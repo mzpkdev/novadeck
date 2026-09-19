@@ -56,15 +56,15 @@ describe("release model", () => {
     it("starts at the configured initial version", () => {
       expect(
         planRelease([], ["feat: scaffold the application"], {
-          initialVersion: "0.1.0",
+          initialVersion: "0.0.0",
           patchOnly: true,
         }),
       ).toEqual({
         release: true,
         previousTag: null,
-        tag: "v0.1.0",
+        tag: "v0.0.0",
         type: "patch",
-        version: "0.1.0",
+        version: "0.0.0",
       })
     })
 
