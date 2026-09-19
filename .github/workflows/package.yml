@@ -68,6 +68,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "Stable promotion must run from the main branch."
+            exit 1
+          fi
           if [[ -z "$RELEASE_TAG" ]]; then
             echo "A vX.Y.Z prerelease tag is required for promotion."
             exit 1
