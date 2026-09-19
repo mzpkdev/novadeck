@@ -156,7 +156,23 @@ jobs:
         working-directory: release-assets
         run: sha256sum -- * > SHA256SUMS
 
-      - name: Publish GitHub Prerelease
+      - name: Prepare GitHub Prerelease
+        id: creation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists."
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists."
+            exit 1
+          fi
+          echo "started=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create Draft Release
         env:
           GH_TOKEN: ${{ github.token }}
           PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
@@ -168,13 +184,48 @@ jobs:
             notes+=(--notes-start-tag "$PREVIOUS_TAG")
           fi
 
-          gh release create "$RELEASE_TAG" release-assets/* \
+          gh release create "$RELEASE_TAG" \
+            --draft \
             --latest=false \
             --notes "Unsigned development build. macOS Gatekeeper and Windows SmartScreen may display warnings." \
-            --prerelease \
             --target "$SOURCE_SHA" \
             --title "NovaDeck $RELEASE_TAG" \
             "${notes[@]}"
+
+      - name: Upload Release Assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" release-assets/*
+
+      - name: Publish GitHub Prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest=false --prerelease
+
+      - name: Remove Incomplete Release
+        if: failure() && steps.creation.outputs.started == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          if release="$(gh release view "$RELEASE_TAG" --json isDraft,targetCommitish 2>/dev/null)"; then
+            is_draft="$(jq -r .isDraft <<< "$release")"
+            target="$(jq -r .targetCommitish <<< "$release")"
+            if [[ "$is_draft" == "true" && "$target" == "$SOURCE_SHA" ]]; then
+              gh release delete "$RELEASE_TAG" --cleanup-tag --yes
+            else
+              echo "Refusing to remove a published release or a release for another commit."
+            fi
+          elif tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null)"; then
+            if [[ "$tag_sha" == "$SOURCE_SHA" ]]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG"
+            else
+              echo "Refusing to remove a tag for another commit."
+            fi
+          fi
 
   promote:
     name: Promote Stable Release
@@ -217,6 +268,25 @@ jobs:
             echo "$RELEASE_TAG does not point to a commit on main."
             exit 1
           fi
+
+      - name: Verify Release Checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --dir release-assets
+          cd release-assets
+
+          while IFS= read -r -d '' asset; do
+            checksum="$(sha256sum -- "$asset")"
+            if ! grep --fixed-strings --line-regexp -- "$checksum" SHA256SUMS >/dev/null; then
+              echo "$asset is missing a matching checksum."
+              exit 1
+            fi
+          done < <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0')
+
+          sha256sum --check --strict SHA256SUMS
 
       - name: Promote Release
         env:
