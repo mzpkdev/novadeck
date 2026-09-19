@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "perf": "warn",
+    "suspicious": "warn"
+  },
+  "plugins": ["import", "react", "typescript", "unicorn", "vitest"],
+  "rules": {
+    "func-style": [
+      "error",
+      "expression",
+      {
+        "overrides": {
+          "namedExports": "expression"
+        }
+      }
+    ],
+    "import/no-unassigned-import": "off",
+    "prefer-arrow-callback": "error",
+    "react/react-in-jsx-scope": "off",
+    "typescript/consistent-type-definitions": ["error", "type"]
+  },
+  "overrides": [
+    {
+      "files": ["**/*.d.ts"],
+      "rules": {
+        "typescript/consistent-type-definitions": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["out", "release", "coverage"]
+}

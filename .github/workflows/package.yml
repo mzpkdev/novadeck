@@ -1,0 +1,38 @@
+name: Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            target: linux
+          - name: macOS
+            os: macos-latest
+            target: mac
+          - name: Windows
+            os: windows-latest
+            target: win
+    steps:
+      - uses: stardwst/__actions/actions/node-run@v1
+        with:
+          command: npm run package:${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaDeck-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error

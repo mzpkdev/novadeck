@@ -1,0 +1,38 @@
+name: Quality
+
+on: pull_request
+
+permissions:
+  contents: read
+
+env:
+  TURBO_LOG_ORDER: stream
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Format
+            command: npm run format:check
+          - name: Lint
+            command: npm run lint
+          - name: Typecheck
+            command: npm run typecheck
+          - name: Test
+            command: npm run test
+          - name: Build
+            command: npm run build
+    steps:
+      - name: Run ${{ matrix.name }}
+        uses: stardwst/__actions/actions/node-run@v1
+        with:
+          command: ${{ matrix.command }}

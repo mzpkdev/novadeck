@@ -1,0 +1,6 @@
+allowBuilds:
+  electron-winstaller: true
+  esbuild: true
+  msw: false
+minimumReleaseAgeExclude:
+  - "@types/node@26.6.2"

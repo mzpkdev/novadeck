@@ -1,0 +1,38 @@
+appId: dev.mzpk.novadeck
+productName: NovaDeck
+asar: true
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+mac:
+  identity: null
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  category: Utility
+  maintainer: mzpkdev
+  syncDesktopName: true
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
