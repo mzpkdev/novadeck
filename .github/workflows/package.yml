@@ -56,7 +56,7 @@ jobs:
       - name: Plan Automatic Release
         id: automatic
         if: github.event_name == 'push'
-        run: node scripts/release/plan.ts
+        run: node scripts/release/plan/main.ts
 
       - name: Plan Packaging Run
         id: manual
@@ -214,7 +214,7 @@ jobs:
 
           RELEASE_JSON="$release_json" \
             LATEST_STABLE_TAG="$latest_stable_tag" \
-            node scripts/release/validate-promotion.ts
+            node scripts/release/promote/main.ts
 
           if ! git merge-base --is-ancestor "$RELEASE_TAG^{commit}" origin/main; then
             echo "$RELEASE_TAG does not point to a commit on main."

@@ -1,4 +1,4 @@
-import { compareVersions, parseVersion } from "./model.ts"
+import { compareVersions, parseVersion } from "../version/version.ts"
 
 interface Asset {
   name: string

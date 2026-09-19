@@ -1,6 +1,6 @@
-import { context, describe, expect, it } from "../../src/test"
+import { context, describe, expect, it } from "../../../src/test"
 
-import { type CandidateRelease, validatePromotion } from "./promotion"
+import { type CandidateRelease, validatePromotion } from "./validation"
 
 function candidate(overrides: Partial<CandidateRelease> = {}): CandidateRelease {
   return {

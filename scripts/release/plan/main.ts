@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process"
 import { appendFileSync, readFileSync } from "node:fs"
 
-import { latestVersion, planRelease } from "./model.ts"
+import { latestVersion } from "../version/version.ts"
+import { planRelease } from "./plan.ts"
 
 function git(...args: string[]): string {
   return execFileSync("git", args, { encoding: "utf8" }).trim()
@@ -25,23 +26,35 @@ function writeOutput(name: string, value: string): void {
   appendFileSync(output, `${name}=${value}\n`)
 }
 
-const tags = readTags()
-const previousTag = latestVersion(tags)?.tag ?? null
-const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { version: string }
-const plan = planRelease(tags, readMessages(previousTag), {
-  initialVersion: manifest.version,
-  patchOnly: process.env.RELEASE_PATCH_ONLY === "true",
-})
+export function main(): void {
+  const tags = readTags()
+  const previousTag = latestVersion(tags)?.tag ?? null
+  const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { version: string }
+  const plan = planRelease(tags, readMessages(previousTag), {
+    initialVersion: manifest.version,
+    patchOnly: process.env.RELEASE_PATCH_ONLY === "true",
+  })
 
-if (!plan.release) {
-  writeOutput("package", "false")
-  writeOutput("publish", "false")
-  console.log("No release-worthy commits found.")
-} else {
+  if (!plan.release) {
+    writeOutput("package", "false")
+    writeOutput("publish", "false")
+    console.log("No release-worthy commits found.")
+    return
+  }
+
   writeOutput("package", "true")
   writeOutput("previous_tag", plan.previousTag ?? "")
   writeOutput("publish", "true")
   writeOutput("tag", plan.tag)
   writeOutput("version", plan.version)
   console.log(JSON.stringify(plan, null, 2))
+}
+
+if (import.meta.main) {
+  try {
+    main()
+  } catch (error) {
+    console.error(error)
+    process.exitCode = 1
+  }
 }
