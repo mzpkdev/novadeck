@@ -9,6 +9,7 @@ dist/
 build/
 out/
 release/
+!/scripts/release/
 *.tsbuildinfo
 
 # Tests

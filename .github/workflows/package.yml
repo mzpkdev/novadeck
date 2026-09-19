@@ -1,41 +1,81 @@
 name: Release
 
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - v*
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Package the current source or promote an existing prerelease
+        required: true
+        default: package
+        type: choice
+        options:
+          - package
+          - promote
+      tag:
+        description: Existing vX.Y.Z prerelease to promote
+        required: false
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   prepare:
     name: Prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    outputs:
+      package: ${{ steps.automatic.outputs.package || steps.manual.outputs.package || 'false' }}
+      previous_tag: ${{ steps.automatic.outputs.previous_tag }}
+      publish: ${{ steps.automatic.outputs.publish || 'false' }}
+      tag: ${{ steps.automatic.outputs.tag }}
+      version: ${{ steps.automatic.outputs.version || steps.manual.outputs.version }}
     steps:
       - name: Check Out Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-      - name: Validate Release Tag
-        if: github.ref_type == 'tag'
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+      - name: Set Up Toolchain
+        if: github.event_name == 'push' || inputs.operation == 'package'
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Plan Automatic Release
+        id: automatic
+        if: github.event_name == 'push'
+        run: node scripts/release/plan.ts
+
+      - name: Plan Packaging Run
+        id: manual
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'package'
         run: |
-          node <<'NODE'
-          const fs = require("node:fs")
+          version="$(node --input-type=module -e 'import manifest from "./package.json" with { type: "json" }; process.stdout.write(manifest.version)')"
+          echo "package=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-          const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"))
-          const expected = `v${manifest.version}`
-          if (process.env.RELEASE_TAG !== expected) {
-            console.error(`Release tag must be ${expected}, received ${process.env.RELEASE_TAG}.`)
-            process.exitCode = 1
-          }
-          NODE
+      - name: Validate Promotion Input
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "A vX.Y.Z prerelease tag is required for promotion."
+            exit 1
+          fi
 
   package:
     name: ${{ matrix.name }}
+    if: needs.prepare.outputs.package == 'true'
     needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -77,6 +117,9 @@ jobs:
           cache: true
           require-lockfile: true
 
+      - name: Set Package Version
+        run: npm pkg set "version=${{ needs.prepare.outputs.version }}"
+
       - name: Package Application
         run: pnpm run package:${{ matrix.target }}
 
@@ -87,11 +130,11 @@ jobs:
           path: ${{ matrix.files }}
           if-no-files-found: error
           compression-level: 0
-          retention-days: 7
+          retention-days: 1
 
   release:
-    name: Draft Release
-    if: github.ref_type == 'tag'
+    name: Publish Dev Release
+    if: needs.prepare.outputs.publish == 'true'
     needs: [prepare, package]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -109,22 +152,82 @@ jobs:
         working-directory: release-assets
         run: sha256sum -- * > SHA256SUMS
 
-      - name: Create Draft Release
+      - name: Publish GitHub Prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
-          if release_is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
-            if [[ "$release_is_draft" != "true" ]]; then
-              echo "Release $RELEASE_TAG is already published and will not be modified."
-              exit 1
-            fi
-            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          notes=(--generate-notes)
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            notes+=(--notes-start-tag "$PREVIOUS_TAG")
+          fi
+
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --latest=false \
+            --notes "Unsigned development build. macOS Gatekeeper and Windows SmartScreen may display warnings." \
+            --prerelease \
+            --target "$SOURCE_SHA" \
+            --title "NovaDeck $RELEASE_TAG" \
+            "${notes[@]}"
+
+  promote:
+    name: Promote Stable Release
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set Up Toolchain
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Validate Prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          release_json="$(gh release view "$RELEASE_TAG" --json assets,isDraft,isPrerelease,tagName)"
+          if latest_stable_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null)"; then
+            :
           else
-            gh release create "$RELEASE_TAG" release-assets/* \
-              --draft \
-              --generate-notes \
-              --notes "Unsigned preview build. macOS Gatekeeper and Windows SmartScreen may display warnings." \
-              --title "NovaDeck $RELEASE_TAG" \
-              --verify-tag
+            latest_stable_tag=""
+          fi
+
+          RELEASE_JSON="$release_json" \
+            LATEST_STABLE_TAG="$latest_stable_tag" \
+            node scripts/release/validate-promotion.ts
+
+          if ! git merge-base --is-ancestor "$RELEASE_TAG^{commit}" origin/main; then
+            echo "$RELEASE_TAG does not point to a commit on main."
+            exit 1
+          fi
+
+      - name: Promote Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --latest --prerelease=false
+
+      - name: Verify Stable Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          is_prerelease="$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"
+          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          if [[ "$is_prerelease" != "false" || "$latest_tag" != "$RELEASE_TAG" ]]; then
+            echo "Failed to verify $RELEASE_TAG as the latest stable release."
+            exit 1
           fi

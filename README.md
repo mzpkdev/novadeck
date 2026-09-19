@@ -51,3 +51,17 @@ The configured artifacts are:
 Artifacts are written to `release/`. Builds are intentionally unsigned for now,
 so macOS Gatekeeper and Windows SmartScreen may warn when opening them. The
 permanent application ID is `dev.mzpk.novadeck`.
+
+## Releases
+
+Every release-worthy squash commit on `main` produces an immutable GitHub
+prerelease for the dev channel. Conventional Commits calculate its normal
+SemVer version: `fix` and `perf` increment patch, `feat` increments minor, and a
+breaking change increments major. `build(deps)` increments patch; documentation,
+tests, CI, and other maintenance commits do not release.
+
+To promote tested binaries without rebuilding them, open **Actions → Release**,
+run the workflow with the `promote` operation, and enter its `vX.Y.Z` prerelease
+tag. Promotion verifies every platform package and checksum, then marks that
+same GitHub Release as the latest stable release. A manual `package` operation
+builds temporary artifacts without creating a release.

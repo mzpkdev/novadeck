@@ -37,6 +37,11 @@ and the Screenshot section when it does not apply. Keep the title and body curre
 With `gh`, write the body to a Markdown file and pass `--body-file`. Read the
 submitted PR back to confirm its title, body, base, and head branch.
 
+Squash commits on `main` drive automated versioning. Use `fix`, `perf`, or
+`build(deps)` for a patch release; `feat` for a minor release; and `!` or a
+`BREAKING CHANGE` footer for a major release. Other allowed types do not publish
+a release unless they declare a breaking change.
+
 The `PR / Verify` job checks workflow syntax, title format, and required headings.
 It checks heading presence, so the author must still write useful content. On
 failure, read the job summary or step log for diagnostics and fixes. `FAIL` means
