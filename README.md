@@ -60,6 +60,12 @@ SemVer version: `fix` and `perf` increment patch, `feat` increments minor, and a
 breaking change increments major. `build(deps)` increments patch; documentation,
 tests, CI, and other maintenance commits do not release.
 
+During beta, the repository variable `RELEASE_PATCH_ONLY` is `true`, so every
+release-worthy commit advances only the patch component. Set it to `false` when
+normal minor and major bumps should begin; the qualification rules do not change.
+The configured `package.json` version remains the initial release when no tag
+exists, so beta starts at `v0.1.0`.
+
 To promote tested binaries without rebuilding them, open **Actions → Release**,
 run the workflow with the `promote` operation, and enter its `vX.Y.Z` prerelease
 tag. Promotion verifies every platform package and checksum, then marks that

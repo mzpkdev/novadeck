@@ -53,12 +53,17 @@ describe("release model", () => {
   })
 
   context("when planning the next immutable build", () => {
-    it("starts a new project at version 0.1.0 for a feature", () => {
-      expect(planRelease([], ["feat: scaffold the application"])).toEqual({
+    it("starts at the configured initial version", () => {
+      expect(
+        planRelease([], ["feat: scaffold the application"], {
+          initialVersion: "0.1.0",
+          patchOnly: true,
+        }),
+      ).toEqual({
         release: true,
         previousTag: null,
         tag: "v0.1.0",
-        type: "minor",
+        type: "patch",
         version: "0.1.0",
       })
     })
@@ -81,6 +86,27 @@ describe("release model", () => {
     it("does not plan a release without a releasable commit", () => {
       expect(planRelease(["v0.3.1"], ["docs: explain tabs"])).toEqual({
         release: false,
+      })
+    })
+
+    it.each([
+      "fix: prevent a startup crash",
+      "feat: add workspace tabs",
+      "feat!: replace the workspace format",
+    ])("converts %s to a patch bump while patch-only mode is enabled", (message) => {
+      expect(planRelease(["v0.4.2"], [message], { patchOnly: true })).toEqual({
+        release: true,
+        previousTag: "v0.4.2",
+        tag: "v0.4.3",
+        type: "patch",
+        version: "0.4.3",
+      })
+    })
+
+    it("restores normal Conventional Commit bumps when patch-only mode is disabled", () => {
+      expect(planRelease(["v0.4.2"], ["feat!: replace storage"])).toMatchObject({
+        tag: "v1.0.0",
+        type: "major",
       })
     })
   })

@@ -23,6 +23,11 @@ export type ReleasePlan =
       version: string
     }
 
+export interface ReleaseOptions {
+  initialVersion?: string
+  patchOnly?: boolean
+}
+
 interface Bump {
   level: number
 }
@@ -122,13 +127,21 @@ export function analyzeRelease(messages: string[]): ReleaseType | null {
   return bump ? (levels[bump.level] ?? null) : null
 }
 
-export function planRelease(tags: string[], messages: string[]): ReleasePlan {
-  const type = analyzeRelease(messages)
-  if (!type) return { release: false }
+export function planRelease(
+  tags: string[],
+  messages: string[],
+  options: ReleaseOptions = {},
+): ReleasePlan {
+  const analyzedType = analyzeRelease(messages)
+  if (!analyzedType) return { release: false }
 
   const latest = latestVersion(tags)
-  const base = latest?.version ?? { major: 0, minor: 0, patch: 0 }
-  const version = formatVersion(incrementVersion(base, type))
+  const type = options.patchOnly ? "patch" : analyzedType
+  const initial = options.initialVersion ? parseVersion(options.initialVersion) : null
+  const next = latest
+    ? incrementVersion(latest.version, type)
+    : (initial ?? incrementVersion({ major: 0, minor: 0, patch: 0 }, type))
+  const version = formatVersion(next)
 
   return {
     release: true,

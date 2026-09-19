@@ -21,6 +21,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_PATCH_ONLY: ${{ vars.RELEASE_PATCH_ONLY || 'true' }}
+
 concurrency:
   group: release
   cancel-in-progress: false

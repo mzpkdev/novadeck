@@ -42,6 +42,10 @@ Squash commits on `main` drive automated versioning. Use `fix`, `perf`, or
 `BREAKING CHANGE` footer for a major release. Other allowed types do not publish
 a release unless they declare a breaking change.
 
+While the repository variable `RELEASE_PATCH_ONLY` is `true`, all qualifying
+changes are published as patch increments. Commit types still matter and normal
+minor and major behavior resumes when the variable is set to `false`.
+
 The `PR / Verify` job checks workflow syntax, title format, and required headings.
 It checks heading presence, so the author must still write useful content. On
 failure, read the job summary or step log for diagnostics and fixes. `FAIL` means

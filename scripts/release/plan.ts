@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { appendFileSync } from "node:fs"
+import { appendFileSync, readFileSync } from "node:fs"
 
 import { latestVersion, planRelease } from "./model.ts"
 
@@ -27,7 +27,11 @@ function writeOutput(name: string, value: string): void {
 
 const tags = readTags()
 const previousTag = latestVersion(tags)?.tag ?? null
-const plan = planRelease(tags, readMessages(previousTag))
+const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { version: string }
+const plan = planRelease(tags, readMessages(previousTag), {
+  initialVersion: manifest.version,
+  patchOnly: process.env.RELEASE_PATCH_ONLY === "true",
+})
 
 if (!plan.release) {
   writeOutput("package", "false")
