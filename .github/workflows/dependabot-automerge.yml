@@ -36,7 +36,7 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/dependabot/readiness/main.ts
+        run: node scripts/dependabot/automerge/main.ts
 
       - name: Read Dependabot Update
         if: steps.readiness.outputs.ready == 'true'

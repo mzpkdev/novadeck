@@ -1,4 +1,4 @@
-import { verifyPullRequest } from "./verification.ts"
+import { verifyPullRequest } from "./verify.ts"
 
 export const main = (): void => {
   const result = verifyPullRequest(process.env.PR_TITLE ?? "", process.env.PR_BODY ?? "")

@@ -58,7 +58,7 @@ jobs:
         if: github.event_name == 'push'
         run: node scripts/release/plan/main.ts
 
-      - name: Plan Packaging Run
+      - name: Prepare Manual Package
         id: manual
         if: github.event_name == 'workflow_dispatch' && inputs.operation == 'package'
         run: node scripts/release/package/main.ts
@@ -197,7 +197,7 @@ jobs:
           cache: true
           require-lockfile: true
 
-      - name: Validate Prerelease
+      - name: Validate Stable Promotion
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}

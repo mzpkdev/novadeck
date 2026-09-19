@@ -1,5 +1,5 @@
 import { context, describe, expect, it } from "../../../src/test"
-import { verifyDescription, verifyPullRequest, verifyTitle } from "./verification"
+import { verifyDescription, verifyPullRequest, verifyTitle } from "./verify"
 
 describe("pull request verification", () => {
   context("when the title follows Conventional Commits", () => {
