@@ -61,10 +61,7 @@ jobs:
       - name: Plan Packaging Run
         id: manual
         if: github.event_name == 'workflow_dispatch' && inputs.operation == 'package'
-        run: |
-          version="$(node --input-type=module -e 'import manifest from "./package.json" with { type: "json" }; process.stdout.write(manifest.version)')"
-          echo "package=true" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: node scripts/release/package/main.ts
 
       - name: Validate Promotion Input
         if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
