@@ -3,7 +3,7 @@ import { vi } from "vitest"
 
 import { server } from "../../../src/renderer/src/test/server"
 import { context, describe, expect, it } from "../../../src/test"
-import { earlierRuns, waitForTurn } from "./queue"
+import { earlierRuns, readWorkflowRuns, waitForTurn } from "./queue"
 
 const env = {
   GH_TOKEN: "fixture-token",
@@ -23,20 +23,44 @@ const respond = (...runs: ReturnType<typeof run>[]): void => {
   server.use(
     http.get(
       "https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs",
-      ({ request }) => {
-        const status = new URL(request.url).searchParams.get("status")
-        return HttpResponse.json({ workflow_runs: runs.filter((item) => item.status === status) })
-      },
+      () => HttpResponse.json({ workflow_runs: runs }),
     ),
   )
 }
 
 describe("release queue", () => {
+  it("reads every page from one unfiltered workflow-run listing", async () => {
+    server.use(
+      http.get(
+        "https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs",
+        ({ request }) => {
+          const page = new URL(request.url).searchParams.get("page")
+          if (page === "2") return HttpResponse.json({ workflow_runs: [run(200, 20)] })
+
+          return HttpResponse.json(
+            { workflow_runs: [run(300, 30)] },
+            {
+              headers: {
+                link: '<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=2>; rel="next"',
+              },
+            },
+          )
+        },
+      ),
+    )
+
+    await expect(readWorkflowRuns(env)).resolves.toEqual([run(300, 30), run(200, 20)])
+  })
+
   context("when workflow runs overlap", () => {
     it("identifies only earlier active runs as blockers", () => {
-      expect(earlierRuns([run(100, 10), run(300, 30), run(400, 40)], 300, 30)).toEqual([
-        run(100, 10),
-      ])
+      expect(
+        earlierRuns(
+          [run(100, 10), run(200, 20, "completed"), run(300, 30), run(400, 40)],
+          300,
+          30,
+        ),
+      ).toEqual([run(100, 10)])
     })
 
     it("waits until every earlier run completes", async () => {

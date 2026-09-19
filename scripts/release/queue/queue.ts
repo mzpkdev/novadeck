@@ -10,7 +10,7 @@ interface WorkflowRuns {
   workflow_runs: WorkflowRun[]
 }
 
-const activeStatuses = ["requested", "waiting", "pending", "queued", "in_progress"] as const
+const activeStatuses = new Set(["requested", "waiting", "pending", "queued", "in_progress"])
 
 const request = async (url: string, token: string): Promise<Response> => {
   const response = await fetch(url, {
@@ -56,7 +56,7 @@ const readPage = async (url: string, token: string): Promise<WorkflowRun[]> => {
   return next ? [...runs, ...(await readPage(next, token))] : runs
 }
 
-export const readActiveRuns = async (env: Environment): Promise<WorkflowRun[]> => {
+export const readWorkflowRuns = async (env: Environment): Promise<WorkflowRun[]> => {
   const api = (env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, "")
   const repo = env.GITHUB_REPOSITORY
   const token = env.GH_TOKEN
@@ -64,19 +64,21 @@ export const readActiveRuns = async (env: Environment): Promise<WorkflowRun[]> =
     throw new Error("Missing repository or token.")
   }
 
-  const root = `${api}/repos/${repo}/actions/workflows/release.yml/runs?per_page=100`
-  const pages = await Promise.all(
-    activeStatuses.map((status) => readPage(`${root}&status=${status}`, token)),
-  )
-
-  return pages.flat()
+  const url = `${api}/repos/${repo}/actions/workflows/release.yml/runs?per_page=100&exclude_pull_requests=true`
+  return readPage(url, token)
 }
 
 export const earlierRuns = (
   runs: WorkflowRun[],
   currentId: number,
   currentNumber: number,
-): WorkflowRun[] => runs.filter((run) => run.id !== currentId && run.run_number < currentNumber)
+): WorkflowRun[] =>
+  runs.filter(
+    (run) =>
+      run.id !== currentId &&
+      run.run_number < currentNumber &&
+      activeStatuses.has(run.status),
+  )
 
 export const waitForTurn = async (
   env: Environment,
@@ -89,7 +91,7 @@ export const waitForTurn = async (
   }
 
   while (true) {
-    const runs = await readActiveRuns(env)
+    const runs = await readWorkflowRuns(env)
     if (!runs.some((run) => run.id === currentId)) {
       console.log("Current run is not visible yet; waiting before retrying.")
       await pause()
