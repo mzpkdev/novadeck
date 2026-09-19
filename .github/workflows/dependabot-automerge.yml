@@ -1,0 +1,151 @@
+name: Dependabot
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Automerge
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Automerge Readiness
+        id: readiness
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs")
+
+          const object = (value) =>
+            value !== null && typeof value === "object" && !Array.isArray(value) ? value : {}
+
+          const hasChecks = (value) => {
+            const rule = object(value)
+            return (
+              (Array.isArray(rule.contexts) && rule.contexts.length > 0) ||
+              (Array.isArray(rule.checks) && rule.checks.length > 0)
+            )
+          }
+
+          const hasRequiredChecks = (branch, rules) => {
+            const info = object(branch)
+            const protection = object(info.protection)
+            if (info.protected === true && hasChecks(protection.required_status_checks)) return true
+            if (!Array.isArray(rules)) throw new Error("Branch rules response must be a list.")
+            return rules.some((value) => {
+              const rule = object(value)
+              const parameters = object(rule.parameters)
+              return (
+                rule.type === "required_status_checks" &&
+                Array.isArray(parameters.required_status_checks) &&
+                parameters.required_status_checks.length > 0
+              )
+            })
+          }
+
+          const read = async (url) => {
+            const response = await fetch(url, {
+              headers: {
+                accept: "application/vnd.github+json",
+                authorization: `Bearer ${process.env.GH_TOKEN}`,
+                "x-github-api-version": "2022-11-28",
+              },
+              signal: AbortSignal.timeout(15_000),
+            })
+            if (!response.ok) throw new Error(`GitHub API returned ${response.status}.`)
+            return response
+          }
+
+          const readRules = async (url) => {
+            const found = []
+            let next = url
+            while (next) {
+              const response = await read(next)
+              const page = await response.json()
+              if (!Array.isArray(page)) throw new Error("Branch rules response must be a list.")
+              found.push(...page)
+              next = response.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1]
+            }
+            return found
+          }
+
+          const main = async () => {
+            const repo = process.env.GITHUB_REPOSITORY
+            const base = process.env.BASE_REF
+            if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !process.env.GH_TOKEN || !base) {
+              throw new Error("Missing repository, token, or base branch.")
+            }
+
+            const api = (process.env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, "")
+            const root = `${api}/repos/${repo}`
+            const settings = object(await (await read(root)).json())
+            let ready = false
+
+            if (settings.allow_auto_merge === true && settings.allow_squash_merge === true) {
+              const branch = encodeURIComponent(base)
+              const info = await (await read(`${root}/branches/${branch}`)).json()
+              ready = hasRequiredChecks(info, [])
+              if (!ready) {
+                const rules = await readRules(`${root}/rules/branches/${branch}?per_page=100`)
+                ready = hasRequiredChecks(info, rules)
+              }
+            }
+
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `ready=${ready}\n`)
+            console.log(
+              ready
+                ? "Automerge is ready."
+                : "Automerge needs required checks and repository settings.",
+            )
+          }
+
+          main().catch((error) => {
+            console.error(error)
+            process.exitCode = 1
+          })
+          NODE
+
+      - name: Read Dependabot Update
+        if: steps.readiness.outputs.ready == 'true'
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Enable Automerge
+        if: >-
+          steps.readiness.outputs.ready == 'true' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
+
+      - name: Disable Ineligible Automerge
+        if: >-
+          always() &&
+          (steps.readiness.outcome != 'success' ||
+          steps.readiness.outputs.ready != 'true' ||
+          steps.metadata.outcome != 'success' ||
+          (steps.metadata.outputs.update-type != 'version-update:semver-patch' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-minor'))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [[ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" == "true" ]]; then
+            gh pr merge --disable-auto "$PR_URL"
+          fi
