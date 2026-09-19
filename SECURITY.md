@@ -12,7 +12,8 @@ promptly so it can be rotated; removing it from a file does not revoke it.
 
 ## Credentials and Data
 
-This repository is private. Keep sensitive data out of code and shared work.
+This repository is public. Treat committed code, issues, PRs, workflow logs, and
+artifacts as publicly accessible. Keep sensitive data out of code and shared work.
 Store credentials in the project's secret store or ignored local configuration.
 Use dummy values in examples and sanitized data in tests. Check logs, screenshots,
 issues, PRs, and agent context before sharing them. Grant only the access a task needs.
