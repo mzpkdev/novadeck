@@ -18,10 +18,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Verify Pull Request
-        uses: stardwst/__actions/actions/pr-verify@v1
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          node <<'NODE'
+          const title = process.env.PR_TITLE ?? ""
+          const body = process.env.PR_BODY ?? ""
+          const tags = new Set([
+            "build",
+            "chore",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "poc",
+            "refactor",
+            "revert",
+            "style",
+            "test",
+          ])
+          const header = /^([\w-]+)(?:\((.*)\))?(!)?:\s*(.+)$/.exec(title)
+
+          if (!header || !tags.has(header[1])) {
+            console.error(
+              "::error title=Invalid pull request title::Use type(optional-scope): concise imperative summary.",
+            )
+            process.exitCode = 1
+          }
+
+          for (const section of ["What", "Why", "Impact"]) {
+            if (!new RegExp(`^##\\s+${section}\\s*$`, "m").test(body)) {
+              console.error(`::error title=Missing pull request section::Add a ## ${section} heading.`)
+              process.exitCode = 1
+            }
+          }
+          NODE
+
+      - name: Lint Workflows
+        uses: docker://rhysd/actionlint:1.7.12
         with:
-          required-sections: |
-            What
-            Why
-            Impact
+          args: -color

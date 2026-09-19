@@ -28,10 +28,21 @@ jobs:
             os: windows-latest
             target: win
     steps:
-      - uses: stardwst/__actions/actions/node-run@v1
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up Toolchain
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
-          command: npm run package:${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Package Application
+        run: pnpm run package:${{ matrix.target }}
+
+      - name: Upload Packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: NovaDeck-${{ matrix.target }}
           path: release/*
