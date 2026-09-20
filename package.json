@@ -8,6 +8,7 @@
   "type": "module",
   "scripts": {
     "dev": "turbo run dev --filter=@novadeck/application",
+    "storybook": "pnpm --filter @novadeck/design-system storybook",
     "build": "turbo run build",
     "preview": "pnpm --filter @novadeck/application preview",
     "package": "pnpm --filter @novadeck/application package",

@@ -1,0 +1,205 @@
+@layer novadeck.tokens, novadeck.reset, novadeck.components;
+
+@layer novadeck.tokens {
+  @scope (.novadeck) {
+    :scope {
+      --color__background: #090b10;
+      --color__surface: #11151f;
+      --color__surface-subtle: #1a2030;
+      --color__border-subtle: #292e3a;
+      --color__accent: #5f5eff;
+      --color__accent-hover: #7776ff;
+      --color__accent-subtle: #d9d8ff;
+      --color__on-accent: #ffffff;
+      --color__text-700: #b5bdcc;
+      --color__text-900: #f4f5f7;
+      --disabled-opacity: 0.5;
+      --easing__out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+      --roundness: 0.5rem;
+      --shadow__none: none;
+      --shadow__level-1: 0 0.5rem 1.5rem rgb(0 0 0 / 20%);
+      --shadow__level-2: 0 0.75rem 2rem rgb(0 0 0 / 32%);
+      --spacing__xs: 0.5rem;
+      --spacing__md: 1rem;
+      --thickness: 1px;
+      --transition__duration: 160ms;
+    }
+  }
+}
+
+@layer novadeck.reset {
+  @scope (.novadeck) {
+    :scope,
+    :scope::before,
+    :scope::after,
+    :scope *,
+    :scope *::before,
+    :scope *::after {
+      box-sizing: border-box;
+    }
+
+    :scope button {
+      font: inherit;
+      letter-spacing: inherit;
+      margin: 0;
+    }
+
+    :scope:focus-visible,
+    :scope :focus-visible {
+      outline: 2px solid var(--color__accent);
+      outline-offset: 3px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      :scope,
+      :scope *,
+      :scope *::before,
+      :scope *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  }
+}
+
+@layer novadeck.components {
+  @scope (.novadeck) {
+    .button {
+      --button__background: transparent;
+      --button__border-color: var(--color__accent);
+      --button__color: var(--color__text-900);
+      --button__shadow: var(--shadow__level-1);
+
+      align-items: center;
+      background: var(--button__background);
+      border: var(--thickness) solid var(--button__border-color);
+      border-radius: var(--roundness);
+      box-shadow: var(--button__shadow);
+      color: var(--button__color);
+      cursor: pointer;
+      display: inline-flex;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: inherit;
+      isolation: isolate;
+      justify-content: center;
+      line-height: 1.5;
+      min-block-size: 2.5rem;
+      padding-block: var(--spacing__xs);
+      padding-inline: var(--spacing__md);
+      position: relative;
+      text-align: center;
+      transition-duration: var(--transition__duration);
+      transition-property: background-color, border-color, box-shadow, color, transform;
+      transition-timing-function: var(--easing__out-expo);
+      width: auto;
+    }
+
+    .button > .content {
+      align-items: center;
+      display: inline-flex;
+      gap: var(--spacing__xs);
+      justify-content: center;
+      min-inline-size: 0;
+    }
+
+    .button > .content > .icon {
+      display: inline-flex;
+      flex: none;
+      line-height: 0;
+    }
+
+    .button > .content > .icon > svg,
+    .button.icon-only > .content > svg {
+      block-size: 1.125em;
+      inline-size: 1.125em;
+    }
+
+    .button.icon-only {
+      inline-size: 2.5rem;
+      padding: 0;
+    }
+
+    .button.fluid {
+      inline-size: 100%;
+    }
+
+    .button[aria-busy="true"] > .content {
+      opacity: 0;
+    }
+
+    .button > .spinner {
+      animation: novadeck-button-spin 700ms linear infinite;
+      block-size: 1em;
+      border: 0.125em solid currentcolor;
+      border-inline-end-color: transparent;
+      border-radius: 50%;
+      inline-size: 1em;
+      position: absolute;
+    }
+
+    .button:hover:not(:disabled) {
+      --button__background: var(--color__surface-subtle);
+      --button__color: var(--color__accent);
+    }
+
+    .button:active:not(:disabled) {
+      --button__background: color-mix(in srgb, var(--color__accent-subtle) 18%, transparent);
+
+      transform: translateY(1px);
+    }
+
+    .button.filled {
+      --button__background: var(--color__accent);
+      --button__border-color: var(--color__accent);
+      --button__color: var(--color__on-accent);
+    }
+
+    .button.filled:hover:not(:disabled) {
+      --button__background: var(--color__accent-hover);
+      --button__border-color: var(--button__background);
+      --button__color: var(--color__on-accent);
+      --button__shadow: var(--shadow__level-2);
+    }
+
+    .button.elevated {
+      --button__background: var(--color__surface);
+      --button__border-color: var(--color__border-subtle);
+      --button__color: var(--color__text-700);
+    }
+
+    .button.tonal {
+      --button__background: color-mix(in srgb, var(--color__accent-subtle) 22%, transparent);
+      --button__border-color: transparent;
+      --button__color: var(--color__text-900);
+    }
+
+    .button.text {
+      --button__border-color: transparent;
+      --button__shadow: var(--shadow__none);
+    }
+
+    .button:is([aria-pressed="true"], [aria-pressed="mixed"]) {
+      --button__background: color-mix(in srgb, var(--color__accent-subtle) 22%, transparent);
+      --button__border-color: var(--color__accent);
+      --button__color: var(--color__accent);
+      --button__shadow: var(--shadow__none);
+    }
+
+    .button:disabled:not([aria-busy="true"]) {
+      cursor: not-allowed;
+      opacity: var(--disabled-opacity);
+    }
+
+    .button[aria-busy="true"] {
+      cursor: progress;
+    }
+  }
+}
+
+@keyframes novadeck-button-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}

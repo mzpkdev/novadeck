@@ -1,5 +1,4 @@
-@import "tailwindcss";
-@source "../../../../design-system/src";
+@import "@novadeck/design-system/styles.css";
 
 :root {
   color: #f4f5f7;

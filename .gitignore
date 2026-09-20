@@ -9,6 +9,7 @@ dist/
 build/
 out/
 release/
+storybook-static/
 *.tsbuildinfo
 
 # Tests

@@ -29,5 +29,5 @@
       }
     }
   ],
-  "ignorePatterns": ["out", "release", "coverage"]
+  "ignorePatterns": ["out", "release", "storybook-static", "coverage"]
 }

@@ -18,7 +18,14 @@ pnpm dev
 The repository contains two workspace packages:
 
 - `application` contains the Electron application and consumes the design system.
-- `design-system` contains reusable Ark UI components styled with Tailwind CSS.
+- `design-system` contains the Ark UI React adapter and scoped, framework-neutral CSS. Its
+  Storybook has no addons or browser-test harness.
+
+Run the component workshop separately with:
+
+```sh
+pnpm storybook
+```
 
 The application itself is split into three trust boundaries:
 

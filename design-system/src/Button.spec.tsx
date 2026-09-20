@@ -16,6 +16,7 @@ describe("Button", () => {
       expect(clicked).toBe(true)
       expect(button).toHaveFocus()
       expect(button).toHaveAttribute("type", "button")
+      expect(button).toHaveClass("button", "outlined")
     })
   })
 
@@ -31,6 +32,25 @@ describe("Button", () => {
       fireEvent.click(screen.getByRole("button", { name: "Create deck" }))
 
       expect(clicked).toBe(false)
+    })
+  })
+
+  context("when an action is in progress", () => {
+    it("preserves its name and prevents another activation", () => {
+      let clicked = false
+
+      render(
+        <Button loading variant="filled" onClick={() => (clicked = true)}>
+          Create deck
+        </Button>,
+      )
+      const button = screen.getByRole("button", { name: "Create deck" })
+      fireEvent.click(button)
+
+      expect(clicked).toBe(false)
+      expect(button).toBeDisabled()
+      expect(button).toHaveAttribute("aria-busy", "true")
+      expect(button).toHaveClass("filled")
     })
   })
 })
