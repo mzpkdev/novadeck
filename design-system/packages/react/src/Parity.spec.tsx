@@ -95,7 +95,7 @@ describe("recipe parity", () => {
   })
 
   it("carries the design-system theme into portals", async () => {
-    render(
+    const { unmount } = render(
       <div className="novadeck theme-outlined" data-theme="dark">
         <Portal>
           <span data-testid="portal-content">Portalled</span>
@@ -104,8 +104,27 @@ describe("recipe parity", () => {
     )
 
     const portalContent = await screen.findByTestId("portal-content")
-    expect(portalContent.parentElement).toHaveClass("novadeck", "theme-outlined")
-    expect(portalContent.parentElement).toHaveAttribute("data-theme", "dark")
+    const portalContainer = portalContent.parentElement!
+    expect(portalContainer).toHaveClass("novadeck", "theme-outlined")
+    expect(portalContainer).toHaveAttribute("data-theme", "dark")
+
+    unmount()
+    expect(portalContainer).not.toBeInTheDocument()
+  })
+
+  it("can render portal content inline", () => {
+    render(
+      <div data-testid="portal-parent">
+        <Portal disabled>
+          <span data-testid="inline-portal-content">Inline</span>
+        </Portal>
+      </div>,
+    )
+
+    expect(screen.getByTestId("portal-parent")).toContainElement(
+      screen.getByTestId("inline-portal-content"),
+    )
+    expect(document.querySelector("[data-novadeck-portal]")).not.toBeInTheDocument()
   })
 
   it("keeps Ark interactions intact", async () => {

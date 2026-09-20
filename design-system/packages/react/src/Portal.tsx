@@ -1,6 +1,6 @@
+import { Portal as ArkPortal } from "@ark-ui/react/portal"
 import type { ReactNode } from "react"
-import { useLayoutEffect, useRef, useState } from "react"
-import { createPortal } from "react-dom"
+import { useLayoutEffect, useMemo, useRef, useState } from "react"
 
 export type PortalProps = {
   active?: boolean
@@ -36,6 +36,7 @@ const synchronizeContext = (container: HTMLElement, source: HTMLElement) => {
 export const Portal = ({ active = true, children, disabled = false, source }: PortalProps) => {
   const fallbackSource = useRef<HTMLSpanElement>(null)
   const [container, setContainer] = useState<HTMLElement | null>(null)
+  const containerRef = useMemo(() => ({ current: container }), [container])
 
   useLayoutEffect(() => {
     if (disabled || !active) return
@@ -46,7 +47,10 @@ export const Portal = ({ active = true, children, disabled = false, source }: Po
     nextContainer.dataset.novadeckPortal = ""
     nextContainer.style.display = "contents"
     synchronizeContext(nextContainer, contextSource)
-    contextSource.ownerDocument.body.append(nextContainer)
+    const root = contextSource.getRootNode()
+    const ShadowRoot = contextSource.ownerDocument.defaultView?.ShadowRoot
+    const host = ShadowRoot && root instanceof ShadowRoot ? root : contextSource.ownerDocument.body
+    host.append(nextContainer)
     setContainer(nextContainer)
 
     const Observer = contextSource.ownerDocument.defaultView?.MutationObserver
@@ -72,7 +76,7 @@ export const Portal = ({ active = true, children, disabled = false, source }: Po
       {source === undefined && (
         <span aria-hidden="true" data-novadeck-portal-anchor="" hidden ref={fallbackSource} />
       )}
-      {active && container ? createPortal(children, container) : null}
+      {active && container ? <ArkPortal container={containerRef}>{children}</ArkPortal> : null}
     </>
   )
 }
