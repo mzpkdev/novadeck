@@ -20,7 +20,7 @@ The repository contains two workspace packages:
 - `application` contains the Electron application and consumes the design system.
 - `design-system` is an inner workspace containing `packages/css`, the complete framework-neutral
   CSS contract ported from Stardwst, and `packages/react`, the Ark UI React adapter. The React
-  package owns a Storybook with no addons or browser-test harness.
+  package owns a Storybook with the official themes addon and no browser-test harness.
 
 Run the component workshop separately with:
 

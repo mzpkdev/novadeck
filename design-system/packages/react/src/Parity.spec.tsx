@@ -112,6 +112,41 @@ describe("recipe parity", () => {
     expect(portalContainer).not.toBeInTheDocument()
   })
 
+  it("refreshes and removes inherited portal context", async () => {
+    render(
+      <div
+        className="novadeck theme-outlined"
+        data-testid="island"
+        data-theme="dark"
+        style={{ "--deck-border": "blue", "--deck-surface": "navy" } as React.CSSProperties}
+      >
+        <Portal>
+          <span data-testid="responsive-portal-content">Portalled</span>
+        </Portal>
+      </div>,
+    )
+
+    const island = screen.getByTestId("island")
+    const portalContainer = (await screen.findByTestId("responsive-portal-content")).parentElement!
+    expect(portalContainer.style.getPropertyValue("--deck-border")).toBe("blue")
+    expect(portalContainer.style.getPropertyValue("--deck-surface")).toBe("navy")
+
+    island.dataset.theme = "light"
+    island.classList.remove("theme-outlined")
+    island.style.removeProperty("--deck-border")
+    island.style.removeProperty("--deck-surface")
+    island.style.setProperty("--deck-accent", "cyan")
+    fireEvent(window, new Event("resize"))
+
+    await waitFor(() => {
+      expect(portalContainer).toHaveAttribute("data-theme", "light")
+      expect(portalContainer).not.toHaveClass("theme-outlined")
+      expect(portalContainer.style.getPropertyValue("--deck-border")).toBe("")
+      expect(portalContainer.style.getPropertyValue("--deck-surface")).toBe("")
+      expect(portalContainer.style.getPropertyValue("--deck-accent")).toBe("cyan")
+    })
+  })
+
   it("can render portal content inline", () => {
     render(
       <div data-testid="portal-parent">
