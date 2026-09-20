@@ -1,4 +1,4 @@
-import { context, describe, expect, it } from "../../../src/test"
+import { context, describe, expect, it } from "../../test"
 import { requiredSections, verifyDescription, verifyPullRequest, verifyTitle } from "./verify"
 
 describe("pull request verification", () => {

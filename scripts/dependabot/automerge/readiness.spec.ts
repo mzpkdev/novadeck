@@ -1,7 +1,7 @@
 import { HttpResponse, http } from "msw"
 
-import { server } from "../../../src/renderer/src/test/server"
-import { context, describe, expect, it } from "../../../src/test"
+import { context, describe, expect, it } from "../../test"
+import { server } from "../../test/server"
 import { hasRequiredChecks, ready } from "./readiness"
 
 const env = {

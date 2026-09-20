@@ -1,0 +1,31 @@
+@scope (.novadeck) {
+  .container {
+    --container__max-width: 1080px;
+    --container__padding: var(--spacing__md);
+
+    margin: 0 auto;
+    max-width: var(--container__max-width);
+    padding: var(--container__padding);
+  }
+
+  .container.fluid {
+    inline-size: 100%;
+    max-width: none;
+  }
+
+  .container.align-start {
+    text-align: start;
+  }
+
+  .container.align-center {
+    text-align: center;
+  }
+
+  .container.align-end {
+    text-align: end;
+  }
+
+  .container.align-justify {
+    text-align: justify;
+  }
+}

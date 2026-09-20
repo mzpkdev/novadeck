@@ -12,9 +12,11 @@ export default defineConfig({
   },
   renderer: {
     resolve: {
-      alias: {
-        "@renderer": resolve("src/renderer/src"),
-      },
+      alias: [
+        { find: "@renderer", replacement: resolve("src/renderer/src") },
+        { find: /^react$/, replacement: resolve("node_modules/react/index.js") },
+      ],
+      dedupe: ["react", "react-dom"],
     },
     plugins: [react()],
   },

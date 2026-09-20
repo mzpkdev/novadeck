@@ -1,0 +1,146 @@
+@scope (.novadeck) {
+  .hero {
+    --hero__background: var(--color__surface);
+
+    display: flex;
+    flex-direction: column;
+    inline-size: 100%;
+    isolation: isolate;
+    position: relative;
+  }
+
+  .hero.full-height {
+    min-block-size: 100dvh;
+  }
+
+  .hero > .background {
+    background: var(--hero__background);
+    inset: 0;
+    position: absolute;
+    z-index: 0;
+  }
+
+  .hero::after {
+    background: var(--hero__background);
+    content: "";
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    z-index: 2;
+  }
+
+  .hero.overlay::after {
+    opacity: 0.75;
+  }
+
+  .hero > .background > * {
+    block-size: 100%;
+    inline-size: 100%;
+  }
+
+  .hero > .background :is(img, video) {
+    block-size: 100%;
+    display: block;
+    inline-size: 100%;
+    object-fit: cover;
+    vertical-align: middle;
+  }
+
+  .hero > .image {
+    align-items: stretch;
+    block-size: 100%;
+    bottom: 0;
+    display: flex;
+    inline-size: 50%;
+    justify-content: flex-end;
+    position: absolute;
+    right: 0;
+    z-index: 1;
+  }
+
+  .hero.image-left > .image {
+    justify-content: flex-start;
+    left: 0;
+    right: auto;
+  }
+
+  .hero.image-center > .image {
+    justify-content: center;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+
+  .hero > .image > * {
+    block-size: 100%;
+    inline-size: 100%;
+  }
+
+  .hero > .image :is(img, video) {
+    block-size: 100%;
+    display: block;
+    inline-size: 100%;
+    object-fit: cover;
+    vertical-align: middle;
+  }
+
+  .hero > .content {
+    block-size: 100%;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    margin: auto;
+    max-inline-size: 48rem;
+    padding: var(--spacing__xs) var(--spacing__md);
+    position: relative;
+    width: 100%;
+    z-index: 3;
+  }
+
+  .hero > .content > .headline {
+    display: block;
+    font-family: var(--font-family__display);
+    font-size: clamp(2.5rem, 7vw, 4.25rem);
+    font-weight: 700;
+    letter-spacing: var(--tracking-display);
+    line-height: 1.15;
+    margin-block-end: var(--spacing__md);
+    text-wrap: pretty;
+  }
+
+  .hero > .content > .headline > * {
+    font: inherit;
+    letter-spacing: inherit;
+    margin: 0;
+  }
+
+  .hero > .content > .subheading {
+    color: var(--color__text-700);
+    display: block;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+
+  .hero > .content > .subheading > * {
+    margin: 0;
+  }
+
+  .hero > .content > .body {
+    margin-block-start: var(--spacing__xl);
+  }
+
+  @media (width < 48rem) {
+    .hero > .image {
+      inline-size: 100%;
+    }
+
+    .hero:is(.image-left, .image-center) > .image {
+      left: 0;
+      right: auto;
+      transform: none;
+    }
+  }
+}

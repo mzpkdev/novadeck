@@ -4,7 +4,7 @@ export const App = (): React.JSX.Element => {
   const { versions } = window.novadeck
 
   return (
-    <main className="shell">
+    <main className="novadeck shell">
       <section className="hero" aria-labelledby="title">
         <p className="eyebrow">Desktop workspace</p>
         <h1 id="title">NovaDeck</h1>

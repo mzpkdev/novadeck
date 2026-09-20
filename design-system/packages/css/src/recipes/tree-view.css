@@ -1,0 +1,216 @@
+@scope (.novadeck) {
+  .tree-view {
+    --tree-view__inline-size: 24rem;
+    --tree-view__row-gap: var(--spacing__2xs);
+    --tree-view__item-gap: var(--spacing__xs);
+    --tree-view__item-color: var(--color__text-700);
+    --tree-view__item-background: transparent;
+    --tree-view__branch-color: var(--color__text-700);
+    --tree-view__branch-background: transparent;
+    --tree-view__branch-border-color: var(--color__border-subtle);
+    --tree-view__node-column-size: 1rem;
+    --tree-view__selected-color: var(--color__accent);
+    --tree-view__selected-background: var(--color__accent-subtle);
+
+    font-family: var(--font-family__display);
+    inline-size: min(100%, var(--tree-view__inline-size));
+  }
+
+  .tree-view > .tree {
+    display: grid;
+    gap: var(--tree-view__row-gap);
+    margin: 0;
+    padding: 0;
+  }
+
+  .tree-view .branch {
+    list-style: none;
+  }
+
+  .tree-view .branch > .control,
+  .tree-view .item {
+    align-items: center;
+    border: 0;
+    border-radius: var(--roundness);
+    box-sizing: border-box;
+    display: flex;
+    gap: var(--tree-view__item-gap);
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: var(--spacing__xs) var(--spacing__sm);
+    text-align: start;
+    transition:
+      background-color var(--transition__duration) var(--easing__out-expo),
+      color var(--transition__duration) var(--easing__out-expo),
+      box-shadow var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .tree-view .branch > .control {
+    background: var(--tree-view__branch-background);
+    color: var(--tree-view__branch-color);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  @media (pointer: coarse) {
+    .tree-view .branch > .control,
+    .tree-view .item {
+      min-block-size: 2.75rem;
+    }
+  }
+
+  .tree-view .item {
+    background: var(--tree-view__item-background);
+    color: var(--tree-view__item-color);
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+
+  .tree-view .branch > .control:hover:not([aria-disabled="true"]),
+  .tree-view .item:hover:not([aria-disabled="true"]) {
+    --tree-view__item-color: var(--color__text-900);
+    --tree-view__item-background: var(--color__surface-subtle);
+    --tree-view__branch-color: var(--color__text-900);
+    --tree-view__branch-background: var(--color__surface-subtle);
+  }
+
+  .tree-view .branch > .control:focus-visible,
+  .tree-view .item:focus-visible {
+    outline: 2px solid var(--color__accent);
+    outline-offset: 2px;
+  }
+
+  .tree-view .branch > .content {
+    border-inline-start: var(--thickness) solid var(--tree-view__branch-border-color);
+    display: grid;
+    gap: var(--tree-view__row-gap);
+    margin-inline-start: var(--spacing__sm);
+    padding-block: var(--spacing__2xs);
+    padding-inline-start: var(--spacing__sm);
+  }
+
+  .tree-view .branch > .content[hidden],
+  .tree-view .branch > .control[aria-expanded="false"] + .content {
+    display: none;
+  }
+
+  .tree-view .branch > .control > .indicator,
+  .tree-view .item > .spacer {
+    block-size: var(--tree-view__node-column-size);
+    flex: 0 0 var(--tree-view__node-column-size);
+    inline-size: var(--tree-view__node-column-size);
+  }
+
+  .tree-view .branch > .control > .indicator {
+    align-items: center;
+    display: grid;
+    justify-items: center;
+  }
+
+  .tree-view .branch > .control .arrow {
+    block-size: 1em;
+    display: block;
+    inline-size: 1em;
+    transform: scaleX(1);
+    transform-origin: center;
+    transition: transform var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .tree-view .branch > .control[aria-expanded="true"] .arrow {
+    transform: scaleX(1) rotate(90deg);
+  }
+
+  .tree-view[dir="rtl"] .branch > .control .arrow {
+    transform: scaleX(-1);
+  }
+
+  .tree-view[dir="rtl"] .branch > .control[aria-expanded="true"] .arrow {
+    transform: scaleX(-1) rotate(90deg);
+  }
+
+  .tree-view .branch > .control .loading {
+    block-size: 1rem;
+    display: none;
+    inline-size: 1rem;
+  }
+
+  /* Loading a lazy branch is a composite state, so its Ark marker remains a
+     narrow bridge rather than becoming part of the public selector contract. */
+  .tree-view .branch > .control > .indicator[data-loading] .arrow {
+    display: none;
+  }
+
+  .tree-view .branch > .control > .indicator[data-loading] .loading {
+    display: block;
+  }
+
+  .tree-view .branch > .control > .indicator[data-loading] .loading circle {
+    animation: novadeck-tree-view-loading 900ms ease-in-out infinite alternate;
+  }
+
+  .tree-view .branch > .control > .indicator[data-loading] .loading circle:nth-child(2) {
+    animation-delay: 150ms;
+  }
+
+  .tree-view .branch > .control > .indicator[data-loading] .loading circle:nth-child(3) {
+    animation-delay: 300ms;
+  }
+
+  .tree-view .text {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tree-view .end {
+    align-items: center;
+    display: flex;
+    margin-inline-start: auto;
+  }
+
+  .tree-view .item[aria-selected="true"],
+  .tree-view .item[aria-current]:not([aria-current="false"]),
+  .tree-view .branch[aria-current]:not([aria-current="false"]) > .control,
+  .tree-view .branch[aria-selected="true"] > .control {
+    --tree-view__item-color: var(--tree-view__selected-color);
+    --tree-view__item-background: var(--tree-view__selected-background);
+    --tree-view__branch-color: var(--tree-view__selected-color);
+    --tree-view__branch-background: var(--tree-view__selected-background);
+
+    box-shadow: var(--shadow__level-1);
+    font-weight: 600;
+  }
+
+  .tree-view [aria-disabled="true"],
+  .tree-view :disabled {
+    cursor: not-allowed;
+    opacity: var(--disabled-opacity);
+  }
+}
+
+@keyframes novadeck-tree-view-loading {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @scope (.novadeck) {
+    .tree-view .arrow,
+    .tree-view .branch > .control,
+    .tree-view .item {
+      transition: none;
+    }
+
+    .tree-view .loading circle {
+      animation: none;
+    }
+  }
+}

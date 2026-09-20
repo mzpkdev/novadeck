@@ -1,0 +1,26 @@
+@layer novadeck.tokens, novadeck.reset, novadeck.base, novadeck.recipes, novadeck.theme, novadeck.utilities;
+
+@import "./tokens.css" layer(novadeck.tokens);
+@import "./base.css";
+@import "./recipes/button.css" layer(novadeck.recipes);
+@import "./recipes/card.css" layer(novadeck.recipes);
+@import "./recipes/checkbox.css" layer(novadeck.recipes);
+@import "./recipes/columns.css" layer(novadeck.recipes);
+@import "./recipes/container.css" layer(novadeck.recipes);
+@import "./recipes/dialog.css" layer(novadeck.recipes);
+@import "./recipes/divider.css" layer(novadeck.recipes);
+@import "./recipes/field.css" layer(novadeck.recipes);
+@import "./recipes/grid.css" layer(novadeck.recipes);
+@import "./recipes/hero.css" layer(novadeck.recipes);
+@import "./recipes/inline.css" layer(novadeck.recipes);
+@import "./recipes/link.css" layer(novadeck.recipes);
+@import "./recipes/menu.css" layer(novadeck.recipes);
+@import "./recipes/navigation-menu.css" layer(novadeck.recipes);
+@import "./recipes/radio.css" layer(novadeck.recipes);
+@import "./recipes/select.css" layer(novadeck.recipes);
+@import "./recipes/slider.css" layer(novadeck.recipes);
+@import "./recipes/stack.css" layer(novadeck.recipes);
+@import "./recipes/switch.css" layer(novadeck.recipes);
+@import "./recipes/tree-view.css" layer(novadeck.recipes);
+@import "./themes/outlined.css" layer(novadeck.theme);
+@import "./themes/dark.css" layer(novadeck.theme);

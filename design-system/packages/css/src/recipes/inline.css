@@ -1,0 +1,47 @@
+@scope (.novadeck) {
+  .inline {
+    --inline__gap: var(--spacing__sm);
+
+    align-self: stretch;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--inline__gap);
+  }
+
+  .inline.nowrap {
+    flex-wrap: nowrap;
+  }
+
+  .inline.items-start {
+    align-items: flex-start;
+  }
+
+  .inline.items-center {
+    align-items: center;
+  }
+
+  .inline.items-end {
+    align-items: flex-end;
+  }
+
+  .inline.items-stretch {
+    align-items: stretch;
+  }
+
+  .inline.justify-start {
+    justify-content: flex-start;
+  }
+
+  .inline.justify-center {
+    justify-content: center;
+  }
+
+  .inline.justify-end {
+    justify-content: flex-end;
+  }
+
+  .inline.justify-between {
+    justify-content: space-between;
+  }
+}
