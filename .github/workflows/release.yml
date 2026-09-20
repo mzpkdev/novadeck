@@ -275,14 +275,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           release_json="$(gh release view "$RELEASE_TAG" --json assets,isDraft,isPrerelease,tagName)"
-          if latest_stable_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null)"; then
-            :
-          else
-            latest_stable_tag=""
-          fi
-
           RELEASE_JSON="$release_json" \
-            LATEST_STABLE_TAG="$latest_stable_tag" \
             node scripts/release/promote/main.ts
 
           if ! git merge-base --is-ancestor "$RELEASE_TAG^{commit}" origin/main; then
