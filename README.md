@@ -60,8 +60,8 @@ be combined into one release of the newest source. Release-it reads Conventional
 Commits across that range and calculates normal SemVer: `fix` and `perf`
 increment patch, `feat` increments minor, and a breaking change increments
 major. `build(deps)` increments patch; documentation, tests, CI, and other
-maintenance commits do not qualify on their own. The configured `package.json`
-version provides the `v0.0.0` base when no release tag exists.
+maintenance commits do not qualify on their own. Release-it uses `v0.0.0` as
+the base when no release tag exists.
 
 Release-it generates the notes, creates the `vX.Y.Z` tag, uploads the checksums
 and native packages through a draft, then publishes the immutable prerelease.
