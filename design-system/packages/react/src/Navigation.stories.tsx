@@ -2,11 +2,12 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 
 import { Menu, NavigationMenu, TreeView } from "./Navigation"
 
-const meta = { title: "Navigation/Recipes" } satisfies Meta
+const meta = { title: "Navigation" } satisfies Meta
 export default meta
 type Story = StoryObj
 
 export const MenuRecipe: Story = {
+  name: "Menu",
   render: () => (
     <Menu.Root>
       <Menu.Trigger>Actions</Menu.Trigger>
@@ -24,6 +25,7 @@ export const MenuRecipe: Story = {
   ),
 }
 export const NavigationMenuRecipe: Story = {
+  name: "Navigation Menu",
   render: () => (
     <NavigationMenu.Root>
       <NavigationMenu.List>
@@ -41,6 +43,7 @@ export const NavigationMenuRecipe: Story = {
   ),
 }
 export const TreeViewRecipe: Story = {
+  name: "Tree View",
   render: () => (
     <TreeView
       label="Deck outline"

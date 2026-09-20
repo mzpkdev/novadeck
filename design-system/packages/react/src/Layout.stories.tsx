@@ -3,11 +3,12 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import { Button } from "./Button"
 import { Card, Column, Columns, Container, Divider, Grid, Hero, Inline, Stack } from "./Layout"
 
-const meta = { title: "Layout/Recipes" } satisfies Meta
+const meta = { title: "Layout" } satisfies Meta
 export default meta
 type Story = StoryObj
 
 export const CardRecipe: Story = {
+  name: "Card",
   render: () => (
     <Card
       header={<h2>Project Atlas</h2>}
@@ -20,6 +21,7 @@ export const CardRecipe: Story = {
   ),
 }
 export const ColumnsRecipe: Story = {
+  name: "Columns",
   render: () => (
     <Columns rowGap="1rem">
       <Column of={3} span={1}>
@@ -32,14 +34,16 @@ export const ColumnsRecipe: Story = {
   ),
 }
 export const ContainerRecipe: Story = {
+  name: "Container",
   render: () => (
     <Container maxWidth="48rem" textAlign="center">
       Contained content
     </Container>
   ),
 }
-export const DividerRecipe: Story = { render: () => <Divider>Details</Divider> }
+export const DividerRecipe: Story = { name: "Divider", render: () => <Divider>Details</Divider> }
 export const GridRecipe: Story = {
+  name: "Grid",
   render: () => (
     <Grid minWidth="12rem">
       {[1, 2, 3].map((item) => (
@@ -49,6 +53,7 @@ export const GridRecipe: Story = {
   ),
 }
 export const HeroRecipe: Story = {
+  name: "Hero",
   render: () => (
     <Hero headline="Build your next deck" subheading="Fast, focused, and local.">
       <Button variant="filled">Get started</Button>
@@ -56,6 +61,7 @@ export const HeroRecipe: Story = {
   ),
 }
 export const InlineRecipe: Story = {
+  name: "Inline",
   render: () => (
     <Inline gap="1rem">
       <Button>Cancel</Button>
@@ -64,6 +70,7 @@ export const InlineRecipe: Story = {
   ),
 }
 export const StackRecipe: Story = {
+  name: "Stack",
   render: () => (
     <Stack gap="1rem">
       <strong>First</strong>
