@@ -110,7 +110,7 @@ export const readWorkflowRun = async (
 
 export const waitForTurn = async (
   env: Environment,
-  pause: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 120_000)),
+  pause: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 300_000)),
 ): Promise<void> => {
   const currentId = Number(env.GITHUB_RUN_ID)
   const currentNumber = Number(env.GITHUB_RUN_NUMBER)
