@@ -60,11 +60,14 @@ The latest unreleased state of `main` produces an immutable GitHub prerelease fo
 the dev channel. An active release always finishes. While it runs, GitHub keeps
 only the newest pending release run, so several rapid merges can still be
 combined into one release of the newest source. Release-it reads Conventional
-Commits across that range and calculates normal SemVer: `fix` and `perf`
-increment patch, `feat` increments minor, and a breaking change increments
-major. `build(deps)` increments patch; documentation, tests, CI, and other
-maintenance commits do not qualify on their own. Release-it uses `v0.0.0` as
-the base when no release tag exists.
+Commits across that range to determine whether a release qualifies. Until
+NovaDeck has an early working product, every qualifying release is explicitly
+limited to a patch increment: `feat`, breaking changes, `fix`, `perf`, and
+`build(deps)` all increment patch. Documentation, tests, CI, and other
+maintenance commits do not qualify on their own. The release workflow contains
+the single TODO that restores release-it's normal SemVer recommendation, where
+`feat` increments minor and a breaking change increments major. Release-it uses
+`v0.0.0` as the base when no release tag exists.
 
 Release-it generates the notes, creates the `vX.Y.Z` tag, uploads the checksums
 and native packages through a draft, then publishes the immutable prerelease.

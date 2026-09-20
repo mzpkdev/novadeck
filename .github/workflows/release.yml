@@ -71,11 +71,14 @@ jobs:
       - name: Plan Release
         id: plan
         run: |
-          version="$(pnpm exec release-it --release-version --no-github.release)"
-          if [[ -z "$version" ]]; then
+          recommended_version="$(pnpm exec release-it --release-version --no-github.release)"
+          if [[ -z "$recommended_version" ]]; then
             echo "package=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # TODO: Replace this command with version="$recommended_version" once NovaDeck has an early working product.
+          version="$(pnpm exec release-it patch --release-version --no-github.release)"
           {
             echo "package=true"
             echo "version=$version"
