@@ -58,7 +58,7 @@ const readPage = async (
   const runs = parseRuns(await response.json())
   const next = response.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1]
   const hasCurrent = foundCurrent || runs.some((run) => run.id === currentId)
-  const hasPrevious = runs.some((run) => run.run_number < currentNumber)
+  const hasPrevious = runs.some((run) => run.run_number === currentNumber - 1)
 
   if (!next || (hasCurrent && hasPrevious)) return runs
   if (page >= 10) throw new Error("Current release run was not found within 10 API pages.")
@@ -90,9 +90,7 @@ export const previousRun = (
   currentId: number,
   currentNumber: number,
 ): WorkflowRun | null =>
-  runs
-    .filter((run) => run.id !== currentId && run.run_number < currentNumber)
-    .sort((left, right) => right.run_number - left.run_number)[0] ?? null
+  runs.find((run) => run.id !== currentId && run.run_number === currentNumber - 1) ?? null
 
 export const readWorkflowRun = async (
   env: Environment,

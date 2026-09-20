@@ -46,7 +46,7 @@ describe("release queue", () => {
           const page = new URL(request.url).searchParams.get("page")
           if (page === "2") {
             return HttpResponse.json(
-              { workflow_runs: [run(200, 20)] },
+              { workflow_runs: [run(290, 29)] },
               {
                 headers: {
                   link: '<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=3>; rel="next"',
@@ -56,7 +56,7 @@ describe("release queue", () => {
           }
 
           return HttpResponse.json(
-            { workflow_runs: [run(300, 30)] },
+            { workflow_runs: [run(300, 30), run(280, 28, "completed")] },
             {
               headers: {
                 link: '<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=2>; rel="next"',
@@ -69,7 +69,8 @@ describe("release queue", () => {
 
     await expect(readWorkflowRuns(env, 300, 30)).resolves.toEqual([
       run(300, 30),
-      run(200, 20),
+      run(280, 28, "completed"),
+      run(290, 29),
     ])
     expect(requests).toHaveBeenCalledTimes(2)
   })
@@ -78,16 +79,16 @@ describe("release queue", () => {
     it("selects the immediately preceding run", () => {
       expect(
         previousRun(
-          [run(100, 10), run(200, 20, "completed"), run(300, 30), run(400, 40)],
+          [run(280, 28), run(290, 29, "completed"), run(300, 30), run(400, 40)],
           300,
           30,
         ),
-      ).toEqual(run(200, 20, "completed"))
+      ).toEqual(run(290, 29, "completed"))
     })
 
     it("polls only the immediately preceding run until it completes", async () => {
       const pause = vi.fn(async () => undefined)
-      respond([run(200, 20), run(300, 30)], run(200, 20, "completed"))
+      respond([run(290, 29), run(300, 30)], run(290, 29, "completed"))
 
       await waitForTurn(env, pause)
 
