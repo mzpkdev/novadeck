@@ -253,7 +253,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: promote-stable
-      cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
     steps:

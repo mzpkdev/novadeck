@@ -8,6 +8,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   automerge:
     name: Automerge
@@ -66,8 +70,13 @@ jobs:
           steps.metadata.outputs.update-type != 'version-update:semver-minor'))
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
+          if [[ "$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)" != "$HEAD_SHA" ]]; then
+            echo "Skipping stale automerge state for $HEAD_SHA."
+            exit 0
+          fi
           if [[ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" == "true" ]]; then
             gh pr merge --disable-auto "$PR_URL"
           fi
