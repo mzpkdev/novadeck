@@ -2,11 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 
 import { Select } from "../../Form"
 
-const meta = { title: "Forms/Select", component: Select } satisfies Meta<typeof Select>
-export default meta
-type Story = StoryObj<typeof meta>
-
-export const Default: Story = {
+const meta = {
+  title: "Forms/Select",
+  component: Select,
   args: {
     label: "Theme",
     options: [
@@ -14,4 +12,10 @@ export const Default: Story = {
       { label: "Dark", value: "dark" },
     ],
   },
-}
+} satisfies Meta<typeof Select>
+export default meta
+type Story = StoryObj<typeof meta>
+
+export const Outlined: Story = {}
+
+export const Elevated: Story = { args: { variant: "elevated" } }
