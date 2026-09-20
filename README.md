@@ -82,5 +82,6 @@ Automatic publishing uses GitHub's built-in workflow token and requires no
 long-lived repository secret. If an older run loses a race with a workflow-file
 change, the newer `main` run becomes authoritative. Rerun the latest failed
 workflow if no newer push superseded it. If an interrupted run leaves an
-unpublished draft and tag behind, delete that draft with its tag from the
-GitHub **Releases** page before rerunning the latest workflow.
+unpublished draft and tag behind, run
+`gh release delete vX.Y.Z --cleanup-tag --yes` before rerunning the latest
+workflow.
