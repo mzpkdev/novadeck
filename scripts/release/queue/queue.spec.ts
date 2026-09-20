@@ -3,7 +3,7 @@ import { vi } from "vitest"
 
 import { server } from "../../../src/renderer/src/test/server"
 import { context, describe, expect, it } from "../../../src/test"
-import { earlierRuns, readWorkflowRuns, waitForTurn } from "./queue"
+import { previousRun, readWorkflowRuns, waitForTurn } from "./queue"
 
 const env = {
   GH_TOKEN: "fixture-token",
@@ -19,11 +19,17 @@ const run = (id: number, number: number, status = "in_progress") => ({
   status,
 })
 
-const respond = (...runs: ReturnType<typeof run>[]): void => {
+const respond = (
+  runs: ReturnType<typeof run>[],
+  updated: ReturnType<typeof run> | null = null,
+): void => {
   server.use(
     http.get(
       "https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs",
       () => HttpResponse.json({ workflow_runs: runs }),
+    ),
+    http.get("https://api.github.test/repos/test/consumer/actions/runs/:runId", () =>
+      HttpResponse.json(updated),
     ),
   )
 }
@@ -53,19 +59,19 @@ describe("release queue", () => {
   })
 
   context("when workflow runs overlap", () => {
-    it("identifies only earlier active runs as blockers", () => {
+    it("selects the immediately preceding run", () => {
       expect(
-        earlierRuns(
+        previousRun(
           [run(100, 10), run(200, 20, "completed"), run(300, 30), run(400, 40)],
           300,
           30,
         ),
-      ).toEqual([run(100, 10)])
+      ).toEqual(run(200, 20, "completed"))
     })
 
-    it("waits until every earlier run completes", async () => {
-      const pause = vi.fn(async () => respond(run(300, 30)))
-      respond(run(200, 20), run(300, 30))
+    it("polls only the immediately preceding run until it completes", async () => {
+      const pause = vi.fn(async () => undefined)
+      respond([run(200, 20), run(300, 30)], run(200, 20, "completed"))
 
       await waitForTurn(env, pause)
 
@@ -75,8 +81,8 @@ describe("release queue", () => {
 
   context("when the GitHub API is not ready", () => {
     it("fails closed until the current run is visible", async () => {
-      const pause = vi.fn(async () => respond(run(300, 30)))
-      respond()
+      const pause = vi.fn(async () => respond([run(300, 30)]))
+      respond([])
 
       await waitForTurn(env, pause)
 

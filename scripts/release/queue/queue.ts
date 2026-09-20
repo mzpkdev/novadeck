@@ -10,8 +10,6 @@ interface WorkflowRuns {
   workflow_runs: WorkflowRun[]
 }
 
-const activeStatuses = new Set(["requested", "waiting", "pending", "queued", "in_progress"])
-
 const request = async (url: string, token: string): Promise<Response> => {
   const response = await fetch(url, {
     headers: {
@@ -68,21 +66,34 @@ export const readWorkflowRuns = async (env: Environment): Promise<WorkflowRun[]>
   return readPage(url, token)
 }
 
-export const earlierRuns = (
+export const previousRun = (
   runs: WorkflowRun[],
   currentId: number,
   currentNumber: number,
-): WorkflowRun[] =>
-  runs.filter(
-    (run) =>
-      run.id !== currentId &&
-      run.run_number < currentNumber &&
-      activeStatuses.has(run.status),
-  )
+): WorkflowRun | null =>
+  runs
+    .filter((run) => run.id !== currentId && run.run_number < currentNumber)
+    .sort((left, right) => right.run_number - left.run_number)[0] ?? null
+
+export const readWorkflowRun = async (
+  env: Environment,
+  runId: number,
+): Promise<WorkflowRun> => {
+  const api = (env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, "")
+  const repo = env.GITHUB_REPOSITORY
+  const token = env.GH_TOKEN
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) {
+    throw new Error("Missing repository or token.")
+  }
+
+  const response = await request(`${api}/repos/${repo}/actions/runs/${runId}`, token)
+  const run: unknown = await response.json()
+  return parseRuns({ workflow_runs: [run] })[0]!
+}
 
 export const waitForTurn = async (
   env: Environment,
-  pause: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 15_000)),
+  pause: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 120_000)),
 ): Promise<void> => {
   const currentId = Number(env.GITHUB_RUN_ID)
   const currentNumber = Number(env.GITHUB_RUN_NUMBER)
@@ -90,18 +101,23 @@ export const waitForTurn = async (
     throw new Error("Missing current workflow run identity.")
   }
 
-  while (true) {
+  let previous: WorkflowRun | null = null
+  while (!previous) {
     const runs = await readWorkflowRuns(env)
-    if (!runs.some((run) => run.id === currentId)) {
+    const current = runs.some((run) => run.id === currentId)
+    if (!current) {
       console.log("Current run is not visible yet; waiting before retrying.")
       await pause()
       continue
     }
 
-    const blockers = earlierRuns(runs, currentId, currentNumber)
-    if (blockers.length === 0) return
+    previous = previousRun(runs, currentId, currentNumber)
+    if (!previous || previous.status === "completed") return
+  }
 
-    console.log(`Waiting for earlier release run(s): ${blockers.map((run) => run.id).join(", ")}.`)
+  while (previous.status !== "completed") {
+    console.log(`Waiting for earlier release run ${previous.id}.`)
     await pause()
+    previous = await readWorkflowRun(env, previous.id)
   }
 }
