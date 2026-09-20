@@ -1,5 +1,0 @@
-paths:
-  .github/workflows/release.yml:
-    ignore:
-      # Actionlint 1.7.12 predates GitHub's durable concurrency queues.
-      - 'unexpected key "queue" for "concurrency" section'

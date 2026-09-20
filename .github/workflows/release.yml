@@ -1,8 +1,7 @@
 name: Release
 
 run-name: >-
-  ${{ github.event_name == 'workflow_dispatch' && format('Release {0}', inputs.operation) ||
-  format('Release {0}', github.event.client_payload.sha || github.sha) }}
+  ${{ github.event_name == 'workflow_dispatch' && 'Package current source' || 'Release latest main' }}
 
 on:
   push:
@@ -10,19 +9,6 @@ on:
   repository_dispatch:
     types: [release]
   workflow_dispatch:
-    inputs:
-      operation:
-        description: Package the current source or promote an existing prerelease
-        required: true
-        default: package
-        type: choice
-        options:
-          - package
-          - promote
-      tag:
-        description: Existing vX.Y.Z prerelease to promote
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -32,10 +18,8 @@ env:
 
 concurrency:
   group: >-
-    ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'package' && format('package-{0}', github.run_id) ||
-    github.event_name == 'workflow_dispatch' && 'promote-stable' ||
-    format('release-{0}', github.event.client_payload.sha || github.sha) }}
-  queue: max
+    ${{ github.event_name == 'workflow_dispatch' && format('package-{0}', github.run_id) || 'release-latest-main' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   prepare:
@@ -46,99 +30,36 @@ jobs:
       package: ${{ steps.automatic.outputs.package || steps.manual.outputs.package || 'false' }}
       previous_tag: ${{ steps.automatic.outputs.previous_tag }}
       publish: ${{ steps.automatic.outputs.publish || 'false' }}
+      source_sha: ${{ steps.source.outputs.sha }}
       tag: ${{ steps.automatic.outputs.tag }}
       version: ${{ steps.automatic.outputs.version || steps.manual.outputs.version }}
     steps:
-      - name: Check Out Repository
+      - name: Check Out Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event.client_payload.sha || github.sha }}
-
-      - name: Validate Dispatched Source
-        if: github.event_name == 'repository_dispatch'
-        env:
-          SOURCE_SHA: ${{ github.event.client_payload.sha }}
-        run: |
-          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Release dispatch must contain a full commit SHA."
-            exit 1
-          fi
-          if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
-            echo "Checked-out commit does not match the release dispatch."
-            exit 1
-          fi
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
-            echo "$SOURCE_SHA is not on main."
-            exit 1
-          fi
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'main' }}
 
       - name: Set Up Toolchain
-        if: >-
-          github.event_name == 'push' || github.event_name == 'repository_dispatch' ||
-          inputs.operation == 'package'
         uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
           runtime: node@26
           cache: true
           require-lockfile: true
 
-      - name: Check Release Turn
-        id: queue
-        if: github.event_name == 'push' || github.event_name == 'repository_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/release/queue/main.ts
-
-      - name: Recover Interrupted Release
-        if: >-
-          (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
-          steps.queue.outputs.ready == 'true'
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: node scripts/release/recover/main.ts
+      - name: Capture Source
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Plan Automatic Release
         id: automatic
-        if: >-
-          (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
-          steps.queue.outputs.ready == 'true'
+        if: github.event_name != 'workflow_dispatch'
         run: node scripts/release/plan/main.ts
-
-      - name: Validate Release Credential
-        if: steps.automatic.outputs.publish == 'true'
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          if [[ -z "$RELEASE_TOKEN" ]]; then
-            echo "RELEASE_TOKEN must grant Contents and Workflows write access."
-            exit 1
-          fi
 
       - name: Prepare Manual Package
         id: manual
-        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'package'
+        if: github.event_name == 'workflow_dispatch'
         run: node scripts/release/package/main.ts
-
-      - name: Validate Promotion Input
-        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
-            echo "Stable promotion must run from the main branch."
-            exit 1
-          fi
-          if [[ -z "$RELEASE_TAG" ]]; then
-            echo "A vX.Y.Z prerelease tag is required for promotion."
-            exit 1
-          fi
-          if [[ -z "$RELEASE_TOKEN" ]]; then
-            echo "RELEASE_TOKEN must grant Contents and Workflows write access."
-            exit 1
-          fi
 
   package:
     name: ${{ matrix.name }}
@@ -174,10 +95,10 @@ jobs:
               release/latest*.yml
               release/*.blockmap
     steps:
-      - name: Check Out Repository
+      - name: Check Out Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.client_payload.sha || github.sha }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Set Up Toolchain
         uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
@@ -221,10 +142,10 @@ jobs:
         working-directory: release-assets
         run: sha256sum -- * > SHA256SUMS
 
-      - name: Prepare GitHub Prerelease
+      - name: Validate Release Target
         id: creation
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
@@ -239,10 +160,10 @@ jobs:
 
       - name: Create Draft Release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          SOURCE_SHA: ${{ github.event.client_payload.sha || github.sha }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         run: |
           notes=(--generate-notes)
           if [[ -n "$PREVIOUS_TAG" ]]; then
@@ -252,29 +173,29 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --draft \
             --latest=false \
-            --notes $'<!-- novadeck-automatic-release -->\n\nUnsigned development build. macOS Gatekeeper and Windows SmartScreen may display warnings.' \
+            --notes "Unsigned development build. macOS Gatekeeper and Windows SmartScreen may display warnings." \
             --target "$SOURCE_SHA" \
             --title "NovaDeck $RELEASE_TAG" \
             "${notes[@]}"
 
       - name: Upload Release Assets
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release upload "$RELEASE_TAG" release-assets/*
 
       - name: Publish GitHub Prerelease
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release edit "$RELEASE_TAG" --draft=false --latest=false --prerelease
 
       - name: Remove Incomplete Release
         if: ${{ (failure() || cancelled()) && steps.creation.outputs.started == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          SOURCE_SHA: ${{ github.event.client_payload.sha || github.sha }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         run: |
           if release="$(gh release view "$RELEASE_TAG" --json isDraft,targetCommitish 2>/dev/null)"; then
             is_draft="$(jq -r .isDraft <<< "$release")"
@@ -290,106 +211,4 @@ jobs:
             else
               echo "Refusing to remove a tag for another commit."
             fi
-          fi
-
-  advance:
-    name: Advance Release Queue
-    if: >-
-      always() && needs.prepare.result == 'success' &&
-      (github.event_name == 'push' || github.event_name == 'repository_dispatch')
-    needs: [prepare, release]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Check Out Current Main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: main
-
-      - name: Set Up Toolchain
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
-        with:
-          runtime: node@26
-          cache: true
-          require-lockfile: true
-
-      - name: Dispatch Next Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.event.client_payload.sha || github.sha }}
-        run: node scripts/release/advance/main.ts
-
-  promote:
-    name: Promote Stable Release
-    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Check Out Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Set Up Toolchain
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
-        with:
-          runtime: node@26
-          cache: true
-          require-lockfile: true
-
-      - name: Validate Stable Promotion
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          release_json="$(gh release view "$RELEASE_TAG" --json assets,isDraft,isPrerelease,tagName)"
-          RELEASE_JSON="$release_json" \
-            node scripts/release/promote/main.ts
-
-          if ! git merge-base --is-ancestor "$RELEASE_TAG^{commit}" origin/main; then
-            echo "$RELEASE_TAG does not point to a commit on main."
-            exit 1
-          fi
-
-      - name: Verify Release Checksums
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          mkdir release-assets
-          gh release download "$RELEASE_TAG" --dir release-assets
-          cd release-assets
-
-          while IFS= read -r -d '' asset; do
-            checksum="$(sha256sum -- "$asset")"
-            if ! grep --fixed-strings --line-regexp -- "$checksum" SHA256SUMS >/dev/null; then
-              echo "$asset is missing a matching checksum."
-              exit 1
-            fi
-          done < <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0')
-
-          sha256sum --check --strict SHA256SUMS
-
-      - name: Promote Release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: gh release edit "$RELEASE_TAG" --latest --prerelease=false
-
-      - name: Verify Stable Release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          is_prerelease="$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"
-          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
-          if [[ "$is_prerelease" != "false" || "$latest_tag" != "$RELEASE_TAG" ]]; then
-            echo "Failed to verify $RELEASE_TAG as the latest stable release."
-            exit 1
           fi

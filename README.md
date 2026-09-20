@@ -54,35 +54,33 @@ permanent application ID is `dev.mzpk.novadeck`.
 
 ## Releases
 
-Every release-worthy squash commit on `main` produces an immutable GitHub
-prerelease for the dev channel. Conventional Commits calculate its normal
-SemVer version: `fix` and `perf` increment patch, `feat` increments minor, and a
-breaking change increments major. `build(deps)` increments patch; documentation,
-tests, CI, and other maintenance commits do not release.
+The latest unreleased state of `main` produces an immutable GitHub prerelease for
+the dev channel. Rapid pushes cancel older release builds, so several merges can
+be combined into one release of the newest source. Conventional Commits across
+that range calculate its normal SemVer version: `fix` and `perf` increment patch,
+`feat` increments minor, and a breaking change increments major. `build(deps)`
+increments patch; documentation, tests, CI, and other maintenance commits do not
+qualify on their own.
 
 During beta, the repository variable `RELEASE_PATCH_ONLY` is `true`, so every
-release-worthy commit advances only the patch component. Set it to `false` when
-normal minor and major bumps should begin; the qualification rules do not change.
-The configured `package.json` version remains the initial release when no tag
-exists, so beta starts at `v0.0.0`.
+release containing qualifying changes advances only the patch component. Set it
+to `false` when normal minor and major bumps should begin; the qualification
+rules do not change. The configured `package.json` version remains the initial
+release when no tag exists, so beta starts at `v0.0.0`.
 
-To promote tested binaries without rebuilding them, open **Actions → Release**,
-run the workflow with the `promote` operation, and enter its `vX.Y.Z` prerelease
-tag. Promotion verifies every platform package and checksum, then marks that
-same GitHub Release as the latest stable release. A manual `package` operation
-builds temporary artifacts without creating a release. Untagged manual builds
-use `<latest-version>-manual.<run-number>` so their filenames and application
-metadata identify the source as a non-release build.
+To promote tested binaries without rebuilding them, open the prerelease on the
+GitHub **Releases** page, choose **Edit**, clear **Set as a pre-release**, select
+**Set as the latest release**, and update it. Immutable releases still allow
+these two status changes; the tag and uploaded binaries remain locked.
 
-Release publication and promotion require a `RELEASE_TOKEN` Actions secret. Use
-a fine-grained personal access token scoped only to this repository with
-**Contents: Read and write** and **Workflows: Read and write**. GitHub's workflow
-token cannot manage a release whose commit contains workflow files that differ
-from the current `main` branch.
+A manual **Actions → Release → Run workflow** packages the selected source
+without creating a GitHub Release. Untagged manual builds use
+`<latest-version>-manual.<run-number>` so their filenames and application
+metadata identify them as non-release builds.
 
-Automatic runs inspect the commit graph. An out-of-order run defers immediately
-when the nearest earlier release-worthy commit is unpublished; each completed
-release dispatches the next deferred commit. This preserves commit order without
-holding runners. If a release fails, rerun that commit's workflow to resume the
-chain. Stable promotions use a durable queue, while manual package builds run
-independently.
+Automatic publishing uses GitHub's built-in workflow token and requires no
+long-lived repository secret. If an older run loses a race with a workflow-file
+change, the newer `main` run becomes authoritative. Rerun the latest failed
+workflow if no newer push superseded it. If an interrupted run leaves an
+unpublished draft and tag behind, delete that draft with its tag from the
+GitHub **Releases** page before rerunning the latest workflow.
