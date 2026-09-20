@@ -50,7 +50,9 @@ The configured artifacts are:
 
 Artifacts are written to `release/`. Builds are intentionally unsigned for now,
 so macOS Gatekeeper and Windows SmartScreen may warn when opening them. The
-permanent application ID is `dev.mzpk.novadeck`.
+permanent application ID is `dev.mzpk.novadeck`. Before upload, the release
+workflow launches every packaged application for ten seconds and fails if it
+exits early.
 
 ## Releases
 
