@@ -1,0 +1,52 @@
+{
+  "$schema": "https://unpkg.com/release-it@21/schema/release-it.json",
+  "git": {
+    "commit": false,
+    "push": false,
+    "requireBranch": false,
+    "requireUpstream": false,
+    "tagName": "v${version}"
+  },
+  "github": {
+    "assets": ["release-assets/*"],
+    "preRelease": true,
+    "release": true,
+    "releaseName": "NovaDeck v${version}"
+  },
+  "hooks": {
+    "before:github:release": "git push origin v${version}"
+  },
+  "npm": false,
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "infile": false,
+      "preset": {
+        "name": "conventionalcommits",
+        "types": [
+          {
+            "effect": "bump",
+            "scope": "deps",
+            "section": "Dependencies",
+            "type": "build"
+          },
+          { "effect": "bump", "section": "Features", "type": "feat" },
+          { "effect": "bump", "section": "Bug Fixes", "type": "fix" },
+          {
+            "effect": "bump",
+            "section": "Performance Improvements",
+            "type": "perf"
+          },
+          { "effect": "bump", "section": "Reverts", "type": "revert" },
+          { "effect": "hidden", "type": "build" },
+          { "effect": "hidden", "type": "chore" },
+          { "effect": "hidden", "type": "ci" },
+          { "effect": "hidden", "type": "docs" },
+          { "effect": "hidden", "type": "poc" },
+          { "effect": "hidden", "type": "refactor" },
+          { "effect": "hidden", "type": "style" },
+          { "effect": "hidden", "type": "test" }
+        ]
+      }
+    }
+  }
+}

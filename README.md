@@ -56,32 +56,26 @@ permanent application ID is `dev.mzpk.novadeck`.
 
 The latest unreleased state of `main` produces an immutable GitHub prerelease for
 the dev channel. Rapid pushes cancel older release builds, so several merges can
-be combined into one release of the newest source. Conventional Commits across
-that range calculate its normal SemVer version: `fix` and `perf` increment patch,
-`feat` increments minor, and a breaking change increments major. `build(deps)`
-increments patch; documentation, tests, CI, and other maintenance commits do not
-qualify on their own.
+be combined into one release of the newest source. Release-it reads Conventional
+Commits across that range and calculates normal SemVer: `fix` and `perf`
+increment patch, `feat` increments minor, and a breaking change increments
+major. `build(deps)` increments patch; documentation, tests, CI, and other
+maintenance commits do not qualify on their own. The configured `package.json`
+version provides the `v0.0.0` base when no release tag exists.
 
-During beta, the repository variable `RELEASE_PATCH_ONLY` is `true`, so every
-release containing qualifying changes advances only the patch component. Set it
-to `false` when normal minor and major bumps should begin; the qualification
-rules do not change. The configured `package.json` version remains the initial
-release when no tag exists, so beta starts at `v0.0.0`.
+Release-it generates the notes, creates the `vX.Y.Z` tag, uploads the checksums
+and native packages through a draft, then publishes the immutable prerelease.
 
 To promote tested binaries without rebuilding them, open the prerelease on the
 GitHub **Releases** page, choose **Edit**, clear **Set as a pre-release**, select
 **Set as the latest release**, and update it. Immutable releases still allow
 these two status changes; the tag and uploaded binaries remain locked.
 
-A manual **Actions → Release → Run workflow** packages the selected source
-without creating a GitHub Release. Untagged manual builds use
-`<latest-version>-manual.<run-number>` so their filenames and application
-metadata identify them as non-release builds.
-
 Automatic publishing uses GitHub's built-in workflow token and requires no
 long-lived repository secret. If an older run loses a race with a workflow-file
 change, the newer `main` run becomes authoritative. Rerun the latest failed
-workflow if no newer push superseded it. If an interrupted run leaves an
-unpublished draft and tag behind, run
-`gh release delete vX.Y.Z --cleanup-tag --yes` before rerunning the latest
-workflow.
+workflow if no newer push superseded it. Release-it intentionally does not add
+project-specific rollback logic. If an interrupted run leaves an unpublished
+draft, delete it and its tag with
+`gh release delete vX.Y.Z --cleanup-tag --yes`. If only the tag exists, delete it
+with `git push origin --delete vX.Y.Z`, then rerun the latest workflow.
