@@ -45,8 +45,8 @@ pnpm package:win
 The configured artifacts are:
 
 - Linux x64: AppImage
-- macOS universal: DMG
-- Windows x64: NSIS installer
+- macOS universal: ZIP archive containing the application bundle
+- Windows x64: portable executable
 
 Artifacts are written to `release/`. Builds are intentionally unsigned for now,
 so macOS Gatekeeper and Windows SmartScreen may warn when opening them. The

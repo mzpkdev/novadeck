@@ -74,7 +74,7 @@ jobs:
             os: macos-latest
             target: mac
             files: |
-              release/*.dmg
+              release/*.zip
           - name: Windows
             os: windows-latest
             target: win

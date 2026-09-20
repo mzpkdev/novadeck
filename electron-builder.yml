@@ -11,17 +11,14 @@ mac:
   identity: null
   category: public.app-category.utilities
   target:
-    - target: dmg
+    - target: zip
       arch:
         - universal
 win:
   target:
-    - target: nsis
+    - target: portable
       arch:
         - x64
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
 linux:
   category: Utility
   maintainer: mzpkdev
