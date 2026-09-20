@@ -46,15 +46,34 @@ const parseRuns = (value: unknown): WorkflowRun[] => {
   })
 }
 
-const readPage = async (url: string, token: string): Promise<WorkflowRun[]> => {
+const readPage = async (
+  url: string,
+  token: string,
+  currentId: number,
+  currentNumber: number,
+  page = 1,
+  foundCurrent = false,
+): Promise<WorkflowRun[]> => {
   const response = await request(url, token)
   const runs = parseRuns(await response.json())
   const next = response.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1]
+  const hasCurrent = foundCurrent || runs.some((run) => run.id === currentId)
+  const hasPrevious = runs.some((run) => run.run_number < currentNumber)
 
-  return next ? [...runs, ...(await readPage(next, token))] : runs
+  if (!next || (hasCurrent && hasPrevious)) return runs
+  if (page >= 10) throw new Error("Current release run was not found within 10 API pages.")
+
+  return [
+    ...runs,
+    ...(await readPage(next, token, currentId, currentNumber, page + 1, hasCurrent)),
+  ]
 }
 
-export const readWorkflowRuns = async (env: Environment): Promise<WorkflowRun[]> => {
+export const readWorkflowRuns = async (
+  env: Environment,
+  currentId: number,
+  currentNumber: number,
+): Promise<WorkflowRun[]> => {
   const api = (env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, "")
   const repo = env.GITHUB_REPOSITORY
   const token = env.GH_TOKEN
@@ -63,7 +82,7 @@ export const readWorkflowRuns = async (env: Environment): Promise<WorkflowRun[]>
   }
 
   const url = `${api}/repos/${repo}/actions/workflows/release.yml/runs?per_page=100&exclude_pull_requests=true`
-  return readPage(url, token)
+  return readPage(url, token, currentId, currentNumber)
 }
 
 export const previousRun = (
@@ -97,13 +116,21 @@ export const waitForTurn = async (
 ): Promise<void> => {
   const currentId = Number(env.GITHUB_RUN_ID)
   const currentNumber = Number(env.GITHUB_RUN_NUMBER)
-  if (!Number.isSafeInteger(currentId) || !Number.isSafeInteger(currentNumber)) {
+  const currentAttempt = Number(env.GITHUB_RUN_ATTEMPT)
+  if (
+    !Number.isSafeInteger(currentId) ||
+    !Number.isSafeInteger(currentNumber) ||
+    !Number.isSafeInteger(currentAttempt)
+  ) {
     throw new Error("Missing current workflow run identity.")
+  }
+  if (currentAttempt !== 1) {
+    throw new Error("Release workflow reruns are disabled because they cannot preserve FIFO order.")
   }
 
   let previous: WorkflowRun | null = null
   while (!previous) {
-    const runs = await readWorkflowRuns(env)
+    const runs = await readWorkflowRuns(env, currentId, currentNumber)
     const current = runs.some((run) => run.id === currentId)
     if (!current) {
       console.log("Current run is not visible yet; waiting before retrying.")

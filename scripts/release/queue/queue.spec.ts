@@ -9,6 +9,7 @@ const env = {
   GH_TOKEN: "fixture-token",
   GITHUB_API_URL: "https://api.github.test",
   GITHUB_REPOSITORY: "test/consumer",
+  GITHUB_RUN_ATTEMPT: "1",
   GITHUB_RUN_ID: "300",
   GITHUB_RUN_NUMBER: "30",
 }
@@ -35,13 +36,24 @@ const respond = (
 }
 
 describe("release queue", () => {
-  it("reads every page from one unfiltered workflow-run listing", async () => {
+  it("stops reading pages after finding the current run and its predecessor", async () => {
+    const requests = vi.fn()
     server.use(
       http.get(
         "https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs",
         ({ request }) => {
+          requests()
           const page = new URL(request.url).searchParams.get("page")
-          if (page === "2") return HttpResponse.json({ workflow_runs: [run(200, 20)] })
+          if (page === "2") {
+            return HttpResponse.json(
+              { workflow_runs: [run(200, 20)] },
+              {
+                headers: {
+                  link: '<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=3>; rel="next"',
+                },
+              },
+            )
+          }
 
           return HttpResponse.json(
             { workflow_runs: [run(300, 30)] },
@@ -55,7 +67,11 @@ describe("release queue", () => {
       ),
     )
 
-    await expect(readWorkflowRuns(env)).resolves.toEqual([run(300, 30), run(200, 20)])
+    await expect(readWorkflowRuns(env, 300, 30)).resolves.toEqual([
+      run(300, 30),
+      run(200, 20),
+    ])
+    expect(requests).toHaveBeenCalledTimes(2)
   })
 
   context("when workflow runs overlap", () => {
@@ -87,6 +103,14 @@ describe("release queue", () => {
       await waitForTurn(env, pause)
 
       expect(pause).toHaveBeenCalledOnce()
+    })
+  })
+
+  context("when GitHub reruns an old workflow run", () => {
+    it("rejects the reused run number", async () => {
+      await expect(waitForTurn({ ...env, GITHUB_RUN_ATTEMPT: "2" })).rejects.toThrow(
+        "reruns are disabled",
+      )
     })
   })
 })

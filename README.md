@@ -71,3 +71,7 @@ run the workflow with the `promote` operation, and enter its `vX.Y.Z` prerelease
 tag. Promotion verifies every platform package and checksum, then marks that
 same GitHub Release as the latest stable release. A manual `package` operation
 builds temporary artifacts without creating a release.
+
+Do not use GitHub's **Re-run** controls for the Release workflow. Re-runs reuse
+an old ordering identity and are rejected to preserve FIFO publication. Start a
+new manual workflow run for another package or promotion attempt.
