@@ -137,4 +137,19 @@ describe("Ark UI wrapper interactions", () => {
     fireEvent.keyDown(document, { key: "Escape" })
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull())
   })
+
+  it("keeps disabled linked tree nodes as semantic tree items", () => {
+    render(
+      <TreeView
+        label="Outline"
+        nodes={[{ disabled: true, href: "/locked", label: "Locked", value: "locked" }]}
+      />,
+    )
+
+    const item = screen.getByRole("treeitem", { name: "Locked" })
+    expect(item).toHaveClass("item")
+    expect(item).toHaveAttribute("aria-disabled", "true")
+    expect(item).not.toHaveAttribute("href")
+    expect(item.querySelector("a")).toBeNull()
+  })
 })

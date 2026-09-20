@@ -162,7 +162,7 @@ const TreeNodes = ({ items, path = rootPath }: { items: TreeViewNode[]; path?: n
               </ArkTreeView.BranchContent>
             </ArkTreeView.Branch>
           ) : (
-            <ArkTreeView.Item className="item" asChild={Boolean(node.href)}>
+            <ArkTreeView.Item className="item" asChild={Boolean(node.href && !node.disabled)}>
               {node.href && !node.disabled ? (
                 <a download={node.download} href={node.href} rel={node.rel} target={node.target}>
                   <span aria-hidden="true" className="spacer" />
