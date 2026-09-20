@@ -91,6 +91,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/queue/main.ts
 
+      - name: Recover Interrupted Release
+        if: >-
+          (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+          steps.queue.outputs.ready == 'true'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: node scripts/release/recover/main.ts
+
       - name: Plan Automatic Release
         id: automatic
         if: >-
