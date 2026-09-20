@@ -57,8 +57,9 @@ exits early.
 ## Releases
 
 The latest unreleased state of `main` produces an immutable GitHub prerelease for
-the dev channel. Rapid pushes cancel older release builds, so several merges can
-be combined into one release of the newest source. Release-it reads Conventional
+the dev channel. An active release always finishes. While it runs, GitHub keeps
+only the newest pending release run, so several rapid merges can still be
+combined into one release of the newest source. Release-it reads Conventional
 Commits across that range and calculates normal SemVer: `fix` and `perf`
 increment patch, `feat` increments minor, and a breaking change increments
 major. `build(deps)` increments patch; documentation, tests, CI, and other

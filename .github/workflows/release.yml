@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: release-latest-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -105,13 +105,10 @@ jobs:
           artifact="$(realpath "$(find release -maxdepth 1 -name '*.AppImage' -print -quit)")"
           test -n "$artifact"
           chmod +x "$artifact"
-          smoke_directory="$RUNNER_TEMP/novadeck-smoke"
-          mkdir -p "$smoke_directory"
-          (cd "$smoke_directory" && "$artifact" --appimage-extract >/dev/null)
 
           unset APPDIR APPIMAGE
           set +e
-          timeout --kill-after=5s 10s xvfb-run -a "$smoke_directory/squashfs-root/AppRun"
+          timeout --kill-after=5s 10s xvfb-run -a "$artifact" --appimage-extract-and-run
           status=$?
           set -e
 
