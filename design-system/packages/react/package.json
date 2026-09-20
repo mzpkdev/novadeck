@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@novadeck/css": "workspace:*",
+    "@storybook/addon-themes": "10.5.9",
     "@storybook/react-vite": "10.5.9",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
