@@ -77,23 +77,17 @@ jobs:
             files: |
               release/*.AppImage
               release/*.deb
-              release/latest-linux*.yml
-              release/*.blockmap
           - name: macOS
             os: macos-latest
             target: mac
             files: |
               release/*.dmg
               release/*.zip
-              release/latest-mac*.yml
-              release/*.blockmap
           - name: Windows
             os: windows-latest
             target: win
             files: |
               release/*.exe
-              release/latest*.yml
-              release/*.blockmap
     steps:
       - name: Check Out Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
