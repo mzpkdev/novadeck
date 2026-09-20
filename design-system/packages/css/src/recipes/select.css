@@ -1,0 +1,188 @@
+@scope (.novadeck) {
+  .select,
+  .select.positioner {
+    --select__border-color: var(--color__border);
+    --select__item-active-background: var(--color__accent-subtle);
+    --select__item-active-color: var(--color__accent);
+
+    color: var(--color__text-900);
+  }
+
+  .select:not(.positioner) {
+    display: grid;
+    font-size: 0.875rem;
+    gap: var(--spacing__xs);
+    line-height: 1.5;
+    max-width: 20rem;
+    min-width: 12rem;
+    width: 100%;
+  }
+
+  .select:not(.positioner) > .label {
+    font-weight: 600;
+  }
+
+  .select:not(.positioner) > .control {
+    border-radius: var(--roundness);
+    width: 100%;
+  }
+
+  .select:not(.positioner) > .control > .trigger {
+    align-items: center;
+    background: var(--select__trigger-background, var(--color__surface));
+    border: var(--thickness) solid var(--select__border-color);
+    border-radius: var(--roundness);
+    box-shadow: var(--select__trigger-shadow, var(--shadow__level-1));
+    color: var(--color__text-900);
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    gap: var(--spacing__sm);
+    justify-content: space-between;
+    min-height: 2.5rem;
+    padding: var(--spacing__xs) var(--spacing__sm);
+    text-align: start;
+    transition:
+      background-color var(--transition__duration) var(--easing__out-expo),
+      border-color var(--transition__duration) var(--easing__out-expo),
+      box-shadow var(--transition__duration) var(--easing__out-expo);
+    width: 100%;
+  }
+
+  .select:not(.positioner) > .control > .trigger:hover:not(:disabled) {
+    border-color: var(--select__hover-border-color, var(--color__accent));
+  }
+
+  .select:not(.positioner) > .control > .trigger:focus-visible {
+    border-color: var(--color__accent);
+    outline: 2px solid var(--color__accent);
+    outline-offset: 3px;
+  }
+
+  .select:not(.positioner)[aria-invalid="true"] > .control > .trigger,
+  .select:not(.positioner) > .control > .trigger[aria-invalid="true"] {
+    border-color: var(--color__danger);
+    box-shadow: inset 0 0 0 1px var(--color__danger);
+  }
+
+  .select:not(.positioner)[aria-disabled="true"] > .control > .trigger,
+  .select:not(.positioner) > .control > .trigger:disabled {
+    cursor: not-allowed;
+    opacity: var(--disabled-opacity);
+  }
+
+  .select:not(.positioner)[aria-readonly="true"] > .control > .trigger {
+    cursor: default;
+  }
+
+  .select:not(.positioner) > .control > .trigger > .value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .select:not(.positioner) > .control > .trigger > .indicator {
+    color: var(--color__text-600);
+    display: inline-flex;
+    flex: 0 0 auto;
+    transition: transform var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .select:not(.positioner) > .control > .trigger[aria-expanded="true"] > .indicator {
+    transform: rotate(180deg);
+  }
+
+  .select.positioner {
+    z-index: var(--z-index__50);
+  }
+
+  .select.positioner > .content {
+    background: var(--select__content-background, var(--color__surface));
+    border: var(--thickness) solid var(--select__border-color);
+    border-radius: var(--roundness);
+    box-shadow: var(--select__content-shadow, var(--shadow__level-3));
+    box-sizing: border-box;
+    max-height: 16rem;
+    min-width: 12rem;
+    overflow: auto;
+    padding: var(--spacing__2xs);
+    width: var(--reference-width);
+  }
+
+  /* Ark's open presence state starts the popup entrance animation. */
+  .select.positioner > .content[data-state="open"] {
+    animation: novadeck-select-enter var(--transition__duration) var(--easing__out-expo);
+    transform-origin: var(--transform-origin);
+  }
+
+  .select.positioner > .content > .item {
+    align-items: center;
+    border-radius: var(--roundness);
+    color: var(--color__text-900);
+    cursor: pointer;
+    display: flex;
+    font-size: 0.875rem;
+    gap: var(--spacing__sm);
+    justify-content: space-between;
+    line-height: 1.5;
+    min-height: 2.25rem;
+    padding: 0.375rem var(--spacing__xs);
+    transition:
+      background-color var(--transition__duration) var(--easing__out-expo),
+      color var(--transition__duration) var(--easing__out-expo);
+  }
+
+  /* Ark's roving-highlight state has no native or ARIA equivalent on an option. */
+  .select.positioner > .content > .item[data-highlighted]:not([aria-selected="true"]) {
+    background: var(--color__surface-subtle);
+  }
+
+  .select.positioner > .content > .item[aria-selected="true"] {
+    background: var(--select__item-active-background);
+    color: var(--select__item-active-color);
+  }
+
+  .select.positioner > .content > .item[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: var(--disabled-opacity);
+  }
+
+  .select.positioner > .content > .item > .item-text {
+    min-width: 0;
+  }
+
+  .select.positioner > .content > .item > .item-indicator:not([hidden]) {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .select.positioner > .content > .item > .item-indicator[hidden] {
+    display: none;
+  }
+
+  @keyframes novadeck-select-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-0.125rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .select.positioner > .content {
+      animation: none;
+    }
+
+    .select:not(.positioner) > .control > .trigger,
+    .select:not(.positioner) > .control > .trigger > .indicator,
+    .select.positioner > .content > .item {
+      transition: none;
+    }
+  }
+}

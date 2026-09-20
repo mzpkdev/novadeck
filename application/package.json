@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
-    "@novadeck/design-system": "workspace:*",
+    "@novadeck/css": "link:../design-system/packages/css",
+    "@novadeck/react": "link:../design-system/packages/react",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

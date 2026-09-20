@@ -1,6 +1,6 @@
 import type { Preview } from "@storybook/react-vite"
 
-import "../src/styles.css"
+import "@novadeck/css/styles.css"
 
 const preview: Preview = {
   decorators: [

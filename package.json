@@ -7,8 +7,9 @@
   "author": "mzpkdev",
   "type": "module",
   "scripts": {
+    "postinstall": "pnpm --dir design-system install --frozen-lockfile",
     "dev": "turbo run dev --filter=@novadeck/application",
-    "storybook": "pnpm --filter @novadeck/design-system storybook",
+    "storybook": "pnpm --filter @novadeck/design-system-workspace storybook",
     "build": "turbo run build",
     "preview": "pnpm --filter @novadeck/application preview",
     "package": "pnpm --filter @novadeck/application package",

@@ -1,0 +1,18 @@
+{
+  "name": "@novadeck/css",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Framework-neutral CSS for NovaDeck design islands and recipes",
+  "files": [
+    "src",
+    "CSS.md"
+  ],
+  "sideEffects": [
+    "./src/**/*.css"
+  ],
+  "exports": {
+    "./styles.css": "./src/styles.css",
+    "./tokens.css": "./src/tokens.css",
+    "./CSS.md": "./CSS.md"
+  }
+}

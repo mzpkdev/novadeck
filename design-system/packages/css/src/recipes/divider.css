@@ -1,0 +1,87 @@
+@scope (.novadeck) {
+  .divider {
+    --divider__background: var(--color__border-subtle);
+    --divider__thickness: 2px;
+    --divider__spacing: var(--spacing__xl);
+
+    background: var(--divider__background);
+    border: 0;
+    box-sizing: border-box;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .divider.horizontal {
+    display: block;
+    flex: 1 0 100%;
+    height: var(--divider__thickness);
+    margin-block: var(--divider__spacing);
+    margin-inline: 0;
+    width: auto;
+  }
+
+  .divider.vertical {
+    display: inline-block;
+    height: auto;
+    margin-block: 0;
+    margin-inline: var(--divider__spacing);
+    min-block-size: 1em;
+    width: var(--divider__thickness);
+  }
+
+  .divider.labeled {
+    background: transparent;
+    color: var(--color__text-600);
+    font-family: var(--font-family__display);
+    font-size: 0.875rem;
+    font-weight: 600;
+    gap: var(--spacing__sm);
+    overflow: visible;
+  }
+
+  .divider.labeled::before,
+  .divider.labeled::after {
+    background: var(--divider__background);
+    content: "";
+    flex: 1 1 auto;
+  }
+
+  .divider.horizontal.labeled {
+    align-items: center;
+    display: flex;
+    height: auto;
+  }
+
+  .divider.horizontal.labeled::before,
+  .divider.horizontal.labeled::after {
+    height: var(--divider__thickness);
+    min-inline-size: 1em;
+  }
+
+  .divider.vertical.labeled {
+    align-items: center;
+    display: inline-flex;
+    flex-direction: column;
+    width: auto;
+  }
+
+  .divider.vertical.labeled::before,
+  .divider.vertical.labeled::after {
+    min-block-size: 1em;
+    width: var(--divider__thickness);
+  }
+
+  .divider.labeled > .content {
+    align-items: center;
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: var(--spacing__2xs);
+  }
+
+  .divider.labeled > .content > :is(h1, h2, h3, h4, h5, h6) {
+    align-items: center;
+    display: inline-flex;
+    gap: var(--spacing__2xs);
+    margin: 0;
+  }
+}

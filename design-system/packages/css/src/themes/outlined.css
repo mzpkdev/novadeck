@@ -1,0 +1,659 @@
+/* OutlineCSS-style outlined theme. */
+@scope (.novadeck) {
+  .button,
+  .button.outlined {
+    --button__background: transparent;
+    --button__border-color: var(--color__accent);
+    --button__color: var(--color__accent);
+    --button__shadow: var(--shadow__level-1);
+
+    transition-property: background-color, border-color, box-shadow, color;
+  }
+
+  .button-group > .button {
+    transition-property: background-color, box-shadow, color;
+  }
+
+  .button:hover:not(:disabled, [aria-disabled="true"]),
+  .button.outlined:hover:not(:disabled, [aria-disabled="true"]) {
+    --button__background: var(--color__surface-muted);
+    --button__border-color: var(--color__accent);
+    --button__color: var(--color__accent);
+  }
+
+  .button:active:not(:disabled, [aria-disabled="true"]),
+  .button.outlined:active:not(:disabled, [aria-disabled="true"]) {
+    --button__background: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+    --button__border-color: var(--color__accent);
+    --button__color: var(--color__accent);
+
+    transform: none;
+  }
+
+  .button.filled {
+    --button__background: var(--color__accent);
+    --button__border-color: transparent;
+    --button__color: var(--color__on-accent-muted);
+  }
+
+  .button.filled:hover:not(:disabled, [aria-disabled="true"]) {
+    --button__background: var(--color__accent-hover);
+    --button__border-color: transparent;
+    --button__color: var(--color__on-accent-muted);
+  }
+
+  .button.filled:focus-visible:not(:disabled, [aria-disabled="true"]) {
+    --button__background: var(--color__accent);
+    --button__border-color: transparent;
+    --button__color: var(--color__on-accent-muted);
+  }
+
+  .button.filled:active:not(:disabled, [aria-disabled="true"]) {
+    --button__background: color-mix(in srgb, var(--color__accent) 85%, black);
+    --button__border-color: transparent;
+    --button__color: var(--color__on-accent-muted);
+  }
+
+  .button.elevated {
+    --button__background: var(--color__surface-muted);
+    --button__border-color: var(--color__border-strong);
+    --button__color: var(--color__text-700);
+    --button__shadow: var(--shadow__level-1);
+
+    border-block-start-color: transparent;
+    border-inline-color: transparent;
+  }
+
+  .button.elevated::after {
+    block-size: 100%;
+    border-block-end: 1px solid var(--color__accent);
+    border-radius: var(--roundness);
+    content: "";
+    inline-size: 0;
+    inset-block-end: -2px;
+    inset-inline-start: 50%;
+    opacity: 0;
+    position: absolute;
+    transition:
+      inset-inline-start 180ms var(--easing__out-expo),
+      inline-size 180ms var(--easing__out-expo),
+      opacity 25ms var(--easing__out-expo);
+    z-index: -1;
+  }
+
+  .button.elevated:hover:not(:disabled, [aria-disabled="true"]) {
+    --button__background: var(--color__surface-muted);
+    --button__border-color: var(--color__surface-muted);
+    --button__color: var(--color__accent);
+  }
+
+  .button.elevated:hover:not(:disabled, [aria-disabled="true"])::after {
+    inline-size: 100%;
+    inset-inline-start: 0;
+    opacity: 1;
+  }
+
+  .button.elevated:active:not(:disabled, [aria-disabled="true"]) {
+    --button__background: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+    --button__border-color: var(--color__border-strong);
+    --button__color: var(--color__accent);
+    --button__shadow: var(--shadow__none);
+  }
+
+  .button.tonal {
+    --button__background: var(--color__accent-subtle);
+    --button__border-color: transparent;
+    --button__color: var(--color__text-on-accent-subtle);
+    --button__shadow: var(--shadow__level-1);
+  }
+
+  .button.tonal:hover:not(:disabled, [aria-disabled="true"]) {
+    --button__background: var(--color__surface-muted);
+    --button__border-color: transparent;
+    --button__color: var(--color__text-on-accent-subtle);
+  }
+
+  .button.tonal:active:not(:disabled, [aria-disabled="true"]) {
+    --button__background: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+    --button__border-color: transparent;
+    --button__color: var(--color__text-on-accent-subtle);
+  }
+
+  .button.text {
+    --button__background: transparent;
+    --button__border-color: transparent;
+    --button__color: var(--color__accent);
+    --button__shadow: var(--shadow__none);
+  }
+
+  .button.text:hover:not(:disabled, [aria-disabled="true"]) {
+    --button__background: var(--color__surface-muted);
+    --button__border-color: transparent;
+    --button__color: var(--color__accent);
+  }
+
+  .button.text:active:not(:disabled, [aria-disabled="true"]) {
+    --button__background: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+    --button__border-color: transparent;
+    --button__color: var(--color__accent);
+  }
+
+  .button:is([aria-pressed="true"], [aria-pressed="mixed"]) {
+    --button__background: var(--color__accent-subtle);
+    --button__border-color: var(--color__accent);
+    --button__color: var(--color__accent);
+    --button__shadow: var(--shadow__none);
+  }
+
+  .button.text:is([aria-pressed="true"], [aria-pressed="mixed"]) {
+    --button__background: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+    --button__border-color: transparent;
+    --button__color: var(--color__accent);
+  }
+
+  .checkbox,
+  .radio > .options > .item,
+  .switch {
+    background-color: transparent;
+    border-radius: var(--roundness);
+    padding: var(--spacing__xs) var(--spacing__md);
+    transition: background-color var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .checkbox:hover:not(
+      :has(input:disabled),
+      :has(.control[aria-readonly="true"]),
+      [aria-disabled="true"],
+      [aria-readonly="true"]
+    ),
+  .radio:not([aria-disabled="true"], [aria-readonly="true"])
+    > .options
+    > .item:hover:not([aria-disabled="true"], [aria-readonly="true"]),
+  .switch:hover:not(
+      :has(input:disabled),
+      :has(.control[aria-readonly="true"]),
+      [aria-disabled="true"],
+      [aria-readonly="true"]
+    ) {
+    background-color: var(--color__surface-muted);
+  }
+
+  .checkbox:active:not(
+      :has(input:disabled),
+      :has(.control[aria-readonly="true"]),
+      [aria-disabled="true"],
+      [aria-readonly="true"]
+    ),
+  .radio:not([aria-disabled="true"], [aria-readonly="true"])
+    > .options
+    > .item:active:not([aria-disabled="true"], [aria-readonly="true"]),
+  .switch:active:not(
+      :has(input:disabled),
+      :has(.control[aria-readonly="true"]),
+      [aria-disabled="true"],
+      [aria-readonly="true"]
+    ) {
+    background-color: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+  }
+
+  .checkbox > .control,
+  .radio > .options > .item > .control {
+    background: transparent;
+    border-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  .checkbox.outlined > .control {
+    background: transparent;
+    border-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  /* Ark exposes indeterminate state on this visual control. */
+  .checkbox.outlined:has(input:checked) > .control,
+  .checkbox.outlined
+    > .control:is([aria-checked="true"], [aria-checked="mixed"], [data-state="indeterminate"]) {
+    background: var(--color__accent-subtle);
+    border-color: var(--color__accent-subtle);
+    color: var(--color__accent);
+  }
+
+  .checkbox.filled > .control {
+    background: var(--color__surface-muted);
+    border-color: var(--color__border-muted);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  /* Ark exposes indeterminate state on this visual control. */
+  .checkbox.filled:has(input:checked) > .control,
+  .checkbox.filled
+    > .control:is([aria-checked="true"], [aria-checked="mixed"], [data-state="indeterminate"]) {
+    background: var(--color__accent);
+    border-color: var(--color__accent);
+    color: var(--color__on-accent);
+  }
+
+  .radio.outlined > .options > .item > .control {
+    background: transparent;
+    border-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  .radio.outlined > .options > .item:has(input:checked) > .control,
+  .radio.outlined > .options > .item > .control[aria-checked="true"] {
+    background: var(--color__accent-subtle);
+    border-color: var(--color__accent);
+  }
+
+  .radio.outlined > .options > .item > .control > .indicator {
+    background: var(--color__accent);
+  }
+
+  .radio.elevated > .options > .item > .control {
+    background: transparent;
+    border-color: var(--color__border-strong);
+    box-shadow:
+      0 1px 0 var(--color__border-strong),
+      var(--shadow__level-1);
+  }
+
+  .radio.elevated > .options > .item:has(input:checked) > .control,
+  .radio.elevated > .options > .item > .control[aria-checked="true"] {
+    background: var(--color__accent);
+    border-color: var(--color__accent);
+  }
+
+  .radio.elevated > .options > .item > .control > .indicator {
+    background: var(--color__on-accent);
+  }
+
+  .switch.outlined {
+    --switch__control-background: transparent;
+    --switch__state-border-color: var(--color__border-strong);
+    --switch__thumb-color: var(--color__border-strong);
+    --switch__thumb-shadow: var(--shadow__level-1);
+  }
+
+  .switch.outlined:has(input:checked),
+  .switch.outlined > .control[aria-checked="true"] {
+    --switch__control-background: transparent;
+    --switch__state-border-color: var(--color__accent);
+    --switch__thumb-color: var(--color__accent);
+  }
+
+  .switch.elevated {
+    --switch__control-background: transparent;
+    --switch__state-border-color: var(--color__border-strong);
+    --switch__thumb-color: var(--color__border-strong);
+    --switch__thumb-shadow: 0 1px 0 var(--color__border-strong), var(--shadow__level-1);
+  }
+
+  .switch.elevated > .control {
+    box-shadow:
+      0 1px 0 var(--color__border-strong),
+      var(--shadow__level-1);
+  }
+
+  .switch.elevated:has(input:checked),
+  .switch.elevated > .control[aria-checked="true"] {
+    --switch__control-background: var(--color__accent);
+    --switch__state-border-color: var(--color__accent);
+    --switch__thumb-color: var(--color__on-accent);
+  }
+
+  .switch.elevated:has(input:checked) > .control > .thumb,
+  .switch.elevated > .control[aria-checked="true"] > .thumb {
+    box-shadow:
+      0 1px 0 var(--color__border-strong),
+      var(--shadow__level-1);
+  }
+
+  .select:not(.positioner).outlined {
+    --select__trigger-background: var(--field__background, var(--color__background));
+  }
+
+  .select:not(.positioner).elevated {
+    --select__trigger-background: var(--color__surface-muted);
+    --select__trigger-shadow: var(--shadow__level-1);
+  }
+
+  .field {
+    --field__label-resting-top: calc(0.375rem + 1.25rem);
+
+    padding-block-start: 0.375rem;
+    position: relative;
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))) {
+    --field__outline-background: var(--field__background, var(--color__background));
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+      > .input > .control:is(:disabled, [readonly]),
+      > .textarea > .control:is(:disabled, [readonly]),
+      > :is(input.input, select.input, textarea.textarea, .select):is(
+        :disabled,
+        [readonly]:not(select)
+      )
+    ) {
+    --field__outline-background: var(--color__surface-subtle);
+  }
+
+  /* Editable text controls retain their caret and the theme's focus styling. */
+  .input:not(:is(input, select)):has(> .control:focus-visible:not([readonly])),
+  input.input:focus-visible:not([readonly]),
+  .textarea:not(textarea):has(> .control:focus-visible:not([readonly])),
+  textarea.textarea:focus-visible:not([readonly]),
+  .field > .input > .control:focus-visible,
+  .field > .textarea > .control:focus-visible,
+  .field > :is(input.input, select.input, textarea.textarea, .select):focus-visible {
+    outline: none;
+  }
+
+  .field > .label {
+    background: transparent;
+    font-size: 1rem;
+    font-weight: 400;
+    inset-inline-start: var(--spacing__md);
+    padding-inline: 0;
+    pointer-events: none;
+    position: absolute;
+    top: var(--field__label-resting-top);
+    transform: translateY(-50%);
+    transition:
+      color var(--transition__duration) var(--easing__out-expo),
+      font-size var(--transition__duration) var(--easing__out-expo),
+      padding var(--transition__duration) var(--easing__out-expo),
+      top var(--transition__duration) var(--easing__out-expo);
+    z-index: 2;
+  }
+
+  .field:not(:focus-within):has(> .input > .start + .control:placeholder-shown) > .label {
+    inset-inline-start: calc(var(--spacing__sm) + 1.125rem + var(--spacing__xs));
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > :is(.input, .textarea, .select) {
+    background: var(--field__outline-background);
+    border-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  .input,
+  .textarea {
+    background: transparent;
+    border-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > .input:has(> .control:is(:disabled, [readonly])),
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > .textarea:has(> .control:is(:disabled, [readonly])),
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > :is(input.input, select.input, textarea.textarea, .select):is(
+      :disabled,
+      [readonly]:not(select)
+    ),
+  .input:has(> .control:is(:disabled, [readonly])),
+  .textarea:has(> .control:is(:disabled, [readonly])),
+  :is(input.input, textarea.textarea):is(:disabled, [readonly]) {
+    background: var(--color__surface-subtle);
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > .input
+    > .control::placeholder,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > .textarea
+    > .control::placeholder,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+    > :is(input.input, textarea.textarea)::placeholder {
+    color: transparent;
+    transition: color var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within > .label,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+      .input > .control:not(:placeholder-shown)
+    )
+    > .label,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+      input.input:not(:placeholder-shown)
+    )
+    > .label,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+      .textarea > .control:not(:placeholder-shown)
+    )
+    > .label,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+      textarea.textarea:not(:placeholder-shown)
+    )
+    > .label,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(select.input) > .label,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(.select) > .label {
+    background: var(--field__outline-background);
+    font-size: 0.75rem;
+    padding-inline: var(--spacing__sm);
+    top: 0.375rem;
+  }
+
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within
+    > .input
+    > .control::placeholder,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within
+    > .textarea
+    > .control::placeholder,
+  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within
+    > :is(input.input, textarea.textarea)::placeholder {
+    color: var(--color__text-on-accent-subtle);
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) {
+    isolation: isolate;
+  }
+
+  :is(.input, .textarea).elevated,
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) > :is(.input, .textarea, .select) {
+    background-color: var(--color__surface-muted);
+    border-block-start-color: transparent;
+    border-inline-color: transparent;
+    border-block-end-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+    grid-area: 1 / 1;
+    position: relative;
+    transition-property: background-color, border-color, box-shadow;
+    z-index: 1;
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated))::after {
+    align-self: stretch;
+    block-size: 100%;
+    border-block-end: 1px solid var(--color__accent);
+    border-radius: var(--roundness);
+    content: "";
+    grid-area: 1 / 1;
+    inline-size: 0;
+    inset-block-end: -2px;
+    inset-inline-start: 50%;
+    justify-self: start;
+    opacity: 0;
+    pointer-events: none;
+    position: relative;
+    transition:
+      inset-inline-start 180ms var(--easing__out-expo),
+      inline-size 180ms var(--easing__out-expo),
+      opacity 25ms var(--easing__out-expo);
+    z-index: 0;
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within::after {
+    inline-size: 100%;
+    inset-inline-start: 0;
+    opacity: 1;
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+    > :is(.input, .textarea, .select) {
+    border-block-end-color: transparent;
+    box-shadow: var(--shadow__level-1);
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) > .input > .control::placeholder,
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) > .textarea > .control::placeholder,
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated))
+    > :is(input.input, textarea.textarea)::placeholder {
+    color: transparent;
+    transition: color var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+    > .input
+    > .control::placeholder,
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+    > .textarea
+    > .control::placeholder,
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+    > :is(input.input, textarea.textarea)::placeholder {
+    color: var(--color__text-on-accent-subtle);
+  }
+
+  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):is(
+      :focus-within,
+      :has(.input > .control:not(:placeholder-shown)),
+      :has(input.input:not(:placeholder-shown)),
+      :has(.textarea > .control:not(:placeholder-shown)),
+      :has(textarea.textarea:not(:placeholder-shown)),
+      :has(select.input),
+      :has(.select)
+    )
+    > .label {
+    background: transparent;
+    font-size: 0.75rem;
+    padding-inline: var(--spacing__sm);
+    top: 0.375rem;
+  }
+
+  :is(.input, .textarea).elevated:not(.field > *)::after {
+    border-block-end: 1px solid var(--color__accent);
+    border-radius: var(--roundness);
+    content: "";
+    inline-size: 0;
+    inset-block-end: -2px;
+    inset-inline-start: 50%;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition:
+      inset-inline-start 180ms var(--easing__out-expo),
+      inline-size 180ms var(--easing__out-expo),
+      opacity 25ms var(--easing__out-expo);
+  }
+
+  :is(.input, .textarea).elevated:not(.field > *):focus-within::after {
+    inline-size: 100%;
+    inset-inline-start: 0;
+    opacity: 1;
+  }
+
+  :is(.input, .textarea).elevated:not(.field > *):focus-within {
+    border-block-end-color: transparent;
+  }
+
+  :is(.input, .textarea).elevated > .control:focus-visible {
+    outline: none;
+  }
+
+  .slider {
+    --slider__inline-padding: var(--spacing__md);
+
+    background-color: transparent;
+    border-radius: var(--roundness);
+    padding: var(--spacing__xs) var(--slider__inline-padding);
+    transition: background-color var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .slider:hover:not(:disabled, [aria-disabled="true"]):not(
+      :has(> .control > .thumb[aria-readonly="true"])
+    ) {
+    background-color: var(--color__surface-muted);
+  }
+
+  .slider:active:not(:disabled, [aria-disabled="true"]):not(
+      :has(> .control > .thumb[aria-readonly="true"])
+    ) {
+    background-color: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+  }
+
+  .slider.filled > .control > .track {
+    --slider__track-size: 0.125em;
+
+    background: var(--color__border-strong);
+    border-width: 0;
+  }
+
+  .slider.filled > .control > .track > .range {
+    background: var(--color__accent);
+  }
+
+  .slider.filled > .control > .thumb {
+    background: var(--color__accent);
+    border-color: var(--color__accent);
+    transition:
+      background-color var(--transition__duration) var(--easing__out-expo),
+      border-color var(--transition__duration) var(--easing__out-expo),
+      box-shadow var(--transition__duration) var(--easing__out-expo),
+      transform var(--transition__duration) var(--easing__out-expo);
+  }
+
+  .slider.filled
+    > .control
+    > .thumb:hover:not(:disabled, [aria-disabled="true"], [aria-readonly="true"]) {
+    background: var(--color__accent-hover);
+    border-color: var(--color__accent-hover);
+  }
+
+  .slider.filled
+    > .control
+    > .thumb:active:not(:disabled, [aria-disabled="true"], [aria-readonly="true"]) {
+    background: var(--color__accent);
+    border-color: var(--color__accent);
+  }
+
+  .slider.elevated > .control > .track {
+    --slider__track-size: 0.275em;
+
+    background: var(--color__surface-muted);
+    border-color: var(--color__border-muted);
+    box-shadow: inset 0 1px 0 rgb(15 23 42 / 8%);
+  }
+
+  .slider.elevated > .control > .track > .range {
+    background: linear-gradient(to right, var(--color__accent-subtle), var(--color__accent-focus));
+  }
+
+  .slider.elevated > .control > .thumb {
+    background: linear-gradient(45deg, var(--color__on-accent-muted), var(--color__surface-muted));
+    border-color: var(--color__border-strong);
+    box-shadow: var(--shadow__level-1);
+  }
+
+  .slider.elevated
+    > .control
+    > .thumb:hover:not(:disabled, [aria-disabled="true"], [aria-readonly="true"]) {
+    background: var(--color__surface-muted);
+    border-color: var(--color__border-strong);
+  }
+
+  .slider.elevated
+    > .control
+    > .thumb:active:not(:disabled, [aria-disabled="true"], [aria-readonly="true"]) {
+    background: color-mix(in srgb, var(--color__accent-subtle) 50%, transparent);
+    border-color: var(--color__border-strong);
+  }
+
+  .card {
+    --card__background: transparent;
+    --card__border-color: var(--color__border-strong);
+  }
+}

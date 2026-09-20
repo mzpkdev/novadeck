@@ -1,4 +1,4 @@
-import { Button } from "@novadeck/design-system"
+import { Button } from "@novadeck/react"
 import { render, screen } from "@testing-library/react"
 
 import { context, describe, expect, it } from "../../test"

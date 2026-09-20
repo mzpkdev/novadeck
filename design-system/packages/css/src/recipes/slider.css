@@ -1,0 +1,167 @@
+@scope (.novadeck) {
+  .slider {
+    --slider__inline-padding: 0rem;
+    --slider__thumb-size: 1.25rem;
+    --slider__track-size: 0.25rem;
+
+    color: var(--color__text-900);
+    display: grid;
+    font-size: 0.875rem;
+    gap: var(--spacing__xs);
+    line-height: 1.5;
+    width: 100%;
+  }
+
+  .slider.horizontal {
+    contain: inline-size;
+    contain-intrinsic-inline-size: calc(
+      12rem - var(--slider__inline-padding) - var(--slider__inline-padding)
+    );
+  }
+
+  .slider > .header {
+    align-items: baseline;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+  }
+
+  .slider > .header > .label {
+    font-weight: 600;
+  }
+
+  .slider > .header > .value {
+    color: var(--color__text-700);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .slider > .description {
+    color: var(--color__text-600);
+    font-size: 0.8125rem;
+  }
+
+  .slider > .control {
+    align-items: center;
+    display: flex;
+    min-height: var(--slider__thumb-size);
+    position: relative;
+  }
+
+  .slider > .control > .track {
+    background: var(--slider__track-background, var(--color__surface-subtle));
+    border: var(--thickness) solid var(--slider__track-border-color, var(--color__border));
+    border-radius: var(--roundness__full);
+    height: var(--slider__track-size);
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .slider > .control > .track > .range {
+    background: var(--slider__range-background, var(--color__accent));
+    border-radius: inherit;
+    height: 100%;
+    inset-block-start: 0;
+  }
+
+  .slider > .control > .thumb {
+    background: var(--slider__thumb-background, var(--color__accent));
+    border: var(--thickness) solid var(--slider__thumb-border-color, var(--color__accent));
+    border-radius: var(--roundness);
+    box-shadow: var(--slider__thumb-shadow, var(--shadow__level-1));
+    cursor: grab;
+    height: var(--slider__thumb-size);
+    transition:
+      box-shadow var(--transition__duration) var(--easing__out-expo),
+      transform var(--transition__duration) var(--easing__out-expo);
+    width: var(--slider__thumb-size);
+  }
+
+  .slider > .control > .thumb:hover:not([aria-disabled="true"], [aria-readonly="true"]) {
+    box-shadow: var(--slider__thumb-hover-shadow, var(--shadow__level-2));
+    transform: scale(1.05);
+  }
+
+  /* Ark's dragging state has no native or ARIA equivalent on the slider thumb. */
+  .slider > .control > .thumb[data-dragging] {
+    cursor: grabbing;
+  }
+
+  .slider > .control > .thumb:focus-visible {
+    outline: 2px solid var(--color__accent);
+    outline-offset: 3px;
+  }
+
+  .slider[aria-invalid="true"] > .control > .track > .range,
+  .slider:has(.thumb[aria-invalid="true"]) > .control > .track > .range {
+    background: var(--color__danger);
+  }
+
+  .slider[aria-invalid="true"] > .control > .thumb,
+  .slider > .control > .thumb[aria-invalid="true"] {
+    background: var(--color__danger);
+    border-color: var(--color__danger);
+  }
+
+  .slider[aria-disabled="true"] {
+    color: var(--color__text-600);
+    cursor: not-allowed;
+  }
+
+  .slider[aria-disabled="true"] > .header > :is(.label, .value) {
+    color: inherit;
+  }
+
+  .slider[aria-disabled="true"] > .control > .track > .range {
+    background: var(--color__border);
+  }
+
+  .slider[aria-disabled="true"] > .control > .thumb,
+  .slider > .control > .thumb[aria-disabled="true"] {
+    background: var(--color__surface);
+    border-color: var(--color__border);
+    box-shadow: var(--shadow__none);
+    cursor: not-allowed;
+  }
+
+  .slider:has(> .control > .thumb[aria-readonly="true"]) > .control > .thumb {
+    cursor: default;
+  }
+
+  .slider.vertical {
+    width: fit-content;
+  }
+
+  .slider.vertical > .header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--spacing__2xs);
+  }
+
+  .slider.vertical > .control {
+    height: 10rem;
+    justify-content: center;
+    min-width: var(--slider__thumb-size);
+  }
+
+  .slider.vertical > .control > .track {
+    height: 100%;
+    width: var(--slider__track-size);
+  }
+
+  .slider.vertical > .control > .track > .range {
+    height: auto;
+    width: 100%;
+  }
+
+  .slider > .error {
+    color: var(--color__danger);
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slider > .control > .thumb {
+      transition: none;
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@novadeck/react",
+  "version": "0.0.0",
+  "private": true,
+  "description": "React components for the NovaDeck design system",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./button": "./src/Button.tsx"
+  },
+  "scripts": {
+    "build": "storybook build --output-dir storybook-static",
+    "storybook": "storybook dev --port 6006",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ark-ui/react": "^5.39.2"
+  },
+  "devDependencies": {
+    "@novadeck/css": "workspace:*",
+    "@storybook/react-vite": "10.5.9",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "storybook": "10.5.9",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  },
+  "peerDependencies": {
+    "@novadeck/css": "0.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "engines": {
+    "node": "26.x"
+  },
+  "packageManager": "pnpm@11.22.0"
+}
