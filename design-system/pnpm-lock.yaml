@@ -23,8 +23,8 @@ importers:
         specifier: workspace:*
         version: link:../css
       '@storybook/addon-themes':
-        specifier: 10.5.9
-        version: 10.5.9(storybook@10.6.0(@types/react@19.3.0)(react@19.3.0))
+        specifier: 10.6.0
+        version: 10.6.0(storybook@10.6.0(@types/react@19.3.0)(react@19.3.0))
       '@storybook/react-vite':
         specifier: 10.5.9
         version: 10.5.9(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(storybook@10.6.0(@types/react@19.3.0)(react@19.3.0))(typescript@7.0.2)(vite@8.3.0(esbuild@0.28.2))
@@ -763,10 +763,10 @@ packages:
       rollup:
         optional: true
 
-  '@storybook/addon-themes@10.5.9':
-    resolution: {integrity: sha512-/OZ6/4dS9N/N3vDzaQxMBotIPrrn80tLJFd23QDvSYeTyAEomH6x3JnXUwyhvlVhTQcYkhrUCOLdNPYW/wn67w==}
+  '@storybook/addon-themes@10.6.0':
+    resolution: {integrity: sha512-PJtRtaCzKCAcouEqkHevMwv0aeQNsYWab4K/qszNGuSyFXxdcPQguKwmbB6Ajd/FxW+Of/mLXjRgpjrGVSgm1g==}
     peerDependencies:
-      storybook: ^10.5.9
+      storybook: ^10.6.0
 
   '@storybook/builder-vite@10.5.9':
     resolution: {integrity: sha512-Zg4JbGQiHFPGlFJ9HM+XPgzKmU/RFPCymhohVRJhBBYfmgaQgz0flWWzscseCDpl638MNd8/r/H+nwuoBgSYDg==}
@@ -2663,7 +2663,7 @@ snapshots:
       estree-walker: 2.0.2
       picomatch: 4.0.7
 
-  '@storybook/addon-themes@10.5.9(storybook@10.6.0(@types/react@19.3.0)(react@19.3.0))':
+  '@storybook/addon-themes@10.6.0(storybook@10.6.0(@types/react@19.3.0)(react@19.3.0))':
     dependencies:
       storybook: 10.6.0(@types/react@19.3.0)(react@19.3.0)
       ts-dedent: 2.3.0
