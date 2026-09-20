@@ -23,8 +23,8 @@
     "format:check": "oxfmt --check"
   },
   "dependencies": {
+    "@ark-ui/react": "^5.39.2",
     "react": "^19.3.0",
-    "react-aria-components": "^1.21.1",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {

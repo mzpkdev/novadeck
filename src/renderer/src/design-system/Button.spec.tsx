@@ -5,28 +5,32 @@ import { Button } from "./Button"
 
 describe("Button", () => {
   context("when enabled", () => {
-    it("handles accessible press interactions", () => {
-      let pressed = false
+    it("handles click interactions without submitting forms by default", () => {
+      let clicked = false
 
-      render(<Button onPress={() => (pressed = true)}>Create deck</Button>)
-      fireEvent.click(screen.getByRole("button", { name: "Create deck" }))
+      render(<Button onClick={() => (clicked = true)}>Create deck</Button>)
+      const button = screen.getByRole("button", { name: "Create deck" })
+      button.focus()
+      fireEvent.click(button)
 
-      expect(pressed).toBe(true)
+      expect(clicked).toBe(true)
+      expect(button).toHaveFocus()
+      expect(button).toHaveAttribute("type", "button")
     })
   })
 
   context("when disabled", () => {
-    it("does not handle press interactions", () => {
-      let pressed = false
+    it("does not handle click interactions", () => {
+      let clicked = false
 
       render(
-        <Button isDisabled onPress={() => (pressed = true)}>
+        <Button disabled onClick={() => (clicked = true)}>
           Create deck
         </Button>,
       )
       fireEvent.click(screen.getByRole("button", { name: "Create deck" }))
 
-      expect(pressed).toBe(false)
+      expect(clicked).toBe(false)
     })
   })
 })
