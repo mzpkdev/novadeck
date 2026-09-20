@@ -95,7 +95,7 @@ export const readWorkflowRuns = async (
     throw new Error("Missing repository or token.")
   }
 
-  const url = `${api}/repos/${repo}/actions/workflows/release.yml/runs?per_page=100&exclude_pull_requests=true`
+  const url = `${api}/repos/${repo}/actions/workflows/release.yml/runs?per_page=100&event=push&exclude_pull_requests=true`
   return readPage(url, token, currentId, currentNumber)
 }
 
@@ -128,6 +128,8 @@ export const waitForTurn = async (
   env: Environment,
   pause: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 300_000)),
 ): Promise<void> => {
+  if (env.GITHUB_EVENT_NAME !== "push") return
+
   const currentId = Number(env.GITHUB_RUN_ID)
   const currentNumber = Number(env.GITHUB_RUN_NUMBER)
   const currentAttempt = Number(env.GITHUB_RUN_ATTEMPT)
@@ -161,8 +163,7 @@ export const waitForTurn = async (
 
     previous = previousRun(runs, currentId, currentNumber)
     if (!previous) {
-      if (currentNumber === 1) return
-      throw new Error("No earlier release run is visible; refusing to bypass FIFO order.")
+      return
     }
     if (previous.status === "completed") {
       if (previous.conclusion === "success") return

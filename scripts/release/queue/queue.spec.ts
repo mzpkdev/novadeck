@@ -8,6 +8,7 @@ import { previousRun, readWorkflowRuns, waitForTurn } from "./queue"
 const env = {
   GH_TOKEN: "fixture-token",
   GITHUB_API_URL: "https://api.github.test",
+  GITHUB_EVENT_NAME: "push",
   GITHUB_REPOSITORY: "test/consumer",
   GITHUB_RUN_ATTEMPT: "1",
   GITHUB_RUN_ID: "300",
@@ -188,10 +189,18 @@ describe("release queue", () => {
       expect(pause).toHaveBeenCalledOnce()
     })
 
-    it("fails closed when no earlier run is visible", async () => {
+    it("allows the first automatic release when no earlier push run exists", async () => {
       respond([run(300, 30)])
 
-      await expect(waitForTurn(env)).rejects.toThrow("refusing to bypass FIFO order")
+      await expect(waitForTurn(env)).resolves.toBeUndefined()
+    })
+  })
+
+  context("when the workflow was started manually", () => {
+    it("does not enter the automatic release queue", async () => {
+      await expect(
+        waitForTurn({ ...env, GITHUB_EVENT_NAME: "workflow_dispatch" }),
+      ).resolves.toBeUndefined()
     })
   })
 
