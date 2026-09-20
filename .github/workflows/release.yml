@@ -252,7 +252,7 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --draft \
             --latest=false \
-            --notes "Unsigned development build. macOS Gatekeeper and Windows SmartScreen may display warnings." \
+            --notes $'<!-- novadeck-automatic-release -->\n\nUnsigned development build. macOS Gatekeeper and Windows SmartScreen may display warnings.' \
             --target "$SOURCE_SHA" \
             --title "NovaDeck $RELEASE_TAG" \
             "${notes[@]}"

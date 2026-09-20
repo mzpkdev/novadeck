@@ -39,6 +39,7 @@ describe("interrupted release recovery", () => {
         server.use(
           http.get("https://api.github.test/repos/test/consumer/releases/tags/v0.0.0", () =>
             HttpResponse.json({
+              body: "<!-- novadeck-automatic-release -->\n\nUnsigned development build.",
               draft: true,
               id: 42,
               tag_name: "v0.0.0",
@@ -74,6 +75,7 @@ describe("interrupted release recovery", () => {
         server.use(
           http.get("https://api.github.test/repos/test/consumer/releases/tags/v0.0.0", () =>
             HttpResponse.json({
+              body: "<!-- novadeck-automatic-release -->",
               draft: false,
               id: 42,
               tag_name: "v0.0.0",
@@ -83,6 +85,53 @@ describe("interrupted release recovery", () => {
         )
 
         await expect(recoverInterruptedRelease(env, directory)).resolves.toEqual([])
+        expect(git(directory, "tag", "--list")).toBe("v0.0.0")
+      } finally {
+        rmSync(directory, { force: true, recursive: true })
+      }
+    })
+  })
+
+  context("when a draft was created outside the workflow", () => {
+    it("refuses to remove it", async () => {
+      const { directory, source } = repository()
+      try {
+        server.use(
+          http.get("https://api.github.test/repos/test/consumer/releases/tags/v0.0.0", () =>
+            HttpResponse.json({
+              body: "Manual release candidate.",
+              draft: true,
+              id: 42,
+              tag_name: "v0.0.0",
+              target_commitish: source,
+            }),
+          ),
+        )
+
+        await expect(recoverInterruptedRelease(env, directory)).rejects.toThrow(
+          "Refusing to remove v0.0.0",
+        )
+        expect(git(directory, "tag", "--list")).toBe("v0.0.0")
+      } finally {
+        rmSync(directory, { force: true, recursive: true })
+      }
+    })
+  })
+
+  context("when a standalone tag has no release", () => {
+    it("refuses to remove it", async () => {
+      const { directory } = repository()
+      try {
+        server.use(
+          http.get(
+            "https://api.github.test/repos/test/consumer/releases/tags/v0.0.0",
+            () => new HttpResponse(null, { status: 404 }),
+          ),
+        )
+
+        await expect(recoverInterruptedRelease(env, directory)).rejects.toThrow(
+          "no associated workflow draft",
+        )
         expect(git(directory, "tag", "--list")).toBe("v0.0.0")
       } finally {
         rmSync(directory, { force: true, recursive: true })

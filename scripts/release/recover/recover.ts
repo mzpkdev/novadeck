@@ -6,11 +6,14 @@ import { parseVersion } from "../version/version.ts"
 type Environment = Record<string, string | undefined>
 
 interface Release {
+  body: string | null
   draft: boolean
   id: number
   tag_name: string
   target_commitish: string
 }
+
+const marker = "<!-- novadeck-automatic-release -->"
 
 const git = (args: string[], directory: string): string =>
   execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim()
@@ -47,6 +50,8 @@ const readRelease = async (
   if (
     !value ||
     typeof value !== "object" ||
+    !("body" in value) ||
+    (value.body !== null && typeof value.body !== "string") ||
     !("draft" in value) ||
     typeof value.draft !== "boolean" ||
     !("id" in value) ||
@@ -87,12 +92,19 @@ export const recoverInterruptedRelease = async (
   const recovered: string[] = []
   for (const tag of tags) {
     const release = await readRelease(api, repo, tag, token)
-    if (release && !release.draft) continue
-    if (release && (release.tag_name !== tag || release.target_commitish !== source)) {
-      throw new Error(`Refusing to remove ${tag}; its draft targets another commit.`)
+    if (!release) {
+      throw new Error(`Refusing to remove ${tag}; it has no associated workflow draft.`)
+    }
+    if (!release.draft) continue
+    if (
+      release.tag_name !== tag ||
+      release.target_commitish !== source ||
+      !release.body?.includes(marker)
+    ) {
+      throw new Error(`Refusing to remove ${tag}; the workflow does not own its draft.`)
     }
 
-    if (release) await remove(`${api}/repos/${repo}/releases/${release.id}`, token)
+    await remove(`${api}/repos/${repo}/releases/${release.id}`, token)
     await remove(`${api}/repos/${repo}/git/refs/tags/${encodeURIComponent(tag)}`, token)
     git(["tag", "--delete", tag], directory)
     recovered.push(tag)
