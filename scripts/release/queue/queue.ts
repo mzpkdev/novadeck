@@ -12,7 +12,6 @@ interface Release {
 
 interface TurnOptions {
   directory?: string
-  pause?: () => Promise<void>
   refresh?: (directory: string) => void
 }
 
@@ -73,14 +72,12 @@ const readRelease = async (
   return value as Release
 }
 
-export const waitForReleaseTurn = async (
+export const publishedReleaseAt = async (
+  sha: string,
   env: Environment,
   options: TurnOptions = {},
-): Promise<void> => {
+): Promise<boolean> => {
   const directory = options.directory ?? process.cwd()
-  const previous = previousReleaseCommit(directory)
-  if (!previous) return
-
   const api = (env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, "")
   const repo = env.GITHUB_REPOSITORY
   const token = env.GH_TOKEN
@@ -88,17 +85,22 @@ export const waitForReleaseTurn = async (
     throw new Error("Missing repository or token.")
   }
 
-  const pause = options.pause ?? (() => new Promise((resolve) => setTimeout(resolve, 60_000)))
   const refresh = options.refresh ?? ((cwd) => void git(["fetch", "--force", "--tags", "origin"], cwd))
-
-  while (true) {
-    refresh(directory)
-    for (const tag of tagsAt(previous, directory)) {
-      const release = await readRelease(api, repo, tag, token)
-      if (release && !release.draft && release.tag_name === tag) return
-    }
-
-    console.log(`Waiting for the release at ${previous} to be published.`)
-    await pause()
+  refresh(directory)
+  for (const tag of tagsAt(sha, directory)) {
+    const release = await readRelease(api, repo, tag, token)
+    if (release && !release.draft && release.tag_name === tag) return true
   }
+  return false
+}
+
+export const releaseTurnReady = async (
+  env: Environment,
+  options: TurnOptions = {},
+): Promise<boolean> => {
+  const directory = options.directory ?? process.cwd()
+  const previous = previousReleaseCommit(directory)
+  if (!previous) return true
+
+  return publishedReleaseAt(previous, env, options)
 }

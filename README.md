@@ -70,7 +70,9 @@ To promote tested binaries without rebuilding them, open **Actions → Release**
 run the workflow with the `promote` operation, and enter its `vX.Y.Z` prerelease
 tag. Promotion verifies every platform package and checksum, then marks that
 same GitHub Release as the latest stable release. A manual `package` operation
-builds temporary artifacts without creating a release.
+builds temporary artifacts without creating a release. Untagged manual builds
+use `<latest-version>-manual.<run-number>` so their filenames and application
+metadata identify the source as a non-release build.
 
 Release publication and promotion require a `RELEASE_TOKEN` Actions secret. Use
 a fine-grained personal access token scoped only to this repository with
@@ -78,8 +80,9 @@ a fine-grained personal access token scoped only to this repository with
 token cannot manage a release whose commit contains workflow files that differ
 from the current `main` branch.
 
-Automatic runs inspect the commit graph. A newer release-worthy commit waits
-until the nearest earlier one has a published release, so GitHub's run arrival
-order cannot reorder or fold releases. If a release fails, rerun that commit's
-workflow; dependent releases remain waiting. Stable promotions use a durable
-queue, while manual package builds run independently.
+Automatic runs inspect the commit graph. An out-of-order run defers immediately
+when the nearest earlier release-worthy commit is unpublished; each completed
+release dispatches the next deferred commit. This preserves commit order without
+holding runners. If a release fails, rerun that commit's workflow to resume the
+chain. Stable promotions use a durable queue, while manual package builds run
+independently.

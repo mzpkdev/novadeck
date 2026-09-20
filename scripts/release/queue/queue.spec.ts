@@ -4,11 +4,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { HttpResponse, http } from "msw"
-import { vi } from "vitest"
-
 import { server } from "../../../src/renderer/src/test/server"
 import { context, describe, expect, it } from "../../../src/test"
-import { previousReleaseCommit, waitForReleaseTurn } from "./queue"
+import { previousReleaseCommit, releaseTurnReady } from "./queue"
 
 const env = {
   GH_TOKEN: "fixture-token",
@@ -64,25 +62,41 @@ describe("release order", () => {
   })
 
   context("when an earlier release-worthy commit exists", () => {
-    it("waits until its tagged release is published", async () => {
+    it("defers while its tagged release is still a draft", async () => {
       const directory = repository()
       try {
         const previous = commit(directory, "fix: first release")
         git(directory, "tag", "v0.0.0", previous)
         commit(directory, "fix: second release")
-        let draft = true
         server.use(
           http.get("https://api.github.test/repos/test/consumer/releases/tags/v0.0.0", () =>
-            HttpResponse.json({ draft, tag_name: "v0.0.0" }),
+            HttpResponse.json({ draft: true, tag_name: "v0.0.0" }),
           ),
         )
-        const pause = vi.fn(async () => {
-          draft = false
-        })
 
-        await waitForReleaseTurn(env, { directory, pause, refresh: () => undefined })
+        await expect(
+          releaseTurnReady(env, { directory, refresh: () => undefined }),
+        ).resolves.toBe(false)
+      } finally {
+        rmSync(directory, { force: true, recursive: true })
+      }
+    })
 
-        expect(pause).toHaveBeenCalledOnce()
+    it("proceeds after its tagged release is published", async () => {
+      const directory = repository()
+      try {
+        const previous = commit(directory, "fix: first release")
+        git(directory, "tag", "v0.0.0", previous)
+        commit(directory, "fix: second release")
+        server.use(
+          http.get("https://api.github.test/repos/test/consumer/releases/tags/v0.0.0", () =>
+            HttpResponse.json({ draft: false, tag_name: "v0.0.0" }),
+          ),
+        )
+
+        await expect(
+          releaseTurnReady(env, { directory, refresh: () => undefined }),
+        ).resolves.toBe(true)
       } finally {
         rmSync(directory, { force: true, recursive: true })
       }

@@ -1,4 +1,11 @@
+import { execFileSync } from "node:child_process"
 import { appendFileSync, readFileSync } from "node:fs"
+
+import { readTags } from "../plan/main.ts"
+import { formatVersion, latestVersion, parseVersion } from "../version/version.ts"
+
+const git = (args: string[]): string =>
+  execFileSync("git", args, { encoding: "utf8" }).trim()
 
 export function main(): void {
   const output = process.env.GITHUB_OUTPUT
@@ -9,8 +16,19 @@ export function main(): void {
     throw new Error("package.json version is missing.")
   }
 
-  appendFileSync(output, `package=true\nversion=${manifest.version}\n`)
-  console.log(`Packaging NovaDeck ${manifest.version}.`)
+  const exact = latestVersion(git(["tag", "--points-at", "HEAD", "--list"]).split("\n"))
+  const latest = latestVersion(readTags())
+  const base = exact?.version ?? latest?.version ?? parseVersion(manifest.version)
+  if (!base) throw new Error("package.json version is invalid.")
+
+  const run = process.env.GITHUB_RUN_NUMBER
+  if (!exact && (!run || !/^[1-9]\d*$/.test(run))) {
+    throw new Error("GITHUB_RUN_NUMBER is missing.")
+  }
+  const version = exact ? formatVersion(base) : `${formatVersion(base)}-manual.${run}`
+
+  appendFileSync(output, `package=true\nversion=${version}\n`)
+  console.log(`Packaging NovaDeck ${version}.`)
 }
 
 if (import.meta.main) {

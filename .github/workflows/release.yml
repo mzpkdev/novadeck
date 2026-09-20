@@ -41,7 +41,7 @@ jobs:
   prepare:
     name: Prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 10
     outputs:
       package: ${{ steps.automatic.outputs.package || steps.manual.outputs.package || 'false' }}
       previous_tag: ${{ steps.automatic.outputs.previous_tag }}
@@ -84,7 +84,8 @@ jobs:
           cache: true
           require-lockfile: true
 
-      - name: Wait for Earlier Release
+      - name: Check Release Turn
+        id: queue
         if: github.event_name == 'push' || github.event_name == 'repository_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -92,7 +93,9 @@ jobs:
 
       - name: Plan Automatic Release
         id: automatic
-        if: github.event_name == 'push' || github.event_name == 'repository_dispatch'
+        if: >-
+          (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+          steps.queue.outputs.ready == 'true'
         run: node scripts/release/plan/main.ts
 
       - name: Validate Release Credential
@@ -280,6 +283,36 @@ jobs:
               echo "Refusing to remove a tag for another commit."
             fi
           fi
+
+  advance:
+    name: Advance Release Queue
+    if: >-
+      always() && needs.prepare.result == 'success' &&
+      (github.event_name == 'push' || github.event_name == 'repository_dispatch')
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check Out Current Main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set Up Toolchain
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Dispatch Next Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.client_payload.sha || github.sha }}
+        run: node scripts/release/advance/main.ts
 
   promote:
     name: Promote Stable Release
