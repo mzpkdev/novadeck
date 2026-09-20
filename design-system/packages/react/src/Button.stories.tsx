@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { ArrowRight, Plus } from "lucide-react"
 
 import { Button } from "./Button"
 
@@ -18,6 +19,18 @@ export const Outlined: Story = {}
 
 export const Filled: Story = {
   args: { variant: "filled" },
+}
+
+export const WithIcons: Story = {
+  args: { end: <ArrowRight />, start: <Plus /> },
+}
+
+export const IconOnly: Story = {
+  args: {
+    "aria-label": "Create deck",
+    children: <Plus aria-hidden="true" />,
+    iconOnly: true,
+  },
 }
 
 export const Loading: Story = {

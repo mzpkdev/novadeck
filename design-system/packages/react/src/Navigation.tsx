@@ -1,6 +1,7 @@
 import { Menu as ArkMenu } from "@ark-ui/react/menu"
 import { NavigationMenu as ArkNavigationMenu } from "@ark-ui/react/navigation-menu"
 import { TreeView as ArkTreeView, createTreeCollection } from "@ark-ui/react/tree-view"
+import { ChevronRight } from "lucide-react"
 import type { ComponentProps, ComponentType, ReactNode } from "react"
 
 import { Portal } from "./Portal"
@@ -150,9 +151,7 @@ const TreeNodes = ({ items, path = rootPath }: { items: TreeViewNode[]; path?: n
                 className="control"
               >
                 <ArkTreeView.BranchIndicator className="indicator">
-                  <svg aria-hidden="true" className="arrow" viewBox="0 0 16 16">
-                    <path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" />
-                  </svg>
+                  <ChevronRight aria-hidden="true" className="arrow" />
                 </ArkTreeView.BranchIndicator>
                 {node.icon}
                 <ArkTreeView.BranchText className="text">{node.label}</ArkTreeView.BranchText>

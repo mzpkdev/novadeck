@@ -4,6 +4,7 @@ import { RadioGroup as ArkRadio } from "@ark-ui/react/radio-group"
 import { Select as ArkSelect, createListCollection } from "@ark-ui/react/select"
 import { Slider as ArkSlider } from "@ark-ui/react/slider"
 import { Switch as ArkSwitch } from "@ark-ui/react/switch"
+import { Check, ChevronDown, Minus } from "lucide-react"
 import type {
   ComponentProps,
   HTMLAttributes,
@@ -164,8 +165,12 @@ export type CheckboxProps = Omit<ComponentProps<typeof ArkCheckbox.Root>, "child
 export const Checkbox = ({ inputProps, label, variant, ...props }: CheckboxProps) => (
   <CheckboxRoot {...props} variant={variant}>
     <CheckboxControl>
-      <CheckboxIndicator>✓</CheckboxIndicator>
-      <CheckboxIndicator indeterminate>−</CheckboxIndicator>
+      <CheckboxIndicator>
+        <Check aria-hidden="true" />
+      </CheckboxIndicator>
+      <CheckboxIndicator indeterminate>
+        <Minus aria-hidden="true" />
+      </CheckboxIndicator>
     </CheckboxControl>
     <CheckboxLabel>{label}</CheckboxLabel>
     <ArkCheckbox.HiddenInput {...inputProps} />
@@ -544,7 +549,9 @@ export const Select = ({
         {options.map((option) => (
           <SelectItem item={option} key={option.value}>
             <SelectItemText>{option.label}</SelectItemText>
-            <SelectItemIndicator>✓</SelectItemIndicator>
+            <SelectItemIndicator>
+              <Check aria-hidden="true" />
+            </SelectItemIndicator>
           </SelectItem>
         ))}
       </SelectContent>
@@ -561,7 +568,9 @@ export const Select = ({
       <SelectControl>
         <SelectTrigger>
           <SelectValueText placeholder={placeholder} />
-          <SelectIndicator aria-hidden="true">⌄</SelectIndicator>
+          <SelectIndicator aria-hidden="true">
+            <ChevronDown />
+          </SelectIndicator>
         </SelectTrigger>
       </SelectControl>
       <ArkSelect.HiddenSelect />

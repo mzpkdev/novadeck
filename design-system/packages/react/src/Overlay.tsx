@@ -1,4 +1,5 @@
 import { Dialog as ArkDialog } from "@ark-ui/react/dialog"
+import { X } from "lucide-react"
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react"
 
 import { Portal } from "./Portal"
@@ -97,9 +98,7 @@ export const Dialog = ({
                 {description && <DialogDescription>{description}</DialogDescription>}
               </div>
               <DialogCloseTrigger aria-label={closeLabel}>
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="m6 6 12 12M18 6 6 18" />
-                </svg>
+                <X aria-hidden="true" />
               </DialogCloseTrigger>
             </DialogHeader>
             {(children ?? content) && <DialogBody>{children ?? <p>{content}</p>}</DialogBody>}

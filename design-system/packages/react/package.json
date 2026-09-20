@@ -21,7 +21,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ark-ui/react": "^5.39.2"
+    "@ark-ui/react": "^5.39.2",
+    "lucide-react": "^1.47.0"
   },
   "devDependencies": {
     "@novadeck/css": "workspace:*",
