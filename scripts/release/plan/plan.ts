@@ -24,6 +24,7 @@ export type ReleasePlan =
     }
 
 export interface ReleaseOptions {
+  currentMessage?: string
   initialVersion?: string
   patchOnly?: boolean
 }
@@ -76,6 +77,10 @@ export function planRelease(
   messages: string[],
   options: ReleaseOptions = {},
 ): ReleasePlan {
+  if (options.currentMessage && !analyzeRelease([options.currentMessage])) {
+    return { release: false }
+  }
+
   const analyzedType = analyzeRelease(messages)
   if (!analyzedType) return { release: false }
 

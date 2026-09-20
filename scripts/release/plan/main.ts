@@ -31,6 +31,7 @@ export function main(): void {
   const previousTag = latestVersion(tags)?.tag ?? null
   const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { version: string }
   const plan = planRelease(tags, readMessages(previousTag), {
+    currentMessage: git(["log", "-1", "--format=%B"]),
     initialVersion: manifest.version,
     patchOnly: process.env.RELEASE_PATCH_ONLY === "true",
   })

@@ -83,6 +83,14 @@ describe("release model", () => {
       })
     })
 
+    it("does not fold an earlier failed release into a maintenance commit", () => {
+      expect(
+        planRelease(["v0.3.1"], ["docs: explain tabs", "fix: restore tabs"], {
+          currentMessage: "docs: explain tabs",
+        }),
+      ).toEqual({ release: false })
+    })
+
     it.each([
       "fix: prevent a startup crash",
       "feat: add workspace tabs",

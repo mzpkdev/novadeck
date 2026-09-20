@@ -72,9 +72,14 @@ tag. Promotion verifies every platform package and checksum, then marks that
 same GitHub Release as the latest stable release. A manual `package` operation
 builds temporary artifacts without creating a release.
 
-Automatic releases and stable promotions use durable GitHub Actions queues, so
-bursts of merges and promotions wait instead of cancelling in-progress work.
-Manual package builds use independent concurrency groups and can run in
-parallel. If a release fails, rerun it before merging another release-worthy
-change; the next successful automatic run otherwise calculates one version from
-everything since the last published tag.
+Release publication and promotion require a `RELEASE_TOKEN` Actions secret. Use
+a fine-grained personal access token scoped only to this repository with
+**Contents: Read and write** and **Workflows: Read and write**. GitHub's workflow
+token cannot manage a release whose commit contains workflow files that differ
+from the current `main` branch.
+
+Automatic runs inspect the commit graph. A newer release-worthy commit waits
+until the nearest earlier one has a published release, so GitHub's run arrival
+order cannot reorder or fold releases. If a release fails, rerun that commit's
+workflow; dependent releases remain waiting. Stable promotions use a durable
+queue, while manual package builds run independently.

@@ -1,5 +1,9 @@
 name: Release
 
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && format('Release {0}', inputs.operation) ||
+  format('Release {0}', github.event.client_payload.sha || github.sha) }}
+
 on:
   push:
     branches: [main]
@@ -29,14 +33,15 @@ env:
 concurrency:
   group: >-
     ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'package' && format('package-{0}', github.run_id) ||
-    github.event_name == 'workflow_dispatch' && 'promote-stable' || 'release-publish' }}
+    github.event_name == 'workflow_dispatch' && 'promote-stable' ||
+    format('release-{0}', github.event.client_payload.sha || github.sha) }}
   queue: max
 
 jobs:
   prepare:
     name: Prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 360
     outputs:
       package: ${{ steps.automatic.outputs.package || steps.manual.outputs.package || 'false' }}
       previous_tag: ${{ steps.automatic.outputs.previous_tag }}
@@ -79,10 +84,26 @@ jobs:
           cache: true
           require-lockfile: true
 
+      - name: Wait for Earlier Release
+        if: github.event_name == 'push' || github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/queue/main.ts
+
       - name: Plan Automatic Release
         id: automatic
         if: github.event_name == 'push' || github.event_name == 'repository_dispatch'
         run: node scripts/release/plan/main.ts
+
+      - name: Validate Release Credential
+        if: steps.automatic.outputs.publish == 'true'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_TOKEN" ]]; then
+            echo "RELEASE_TOKEN must grant Contents and Workflows write access."
+            exit 1
+          fi
 
       - name: Prepare Manual Package
         id: manual
@@ -92,6 +113,7 @@ jobs:
       - name: Validate Promotion Input
         if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
         env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           if [[ "$GITHUB_REF_NAME" != "main" ]]; then
@@ -100,6 +122,10 @@ jobs:
           fi
           if [[ -z "$RELEASE_TAG" ]]; then
             echo "A vX.Y.Z prerelease tag is required for promotion."
+            exit 1
+          fi
+          if [[ -z "$RELEASE_TOKEN" ]]; then
+            echo "RELEASE_TOKEN must grant Contents and Workflows write access."
             exit 1
           fi
 
@@ -187,7 +213,7 @@ jobs:
       - name: Prepare GitHub Prerelease
         id: creation
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
@@ -202,7 +228,7 @@ jobs:
 
       - name: Create Draft Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           SOURCE_SHA: ${{ github.event.client_payload.sha || github.sha }}
@@ -222,20 +248,20 @@ jobs:
 
       - name: Upload Release Assets
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release upload "$RELEASE_TAG" release-assets/*
 
       - name: Publish GitHub Prerelease
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release edit "$RELEASE_TAG" --draft=false --latest=false --prerelease
 
       - name: Remove Incomplete Release
         if: ${{ (failure() || cancelled()) && steps.creation.outputs.started == 'true' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           SOURCE_SHA: ${{ github.event.client_payload.sha || github.sha }}
         run: |
@@ -311,13 +337,13 @@ jobs:
 
       - name: Promote Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: gh release edit "$RELEASE_TAG" --latest --prerelease=false
 
       - name: Verify Stable Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           is_prerelease="$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"
