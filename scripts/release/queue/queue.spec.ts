@@ -75,6 +75,44 @@ describe("release queue", () => {
     expect(requests).toHaveBeenCalledTimes(2)
   })
 
+  it("remembers a predecessor found before the current run", async () => {
+    const requests = vi.fn()
+    server.use(
+      http.get(
+        "https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs",
+        ({ request }) => {
+          requests()
+          const page = new URL(request.url).searchParams.get("page")
+          if (page === "2") {
+            return HttpResponse.json(
+              { workflow_runs: [run(300, 30)] },
+              {
+                headers: {
+                  link: '<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=3>; rel="next"',
+                },
+              },
+            )
+          }
+
+          return HttpResponse.json(
+            { workflow_runs: [run(290, 29)] },
+            {
+              headers: {
+                link: '<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=2>; rel="next"',
+              },
+            },
+          )
+        },
+      ),
+    )
+
+    await expect(readWorkflowRuns(env, 300, 30)).resolves.toEqual([
+      run(290, 29),
+      run(300, 30),
+    ])
+    expect(requests).toHaveBeenCalledTimes(2)
+  })
+
   context("when workflow runs overlap", () => {
     it("selects the immediately preceding run", () => {
       expect(
@@ -94,12 +132,32 @@ describe("release queue", () => {
 
       expect(pause).toHaveBeenCalledOnce()
     })
+
+    it("waits for the closest surviving run when the predecessor is missing", async () => {
+      const pause = vi.fn(async () => undefined)
+      respond([run(280, 28), run(300, 30)], run(280, 28, "completed"))
+
+      await waitForTurn(env, pause)
+
+      expect(pause).toHaveBeenCalledOnce()
+    })
   })
 
   context("when the GitHub API is not ready", () => {
     it("fails closed until the current run is visible", async () => {
-      const pause = vi.fn(async () => respond([run(300, 30)]))
+      const pause = vi.fn(async () => respond([run(300, 1)]))
       respond([])
+
+      await waitForTurn({ ...env, GITHUB_RUN_NUMBER: "1" }, pause)
+
+      expect(pause).toHaveBeenCalledOnce()
+    })
+
+    it("fails closed when no earlier run is visible", async () => {
+      const pause = vi.fn(async () =>
+        respond([run(290, 29, "completed"), run(300, 30)]),
+      )
+      respond([run(300, 30)])
 
       await waitForTurn(env, pause)
 

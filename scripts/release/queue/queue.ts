@@ -53,19 +53,29 @@ const readPage = async (
   currentNumber: number,
   page = 1,
   foundCurrent = false,
+  foundPrevious = false,
 ): Promise<WorkflowRun[]> => {
   const response = await request(url, token)
   const runs = parseRuns(await response.json())
   const next = response.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1]
   const hasCurrent = foundCurrent || runs.some((run) => run.id === currentId)
-  const hasPrevious = runs.some((run) => run.run_number === currentNumber - 1)
+  const hasPrevious =
+    foundPrevious || runs.some((run) => run.run_number === currentNumber - 1)
 
   if (!next || (hasCurrent && hasPrevious)) return runs
   if (page >= 10) throw new Error("Current release run was not found within 10 API pages.")
 
   return [
     ...runs,
-    ...(await readPage(next, token, currentId, currentNumber, page + 1, hasCurrent)),
+    ...(await readPage(
+      next,
+      token,
+      currentId,
+      currentNumber,
+      page + 1,
+      hasCurrent,
+      hasPrevious,
+    )),
   ]
 }
 
@@ -90,7 +100,9 @@ export const previousRun = (
   currentId: number,
   currentNumber: number,
 ): WorkflowRun | null =>
-  runs.find((run) => run.id !== currentId && run.run_number === currentNumber - 1) ?? null
+  runs
+    .filter((run) => run.id !== currentId && run.run_number < currentNumber)
+    .sort((left, right) => right.run_number - left.run_number)[0] ?? null
 
 export const readWorkflowRun = async (
   env: Environment,
@@ -137,7 +149,14 @@ export const waitForTurn = async (
     }
 
     previous = previousRun(runs, currentId, currentNumber)
-    if (!previous || previous.status === "completed") return
+    if (!previous) {
+      if (currentNumber === 1) return
+
+      console.log("No earlier release run is visible; waiting before retrying.")
+      await pause()
+      continue
+    }
+    if (previous.status === "completed") return
   }
 
   while (previous.status !== "completed") {
