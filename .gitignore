@@ -8,8 +8,7 @@ node_modules/
 dist/
 build/
 out/
-release/
-!/scripts/release/
+/release/
 *.tsbuildinfo
 
 # Tests

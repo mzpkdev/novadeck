@@ -72,7 +72,9 @@ tag. Promotion verifies every platform package and checksum, then marks that
 same GitHub Release as the latest stable release. A manual `package` operation
 builds temporary artifacts without creating a release.
 
-If a Release workflow fails, later release runs fail closed instead of folding
-multiple commits into one version. Wait for newer runs to finish, then use
-GitHub's **Re-run** control to recover failed runs from oldest to newest. A
-rerun is rejected while any newer release run is still active.
+Automatic releases and stable promotions use durable GitHub Actions queues, so
+bursts of merges and promotions wait instead of cancelling in-progress work.
+Manual package builds use independent concurrency groups and can run in
+parallel. If a release fails, rerun it before merging another release-worthy
+change; the next successful automatic run otherwise calculates one version from
+everything since the last published tag.

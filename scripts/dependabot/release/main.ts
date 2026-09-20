@@ -1,8 +1,8 @@
-import { waitForTurn } from "./queue.ts"
+import { dispatchReleaseAfterMerge } from "./release.ts"
 
 export async function main(): Promise<void> {
-  await waitForTurn(process.env)
-  console.log("No earlier release runs are active.")
+  const sha = await dispatchReleaseAfterMerge(process.env)
+  console.log(`Dispatched release for ${sha}.`)
 }
 
 if (import.meta.main) {
