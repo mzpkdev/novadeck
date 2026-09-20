@@ -6,7 +6,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./button": "./src/Button.tsx"
+    "./button": "./src/Button.tsx",
+    "./form": "./src/Form.tsx",
+    "./layout": "./src/Layout.tsx",
+    "./navigation": "./src/Navigation.tsx",
+    "./overlay": "./src/Overlay.tsx",
+    "./portal": "./src/Portal.tsx"
   },
   "scripts": {
     "build": "storybook build --output-dir storybook-static",

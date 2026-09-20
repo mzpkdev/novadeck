@@ -35,6 +35,17 @@ describe("Button", () => {
     })
   })
 
+  context("when rendered as a link", () => {
+    it("removes navigation while disabled", () => {
+      render(<Button content="Open deck" disabled href="/decks/one" />)
+
+      const link = screen.getByRole("link", { name: "Open deck" })
+      expect(link).not.toHaveAttribute("href")
+      expect(link).toHaveAttribute("aria-disabled", "true")
+      expect(link).toHaveAttribute("tabindex", "-1")
+    })
+  })
+
   context("when an action is in progress", () => {
     it("preserves its name and prevents another activation", () => {
       let clicked = false
