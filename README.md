@@ -44,8 +44,8 @@ pnpm package:win
 
 The configured artifacts are:
 
-- Linux x64: AppImage and DEB
-- macOS universal: DMG and ZIP
+- Linux x64: AppImage
+- macOS universal: DMG
 - Windows x64: NSIS installer
 
 Artifacts are written to `release/`. Builds are intentionally unsigned for now,

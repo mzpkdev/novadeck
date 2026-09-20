@@ -14,9 +14,6 @@ mac:
     - target: dmg
       arch:
         - universal
-    - target: zip
-      arch:
-        - universal
 win:
   target:
     - target: nsis
@@ -31,8 +28,5 @@ linux:
   syncDesktopName: true
   target:
     - target: AppImage
-      arch:
-        - x64
-    - target: deb
       arch:
         - x64
