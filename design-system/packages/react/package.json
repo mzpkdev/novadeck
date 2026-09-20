@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./button": "./src/Button.tsx",
     "./form": "./src/Form.tsx",
+    "./icons": "./src/icons.ts",
     "./layout": "./src/Layout.tsx",
     "./navigation": "./src/Navigation.tsx",
     "./overlay": "./src/Overlay.tsx",

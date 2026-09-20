@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 
 import { Button } from "./Button"
+import { Plus } from "./icons"
 import { context, describe, expect, it } from "./test"
 
 describe("Button", () => {
@@ -17,6 +18,12 @@ describe("Button", () => {
       expect(button).toHaveFocus()
       expect(button).toHaveAttribute("type", "button")
       expect(button).toHaveClass("button", "outlined")
+    })
+
+    it("renders icons re-exported by the design system", () => {
+      const { container } = render(<Button start={<Plus />}>Create deck</Button>)
+
+      expect(container.querySelector(".lucide-plus")).toBeInTheDocument()
     })
   })
 

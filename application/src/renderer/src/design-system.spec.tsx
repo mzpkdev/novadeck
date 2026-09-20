@@ -1,4 +1,5 @@
 import { Button } from "@novadeck/react"
+import { Plus } from "@novadeck/react/icons"
 import { render, screen } from "@testing-library/react"
 
 import { context, describe, expect, it } from "../../test"
@@ -9,6 +10,7 @@ describe("design system package", () => {
       render(<Button>Create deck</Button>)
 
       expect(screen.getByRole("button", { name: "Create deck" })).toHaveAttribute("type", "button")
+      expect(Plus).toBeDefined()
     })
   })
 })
