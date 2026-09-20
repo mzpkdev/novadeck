@@ -102,10 +102,9 @@ Parts use short names under an owning recipe:
 </article>
 ```
 
-Input and Textarea frames accept `outlined` (default) or `elevated`. For example, use
+Input, Textarea, and Select frames accept `outlined` (default) or `elevated`. For example, use
 `class="input elevated"` or `class="textarea elevated"`. Inside a `.field`, the control's
-`elevated` class also selects the floating-label and underline treatment. Existing
-`.field.elevated` groups remain supported.
+`elevated` class selects the floating-label and underline treatment.
 
 The Input frame accepts optional `start` and `end` parts. An end Button becomes a joined action, while
 `aria-busy="true"` on the control lets adapters replace the end part with the Input spinner. The

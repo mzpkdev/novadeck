@@ -69,6 +69,18 @@ describe("recipe parity", () => {
       expect(container.querySelector(`.${name}`)).toBeInTheDocument()
   })
 
+  it("derives field treatment only from its control", () => {
+    const { container } = render(
+      <Field.Root>
+        <Field.Label>Name</Field.Label>
+        <Input controlProps={{ placeholder: "Deck name" }} variant="elevated" />
+      </Field.Root>,
+    )
+
+    expect(container.querySelector(".field")).not.toHaveClass("outlined", "elevated")
+    expect(container.querySelector(".field > .input")).toHaveClass("elevated")
+  })
+
   it("styles the navigation recipes", () => {
     const { container } = render(
       <>

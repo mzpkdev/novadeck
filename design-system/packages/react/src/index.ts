@@ -19,7 +19,6 @@ export {
 export type {
   CheckboxProps,
   CheckboxVariant,
-  FieldVariant,
   InputProps,
   InputVariant,
   RadioOption,

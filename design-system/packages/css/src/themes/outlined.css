@@ -324,11 +324,11 @@
     position: relative;
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))) {
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)) {
     --field__outline-background: var(--field__background, var(--color__background));
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(
       > .input > .control:is(:disabled, [readonly]),
       > .textarea > .control:is(:disabled, [readonly]),
       > :is(input.input, select.input, textarea.textarea, .select):is(
@@ -372,8 +372,7 @@
     inset-inline-start: calc(var(--spacing__sm) + 1.125rem + var(--spacing__xs));
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
-    > :is(.input, .textarea, .select) {
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)) > :is(.input, .textarea, .select) {
     background: var(--field__outline-background);
     border-color: var(--color__border-strong);
     box-shadow: var(--shadow__level-1);
@@ -386,11 +385,11 @@
     box-shadow: var(--shadow__level-1);
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+  .field:not(:has(> :is(.input, .textarea, .select).elevated))
     > .input:has(> .control:is(:disabled, [readonly])),
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+  .field:not(:has(> :is(.input, .textarea, .select).elevated))
     > .textarea:has(> .control:is(:disabled, [readonly])),
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+  .field:not(:has(> :is(.input, .textarea, .select).elevated))
     > :is(input.input, select.input, textarea.textarea, .select):is(
       :disabled,
       [readonly]:not(select)
@@ -401,60 +400,56 @@
     background: var(--color__surface-subtle);
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
-    > .input
-    > .control::placeholder,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
-    > .textarea
-    > .control::placeholder,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated)))
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)) > .input > .control::placeholder,
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)) > .textarea > .control::placeholder,
+  .field:not(:has(> :is(.input, .textarea, .select).elevated))
     > :is(input.input, textarea.textarea)::placeholder {
     color: transparent;
     transition: color var(--transition__duration) var(--easing__out-expo);
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within > .label,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):focus-within > .label,
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(
       .input > .control:not(:placeholder-shown)
     )
     > .label,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(
       input.input:not(:placeholder-shown)
     )
     > .label,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(
       .textarea > .control:not(:placeholder-shown)
     )
     > .label,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(
       textarea.textarea:not(:placeholder-shown)
     )
     > .label,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(select.input) > .label,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):has(.select) > .label {
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(select.input) > .label,
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):has(.select) > .label {
     background: var(--field__outline-background);
     font-size: 0.75rem;
     padding-inline: var(--spacing__sm);
     top: 0.375rem;
   }
 
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):focus-within
     > .input
     > .control::placeholder,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):focus-within
     > .textarea
     > .control::placeholder,
-  .field:not(:is(.elevated, :has(> :is(.input, .textarea).elevated))):focus-within
+  .field:not(:has(> :is(.input, .textarea, .select).elevated)):focus-within
     > :is(input.input, textarea.textarea)::placeholder {
     color: var(--color__text-on-accent-subtle);
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) {
+  .field:has(> :is(.input, .textarea, .select).elevated) {
     isolation: isolate;
   }
 
   :is(.input, .textarea).elevated,
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) > :is(.input, .textarea, .select) {
+  .field:has(> :is(.input, .textarea, .select).elevated) > :is(.input, .textarea, .select) {
     background-color: var(--color__surface-muted);
     border-block-start-color: transparent;
     border-inline-color: transparent;
@@ -466,7 +461,7 @@
     z-index: 1;
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated))::after {
+  .field:has(> :is(.input, .textarea, .select).elevated)::after {
     align-self: stretch;
     block-size: 100%;
     border-block-end: 1px solid var(--color__accent);
@@ -487,38 +482,38 @@
     z-index: 0;
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within::after {
+  .field:has(> :is(.input, .textarea, .select).elevated):focus-within::after {
     inline-size: 100%;
     inset-inline-start: 0;
     opacity: 1;
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+  .field:has(> :is(.input, .textarea, .select).elevated):focus-within
     > :is(.input, .textarea, .select) {
     border-block-end-color: transparent;
     box-shadow: var(--shadow__level-1);
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) > .input > .control::placeholder,
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)) > .textarea > .control::placeholder,
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated))
+  .field:has(> :is(.input, .textarea, .select).elevated) > .input > .control::placeholder,
+  .field:has(> :is(.input, .textarea, .select).elevated) > .textarea > .control::placeholder,
+  .field:has(> :is(.input, .textarea, .select).elevated)
     > :is(input.input, textarea.textarea)::placeholder {
     color: transparent;
     transition: color var(--transition__duration) var(--easing__out-expo);
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+  .field:has(> :is(.input, .textarea, .select).elevated):focus-within
     > .input
     > .control::placeholder,
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+  .field:has(> :is(.input, .textarea, .select).elevated):focus-within
     > .textarea
     > .control::placeholder,
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):focus-within
+  .field:has(> :is(.input, .textarea, .select).elevated):focus-within
     > :is(input.input, textarea.textarea)::placeholder {
     color: var(--color__text-on-accent-subtle);
   }
 
-  .field:is(.elevated, :has(> :is(.input, .textarea).elevated)):is(
+  .field:has(> :is(.input, .textarea, .select).elevated):is(
       :focus-within,
       :has(.input > .control:not(:placeholder-shown)),
       :has(input.input:not(:placeholder-shown)),

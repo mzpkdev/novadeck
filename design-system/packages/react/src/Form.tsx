@@ -17,21 +17,14 @@ import { createContext, useContext } from "react"
 import { Portal, type PortalProps } from "./Portal"
 import { cn } from "./utils"
 
-export type FieldVariant = "outlined" | "elevated"
-
-const FieldRoot = ({
-  className,
-  ...props
-}: ComponentProps<typeof ArkField.Root> & { variant?: FieldVariant }) => {
-  const { variant = "outlined", ...rootProps } = props
-  return <ArkField.Root {...rootProps} className={cn("field", variant, className)} />
-}
+const FieldRoot = ({ className, ...props }: ComponentProps<typeof ArkField.Root>) => (
+  <ArkField.Root {...props} className={cn("field", className)} />
+)
 const FieldRootProvider = ({
   className,
-  variant = "outlined",
   ...props
-}: ComponentProps<typeof ArkField.RootProvider> & { variant?: FieldVariant | undefined }) => (
-  <ArkField.RootProvider {...props} className={cn("field", variant, className)} />
+}: ComponentProps<typeof ArkField.RootProvider>) => (
+  <ArkField.RootProvider {...props} className={cn("field", className)} />
 )
 const FieldLabel = ({ className, ...props }: ComponentProps<typeof ArkField.Label>) => (
   <ArkField.Label {...props} className={cn("label", className)} />
@@ -70,7 +63,7 @@ export const Field = {
   Select: FieldSelect,
 }
 
-export type InputVariant = FieldVariant
+export type InputVariant = "outlined" | "elevated"
 export type InputProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> & {
   controlProps?: InputHTMLAttributes<HTMLInputElement>
   end?: ReactNode
@@ -103,7 +96,7 @@ export const Input = ({
   </div>
 )
 
-export type TextareaVariant = FieldVariant
+export type TextareaVariant = InputVariant
 export type TextareaProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> & {
   controlProps?: TextareaHTMLAttributes<HTMLTextAreaElement>
   footer?: ReactNode
