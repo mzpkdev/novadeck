@@ -1,5 +1,5 @@
 import { context, describe, expect, it } from "../../../src/test"
-import { verifyDescription, verifyPullRequest, verifyTitle } from "./verify"
+import { requiredSections, verifyDescription, verifyPullRequest, verifyTitle } from "./verify"
 
 describe("pull request verification", () => {
   context("when the title follows Conventional Commits", () => {
@@ -26,6 +26,15 @@ describe("pull request verification", () => {
         "Add a ## Why heading.",
         "Add a ## Impact heading.",
       ])
+    })
+
+    it("exempts only Dependabot's generated description", () => {
+      expect(requiredSections("dependabot[bot]")).toEqual([])
+      expect(requiredSections("contributor")).toEqual(["What", "Why", "Impact"])
+      expect(verifyPullRequest("build(deps): update Electron", "", [])).toEqual({
+        descriptionErrors: [],
+        titleErrors: [],
+      })
     })
   })
 

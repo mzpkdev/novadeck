@@ -18,6 +18,11 @@ export type Verification = {
   titleErrors: string[]
 }
 
+const descriptionSections = ["What", "Why", "Impact"]
+
+export const requiredSections = (author: string): string[] =>
+  author === "dependabot[bot]" ? [] : descriptionSections
+
 export const verifyTitle = (title: string): string[] => {
   const header = /^([\w-]+)(?:\((.*)\))?(!)?:\s*(.+)$/.exec(title)
 
@@ -35,7 +40,7 @@ export const verifyDescription = (body: string, sections: string[]): string[] =>
 export const verifyPullRequest = (
   title: string,
   body: string,
-  sections = ["What", "Why", "Impact"],
+  sections = descriptionSections,
 ): Verification => {
   return {
     descriptionErrors: verifyDescription(body, sections),

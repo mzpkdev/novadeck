@@ -8,6 +8,9 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Europe/Warsaw"
+    commit-message:
+      prefix: "build"
+      include: "scope"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -16,3 +19,6 @@ updates:
       day: "monday"
       time: "09:30"
       timezone: "Europe/Warsaw"
+    commit-message:
+      prefix: "build"
+      include: "scope"

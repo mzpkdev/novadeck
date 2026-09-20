@@ -1,7 +1,11 @@
-import { verifyPullRequest } from "./verify.ts"
+import { requiredSections, verifyPullRequest } from "./verify.ts"
 
 export const main = (): void => {
-  const result = verifyPullRequest(process.env.PR_TITLE ?? "", process.env.PR_BODY ?? "")
+  const result = verifyPullRequest(
+    process.env.PR_TITLE ?? "",
+    process.env.PR_BODY ?? "",
+    requiredSections(process.env.PR_AUTHOR ?? ""),
+  )
 
   for (const message of result.titleErrors) {
     console.error(`::error title=Invalid pull request title::${message}`)
