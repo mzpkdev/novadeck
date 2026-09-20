@@ -14,7 +14,13 @@ const env = {
   GITHUB_RUN_NUMBER: "30",
 }
 
-const run = (id: number, number: number, status = "in_progress") => ({
+const run = (
+  id: number,
+  number: number,
+  status = "in_progress",
+  conclusion: string | null = status === "completed" ? "success" : null,
+) => ({
+  conclusion,
   id,
   run_number: number,
   status,
@@ -113,6 +119,35 @@ describe("release queue", () => {
     expect(requests).toHaveBeenCalledTimes(2)
   })
 
+  it("finishes pagination when the direct predecessor was deleted", async () => {
+    const requests = vi.fn()
+    server.use(
+      http.get(
+        "https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs",
+        ({ request }) => {
+          requests()
+          const page = Number(new URL(request.url).searchParams.get("page") ?? "1")
+          const runs = page === 1 ? [run(300, 30), run(280, 28, "completed")] : []
+          if (page === 11) return HttpResponse.json({ workflow_runs: runs })
+
+          return HttpResponse.json(
+            { workflow_runs: runs },
+            {
+              headers: {
+                link: `<https://api.github.test/repos/test/consumer/actions/workflows/release.yml/runs?page=${page + 1}>; rel="next"`,
+              },
+            },
+          )
+        },
+      ),
+    )
+
+    const runs = await readWorkflowRuns(env, 300, 30)
+
+    expect(previousRun(runs, 300, 30)).toEqual(run(280, 28, "completed"))
+    expect(requests).toHaveBeenCalledTimes(11)
+  })
+
   context("when workflow runs overlap", () => {
     it("selects the immediately preceding run", () => {
       expect(
@@ -154,22 +189,35 @@ describe("release queue", () => {
     })
 
     it("fails closed when no earlier run is visible", async () => {
-      const pause = vi.fn(async () =>
-        respond([run(290, 29, "completed"), run(300, 30)]),
-      )
       respond([run(300, 30)])
 
-      await waitForTurn(env, pause)
-
-      expect(pause).toHaveBeenCalledOnce()
+      await expect(waitForTurn(env)).rejects.toThrow("refusing to bypass FIFO order")
     })
   })
 
   context("when GitHub reruns an old workflow run", () => {
-    it("rejects the reused run number", async () => {
+    it("allows recovery after newer runs have completed", async () => {
+      respond([run(290, 29, "completed"), run(300, 30), run(310, 31, "completed")])
+
+      await expect(
+        waitForTurn({ ...env, GITHUB_RUN_ATTEMPT: "2" }),
+      ).resolves.toBeUndefined()
+    })
+
+    it("rejects recovery while a newer run is active", async () => {
+      respond([run(290, 29, "completed"), run(300, 30), run(310, 31)])
+
       await expect(waitForTurn({ ...env, GITHUB_RUN_ATTEMPT: "2" })).rejects.toThrow(
-        "reruns are disabled",
+        "newer release run(s) are active",
       )
+    })
+  })
+
+  context("when an earlier release failed", () => {
+    it("fails closed until that run is recovered", async () => {
+      respond([run(290, 29, "completed", "failure"), run(300, 30)])
+
+      await expect(waitForTurn(env)).rejects.toThrow("rerun it successfully first")
     })
   })
 })

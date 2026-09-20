@@ -1,6 +1,7 @@
 type Environment = Record<string, string | undefined>
 
 interface WorkflowRun {
+  conclusion: string | null
   id: number
   run_number: number
   status: string
@@ -35,6 +36,7 @@ const parseRuns = (value: unknown): WorkflowRun[] => {
   return runs.map((run) => {
     if (
       !run ||
+      (run.conclusion !== null && typeof run.conclusion !== "string") ||
       typeof run.id !== "number" ||
       typeof run.run_number !== "number" ||
       typeof run.status !== "string"
@@ -63,7 +65,9 @@ const readPage = async (
     foundPrevious || runs.some((run) => run.run_number === currentNumber - 1)
 
   if (!next || (hasCurrent && hasPrevious)) return runs
-  if (page >= 10) throw new Error("Current release run was not found within 10 API pages.")
+  if (page >= 10 && !hasCurrent) {
+    throw new Error("Current release run was not found within 10 API pages.")
+  }
 
   return [
     ...runs,
@@ -134,10 +138,6 @@ export const waitForTurn = async (
   ) {
     throw new Error("Missing current workflow run identity.")
   }
-  if (currentAttempt !== 1) {
-    throw new Error("Release workflow reruns are disabled because they cannot preserve FIFO order.")
-  }
-
   let previous: WorkflowRun | null = null
   while (!previous) {
     const runs = await readWorkflowRuns(env, currentId, currentNumber)
@@ -148,20 +148,39 @@ export const waitForTurn = async (
       continue
     }
 
+    const newerActive = runs.filter(
+      (run) => run.run_number > currentNumber && run.status !== "completed",
+    )
+    if (currentAttempt > 1 && newerActive.length > 0) {
+      throw new Error(
+        `Cannot rerun while newer release run(s) are active: ${newerActive
+          .map((run) => run.id)
+          .join(", ")}.`,
+      )
+    }
+
     previous = previousRun(runs, currentId, currentNumber)
     if (!previous) {
       if (currentNumber === 1) return
-
-      console.log("No earlier release run is visible; waiting before retrying.")
-      await pause()
-      continue
+      throw new Error("No earlier release run is visible; refusing to bypass FIFO order.")
     }
-    if (previous.status === "completed") return
+    if (previous.status === "completed") {
+      if (previous.conclusion === "success") return
+      throw new Error(
+        `Earlier release run ${previous.id} concluded ${previous.conclusion ?? "without a result"}; rerun it successfully first.`,
+      )
+    }
   }
 
   while (previous.status !== "completed") {
     console.log(`Waiting for earlier release run ${previous.id}.`)
     await pause()
     previous = await readWorkflowRun(env, previous.id)
+  }
+
+  if (previous.conclusion !== "success") {
+    throw new Error(
+      `Earlier release run ${previous.id} concluded ${previous.conclusion ?? "without a result"}; rerun it successfully first.`,
+    )
   }
 }

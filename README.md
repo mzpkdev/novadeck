@@ -72,6 +72,7 @@ tag. Promotion verifies every platform package and checksum, then marks that
 same GitHub Release as the latest stable release. A manual `package` operation
 builds temporary artifacts without creating a release.
 
-Do not use GitHub's **Re-run** controls for the Release workflow. Re-runs reuse
-an old ordering identity and are rejected to preserve FIFO publication. Start a
-new manual workflow run for another package or promotion attempt.
+If a Release workflow fails, later release runs fail closed instead of folding
+multiple commits into one version. Wait for newer runs to finish, then use
+GitHub's **Re-run** control to recover failed runs from oldest to newest. A
+rerun is rejected while any newer release run is still active.
