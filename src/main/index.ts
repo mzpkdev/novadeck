@@ -1,6 +1,6 @@
 import { join } from "node:path"
 
-import { app, BrowserWindow, shell } from "electron"
+import { app, BrowserWindow, session, shell } from "electron"
 
 const appId = "dev.mzpk.novadeck"
 
@@ -22,6 +22,8 @@ const createWindow = (): BrowserWindow => {
 
   window.once("ready-to-show", () => window.show())
 
+  window.webContents.on("will-navigate", (event) => event.preventDefault())
+
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url)
     return { action: "deny" }
@@ -39,6 +41,10 @@ const createWindow = (): BrowserWindow => {
 app.setAppUserModelId(appId)
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionCheckHandler(() => false)
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, respond) =>
+    respond(false),
+  )
   createWindow()
 
   app.on("activate", () => {

@@ -15,6 +15,14 @@ describe("compiled application", () => {
       expect(main).toContain('"../preload/index.mjs"')
     })
 
+    it("blocks renderer navigation and denies permissions by default", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toContain('webContents.on("will-navigate"')
+      expect(main).toContain("setPermissionCheckHandler")
+      expect(main).toContain("setPermissionRequestHandler")
+    })
+
     it("exposes the typed renderer bridge from the preload process", async () => {
       const preload = await read("preload/index.mjs")
 

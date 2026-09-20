@@ -251,6 +251,9 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: promote-stable
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
