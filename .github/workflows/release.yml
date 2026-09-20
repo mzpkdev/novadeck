@@ -42,6 +42,32 @@ jobs:
         id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify Release Baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_tag=""
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              latest_tag="$tag"
+              break
+            fi
+          done < <(git tag --merged HEAD --sort=-version:refname)
+
+          if [[ -z "$latest_tag" ]]; then
+            exit 0
+          fi
+
+          if ! is_draft="$(gh release view "$latest_tag" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            echo "::error::Release $latest_tag is incomplete. Delete any draft release and its tag, then rerun the latest release workflow."
+            exit 1
+          fi
+
+          if [[ "$is_draft" == "true" ]]; then
+            echo "::error::Release $latest_tag is still a draft. Clean up the draft and tag, then rerun the latest release workflow."
+            exit 1
+          fi
+
       - name: Plan Release
         id: plan
         run: |

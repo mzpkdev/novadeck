@@ -81,4 +81,6 @@ workflow if no newer push superseded it. Release-it intentionally does not add
 project-specific rollback logic. If an interrupted run leaves an unpublished
 draft, delete it and its tag with
 `gh release delete vX.Y.Z --cleanup-tag --yes`. If only the tag exists, delete it
-with `git push origin --delete vX.Y.Z`, then rerun the latest workflow.
+with `git push origin --delete vX.Y.Z`, then rerun the latest workflow. Automatic
+runs fail before calculating another version while the latest SemVer tag is
+missing its published release or still has a draft.
