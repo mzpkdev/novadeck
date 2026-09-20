@@ -7,5 +7,27 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
-  args: { children: "Contained content", maxWidth: "48rem", textAlign: "center" },
+  render: (args) => (
+    <div
+      style={{
+        background: "var(--color__accent-subtle)",
+        minHeight: "12rem",
+        paddingBlock: "var(--spacing__xl)",
+      }}
+    >
+      <Container {...args}>
+        <div
+          style={{
+            background: "var(--color__surface)",
+            border: "var(--thickness) solid var(--color__border-subtle)",
+            borderRadius: "var(--roundness)",
+            padding: "var(--spacing__xl)",
+          }}
+        >
+          {args.children}
+        </div>
+      </Container>
+    </div>
+  ),
+  args: { children: "Content constrained to 48rem", maxWidth: "48rem", textAlign: "center" },
 }

@@ -16,7 +16,14 @@ export const Default: Story = {
         <NavigationMenu.Item value="file">
           <NavigationMenu.Trigger>File</NavigationMenu.Trigger>
           <NavigationMenu.Content>
-            <NavigationMenu.Link href="#new">New deck</NavigationMenu.Link>
+            <NavigationMenu.Link href="#new">
+              <strong>New deck</strong>
+              <span>Start a presentation from scratch.</span>
+            </NavigationMenu.Link>
+            <NavigationMenu.Link href="#open">
+              <strong>Open deck</strong>
+              <span>Continue working on an existing deck.</span>
+            </NavigationMenu.Link>
           </NavigationMenu.Content>
         </NavigationMenu.Item>
         <NavigationMenu.Item value="help">

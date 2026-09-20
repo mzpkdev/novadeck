@@ -190,19 +190,19 @@
   }
 
   .field:has(
-      > .input > .control:is(:invalid, [aria-invalid="true"]),
-      > .textarea > .control:is(:invalid, [aria-invalid="true"]),
-      > :is(input.input, select.input, textarea.textarea):is(:invalid, [aria-invalid="true"])
+      > .input > .control:is(:user-invalid, [aria-invalid="true"]),
+      > .textarea > .control:is(:user-invalid, [aria-invalid="true"]),
+      > :is(input.input, select.input, textarea.textarea):is(:user-invalid, [aria-invalid="true"])
     )
     > .label {
     color: var(--color__danger);
   }
 
-  .input:has(> .control:is(:invalid, [aria-invalid="true"])),
-  input.input:is(:invalid, [aria-invalid="true"]),
-  select.input:is(:invalid, [aria-invalid="true"]),
-  .textarea:has(> .control:is(:invalid, [aria-invalid="true"])),
-  textarea.textarea:is(:invalid, [aria-invalid="true"]) {
+  .input:has(> .control:is(:user-invalid, [aria-invalid="true"])),
+  input.input:is(:user-invalid, [aria-invalid="true"]),
+  select.input:is(:user-invalid, [aria-invalid="true"]),
+  .textarea:has(> .control:is(:user-invalid, [aria-invalid="true"])),
+  textarea.textarea:is(:user-invalid, [aria-invalid="true"]) {
     border-color: var(--color__danger);
     box-shadow: inset 0 0 0 1px var(--color__danger);
   }

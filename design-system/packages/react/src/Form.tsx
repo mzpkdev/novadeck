@@ -213,8 +213,8 @@ const RadioItem = ({ className, ...props }: ComponentProps<typeof ArkRadio.Item>
 const RadioItemControl = ({ className, ...props }: ComponentProps<typeof ArkRadio.ItemControl>) => (
   <ArkRadio.ItemControl {...props} className={cn("control", className)} />
 )
-const RadioIndicator = ({ className, ...props }: ComponentProps<typeof ArkRadio.Indicator>) => (
-  <ArkRadio.Indicator {...props} className={cn("indicator", className)} />
+const RadioIndicator = ({ className, ...props }: ComponentProps<"span">) => (
+  <span {...props} className={cn("indicator", className)} />
 )
 const RadioItemText = ({ className, ...props }: ComponentProps<typeof ArkRadio.ItemText>) => (
   <ArkRadio.ItemText {...props} className={cn("text", className)} />

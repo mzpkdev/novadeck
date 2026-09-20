@@ -8,6 +8,11 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
+  render: (args) => (
+    <div style={{ maxWidth: "26rem" }}>
+      <Card {...args} />
+    </div>
+  ),
   args: {
     children: "A shared planning workspace.",
     footer: <Button variant="text">Open</Button>,

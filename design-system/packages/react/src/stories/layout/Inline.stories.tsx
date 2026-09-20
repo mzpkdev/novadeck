@@ -9,9 +9,17 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
   render: () => (
-    <Inline gap="1rem">
-      <Button>Cancel</Button>
-      <Button variant="filled">Save</Button>
-    </Inline>
+    <div
+      style={{
+        background: "var(--color__accent-subtle)",
+        borderRadius: "var(--roundness)",
+        padding: "var(--spacing__md)",
+      }}
+    >
+      <Inline gap="1rem">
+        <Button>Cancel</Button>
+        <Button variant="filled">Save</Button>
+      </Inline>
+    </div>
   ),
 }

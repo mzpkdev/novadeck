@@ -10,7 +10,9 @@ export const Default: Story = {
   render: () => (
     <Grid minWidth="12rem">
       {[1, 2, 3].map((item) => (
-        <Card header={`Card ${item}`} key={item} />
+        <Card key={item} header={`Card ${item}`}>
+          Cards fill each responsive grid column.
+        </Card>
       ))}
     </Grid>
   ),
