@@ -4,17 +4,17 @@ import { appendFileSync, readFileSync } from "node:fs"
 import { latestVersion } from "../version/version.ts"
 import { planRelease } from "./plan.ts"
 
-function git(...args: string[]): string {
-  return execFileSync("git", args, { encoding: "utf8" }).trim()
+function git(args: string[], directory = process.cwd()): string {
+  return execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim()
 }
 
-function readTags(): string[] {
-  return git("tag", "--list").split("\n").filter(Boolean)
+export function readTags(directory = process.cwd()): string[] {
+  return git(["tag", "--merged", "HEAD", "--list"], directory).split("\n").filter(Boolean)
 }
 
 function readMessages(previousTag: string | null): string[] {
   const range = previousTag ? `${previousTag}..HEAD` : "HEAD"
-  const output = git("log", "--format=%B%x00", range)
+  const output = git(["log", "--format=%B%x00", range])
 
   return output.split("\0").map((message) => message.trim()).filter(Boolean)
 }
