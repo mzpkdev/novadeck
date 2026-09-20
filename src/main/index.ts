@@ -2,7 +2,7 @@ import { join } from "node:path"
 
 import { app, BrowserWindow, session, shell } from "electron"
 
-const appId = "dev.mzpk.novadeck"
+const appID = "dev.mzpk.novadeck"
 
 const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
@@ -38,7 +38,7 @@ const createWindow = (): BrowserWindow => {
   return window
 }
 
-app.setAppUserModelId(appId)
+app.setAppUserModelId(appID)
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false)

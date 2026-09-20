@@ -11,7 +11,7 @@ describe("compiled application", () => {
     it("keeps the application identity and preload entry in the main process", async () => {
       const main = await read("main/index.js")
 
-      expect(main).toContain('const appId = "dev.mzpk.novadeck"')
+      expect(main).toContain('const appID = "dev.mzpk.novadeck"')
       expect(main).toContain('"../preload/index.mjs"')
     })
 
