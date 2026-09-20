@@ -1,8 +1,8 @@
 import { HttpResponse, http } from "msw"
 import { vi } from "vitest"
 
-import { server } from "../../../src/renderer/src/test/server"
-import { context, describe, expect, it } from "../../../src/test"
+import { context, describe, expect, it } from "../../test"
+import { server } from "../../test/server"
 import { dispatchReleaseAfterMerge } from "./release"
 
 const env = {

@@ -1,3 +1,10 @@
+packages:
+  - application
+  - design-system
+
+publicHoistPattern:
+  - electron
+
 allowBuilds:
   electron-winstaller: true
   esbuild: true

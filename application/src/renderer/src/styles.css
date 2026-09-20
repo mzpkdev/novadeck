@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../../design-system/src";
 
 :root {
   color: #f4f5f7;

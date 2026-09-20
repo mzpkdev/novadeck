@@ -1,7 +1,7 @@
 # NovaDeck
 
 NovaDeck is a cross-platform desktop application built with Electron, React,
-TypeScript, and Vite.
+TypeScript, Vite, and Turborepo.
 
 ## Requirements
 
@@ -15,11 +15,16 @@ pnpm install
 pnpm dev
 ```
 
-The application is split into three trust boundaries:
+The repository contains two workspace packages:
 
-- `src/main` owns the Electron lifecycle and native capabilities.
-- `src/preload` exposes a narrow, typed API to the renderer.
-- `src/renderer` contains the sandboxed React application.
+- `application` contains the Electron application and consumes the design system.
+- `design-system` contains reusable Ark UI components styled with Tailwind CSS.
+
+The application itself is split into three trust boundaries:
+
+- `application/src/main` owns the Electron lifecycle and native capabilities.
+- `application/src/preload` exposes a narrow, typed API to the renderer.
+- `application/src/renderer` contains the sandboxed React application.
 
 ## Checks
 
@@ -48,7 +53,7 @@ The configured artifacts are:
 - macOS universal: ZIP archive containing the application bundle
 - Windows x64: portable executable
 
-Artifacts are written to `release/`. Builds are intentionally unsigned for now,
+Artifacts are written to `application/release/`. Builds are intentionally unsigned for now,
 so macOS Gatekeeper and Windows SmartScreen may warn when opening them. The
 permanent application ID is `dev.mzpk.novadeck`. Before upload, the release
 workflow launches every packaged application for ten seconds and fails if it

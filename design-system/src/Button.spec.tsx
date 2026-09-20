@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 
-import { context, describe, expect, it } from "../../../test"
 import { Button } from "./Button"
+import { context, describe, expect, it } from "./test"
 
 describe("Button", () => {
   context("when enabled", () => {
