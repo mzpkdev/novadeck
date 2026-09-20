@@ -1,7 +1,7 @@
-import type { NovaDeckAPI } from "../../shared/api"
+import type { NovaDeckApi } from "../../shared/api"
 
 declare global {
   interface Window {
-    novadeck: NovaDeckAPI
+    novadeck: NovaDeckApi
   }
 }

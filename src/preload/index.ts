@@ -1,6 +1,6 @@
 import { contextBridge } from "electron"
 
-import type { NovaDeckAPI } from "../shared/api"
+import type { NovaDeckApi } from "../shared/api"
 
 const api = {
   versions: {
@@ -8,6 +8,6 @@ const api = {
     electron: process.versions.electron ?? "unknown",
     node: process.versions.node,
   },
-} satisfies NovaDeckAPI
+} satisfies NovaDeckApi
 
 contextBridge.exposeInMainWorld("novadeck", api)

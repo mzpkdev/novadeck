@@ -14,11 +14,8 @@ visible, while a new function is often clearer than another level of nesting.
 Prefer `const` and treat values as immutable. Derive a new value instead of
 changing one that other code may hold. Use short, single-word names such as
 `file` or `result` when the context makes them clear, and longer names when it
-doesn't. Keep a leading acronym lowercase in camel case, such as `api` or
-`apiClient`, and capitalize every letter when it follows another word, such as
-`NovaDeckAPI`, `appID`, or `statusURL`. Preserve names owned by external APIs,
-configuration schemas, and serialized data. Precise TypeScript types should
-make inputs, outputs, and errors easy to follow without a trail of casts.
+doesn't. Precise TypeScript types should make inputs, outputs, and errors easy
+to follow without a trail of casts.
 
 Tests should read like accounts of behavior. Write `*.spec.ts` files with
 `describe`, `context`, and `it` to show the situation and its observable result.

@@ -1,4 +1,4 @@
-export type NovaDeckAPI = Readonly<{
+export type NovaDeckApi = Readonly<{
   versions: Readonly<{
     chrome: string
     electron: string
