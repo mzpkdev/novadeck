@@ -98,17 +98,17 @@ jobs:
             os: ubuntu-latest
             target: linux
             files: |
-              application/release/*.AppImage
+              application/host/release/*.AppImage
           - name: macOS
             os: macos-latest
             target: mac
             files: |
-              application/release/*.zip
+              application/host/release/*.zip
           - name: Windows
             os: windows-latest
             target: win
             files: |
-              application/release/*.exe
+              application/host/release/*.exe
     steps:
       - name: Check Out Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,7 +123,7 @@ jobs:
           require-lockfile: true
 
       - name: Set Package Version
-        run: npm --prefix application pkg set "version=${{ needs.prepare.outputs.version }}"
+        run: npm --prefix application/host pkg set "version=${{ needs.prepare.outputs.version }}"
 
       - name: Package Application
         run: pnpm run package:${{ matrix.target }}
@@ -131,7 +131,7 @@ jobs:
       - name: Smoke Test Linux Package
         if: matrix.target == 'linux'
         run: |
-          artifact="$(realpath "$(find application/release -maxdepth 1 -name '*.AppImage' -print -quit)")"
+          artifact="$(realpath "$(find application/host/release -maxdepth 1 -name '*.AppImage' -print -quit)")"
           test -n "$artifact"
           chmod +x "$artifact"
 
@@ -149,7 +149,7 @@ jobs:
       - name: Smoke Test macOS Package
         if: matrix.target == 'mac'
         run: |
-          artifact="$(find application/release -maxdepth 1 -name '*.zip' -print -quit)"
+          artifact="$(find application/host/release -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$artifact"
           smoke_directory="$RUNNER_TEMP/novadeck-smoke"
           mkdir -p "$smoke_directory"
@@ -174,7 +174,7 @@ jobs:
         if: matrix.target == 'win'
         shell: pwsh
         run: |
-          $artifact = Get-ChildItem application/release -Filter *.exe | Select-Object -First 1
+          $artifact = Get-ChildItem application/host/release -Filter *.exe | Select-Object -First 1
           if ($null -eq $artifact) {
             throw "The portable executable was not found."
           }

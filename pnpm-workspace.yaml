@@ -1,5 +1,5 @@
 packages:
-  - application
+  - application/*
   - design-system
 
 publicHoistPattern:
