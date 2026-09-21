@@ -16,9 +16,14 @@ const parseStatus = (value: unknown): ServiceStatus => {
   return { status: value.status }
 }
 
-const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8787/api"
+const configuredApiUrl = (): string =>
+  window.novadeck?.apiUrl || import.meta.env.VITE_API_URL || "/api"
 
-const statusEndpoint = (): string => new URL("status", `${apiUrl.replace(/\/$/, "")}/`).href
+const statusEndpoint = (): string => {
+  const apiUrl = new URL(configuredApiUrl(), globalThis.location.origin).href
+
+  return new URL("status", `${apiUrl.replace(/\/$/, "")}/`).href
+}
 
 export const readStatus = async (endpoint = statusEndpoint()): Promise<ServiceStatus> => {
   const response = await fetch(endpoint)

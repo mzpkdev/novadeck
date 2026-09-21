@@ -11,7 +11,7 @@ export const createApp = (options: AppOptions = {}): Hono => {
   app.use(
     "/api/*",
     cors({
-      origin: [...(options.corsOrigins ?? ["http://127.0.0.1:5173", "null"])],
+      origin: [...(options.corsOrigins ?? ["http://127.0.0.1:5173"])],
     }),
   )
   app.get("/api/status", (context) => context.json({ status: "ready" } as const))

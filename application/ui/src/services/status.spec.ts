@@ -15,6 +15,22 @@ describe("service status", () => {
         status: "ready",
       })
     })
+
+    it("prefers the API URL supplied by the desktop host", async () => {
+      Object.defineProperty(window, "novadeck", {
+        configurable: true,
+        value: { apiUrl: "http://127.0.0.1:43210/api/" },
+      })
+      server.use(
+        http.get("http://127.0.0.1:43210/api/status", () => HttpResponse.json({ status: "ready" })),
+      )
+
+      try {
+        await expect(readStatus()).resolves.toEqual({ status: "ready" })
+      } finally {
+        Reflect.deleteProperty(window, "novadeck")
+      }
+    })
   })
 
   context("when the service returns an invalid response", () => {

@@ -1,10 +1,14 @@
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { startRuntime, type Runtime } from "@novadeck/runtime"
 import { app, BrowserWindow, session, shell } from "electron"
 
+import { apiUrlArgumentPrefix } from "../bridge.js"
+
 const appId = "dev.mzpk.novadeck"
 const developmentOrigin = "http://127.0.0.1:5173"
+const currentDirectory = dirname(fileURLToPath(import.meta.url))
 
 let runtime: Runtime | undefined
 let stopping = false
@@ -23,7 +27,8 @@ const waitFor = async (origin: string, attempts = 100): Promise<void> => {
   return waitFor(origin, attempts - 1)
 }
 
-const createWindow = (): BrowserWindow => {
+const createWindow = (runtimeOrigin: string): BrowserWindow => {
+  const apiUrl = new URL("/api/", runtimeOrigin).href
   const window = new BrowserWindow({
     width: 1120,
     height: 720,
@@ -32,8 +37,10 @@ const createWindow = (): BrowserWindow => {
     show: false,
     backgroundColor: "#090b10",
     webPreferences: {
+      additionalArguments: [`${apiUrlArgumentPrefix}${apiUrl}`],
       contextIsolation: true,
       nodeIntegration: false,
+      preload: join(currentDirectory, "../preload/index.cjs"),
       sandbox: true,
     },
   })
@@ -57,11 +64,14 @@ const createWindow = (): BrowserWindow => {
 }
 
 const launch = async (): Promise<void> => {
-  runtime = await startRuntime()
+  runtime = await startRuntime({
+    port: 0,
+    corsOrigins: app.isPackaged ? ["null"] : [developmentOrigin],
+  })
 
   if (!app.isPackaged) await waitFor(developmentOrigin)
 
-  createWindow()
+  createWindow(runtime.origin)
 }
 
 app.setAppUserModelId(appId)
@@ -79,7 +89,7 @@ app.whenReady().then(() => {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      if (runtime) createWindow()
+      if (runtime) createWindow(runtime.origin)
     }
   })
 })

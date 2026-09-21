@@ -1,6 +1,6 @@
 import type { RuntimeOptions } from "./server.js"
 
-const defaultCorsOrigins = ["http://127.0.0.1:5173", "null"]
+const defaultCorsOrigins = ["http://127.0.0.1:5173"]
 
 const readPort = (value: string | undefined): number => {
   const port = Number(value ?? "8787")

@@ -23,7 +23,7 @@ describe("runtime configuration", () => {
       expect(runtimeOptionsFromEnv({})).toEqual({
         hostname: "127.0.0.1",
         port: 8787,
-        corsOrigins: ["http://127.0.0.1:5173", "null"],
+        corsOrigins: ["http://127.0.0.1:5173"],
       })
     })
   })

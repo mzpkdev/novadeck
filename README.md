@@ -52,6 +52,10 @@ GitHub Pages. `application/runtime/.env` controls `HOST`, `PORT`, and the comma-
 `CORS_ORIGINS` allowlist. Add the static frontend's origin to that allowlist when the packages are
 deployed separately. Local `.env` files are ignored and must not be committed.
 
+The Electron host does not use either package's `.env`. It starts the bundled runtime on an
+available loopback port with desktop-only CORS settings, then exposes only that generated API URL
+to the sandboxed UI through an Electron preload bridge.
+
 ## Checks
 
 ```sh

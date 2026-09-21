@@ -30,10 +30,13 @@ describe("runtime application", () => {
       expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://app.novadeck.test")
     })
 
-    it("allows the packaged Electron frontend by default", async () => {
-      const response = await createApp().request("http://localhost/api/status", {
-        headers: { Origin: "null" },
-      })
+    it("allows the packaged Electron frontend when explicitly configured", async () => {
+      const response = await createApp({ corsOrigins: ["null"] }).request(
+        "http://localhost/api/status",
+        {
+          headers: { Origin: "null" },
+        },
+      )
 
       expect(response.headers.get("Access-Control-Allow-Origin")).toBe("null")
     })
