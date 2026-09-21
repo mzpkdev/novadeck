@@ -60,7 +60,7 @@ export const App = (): React.JSX.Element => {
   return (
     <main
       className="novadeck min-h-screen bg-background font-sans text-text-900 antialiased"
-      data-theme="dark"
+      data-theme="light"
     >
       <div className="grid min-h-screen lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="flex flex-col border-b border-border-subtle bg-surface px-ds-lg py-ds-xl lg:border-r lg:border-b-0">

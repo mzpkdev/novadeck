@@ -12,7 +12,10 @@ describe("NovaDeck shell", () => {
 
       render(<App />)
 
-      expect(screen.getByRole("heading", { name: "NovaDeck" })).toBeInTheDocument()
+      expect(screen.getByRole("heading", { name: "NovaDeck" }).closest("main")).toHaveAttribute(
+        "data-theme",
+        "light",
+      )
       expect(
         await within(screen.getByRole("complementary", { name: "Runtime status" })).findByText(
           "Runtime ready",
