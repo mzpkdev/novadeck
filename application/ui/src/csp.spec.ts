@@ -25,4 +25,18 @@ describe("frontend Content Security Policy", () => {
       )
     })
   })
+
+  context("when the API URL is scheme-relative", () => {
+    it("rejects the build configuration", () => {
+      expect(() => contentSecurityPolicyConnectSources("//api.example.com/api", false)).toThrow(
+        "VITE_API_URL must be an absolute HTTP(S) URL or a relative path",
+      )
+    })
+
+    it("rejects a backslash-form URL", () => {
+      expect(() => contentSecurityPolicyConnectSources("/\\api.example.com/api", false)).toThrow(
+        "VITE_API_URL must be an absolute HTTP(S) URL or a relative path",
+      )
+    })
+  })
 })

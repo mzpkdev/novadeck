@@ -15,4 +15,19 @@ describe("runtime server", () => {
       }
     })
   })
+
+  context("when started on an IPv6 host", () => {
+    it("returns a valid bracketed origin", async () => {
+      const runtime = await startRuntime({ hostname: "::1", port: 0 })
+
+      try {
+        const url = new URL(runtime.origin)
+
+        expect(url.hostname).toBe("[::1]")
+        await expect(fetch(`${runtime.origin}/api/status`)).resolves.toMatchObject({ ok: true })
+      } finally {
+        await runtime.close()
+      }
+    })
+  })
 })

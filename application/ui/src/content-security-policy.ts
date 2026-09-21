@@ -18,7 +18,11 @@ export const contentSecurityPolicyConnectSources = (
 
     if (!(url.protocol === "http:" && url.hostname === "127.0.0.1")) sources.add(url.origin)
   } catch {
-    if (!configuredUrl.startsWith("/") && !configuredUrl.startsWith("./")) {
+    const base = new URL("https://novadeck.invalid")
+    const hasRelativePrefix = configuredUrl.startsWith("/") || configuredUrl.startsWith("./")
+    const isRelativePath = hasRelativePrefix && new URL(configuredUrl, base).origin === base.origin
+
+    if (!isRelativePath) {
       throw new Error("VITE_API_URL must be an absolute HTTP(S) URL or a relative path")
     }
   }

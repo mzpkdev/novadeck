@@ -1,3 +1,5 @@
+import { format } from "node:url"
+
 import { serve, type ServerType } from "@hono/node-server"
 
 import { createApp } from "./app.js"
@@ -36,7 +38,7 @@ export const startRuntime = (options: RuntimeOptions = {}): Promise<Runtime> => 
       (info) => {
         server.off("error", reject)
         resolve({
-          origin: `http://${hostname}:${info.port}`,
+          origin: format({ hostname, port: info.port, protocol: "http" }),
           close: () => close(server),
         })
       },
