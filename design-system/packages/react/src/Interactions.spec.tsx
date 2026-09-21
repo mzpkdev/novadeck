@@ -1,11 +1,69 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
+import { Editable } from "./Editable"
 import { Radio, Select, Slider, Switch } from "./Form"
 import { Menu, TreeView } from "./Navigation"
 import { Dialog } from "./Overlay"
+import { Tabs } from "./Tabs"
 import { describe, expect, it } from "./test"
 
 describe("Ark UI wrapper interactions", () => {
+  it("moves through vertical tabs with the keyboard", async () => {
+    render(
+      <Tabs.Root defaultValue="one" orientation="vertical">
+        <Tabs.List aria-label="Terminals">
+          <Tabs.Trigger value="one">Terminal 1</Tabs.Trigger>
+          <Tabs.Trigger value="two">Terminal 2</Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="one">First terminal</Tabs.Content>
+        <Tabs.Content value="two">Second terminal</Tabs.Content>
+      </Tabs.Root>,
+    )
+
+    const first = screen.getByRole("tab", { name: "Terminal 1" })
+    first.focus()
+    fireEvent.keyDown(first, { key: "ArrowDown" })
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Terminal 2" })).toHaveFocus()
+    })
+    fireEvent.click(screen.getByRole("tab", { name: "Terminal 2" }))
+    await waitFor(() => expect(screen.getByText("Second terminal")).toBeVisible())
+  })
+
+  it("commits and cancels editable values from the keyboard", async () => {
+    let value = "Terminal 1"
+    render(
+      <Editable.Root
+        activationMode="dblclick"
+        defaultValue={value}
+        defaultEdit
+        onValueCommit={(details) => {
+          value = details.value
+        }}
+      >
+        <Editable.Area>
+          <Editable.Preview />
+          <Editable.Input aria-label="Terminal name" />
+        </Editable.Area>
+      </Editable.Root>,
+    )
+
+    const input = screen.getByRole("textbox", { name: "Terminal name" })
+    await act(async () => {
+      fireEvent.input(input, { target: { value: "Build" } })
+    })
+    fireEvent.keyDown(input, { key: "Enter" })
+    await waitFor(() => expect(screen.getByText("Build")).toBeVisible())
+    expect(value).toBe("Build")
+
+    fireEvent.doubleClick(screen.getByText("Build"))
+    const reopened = await screen.findByRole("textbox", { name: "Terminal name" })
+    fireEvent.input(reopened, { target: { value: "Discarded" } })
+    fireEvent.keyDown(reopened, { key: "Escape" })
+    await waitFor(() => expect(screen.getByText("Build")).toBeVisible())
+  })
+
   it("preserves radio and switch state changes", async () => {
     let radioValue: string | null = null
     let switchChecked = false

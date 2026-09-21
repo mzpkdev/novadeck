@@ -1,0 +1,49 @@
+@scope (.novadeck) {
+  .editable > .label {
+    color: var(--color__text-700);
+    display: block;
+    margin-block-end: var(--spacing__2xs);
+  }
+
+  .editable > .area {
+    align-items: center;
+    display: grid;
+    min-inline-size: 0;
+  }
+
+  .editable > .area > :is(.preview, .input) {
+    background: transparent;
+    border: var(--thickness) solid transparent;
+    color: var(--color__text-900);
+    font: inherit;
+    grid-area: 1 / 1;
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: var(--spacing__xs) var(--spacing__sm);
+  }
+
+  .editable > .area > .preview {
+    cursor: text;
+  }
+
+  .editable > .area > .input {
+    border-color: var(--color__accent);
+    outline: 0;
+  }
+
+  .editable > .control {
+    align-items: center;
+    display: flex;
+    gap: var(--spacing__xs);
+    margin-block-start: var(--spacing__xs);
+  }
+
+  .editable > .control > :is(.edit-trigger, .submit-trigger, .cancel-trigger) {
+    background: transparent;
+    border: 0;
+    color: var(--color__accent);
+    cursor: pointer;
+    font: inherit;
+    padding: var(--spacing__2xs) var(--spacing__xs);
+  }
+}

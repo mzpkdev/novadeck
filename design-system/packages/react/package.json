@@ -7,12 +7,14 @@
   "exports": {
     ".": "./src/index.ts",
     "./button": "./src/Button.tsx",
+    "./editable": "./src/Editable.tsx",
     "./form": "./src/Form.tsx",
     "./icons": "./src/icons.ts",
     "./layout": "./src/Layout.tsx",
     "./navigation": "./src/Navigation.tsx",
     "./overlay": "./src/Overlay.tsx",
-    "./portal": "./src/Portal.tsx"
+    "./portal": "./src/Portal.tsx",
+    "./tabs": "./src/Tabs.tsx"
   },
   "scripts": {
     "build": "storybook build --output-dir storybook-static",

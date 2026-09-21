@@ -23,7 +23,7 @@ export default mergeConfig(
       environment: "jsdom",
       server: {
         deps: {
-          inline: [/@ark-ui.*react/, /lucide-react/],
+          inline: [/@ark-ui.*react/, /@zag-js.*react/, /lucide-react/],
         },
       },
       setupFiles: ["./src/test/setup.ts"],

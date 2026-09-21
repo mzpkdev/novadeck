@@ -38,7 +38,9 @@ describe("compiled frontend", () => {
 
       expect(css).toContain("--color__background")
       expect(css).toContain("background-color:var(--color__background)")
-      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.card/)
+      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.field/)
+      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.tabs/)
+      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.editable/)
     })
 
     it("does not rely on an application stylesheet", async () => {

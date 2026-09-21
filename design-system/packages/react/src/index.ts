@@ -1,5 +1,6 @@
 export { Button } from "./Button"
 export type { ButtonLinkProps, ButtonNativeProps, ButtonProps, ButtonVariant } from "./Button"
+export { Editable } from "./Editable"
 export {
   Checkbox,
   CheckboxParts,
@@ -65,5 +66,6 @@ export { Portal } from "./Portal"
 export type { PortalProps } from "./Portal"
 export { ButtonGroup, Link } from "./Primitive"
 export type { ButtonGroupProps, LinkProps } from "./Primitive"
+export { Tabs } from "./Tabs"
 export { cn } from "./utils"
 export type { ClassValue } from "./utils"

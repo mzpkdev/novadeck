@@ -1,274 +1,303 @@
-import { Button, Card, Textarea } from "@novadeck/react"
-import {
-  ArrowUp,
-  Bot,
-  ChevronDown,
-  Command,
-  FileText,
-  MoreHorizontal,
-  Plus,
-  Settings,
-  Sparkles,
-  Terminal,
-  User,
-} from "@novadeck/react/icons"
-import { useEffect, useState } from "react"
+import { Editable, Input, Tabs } from "@novadeck/react"
+import { Terminal } from "@novadeck/react/icons"
+import { type FormEvent, useRef, useState } from "react"
 
-import { readStatus, type ServiceStatus } from "./services/status"
+import { readStatus } from "./services/status"
 
-const conversations = [
-  "Launch narrative",
-  "Q3 review structure",
-  "Research synthesis",
-  "Rewrite opening slide",
-] as const
+type Tone = "accent" | "error" | "muted" | "output" | "success"
+type Line = { id: string; text: string; tone: Tone }
+type TabId = "assistant" | "logs" | "runtime"
+type Session = { id: TabId; lines: Line[]; title: string }
 
-const statusStyles = {
-  connecting: "bg-text-500",
-  ready: "bg-accent",
-  unavailable: "bg-danger",
-} as const satisfies Record<ServiceStatus["status"] | "connecting" | "unavailable", string>
+let nextLineId = 0
+const createLine = (text: string, tone: Tone): Line => ({
+  id: `terminal-line-${nextLineId++}`,
+  text,
+  tone,
+})
+
+const initialLines: Line[] = [
+  createLine("NovaDeck Terminal 0.0.0", "accent"),
+  createLine("Presentation workspace connected to local runtime.", "muted"),
+  createLine("Type `help` to see available commands.", "muted"),
+  createLine("", "output"),
+  createLine('$ novadeck deck create "A calm, privacy-first AI workspace"', "output"),
+  createLine("Analyzing brief...", "muted"),
+  createLine("Building a six-slide narrative...", "muted"),
+  createLine("✓ Wrote ./launch-outline.deck", "success"),
+  createLine("", "output"),
+  createLine("  01  A calmer way to work with AI", "output"),
+  createLine("  02  The cost of noisy, fragmented tools", "output"),
+  createLine("  03  One private workspace for real thinking", "output"),
+  createLine("  04  Control stays with your team", "output"),
+  createLine("  05  From first thought to finished work", "output"),
+  createLine("  06  Do your best work. Keep it yours.", "output"),
+  createLine("", "output"),
+  createLine("Run `novadeck deck build` to generate the presentation.", "muted"),
+]
+
+const initialSessions: Session[] = [
+  { id: "assistant", lines: initialLines, title: "Terminal 1" },
+  {
+    id: "runtime",
+    lines: [
+      createLine("NovaDeck Runtime", "accent"),
+      createLine("Local API process is ready.", "success"),
+      createLine("endpoint  http://127.0.0.1:8787", "output"),
+      createLine("health    /api/status", "muted"),
+    ],
+    title: "Terminal 2",
+  },
+  {
+    id: "logs",
+    lines: [
+      createLine("NovaDeck application logs", "accent"),
+      createLine("15:42:08  ui       connected", "muted"),
+      createLine("15:42:08  runtime  listening on 127.0.0.1:8787", "output"),
+      createLine("15:42:09  deck     loaded launch-outline.deck", "success"),
+    ],
+    title: "Terminal 3",
+  },
+]
+
+const toneStyles = {
+  accent: "text-accent",
+  error: "text-danger",
+  muted: "text-text-500",
+  output: "text-text-900",
+  success: "text-success",
+} as const satisfies Record<Tone, string>
+
+const responseFor = async (command: string): Promise<Line[]> => {
+  const normalized = command.toLowerCase()
+
+  if (normalized === "help") {
+    return [
+      createLine("Commands", "accent"),
+      createLine("  help                  Show this command list", "output"),
+      createLine("  status                Check the local runtime", "output"),
+      createLine("  ls                    List workspace files", "output"),
+      createLine("  pwd                   Print the working directory", "output"),
+      createLine("  novadeck deck build   Build the current deck", "output"),
+      createLine("  clear                 Clear the terminal", "output"),
+    ]
+  }
+
+  if (normalized === "status") {
+    try {
+      const result = await readStatus()
+      return [createLine(`runtime  ${result.status}`, "success")]
+    } catch {
+      return [createLine("runtime  unavailable", "error")]
+    }
+  }
+
+  if (normalized === "ls") return [createLine("launch-outline.deck", "output")]
+  if (normalized === "pwd") return [createLine("/home/novadeck", "output")]
+
+  if (normalized === "novadeck deck build") {
+    return [
+      createLine("Rendering 6 slides...", "muted"),
+      createLine("✓ Built ./dist/privacy-first-ai.deck", "success"),
+    ]
+  }
+
+  return [
+    createLine(`command not found: ${command}`, "error"),
+    createLine("Type `help` for available commands.", "muted"),
+  ]
+}
 
 export const App = (): React.JSX.Element => {
-  const [status, setStatus] = useState<ServiceStatus["status"] | "connecting" | "unavailable">(
-    "connecting",
-  )
+  const [activeTab, setActiveTab] = useState<TabId>("assistant")
+  const [editingTab, setEditingTab] = useState<TabId | null>(null)
+  const [sessions, setSessions] = useState(initialSessions)
+  const renameValue = useRef("")
+  const triggers = useRef<Partial<Record<TabId, HTMLButtonElement>>>({})
+  const activeSession = sessions.find((session) => session.id === activeTab)!
 
-  useEffect(() => {
-    let active = true
-
-    void readStatus().then(
-      (result) => {
-        if (active) setStatus(result.status)
-      },
-      () => {
-        if (active) setStatus("unavailable")
-      },
+  const updateLines = (id: TabId, update: (lines: Line[]) => Line[]): void => {
+    setSessions((current) =>
+      current.map((session) =>
+        session.id === id ? { ...session, lines: update(session.lines) } : session,
+      ),
     )
+  }
 
-    return () => {
-      active = false
+  const renameTab = (id: TabId, value: string): void => {
+    const title = value.trim()
+    if (!title) return
+    setSessions((current) =>
+      current.map((session) => (session.id === id ? { ...session, title } : session)),
+    )
+  }
+
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault()
+
+    const form = event.currentTarget
+    const value = new FormData(form).get("command")
+    const next = typeof value === "string" ? value.trim() : ""
+    if (!next) return
+
+    form.reset()
+
+    if (next.toLowerCase() === "clear") {
+      updateLines(activeTab, () => [])
+      return
     }
-  }, [])
+
+    const sessionId = activeTab
+    updateLines(sessionId, (current) => [
+      ...current,
+      createLine("", "output"),
+      createLine(`~/novadeck $ ${next}`, "output"),
+    ])
+
+    const response = await responseFor(next)
+    updateLines(sessionId, (current) => [...current, ...response])
+  }
 
   return (
-    <main
-      className="novadeck min-h-screen bg-background font-sans text-text-900 antialiased"
-      data-theme="light"
-    >
-      <div className="min-h-screen [display:grid] lg:h-screen lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <aside className="flex items-center gap-ds-md border-b border-border-subtle bg-surface px-ds-md py-ds-sm lg:h-screen lg:flex-col lg:items-stretch lg:border-r lg:border-b-0 lg:px-ds-md lg:py-ds-lg">
-          <div className="flex min-w-0 items-center gap-ds-sm px-ds-xs">
-            <span className="size-8 shrink-0 place-items-center rounded-sm bg-text-900 text-background shadow-level-1 [display:grid]">
-              <Command aria-hidden="true" className="size-4" strokeWidth={2.25} />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tracking-tight">NovaDeck</p>
-              <p className="truncate font-mono text-[0.625rem] text-text-500">assistant / local</p>
-            </div>
-          </div>
+    <div className="novadeck" data-theme="light">
+      <Tabs.Root
+        onValueChange={({ value }) => {
+          setActiveTab(value as TabId)
+          setEditingTab(null)
+        }}
+        orientation="vertical"
+        value={activeTab}
+        asChild
+      >
+        <main
+          className="grid h-svh grid-cols-[7rem_minmax(0,1fr)] overflow-hidden bg-background font-mono text-text-900 antialiased sm:grid-cols-[13rem_minmax(0,1fr)]"
+          data-theme="light"
+        >
+          <aside className="flex min-h-0 flex-col border-r border-border-subtle bg-surface-subtle">
+            <div className="h-11 shrink-0 border-b border-border-subtle" />
 
-          <Button
-            className="ml-auto shrink-0 text-xs lg:mt-ds-lg lg:ml-0"
-            start={<Plus aria-hidden="true" />}
-            variant="filled"
-          >
-            New chat
-          </Button>
+            <nav aria-label="Terminal sessions" className="relative min-h-0 flex-1">
+              <Tabs.List className="pl-ds-2xs pt-ds-xs">
+                {sessions.map(({ id, title }) => (
+                  <Tabs.Trigger
+                    className="h-10 w-full justify-center overflow-hidden px-ds-xs py-0 text-left text-[0.6875rem] leading-none hover:bg-background/60 data-[selected]:bg-background data-[selected]:[box-shadow:inset_2px_0_0_var(--color__accent)] sm:justify-start sm:px-ds-md"
+                    key={id}
+                    onDoubleClick={() => {
+                      renameValue.current = title
+                      setEditingTab(id)
+                    }}
+                    ref={(element) => {
+                      if (element) triggers.current[id] = element
+                      else delete triggers.current[id]
+                    }}
+                    value={id}
+                  >
+                    <span className="truncate">{title}</span>
+                  </Tabs.Trigger>
+                ))}
+              </Tabs.List>
 
-          <nav
-            aria-label="Conversation history"
-            className="mt-ds-lg hidden min-h-0 flex-1 lg:block"
-          >
-            <p className="px-ds-sm font-mono text-[0.625rem] font-semibold tracking-[0.14em] text-text-500 uppercase">
-              Recent
-            </p>
-            <div className="mt-ds-xs space-y-ds-2xs">
-              {conversations.map((conversation, index) => (
-                <Button
-                  aria-current={index === 0 ? "page" : undefined}
-                  className="justify-start overflow-hidden text-left text-xs"
-                  fluid
-                  href={`#conversation-${index + 1}`}
-                  key={conversation}
-                  variant={index === 0 ? "tonal" : "text"}
-                >
-                  <span className="truncate">{conversation}</span>
-                </Button>
-              ))}
-            </div>
-          </nav>
+              {editingTab &&
+                sessions.map((session, index) =>
+                  session.id === editingTab ? (
+                    <Editable.Root
+                      activationMode="none"
+                      className="absolute right-0 left-ds-2xs z-10"
+                      defaultValue={session.title}
+                      defaultEdit
+                      finalFocusEl={() => triggers.current[session.id] ?? null}
+                      key={session.id}
+                      onEditChange={({ edit }) => {
+                        if (!edit) setEditingTab(null)
+                      }}
+                      onValueCommit={() => {
+                        renameTab(session.id, renameValue.current)
+                      }}
+                      style={{ top: `calc(var(--spacing__xs) + ${index * 2.5}rem)` }}
+                      submitMode="enter"
+                    >
+                      <Editable.Area>
+                        <Editable.Input
+                          aria-label={`Rename ${session.title}`}
+                          className="h-10 border-0 bg-background px-ds-xs py-0 text-[0.6875rem] leading-none [box-shadow:inset_2px_0_0_var(--color__accent)] sm:px-ds-md"
+                          onInput={(event) => {
+                            renameValue.current = event.currentTarget.value
+                          }}
+                        />
+                      </Editable.Area>
+                    </Editable.Root>
+                  ) : null,
+                )}
+            </nav>
+          </aside>
 
-          <div className="mt-auto hidden space-y-ds-xs lg:block">
-            <div
-              aria-label="Runtime status"
-              className="flex items-center justify-between border-y border-border-subtle px-ds-sm py-ds-md font-mono text-[0.625rem] text-text-500"
-              role="complementary"
-            >
-              <span className="flex items-center gap-ds-xs">
-                <span className={`size-1.5 rounded-full ${statusStyles[status]}`} />
-                Runtime {status}
-              </span>
-              <span>v0.0</span>
-            </div>
-            <Button
-              className="justify-start text-xs"
-              fluid
-              start={<Settings aria-hidden="true" />}
-              variant="text"
-            >
-              Settings
-            </Button>
-          </div>
-        </aside>
-
-        <section className="flex h-[calc(100svh-4rem)] min-w-0 flex-col lg:h-screen">
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-subtle bg-background/90 px-ds-md backdrop-blur md:px-ds-xl">
-            <Button
-              className="-ml-ds-sm text-sm"
-              end={<ChevronDown aria-hidden="true" />}
-              variant="text"
-            >
-              NovaDeck Assistant
-            </Button>
-            <div className="flex items-center gap-ds-xs">
-              <span className="hidden items-center gap-ds-xs font-mono text-[0.625rem] text-text-500 sm:flex">
-                <span className={`size-1.5 rounded-full ${statusStyles[status]}`} />
-                local runtime
-              </span>
-              <Button aria-label="Conversation options" iconOnly variant="text">
-                <MoreHorizontal aria-hidden="true" />
-              </Button>
-            </div>
-          </header>
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto flex w-full max-w-3xl flex-col px-ds-lg py-ds-2xl md:px-ds-xl">
-              <section
-                className="mb-10 border-b border-border-subtle pb-ds-xl"
-                aria-labelledby="assistant-heading"
-              >
-                <div className="mb-ds-md flex items-center gap-ds-xs font-mono text-[0.625rem] font-semibold tracking-[0.14em] text-accent uppercase">
-                  <Terminal aria-hidden="true" className="size-3.5" />
-                  Session ready
-                </div>
-                <h1
-                  className="text-2xl font-semibold tracking-tight md:text-3xl"
-                  id="assistant-heading"
-                >
-                  NovaDeck Assistant
-                </h1>
-                <p className="mt-ds-sm max-w-xl text-sm leading-6 text-text-500">
-                  Build a presentation by describing the story you want to tell. I’ll shape the
-                  structure, write the slides, and keep the narrative focused.
-                </p>
-              </section>
-
-              <div className="space-y-8" aria-label="Conversation">
-                <article className="flex gap-ds-md" aria-label="You">
-                  <span className="size-7 shrink-0 place-items-center rounded-sm border border-border bg-surface font-mono text-text-500 [display:grid]">
-                    <User aria-hidden="true" className="size-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1 pt-ds-2xs">
-                    <p className="font-mono text-[0.625rem] font-semibold tracking-[0.12em] text-text-500 uppercase">
-                      You
-                    </p>
-                    <p className="mt-ds-xs text-sm leading-6">
-                      Create a concise product launch deck for a calm, privacy-first AI workspace.
-                      Make it feel confident without sounding corporate.
-                    </p>
-                  </div>
-                </article>
-
-                <article className="flex gap-ds-md" aria-label="NovaDeck Assistant">
-                  <span className="size-7 shrink-0 place-items-center rounded-sm bg-text-900 text-background [display:grid]">
-                    <Bot aria-hidden="true" className="size-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1 pt-ds-2xs">
-                    <div className="flex items-center gap-ds-xs">
-                      <p className="font-mono text-[0.625rem] font-semibold tracking-[0.12em] text-text-500 uppercase">
-                        Assistant
-                      </p>
-                      <Sparkles aria-hidden="true" className="size-3 text-accent" />
-                    </div>
-                    <p className="mt-ds-xs text-sm leading-6">
-                      I’d frame it as a quiet alternative to noisy AI tools: one clear idea per
-                      slide, grounded in trust and control. Here’s a six-slide narrative.
-                    </p>
-
-                    <Card
-                      className="mt-ds-lg"
-                      fluid
-                      renderContent={
-                        <div className="font-mono text-xs">
-                          <div className="flex items-center justify-between border-b border-border-subtle bg-surface-subtle px-ds-md py-ds-sm">
-                            <span className="flex items-center gap-ds-xs text-text-500">
-                              <FileText aria-hidden="true" className="size-3.5" />
-                              launch-outline.deck
-                            </span>
-                            <span className="text-[0.625rem] text-text-500">6 slides</span>
-                          </div>
-                          <ol className="space-y-ds-sm p-ds-md">
-                            {[
-                              ["01", "A calmer way to work with AI"],
-                              ["02", "The cost of noisy, fragmented tools"],
-                              ["03", "One private workspace for real thinking"],
-                              ["04", "Control stays with your team"],
-                              ["05", "From first thought to finished work"],
-                              ["06", "Do your best work. Keep it yours."],
-                            ].map(([number, title]) => (
-                              <li className="flex gap-ds-md" key={number}>
-                                <span className="text-accent">{number}</span>
-                                <span className="text-text-700">{title}</span>
-                              </li>
-                            ))}
-                          </ol>
-                          <div className="flex flex-wrap items-center gap-ds-xs border-t border-border-subtle px-ds-md py-ds-sm">
-                            <Button className="text-xs" variant="filled">
-                              Build deck
-                            </Button>
-                            <Button className="text-xs" variant="text">
-                              Refine outline
-                            </Button>
-                          </div>
-                        </div>
-                      }
-                    />
-                  </div>
-                </article>
+          <section className="flex h-full min-w-0 flex-col" aria-labelledby="terminal-title">
+            <header className="relative flex h-11 shrink-0 items-center border-b border-border-subtle bg-surface px-ds-md">
+              <div className="flex items-center gap-ds-xs" aria-hidden="true">
+                <span className="size-2.5 rounded-full bg-warning" />
+                <span className="size-2.5 rounded-full bg-success" />
               </div>
-            </div>
-          </div>
 
-          <div className="shrink-0 border-t border-border-subtle bg-background px-ds-lg py-ds-md md:px-ds-xl">
-            <form className="mx-auto max-w-3xl" onSubmit={(event) => event.preventDefault()}>
-              <Textarea
-                aria-label="Message composer"
-                className="bg-surface shadow-level-2"
+              <h1
+                className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[0.6875rem] font-medium tracking-wide text-text-500"
+                id="terminal-title"
+              >
+                {activeSession.title}
+              </h1>
+            </header>
+
+            {sessions.map((session) => (
+              <Tabs.Content
+                className="min-h-0 flex-1 overflow-y-auto px-ds-md py-ds-lg text-xs leading-6 sm:px-ds-xl sm:py-ds-xl sm:text-[0.8125rem]"
+                key={session.id}
+                value={session.id}
+              >
+                <div aria-live="polite" className="max-w-4xl" role="log">
+                  {session.lines.map((line) => (
+                    <div
+                      className={`min-h-6 whitespace-pre-wrap ${toneStyles[line.tone]}`}
+                      key={line.id}
+                    >
+                      {line.text}
+                    </div>
+                  ))}
+                  <span
+                    aria-hidden="true"
+                    ref={(element) => element?.scrollIntoView?.({ block: "end" })}
+                  />
+                </div>
+              </Tabs.Content>
+            ))}
+
+            <form
+              aria-label="Terminal command"
+              className="shrink-0 border-t border-border-subtle bg-background px-ds-md py-ds-sm sm:px-ds-xl"
+              onSubmit={submit}
+            >
+              <Input
+                className="min-h-0 min-w-0 border-0 bg-transparent p-0 text-xs text-text-900 shadow-none outline-none sm:text-[0.8125rem]"
                 controlProps={{
-                  "aria-label": "Message NovaDeck Assistant",
-                  className: "resize-none",
-                  placeholder: "Describe the deck you want to make…",
-                  rows: 2,
+                  "aria-label": "Terminal input",
+                  autoCapitalize: "off",
+                  autoComplete: "off",
+                  autoCorrect: "off",
+                  autoFocus: true,
+                  className: "caret-accent px-ds-xs py-ds-xs text-text-900",
+                  name: "command",
+                  spellCheck: false,
                 }}
-                footer={
-                  <div className="flex items-center justify-between gap-ds-md">
-                    <span className="font-mono text-[0.625rem] text-text-500">
-                      <span className="text-accent">~/novadeck</span> · local context
-                    </span>
-                    <Button aria-label="Send message" iconOnly type="submit" variant="filled">
-                      <ArrowUp aria-hidden="true" />
-                    </Button>
-                  </div>
+                start={
+                  <span className="inline-flex shrink-0 items-center gap-ds-xs whitespace-nowrap text-[0.6875rem] leading-none sm:text-xs">
+                    <Terminal aria-hidden="true" className="block size-3.5 shrink-0 text-accent" />
+                    <span className="text-accent">~/novadeck/{activeTab}</span>
+                    <span className="text-text-500">$</span>
+                  </span>
                 }
               />
-              <p className="mt-ds-xs text-center font-mono text-[0.625rem] text-text-500">
-                NovaDeck can make mistakes. Review generated slides before presenting.
-              </p>
             </form>
-          </div>
-        </section>
-      </div>
-    </main>
+          </section>
+        </main>
+      </Tabs.Root>
+    </div>
   )
 }

@@ -1,0 +1,56 @@
+@scope (.novadeck) {
+  .tabs :where([data-scope="tabs"][data-part="list"]) {
+    align-items: stretch;
+    display: flex;
+    position: relative;
+  }
+
+  .tabs[data-orientation="vertical"] :where([data-scope="tabs"][data-part="list"]) {
+    flex-direction: column;
+  }
+
+  .tabs :where([data-scope="tabs"][data-part="list"]) > .trigger {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    color: var(--color__text-500);
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    justify-content: center;
+    min-inline-size: 0;
+    padding: var(--spacing__xs) var(--spacing__md);
+    position: relative;
+    transition-duration: var(--transition__duration);
+    transition-property: background-color, color, box-shadow;
+    transition-timing-function: var(--easing__out-expo);
+  }
+
+  .tabs :where([data-scope="tabs"][data-part="list"]) > .trigger:hover:not(:disabled) {
+    background: var(--color__surface-subtle);
+    color: var(--color__text-900);
+  }
+
+  .tabs :where([data-scope="tabs"][data-part="list"]) > .trigger[data-selected] {
+    color: var(--color__text-900);
+  }
+
+  .tabs :where([data-scope="tabs"][data-part="list"]) > .trigger:disabled {
+    cursor: not-allowed;
+    opacity: var(--disabled-opacity);
+  }
+
+  .tabs :where([data-scope="tabs"][data-part="list"]) > .indicator {
+    background: var(--color__accent);
+    block-size: var(--thickness);
+    inset-block-end: 0;
+    position: absolute;
+  }
+
+  .tabs[data-orientation="vertical"] :where([data-scope="tabs"][data-part="list"]) > .indicator {
+    block-size: auto;
+    inline-size: var(--thickness);
+    inset-block: 0 auto;
+    inset-inline-start: 0;
+  }
+}

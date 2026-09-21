@@ -1,11 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 
+import { Editable } from "./Editable"
 import { Checkbox, Field, Input, Radio, Select, Slider, Switch, Textarea } from "./Form"
 import { Card, Column, Columns, Divider, Grid, Hero, Inline, Stack } from "./Layout"
 import { Menu, NavigationMenu, TreeView } from "./Navigation"
 import { Dialog } from "./Overlay"
 import { Portal } from "./Portal"
 import { ButtonGroup, Link } from "./Primitive"
+import { Tabs } from "./Tabs"
 import { describe, expect, it } from "./test"
 
 describe("recipe parity", () => {
@@ -99,11 +101,25 @@ describe("recipe parity", () => {
             </NavigationMenu.Item>
           </NavigationMenu.List>
         </NavigationMenu.Root>
+        <Tabs.Root defaultValue="one">
+          <Tabs.List>
+            <Tabs.Trigger value="one">One</Tabs.Trigger>
+          </Tabs.List>
+          <Tabs.Content value="one">Panel</Tabs.Content>
+        </Tabs.Root>
+        <Editable.Root defaultValue="Terminal 1">
+          <Editable.Area>
+            <Editable.Preview />
+            <Editable.Input />
+          </Editable.Area>
+        </Editable.Root>
       </>,
     )
 
     expect(container.querySelector(".menu-positioner")).toBeInTheDocument()
     expect(container.querySelector(".navigation-menu")).toBeInTheDocument()
+    expect(container.querySelector(".tabs > .list > .trigger")).toBeInTheDocument()
+    expect(container.querySelector(".editable > .area > .input")).toBeInTheDocument()
   })
 
   it("carries the design-system theme into portals", async () => {
