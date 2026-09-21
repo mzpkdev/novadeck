@@ -1,6 +1,5 @@
-import { Input } from "@novadeck/react/field"
+import { Input, Tabs } from "@novadeck/react"
 import { Terminal } from "@novadeck/react/icons"
-import { Tabs } from "@novadeck/react/tabs"
 import { type FormEvent, useState } from "react"
 
 import {

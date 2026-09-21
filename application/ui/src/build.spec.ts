@@ -38,12 +38,21 @@ describe("compiled frontend", () => {
 
       expect(css).toContain("--color__background")
       expect(css).toContain("background-color:var(--color__background)")
+      expect(css).toContain("background-color:var(--color__amber-500)")
+      expect(css).toContain("background-color:var(--color__green-700)")
+      expect(css).toContain("color:var(--color__green-700)")
       for (const recipe of ["editable", "field", "tabs"]) {
         const marker = new RegExp(
           `@layer novadeck\\.recipes\\{@scope\\(\\.novadeck\\)\\{\\.${recipe}`,
           "g",
         )
         expect(css.match(marker)).toHaveLength(1)
+      }
+      for (const recipe of ["button", "checkbox", "dialog", "tree-view"]) {
+        const marker = new RegExp(
+          `@layer novadeck\\.recipes\\{@scope\\(\\.novadeck\\)\\{\\.${recipe}`,
+        )
+        expect(css).not.toMatch(marker)
       }
     })
 

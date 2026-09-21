@@ -1,6 +1,5 @@
-import { Editable } from "@novadeck/react/editable"
+import { Editable, Tabs } from "@novadeck/react"
 import { Pencil, X } from "@novadeck/react/icons"
-import { Tabs } from "@novadeck/react/tabs"
 import { useRef, useState } from "react"
 
 import type { Session, TabId } from "./terminal"

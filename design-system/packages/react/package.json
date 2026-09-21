@@ -4,6 +4,7 @@
   "private": true,
   "description": "React components for the NovaDeck design system",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./button": "./src/Button.tsx",

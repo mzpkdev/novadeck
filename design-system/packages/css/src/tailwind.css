@@ -31,6 +31,8 @@
   --color-accent-hover: var(--color__accent-hover);
   --color-accent-focus: var(--color__accent-focus);
   --color-danger: var(--color__danger);
+  --color-success: var(--color__green-700);
+  --color-warning: var(--color__amber-500);
   --color-on-accent: var(--color__on-accent);
   --color-on-accent-muted: var(--color__on-accent-muted);
   --color-text-on-accent-subtle: var(--color__text-on-accent-subtle);
