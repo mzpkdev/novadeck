@@ -1,3 +1,11 @@
+import "@novadeck/css/tailwind/card.css"
+import "@novadeck/css/tailwind/columns.css"
+import "@novadeck/css/tailwind/container.css"
+import "@novadeck/css/tailwind/divider.css"
+import "@novadeck/css/tailwind/grid.css"
+import "@novadeck/css/tailwind/hero.css"
+import "@novadeck/css/tailwind/inline.css"
+import "@novadeck/css/tailwind/stack.css"
 import {
   createElement,
   type AnchorHTMLAttributes,

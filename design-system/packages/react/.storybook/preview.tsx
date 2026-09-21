@@ -1,7 +1,7 @@
 import { withThemeByDataAttribute } from "@storybook/addon-themes"
 import type { Preview, ReactRenderer } from "@storybook/react-vite"
 
-import "@novadeck/css/styles.css"
+import "@novadeck/css/theme.css"
 
 const preview: Preview = {
   decorators: [

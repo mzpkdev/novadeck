@@ -1,10 +1,9 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
+import "@fontsource-variable/geist/wght.css"
+import "@fontsource-variable/geist-mono/wght.css"
 import "@novadeck/css/tailwind.css"
-import "@novadeck/css/tailwind/editable.css"
-import "@novadeck/css/tailwind/field.css"
-import "@novadeck/css/tailwind/tabs.css"
 
 import { App } from "./App"
 

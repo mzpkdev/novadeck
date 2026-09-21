@@ -1,3 +1,7 @@
+import "@novadeck/css/tailwind/button.css"
+import "@novadeck/css/tailwind/menu.css"
+import "@novadeck/css/tailwind/navigation-menu.css"
+import "@novadeck/css/tailwind/tree-view.css"
 import { Menu as ArkMenu } from "@ark-ui/react/menu"
 import { NavigationMenu as ArkNavigationMenu } from "@ark-ui/react/navigation-menu"
 import { TreeView as ArkTreeView, createTreeCollection } from "@ark-ui/react/tree-view"

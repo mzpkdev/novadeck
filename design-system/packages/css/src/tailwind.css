@@ -3,6 +3,7 @@
 @import "tailwindcss";
 @import "./tokens.css" layer(novadeck.tokens);
 @import "./base.css";
+@import "./themes/outlined.css" layer(novadeck.theme);
 @import "./themes/dark.css" layer(novadeck.theme);
 
 @theme inline {
@@ -34,8 +35,8 @@
   --color-on-accent-muted: var(--color__on-accent-muted);
   --color-text-on-accent-subtle: var(--color__text-on-accent-subtle);
 
-  --font-sans: var(--font-family__display);
-  --font-mono: var(--font-family__monospace);
+  --font-sans: "Geist Variable", var(--font-family__display);
+  --font-mono: "Geist Mono Variable", var(--font-family__monospace);
 
   --spacing-ds-2xs: var(--spacing__2xs);
   --spacing-ds-xs: var(--spacing__xs);

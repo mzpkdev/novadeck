@@ -1,3 +1,5 @@
+import "@novadeck/css/tailwind/button.css"
+import "@novadeck/css/tailwind/dialog.css"
 import { Dialog as ArkDialog } from "@ark-ui/react/dialog"
 import { X } from "lucide-react"
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react"

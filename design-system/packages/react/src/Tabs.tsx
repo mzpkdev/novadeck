@@ -1,3 +1,4 @@
+import "@novadeck/css/tailwind/tabs.css"
 import { Tabs as ArkTabs } from "@ark-ui/react/tabs"
 import type { ComponentProps, ComponentType } from "react"
 

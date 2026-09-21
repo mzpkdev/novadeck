@@ -1,3 +1,4 @@
+import "@novadeck/css/tailwind/button.css"
 import { ark, type HTMLArkProps } from "@ark-ui/react/factory"
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react"
 

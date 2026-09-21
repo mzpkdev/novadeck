@@ -38,9 +38,13 @@ describe("compiled frontend", () => {
 
       expect(css).toContain("--color__background")
       expect(css).toContain("background-color:var(--color__background)")
-      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.field/)
-      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.tabs/)
-      expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.editable/)
+      for (const recipe of ["editable", "field", "tabs"]) {
+        const marker = new RegExp(
+          `@layer novadeck\\.recipes\\{@scope\\(\\.novadeck\\)\\{\\.${recipe}`,
+          "g",
+        )
+        expect(css.match(marker)).toHaveLength(1)
+      }
     })
 
     it("does not rely on an application stylesheet", async () => {

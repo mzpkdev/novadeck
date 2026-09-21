@@ -41,7 +41,16 @@ describe("NovaDeck terminal", () => {
         within(screen.getByRole("tabpanel", { name: "Terminal 2" })).getByRole("log"),
       ).toBeInTheDocument()
 
-      fireEvent.doubleClick(screen.getByRole("tab", { name: "Terminal 2" }))
+      fireEvent.click(runtimeTab.querySelector("[data-close-trigger]")!)
+      expect(screen.getByRole("tab", { name: "Terminal 2" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      expect(screen.queryByRole("textbox", { name: "Rename Terminal 2" })).not.toBeInTheDocument()
+
+      fireEvent.click(
+        screen.getByRole("tab", { name: "Terminal 2" }).querySelector("[data-rename-trigger]")!,
+      )
       const editor = screen.getByRole("textbox", { name: "Rename Terminal 2" })
       fireEvent.input(editor, { target: { value: "Runtime shell" } })
       fireEvent.keyDown(editor, { key: "Enter" })

@@ -1,16 +1,19 @@
 # CSS API
 
-`@novadeck/css` is a framework-independent class and custom-property contract. Import its public stylesheet with `@import "@novadeck/css/styles.css";`.
+`@novadeck/css` is a framework-independent class and custom-property contract. Import its complete
+public stylesheet with `@import "@novadeck/css/styles.css";` when using recipe classes directly.
 
 Tailwind 4 consumers can import `@novadeck/css/tailwind.css` instead. That entry loads Tailwind,
-the NovaDeck tokens and base styles, and the dark-theme token overrides. Import only the component
-recipes the application renders so unused recipes stay out of its stylesheet:
+the NovaDeck tokens and base styles, and the outlined and dark themes. `@novadeck/react` components
+load their own recipe entry points, so React applications import only the shared adapter:
 
 ```ts
 import "@novadeck/css/tailwind.css"
-import "@novadeck/css/tailwind/button.css"
-import "@novadeck/css/tailwind/card.css"
 ```
+
+Non-React Tailwind consumers can import individual `@novadeck/css/tailwind/*.css` recipe entries
+alongside the adapter. Consumers that do not need Tailwind can combine `@novadeck/css/theme.css`
+with component-owned recipes.
 
 The Tailwind-specific recipe entry points place each recipe in the `novadeck.recipes` layer. The
 adapter declares the shared cascade order up front, with Tailwind utilities last, so utilities can

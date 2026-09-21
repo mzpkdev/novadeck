@@ -1,3 +1,4 @@
+import "@novadeck/css/tailwind/editable.css"
 import { Editable as ArkEditable, useEditableContext } from "@ark-ui/react/editable"
 import type { ComponentProps, ComponentType } from "react"
 
