@@ -16,7 +16,6 @@
   "dependencies": {
     "@novadeck/css": "link:../../design-system/packages/css",
     "@novadeck/react": "link:../../design-system/packages/react",
-    "lucide-react": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

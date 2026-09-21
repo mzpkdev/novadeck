@@ -12,7 +12,7 @@ import {
   Settings,
   Sparkles,
   Users,
-} from "lucide-react"
+} from "@novadeck/react/icons"
 import { useEffect, useState } from "react"
 
 import { readStatus, type ServiceStatus } from "./services/status"
