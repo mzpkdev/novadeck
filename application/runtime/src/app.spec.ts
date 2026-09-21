@@ -19,6 +19,26 @@ describe("runtime application", () => {
     })
   })
 
+  context("when called from an allowed frontend", () => {
+    it("returns CORS headers for API requests", async () => {
+      const response = await createApp({
+        corsOrigins: ["https://app.novadeck.test"],
+      }).request("http://localhost/api/status", {
+        headers: { Origin: "https://app.novadeck.test" },
+      })
+
+      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://app.novadeck.test")
+    })
+
+    it("allows the packaged Electron frontend by default", async () => {
+      const response = await createApp().request("http://localhost/api/status", {
+        headers: { Origin: "null" },
+      })
+
+      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("null")
+    })
+  })
+
   context("when a frontend route is requested", () => {
     it("leaves frontend delivery to its host", async () => {
       const response = await createApp().request("http://localhost/")

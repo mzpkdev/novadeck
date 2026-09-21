@@ -38,8 +38,19 @@ Run the browser-hosted application without Electron with:
 pnpm dev:web
 ```
 
-The UI is then available at `http://127.0.0.1:5173`, with API requests proxied to the runtime at
-`http://127.0.0.1:8787`.
+The UI is then available at `http://127.0.0.1:5173` and calls the runtime directly. Copy each
+package's environment template before changing its local configuration:
+
+```sh
+cp application/ui/example.env application/ui/.env
+cp application/runtime/example.env application/runtime/.env
+```
+
+`application/ui/.env` sets the API base URL through `VITE_API_URL`. Because Vite embeds this value
+at build time, set it to the public HTTPS API URL when deploying the UI to a static host such as
+GitHub Pages. `application/runtime/.env` controls `HOST`, `PORT`, and the comma-separated
+`CORS_ORIGINS` allowlist. Add the static frontend's origin to that allowlist when the packages are
+deployed separately. Local `.env` files are ignored and must not be committed.
 
 ## Checks
 

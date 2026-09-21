@@ -3,6 +3,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["VITE_API_URL"],
       "outputs": ["dist/**", "out/**", "packages/react/storybook-static/**"]
     },
     "dev": {
@@ -11,6 +12,7 @@
     },
     "test": {
       "dependsOn": ["^test"],
+      "env": ["VITE_API_URL"],
       "outputs": []
     },
     "typecheck": {

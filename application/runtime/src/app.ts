@@ -1,8 +1,19 @@
 import { Hono } from "hono"
+import { cors } from "hono/cors"
 
-export const createApp = (): Hono => {
+export type AppOptions = Readonly<{
+  corsOrigins?: readonly string[]
+}>
+
+export const createApp = (options: AppOptions = {}): Hono => {
   const app = new Hono()
 
+  app.use(
+    "/api/*",
+    cors({
+      origin: [...(options.corsOrigins ?? ["http://127.0.0.1:5173", "null"])],
+    }),
+  )
   app.get("/api/status", (context) => context.json({ status: "ready" } as const))
   app.all("/api/*", (context) => context.notFound())
 

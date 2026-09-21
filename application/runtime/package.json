@@ -5,15 +5,15 @@
   "description": "The NovaDeck Hono backend.",
   "author": "mzpkdev",
   "type": "module",
-  "main": "./dist/cli.js",
+  "main": "./dist/index.js",
   "exports": {
     ".": "./src/server.ts",
     "./app": "./src/app.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/cli.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/cli.js",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json"

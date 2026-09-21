@@ -16,12 +16,9 @@ const parseStatus = (value: unknown): ServiceStatus => {
   return { status: value.status }
 }
 
-const statusEndpoint = (): string => {
-  const runtime = new URLSearchParams(globalThis.location.search).get("runtime")
-  const origin = runtime ?? globalThis.location.origin
+const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8787/api"
 
-  return new URL("/api/status", origin).href
-}
+const statusEndpoint = (): string => new URL("status", `${apiUrl.replace(/\/$/, "")}/`).href
 
 export const readStatus = async (endpoint = statusEndpoint()): Promise<ServiceStatus> => {
   const response = await fetch(endpoint)

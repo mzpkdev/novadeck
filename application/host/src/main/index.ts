@@ -23,7 +23,7 @@ const waitFor = async (origin: string, attempts = 100): Promise<void> => {
   return waitFor(origin, attempts - 1)
 }
 
-const createWindow = (runtimeOrigin: string): BrowserWindow => {
+const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1120,
     height: 720,
@@ -48,9 +48,7 @@ const createWindow = (runtimeOrigin: string): BrowserWindow => {
   })
 
   if (app.isPackaged) {
-    void window.loadFile(join(process.resourcesPath, "ui", "index.html"), {
-      query: { runtime: runtimeOrigin },
-    })
+    void window.loadFile(join(process.resourcesPath, "ui", "index.html"))
   } else {
     void window.loadURL(developmentOrigin)
   }
@@ -59,13 +57,11 @@ const createWindow = (runtimeOrigin: string): BrowserWindow => {
 }
 
 const launch = async (): Promise<void> => {
-  const options = app.isPackaged ? { port: 0 } : { port: 8787 }
-
-  runtime = await startRuntime(options)
+  runtime = await startRuntime()
 
   if (!app.isPackaged) await waitFor(developmentOrigin)
 
-  createWindow(runtime.origin)
+  createWindow()
 }
 
 app.setAppUserModelId(appId)
@@ -83,7 +79,7 @@ app.whenReady().then(() => {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      if (runtime) createWindow(runtime.origin)
+      if (runtime) createWindow()
     }
   })
 })
