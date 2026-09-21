@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client"
 
 import "@fontsource-variable/geist/wght.css"
 import "@fontsource-variable/geist-mono/wght.css"
-import "@novadeck/css/tailwind.css"
+import "tailwindcss/index.css"
 
 import { App } from "./App"
 

@@ -1,5 +1,5 @@
-import { Input, Tabs } from "@novadeck/react"
-import { Terminal } from "@novadeck/react/icons"
+import { Tabs } from "@ark-ui/react/tabs"
+import { Terminal } from "lucide-react"
 import { type FormEvent, useState } from "react"
 
 import {
@@ -13,11 +13,11 @@ import {
 import { TerminalTabs } from "./TerminalTabs"
 
 const toneStyles = {
-  accent: "text-accent",
-  error: "text-danger",
-  muted: "text-text-500",
-  output: "text-text-900",
-  success: "text-success",
+  accent: "text-cyan-700",
+  error: "text-red-700",
+  muted: "text-zinc-500",
+  output: "text-zinc-900",
+  success: "text-emerald-700",
 } as const satisfies Record<Tone, string>
 
 export const App = (): React.JSX.Element => {
@@ -68,86 +68,76 @@ export const App = (): React.JSX.Element => {
   }
 
   return (
-    <div className="novadeck" data-theme="light">
-      <Tabs.Root
-        onValueChange={({ value }) => setActiveTab(value as TabId)}
-        orientation="vertical"
-        value={activeTab}
-        asChild
+    <Tabs.Root
+      onValueChange={({ value }) => setActiveTab(value as TabId)}
+      orientation="vertical"
+      value={activeTab}
+      asChild
+    >
+      <main
+        className="grid h-svh grid-cols-[7rem_minmax(0,1fr)] overflow-hidden bg-white font-['Geist_Variable',ui-sans-serif,sans-serif] text-zinc-900 antialiased sm:grid-cols-[13rem_minmax(0,1fr)]"
+        data-theme="light"
       >
-        <main
-          className="grid h-svh grid-cols-[7rem_minmax(0,1fr)] overflow-hidden bg-background font-sans text-text-900 antialiased sm:grid-cols-[13rem_minmax(0,1fr)]"
-          data-theme="light"
-        >
-          <TerminalTabs onRename={renameTab} sessions={sessions} />
+        <TerminalTabs onRename={renameTab} sessions={sessions} />
 
-          <section className="flex h-full min-w-0 flex-col" aria-labelledby="terminal-title">
-            <header className="relative flex h-11 shrink-0 items-center border-b border-border-subtle bg-surface px-ds-md">
-              <div className="flex items-center gap-ds-xs" aria-hidden="true">
-                <span className="size-2.5 rounded-full bg-warning" />
-                <span className="size-2.5 rounded-full bg-success" />
-              </div>
-
-              <h1
-                className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[0.6875rem] font-medium tracking-wide text-text-500"
-                id="terminal-title"
-              >
-                {activeSession.title}
-              </h1>
-            </header>
-
-            {sessions.map((session) => (
-              <Tabs.Content
-                className="min-h-0 flex-1 overflow-y-auto px-ds-md py-ds-lg font-mono text-xs leading-6 sm:px-ds-xl sm:py-ds-xl sm:text-[0.8125rem]"
-                key={session.id}
-                value={session.id}
-              >
-                <div aria-live="polite" className="max-w-4xl" role="log">
-                  {session.lines.map((line) => (
-                    <div
-                      className={`min-h-6 whitespace-pre-wrap ${toneStyles[line.tone]}`}
-                      key={line.id}
-                    >
-                      {line.text}
-                    </div>
-                  ))}
-                  <span
-                    aria-hidden="true"
-                    ref={(element) => element?.scrollIntoView?.({ block: "end" })}
-                  />
-                </div>
-              </Tabs.Content>
-            ))}
-
-            <form
-              aria-label="Terminal command"
-              className="shrink-0 border-t border-border-subtle bg-background px-ds-md py-ds-sm font-mono sm:px-ds-xl"
-              onSubmit={submit}
+        <section className="flex h-full min-w-0 flex-col" aria-labelledby="terminal-title">
+          <header className="relative flex h-11 shrink-0 items-center border-b border-zinc-200 bg-white px-4">
+            <h1
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[0.6875rem] font-medium tracking-wide text-zinc-500"
+              id="terminal-title"
             >
-              <Input
-                className="min-h-0 min-w-0 border-0 bg-transparent p-0 text-xs text-text-900 shadow-none outline-none sm:text-[0.8125rem]"
-                controlProps={{
-                  "aria-label": "Terminal input",
-                  autoCapitalize: "off",
-                  autoComplete: "off",
-                  autoCorrect: "off",
-                  autoFocus: true,
-                  className: "caret-accent px-ds-xs py-ds-xs text-text-900",
-                  name: "command",
-                  spellCheck: false,
-                }}
-                start={
-                  <span className="inline-flex shrink-0 items-center gap-ds-xs whitespace-nowrap text-[0.6875rem] leading-none sm:text-xs">
-                    <Terminal aria-hidden="true" className="block size-3.5 shrink-0 text-accent" />
-                    <span className="text-accent">~/novadeck/{activeTab}</span>
-                    <span className="text-text-500">$</span>
-                  </span>
-                }
+              {activeSession.title}
+            </h1>
+          </header>
+
+          {sessions.map((session) => (
+            <Tabs.Content
+              className="min-h-0 flex-1 overflow-y-auto px-4 py-6 font-['Geist_Mono_Variable',ui-monospace,monospace] text-xs leading-6 outline-none sm:px-8 sm:py-8 sm:text-[0.8125rem]"
+              key={session.id}
+              value={session.id}
+            >
+              <div aria-live="polite" className="max-w-4xl" role="log">
+                {session.lines.map((line) => (
+                  <div
+                    className={`min-h-6 whitespace-pre-wrap ${toneStyles[line.tone]}`}
+                    key={line.id}
+                  >
+                    {line.text}
+                  </div>
+                ))}
+                <span
+                  aria-hidden="true"
+                  ref={(element) => element?.scrollIntoView?.({ block: "end" })}
+                />
+              </div>
+            </Tabs.Content>
+          ))}
+
+          <form
+            aria-label="Terminal command"
+            className="shrink-0 border-t border-zinc-200 bg-white px-4 py-2 font-['Geist_Mono_Variable',ui-monospace,monospace] sm:px-8"
+            onSubmit={submit}
+          >
+            <div className="flex min-w-0 items-center gap-2 text-xs sm:text-[0.8125rem]">
+              <span className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-[0.6875rem] leading-none sm:text-xs">
+                <Terminal aria-hidden="true" className="block size-3.5 shrink-0 text-cyan-700" />
+                <span className="text-cyan-700">~/novadeck/{activeTab}</span>
+                <span className="text-zinc-500">$</span>
+              </span>
+              <input
+                aria-label="Terminal input"
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                autoFocus
+                className="min-w-0 flex-1 border-0 bg-transparent px-2 py-2 text-zinc-900 caret-cyan-700 outline-none"
+                name="command"
+                spellCheck={false}
               />
-            </form>
-          </section>
-        </main>
-      </Tabs.Root>
-    </div>
+            </div>
+          </form>
+        </section>
+      </main>
+    </Tabs.Root>
   )
 }

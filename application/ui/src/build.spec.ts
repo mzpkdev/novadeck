@@ -28,7 +28,7 @@ describe("compiled frontend", () => {
       expect(html).not.toContain("ws:")
     })
 
-    it("compiles Tailwind utilities against the design-system tokens", async () => {
+    it("compiles Tailwind utilities without design-system recipes", async () => {
       const assets = await readdir(join(output, "assets"))
       const stylesheet = assets.find((asset) => asset.endsWith(".css"))
 
@@ -36,24 +36,10 @@ describe("compiled frontend", () => {
 
       const css = await read(`assets/${stylesheet}`)
 
-      expect(css).toContain("--color__background")
-      expect(css).toContain("background-color:var(--color__background)")
-      expect(css).toContain("background-color:var(--color__amber-500)")
-      expect(css).toContain("background-color:var(--color__green-700)")
-      expect(css).toContain("color:var(--color__green-700)")
-      for (const recipe of ["editable", "field", "tabs"]) {
-        const marker = new RegExp(
-          `@layer novadeck\\.recipes\\{@scope\\(\\.novadeck\\)\\{\\.${recipe}`,
-          "g",
-        )
-        expect(css.match(marker)).toHaveLength(1)
-      }
-      for (const recipe of ["button", "checkbox", "dialog", "tree-view"]) {
-        const marker = new RegExp(
-          `@layer novadeck\\.recipes\\{@scope\\(\\.novadeck\\)\\{\\.${recipe}`,
-        )
-        expect(css).not.toMatch(marker)
-      }
+      expect(css).toContain("background-color:var(--color-white)")
+      expect(css).toContain("border-color:var(--color-zinc-200)")
+      expect(css).not.toContain("novadeck.recipes")
+      expect(css).not.toContain("--color__")
     })
 
     it("does not rely on an application stylesheet", async () => {

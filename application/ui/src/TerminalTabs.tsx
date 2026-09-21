@@ -1,5 +1,6 @@
-import { Editable, Tabs } from "@novadeck/react"
-import { Pencil, X } from "@novadeck/react/icons"
+import { Editable } from "@ark-ui/react/editable"
+import { Tabs } from "@ark-ui/react/tabs"
+import { Pencil, X } from "lucide-react"
 import { useRef, useState } from "react"
 
 import type { Session, TabId } from "./terminal"
@@ -20,93 +21,89 @@ export const TerminalTabs = ({ onRename, sessions }: TerminalTabsProps): React.J
   }
 
   return (
-    <aside className="flex min-h-0 flex-col border-r border-border-subtle bg-surface-subtle">
-      <div className="h-11 shrink-0 border-b border-border-subtle" />
+    <aside className="flex min-h-0 flex-col border-r border-zinc-200 bg-zinc-50">
+      <div className="h-11 shrink-0 border-b border-zinc-200" />
 
-      <nav aria-label="Terminal sessions" className="relative min-h-0 flex-1">
-        <Tabs.List className="pl-ds-2xs pt-ds-xs">
+      <nav aria-label="Terminal sessions" className="min-h-0 flex-1">
+        <Tabs.List className="pt-2 pl-1">
           {sessions.map(({ id, title }) => (
-            <Tabs.Trigger
-              aria-description="Press F2 to rename"
-              aria-keyshortcuts="F2"
-              className="group h-10 w-full justify-center overflow-hidden px-ds-xs py-0 text-left text-[0.6875rem] leading-none hover:bg-background/60 data-[selected]:bg-background data-[selected]:[box-shadow:inset_2px_0_0_var(--color__accent)] sm:justify-start sm:px-ds-md"
-              key={id}
-              onKeyDown={(event) => {
-                if (event.key !== "F2") return
-                event.preventDefault()
-                startRename(id, title)
-              }}
-              onFocus={() => {
-                if (editingTab !== id) setEditingTab(null)
-              }}
-              ref={(element) => {
-                if (element) triggers.current[id] = element
-                else delete triggers.current[id]
-              }}
-              value={id}
-            >
-              <span className="truncate">{title}</span>
-              <span
-                aria-hidden="true"
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-ds-xs opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:pointer-events-auto group-focus-visible:opacity-100"
+            <div className="relative h-10" data-tab-row={id} key={id}>
+              <Tabs.Trigger
+                aria-description="Press F2 to rename"
+                aria-keyshortcuts="F2"
+                className="group flex h-full w-full cursor-pointer items-center justify-center overflow-hidden border-l-2 border-transparent px-2 text-left text-[0.6875rem] leading-none outline-none transition-colors hover:bg-white/70 focus-visible:ring-2 focus-visible:ring-cyan-700 focus-visible:ring-inset data-[selected]:border-cyan-700 data-[selected]:bg-white sm:justify-start sm:px-4"
+                onKeyDown={(event) => {
+                  if (event.key !== "F2") return
+                  event.preventDefault()
+                  startRename(id, title)
+                }}
+                onFocus={() => {
+                  if (editingTab !== id) setEditingTab(null)
+                }}
+                ref={(element) => {
+                  if (element) triggers.current[id] = element
+                  else delete triggers.current[id]
+                }}
+                value={id}
               >
+                <span className="truncate">{title}</span>
                 <span
-                  className="inline-flex opacity-25 transition-opacity hover:opacity-100"
-                  data-rename-trigger
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    startRename(id, title)
-                  }}
-                  title={`Rename ${title}`}
+                  aria-hidden="true"
+                  className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:pointer-events-auto group-focus-visible:opacity-100"
                 >
-                  <Pencil size={10} />
+                  <span
+                    className="inline-flex opacity-25 transition-opacity hover:opacity-100"
+                    data-rename-trigger
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      startRename(id, title)
+                    }}
+                    title={`Rename ${title}`}
+                  >
+                    <Pencil size={10} />
+                  </span>
+                  <span
+                    className="inline-flex opacity-25 transition-opacity hover:opacity-100"
+                    data-close-trigger
+                    onClick={(event) => {
+                      event.stopPropagation()
+                    }}
+                    title={`Close ${title}`}
+                  >
+                    <X size={12} />
+                  </span>
                 </span>
-                <span
-                  className="inline-flex opacity-25 transition-opacity hover:opacity-100"
-                  data-close-trigger
-                  onClick={(event) => {
-                    event.stopPropagation()
+              </Tabs.Trigger>
+
+              {editingTab === id ? (
+                <Editable.Root
+                  activationMode="none"
+                  className="absolute inset-0 z-10 h-full"
+                  defaultValue={title}
+                  defaultEdit
+                  finalFocusEl={() => triggers.current[id] ?? null}
+                  onEditChange={({ edit }) => {
+                    if (!edit) setEditingTab(null)
                   }}
-                  title={`Close ${title}`}
+                  onValueCommit={() => {
+                    onRename(id, renameValue.current)
+                  }}
+                  submitMode="enter"
                 >
-                  <X size={12} />
-                </span>
-              </span>
-            </Tabs.Trigger>
+                  <Editable.Area className="h-full w-full">
+                    <Editable.Input
+                      aria-label={`Rename ${title}`}
+                      className="h-full w-full border-0 border-l-2 border-cyan-700 bg-white px-2 text-[0.6875rem] leading-none text-zinc-900 outline-none sm:px-4"
+                      onInput={(event) => {
+                        renameValue.current = event.currentTarget.value
+                      }}
+                    />
+                  </Editable.Area>
+                </Editable.Root>
+              ) : null}
+            </div>
           ))}
         </Tabs.List>
-
-        {editingTab &&
-          sessions.map((session, index) =>
-            session.id === editingTab ? (
-              <Editable.Root
-                activationMode="none"
-                className="absolute right-0 left-ds-2xs z-10"
-                defaultValue={session.title}
-                defaultEdit
-                finalFocusEl={() => triggers.current[session.id] ?? null}
-                key={session.id}
-                onEditChange={({ edit }) => {
-                  if (!edit) setEditingTab(null)
-                }}
-                onValueCommit={() => {
-                  onRename(session.id, renameValue.current)
-                }}
-                style={{ top: `calc(var(--spacing__xs) + ${index * 2.5}rem)` }}
-                submitMode="enter"
-              >
-                <Editable.Area>
-                  <Editable.Input
-                    aria-label={`Rename ${session.title}`}
-                    className="h-10 border-0 bg-background px-ds-xs py-0 text-[0.6875rem] leading-none [box-shadow:inset_2px_0_0_var(--color__accent)] sm:px-ds-md"
-                    onInput={(event) => {
-                      renameValue.current = event.currentTarget.value
-                    }}
-                  />
-                </Editable.Area>
-              </Editable.Root>
-            ) : null,
-          )}
       </nav>
     </aside>
   )

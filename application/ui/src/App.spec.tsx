@@ -17,8 +17,7 @@ describe("NovaDeck terminal", () => {
         "light",
       )
       expect(screen.getByRole("textbox", { name: "Terminal input" }).parentElement).toHaveClass(
-        "input",
-        "outlined",
+        "flex",
       )
       fireEvent.change(screen.getByRole("textbox", { name: "Terminal input" }), {
         target: { value: "help" },
@@ -52,6 +51,7 @@ describe("NovaDeck terminal", () => {
         screen.getByRole("tab", { name: "Terminal 2" }).querySelector("[data-rename-trigger]")!,
       )
       const editor = screen.getByRole("textbox", { name: "Rename Terminal 2" })
+      expect(editor.closest("[data-tab-row]")).toContainElement(runtimeTab)
       fireEvent.input(editor, { target: { value: "Runtime shell" } })
       fireEvent.keyDown(editor, { key: "Enter" })
 

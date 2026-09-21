@@ -26,12 +26,9 @@ The repository contains four top-level workspace areas:
   CSS contract ported from Stardwst, and `packages/react`, the Ark UI React adapter. The React
   package owns a Storybook with the official themes addon and no browser-test harness.
 
-The UI has no local stylesheets. It uses `@novadeck/react` components and their packaged recipes
-for reusable controls and surfaces, with Tailwind CSS utilities for application layout. Its
-Tailwind theme comes from `@novadeck/css/tailwind.css`, which loads the design-system styles and
-maps semantic color, type, spacing, radius, shadow, and easing utilities directly to its tokens.
-The UI imports only the packaged component recipes it uses, so unused design-system recipes do not
-enter the application stylesheet.
+The UI has no local stylesheets. It uses unstyled Ark UI React primitives, Lucide icons, and
+Tailwind CSS utilities directly so its visuals can be iterated independently of the reusable
+design-system packages.
 
 Run the component workshop separately with:
 
