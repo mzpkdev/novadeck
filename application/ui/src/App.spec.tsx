@@ -16,6 +16,12 @@ describe("NovaDeck shell", () => {
         "data-theme",
         "light",
       )
+      expect(screen.getByRole("button", { name: "New deck" })).toHaveClass("button", "filled")
+      expect(screen.getByRole("searchbox", { name: "Search decks" }).parentElement).toHaveClass(
+        "input",
+        "outlined",
+      )
+      expect(screen.getAllByRole("article")[0]).toHaveClass("card", "fluid", "raised")
       expect(
         await within(screen.getByRole("complementary", { name: "Runtime status" })).findByText(
           "Runtime ready",

@@ -1,3 +1,4 @@
+import { Button, Card, Input, Link } from "@novadeck/react"
 import {
   Activity,
   Bell,
@@ -62,10 +63,10 @@ export const App = (): React.JSX.Element => {
       className="novadeck min-h-screen bg-background font-sans text-text-900 antialiased"
       data-theme="light"
     >
-      <div className="grid min-h-screen lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="min-h-screen [display:grid] lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="flex flex-col border-b border-border-subtle bg-surface px-ds-lg py-ds-xl lg:border-r lg:border-b-0">
           <div className="flex items-center gap-ds-sm px-ds-xs">
-            <span className="grid size-9 place-items-center rounded-md bg-accent text-on-accent shadow-level-2">
+            <span className="size-9 place-items-center rounded-md bg-accent text-on-accent shadow-level-2 [display:grid]">
               <Command aria-hidden="true" className="size-5" strokeWidth={2.25} />
             </span>
             <div>
@@ -76,32 +77,30 @@ export const App = (): React.JSX.Element => {
 
           <nav aria-label="Primary" className="mt-8 flex gap-ds-xs overflow-x-auto lg:flex-col">
             {navigation.map(({ label, icon: Icon, current }) => (
-              <a
+              <Button
                 aria-current={current ? "page" : undefined}
-                className={`flex min-w-max items-center gap-ds-sm rounded-md px-ds-sm py-ds-xs text-sm font-medium transition-colors duration-200 ease-standard ${
-                  current
-                    ? "bg-accent-subtle text-accent"
-                    : "text-text-500 hover:bg-surface-subtle hover:text-text-900"
-                }`}
+                className="min-w-max justify-start text-sm lg:w-full"
                 href={`#${label.toLowerCase()}`}
                 key={label}
+                start={<Icon aria-hidden="true" />}
+                variant={current ? "tonal" : "text"}
               >
-                <Icon aria-hidden="true" className="size-4" />
                 {label}
-              </a>
+              </Button>
             ))}
           </nav>
 
           <div className="mt-auto hidden pt-ds-xl lg:block">
-            <button
-              className="flex w-full items-center gap-ds-sm rounded-md px-ds-sm py-ds-xs text-left text-sm text-text-500 transition-colors duration-200 ease-standard hover:bg-surface-subtle hover:text-text-900"
-              type="button"
+            <Button
+              className="justify-start text-sm"
+              fluid
+              start={<Settings aria-hidden="true" />}
+              variant="text"
             >
-              <Settings aria-hidden="true" className="size-4" />
               Settings
-            </button>
+            </Button>
             <div className="mt-ds-md flex items-center gap-ds-sm border-t border-border-subtle px-ds-xs pt-ds-lg">
-              <span className="grid size-8 place-items-center rounded-full bg-surface-muted text-xs font-semibold text-text-700">
+              <span className="size-8 place-items-center rounded-full bg-surface-muted text-xs font-semibold text-text-700 [display:grid]">
                 MK
               </span>
               <div className="min-w-0 flex-1">
@@ -115,28 +114,23 @@ export const App = (): React.JSX.Element => {
 
         <section className="min-w-0">
           <header className="flex h-16 items-center gap-ds-md border-b border-border-subtle bg-background/90 px-ds-lg backdrop-blur md:px-ds-2xl">
-            <label className="relative flex max-w-md flex-1 items-center">
-              <span className="sr-only">Search decks</span>
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-ds-sm size-4 text-text-500"
-              />
-              <input
-                className="h-9 w-full rounded-md border border-border-subtle bg-surface px-9 text-sm text-text-900 shadow-level-1 outline-none transition-colors duration-200 ease-standard placeholder:text-text-500 focus:border-accent"
-                placeholder="Search your decks"
-                type="search"
-              />
-              <kbd className="pointer-events-none absolute right-ds-xs hidden rounded-2xs border border-border bg-surface-subtle px-ds-xs py-ds-2xs font-mono text-[0.625rem] text-text-500 sm:block">
-                ⌘ K
-              </kbd>
-            </label>
-            <button
-              aria-label="Notifications"
-              className="grid size-9 place-items-center rounded-md border border-border-subtle bg-surface text-text-500 shadow-level-1 transition-colors duration-200 ease-standard hover:border-border hover:text-text-900"
-              type="button"
-            >
-              <Bell aria-hidden="true" className="size-4" />
-            </button>
+            <Input
+              className="max-w-md flex-1 text-sm"
+              controlProps={{
+                "aria-label": "Search decks",
+                placeholder: "Search your decks",
+                type: "search",
+              }}
+              end={
+                <kbd className="hidden rounded-2xs border border-border bg-surface-subtle px-ds-xs py-ds-2xs font-mono text-[0.625rem] text-text-500 sm:block">
+                  ⌘ K
+                </kbd>
+              }
+              start={<Search aria-hidden="true" />}
+            />
+            <Button aria-label="Notifications" iconOnly variant="elevated">
+              <Bell aria-hidden="true" />
+            </Button>
           </header>
 
           <div className="mx-auto max-w-6xl p-ds-lg md:p-ds-2xl">
@@ -151,13 +145,13 @@ export const App = (): React.JSX.Element => {
                   Shape ideas into focused, expressive presentations.
                 </p>
               </div>
-              <button
-                className="inline-flex h-10 items-center justify-center gap-ds-xs rounded-md bg-accent px-ds-md text-sm font-semibold text-on-accent shadow-level-2 transition duration-200 ease-standard hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-focus"
-                type="button"
+              <Button
+                className="text-sm font-semibold"
+                start={<CirclePlus aria-hidden="true" />}
+                variant="filled"
               >
-                <CirclePlus aria-hidden="true" className="size-4" />
                 New deck
-              </button>
+              </Button>
             </div>
 
             <section className="mt-8" aria-labelledby="recent-heading">
@@ -165,106 +159,121 @@ export const App = (): React.JSX.Element => {
                 <h2 className="text-sm font-semibold" id="recent-heading">
                   Recent decks
                 </h2>
-                <a
+                <Link
                   className="flex items-center gap-ds-2xs text-xs font-medium text-accent hover:text-accent-hover"
                   href="#decks"
                 >
                   View all
                   <ChevronRight aria-hidden="true" className="size-3.5" />
-                </a>
+                </Link>
               </div>
 
-              <div className="grid gap-ds-md md:grid-cols-3">
+              <div className="gap-ds-md [display:grid] md:grid-cols-3">
                 {decks.map((deck, index) => (
-                  <article
-                    className="group overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-level-1 transition duration-200 ease-standard hover:-translate-y-0.5 hover:border-border hover:shadow-level-3"
+                  <Card
+                    className="group transition-transform duration-200 ease-standard hover:-translate-y-0.5"
+                    fluid
                     key={deck.name}
-                  >
-                    <div className="relative aspect-[16/10] overflow-hidden bg-surface-muted p-ds-lg">
-                      <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_30%,var(--color__surface-subtle))] opacity-70" />
-                      <div className="relative flex h-full flex-col rounded-sm border border-border bg-background/75 p-ds-sm shadow-level-2">
-                        <div className={`mb-auto h-1 w-8 rounded-full ${deck.accent}`} />
-                        <p className="text-[0.625rem] font-semibold tracking-[0.16em] text-text-500 uppercase">
-                          NovaDeck / 0{index + 1}
-                        </p>
-                        <p className="mt-ds-xs max-w-[10rem] text-sm font-semibold leading-tight">
-                          {deck.name}
-                        </p>
-                      </div>
-                      <button
-                        aria-label={`Play ${deck.name}`}
-                        className="absolute right-ds-sm bottom-ds-sm grid size-8 translate-y-1 place-items-center rounded-full bg-accent text-on-accent opacity-0 shadow-level-2 transition duration-200 ease-standard group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100"
-                        type="button"
-                      >
-                        <Play aria-hidden="true" className="size-3.5 fill-current" />
-                      </button>
-                    </div>
-                    <div className="flex items-start justify-between gap-ds-sm p-ds-md">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-sm font-medium">{deck.name}</h3>
-                        <p className="mt-ds-2xs text-xs text-text-500">{deck.updated}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-surface-subtle px-ds-xs py-ds-2xs text-[0.625rem] font-medium text-text-500">
-                        {deck.slides} slides
-                      </span>
-                    </div>
-                  </article>
+                    raised
+                    renderContent={
+                      <>
+                        <div className="relative aspect-[16/10] overflow-hidden bg-surface-muted p-ds-lg">
+                          <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_30%,var(--color__surface-subtle))] opacity-70" />
+                          <div className="relative flex h-full flex-col rounded-sm border border-border bg-background/75 p-ds-sm shadow-level-2">
+                            <div className={`mb-auto h-1 w-8 rounded-full ${deck.accent}`} />
+                            <p className="text-[0.625rem] font-semibold tracking-[0.16em] text-text-500 uppercase">
+                              NovaDeck / 0{index + 1}
+                            </p>
+                            <p className="mt-ds-xs max-w-[10rem] text-sm font-semibold leading-tight">
+                              {deck.name}
+                            </p>
+                          </div>
+                          <Button
+                            aria-label={`Play ${deck.name}`}
+                            className="absolute right-ds-sm bottom-ds-sm translate-y-1 rounded-full opacity-0 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100"
+                            iconOnly
+                            variant="filled"
+                          >
+                            <Play aria-hidden="true" className="fill-current" />
+                          </Button>
+                        </div>
+                        <div className="flex items-start justify-between gap-ds-sm border-t border-border-subtle p-ds-md">
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-medium">{deck.name}</h3>
+                            <p className="mt-ds-2xs text-xs text-text-500">{deck.updated}</p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-surface-subtle px-ds-xs py-ds-2xs text-[0.625rem] font-medium text-text-500">
+                            {deck.slides} slides
+                          </span>
+                        </div>
+                      </>
+                    }
+                  />
                 ))}
               </div>
             </section>
 
-            <div className="mt-8 grid gap-ds-md lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,0.75fr)]">
-              <section
-                className="rounded-lg border border-border-subtle bg-surface p-ds-lg shadow-level-1"
+            <div className="mt-8 gap-ds-md [display:grid] lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,0.75fr)]">
+              <Card
+                as="section"
                 aria-labelledby="activity-heading"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold" id="activity-heading">
-                      Workspace activity
-                    </h2>
-                    <p className="mt-ds-2xs text-xs text-text-500">
-                      A quick pulse on your creative flow.
-                    </p>
-                  </div>
-                  <Activity aria-hidden="true" className="size-5 text-accent" />
-                </div>
-                <div className="mt-ds-xl grid grid-cols-3 gap-ds-sm">
-                  {[
-                    ["74", "Slides"],
-                    ["3", "Active decks"],
-                    ["8.2h", "Focus time"],
-                  ].map(([value, label]) => (
-                    <div className="rounded-md bg-surface-subtle p-ds-sm" key={label}>
-                      <p className="text-lg font-semibold tracking-tight">{value}</p>
-                      <p className="mt-ds-2xs text-xs text-text-500">{label}</p>
+                fluid
+                renderContent={
+                  <div className="p-ds-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-sm font-semibold" id="activity-heading">
+                          Workspace activity
+                        </h2>
+                        <p className="mt-ds-2xs text-xs text-text-500">
+                          A quick pulse on your creative flow.
+                        </p>
+                      </div>
+                      <Activity aria-hidden="true" className="size-5 text-accent" />
                     </div>
-                  ))}
-                </div>
-              </section>
+                    <div className="mt-ds-xl grid-cols-3 gap-ds-sm [display:grid]">
+                      {[
+                        ["74", "Slides"],
+                        ["3", "Active decks"],
+                        ["8.2h", "Focus time"],
+                      ].map(([value, label]) => (
+                        <div className="rounded-md bg-surface-subtle p-ds-sm" key={label}>
+                          <p className="text-lg font-semibold tracking-tight">{value}</p>
+                          <p className="mt-ds-2xs text-xs text-text-500">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                }
+              />
 
-              <aside
+              <Card
                 aria-label="Runtime status"
-                className="rounded-lg border border-border-subtle bg-surface p-ds-lg shadow-level-1"
-              >
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">System</h2>
-                  <span className="flex items-center gap-ds-xs text-xs font-medium text-text-500">
-                    <span className={`size-2 rounded-full ${statusStyles[status]}`} />
-                    Runtime {status}
-                  </span>
-                </div>
-                <dl className="mt-ds-xl space-y-ds-sm text-xs">
-                  <div className="flex justify-between gap-ds-md border-b border-border-subtle pb-ds-sm">
-                    <dt className="text-text-500">Frontend</dt>
-                    <dd className="font-medium">React</dd>
+                as="section"
+                fluid
+                renderContent={
+                  <div className="p-ds-lg">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-sm font-semibold">System</h2>
+                      <span className="flex items-center gap-ds-xs text-xs font-medium text-text-500">
+                        <span className={`size-2 rounded-full ${statusStyles[status]}`} />
+                        Runtime {status}
+                      </span>
+                    </div>
+                    <dl className="mt-ds-xl space-y-ds-sm text-xs">
+                      <div className="flex justify-between gap-ds-md border-b border-border-subtle pb-ds-sm">
+                        <dt className="text-text-500">Frontend</dt>
+                        <dd className="font-medium">React</dd>
+                      </div>
+                      <div className="flex justify-between gap-ds-md">
+                        <dt className="text-text-500">Backend</dt>
+                        <dd className="font-medium">Hono</dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div className="flex justify-between gap-ds-md">
-                    <dt className="text-text-500">Backend</dt>
-                    <dd className="font-medium">Hono</dd>
-                  </div>
-                </dl>
-              </aside>
+                }
+                role="complementary"
+              />
             </div>
           </div>
         </section>

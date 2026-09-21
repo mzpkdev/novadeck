@@ -2,6 +2,19 @@
 
 `@novadeck/css` is a framework-independent class and custom-property contract. Import its public stylesheet with `@import "@novadeck/css/styles.css";`.
 
+Tailwind 4 consumers can import `@novadeck/css/tailwind.css` instead. That entry loads Tailwind,
+the NovaDeck tokens and base styles, and the dark-theme token overrides. Import only the component
+recipes the application renders so unused recipes stay out of its stylesheet:
+
+```ts
+import "@novadeck/css/tailwind.css"
+import "@novadeck/css/recipes/button.css"
+import "@novadeck/css/recipes/card.css"
+```
+
+The adapter declares the shared cascade order up front, with Tailwind utilities last, so utilities
+can provide application-specific layout without overriding a component recipe unintentionally.
+
 ## Design islands
 
 Place components inside an opt-in `.novadeck` island:

@@ -1,6 +1,9 @@
+@layer theme, base, novadeck.tokens, novadeck.reset, novadeck.base, components, novadeck.recipes, novadeck.theme, novadeck.utilities, utilities;
+
 @import "tailwindcss";
-@import "./tokens.css";
-@import "./themes/dark.css";
+@import "./tokens.css" layer(novadeck.tokens);
+@import "./base.css";
+@import "./themes/dark.css" layer(novadeck.theme);
 
 @theme inline {
   --color-text-50: var(--color__text-50);
