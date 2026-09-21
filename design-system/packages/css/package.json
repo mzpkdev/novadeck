@@ -12,6 +12,7 @@
   ],
   "exports": {
     "./styles.css": "./src/styles.css",
+    "./tailwind.css": "./src/tailwind.css",
     "./tokens.css": "./src/tokens.css",
     "./CSS.md": "./CSS.md"
   }

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import { join } from "node:path"
 
 import { context, describe, expect, it } from "./test"
@@ -26,6 +26,24 @@ describe("compiled frontend", () => {
       expect(html).toContain("connect-src 'self' http://127.0.0.1:*")
       expect(html).not.toContain("__NOVADECK_CONNECT_SOURCES__")
       expect(html).not.toContain("ws:")
+    })
+
+    it("compiles Tailwind utilities against the design-system tokens", async () => {
+      const assets = await readdir(join(output, "assets"))
+      const stylesheet = assets.find((asset) => asset.endsWith(".css"))
+
+      if (!stylesheet) throw new Error("The frontend build did not emit a stylesheet")
+
+      const css = await read(`assets/${stylesheet}`)
+
+      expect(css).toContain("--color__background")
+      expect(css).toContain("background-color:var(--color__background)")
+    })
+
+    it("does not rely on an application stylesheet", async () => {
+      const source = await readdir(join(process.cwd(), "src"), { recursive: true })
+
+      expect(source.filter((file) => file.endsWith(".css"))).toEqual([])
     })
   })
 })

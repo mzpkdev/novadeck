@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./themes/dark.css";
+
+@theme inline {
+  --color-text-50: var(--color__text-50);
+  --color-text-100: var(--color__text-100);
+  --color-text-200: var(--color__text-200);
+  --color-text-300: var(--color__text-300);
+  --color-text-400: var(--color__text-400);
+  --color-text-500: var(--color__text-500);
+  --color-text-600: var(--color__text-600);
+  --color-text-700: var(--color__text-700);
+  --color-text-800: var(--color__text-800);
+  --color-text-900: var(--color__text-900);
+  --color-text-950: var(--color__text-950);
+  --color-background: var(--color__background);
+  --color-surface: var(--color__surface);
+  --color-surface-subtle: var(--color__surface-subtle);
+  --color-surface-muted: var(--color__surface-muted);
+  --color-border-subtle: var(--color__border-subtle);
+  --color-border: var(--color__border);
+  --color-border-muted: var(--color__border-muted);
+  --color-border-strong: var(--color__border-strong);
+  --color-accent-subtle: var(--color__accent-subtle);
+  --color-accent: var(--color__accent);
+  --color-accent-hover: var(--color__accent-hover);
+  --color-accent-focus: var(--color__accent-focus);
+  --color-danger: var(--color__danger);
+  --color-on-accent: var(--color__on-accent);
+  --color-on-accent-muted: var(--color__on-accent-muted);
+  --color-text-on-accent-subtle: var(--color__text-on-accent-subtle);
+
+  --font-sans: var(--font-family__display);
+  --font-mono: var(--font-family__monospace);
+
+  --spacing-ds-2xs: var(--spacing__2xs);
+  --spacing-ds-xs: var(--spacing__xs);
+  --spacing-ds-sm: var(--spacing__sm);
+  --spacing-ds-md: var(--spacing__md);
+  --spacing-ds-lg: var(--spacing__lg);
+  --spacing-ds-xl: var(--spacing__xl);
+  --spacing-ds-2xl: var(--spacing__2xl);
+
+  --radius-none: var(--roundness__none);
+  --radius-full: var(--roundness__full);
+  --radius-2xs: var(--roundness__2xs);
+  --radius-xs: var(--roundness__xs);
+  --radius-sm: var(--roundness__sm);
+  --radius-md: var(--roundness__md);
+  --radius-lg: var(--roundness__lg);
+  --radius-xl: var(--roundness__xl);
+  --radius-2xl: var(--roundness__2xl);
+
+  --shadow-none: var(--shadow__none);
+  --shadow-inner: var(--shadow__inner);
+  --shadow-level-1: var(--shadow__level-1);
+  --shadow-level-2: var(--shadow__level-2);
+  --shadow-level-3: var(--shadow__level-3);
+
+  --ease-standard: var(--transition__easing);
+}
