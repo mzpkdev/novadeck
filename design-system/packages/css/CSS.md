@@ -8,12 +8,13 @@ recipes the application renders so unused recipes stay out of its stylesheet:
 
 ```ts
 import "@novadeck/css/tailwind.css"
-import "@novadeck/css/recipes/button.css"
-import "@novadeck/css/recipes/card.css"
+import "@novadeck/css/tailwind/button.css"
+import "@novadeck/css/tailwind/card.css"
 ```
 
-The adapter declares the shared cascade order up front, with Tailwind utilities last, so utilities
-can provide application-specific layout without overriding a component recipe unintentionally.
+The Tailwind-specific recipe entry points place each recipe in the `novadeck.recipes` layer. The
+adapter declares the shared cascade order up front, with Tailwind utilities last, so utilities can
+provide application-specific layout and deliberate component overrides.
 
 ## Design islands
 

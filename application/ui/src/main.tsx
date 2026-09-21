@@ -2,10 +2,10 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
 import "@novadeck/css/tailwind.css"
-import "@novadeck/css/recipes/button.css"
-import "@novadeck/css/recipes/card.css"
-import "@novadeck/css/recipes/field.css"
-import "@novadeck/css/recipes/link.css"
+import "@novadeck/css/tailwind/button.css"
+import "@novadeck/css/tailwind/card.css"
+import "@novadeck/css/tailwind/field.css"
+import "@novadeck/css/tailwind/link.css"
 
 import { App } from "./App"
 

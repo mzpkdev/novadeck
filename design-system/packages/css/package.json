@@ -11,8 +11,8 @@
     "./src/**/*.css"
   ],
   "exports": {
-    "./recipes/*.css": "./src/recipes/*.css",
     "./styles.css": "./src/styles.css",
+    "./tailwind/*.css": "./src/tailwind/*.css",
     "./tailwind.css": "./src/tailwind.css",
     "./tokens.css": "./src/tokens.css",
     "./CSS.md": "./CSS.md"
