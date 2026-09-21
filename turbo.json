@@ -3,7 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["out/**", "packages/react/storybook-static/**"]
+      "env": ["VITE_API_URL"],
+      "outputs": ["dist/**", "out/**", "packages/react/storybook-static/**"]
     },
     "dev": {
       "cache": false,
@@ -11,6 +12,7 @@
     },
     "test": {
       "dependsOn": ["^test"],
+      "env": ["VITE_API_URL"],
       "outputs": []
     },
     "typecheck": {

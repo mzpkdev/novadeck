@@ -1,7 +1,7 @@
 # NovaDeck
 
-NovaDeck is a cross-platform desktop application built with Electron, React,
-TypeScript, Vite, and Turborepo.
+NovaDeck is a React application with a Hono backend and an optional cross-platform
+Electron host, built with TypeScript, Vite, and Turborepo.
 
 ## Requirements
 
@@ -15,9 +15,13 @@ pnpm install
 pnpm dev
 ```
 
-The repository contains two workspace packages:
+The repository contains four top-level workspace areas:
 
-- `application` contains the Electron application and consumes the design system.
+- `application/ui` is the standalone Vite and React frontend.
+- `application/runtime` is the standalone Hono and Node.js backend. It exposes the API without
+  owning frontend delivery.
+- `application/host` is the Electron wrapper. It starts the runtime and loads the packaged UI for
+  desktop users.
 - `design-system` is an inner workspace containing `packages/css`, the complete framework-neutral
   CSS contract ported from Stardwst, and `packages/react`, the Ark UI React adapter. The React
   package owns a Storybook with the official themes addon and no browser-test harness.
@@ -28,11 +32,33 @@ Run the component workshop separately with:
 pnpm storybook
 ```
 
-The application itself is split into three trust boundaries:
+Run the browser-hosted application without Electron with:
 
-- `application/src/main` owns the Electron lifecycle and native capabilities.
-- `application/src/preload` exposes a narrow, typed API to the renderer.
-- `application/src/renderer` contains the sandboxed React application.
+```sh
+pnpm dev:web
+```
+
+The UI is then available at `http://127.0.0.1:5173` and calls the runtime directly.
+
+## Deployment configuration
+
+| Mode               | Configuration                                                                                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Standalone UI      | `application/ui/.env` supplies the build-time `VITE_API_URL`; without it, the UI uses same-origin `/api`.                                                                                                     |
+| Standalone runtime | `application/runtime/.env` supplies `HOST`, `PORT`, and the comma-separated `CORS_ORIGINS` allowlist.                                                                                                         |
+| Electron           | The host starts the bundled runtime on `127.0.0.1` with an OS-selected port and desktop-only CORS, then provides the generated API URL through a sandboxed preload bridge. Package `.env` files are not used. |
+
+Copy each package's environment template before changing standalone configuration:
+
+```sh
+cp application/ui/example.env application/ui/.env
+cp application/runtime/example.env application/runtime/.env
+```
+
+For a static host such as GitHub Pages, set `VITE_API_URL` to the public HTTPS API URL before
+building. The generated Content Security Policy permits that exact API origin. Add the static
+frontend's origin to the runtime's `CORS_ORIGINS` when the packages are deployed separately. Local
+`.env` files are ignored and must not be committed.
 
 ## Checks
 
@@ -61,7 +87,7 @@ The configured artifacts are:
 - macOS universal: ZIP archive containing the application bundle
 - Windows x64: portable executable
 
-Artifacts are written to `application/release/`. Builds are intentionally unsigned for now,
+Artifacts are written to `application/host/release/`. Builds are intentionally unsigned for now,
 so macOS Gatekeeper and Windows SmartScreen may warn when opening them. The
 permanent application ID is `dev.mzpk.novadeck`. Before upload, the release
 workflow launches every packaged application for ten seconds and fails if it
