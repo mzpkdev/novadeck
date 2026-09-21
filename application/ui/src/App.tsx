@@ -31,7 +31,6 @@ export const App = (): React.JSX.Element => {
       <section className="hero" aria-labelledby="title">
         <p className="eyebrow">Application workspace</p>
         <h1 id="title">NovaDeck</h1>
-        <p className="lede">A clean launchpad for the ideas that deserve their own window.</p>
 
         <ul className="tools" aria-label="Application stack">
           {tools.map((tool) => (

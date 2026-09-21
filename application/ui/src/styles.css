@@ -63,20 +63,12 @@ h1 {
   line-height: 0.82;
 }
 
-.lede {
-  max-width: 36rem;
-  margin: 2rem 0;
-  color: #b5bdcc;
-  font-size: clamp(1.1rem, 2.2vw, 1.5rem);
-  line-height: 1.5;
-}
-
 .tools {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
   padding: 0;
-  margin: 0;
+  margin: 2rem 0 0;
   list-style: none;
 }
 
