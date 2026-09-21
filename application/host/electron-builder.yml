@@ -1,5 +1,6 @@
 appId: dev.mzpk.novadeck
 productName: NovaDeck
+executableName: novadeck
 asar: true
 directories:
   output: release
