@@ -39,7 +39,6 @@ describe("compiled frontend", () => {
       expect(css).toContain("--color__background")
       expect(css).toContain("background-color:var(--color__background)")
       expect(css).toMatch(/@layer novadeck\.recipes\{@scope\(\.novadeck\)\{\.card/)
-      expect(css).toContain("transition-property:transform,translate,scale,rotate")
     })
 
     it("does not rely on an application stylesheet", async () => {

@@ -12,16 +12,17 @@ describe("NovaDeck shell", () => {
 
       render(<App />)
 
-      expect(screen.getByRole("heading", { name: "NovaDeck" }).closest("main")).toHaveAttribute(
-        "data-theme",
-        "light",
+      expect(
+        screen.getByRole("heading", { name: "NovaDeck Assistant" }).closest("main"),
+      ).toHaveAttribute("data-theme", "light")
+      expect(screen.getByRole("button", { name: "New chat" })).toHaveClass("button", "filled")
+      expect(
+        screen.getByRole("textbox", { name: "Message NovaDeck Assistant" }).parentElement,
+      ).toHaveClass("textarea", "outlined")
+      expect(screen.getByText("launch-outline.deck").closest("article")).toHaveClass(
+        "card",
+        "fluid",
       )
-      expect(screen.getByRole("button", { name: "New deck" })).toHaveClass("button", "filled")
-      expect(screen.getByRole("searchbox", { name: "Search decks" }).parentElement).toHaveClass(
-        "input",
-        "outlined",
-      )
-      expect(screen.getAllByRole("article")[0]).toHaveClass("card", "fluid", "raised")
       expect(
         await within(screen.getByRole("complementary", { name: "Runtime status" })).findByText(
           "Runtime ready",
