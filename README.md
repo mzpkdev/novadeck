@@ -38,23 +38,27 @@ Run the browser-hosted application without Electron with:
 pnpm dev:web
 ```
 
-The UI is then available at `http://127.0.0.1:5173` and calls the runtime directly. Copy each
-package's environment template before changing its local configuration:
+The UI is then available at `http://127.0.0.1:5173` and calls the runtime directly.
+
+## Deployment configuration
+
+| Mode               | Configuration                                                                                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Standalone UI      | `application/ui/.env` supplies the build-time `VITE_API_URL`; without it, the UI uses same-origin `/api`.                                                                                                     |
+| Standalone runtime | `application/runtime/.env` supplies `HOST`, `PORT`, and the comma-separated `CORS_ORIGINS` allowlist.                                                                                                         |
+| Electron           | The host starts the bundled runtime on `127.0.0.1` with an OS-selected port and desktop-only CORS, then provides the generated API URL through a sandboxed preload bridge. Package `.env` files are not used. |
+
+Copy each package's environment template before changing standalone configuration:
 
 ```sh
 cp application/ui/example.env application/ui/.env
 cp application/runtime/example.env application/runtime/.env
 ```
 
-`application/ui/.env` sets the API base URL through `VITE_API_URL`. Because Vite embeds this value
-at build time, set it to the public HTTPS API URL when deploying the UI to a static host such as
-GitHub Pages. `application/runtime/.env` controls `HOST`, `PORT`, and the comma-separated
-`CORS_ORIGINS` allowlist. Add the static frontend's origin to that allowlist when the packages are
-deployed separately. Local `.env` files are ignored and must not be committed.
-
-The Electron host does not use either package's `.env`. It starts the bundled runtime on an
-available loopback port with desktop-only CORS settings, then exposes only that generated API URL
-to the sandboxed UI through an Electron preload bridge.
+For a static host such as GitHub Pages, set `VITE_API_URL` to the public HTTPS API URL before
+building. The generated Content Security Policy permits that exact API origin. Add the static
+frontend's origin to the runtime's `CORS_ORIGINS` when the packages are deployed separately. Local
+`.env` files are ignored and must not be committed.
 
 ## Checks
 

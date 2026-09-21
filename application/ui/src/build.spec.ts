@@ -19,5 +19,13 @@ describe("compiled frontend", () => {
         Promise.all(paths.map((path) => read(path.replace(/^\.\//, "")))),
       ).resolves.toHaveLength(2)
     })
+
+    it("contains a production Content Security Policy", async () => {
+      const html = await read("index.html")
+
+      expect(html).toContain("connect-src 'self' http://127.0.0.1:*")
+      expect(html).not.toContain("__NOVADECK_CONNECT_SOURCES__")
+      expect(html).not.toContain("ws:")
+    })
   })
 })
