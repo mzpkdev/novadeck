@@ -1,6 +1,5 @@
 packages:
   - application/*
-  - design-system
 
 publicHoistPattern:
   - electron
