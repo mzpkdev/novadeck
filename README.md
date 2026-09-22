@@ -17,9 +17,9 @@ pnpm dev
 
 The repository contains three application workspace packages:
 
-- `application/ui` is the standalone Vite and React frontend. It starts as a blank white canvas and
-  is bootstrapped with Tailwind CSS, Ark UI, Lucide, clsx, and tailwind-merge directly instead of
-  depending on a separate design-system package.
+- `application/ui` is the standalone Vite and React frontend. It contains an interactive monochrome
+  terminal mockup with focus, masonry grid, and zoomable canvas layouts. Tailwind CSS and Lucide
+  provide styling and icons directly in this package.
 - `application/runtime` is the standalone Hono and Node.js backend. It exposes the API without
   owning frontend delivery.
 - `application/host` is the Electron wrapper. It starts the runtime and loads the packaged UI for
@@ -31,8 +31,29 @@ Run the browser-hosted application without Electron with:
 pnpm dev:web
 ```
 
-The blank UI is then available at `http://127.0.0.1:5173`, with the runtime available for future
-application features.
+The UI is then available at `http://127.0.0.1:5173`. To iterate on the mockup without the
+runtime, use `pnpm --filter @novadeck/ui dev`.
+
+The terminal sessions and output are sample content. Local demo commands (`help`, `pwd`, `ls`,
+`whoami`, `date`, `echo`, and `clear`) update in-memory history; they do not execute a shell.
+Switch layouts with the header controls. Sidebar tabs show each process and status; use the
+pencil to rename a terminal (Enter saves, Escape cancels) and the × to close it.
+
+The canvas uses [XYFlow / React Flow](https://reactflow.dev/) custom terminal nodes. Select a
+sidebar session to center it, drag the background to pan, and drag a terminal header to move it.
+Drag the bottom-right grip to resize, or use the minus/plus header control to fold and restore a
+terminal. Headers and resize grips scale more gently than the terminal body. Clicking the
+background unfocuses the terminal; hovering over its content lets you scroll without focusing it.
+Zoom with the controls, a two-finger pinch, or Ctrl/Cmd + wheel, including over terminal cards.
+Use the fit button to see all terminals. A focused canvas also supports arrow keys, `+`/`-`,
+and `0` to fit. Cmd/Ctrl + K opens session search, and Cmd/Ctrl + comma opens preferences.
+Reloading resets the mockup.
+
+Tailwind v4 tokens live in `application/ui/src/styles.css` using the
+[CSS theme configuration](https://tailwindcss.com/docs/theme), with the existing
+`@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,
+and shadows are centralized there; terminal sample data lives in
+`application/ui/src/workspace/sessions.ts`.
 
 ## Deployment configuration
 
