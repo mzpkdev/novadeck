@@ -1,6 +1,6 @@
 import { Tabs } from "@ark-ui/react/tabs"
 import { Terminal } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useRef, useState } from "react"
 
 import {
   createLine,
@@ -23,6 +23,7 @@ const toneStyles = {
 export const App = (): React.JSX.Element => {
   const [activeTab, setActiveTab] = useState<TabId>("assistant")
   const [sessions, setSessions] = useState(initialSessions)
+  const generations = useRef<Record<TabId, number>>({ assistant: 0, logs: 0, runtime: 0 })
   const activeSession = sessions.find((session) => session.id === activeTab)!
 
   const updateLines = (id: TabId, update: (lines: Line[]) => Line[]): void => {
@@ -52,11 +53,13 @@ export const App = (): React.JSX.Element => {
     form.reset()
 
     if (next.toLowerCase() === "clear") {
+      generations.current[activeTab]++
       updateLines(activeTab, () => [])
       return
     }
 
     const sessionId = activeTab
+    const generation = generations.current[sessionId]
     updateLines(sessionId, (current) => [
       ...current,
       createLine("", "output"),
@@ -64,7 +67,9 @@ export const App = (): React.JSX.Element => {
     ])
 
     const response = await executeCommand(next)
-    updateLines(sessionId, (current) => [...current, ...response])
+    if (generations.current[sessionId] === generation) {
+      updateLines(sessionId, (current) => [...current, ...response])
+    }
   }
 
   return (

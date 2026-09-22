@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { HttpResponse, http } from "msw"
 
 import { App } from "./App"
@@ -26,6 +26,35 @@ describe("NovaDeck terminal", () => {
 
       expect(await screen.findByText("Commands")).toBeInTheDocument()
       expect(screen.getByText("novadeck deck build Build the current deck")).toBeInTheDocument()
+    })
+
+    it("keeps a cleared terminal empty when a pending command finishes", async () => {
+      let releaseStatus!: () => void
+      const pendingStatus = new Promise<void>((resolve) => {
+        releaseStatus = resolve
+      })
+      server.use(
+        http.get("*/api/status", async () => {
+          await pendingStatus
+          return HttpResponse.json({ status: "ready" })
+        }),
+      )
+
+      render(<App />)
+
+      const input = screen.getByRole("textbox", { name: "Terminal input" })
+      const form = screen.getByRole("form", { name: "Terminal command" })
+      fireEvent.change(input, { target: { value: "status" } })
+      fireEvent.submit(form)
+      expect(await screen.findByText("~/novadeck $ status")).toBeInTheDocument()
+
+      fireEvent.change(input, { target: { value: "clear" } })
+      fireEvent.submit(form)
+      expect(screen.queryByText("~/novadeck $ status")).not.toBeInTheDocument()
+
+      await act(async () => releaseStatus())
+
+      expect(screen.queryByText("runtime ready")).not.toBeInTheDocument()
     })
 
     it("switches and renames terminal tabs", async () => {
