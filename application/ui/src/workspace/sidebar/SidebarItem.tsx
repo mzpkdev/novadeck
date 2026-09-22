@@ -67,7 +67,7 @@ export const SidebarItem = ({
     {editor}
     {actions && (
       <div
-        className={`sidebar-item-actions flex h-6 shrink-0 items-center ${editing ? "mr-2 mb-[9px] self-end" : "absolute right-2 bottom-[9px]"}`}
+        className={`sidebar-item-actions flex h-6 shrink-0 items-center ${editing ? "mr-2 mb-1.5 self-end" : "absolute right-2 bottom-[9px]"}`}
       >
         {actions}
       </div>

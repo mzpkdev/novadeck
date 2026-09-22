@@ -52,7 +52,7 @@ export const SessionTab = ({
         editor={
           <Editable.Area
             hidden={!editing}
-            className="session-rename flex min-w-0 flex-1 items-start px-2.5 py-2 [&_input]:w-full [&_input]:rounded-control [&_input]:border [&_input]:border-line [&_input]:bg-paper [&_input]:px-1.5 [&_input]:py-1 [&_input]:text-[12px] [&_input]:text-ink"
+            className="session-rename flex min-w-0 flex-1 items-start px-2.5 py-1.5 [&_input]:w-full [&_input]:rounded-control [&_input]:border [&_input]:border-line [&_input]:bg-paper [&_input]:px-1.5 [&_input]:py-0.5 [&_input]:text-[12px] [&_input]:leading-[18px] [&_input]:text-ink"
           >
             <Editable.Input aria-label={`Rename ${session.name}`} />
           </Editable.Area>
