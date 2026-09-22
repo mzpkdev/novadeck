@@ -15,22 +15,15 @@ pnpm install
 pnpm dev
 ```
 
-The repository contains four top-level workspace areas:
+The repository contains three application workspace packages:
 
-- `application/ui` is the standalone Vite and React frontend.
+- `application/ui` is the standalone Vite and React frontend. It starts as a blank white canvas and
+  is bootstrapped with Tailwind CSS, Ark UI, Lucide, clsx, and tailwind-merge directly instead of
+  depending on a separate design-system package.
 - `application/runtime` is the standalone Hono and Node.js backend. It exposes the API without
   owning frontend delivery.
 - `application/host` is the Electron wrapper. It starts the runtime and loads the packaged UI for
   desktop users.
-- `design-system` is an inner workspace containing `packages/css`, the complete framework-neutral
-  CSS contract ported from Stardwst, and `packages/react`, the Ark UI React adapter. The React
-  package owns a Storybook with the official themes addon and no browser-test harness.
-
-Run the component workshop separately with:
-
-```sh
-pnpm storybook
-```
 
 Run the browser-hosted application without Electron with:
 
@@ -38,7 +31,8 @@ Run the browser-hosted application without Electron with:
 pnpm dev:web
 ```
 
-The UI is then available at `http://127.0.0.1:5173` and calls the runtime directly.
+The blank UI is then available at `http://127.0.0.1:5173`, with the runtime available for future
+application features.
 
 ## Deployment configuration
 

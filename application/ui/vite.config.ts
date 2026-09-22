@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 
+import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv, type ConfigEnv, type Plugin } from "vite"
 
@@ -31,7 +32,7 @@ const contentSecurityPolicy = (): Plugin => {
 
 export default defineConfig({
   base: "./",
-  plugins: [react(), contentSecurityPolicy()],
+  plugins: [tailwindcss(), react(), contentSecurityPolicy()],
   resolve: {
     alias: [{ find: /^react$/, replacement: resolve("node_modules/react/index.js") }],
     dedupe: ["react", "react-dom"],

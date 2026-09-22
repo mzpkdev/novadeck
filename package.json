@@ -7,10 +7,8 @@
   "author": "mzpkdev",
   "type": "module",
   "scripts": {
-    "postinstall": "pnpm --dir design-system install --frozen-lockfile",
     "dev": "pnpm --filter @novadeck/host dev",
     "dev:web": "concurrently --kill-others-on-fail --names runtime,ui \"pnpm --filter @novadeck/runtime dev\" \"pnpm --filter @novadeck/ui dev\"",
-    "storybook": "pnpm --filter @novadeck/design-system-workspace storybook",
     "build": "turbo run build",
     "preview": "pnpm --filter @novadeck/runtime start",
     "package": "pnpm --filter @novadeck/host package",
