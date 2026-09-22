@@ -89,6 +89,8 @@ The canvas uses [XYFlow / React Flow](https://reactflow.dev/) custom terminal no
 sidebar session to center it, drag the background to pan, and drag a terminal header to move it.
 Canvas nodes move and resize freely, then ease onto the 24px grid when released, matching the dot
 spacing and Grid’s vertical step. Arrow keys move a selected node by 24px (Shift for larger steps).
+XYFlow owns live drag and resize geometry; the workspace stores the final position and size on
+release, or when leaving Canvas during a gesture. This keeps pointer updates out of the app reducer.
 Drag the bottom-right grip to resize, or use the minus/plus header control to fold and restore a
 terminal. Collapsed terminals keep their resize grip for width-only changes and retain their expanded height.
 Headers and resize grips scale more gently than the terminal body. Clicking the
