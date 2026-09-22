@@ -646,6 +646,10 @@ export const App = (): React.JSX.Element => {
                 active={sidebarPanel === "terminals"}
                 onClose={hideSidebar}
               >
+                <button className="sidebar-create" onClick={add}>
+                  <Plus size={14} />
+                  <span>New terminal</span>
+                </button>
                 <SessionList
                   key={workspaceSessionId}
                   sessions={orderedSessions}
@@ -655,10 +659,6 @@ export const App = (): React.JSX.Element => {
                   onClose={close}
                   onReorder={setTabOrder}
                 />
-                <button className="new-session" onClick={add}>
-                  <Plus size={14} />
-                  <span>New terminal</span>
-                </button>
               </SidebarPanel>
             </aside>
           }

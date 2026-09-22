@@ -162,79 +162,17 @@
   .sidebar {
     @apply relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell;
   }
-  .session-list {
-    @apply flex min-h-0 flex-col gap-1 overflow-y-auto py-1;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-line) transparent;
-  }
-  .session-list::-webkit-scrollbar {
-    width: var(--spacing);
-  }
-  .session-list::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .session-list::-webkit-scrollbar-thumb {
-    background: var(--color-line);
-    border-radius: var(--radius-panel);
-  }
-  .session-tab {
-    @apply relative flex min-h-14 w-full shrink-0 items-center rounded-control px-2.5 text-left text-muted;
-    transition:
-      background-color var(--motion-state) var(--ease-interface),
-      color var(--motion-state) var(--ease-interface);
-  }
-  .session-tab:hover,
-  .session-tab:focus-within {
-    @apply bg-soft;
-  }
-  .session-tab.dragging {
-    @apply z-50 bg-paper text-ink outline outline-1 outline-line;
-  }
-  .session-tab.selected {
-    @apply bg-soft text-ink;
-  }
-  .session-tab::before {
-    content: "";
-    @apply absolute left-0 top-4 bottom-4 w-0.5 rounded-control bg-strong;
-    opacity: 0;
-    transition: opacity var(--motion-state) var(--ease-interface);
-  }
-  .session-tab.selected::before {
-    opacity: 1;
-  }
-  .session-select {
-    @apply flex min-w-0 flex-1 items-center gap-2.5 self-stretch text-left;
-  }
-  .session-select > svg {
-    @apply shrink-0;
-  }
-  .session-select:focus-visible,
-  .session-action:focus-visible {
-    outline-offset: -2px;
-  }
-  .session-tab-copy {
-    @apply flex min-w-0 flex-1 flex-col gap-1;
-  }
-  .session-tab-copy strong {
-    @apply truncate text-[12px] font-medium;
-  }
-  .session-tab-copy > span {
-    @apply truncate font-mono text-[10px] text-muted;
-  }
-  .session-controls {
-    @apply relative ml-1 h-8 w-16 shrink-0;
+  .session-process {
+    @apply truncate font-mono;
   }
   .session-actions {
-    @apply absolute inset-0 flex items-center opacity-0;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .session-tab:hover .session-actions,
-  .session-tab:focus-within .session-actions,
-  .session-tab.editing .session-actions {
-    @apply opacity-100;
+    @apply flex items-center;
   }
   .session-action {
-    @apply flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-line hover:text-ink;
+    @apply flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink;
+  }
+  .session-action:focus-visible {
+    outline-offset: -2px;
   }
   .session-action > svg,
   .terminal-view-action > svg,
@@ -243,18 +181,16 @@
     transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .session-action:hover > svg,
+  .session-action:focus-visible > svg,
   .terminal-view-action:hover > svg,
   .terminal-close:hover > svg {
     opacity: 1;
   }
   .session-rename {
-    @apply min-w-0 flex-1;
+    @apply flex min-w-0 flex-1 items-start px-2.5 py-2;
   }
   .session-rename input {
     @apply w-full rounded-control border border-line bg-paper px-1.5 py-1 text-[12px] text-ink;
-  }
-  .new-session {
-    @apply mt-3 flex min-h-9 shrink-0 items-center gap-3 rounded-control px-3 text-[11px] text-muted hover:bg-soft hover:text-ink;
   }
   .empty-workspace {
     @apply flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted;
@@ -910,12 +846,6 @@
     scroll-behavior: auto !important;
     transition: none !important;
     animation: none !important;
-  }
-}
-
-@media (hover: none) {
-  .session-actions {
-    opacity: 1;
   }
 }
 

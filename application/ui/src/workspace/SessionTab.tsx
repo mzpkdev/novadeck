@@ -3,6 +3,7 @@ import { Check, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import type { Session } from "./sessions"
+import { SidebarItem } from "./SidebarItem"
 
 export const SessionTab = ({
   session,
@@ -40,54 +41,49 @@ export const SessionTab = ({
     setEditing(false)
   }
   return (
-    <div
+    <SidebarItem
       ref={ref}
+      handleRef={handleRef}
+      name={session.name}
+      icon={<TerminalIcon size={14} strokeWidth={1.5} />}
+      detail={<span className="session-process">{session.command}</span>}
+      selected={selected}
+      selectLabel={`Select ${session.name}`}
+      tooltip={`${session.name}\n${session.directory} · ${session.command}`}
+      onSelect={onSelect}
       data-session-id={session.id}
       className={`session-tab ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
-    >
-      {editing ? (
-        <form
-          className="session-rename"
-          onSubmit={(event) => {
-            event.preventDefault()
-            save()
-          }}
-        >
-          <input
-            ref={input}
-            aria-label={`Rename ${session.name}`}
-            value={draft}
-            maxLength={60}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={(event) => {
-              if (!(event.relatedTarget as HTMLElement | null)?.closest(".session-actions")) save()
+      editor={
+        editing ? (
+          <form
+            className="session-rename"
+            onSubmit={(event) => {
+              event.preventDefault()
+              save()
             }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault()
-                event.stopPropagation()
-                setEditing(false)
-              }
-            }}
-          />
-        </form>
-      ) : (
-        <button
-          ref={handleRef}
-          className="session-select"
-          aria-label={`Select ${session.name}`}
-          aria-current={selected ? "true" : undefined}
-          title={`${session.directory} · ${session.command}`}
-          onClick={onSelect}
-        >
-          <TerminalIcon size={16} strokeWidth={1.5} />
-          <span className="session-tab-copy">
-            <strong>{session.name}</strong>
-            <span>{session.command}</span>
-          </span>
-        </button>
-      )}
-      <div className="session-controls">
+          >
+            <input
+              ref={input}
+              aria-label={`Rename ${session.name}`}
+              value={draft}
+              maxLength={60}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={(event) => {
+                if (!(event.relatedTarget as HTMLElement | null)?.closest(".session-actions"))
+                  save()
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setEditing(false)
+                }
+              }}
+            />
+          </form>
+        ) : undefined
+      }
+      actions={
         <div className="session-actions">
           <button
             className="session-action"
@@ -116,7 +112,7 @@ export const SessionTab = ({
             <X size={14} strokeWidth={1.5} />
           </button>
         </div>
-      </div>
-    </div>
+      }
+    />
   )
 }

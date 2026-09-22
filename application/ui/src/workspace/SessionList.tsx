@@ -70,7 +70,7 @@ export const SessionList = ({
         onReorder(order)
       }}
     >
-      <div className="session-list" ref={setList}>
+      <div className="session-list sidebar-list" ref={setList}>
         {sessions.map((session, index) => (
           <SessionTab
             key={session.id}

@@ -44,6 +44,11 @@ Their message inputs retain local demo commands and acknowledge other prompts wi
 `whoami`, `date`, `echo`, and `clear`) update in-memory history; they do not execute a shell.
 Switch layouts with the header controls. Sidebar tabs show each terminal’s name and command; use the
 pencil to rename a terminal (Enter saves, Escape cancels) and the × to close it.
+Both sidebar lists use a shared `SidebarItem`: matching two-line rows, a leading icon, a quiet
+secondary line, and a white bordered selection with a thin left marker. Terminal names use the
+full first line; process details and the individually fading rename/close controls share the
+second. Session rows show their date and terminal/running counts, with terminal names in the
+tooltip. Both create actions sit directly below the shared sidebar header.
 Sidebar tabs use [dnd-kit](https://dndkit.com/react/hooks/use-sortable/) for reordering: drag the
 name area, or hold briefly before dragging on touch. With a tab focused, Space picks it up,
 arrow keys move it, Space drops it, and Escape cancels; Enter still selects the terminal.
