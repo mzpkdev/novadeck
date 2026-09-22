@@ -113,6 +113,7 @@ General contains terminal text size and View modes toggles, applied immediately 
 Disable unused Focus, Grid, or Canvas modes to hide their navigation and actions; at least one mode
 must remain enabled. Disabling the active mode switches to an enabled view. Search and windowed
 actions use an available mode, and disabled layouts are retained until the page reloads.
+Theme and terminal text size use Ark UI Select dropdowns, rendered inside the modal’s top layer with keyboard navigation and focus restoration.
 General also shows the hardcoded Monochrome theme and an appearance switch locked to Light; dark mode is not available.
 Shortcuts lists the existing search and preferences keyboard controls.
 Reloading resets the mock workspaces, sessions, and layouts, while sidebar width, collapsed state, and the preferred windowed mode remain saved.

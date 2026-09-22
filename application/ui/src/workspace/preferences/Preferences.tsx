@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react"
 import "../shell/ModalMotion.css"
 import type { PreferencesValue } from "../model/types"
 import { viewModes } from "./preferences"
+import { PreferenceSelect } from "./PreferenceSelect"
+
+const themes = [{ label: "Monochrome", value: "monochrome" }]
+const fontSizes = [12, 13, 15].map((size) => ({ label: `${size}px`, value: String(size) }))
 
 const outsideDialog = (element: HTMLDialogElement, x: number, y: number): boolean => {
   const bounds = element.getBoundingClientRect()
@@ -26,8 +30,10 @@ export const Preferences = ({
   const closing = useRef(false)
   const backdropPress = useRef(false)
   const [tab, setTab] = useState("general")
+  const [openSelect, setOpenSelect] = useState<string | null>(null)
   const changeTab = (next: string): void => {
     setTab(next)
+    setOpenSelect(null)
     if (panels.current) panels.current.scrollTop = 0
   }
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"
@@ -41,7 +47,7 @@ export const Preferences = ({
   return (
     <dialog
       ref={dialog}
-      className="preferences-dialog fixed m-auto max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] overflow-hidden open:flex flex-col rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal backdrop:bg-scrim backdrop:backdrop-blur-[3px] max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4"
+      className="preferences-dialog fixed m-auto max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] overflow-visible open:flex flex-col rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal backdrop:bg-scrim backdrop:backdrop-blur-[3px] max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4"
       aria-labelledby="preferences-title"
       aria-hidden={!open}
       inert={!open}
@@ -66,6 +72,7 @@ export const Preferences = ({
         onClose()
       }}
       onClose={() => {
+        setOpenSelect(null)
         if (closing.current) {
           closing.current = false
           return
@@ -125,19 +132,14 @@ export const Preferences = ({
           inert={tab !== "general"}
           tabIndex={tab === "general" ? 0 : -1}
         >
-          <label
-            className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink"
-            htmlFor="theme"
-          >
-            <span>Theme</span>
-            <select
-              className="min-w-[120px] rounded-control border border-line bg-paper px-2 py-1.75 shadow-control text-[11px] text-ink"
-              id="theme"
-              defaultValue="monochrome"
-            >
-              <option value="monochrome">Monochrome</option>
-            </select>
-          </label>
+          <PreferenceSelect
+            label="Theme"
+            items={themes}
+            value="monochrome"
+            open={open && tab === "general" && openSelect === "theme"}
+            onOpenChange={(expanded) => setOpenSelect(expanded ? "theme" : null)}
+            container={dialog}
+          />
           <div className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink">
             <div className="flex flex-col gap-1">
               <span>Appearance</span>
@@ -166,22 +168,15 @@ export const Preferences = ({
               />
             </div>
           </div>
-          <label
-            className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink"
-            htmlFor="font-size"
-          >
-            <span>Terminal text size</span>
-            <select
-              className="min-w-[86px] rounded-control border border-line bg-paper px-2 py-1.75 shadow-control text-[11px] text-ink"
-              id="font-size"
-              value={value.fontSize}
-              onChange={(event) => onChange({ ...value, fontSize: Number(event.target.value) })}
-            >
-              <option value={12}>12px</option>
-              <option value={13}>13px</option>
-              <option value={15}>15px</option>
-            </select>
-          </label>
+          <PreferenceSelect
+            label="Terminal text size"
+            items={fontSizes}
+            value={String(value.fontSize)}
+            onValueChange={(size) => onChange({ ...value, fontSize: Number(size) })}
+            open={open && tab === "general" && openSelect === "font-size"}
+            onOpenChange={(expanded) => setOpenSelect(expanded ? "font-size" : null)}
+            container={dialog}
+          />
           <fieldset className="view-preferences m-0 mt-4 min-w-0 border-0 p-0">
             <legend className="mb-2.5 p-0 text-[12px]">View modes</legend>
             <div className="view-preference-options grid grid-cols-3 gap-1.5">

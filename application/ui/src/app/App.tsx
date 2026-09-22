@@ -371,6 +371,7 @@ export const App = (): React.JSX.Element => {
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault()
         setSettings(false)
