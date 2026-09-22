@@ -539,19 +539,25 @@
     cursor: text;
   }
   .canvas-controls {
-    @apply absolute right-6 bottom-5 z-10 flex items-center gap-1 rounded-control border border-line bg-paper p-1;
+    @apply absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5;
+    opacity: 0.25;
+    transition: opacity 140ms ease;
+  }
+  .canvas-controls:hover,
+  .canvas-controls:has(:focus-visible) {
+    opacity: 1;
+  }
+  .canvas-controls .icon-button {
+    @apply size-7 p-1.5;
+  }
+  .canvas-controls .icon-button > svg {
+    @apply size-3;
   }
   .canvas-controls > span {
-    @apply w-10 text-center font-mono text-[10px];
+    @apply w-8 text-center font-mono text-[9px];
   }
   .control-divider {
-    @apply mx-1 h-4 w-px bg-line;
-  }
-  .canvas-hint {
-    @apply pointer-events-none absolute bottom-7 left-6 z-10 text-[9px] text-muted;
-  }
-  .canvas-hint > span {
-    @apply mx-2;
+    @apply mx-0.5 h-3 w-px bg-line;
   }
   .mobile-sidebar-toggle,
   .sidebar-scrim {
@@ -633,11 +639,6 @@
   .focus .view-toolbar {
     padding-left: 16px;
     padding-right: 16px;
-  }
-  .canvas-hint {
-    max-width: 180px;
-    line-height: 1.8;
-    bottom: 20px;
   }
 }
 @media (max-width: 700px) {
@@ -766,11 +767,6 @@
   }
   .canvas .small-button span {
     display: none;
-  }
-  .canvas-hint {
-    left: 17px;
-    font-size: 8px;
-    max-width: 130px;
   }
   .canvas-controls {
     right: 14px;

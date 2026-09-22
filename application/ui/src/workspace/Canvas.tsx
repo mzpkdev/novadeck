@@ -256,9 +256,6 @@ const TerminalCanvas = ({
           bgColor="transparent"
         />
       </ReactFlow>
-      <div className="canvas-hint">
-        Drag to pan <span>·</span> Pinch to zoom <span>·</span> Drag a title to move
-      </div>
       <div className="canvas-controls">
         <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
           <Minus size={15} />
