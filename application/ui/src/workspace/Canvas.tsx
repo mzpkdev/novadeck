@@ -14,6 +14,7 @@ import {
 import { Maximize, Minus, Plus } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 
+import { backgroundPointerHandlers } from "./background"
 import type { Session } from "./sessions"
 import type { MinimizeControls } from "./Terminal"
 
@@ -168,7 +169,7 @@ const TerminalCanvas = ({
 
   return (
     <div
-      className="canvas-viewport"
+      className="canvas-viewport workspace-background"
       style={
         {
           "--canvas-chrome-scale": chromeScale,
@@ -177,23 +178,7 @@ const TerminalCanvas = ({
       }
       aria-label="Terminal canvas"
       tabIndex={0}
-      onPointerMove={(event) => {
-        if (event.pointerType === "touch") return
-        const canvas = event.currentTarget
-        const bounds = canvas.getBoundingClientRect()
-        canvas.style.setProperty("--canvas-pointer-x", `${event.clientX - bounds.left}px`)
-        canvas.style.setProperty(
-          "--canvas-pointer-y",
-          `${event.clientY - bounds.top - canvas.clientTop}px`,
-        )
-        canvas.dataset.pointerInside = "true"
-      }}
-      onPointerLeave={(event) => {
-        delete event.currentTarget.dataset.pointerInside
-      }}
-      onPointerCancel={(event) => {
-        delete event.currentTarget.dataset.pointerInside
-      }}
+      {...backgroundPointerHandlers}
       onKeyDown={(event) => {
         if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
         const steps: Record<string, XYPosition> = {

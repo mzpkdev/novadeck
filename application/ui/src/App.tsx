@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react"
 
 import { Canvas } from "./workspace/Canvas"
+import { Grid, type GridLayouts } from "./workspace/Grid"
 import { mockReply, sessions as initialSessions, type Session } from "./workspace/sessions"
 import { SessionTab } from "./workspace/SessionTab"
 import { Terminal, type Entry, type MinimizeControls } from "./workspace/Terminal"
@@ -27,6 +28,7 @@ const views = [
 export const App = (): React.JSX.Element => {
   const [view, setView] = useState<View>("focus")
   const [sessions, setSessions] = useState(initialSessions)
+  const [gridLayouts, setGridLayouts] = useState<GridLayouts>({})
   const [selected, setSelected] = useState("01")
   const [entries, setEntries] = useState<Record<string, Entry[]>>({})
   const [cleared, setCleared] = useState<Record<string, boolean>>({})
@@ -321,19 +323,12 @@ export const App = (): React.JSX.Element => {
             <div className="focus-stage">{terminal(active, false)}</div>
           )}
           {view === "grid" && sessions.length > 0 && (
-            <div className="grid-stage">
-              <div className="masonry-grid">
-                {sessions.map((session) => (
-                  <div className="masonry-item" key={session.id}>
-                    <div className="grid-item-label">
-                      <span>{session.id}</span>
-                      <span>{session.directory.replace("~/projects/", "")}</span>
-                    </div>
-                    <div style={{ height: session.height }}>{terminal(session, true)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <Grid
+              sessions={sessions}
+              layouts={gridLayouts}
+              onLayoutsChange={setGridLayouts}
+              render={(session) => terminal(session, true)}
+            />
           )}
           {view === "canvas" && sessions.length > 0 && (
             <Canvas

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/base.css" layer(base);
+@import "react-grid-layout/css/styles.css" layer(base);
 
 @theme {
   --color-paper: #ffffff;
@@ -368,23 +369,50 @@
   .small-button {
     @apply flex h-9 items-center gap-2 rounded-control border border-line bg-paper px-4 text-[11px] hover:bg-soft;
   }
+  .grid-viewport {
+    @apply relative flex min-h-0 flex-1 overflow-hidden border-t border-line;
+  }
   .grid-stage {
-    @apply min-h-0 flex-1 overflow-auto bg-shell px-8 pt-6 pb-8;
-    border-top: 1px solid var(--color-line);
+    @apply relative z-1 min-h-0 flex-1 overflow-auto px-8 pt-6 pb-8;
   }
-  .masonry-grid {
-    columns: 3;
-    column-gap: 22px;
+  .grid-dots {
+    @apply absolute inset-0;
+    background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
+    background-size: 24px 24px;
   }
-  .masonry-item {
-    break-inside: avoid;
-    margin-bottom: 24px;
+  .grid-terminal {
+    @apply flex min-h-0 flex-col;
   }
-  .grid-item-label {
-    @apply mb-2.5 flex items-center gap-2 font-mono text-[9px] text-muted;
+  .grid-terminal-body {
+    @apply min-h-0 flex-1;
   }
-  .grid-item-label > span:first-child {
-    @apply text-ink;
+  .terminal-grid .terminal-header {
+    cursor: grab;
+    touch-action: none;
+  }
+  .terminal-grid .react-draggable-dragging .terminal-header {
+    cursor: grabbing;
+  }
+  .terminal-grid .react-grid-placeholder {
+    @apply rounded-panel border border-line bg-soft;
+    opacity: 1;
+  }
+  .terminal-grid .react-resizable-handle {
+    @apply size-7 text-muted;
+    opacity: 0.35;
+    transition: opacity 140ms ease;
+  }
+  .terminal-grid .react-resizable-handle:hover {
+    opacity: 0.8;
+  }
+  .terminal-grid .react-resizable-handle::after {
+    right: 7px;
+    bottom: 7px;
+    width: 11px;
+    height: 11px;
+    border: 0;
+    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
   }
   .terminal-compact .terminal-content {
     @apply px-4 pt-4;
@@ -422,20 +450,23 @@
   }
   .canvas-viewport {
     @apply relative min-h-0 flex-1 overflow-hidden border-t border-line bg-canvas;
+    --canvas-node-idle-opacity: 0.5;
+    touch-action: none;
+  }
+  .workspace-background {
+    background-color: var(--color-canvas);
     --canvas-grid-opacity: 0.2;
     --canvas-grid-spotlight-opacity: 0.48;
     --canvas-grid-spotlight-radius: 210px;
     --canvas-grain-opacity: 0.065;
-    --canvas-node-idle-opacity: 0.5;
     background-image: radial-gradient(
       ellipse at 45% 32%,
       var(--color-paper) 0%,
       var(--color-canvas) 65%,
       var(--color-soft) 100%
     );
-    touch-action: none;
   }
-  .canvas-viewport::before {
+  .workspace-background::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -465,7 +496,7 @@
     transition: opacity 220ms ease-out;
   }
   @media (hover: hover) and (pointer: fine) {
-    .canvas-viewport[data-pointer-inside="true"] .canvas-grid-spotlight {
+    .workspace-background[data-pointer-inside="true"] .canvas-grid-spotlight {
       opacity: var(--canvas-grid-spotlight-opacity);
     }
   }
@@ -618,17 +649,11 @@
 }
 
 @media (min-width: 1650px) {
-  .masonry-grid {
-    columns: 4;
-  }
   .terminal-content {
     padding: 32px 40px;
   }
 }
 @media (max-width: 1100px) {
-  .masonry-grid {
-    columns: 2;
-  }
   .sidebar {
     width: 205px;
   }
@@ -758,9 +783,6 @@
   }
   .grid-stage {
     padding: 16px;
-  }
-  .masonry-grid {
-    columns: 1;
   }
   .small-button {
     padding: 0 12px;

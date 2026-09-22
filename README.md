@@ -18,7 +18,7 @@ pnpm dev
 The repository contains three application workspace packages:
 
 - `application/ui` is the standalone Vite and React frontend. It contains an interactive monochrome
-  terminal mockup with focus, masonry grid, and zoomable canvas layouts. Tailwind CSS and Lucide
+  terminal mockup with focus, draggable grid, and zoomable canvas layouts. Tailwind CSS and Lucide
   provide styling and icons directly in this package.
 - `application/runtime` is the standalone Hono and Node.js backend. It exposes the API without
   owning frontend delivery.
@@ -33,6 +33,10 @@ pnpm dev:web
 
 The UI is then available at `http://127.0.0.1:5173`. To iterate on the mockup without the
 runtime, use `pnpm --filter @novadeck/ui dev`.
+
+Grid view uses React Grid Layout: drag terminal headers to rearrange panels and drag the
+bottom-right grip to resize. Panels snap to a responsive grid and fill vertical gaps. Each
+screen size retains its arrangement when switching views during the current app session.
 
 The terminal sessions and output are sample content. Local demo commands (`help`, `pwd`, `ls`,
 `whoami`, `date`, `echo`, and `clear`) update in-memory history; they do not execute a shell.
