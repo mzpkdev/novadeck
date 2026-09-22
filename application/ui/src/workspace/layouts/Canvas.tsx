@@ -382,18 +382,19 @@ const TerminalCanvas = ({
     lastNavigation.current = navigation
     const node = getNode(selected)
     if (!node) return
+    const duration = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180
     if (fitOnNavigate) {
       void fitView({
         ...fitOptions,
         nodes: [{ id: selected }],
         maxZoom: 1.5,
-        duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180,
+        duration,
       })
       return
     }
     const targetZoom = getViewport().zoom
     const center = centerOf(node, targetZoom)
-    void setCenter(center.x, center.y, { zoom: targetZoom })
+    void setCenter(center.x, center.y, { zoom: targetZoom, duration, interpolate: "linear" })
   }, [initialized, navigation, selected, fitOnNavigate, fitView, getNode, getViewport, setCenter])
 
   return (
@@ -425,8 +426,8 @@ const TerminalCanvas = ({
         event.stopPropagation()
         const step = canvasStep * (event.shiftKey ? 4 : 1)
         moveNode(node.id, {
-          x: snap(node.position.x + direction.x * step),
-          y: snap(node.position.y + direction.y * step),
+          x: node.position.x + direction.x * step,
+          y: node.position.y + direction.y * step,
         })
       }}
       onKeyDown={(event) => {

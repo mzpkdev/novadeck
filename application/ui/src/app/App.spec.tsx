@@ -436,6 +436,21 @@ describe("novadeck. workspace", () => {
     })
   })
 
+  context("when moving Canvas terminals with the keyboard", () => {
+    it("moves by the requested step without snapping the other axis", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      const node = screen
+        .getByRole("region", { name: "Checkout implementation terminal" })
+        .closest<HTMLElement>(".react-flow__node")!
+      expect(node).toHaveStyle({ transform: "translate(80px,80px)" })
+      await interact("keyDown", node, { key: "ArrowRight" })
+      expect(node).toHaveStyle({ transform: "translate(104px,80px)" })
+      await interact("keyDown", node, { key: "ArrowDown", shiftKey: true })
+      expect(node).toHaveStyle({ transform: "translate(104px,176px)" })
+    })
+  })
+
   context("when toggling views from a terminal header", () => {
     for (const view of ["grid", "canvas"] as const) {
       it(`returns to ${view} and back to Focus without changing the terminal`, async () => {

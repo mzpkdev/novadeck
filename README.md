@@ -107,7 +107,8 @@ and `0` to fit. Choosing Grid or Canvas saves your preferred windowed mode acros
 (Grid by default). The fullscreen terminal's windowed button is available whenever a windowed mode is enabled and names its
 destination: “Open in Grid” or “Open in Canvas”. Search results stay in the current view for
 both clicks and Enter, including Focus entered from navigation or a terminal’s maximize button. Grid scrolls to the selected terminal; Canvas pans and zooms to fit the
-searched terminal with a small margin. Canvas sidebar selection and fullscreen return preserve the current zoom.
+searched terminal with a small margin. Canvas sidebar selection smoothly pans to its terminal while preserving zoom; reduced motion makes
+the pan immediate. Fullscreen return also preserves the current zoom.
 Top navigation uses a quick 140ms fade with a small slide following the tab direction; the header
 and sidebar stay still.
 The terminal expand and return buttons animate the card between layouts over 230ms, with a
