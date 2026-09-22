@@ -56,6 +56,10 @@ export const Terminal = ({
   const initialScroll = useRef(scrollOffset)
   const previousOutput = useRef({ length: entries.length, cleared })
   const output = useRef<HTMLDivElement>(null)
+  const headerPress = useRef<{ x: number; y: number; time: number } | null>(null)
+  const headerTap = useRef<{ x: number; y: number; time: number } | null>(null)
+  const ignoreDoubleClickUntil = useRef(0)
+  const toggleView = onFocus ?? windowed?.onOpen
   useEffect(() => {
     if (!output.current) return
     const changed =
@@ -82,7 +86,67 @@ export const Terminal = ({
       data-terminal={session.id}
     >
       <div className="terminal-heading relative shrink-0">
-        <header className="terminal-header flex h-12 shrink-0 flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted">
+        <header
+          className="terminal-header flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
+          onDoubleClick={(event) => {
+            if (
+              performance.now() < ignoreDoubleClickUntil.current ||
+              (event.target as Element).closest("button")
+            )
+              return
+            if (!toggleView) return
+            event.preventDefault()
+            event.stopPropagation()
+            toggleView()
+          }}
+          onPointerDown={(event) => {
+            if (event.pointerType !== "touch") return
+            if (!event.isPrimary || (event.target as Element).closest("button")) {
+              headerPress.current = null
+              headerTap.current = null
+              return
+            }
+            headerPress.current = { x: event.clientX, y: event.clientY, time: event.timeStamp }
+          }}
+          onPointerMove={(event) => {
+            const press = headerPress.current
+            if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8) {
+              headerPress.current = null
+              headerTap.current = null
+            }
+          }}
+          onPointerCancel={() => {
+            headerPress.current = null
+            headerTap.current = null
+          }}
+          onPointerUp={(event) => {
+            if (event.pointerType !== "touch") return
+            const press = headerPress.current
+            headerPress.current = null
+            if (
+              !press ||
+              event.timeStamp - press.time > 300 ||
+              Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8
+            ) {
+              headerTap.current = null
+              return
+            }
+            const previous = headerTap.current
+            headerTap.current = { x: event.clientX, y: event.clientY, time: event.timeStamp }
+            if (
+              !toggleView ||
+              !previous ||
+              event.timeStamp - previous.time > 350 ||
+              Math.hypot(event.clientX - previous.x, event.clientY - previous.y) > 24
+            )
+              return
+            headerTap.current = null
+            ignoreDoubleClickUntil.current = performance.now() + 500
+            event.preventDefault()
+            event.stopPropagation()
+            toggleView()
+          }}
+        >
           <div
             className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium"
             title={session.name}

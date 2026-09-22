@@ -108,6 +108,8 @@ and sidebar stay still.
 The terminal expand and return buttons animate the card between layouts over 230ms, with a
 separate content crossfade and stationary app chrome. Reduced motion and unsupported browsers
 switch immediately; offscreen terminals fade instead of flying across the workspace.
+Double-click or double-tap a terminal header to enter Focus, or return to the last windowed mode.
+Header buttons, dragging, and disabled view modes retain their existing behavior.
 Canvas positions, sizes, folded states, zoom, and pan survive ordinary mode switches. Windowed
 and search actions explicitly reveal their target; Canvas sidebar selection also centers its
 terminal without changing zoom. Cmd/Ctrl + K opens session

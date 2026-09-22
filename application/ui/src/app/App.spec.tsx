@@ -5,7 +5,7 @@ import { context, describe, expect, it } from "../test"
 import { App } from "./App"
 
 const interact = async (
-  type: "click" | "change" | "keyDown" | "submit",
+  type: "click" | "doubleClick" | "change" | "keyDown" | "submit",
   element: Element,
   options?: object,
 ): Promise<void> => {
@@ -393,6 +393,43 @@ describe("novadeck. workspace", () => {
       expect(screen.getAllByRole("region", { name: /terminal$/ })).toHaveLength(6)
       await interact("click", screen.getByRole("button", { name: "Focus Checkout review" }))
       expect(screen.getByRole("heading", { name: "Checkout review" })).toBeVisible()
+    })
+  })
+
+  context("when toggling views from a terminal header", () => {
+    for (const view of ["grid", "canvas"] as const) {
+      it(`returns to ${view} and back to Focus without changing the terminal`, async () => {
+        localStorage.setItem("novadeck.windowed-view", view)
+        const app = render(<App />)
+        const header = (): HTMLElement =>
+          app.getByRole("heading", { name: "Checkout implementation" }).closest("header")!
+        await interact("doubleClick", header())
+        expect(screen.getByRole("region", { name: `${view} view` })).toBeVisible()
+        await interact("doubleClick", header())
+        expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+        expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
+      })
+    }
+
+    it("ignores double-clicks originating from header buttons", async () => {
+      render(<App />)
+      const terminal = screen.getByRole("region", { name: "Checkout implementation terminal" })
+      await interact(
+        "doubleClick",
+        within(terminal).getByRole("button", { name: "Close Checkout implementation" }),
+      )
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      expect(terminal).toBeVisible()
+    })
+
+    it("does nothing when windowed modes are unavailable", async () => {
+      localStorage.setItem("novadeck.preferences", JSON.stringify({ enabledViews: ["focus"] }))
+      render(<App />)
+      await interact(
+        "doubleClick",
+        screen.getByRole("heading", { name: "Checkout implementation" }).closest("header")!,
+      )
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
     })
   })
 
