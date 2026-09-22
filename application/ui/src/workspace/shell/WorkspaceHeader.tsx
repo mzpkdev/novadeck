@@ -88,7 +88,7 @@ export const WorkspaceHeader = ({
       </nav>
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
         <button
-          className="icon-button header-search max-[701px]:hidden w-auto gap-2 border border-line bg-paper px-2.5 text-[11px] [&_kbd]:ml-3 [&_kbd]:border-0 [&_kbd]:p-0 [&_kbd]:text-[9px] [&_kbd]:text-muted"
+          className="icon-button header-search max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:border-transparent max-[701px]:px-0 [&>span]:max-[701px]:hidden [&>kbd]:max-[701px]:hidden w-auto gap-2 border border-line bg-paper px-2.5 text-[11px] [&_kbd]:ml-3 [&_kbd]:border-0 [&_kbd]:p-0 [&_kbd]:text-[9px] [&_kbd]:text-muted"
           aria-label="Find a terminal"
           title="Find a terminal (⌘K / Ctrl+K)"
           onClick={onSearch}
