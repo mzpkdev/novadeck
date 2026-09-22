@@ -569,7 +569,7 @@ export const App = (): React.JSX.Element => {
                   className="workspace-dots absolute inset-0 canvas-grid-spotlight"
                   aria-hidden="true"
                 />
-                <section className="empty-state relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8">
+                <section className="empty-state relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8 shadow-panel">
                   <span className="empty-state-icon mb-4 flex size-11 items-center justify-center rounded-control border border-line bg-shell text-muted">
                     <TerminalIcon size={22} strokeWidth={1.4} />
                   </span>

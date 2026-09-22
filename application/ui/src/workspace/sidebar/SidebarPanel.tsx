@@ -2,7 +2,7 @@ import { X } from "lucide-react"
 import type { ReactNode } from "react"
 
 export const sidebarCreateClasses =
-  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-line bg-paper px-2.5 text-left text-[11px] text-ink hover:bg-soft focus-visible:bg-soft"
+  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-line bg-paper px-2.5 shadow-control text-left text-[11px] text-ink hover:bg-soft focus-visible:bg-soft"
 
 export const SidebarPanel = ({
   id,

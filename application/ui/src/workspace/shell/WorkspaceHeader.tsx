@@ -67,7 +67,7 @@ export const WorkspaceHeader = ({
         />
       </div>
       <nav
-        className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5"
+        className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5 shadow-control"
         aria-label="Workspace layout"
       >
         {views

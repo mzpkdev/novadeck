@@ -94,7 +94,7 @@ export const WorkspaceSwitcher = ({
       {open && (
         <section
           id={popupId}
-          className="workspace-switcher-menu absolute top-[calc(100%+10px)] left-0 z-40 w-[min(280px,calc(100vw-24px))] overflow-hidden rounded-popover border border-line bg-paper text-ink shadow-none max-[700px]:fixed max-[700px]:top-[54px] max-[700px]:left-3"
+          className="workspace-switcher-menu absolute top-[calc(100%+10px)] left-0 z-40 w-[min(280px,calc(100vw-24px))] overflow-hidden rounded-popover border border-line bg-paper text-ink shadow-floating max-[700px]:fixed max-[700px]:top-[54px] max-[700px]:left-3"
           role="dialog"
           aria-label="Switch workspace"
         >
@@ -120,14 +120,14 @@ export const WorkspaceSwitcher = ({
               />
               <div className="workspace-switcher-create-actions flex justify-end gap-1.5">
                 <button
-                  className="min-h-[29px] rounded-control border border-line bg-paper px-2.5 text-[11px] text-ink hover:bg-soft disabled:text-muted disabled:opacity-55"
+                  className="min-h-[29px] rounded-control border border-line bg-paper shadow-control px-2.5 text-[11px] text-ink hover:bg-soft disabled:text-muted disabled:opacity-55"
                   type="submit"
                   disabled={!name.trim()}
                 >
                   Create
                 </button>
                 <button
-                  className="min-h-[29px] rounded-control border border-line bg-paper px-2.5 text-[11px] text-ink hover:bg-soft"
+                  className="min-h-[29px] rounded-control border border-line bg-paper shadow-control px-2.5 text-[11px] text-ink hover:bg-soft"
                   type="button"
                   onClick={() => {
                     setCreating(false)

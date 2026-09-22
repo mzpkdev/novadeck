@@ -334,7 +334,7 @@ const TerminalCanvas = ({
           bgColor="transparent"
         />
       </ReactFlow>
-      <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5">
+      <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5 shadow-control">
         <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
           <Minus size={15} />
         </button>

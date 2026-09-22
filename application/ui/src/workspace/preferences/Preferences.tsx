@@ -41,7 +41,7 @@ export const Preferences = ({
   return (
     <dialog
       ref={dialog}
-      className="preferences-dialog fixed m-auto max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] overflow-hidden open:flex flex-col rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-none backdrop:bg-scrim backdrop:backdrop-blur-[3px] max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4"
+      className="preferences-dialog fixed m-auto max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] overflow-hidden open:flex flex-col rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal backdrop:bg-scrim backdrop:backdrop-blur-[3px] max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4"
       aria-labelledby="preferences-title"
       aria-hidden={!open}
       inert={!open}
@@ -131,7 +131,7 @@ export const Preferences = ({
           >
             <span>Theme</span>
             <select
-              className="min-w-[120px] rounded-control border border-line bg-paper px-2 py-1.75 text-[11px] text-ink"
+              className="min-w-[120px] rounded-control border border-line bg-paper px-2 py-1.75 shadow-control text-[11px] text-ink"
               id="theme"
               defaultValue="monochrome"
             >
@@ -172,7 +172,7 @@ export const Preferences = ({
           >
             <span>Terminal text size</span>
             <select
-              className="min-w-[86px] rounded-control border border-line bg-paper px-2 py-1.75 text-[11px] text-ink"
+              className="min-w-[86px] rounded-control border border-line bg-paper px-2 py-1.75 shadow-control text-[11px] text-ink"
               id="font-size"
               value={value.fontSize}
               onChange={(event) => onChange({ ...value, fontSize: Number(event.target.value) })}
@@ -196,7 +196,7 @@ export const Preferences = ({
                 return (
                   <label
                     key={mode}
-                    className={`relative flex min-h-[66px] min-w-0 flex-col justify-between gap-2 rounded-control border p-[9px] text-[12px] ${checked ? "border-line-strong bg-shell text-ink" : "border-line bg-paper text-muted hover:bg-shell hover:text-ink"} ${checked && value.enabledViews.length === 1 ? "cursor-not-allowed" : "cursor-pointer"} has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-3 max-[360px]:min-h-[60px] max-[360px]:p-[7px] max-[360px]:text-[10px]`}
+                    className={`relative flex min-h-[66px] min-w-0 flex-col justify-between gap-2 rounded-control border p-[9px] text-[12px] ${checked ? "border-line-strong bg-shell text-ink shadow-control" : "border-line bg-paper text-muted hover:bg-shell hover:text-ink"} ${checked && value.enabledViews.length === 1 ? "cursor-not-allowed" : "cursor-pointer"} has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-3 max-[360px]:min-h-[60px] max-[360px]:p-[7px] max-[360px]:text-[10px]`}
                   >
                     <input
                       type="checkbox"

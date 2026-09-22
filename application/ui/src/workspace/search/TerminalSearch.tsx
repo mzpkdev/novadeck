@@ -45,7 +45,7 @@ export const TerminalSearch = ({
         role="dialog"
         aria-modal="true"
         aria-label="Find a terminal"
-        className="search-dialog w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper"
+        className="search-dialog w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Tab") {
