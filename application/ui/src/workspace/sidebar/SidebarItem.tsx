@@ -40,7 +40,7 @@ export const SidebarItem = ({
   <div
     {...attributes}
     ref={ref}
-    className={`${sidebarItemClasses} ${className}`}
+    className={`${sidebarItemClasses} ${editing ? "flex-col" : ""} ${className}`}
     data-selected={selected}
   >
     <button
@@ -66,7 +66,9 @@ export const SidebarItem = ({
     </button>
     {editor}
     {actions && (
-      <div className="sidebar-item-actions absolute right-2 bottom-[9px] flex h-6 items-center">
+      <div
+        className={`sidebar-item-actions flex h-6 shrink-0 items-center ${editing ? "mr-2 mb-[9px] self-end" : "absolute right-2 bottom-[9px]"}`}
+      >
         {actions}
       </div>
     )}

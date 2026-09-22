@@ -198,6 +198,7 @@
     opacity var(--motion-state) var(--ease-interface);
 }
 .terminal-grid .grid-terminal:is(.react-draggable-dragging, .resizing) {
+  @apply z-3;
   transition: opacity var(--motion-state) var(--ease-interface);
 }
 .terminal-grid .terminal-header {
