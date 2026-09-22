@@ -11,7 +11,6 @@ import {
   type Node,
   type NodeProps,
   type OnNodesChange,
-  type Viewport,
   type XYPosition,
 } from "@xyflow/react"
 import { Maximize, Minus, Plus } from "lucide-react"
@@ -27,21 +26,13 @@ import {
 } from "react"
 
 import { backgroundPointerHandlers } from "./background"
-import type { Session } from "./sessions"
 import type { MinimizeControls } from "./Terminal"
+import type { Session, CanvasLayout } from "./types"
 
 type TerminalNode = Node<
   { content: ReactNode; compactHeader: boolean; minimized: boolean },
   "terminal"
 >
-export type CanvasLayout = {
-  viewport?: Viewport
-  minimized: Record<string, boolean>
-  geometry: Record<
-    string,
-    Pick<TerminalNode, "position" | "measured" | "dragging" | "resizing" | "width" | "height">
-  >
-}
 type CanvasProps = {
   layout: CanvasLayout
   revealOnMount: boolean

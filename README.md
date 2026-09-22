@@ -125,8 +125,20 @@ and shadows are centralized there. Ordinary component styling uses Tailwind util
 `styles.css` retains the theme, shared primitives, contextual terminal/library rules, and canvas
 effects, while `workspace/ModalMotion.css` owns native-dialog and search transitions. Shared motion tokens give controls 120ms feedback and selection
 states 180ms fades; dragging stays immediate and reduced motion disables these transitions.
-Terminal sample data lives in
-`application/ui/src/workspace/sessions.ts`.
+The UI's state model lives in `application/ui/src/workspace/types.ts`, with pure updates and
+selectors in `workspace/state.ts`. One reducer owns the project/session tree: each project retains
+its active session and history, and each session owns its terminals, drafts, output, selection,
+view choice, and layouts. Updates carry project and session IDs so delayed component callbacks
+still update their original session. Closing a terminal prunes its output and layout records.
+
+`App.tsx` composes the views and coordinates browser effects, navigation, and transient controls.
+`WorkspaceHeader` renders navigation, `TerminalSearch` owns search input and focus, and the
+sidebar, terminal, Grid, and Canvas components handle their respective presentation and interactions.
+`workspace/preferences.ts` reads and validates persisted preferences. Sample projects, terminals,
+command replies, and transcripts live under `workspace/mock/`; they are separate from the state model.
+Reducer tests cover session isolation, restoration, scoped updates, and terminal cleanup, alongside
+the App interaction tests. This remains an in-memory mockup; runtime/process integration and
+workspace persistence are future work.
 
 ## Deployment configuration
 

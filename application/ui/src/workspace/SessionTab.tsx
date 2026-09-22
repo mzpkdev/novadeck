@@ -2,8 +2,8 @@ import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import type { Session } from "./sessions"
 import { SidebarItem } from "./SidebarItem"
+import type { Session } from "./types"
 
 export const SessionTab = ({
   session,

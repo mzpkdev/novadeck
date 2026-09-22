@@ -2,28 +2,8 @@ import { LayoutGrid, PanelLeft, SquareDashedMousePointer, X } from "lucide-react
 import { useEffect, useRef, useState } from "react"
 
 import "./ModalMotion.css"
-
-export const viewModes = ["focus", "grid", "canvas"] as const
-export type ViewMode = (typeof viewModes)[number]
-export type PreferencesValue = { fontSize: number; enabledViews: ViewMode[] }
-export const preferencesStorageKey = "novadeck.preferences"
-export const readPreferences = (): PreferencesValue => {
-  const defaults: PreferencesValue = { fontSize: 13, enabledViews: [...viewModes] }
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem(preferencesStorageKey) ?? "null",
-    ) as Partial<PreferencesValue> | null
-    const enabledViews = Array.isArray(saved?.enabledViews)
-      ? viewModes.filter((mode) => saved.enabledViews!.includes(mode))
-      : defaults.enabledViews
-    return {
-      enabledViews: enabledViews.length ? enabledViews : defaults.enabledViews,
-      fontSize: [12, 13, 15].includes(saved?.fontSize ?? 0) ? saved!.fontSize! : defaults.fontSize,
-    }
-  } catch {
-    return defaults
-  }
-}
+import { viewModes } from "./preferences"
+import type { PreferencesValue } from "./types"
 
 export const Preferences = ({
   open,

@@ -1,15 +1,4 @@
-export type Session = {
-  id: string
-  name: string
-  directory: string
-  command: string
-  process: string
-  state: "running" | "idle" | "finished"
-  kind: "shell" | "server" | "tests" | "git" | "logs" | "build" | "claude" | "codex"
-  x: number
-  y: number
-  height: number
-}
+import type { Project, Session } from "../types"
 
 export const sessions: Session[] = [
   {
@@ -85,6 +74,33 @@ export const sessions: Session[] = [
     height: 305,
   },
 ]
+
+export const initialProjects: Project[] = [
+  { id: "storefront", name: "storefront", directory: "~/projects/storefront" },
+  { id: "api-service", name: "api-service", directory: "~/projects/api-service" },
+]
+
+export const projectSessions = (project: Project): Session[] =>
+  sessions.map((session) => ({
+    ...session,
+    directory: session.directory.replace(/^~\/projects\/[^/]+/, project.directory),
+  }))
+
+export const createMockTerminal = (number: number, directory: string): Session => {
+  const id = String(number).padStart(2, "0")
+  return {
+    id,
+    name: `Terminal ${id}`,
+    directory,
+    command: "zsh",
+    process: "zsh",
+    state: "idle",
+    kind: "shell",
+    x: 80 + ((number - 1) % 3) * 610,
+    y: 80 + Math.floor((number - 1) / 3) * 470,
+    height: 400,
+  }
+}
 
 export const mockReply = (command: string, session: Session): string => {
   const input = command.trim()

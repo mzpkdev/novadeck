@@ -11,9 +11,9 @@ import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
 import { useMemo, useState } from "react"
 
-import type { Session } from "./sessions"
 import { SessionTab } from "./SessionTab"
 import { sidebarListClasses } from "./SidebarItem"
+import type { Session } from "./types"
 
 const sensors = [
   PointerSensor.configure({

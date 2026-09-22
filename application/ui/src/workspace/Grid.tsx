@@ -1,18 +1,12 @@
 import { useLayoutEffect, useRef, useMemo, type ReactNode } from "react"
-import {
-  ResponsiveGridLayout,
-  useContainerWidth,
-  verticalCompactor,
-  type ResponsiveLayouts,
-} from "react-grid-layout"
+import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from "react-grid-layout"
 
 import { backgroundPointerHandlers } from "./background"
-import type { Session } from "./sessions"
+import type { Session, GridLayouts, GridBreakpoint } from "./types"
 
 const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
 const columns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }
-type Breakpoint = keyof typeof columns
-export type GridLayouts = ResponsiveLayouts<Breakpoint>
+type Breakpoint = GridBreakpoint
 
 type Props = {
   sessions: Session[]
