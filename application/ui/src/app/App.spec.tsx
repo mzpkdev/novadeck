@@ -117,7 +117,7 @@ describe("novadeck. workspace", () => {
     })
   })
 
-  context("when starting fresh", () => {
+  context("when creating a session", () => {
     it("keeps previous terminals, output, drafts, and selection while opening an empty session", async () => {
       render(<App />)
       await interact("click", screen.getByRole("button", { name: "Select Runtime" }))
@@ -127,7 +127,7 @@ describe("novadeck. workspace", () => {
       await interact("change", input, { target: { value: "echo unfinished" } })
       await interact("click", screen.getByRole("radio", { name: "Sessions" }))
       const morning = currentSessionName()
-      await interact("click", screen.getByRole("button", { name: "Start fresh" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
       expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
       expect(screen.getByRole("button", { name: morning })).toHaveTextContent("6 terminals")
       expect(screen.getByRole("button", { name: morning })).toHaveTextContent("5 running")
@@ -158,7 +158,7 @@ describe("novadeck. workspace", () => {
         { current: true },
       )
       const morningName = currentSessionName()
-      await interact("click", screen.getByRole("button", { name: "Start fresh" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
       const afternoon = currentSessionName()
       await switchTo("api-service")
       expect(morning).not.toBeInTheDocument()
@@ -183,7 +183,7 @@ describe("novadeck. workspace", () => {
       await interact("click", screen.getByRole("radio", { name: "Grid" }))
       await interact("click", screen.getByRole("radio", { name: "Sessions" }))
       const grid = currentSessionName()
-      await interact("click", screen.getByRole("button", { name: "Start fresh" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
       const focus = currentSessionName()
       await interact("click", screen.getByRole("radio", { name: "Focus" }))
       await interact("click", screen.getByRole("button", { name: grid }))

@@ -42,7 +42,7 @@ export const SessionsPanel = ({
         title="Open an empty session. Your other terminals keep running."
       >
         <Plus size={14} strokeWidth={1.65} />
-        <span>Start fresh</span>
+        <span>New session</span>
       </button>
       <div
         className={`sessions-panel-list ${sidebarListClasses}`}

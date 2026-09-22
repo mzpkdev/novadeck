@@ -62,7 +62,7 @@ The header workspace switcher starts on `storefront`, with `api-service` as anot
 Its dropdown shows directory paths and a disabled Open folder… action, reserved for Electron's
 native directory picker. Workspace names will come from the selected directory; there is no
 name-entry form or simulated folder browser.
-The Sessions icon in the left rail opens each project's ongoing sessions. Start fresh adds an
+The Sessions icon in the left rail opens each project's ongoing sessions. New session adds an
 empty session while keeping all previous terminals available; click a session to return to it.
 Sessions use automatic date/time names. Each retains terminal names,
 tab order, selection, submitted output, unsent drafts, scroll positions, the selected view, and
