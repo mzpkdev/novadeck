@@ -312,7 +312,8 @@ export const App = (): React.JSX.Element => {
     dispatch({ type: "terminal/rename", target, terminalId, name })
   const close = (terminalId: string): void => {
     dispatch({ type: "terminal/close", target, terminalId })
-    if (selected === terminalId) setNavigation((value) => ({ count: value.count + 1, fit: false }))
+    if (selected === terminalId && view !== "canvas")
+      setNavigation((value) => ({ count: value.count + 1, fit: false }))
   }
   const run = (session: Session, command: string): void => {
     if (command.trim() === "clear") {

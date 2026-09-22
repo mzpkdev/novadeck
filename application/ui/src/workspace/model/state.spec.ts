@@ -179,6 +179,27 @@ describe("workspace state", () => {
   })
 
   context("when a terminal closes", () => {
+    for (const selected of ["01", "02", ""]) {
+      it(`preserves the Canvas camera and clears only a closed selection (${selected || "none"})`, () => {
+        const state = workspaceState([terminal("01"), terminal("02")])
+        state.view = "canvas"
+        state.selected = selected
+        state.canvasLayout.viewport = { x: -280, y: 96, zoom: 0.6 }
+        const workspace = seed("storefront", "saved", state)
+
+        const closed = workspaceReducer(workspace, {
+          type: "terminal/close",
+          target: { projectId: "storefront", workspaceSessionId: "saved" },
+          terminalId: "01",
+        })
+
+        expect(activeSession(closed)?.state.selected).toBe(selected === "01" ? "" : selected)
+        expect(activeSession(closed)?.state.canvasLayout.viewport).toEqual(
+          state.canvasLayout.viewport,
+        )
+      })
+    }
+
     it("chooses the next ordered neighbor and removes every terminal-owned record", () => {
       const state = workspaceState([terminal("01"), terminal("02"), terminal("03")], 4)
       state.tabOrder = ["02", "01", "03"]

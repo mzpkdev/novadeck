@@ -181,6 +181,9 @@
 .canvas-node:not(.selected):hover {
   opacity: var(--terminal-hover-opacity);
 }
+.grid-viewport[data-has-selection="false"] .grid-terminal {
+  opacity: 1;
+}
 .terminal-grid .grid-terminal.cssTransforms {
   transition:
     transform var(--motion-layout) ease,

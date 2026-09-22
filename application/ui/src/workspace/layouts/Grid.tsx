@@ -74,6 +74,7 @@ export const Grid = ({
     <div
       className="grid-viewport relative flex min-h-0 flex-1 overflow-hidden workspace-background"
       tabIndex={-1}
+      data-has-selection={Boolean(selected)}
       {...backgroundPointerHandlers}
       onPointerDownCapture={(event) => {
         const id = (event.target as Element).closest<HTMLElement>("[data-grid-terminal]")?.dataset

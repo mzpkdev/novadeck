@@ -56,6 +56,7 @@ Tab order is shared across views and retained per mock workspace for the current
 Reordering leaves Grid/Canvas geometry, the active terminal, and command drafts intact.
 In Grid and Canvas, unfocused terminals fade to 50% opacity, brighten to 75% on hover, and
 return to full opacity when focused, using the shared state transition.
+Grid shows all terminals at full opacity when no terminal is selected.
 
 The header workspace switcher starts on `storefront`, with `api-service` as another sample project.
 Its dropdown shows directory paths and offers Create workspace, which opens an empty mock project.
@@ -90,6 +91,7 @@ Drag the bottom-right grip to resize, or use the minus/plus header control to fo
 terminal. Collapsed terminals keep their resize grip for width-only changes and retain their expanded height.
 Headers and resize grips scale more gently than the terminal body. Clicking the
 background unfocuses the terminal; hovering over its content lets you scroll without focusing it.
+Closing the active Canvas terminal clears selection without panning or zooming to a neighbor.
 Zoom with the controls, a two-finger pinch, or Ctrl/Cmd + wheel, including over terminal cards.
 Use the fit button to see all terminals. A focused canvas also supports arrow keys, `+`/`-`,
 and `0` to fit. Choosing Grid or Canvas saves your preferred windowed mode across reloads

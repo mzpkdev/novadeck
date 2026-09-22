@@ -235,10 +235,9 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
   const sessions = orderedSessions(state)
   const index = sessions.findIndex((session) => session.id === terminalId)
   const remaining = sessions.filter((session) => session.id !== terminalId)
-  const selected =
-    state.selected === terminalId
-      ? ((remaining[index] ?? remaining[index - 1])?.id ?? "")
-      : state.selected
+  const neighbor =
+    state.view === "canvas" ? "" : ((remaining[index] ?? remaining[index - 1])?.id ?? "")
+  const selected = state.selected === terminalId ? neighbor : state.selected
   const geometry = withoutKey(state.canvasLayout.geometry, terminalId)
   const minimized = withoutKey(state.canvasLayout.minimized, terminalId)
   return {
