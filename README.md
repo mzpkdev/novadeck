@@ -108,7 +108,7 @@ Canvas positions, sizes, folded states, zoom, and pan survive ordinary mode swit
 and search actions explicitly reveal their target; Canvas sidebar selection also centers its
 terminal without changing zoom. Cmd/Ctrl + K opens session
 search, and Cmd/Ctrl + comma opens preferences. The header keeps an icon-only search button on narrow screens. Search and Preferences share a 140ms movement and 120ms fade on open and dismissal;
-reduced motion makes both immediate. Preferences has General and Shortcuts tabs.
+reduced motion makes both immediate. Preferences has General and Shortcuts tabs sharing the taller panel’s height, with a subtle content fade. Short viewports scroll the content while retaining the heading and tabs. Clicking the backdrop dismisses Preferences and restores focus to its opener.
 General contains terminal text size and View modes toggles, applied immediately and saved locally.
 Disable unused Focus, Grid, or Canvas modes to hide their navigation and actions; at least one mode
 must remain enabled. Disabling the active mode switches to an enabled view. Search and windowed

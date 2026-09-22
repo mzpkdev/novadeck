@@ -142,7 +142,7 @@ export const WorkspaceSwitcher = ({
           ) : (
             <>
               <div
-                className="workspace-switcher-projects max-h-[min(280px,calc(100vh-150px))] overflow-y-auto p-[5px]"
+                className="workspace-switcher-projects flex max-h-[min(280px,calc(100vh-150px))] flex-col gap-1 overflow-y-auto p-[5px]"
                 aria-label="Workspaces"
               >
                 {projects.map((project) => {
@@ -150,7 +150,7 @@ export const WorkspaceSwitcher = ({
                   return (
                     <button
                       key={project.id}
-                      className={`workspace-switcher-project flex w-full min-w-0 items-center gap-3 rounded-control border px-2.5 py-[9px] text-left ${selected ? "selected border-line bg-shell text-ink" : "border-transparent text-muted hover:bg-soft hover:text-ink focus-visible:bg-soft focus-visible:text-ink"}`}
+                      className={`workspace-switcher-project flex w-full min-w-0 items-center gap-3 rounded-control border border-transparent px-2.5 py-[9px] text-left text-ink hover:bg-shell focus-visible:bg-shell focus-visible:outline-offset-[-2px] ${selected ? "selected" : ""}`}
                       type="button"
                       aria-current={selected ? "true" : undefined}
                       title={project.directory}

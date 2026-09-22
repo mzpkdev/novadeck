@@ -88,14 +88,16 @@ export const WorkspaceHeader = ({
       </nav>
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
         <button
-          className="icon-button header-search max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:border-transparent max-[701px]:px-0 [&>span]:max-[701px]:hidden [&>kbd]:max-[701px]:hidden w-auto gap-2 border border-line bg-paper px-2.5 text-[11px] [&_kbd]:ml-3 [&_kbd]:border-0 [&_kbd]:p-0 [&_kbd]:text-[9px] [&_kbd]:text-muted"
+          className="icon-button header-search w-auto gap-2 px-2.5 text-[11px] max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:px-0"
           aria-label="Find a terminal"
           title="Find a terminal (⌘K / Ctrl+K)"
           onClick={onSearch}
         >
           <Search size={15} />
-          <span>Search</span>
-          <kbd>{modifier} K</kbd>
+          <span className="max-[701px]:hidden">Search</span>
+          <kbd className="mb-[-2px] ml-3 min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70 max-[701px]:hidden">
+            {modifier} K
+          </kbd>
         </button>
         <button className="icon-button" onClick={onPreferences} aria-label="Workspace preferences">
           <Settings2 size={16} />
