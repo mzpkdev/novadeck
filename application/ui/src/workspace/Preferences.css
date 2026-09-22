@@ -1,0 +1,217 @@
+.preferences-dialog {
+  position: fixed;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow-y: auto;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-popover);
+  background: var(--color-paper);
+  box-shadow: none;
+  color: var(--color-ink);
+  padding: 20px;
+}
+
+.preferences-dialog::backdrop {
+  background: var(--color-scrim);
+  backdrop-filter: blur(3px);
+}
+
+.preferences-heading {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.preferences-heading h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+.preferences-heading .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.preferences-tabs {
+  display: flex;
+  gap: 16px;
+  margin-top: 18px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.preferences-tabs button {
+  position: relative;
+  min-height: 31px;
+  padding: 0 2px;
+  color: var(--color-muted);
+  font-size: 11px;
+  text-align: left;
+}
+
+.preferences-tabs button[aria-selected="true"] {
+  color: var(--color-ink);
+}
+
+.preferences-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  background: var(--color-strong);
+  content: "";
+}
+
+.preferences-panel:focus-visible {
+  outline: 2px solid var(--color-strong);
+  outline-offset: 4px;
+}
+
+.preferences-panel[hidden] {
+  display: none;
+}
+
+.preference-row {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-ink);
+  font-size: 12px;
+}
+
+.preference-row select {
+  min-width: 86px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: var(--color-paper);
+  padding: 7px 8px;
+  color: var(--color-ink);
+  font-size: 11px;
+}
+
+.view-preferences {
+  min-width: 0;
+  margin: 16px 0 0;
+  border: 0;
+  padding: 0;
+}
+
+.view-preferences legend {
+  margin-bottom: 10px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.view-preference-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.view-preference-options label {
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  min-height: 66px;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: var(--color-paper);
+  padding: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.view-preference-options label:hover {
+  background: var(--color-shell);
+  color: var(--color-ink);
+}
+
+.view-preference-options label:has(input:checked) {
+  border-color: var(--color-line-strong);
+  background: var(--color-shell);
+  color: var(--color-ink);
+}
+
+.view-preference-options label:has(input:focus-visible) {
+  outline: 2px solid var(--color-strong);
+  outline-offset: 3px;
+}
+
+.view-preference-options input {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--color-strong);
+}
+
+.view-preference-options label:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.view-preference-options input:disabled + svg {
+  opacity: 0.45;
+}
+
+.view-preferences p {
+  margin: 9px 0 0;
+  color: var(--color-muted);
+  font-size: 10px;
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 0;
+  margin: 16px 0 0;
+}
+
+.shortcut-list > div {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 12px;
+}
+
+.shortcut-list dt,
+.shortcut-list dd {
+  margin: 0;
+}
+
+.shortcut-list dd {
+  display: flex;
+  gap: 4px;
+}
+
+.shortcut-list kbd {
+  color: var(--color-muted);
+}
+
+@media (max-width: 360px) {
+  .preferences-dialog {
+    width: calc(100vw - 24px);
+    padding: 16px;
+  }
+
+  .view-preference-options label {
+    min-height: 60px;
+    padding: 7px;
+    font-size: 10px;
+  }
+}

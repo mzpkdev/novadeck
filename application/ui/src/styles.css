@@ -10,6 +10,8 @@
   --color-ink: #262826;
   --color-muted: #6b7069;
   --color-line: #e6e8e4;
+  --color-line-strong: #cdd2ca;
+  --color-scrim: rgb(38 40 38 / 0.18);
   --color-soft: #eff1ed;
   --color-strong: #373c35;
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -84,29 +86,39 @@
     @apply flex h-dvh min-h-100 flex-col overflow-hidden bg-paper;
   }
   .app-header {
-    @apply flex h-17 shrink-0 items-center border-b border-line px-6 gap-6;
+    @apply grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .header-workspace {
+    @apply flex min-w-0 items-center gap-4;
   }
   .brand {
-    @apply flex shrink-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.8px];
+    @apply flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px];
     text-decoration: none;
   }
   .brand-symbol {
-    @apply flex size-7 items-center justify-center rounded-control bg-strong text-white;
+    @apply flex size-7 items-center justify-center rounded-control border border-strong bg-strong text-white;
   }
   .view-switch {
-    @apply ml-auto flex shrink-0 gap-1 rounded-control border border-line bg-shell p-1;
+    @apply flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5;
   }
   .view-switch button {
-    @apply flex h-9 items-center justify-center gap-2 rounded-control px-4 text-[11px] text-muted hover:text-ink;
+    @apply flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink;
   }
   .view-switch button.active {
-    @apply bg-white text-ink;
+    @apply border-line bg-paper text-ink;
   }
   .header-actions {
-    @apply ml-6 flex items-center gap-4;
+    @apply flex items-center justify-self-end gap-2;
   }
   .icon-button {
-    @apply inline-flex size-9 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
+    @apply inline-flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
+  }
+  .header-search {
+    @apply w-auto gap-2 border border-line bg-paper px-2.5 text-[11px];
+  }
+  .header-search kbd {
+    @apply ml-3 border-0 p-0 text-[9px] text-muted;
   }
   .icon-button:disabled {
     @apply cursor-default bg-transparent text-muted;
@@ -120,10 +132,13 @@
     @apply relative flex min-h-0 flex-1;
   }
   .sidebar-tools {
-    @apply z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1 py-3;
+    @apply z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3;
+  }
+  .sidebar-tools .icon-button {
+    @apply border border-transparent;
   }
   .sidebar-tools .icon-button.active {
-    @apply bg-soft text-ink;
+    @apply border-line bg-paper text-ink;
   }
   .workspace-panels {
     @apply relative min-h-0 min-w-0 flex-1;
@@ -193,13 +208,22 @@
     @apply w-full rounded-control border border-line bg-paper px-1.5 py-1 text-[12px] text-ink;
   }
   .empty-workspace {
-    @apply flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted;
+    @apply relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted;
+  }
+  .empty-state {
+    @apply relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8;
+  }
+  .empty-state-icon {
+    @apply mb-4 flex size-11 items-center justify-center rounded-control border border-line bg-shell text-muted;
+  }
+  .empty-state-actions {
+    @apply mt-5 flex flex-wrap items-center justify-center gap-2;
   }
   .empty-workspace h2 {
-    @apply mt-2 text-lg font-medium text-ink;
+    @apply text-base font-medium tracking-tight text-ink;
   }
   .empty-workspace p {
-    @apply mb-3 text-xs;
+    @apply mt-2 max-w-60 text-xs leading-relaxed;
   }
   .empty-sessions-link {
     @apply rounded-control px-3 py-2 text-[11px] text-muted hover:bg-soft hover:text-ink;
@@ -218,12 +242,29 @@
   }
   .terminal-window {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper;
+    transition: border-color var(--motion-state) var(--ease-interface);
+  }
+  .terminal-focused,
+  .grid-terminal.selected .terminal-window,
+  .canvas-node.selected .terminal-window {
+    border-color: var(--color-line-strong);
   }
   .terminal-heading {
-    @apply shrink-0;
+    @apply relative shrink-0;
+  }
+  .terminal-heading::before {
+    content: "";
+    @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-strong;
+    opacity: 0;
+    transition: opacity var(--motion-state) var(--ease-interface);
+  }
+  .terminal-focused .terminal-heading::before,
+  .grid-terminal.selected .terminal-heading::before,
+  .canvas-node.selected .terminal-heading::before {
+    opacity: 1;
   }
   .terminal-header {
-    @apply flex h-11 shrink-0 flex-nowrap items-center justify-between gap-3 border-b border-line bg-shell/60 px-4 text-[11px] whitespace-nowrap;
+    @apply flex h-12 shrink-0 flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap;
   }
   .terminal-title {
     @apply flex min-w-0 items-center gap-2.5;
@@ -241,9 +282,9 @@
     @apply shrink-0 text-muted;
   }
   .terminal-content {
-    @apply min-h-0 flex-1 overflow-auto px-7 pt-5 pb-6 font-mono;
+    @apply min-h-0 flex-1 overflow-auto p-6 font-mono;
     font-size: var(--terminal-font-size, 13px);
-    line-height: 1.85;
+    line-height: 1.75;
     scrollbar-width: thin;
     scrollbar-color: var(--color-line) transparent;
   }
@@ -267,10 +308,14 @@
     @apply mt-1 grid w-max max-w-full grid-cols-3 gap-x-10;
   }
   .command-form {
-    @apply mt-7;
+    @apply mt-6 rounded-control border border-line bg-shell p-3;
+    transition: border-color var(--motion-state) var(--ease-interface);
+  }
+  .command-form:focus-within {
+    border-color: var(--color-line-strong);
   }
   .command-location {
-    @apply mb-0.5 flex items-center gap-2 text-[11px];
+    @apply mb-1 flex items-center gap-2 text-[10px] text-muted;
   }
   .command-location > svg {
     @apply ml-1 text-muted;
@@ -331,31 +376,34 @@
     @apply border-t border-line pt-3;
   }
   .agent-command-form {
-    @apply max-w-180 border-y border-line py-2;
+    @apply max-w-180;
   }
   .agent-command-form input::placeholder {
     color: var(--color-muted);
   }
   .app-footer {
-    @apply flex h-8 shrink-0 items-center justify-between border-t border-line bg-shell/50 px-5 text-[9px] text-muted;
+    @apply flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted;
   }
   .footer-running {
-    @apply ml-2;
+    @apply ml-2 border-l border-line pl-3;
   }
   .app-footer > button {
     @apply flex items-center gap-3 hover:text-ink;
   }
   kbd {
-    @apply rounded-control border border-line px-1 py-0.25 font-sans text-[9px];
+    @apply inline-flex min-h-5 items-center justify-center rounded-control border border-line bg-shell px-1.5 font-mono text-[9px];
   }
   .small-button {
     @apply flex h-9 items-center gap-2 rounded-control border border-line bg-paper px-4 text-[11px] hover:bg-soft;
+  }
+  .small-button.primary {
+    @apply border-strong bg-strong text-white hover:bg-ink;
   }
   .grid-viewport {
     @apply relative flex min-h-0 flex-1 overflow-hidden;
   }
   .grid-stage {
-    @apply relative z-1 min-h-0 flex-1 overflow-auto px-8 pt-6 pb-8;
+    @apply relative z-1 min-h-0 flex-1 overflow-auto p-4;
     scrollbar-gutter: stable;
   }
   .workspace-dots {
@@ -419,11 +467,11 @@
   .terminal-compact .terminal-content {
     @apply px-4 pt-4;
     font-size: calc(var(--terminal-font-size, 13px) - 2px);
-    line-height: 1.9;
+    line-height: 1.8;
   }
   .terminal-compact .terminal-header,
   .terminal-focused .terminal-header {
-    @apply h-10 px-3;
+    @apply h-12 px-4;
   }
   .terminal-compact .terminal-meta {
     @apply mb-3 gap-x-3 text-[9px];
@@ -459,10 +507,10 @@
     --terminal-idle-opacity: 0.5;
     --terminal-hover-opacity: 0.75;
     background-color: var(--color-canvas);
-    --canvas-grid-opacity: 0.2;
+    --canvas-grid-opacity: 0.16;
     --canvas-grid-spotlight-opacity: 0.48;
     --canvas-grid-spotlight-radius: 210px;
-    --canvas-grain-opacity: 0.065;
+    --canvas-grain-opacity: 0.045;
     background-image: radial-gradient(
       ellipse at 45% 32%,
       var(--color-paper) 0%,
@@ -612,111 +660,80 @@
     display: none;
   }
   .search-backdrop {
-    @apply fixed inset-0 z-30 flex items-start justify-center bg-ink/20 px-5 pt-[18vh] backdrop-blur-[3px];
+    @apply fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh];
+    background: var(--color-scrim);
+    backdrop-filter: blur(3px);
   }
   .search-dialog {
-    @apply w-full max-w-120 overflow-hidden rounded-popover border border-line bg-paper;
+    @apply w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper;
   }
   .search-field {
-    @apply flex items-center gap-3 border-b border-line p-4 text-muted;
+    @apply flex min-h-17 items-center gap-3 border-b border-line px-5 py-3 text-muted;
   }
   .search-field input {
-    @apply flex-1 bg-transparent text-ink;
+    @apply min-w-0 flex-1 bg-transparent text-sm text-ink;
   }
   .search-field input:focus-visible {
     outline: none;
   }
   .search-results {
-    @apply max-h-[50vh] overflow-y-auto p-2;
+    @apply flex max-h-[50vh] flex-col gap-1 overflow-y-auto p-2;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
   }
   .search-results > button {
-    @apply flex w-full items-center gap-3 rounded-control p-3 text-left hover:bg-soft;
+    @apply flex min-h-15 w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell;
+  }
+  .search-results > button:focus-visible {
+    @apply border-line bg-shell;
+    outline-offset: -2px;
+  }
+  .search-results > button > svg {
+    @apply shrink-0 text-muted;
   }
   .search-results button > span {
-    @apply flex flex-1 flex-col gap-1;
+    @apply flex min-w-0 flex-1 flex-col gap-1;
+  }
+  .search-result-copy strong {
+    @apply truncate text-xs font-medium;
+  }
+  .search-result-action {
+    opacity: 0.25;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
+  }
+  .search-results > button:is(:hover, :focus-visible) .search-result-action {
+    opacity: 1;
   }
   .search-results small {
-    @apply font-mono text-[10px] text-muted;
+    @apply flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted;
+  }
+  .search-results small > span:first-child {
+    @apply shrink-0;
+  }
+  .search-results small > span:last-child {
+    @apply truncate border-l border-line pl-2;
   }
   .search-footnote {
-    @apply flex justify-between border-t border-line px-4 py-3 text-[10px] text-muted;
+    @apply flex items-center justify-between border-t border-line bg-shell px-5 py-3 text-[10px] text-muted;
   }
-  .preferences-dialog {
-    @apply fixed m-auto w-[calc(100%-40px)] max-w-120 max-h-[calc(100dvh-40px)] overflow-y-auto rounded-popover border border-line bg-paper p-6 text-ink;
+  .search-dismiss {
+    @apply flex items-center gap-2;
   }
-  .preferences-dialog::backdrop {
-    background: #26282633;
-    backdrop-filter: blur(3px);
-  }
-  .preferences-heading {
-    @apply mb-2 flex items-center justify-between gap-4;
-  }
-  .preferences-heading h2 {
-    @apply text-lg font-medium tracking-tight;
-  }
-  .preference-row {
-    @apply flex min-h-20 items-center justify-between gap-3 border-b border-line py-4 text-xs;
-  }
-  .preference-row select {
-    @apply min-w-22 rounded-control border border-line bg-shell p-2 text-xs;
-  }
-  .view-preferences {
-    @apply mt-5 min-w-0 text-xs;
-  }
-  .view-preferences legend {
-    @apply mb-3;
-  }
-  .view-preference-options {
-    @apply flex flex-wrap gap-2;
-  }
-  .view-preference-options label {
-    @apply flex cursor-pointer items-center gap-2 rounded-control border border-line px-3 py-2 hover:bg-soft;
-  }
-  .view-preference-options label:has(:checked) {
-    @apply bg-shell;
-  }
-  .view-preference-options label:has(:disabled) {
-    @apply cursor-default;
-  }
-  .view-preference-options input {
-    @apply size-3.5;
-    accent-color: var(--color-ink);
-  }
-  .view-preferences p {
-    @apply mt-3 text-[10px] text-muted;
-  }
-  .preferences-tabs {
-    @apply flex gap-5 border-b border-line;
-  }
-  .preferences-tabs > button {
-    @apply border-b-2 border-transparent px-0.5 py-3 text-xs text-muted hover:text-ink;
-  }
-  .preferences-tabs > button[aria-selected="true"] {
-    @apply border-ink text-ink;
-  }
-  .preferences-panel {
-    @apply min-h-24 pt-2;
-  }
-  .shortcut-list > div {
-    @apply flex min-h-10 items-center justify-between gap-3 text-xs;
-  }
-  .shortcut-list dd {
-    @apply flex shrink-0 gap-1;
-  }
-  .shortcut-list kbd {
-    @apply min-w-6 py-1 text-center font-mono text-[10px];
+  .search-empty {
+    @apply px-4 py-10 text-center text-xs text-muted;
   }
 }
 
 @media (min-width: 1650px) {
   .terminal-content {
-    padding: 32px 40px;
+    padding: 28px 32px;
   }
 }
 @media (min-width: 701px) and (max-width: 1000px) {
   .app-header {
     gap: 12px;
-    padding-inline: 18px;
+    padding-inline: 16px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
   .brand > span:last-child {
     display: none;
@@ -729,8 +746,12 @@
 @media (max-width: 700px) {
   .app-header {
     height: 60px;
-    padding: 0 14px;
-    gap: 10px;
+    padding: 0 12px;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .header-workspace {
+    gap: 8px;
   }
   .brand {
     width: auto;
@@ -751,8 +772,10 @@
     gap: 0;
   }
   .view-switch button {
-    padding: 0 12px;
-    gap: 5px;
+    min-width: 0;
+    width: 32px;
+    padding: 0 8px;
+    gap: 0;
     font-size: 10px;
   }
   .header-actions {
@@ -787,7 +810,7 @@
     inset: 0;
     left: 44px;
     z-index: 19;
-    background: #26282625;
+    background: var(--color-scrim);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -804,7 +827,7 @@
     padding: 6px;
   }
   .terminal-content {
-    padding: 20px 17px;
+    padding: 18px 14px;
     font-size: calc(var(--terminal-font-size, 13px) - 1px);
   }
   .file-list {

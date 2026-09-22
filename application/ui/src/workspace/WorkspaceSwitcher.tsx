@@ -1,4 +1,4 @@
-import { Check, ChevronDown, FolderPlus } from "lucide-react"
+import { Check, ChevronDown, Folder, FolderPlus } from "lucide-react"
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 
 import "./WorkspaceSwitcher.css"
@@ -85,6 +85,7 @@ export const WorkspaceSwitcher = ({
           else setOpen(true)
         }}
       >
+        <Folder aria-hidden="true" size={14} strokeWidth={1.55} />
         <span>{current.name}</span>
         <ChevronDown aria-hidden="true" size={14} strokeWidth={1.75} />
       </button>

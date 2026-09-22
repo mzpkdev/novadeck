@@ -113,6 +113,11 @@ actions use an available mode, and disabled layouts are retained until the page 
 Shortcuts lists the existing search and preferences keyboard controls.
 Reloading resets the mock workspaces, sessions, and layouts, while sidebar width, collapsed state, and the preferred windowed mode remain saved.
 
+App chrome shares the sidebar’s restrained styling: centered view navigation, white terminal
+headers with a thin active marker, bordered command inputs, and matching search, preferences,
+and workspace controls. Empty workspaces retain the gradient and dot background. Borders and
+surface tones separate panels without shadows; compact layouts keep navigation accessible.
+
 Tailwind v4 tokens live in `application/ui/src/styles.css` using the
 [CSS theme configuration](https://tailwindcss.com/docs/theme), with the existing
 `@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,

@@ -1,7 +1,8 @@
-import { X } from "lucide-react"
+import { LayoutGrid, PanelLeft, SquareDashedMousePointer, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import "./ModalMotion.css"
+import "./Preferences.css"
 
 export const viewModes = ["focus", "grid", "canvas"] as const
 export type ViewMode = (typeof viewModes)[number]
@@ -126,6 +127,12 @@ export const Preferences = ({
           <div className="view-preference-options">
             {viewModes.map((mode) => {
               const checked = value.enabledViews.includes(mode)
+              const Icon =
+                mode === "focus"
+                  ? PanelLeft
+                  : mode === "grid"
+                    ? LayoutGrid
+                    : SquareDashedMousePointer
               return (
                 <label key={mode}>
                   <input
@@ -141,6 +148,7 @@ export const Preferences = ({
                       })
                     }
                   />
+                  <Icon aria-hidden="true" size={15} strokeWidth={1.5} />
                   <span>{mode === "focus" ? "Focus" : mode === "grid" ? "Grid" : "Canvas"}</span>
                 </label>
               )

@@ -122,6 +122,7 @@ const createWorkspaceSession = (
 
 export const App = (): React.JSX.Element => {
   const desktop = useDesktop()
+  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"
   const [preferences, setPreferences] = useState(readPreferences)
   const [view, setView] = useState<View>(() =>
     preferences.enabledViews.includes("focus") ? "focus" : preferences.enabledViews[0]!,
@@ -496,31 +497,33 @@ export const App = (): React.JSX.Element => {
       }
     >
       <header className="app-header">
-        <a
-          href="#"
-          className="brand"
-          aria-label="NovaDeck home"
-          onClick={(event) => {
-            event.preventDefault()
-            changeView(preferences.enabledViews[0]!)
-          }}
-        >
-          <span className="brand-symbol">
-            <TerminalIcon size={18} strokeWidth={2} />
-          </span>
-          <span>
-            novadeck<span className="text-muted">.</span>
-          </span>
-        </a>
-        <WorkspaceSwitcher
-          projects={projects}
-          current={project}
-          onSelect={(id) => {
-            const next = projects.find((item) => item.id === id)
-            if (next) switchProject(next)
-          }}
-          onCreate={createProject}
-        />
+        <div className="header-workspace">
+          <a
+            href="#"
+            className="brand"
+            aria-label="NovaDeck home"
+            onClick={(event) => {
+              event.preventDefault()
+              changeView(preferences.enabledViews[0]!)
+            }}
+          >
+            <span className="brand-symbol">
+              <TerminalIcon size={18} strokeWidth={2} />
+            </span>
+            <span>
+              novadeck<span className="text-muted">.</span>
+            </span>
+          </a>
+          <WorkspaceSwitcher
+            projects={projects}
+            current={project}
+            onSelect={(id) => {
+              const next = projects.find((item) => item.id === id)
+              if (next) switchProject(next)
+            }}
+            onCreate={createProject}
+          />
+        </div>
         <nav className="view-switch" aria-label="Workspace layout">
           {views
             .filter(({ id }) => preferences.enabledViews.includes(id))
@@ -555,7 +558,9 @@ export const App = (): React.JSX.Element => {
             title="Find a terminal (⌘K / Ctrl+K)"
             onClick={() => setSearching(true)}
           >
-            <Search size={16} />
+            <Search size={15} />
+            <span>Search</span>
+            <kbd>{modifier} K</kbd>
           </button>
           <button
             className="icon-button"
@@ -699,17 +704,25 @@ export const App = (): React.JSX.Element => {
               />
             )}
             {!sessions.length && (
-              <div className="empty-workspace">
-                <TerminalIcon size={24} strokeWidth={1.2} />
-                <h2>No terminals open</h2>
-                <p>Open a terminal or pick up a previous session.</p>
-                <button className="small-button" onClick={add}>
-                  <Plus size={14} />
-                  New terminal
-                </button>
-                <button className="empty-sessions-link" onClick={showSessions}>
-                  Browse sessions
-                </button>
+              <div className="empty-workspace workspace-background" {...backgroundPointerHandlers}>
+                <div className="workspace-dots canvas-grid" aria-hidden="true" />
+                <div className="workspace-dots canvas-grid-spotlight" aria-hidden="true" />
+                <section className="empty-state">
+                  <span className="empty-state-icon">
+                    <TerminalIcon size={22} strokeWidth={1.4} />
+                  </span>
+                  <h2>No terminals open</h2>
+                  <p>Open a terminal or pick up a previous session.</p>
+                  <div className="empty-state-actions">
+                    <button className="small-button primary" onClick={add}>
+                      <Plus size={14} />
+                      New terminal
+                    </button>
+                    <button className="empty-sessions-link" onClick={showSessions}>
+                      Browse sessions
+                    </button>
+                  </div>
+                </section>
               </div>
             )}
           </section>
@@ -723,7 +736,7 @@ export const App = (): React.JSX.Element => {
           </span>
         </span>
         <button onClick={() => setSearching(true)}>
-          Find a terminal <kbd>⌘ K</kbd>
+          <Search size={12} /> Find a terminal <kbd>{modifier} K</kbd>
         </button>
       </footer>
       <div
@@ -777,20 +790,24 @@ export const App = (): React.JSX.Element => {
           <div className="search-results">
             {matches.map((session) => (
               <button key={session.id} onClick={() => openSearchResult(session.id)}>
-                <TerminalIcon size={16} />
-                <span>
-                  {session.name}
-                  <small>{session.directory}</small>
+                <TerminalIcon size={15} strokeWidth={1.5} />
+                <span className="search-result-copy">
+                  <strong>{session.name}</strong>
+                  <small>
+                    <span>{session.command}</span>
+                    <span>{session.directory}</span>
+                  </small>
                 </span>
-                <ArrowUpRight size={15} />
+                <ArrowUpRight size={14} className="search-result-action" />
               </button>
             ))}
-            {!matches.length && (
-              <p className="p-6 text-center text-muted">No terminals match “{query}”.</p>
-            )}
+            {!matches.length && <p className="search-empty">No terminals match “{query}”.</p>}
           </div>
           <div className="search-footnote">
-            <span>Open in {windowedLabel}</span> <kbd>esc to close</kbd>
+            <span>Open in {windowedLabel}</span>
+            <span className="search-dismiss">
+              <kbd>esc</kbd> Close
+            </span>
           </div>
         </section>
       </div>
