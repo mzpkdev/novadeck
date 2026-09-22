@@ -7,7 +7,7 @@ import {
   ReactFlowProvider,
   useNodesInitialized,
   useReactFlow,
-  useViewport,
+  useStore,
   type Node,
   type NodeProps,
   type OnNodesChange,
@@ -51,6 +51,7 @@ type CanvasProps = {
   onSelect: (id: string) => void
   render: (session: Session, minimize: MinimizeControls) => ReactNode
 }
+type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
 
 const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => (
   <div
@@ -104,7 +105,7 @@ const TerminalCanvas = ({
   const { minimized, geometry } = layout
   const { fitView, zoomIn, zoomOut, getViewport, setViewport, setCenter, getNode, setNodes } =
     useReactFlow<TerminalNode>()
-  const { zoom } = useViewport()
+  const zoom = useStore((state) => state.transform[2])
   const chromeScale = chromeScaleAt(zoom)
   const initialized = useNodesInitialized()
   const container = useRef<HTMLDivElement>(null)
@@ -112,6 +113,9 @@ const TerminalCanvas = ({
   const geometryRef = useRef<CanvasLayout["geometry"]>({ ...layout.geometry })
   const dirtyGeometry = useRef(new Set<string>())
   const resizing = useRef(new Set<string>())
+  const viewportRef = useRef<CanvasViewport>(layout.viewport ?? { x: 0, y: 0, zoom: 1 })
+  const dirtyViewport = useRef(false)
+  const mounted = useRef(false)
   const latest = useRef({ sessions, onLayoutChange })
   // Returning to Canvas restores its camera; only new sidebar requests should recenter it.
   const lastNavigation = useRef(layout.viewport ? navigation : 0)
@@ -148,6 +152,25 @@ const TerminalCanvas = ({
       }
       return { ...previous, geometry: nextGeometry }
     })
+  }, [])
+
+  const trackViewport = useCallback((viewport: CanvasViewport) => {
+    viewportRef.current = { ...viewport }
+    dirtyViewport.current = true
+  }, [])
+
+  const commitViewport = useCallback(() => {
+    if (!dirtyViewport.current) return
+    const { onLayoutChange: commitLayout } = latest.current
+    const viewport = { ...viewportRef.current }
+    dirtyViewport.current = false
+    commitLayout((previous) =>
+      previous.viewport?.x === viewport.x &&
+      previous.viewport.y === viewport.y &&
+      previous.viewport.zoom === viewport.zoom
+        ? previous
+        : { ...previous, viewport },
+    )
   }, [])
 
   const updateNode = useCallback(
@@ -270,6 +293,10 @@ const TerminalCanvas = ({
     })
   }, [geometry, nodeFrom, sessions, setNodes])
 
+  useEffect(() => {
+    if (!dirtyViewport.current && layout.viewport) viewportRef.current = { ...layout.viewport }
+  }, [layout.viewport])
+
   useEffect(
     () => () => {
       const ids = [...dirtyGeometry.current]
@@ -289,9 +316,20 @@ const TerminalCanvas = ({
       }
       resizing.current.clear()
       commitGeometry(ids)
+      if (dirtyViewport.current) {
+        trackViewport(getViewport())
+        commitViewport()
+      }
     },
-    [commitGeometry, getNode],
+    [commitGeometry, commitViewport, getNode, getViewport, trackViewport],
   )
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const onNodesChange: OnNodesChange<TerminalNode> = useCallback(
     (changes) => {
@@ -451,7 +489,20 @@ const TerminalCanvas = ({
             ),
           )
         }}
-        onViewportChange={(viewport) => onLayoutChange((previous) => ({ ...previous, viewport }))}
+        onMoveStart={(_, viewport) => trackViewport(viewport)}
+        onMove={(_, viewport) => trackViewport(viewport)}
+        onMoveEnd={(_, viewport) => {
+          const current = getViewport()
+          if (
+            !mounted.current ||
+            current.x !== viewport.x ||
+            current.y !== viewport.y ||
+            current.zoom !== viewport.zoom
+          )
+            return
+          trackViewport(viewport)
+          commitViewport()
+        }}
         panOnScroll
         panOnScrollSpeed={1}
         zoomOnScroll={false}
