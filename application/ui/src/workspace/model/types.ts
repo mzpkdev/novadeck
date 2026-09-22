@@ -49,6 +49,7 @@ export type WorkspaceState = {
   cleared: Record<string, boolean>
   canvasLayout: CanvasLayout
   gridLayouts: GridLayouts
+  gridMinimized: Record<string, boolean>
   nextTerminalNumber: number
 }
 export type WorkspaceSession = {

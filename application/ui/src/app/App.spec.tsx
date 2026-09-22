@@ -31,6 +31,46 @@ const currentSessionName = (): string =>
 
 describe("novadeck. workspace", () => {
   beforeEach(() => localStorage.clear())
+  context("when minimizing a Grid terminal", () => {
+    it("retains drafts and folded state across views without folding Canvas or Focus", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const input = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      await interact("change", input, { target: { value: "unfinished command" } })
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Minimize Checkout implementation" }),
+      )
+      expect(input.closest(".terminal-content")).toHaveAttribute("inert")
+      expect(
+        screen.queryByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByRole("button", { name: "Restore Checkout implementation" }),
+      ).toHaveAttribute("aria-expanded", "false")
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      expect(
+        screen.getByRole("button", { name: "Minimize Checkout implementation" }),
+      ).toHaveAttribute("aria-expanded", "true")
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      expect(screen.getByRole("button", { name: "Restore Checkout implementation" })).toBeVisible()
+      await interact("click", screen.getByRole("button", { name: "Focus Checkout implementation" }))
+      expect(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).toHaveValue("unfinished command")
+      expect(
+        screen.queryByRole("button", { name: "Restore Checkout implementation" }),
+      ).not.toBeInTheDocument()
+      await interact("click", screen.getByRole("button", { name: "Open in Grid" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Restore Checkout implementation" }),
+      )
+      expect(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).toHaveValue("unfinished command")
+    })
+  })
   context("when limiting available view modes", () => {
     it("keeps search in Focus when both windowed modes are disabled", async () => {
       localStorage.setItem(

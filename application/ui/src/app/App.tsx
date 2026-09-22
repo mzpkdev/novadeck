@@ -132,6 +132,7 @@ export const App = (): React.JSX.Element => {
     scrollOffsets,
     canvasLayout,
     gridLayouts,
+    gridMinimized,
     nextTerminalNumber,
   } = current.state
   const ordered = orderedSessions(current.state)
@@ -562,7 +563,9 @@ export const App = (): React.JSX.Element => {
                 navigation={navigation.count}
                 layouts={gridLayouts}
                 onLayoutsChange={setGridLayouts}
-                render={(session) => terminal(session, true)}
+                minimized={gridMinimized}
+                onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
+                render={(session, minimize) => terminal(session, true, minimize)}
               />
             )}
             {view === "canvas" && sessions.length > 0 && (

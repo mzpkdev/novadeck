@@ -43,6 +43,7 @@ const workspaceState = (
   scrollOffsets: {},
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
+  gridMinimized: {},
   nextTerminalNumber,
 })
 
@@ -219,6 +220,7 @@ describe("workspace state", () => {
         ],
         mobile: [{ i: "01", x: 0, y: 0, w: 4, h: 10 }],
       }
+      state.gridMinimized = { "01": true }
       const workspace = seed("storefront", "saved", state)
 
       const closed = workspaceReducer(workspace, {
@@ -236,6 +238,7 @@ describe("workspace state", () => {
         drafts: {},
         scrollOffsets: {},
         canvasLayout: { minimized: {}, geometry: {} },
+        gridMinimized: {},
       })
       expect(restored?.gridLayouts.wide?.map((item) => item.i)).toEqual(["02"])
       expect(restored?.gridLayouts.mobile).toEqual([])
@@ -424,6 +427,61 @@ describe("workspace state", () => {
       ).toEqual({
         "01": true,
       })
+    })
+  })
+
+  context("when Grid terminals are minimized", () => {
+    it("toggles Grid presentation without changing the Canvas state", () => {
+      const state = workspaceState([terminal("01")])
+      state.canvasLayout.minimized = { "01": true }
+      const workspace = seed("storefront", "saved", state)
+      const action = {
+        type: "grid/minimize" as const,
+        target: { projectId: "storefront", workspaceSessionId: "saved" },
+        terminalId: "01",
+      }
+
+      const minimized = workspaceReducer(workspace, action)
+      const restored = workspaceReducer(minimized, action)
+
+      expect(activeSession(minimized)?.state.gridMinimized).toEqual({ "01": true })
+      expect(activeSession(minimized)?.state.canvasLayout.minimized).toEqual({ "01": true })
+      expect(activeSession(restored)?.state.gridMinimized).toEqual({ "01": false })
+    })
+
+    it("updates only its inactive target session", () => {
+      let workspace = seed("storefront", "old", workspaceState([terminal("01")]))
+      workspace = workspaceReducer(workspace, {
+        type: "session/add",
+        projectId: "storefront",
+        session: savedSession("new", workspaceState([terminal("01")])),
+      })
+      workspace = workspaceReducer(workspace, {
+        type: "grid/minimize",
+        target: { projectId: "storefront", workspaceSessionId: "old" },
+        terminalId: "01",
+      })
+
+      expect(activeSession(workspace)?.state.gridMinimized).toEqual({})
+      expect(
+        workspace.projects[0]?.history.find((item) => item.id === "old")?.state.gridMinimized,
+      ).toEqual({ "01": true })
+    })
+
+    it("ignores unknown or closed terminals and prunes their minimized state", () => {
+      const target = { projectId: "storefront", workspaceSessionId: "saved" }
+      const state = workspaceState([terminal("01"), terminal("02")])
+      state.gridMinimized = { "01": true, "02": true }
+      let workspace = seed("storefront", "saved", state)
+      workspace = workspaceReducer(workspace, { type: "terminal/close", target, terminalId: "01" })
+
+      expect(activeSession(workspace)?.state.gridMinimized).toEqual({ "02": true })
+      expect(workspaceReducer(workspace, { type: "grid/minimize", target, terminalId: "01" })).toBe(
+        workspace,
+      )
+      expect(
+        workspaceReducer(workspace, { type: "grid/minimize", target, terminalId: "missing" }),
+      ).toBe(workspace)
     })
   })
 })

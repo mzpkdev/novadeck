@@ -15,6 +15,7 @@ import type { Entry, Session } from "../model/types"
 
 export type MinimizeControls = {
   minimized: boolean
+  clipContent?: boolean
   onToggle: () => void
 }
 
@@ -53,7 +54,7 @@ export const Terminal = ({
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const input = draft
   const setInput = onDraftChange
-  const initialScroll = useRef(scrollOffset)
+  const savedScroll = useRef(scrollOffset)
   const previousOutput = useRef({ length: entries.length, cleared })
   const output = useRef<HTMLDivElement>(null)
   const headerPress = useRef<{ x: number; y: number; time: number } | null>(null)
@@ -61,14 +62,14 @@ export const Terminal = ({
   const ignoreDoubleClickUntil = useRef(0)
   const toggleView = onFocus ?? windowed?.onOpen
   useEffect(() => {
-    if (!output.current) return
+    if (!output.current || minimize?.minimized) return
     const changed =
       previousOutput.current.length !== entries.length || previousOutput.current.cleared !== cleared
     output.current.scrollTop = changed
       ? output.current.scrollHeight
-      : (initialScroll.current ?? (entries.length || cleared ? output.current.scrollHeight : 0))
+      : (savedScroll.current ?? (entries.length || cleared ? output.current.scrollHeight : 0))
     previousOutput.current = { length: entries.length, cleared }
-  }, [entries.length, cleared])
+  }, [entries.length, cleared, minimize?.minimized])
   useEffect(() => {
     const element = output.current
     if (!element) return
@@ -212,8 +213,14 @@ export const Terminal = ({
       <div
         ref={output}
         className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [scrollbar-width:thin] [scrollbar-color:var(--color-line)_transparent] [&_strong]:font-semibold nodrag nopan"
-        hidden={minimize?.minimized}
-        onScroll={(event) => onScrollChange(event.currentTarget.scrollTop)}
+        hidden={minimize?.minimized && !minimize.clipContent}
+        aria-hidden={minimize?.minimized}
+        inert={minimize?.minimized}
+        onScroll={(event) => {
+          if (minimize?.minimized) return
+          savedScroll.current = event.currentTarget.scrollTop
+          onScrollChange(event.currentTarget.scrollTop)
+        }}
       >
         {!cleared && (
           <TerminalOutput

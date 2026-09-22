@@ -37,6 +37,10 @@ runtime, use `pnpm --filter @novadeck/ui dev`.
 Grid view uses React Grid Layout: drag terminal headers to rearrange panels and drag the
 bottom-right grip to resize. Panels snap to a responsive grid and fill vertical gaps. Each
 screen size retains its arrangement when switching views during the current app session.
+Use a terminal's minus/plus control to collapse it to its header or restore it. The grid closes the
+gap while retaining its width and expanded height for each screen size. Collapsed cards can still
+be dragged, focused, closed, or resized horizontally with the bottom-right grip. Grid and Canvas keep independent
+collapsed states per workspace session, and terminal output and drafts remain intact.
 
 The terminal sessions and output are sample content. Checkout implementation (`claude`) and Checkout review (`codex`)
 terminals show distinct AI TUI-style transcripts with prompts, tool activity, and sample results.

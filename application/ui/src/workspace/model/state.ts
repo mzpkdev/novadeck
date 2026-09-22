@@ -62,6 +62,7 @@ export type WorkspaceAction =
   | { type: "preferences/reconcile"; target: WorkspaceTarget; preferences: PreferencesValue }
   | { type: "canvas/layout"; target: WorkspaceTarget; layout: ValueUpdate<CanvasLayout> }
   | { type: "grid/layouts"; target: WorkspaceTarget; layouts: ValueUpdate<GridLayouts> }
+  | { type: "grid/minimize"; target: WorkspaceTarget; terminalId: string }
 
 export const createWorkspaceSession = (
   input: WorkspaceSessionInput,
@@ -89,6 +90,7 @@ export const createSessionState = (
   cleared: {},
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
+  gridMinimized: {},
   nextTerminalNumber: sessions.length + 1,
 })
 
@@ -238,6 +240,7 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
   const selected = state.selected === terminalId ? neighbor : state.selected
   const geometry = withoutKey(state.canvasLayout.geometry, terminalId)
   const minimized = withoutKey(state.canvasLayout.minimized, terminalId)
+  const gridMinimized = withoutKey(state.gridMinimized, terminalId)
   return {
     ...state,
     sessions: state.sessions.filter((session) => session.id !== terminalId),
@@ -252,6 +255,7 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
         ? state.canvasLayout
         : { ...state.canvasLayout, geometry, minimized },
     gridLayouts: withoutGridItem(state.gridLayouts, terminalId),
+    gridMinimized,
   }
 }
 
@@ -456,5 +460,17 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         )
         return gridLayouts === state.gridLayouts ? state : { ...state, gridLayouts }
       })
+    case "grid/minimize":
+      return updateTarget(workspace, action.target, (state) =>
+        hasTerminal(state, action.terminalId)
+          ? {
+              ...state,
+              gridMinimized: {
+                ...state.gridMinimized,
+                [action.terminalId]: !state.gridMinimized[action.terminalId],
+              },
+            }
+          : state,
+      )
   }
 }
