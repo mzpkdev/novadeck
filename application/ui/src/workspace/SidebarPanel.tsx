@@ -1,7 +1,8 @@
 import { X } from "lucide-react"
 import type { ReactNode } from "react"
 
-import "./SidebarPanel.css"
+export const sidebarCreateClasses =
+  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-line bg-paper px-2.5 text-left text-[11px] text-ink hover:bg-soft focus-visible:bg-soft"
 
 export const SidebarPanel = ({
   id,
@@ -20,19 +21,24 @@ export const SidebarPanel = ({
 }): React.JSX.Element => (
   <section
     id={id}
-    className="sidebar-panel"
+    className="sidebar-panel absolute inset-x-3 top-3 bottom-0 flex min-h-0 min-w-0 flex-col opacity-100 visible [transform:translateX(0)] [transition:opacity_var(--motion-feedback)_ease-out,transform_var(--motion-view)_var(--ease-interface),visibility_var(--motion-view)] data-[active=false]:pointer-events-none data-[active=false]:invisible data-[active=false]:[transform:translateX(-6px)] data-[active=false]:opacity-0"
     data-active={active}
     aria-labelledby={`${id}-title`}
     aria-hidden={!active}
     inert={!active}
   >
-    <header className="sidebar-panel-header">
-      <h2 id={`${id}-title`}>
+    <header className="sidebar-panel-header flex h-[38px] shrink-0 items-center justify-between gap-3 px-0.5">
+      <h2
+        id={`${id}-title`}
+        className="m-0 flex min-w-0 items-center gap-1.5 text-[9px] font-medium tracking-[1.3px] text-muted uppercase"
+      >
         {title}
-        {count !== undefined && <span className="sidebar-panel-count">{count}</span>}
+        {count !== undefined && (
+          <span className="sidebar-panel-count tracking-normal">{count}</span>
+        )}
       </h2>
       <button
-        className="icon-button sidebar-close"
+        className="icon-button sidebar-close size-7 [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
         type="button"
         aria-label={`Hide ${title.toLowerCase()}`}
         title={`Hide ${title.toLowerCase()}`}
@@ -41,6 +47,6 @@ export const SidebarPanel = ({
         <X size={15} strokeWidth={1.6} />
       </button>
     </header>
-    <div className="sidebar-panel-content">{children}</div>
+    <div className="sidebar-panel-content flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
   </section>
 )

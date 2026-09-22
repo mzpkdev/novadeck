@@ -46,7 +46,7 @@ export const SessionTab = ({
       handleRef={handleRef}
       name={session.name}
       icon={<TerminalIcon size={14} strokeWidth={1.5} />}
-      detail={<span className="session-process">{session.command}</span>}
+      detail={<span className="session-process truncate font-mono">{session.command}</span>}
       selected={selected}
       selectLabel={`Select ${session.name}`}
       tooltip={`${session.name}\n${session.directory} · ${session.command}`}
@@ -56,7 +56,7 @@ export const SessionTab = ({
       editor={
         editing ? (
           <form
-            className="session-rename"
+            className="session-rename flex min-w-0 flex-1 items-start px-2.5 py-2 [&_input]:w-full [&_input]:rounded-control [&_input]:border [&_input]:border-line [&_input]:bg-paper [&_input]:px-1.5 [&_input]:py-1 [&_input]:text-[12px] [&_input]:text-ink"
             onSubmit={(event) => {
               event.preventDefault()
               save()
@@ -84,9 +84,9 @@ export const SessionTab = ({
         ) : undefined
       }
       actions={
-        <div className="session-actions">
+        <div className="session-actions flex items-center">
           <button
-            className="session-action"
+            className="session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink"
             aria-label={editing ? `Save name for ${session.name}` : `Rename ${session.name}`}
             title={editing ? "Save name" : "Rename terminal"}
             onClick={() => {
@@ -104,7 +104,7 @@ export const SessionTab = ({
             )}
           </button>
           <button
-            className="session-action"
+            className="session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink"
             aria-label={`Close ${session.name}`}
             title="Close terminal"
             onClick={onClose}

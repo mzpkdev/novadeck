@@ -121,7 +121,9 @@ surface tones separate panels without shadows; compact layouts keep navigation a
 Tailwind v4 tokens live in `application/ui/src/styles.css` using the
 [CSS theme configuration](https://tailwindcss.com/docs/theme), with the existing
 `@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,
-and shadows are centralized there. Shared motion tokens give controls 120ms feedback and selection
+and shadows are centralized there. Ordinary component styling uses Tailwind utility classes in JSX;
+`styles.css` retains the theme, shared primitives, contextual terminal/library rules, and canvas
+effects, while `workspace/ModalMotion.css` owns native-dialog and search transitions. Shared motion tokens give controls 120ms feedback and selection
 states 180ms fades; dragging stays immediate and reduced motion disables these transitions.
 Terminal sample data lives in
 `application/ui/src/workspace/sessions.ts`.

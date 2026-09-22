@@ -81,712 +81,341 @@
   }
 }
 
-@layer components {
-  .workspace {
-    @apply flex h-dvh min-h-100 flex-col overflow-hidden bg-paper;
-  }
-  .app-header {
-    @apply grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  }
-  .header-workspace {
-    @apply flex min-w-0 items-center gap-4;
-  }
-  .brand {
-    @apply flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px];
-    text-decoration: none;
-  }
-  .brand-symbol {
-    @apply flex size-7 items-center justify-center rounded-control border border-strong bg-strong text-white;
-  }
-  .view-switch {
-    @apply flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5;
-  }
-  .view-switch button {
-    @apply flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink;
-  }
-  .view-switch button.active {
-    @apply border-line bg-paper text-ink;
-  }
-  .header-actions {
-    @apply flex items-center justify-self-end gap-2;
-  }
-  .icon-button {
-    @apply inline-flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
-  }
-  .header-search {
-    @apply w-auto gap-2 border border-line bg-paper px-2.5 text-[11px];
-  }
-  .header-search kbd {
-    @apply ml-3 border-0 p-0 text-[9px] text-muted;
-  }
-  .icon-button:disabled {
-    @apply cursor-default bg-transparent text-muted;
-    opacity: 0.25;
-  }
-  .icon-button > svg,
-  .session-action > svg {
-    @apply shrink-0;
-  }
-  .workspace-body {
-    @apply relative flex min-h-0 flex-1;
-  }
-  .sidebar-tools {
-    @apply z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3;
-  }
-  .sidebar-tools .icon-button {
-    @apply border border-transparent;
-  }
-  .sidebar-tools .icon-button.active {
-    @apply border-line bg-paper text-ink;
-  }
-  .workspace-panels {
-    @apply relative min-h-0 min-w-0 flex-1;
-    --separator-border: var(--color-line);
-    --focus-border: var(--color-muted);
-    --sash-hover-size: 2px;
-  }
-  .workspace-panels .sidebar {
-    @apply h-full w-full border-r-0;
-  }
-  .workspace-panels .main-area {
-    @apply h-full;
-  }
-  .sidebar-transition .workspace-sidebar-pane,
-  .sidebar-transition .workspace-main-pane {
-    transition:
-      width var(--motion-state) var(--ease-interface),
-      left var(--motion-state) var(--ease-interface);
-  }
-  .sidebar-transition .sidebar-content {
-    display: block;
-    width: var(--sidebar-expanded-width);
-  }
-  .sidebar-transition .sash,
-  .sidebar-transition .sidebar-keyboard-resize {
-    pointer-events: none;
-    opacity: 0;
-  }
-  .sidebar-keyboard-resize {
-    @apply pointer-events-none absolute inset-y-0 z-40 w-2 -translate-x-1/2;
-  }
-  .sidebar-keyboard-resize:focus-visible {
-    outline: none;
-    background: linear-gradient(var(--color-muted), var(--color-muted)) center / 2px 100% no-repeat;
-  }
-  .sidebar {
-    @apply relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell;
-  }
-  .session-process {
-    @apply truncate font-mono;
-  }
-  .session-actions {
-    @apply flex items-center;
-  }
-  .session-action {
-    @apply flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink;
-  }
-  .session-action:focus-visible {
-    outline-offset: -2px;
-  }
-  .session-action > svg,
-  .terminal-view-action > svg,
-  .terminal-close > svg {
-    opacity: 0.25;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .session-action:hover > svg,
-  .session-action:focus-visible > svg,
-  .terminal-view-action:hover > svg,
-  .terminal-close:hover > svg {
-    opacity: 1;
-  }
-  .session-rename {
-    @apply flex min-w-0 flex-1 items-start px-2.5 py-2;
-  }
-  .session-rename input {
-    @apply w-full rounded-control border border-line bg-paper px-1.5 py-1 text-[12px] text-ink;
-  }
-  .empty-workspace {
-    @apply relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted;
-  }
-  .empty-state {
-    @apply relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8;
-  }
-  .empty-state-icon {
-    @apply mb-4 flex size-11 items-center justify-center rounded-control border border-line bg-shell text-muted;
-  }
-  .empty-state-actions {
-    @apply mt-5 flex flex-wrap items-center justify-center gap-2;
-  }
-  .empty-workspace h2 {
-    @apply text-base font-medium tracking-tight text-ink;
-  }
-  .empty-workspace p {
-    @apply mt-2 max-w-60 text-xs leading-relaxed;
-  }
-  .empty-sessions-link {
-    @apply rounded-control px-3 py-2 text-[11px] text-muted hover:bg-soft hover:text-ink;
-  }
-  .main-area {
-    @apply flex min-w-0 flex-1 flex-col;
-  }
-  .focus-stage {
-    @apply relative min-h-0 flex-1 overflow-hidden p-3;
-  }
-  .focus-stage > .terminal-window {
-    @apply relative z-1;
-  }
-  .focus-stage .workspace-dots {
-    background-position: -8px -8px;
-  }
-  .terminal-window {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper;
-    transition: border-color var(--motion-state) var(--ease-interface);
-  }
-  .terminal-focused,
-  .grid-terminal.selected .terminal-window,
-  .canvas-node.selected .terminal-window {
-    border-color: var(--color-line-strong);
-  }
-  .terminal-heading {
-    @apply relative shrink-0;
-  }
-  .terminal-heading::before {
-    content: "";
-    @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-strong;
-    opacity: 0;
-    transition: opacity var(--motion-state) var(--ease-interface);
-  }
-  .terminal-focused .terminal-heading::before,
-  .grid-terminal.selected .terminal-heading::before,
-  .canvas-node.selected .terminal-heading::before {
-    opacity: 1;
-  }
-  .terminal-header {
-    @apply flex h-12 shrink-0 flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap;
-  }
-  .terminal-title {
-    @apply flex min-w-0 items-center gap-2.5;
-  }
-  .terminal-actions {
-    @apply flex shrink-0 items-center gap-1;
-  }
-  .terminal-actions .icon-button {
-    @apply size-8 p-2;
-  }
-  .terminal-title > :is(h1, h2) {
-    @apply truncate font-medium;
-  }
-  .terminal-header svg {
-    @apply shrink-0 text-muted;
-  }
-  .terminal-content {
-    @apply min-h-0 flex-1 overflow-auto p-6 font-mono;
-    font-size: var(--terminal-font-size, 13px);
-    line-height: 1.75;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-line) transparent;
-  }
-  .terminal-content strong {
-    font-weight: 600;
-  }
-  .terminal-meta {
-    @apply mb-8 grid gap-x-5 gap-y-0.5 text-[11px];
-    grid-template-columns: max-content auto;
-  }
-  .terminal-meta > span:nth-child(odd) {
-    @apply text-muted;
-  }
-  .output-gap {
-    margin-top: 19px;
-  }
-  .prompt-arrow {
-    @apply mr-2 font-semibold;
-  }
-  .file-list {
-    @apply mt-1 grid w-max max-w-full grid-cols-3 gap-x-10;
-  }
-  .command-form {
-    @apply mt-6 rounded-control border border-line bg-shell p-3;
-    transition: border-color var(--motion-state) var(--ease-interface);
-  }
-  .command-form:focus-within {
-    border-color: var(--color-line-strong);
-  }
-  .command-location {
-    @apply mb-1 flex items-center gap-2 text-[10px] text-muted;
-  }
-  .command-location > svg {
-    @apply ml-1 text-muted;
-  }
-  .command-line {
-    @apply flex items-center border-b border-transparent;
-    transition: border-color var(--motion-state) var(--ease-interface);
-  }
-  .command-line input {
-    @apply w-full flex-1 bg-transparent;
-    caret-color: var(--color-ink);
-  }
-  .command-line input:focus-visible {
-    outline: none;
-  }
-  .command-line:focus-within {
-    border-bottom-color: var(--color-line);
-  }
-  .agent-transcript {
-    @apply max-w-180;
-    overflow-wrap: anywhere;
-    line-height: 1.65;
-  }
-  .agent-banner {
-    @apply mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1;
-  }
-  .agent-codex .agent-banner {
-    @apply w-fit max-w-full flex-col border border-line px-3 py-2;
-  }
-  .agent-banner > span {
-    font-size: 0.85em;
-  }
-  .agent-request {
-    @apply mb-4 border-l-2 border-line bg-soft px-3 py-2;
-  }
-  .agent-tool {
-    @apply mt-4;
-  }
-  .agent-tool-result {
-    @apply pl-3 text-muted;
-  }
-  .agent-diff {
-    @apply mt-2 ml-3 overflow-x-auto border-l border-line py-1 pl-3;
-    font: inherit;
-    font-size: 0.9em;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .agent-answer {
-    @apply mt-5;
-  }
-  .agent-completion,
-  .agent-divider {
-    @apply mt-4 text-muted;
-    font-size: 0.85em;
-  }
-  .agent-divider {
-    @apply border-t border-line pt-3;
-  }
-  .agent-command-form {
-    @apply max-w-180;
-  }
-  .agent-command-form input::placeholder {
-    color: var(--color-muted);
-  }
-  .app-footer {
-    @apply flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted;
-  }
-  .footer-running {
-    @apply ml-2 border-l border-line pl-3;
-  }
-  .app-footer > button {
-    @apply flex items-center gap-3 hover:text-ink;
-  }
-  kbd {
-    @apply inline-flex min-h-5 items-center justify-center rounded-control border border-line bg-shell px-1.5 font-mono text-[9px];
-  }
-  .small-button {
-    @apply flex h-9 items-center gap-2 rounded-control border border-line bg-paper px-4 text-[11px] hover:bg-soft;
-  }
-  .small-button.primary {
-    @apply border-strong bg-strong text-white hover:bg-ink;
-  }
-  .grid-viewport {
-    @apply relative flex min-h-0 flex-1 overflow-hidden;
-  }
-  .grid-stage {
-    @apply relative z-1 min-h-0 flex-1 overflow-auto p-4;
-    scrollbar-gutter: stable;
-  }
-  .workspace-dots {
-    @apply absolute inset-0;
-    background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
-    background-size: 24px 24px;
-  }
-  .grid-terminal {
-    @apply flex min-h-0 flex-col;
-    opacity: var(--terminal-idle-opacity);
-    transition: opacity var(--motion-state) var(--ease-interface);
-  }
-  .grid-terminal.selected {
-    opacity: 1;
-  }
-  .grid-terminal:not(.selected):hover,
-  .canvas-node:not(.selected):hover {
-    opacity: var(--terminal-hover-opacity);
-  }
-  .terminal-grid .grid-terminal.cssTransforms {
-    transition:
-      transform var(--motion-layout) ease,
-      width var(--motion-layout) ease,
-      height var(--motion-layout) ease,
-      opacity var(--motion-state) var(--ease-interface);
-  }
-  .terminal-grid .grid-terminal:is(.react-draggable-dragging, .resizing) {
-    transition: opacity var(--motion-state) var(--ease-interface);
-  }
-  .grid-terminal-body {
-    @apply min-h-0 flex-1;
-  }
-  .terminal-grid .terminal-header {
-    cursor: grab;
-    touch-action: none;
-  }
-  .terminal-grid .react-draggable-dragging .terminal-header {
-    cursor: grabbing;
-  }
-  .terminal-grid .react-grid-placeholder {
-    @apply rounded-panel border border-line bg-soft;
-    opacity: 1;
-  }
-  .terminal-grid .react-resizable-handle {
-    @apply size-7 text-muted;
-    opacity: 0.35;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .terminal-grid .react-resizable-handle:hover {
-    opacity: 0.8;
-  }
-  .terminal-grid .react-resizable-handle::after {
-    right: 7px;
-    bottom: 7px;
-    width: 11px;
-    height: 11px;
-    border: 0;
-    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
-    clip-path: polygon(100% 0, 100% 100%, 0 100%);
-  }
-  .terminal-compact .terminal-content {
-    @apply px-4 pt-4;
-    font-size: calc(var(--terminal-font-size, 13px) - 2px);
-    line-height: 1.8;
-  }
-  .terminal-compact .terminal-header,
-  .terminal-focused .terminal-header {
-    @apply h-12 px-4;
-  }
-  .terminal-compact .terminal-meta {
-    @apply mb-3 gap-x-3 text-[9px];
-  }
-  .terminal-compact .output-gap {
-    margin-top: 13px;
-  }
-  .terminal-compact .file-list {
-    @apply grid-cols-2 gap-x-4;
-  }
-  .terminal-compact .command-form {
-    @apply mt-4;
-  }
-  .test-summary {
-    @apply mt-4 border-l-2 border-line py-1 pl-3;
-    white-space: pre;
-  }
-  .terminal-badge {
-    @apply mr-1 rounded-control bg-strong px-1.5 py-0.5 text-[9px] text-white;
-  }
-  .git-log span,
-  .request-log span {
-    @apply mr-2 text-muted;
-  }
-  .request-log b {
-    @apply mx-2 font-normal;
-  }
-  .canvas-viewport {
-    @apply relative min-h-0 flex-1 overflow-hidden bg-canvas;
-    touch-action: none;
-  }
-  .workspace-background {
-    --terminal-idle-opacity: 0.5;
-    --terminal-hover-opacity: 0.75;
-    background-color: var(--color-canvas);
-    --canvas-grid-opacity: 0.16;
-    --canvas-grid-spotlight-opacity: 0.48;
-    --canvas-grid-spotlight-radius: 210px;
-    --canvas-grain-opacity: 0.045;
-    background-image: radial-gradient(
-      ellipse at 45% 32%,
-      var(--color-paper) 0%,
-      var(--color-canvas) 65%,
-      var(--color-soft) 100%
-    );
-  }
-  .workspace-background::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image: url("./assets/canvas-grain.svg");
-    background-size: 192px 192px;
-    opacity: var(--canvas-grain-opacity);
-  }
-  .canvas-viewport .react-flow {
-    --xy-background-color: transparent;
-  }
-  .canvas-grid {
-    pointer-events: none;
-    opacity: var(--canvas-grid-opacity);
-  }
-  .canvas-grid-spotlight {
-    pointer-events: none;
-    opacity: 0;
-    mask-image: radial-gradient(
-      circle var(--canvas-grid-spotlight-radius) at var(--canvas-pointer-x, -1000px)
-        var(--canvas-pointer-y, -1000px),
-      black 0%,
-      rgb(0 0 0 / 0.75) 30%,
-      rgb(0 0 0 / 0.25) 65%,
-      transparent 100%
-    );
-    transition: opacity 220ms ease-out;
-  }
-  @media (hover: hover) and (pointer: fine) {
-    .workspace-background[data-pointer-inside="true"] .canvas-grid-spotlight {
-      opacity: var(--canvas-grid-spotlight-opacity);
-    }
-  }
-  .canvas-viewport .react-flow__node {
-    transition:
-      transform 160ms ease-out,
-      width 160ms ease-out,
-      height 160ms ease-out;
-  }
-  .canvas-viewport .react-flow__node.dragging,
-  .canvas-viewport .react-flow__node.resizing {
-    transition: none;
-  }
-  .canvas-node {
-    @apply h-full w-full;
-    opacity: var(--terminal-idle-opacity);
-    transition: opacity var(--motion-state) var(--ease-interface);
-  }
-  .canvas-node.selected {
-    opacity: 1;
-  }
-  .canvas-node .terminal-resize-grip {
-    @apply absolute right-px bottom-px z-10 flex size-7 items-end justify-end border-0 bg-transparent p-1.5 text-muted;
-    top: auto;
-    left: auto;
-    translate: none;
-    transform: scale(var(--canvas-chrome-scale));
-    transform-origin: bottom right;
-    opacity: 0.35;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .terminal-resize-grip:hover {
-    opacity: 0.8;
-  }
-  .terminal-resize-pattern {
-    width: 11px;
-    height: 11px;
-    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
-    clip-path: polygon(100% 0, 100% 100%, 0 100%);
-    pointer-events: none;
-  }
-  .canvas-node .terminal-heading {
-    height: calc(var(--canvas-header-height) * var(--canvas-chrome-scale));
-  }
-  .canvas-node .terminal-header {
-    width: calc(100% / var(--canvas-chrome-scale));
-    height: var(--canvas-header-height);
-    padding: 7px 16px;
-    gap: 6px;
-    line-height: 16px;
-    transform: scale(var(--canvas-chrome-scale));
-    transform-origin: top left;
-    cursor: move;
-  }
-  .canvas-node.compact-header .terminal-header {
-    gap: 4px;
-    padding: 5px 6px;
-  }
-  .canvas-node.compact-header .terminal-title {
-    gap: 4px;
-    padding: 0 2px;
-    line-height: 16px;
-  }
-  .canvas-node.compact-header .terminal-actions {
-    justify-content: flex-end;
-    gap: 0;
-  }
-  .canvas-node.compact-header .terminal-actions .icon-button {
-    width: 22px;
-    height: 22px;
-    min-width: 0;
-    flex-shrink: 1;
-    padding: 0;
-  }
-  .canvas-node.minimized .terminal-header {
-    border-bottom: 0;
-    padding-right: 40px;
-  }
-  .canvas-node.minimized .terminal-resize-grip {
-    cursor: ew-resize;
-  }
-  .canvas-node .terminal-content {
-    overscroll-behavior: contain;
-    user-select: text;
-    cursor: text;
-  }
-  .canvas-controls {
-    @apply absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5;
-    opacity: 0.25;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .canvas-controls:hover,
-  .canvas-controls:has(:focus-visible) {
-    opacity: 1;
-  }
-  .canvas-controls .icon-button {
-    @apply size-7 p-1.5;
-  }
-  .canvas-controls .icon-button > svg {
-    @apply size-3;
-  }
-  .canvas-controls > span {
-    @apply w-8 text-center font-mono text-[9px];
-  }
-  .control-divider {
-    @apply mx-0.5 h-3 w-px bg-line;
-  }
-  .sidebar-scrim {
-    display: none;
-  }
-  .search-backdrop {
-    @apply fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh];
-    background: var(--color-scrim);
-    backdrop-filter: blur(3px);
-  }
-  .search-dialog {
-    @apply w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper;
-  }
-  .search-field {
-    @apply flex min-h-17 items-center gap-3 border-b border-line px-5 py-3 text-muted;
-  }
-  .search-field input {
-    @apply min-w-0 flex-1 bg-transparent text-sm text-ink;
-  }
-  .search-field input:focus-visible {
-    outline: none;
-  }
-  .search-results {
-    @apply flex max-h-[50vh] flex-col gap-1 overflow-y-auto p-2;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-line) transparent;
-  }
-  .search-results > button {
-    @apply flex min-h-15 w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell;
-  }
-  .search-results > button:focus-visible {
-    @apply border-line bg-shell;
-    outline-offset: -2px;
-  }
-  .search-results > button > svg {
-    @apply shrink-0 text-muted;
-  }
-  .search-results button > span {
-    @apply flex min-w-0 flex-1 flex-col gap-1;
-  }
-  .search-result-copy strong {
-    @apply truncate text-xs font-medium;
-  }
-  .search-result-action {
-    opacity: 0.25;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .search-results > button:is(:hover, :focus-visible) .search-result-action {
-    opacity: 1;
-  }
-  .search-results small {
-    @apply flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted;
-  }
-  .search-results small > span:first-child {
-    @apply shrink-0;
-  }
-  .search-results small > span:last-child {
-    @apply truncate border-l border-line pl-2;
-  }
-  .search-footnote {
-    @apply flex items-center justify-between border-t border-line bg-shell px-5 py-3 text-[10px] text-muted;
-  }
-  .search-dismiss {
-    @apply flex items-center gap-2;
-  }
-  .search-empty {
-    @apply px-4 py-10 text-center text-xs text-muted;
-  }
+.view-switch button.active {
+  @apply border-line bg-paper text-ink;
+}
+.sidebar-tools .icon-button {
+  @apply border border-transparent;
+}
+.sidebar-tools .icon-button.active {
+  @apply border-line bg-paper text-ink;
+}
+.workspace-panels {
+  --separator-border: var(--color-line);
+  --focus-border: var(--color-muted);
+  --sash-hover-size: 2px;
+}
+.workspace-panels .sidebar {
+  @apply h-full w-full border-r-0;
+}
+.workspace-panels .main-area {
+  @apply h-full;
+}
+.sidebar-transition .workspace-sidebar-pane,
+.sidebar-transition .workspace-main-pane {
+  transition:
+    width var(--motion-state) var(--ease-interface),
+    left var(--motion-state) var(--ease-interface);
+}
+.sidebar-transition .sidebar-content {
+  display: block;
+  width: var(--sidebar-expanded-width);
+}
+.sidebar-transition .sash,
+.sidebar-transition .sidebar-keyboard-resize {
+  pointer-events: none;
+  opacity: 0;
+}
+.sidebar-keyboard-resize:focus-visible {
+  outline: none;
+  background: linear-gradient(var(--color-muted), var(--color-muted)) center / 2px 100% no-repeat;
+}
+.session-action:focus-visible {
+  outline-offset: -2px;
+}
+.session-action > svg,
+.terminal-view-action > svg,
+.terminal-close > svg {
+  opacity: 0.25;
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.session-action:hover > svg,
+.session-action:focus-visible > svg,
+.terminal-view-action:hover > svg,
+.terminal-close:hover > svg {
+  opacity: 1;
+}
+.focus-stage > .terminal-window {
+  @apply relative z-1;
+}
+.focus-stage .workspace-dots {
+  background-position: -8px -8px;
+}
+.terminal-focused,
+.grid-terminal.selected .terminal-window,
+.canvas-node.selected .terminal-window {
+  border-color: var(--color-line-strong);
+}
+.terminal-heading::before {
+  content: "";
+  @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-strong;
+  opacity: 0;
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+.terminal-focused .terminal-heading::before,
+.grid-terminal.selected .terminal-heading::before,
+.canvas-node.selected .terminal-heading::before {
+  opacity: 1;
+}
+.terminal-actions .icon-button {
+  @apply size-8 p-2;
+}
+.output-gap {
+  margin-top: 19px;
+}
+.agent-codex .agent-banner {
+  @apply w-fit max-w-full flex-col border border-line px-3 py-2;
+}
+.workspace-dots {
+  background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
+  background-size: 24px 24px;
+}
+.grid-terminal {
+  opacity: var(--terminal-idle-opacity);
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+.grid-terminal.selected {
+  opacity: 1;
+}
+.grid-terminal:not(.selected):hover,
+.canvas-node:not(.selected):hover {
+  opacity: var(--terminal-hover-opacity);
+}
+.terminal-grid .grid-terminal.cssTransforms {
+  transition:
+    transform var(--motion-layout) ease,
+    width var(--motion-layout) ease,
+    height var(--motion-layout) ease,
+    opacity var(--motion-state) var(--ease-interface);
+}
+.terminal-grid .grid-terminal:is(.react-draggable-dragging, .resizing) {
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+.terminal-grid .terminal-header {
+  touch-action: none;
+  cursor: grab;
+}
+.terminal-grid .react-draggable-dragging .terminal-header {
+  cursor: grabbing;
+}
+.terminal-grid .react-grid-placeholder {
+  @apply rounded-panel border border-line bg-soft;
+  opacity: 1;
+}
+.terminal-grid .react-resizable-handle {
+  @apply size-7 text-muted;
+  opacity: 0.35;
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.terminal-grid .react-resizable-handle:hover {
+  opacity: 0.8;
+}
+.terminal-grid .react-resizable-handle::after {
+  right: 7px;
+  bottom: 7px;
+  width: 11px;
+  height: 11px;
+  border: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.terminal-compact .terminal-content {
+  @apply px-4 pt-4;
+  font-size: calc(var(--terminal-font-size, 13px) - 2px);
+  line-height: 1.8;
+}
+.terminal-compact .terminal-header,
+.terminal-focused .terminal-header {
+  @apply h-12 px-4;
+}
+.terminal-compact .terminal-meta {
+  @apply mb-3 gap-x-3 text-[9px];
+}
+.terminal-compact .output-gap {
+  margin-top: 13px;
+}
+.terminal-compact .file-list {
+  @apply grid-cols-2 gap-x-4;
+}
+.terminal-compact .command-form {
+  @apply mt-4;
+}
+.git-log span,
+.request-log span {
+  @apply mr-2 text-muted;
+}
+.request-log b {
+  @apply mx-2 font-normal;
+}
+.canvas-viewport {
+  touch-action: none;
+}
+.workspace-background {
+  --terminal-idle-opacity: 0.5;
+  --terminal-hover-opacity: 0.75;
+  background-color: var(--color-canvas);
+  --canvas-grid-opacity: 0.16;
+  --canvas-grid-spotlight-opacity: 0.48;
+  --canvas-grid-spotlight-radius: 210px;
+  --canvas-grain-opacity: 0.045;
+  background-image: radial-gradient(
+    ellipse at 45% 32%,
+    var(--color-paper) 0%,
+    var(--color-canvas) 65%,
+    var(--color-soft) 100%
+  );
+}
+.workspace-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("./assets/canvas-grain.svg");
+  background-size: 192px 192px;
+  opacity: var(--canvas-grain-opacity);
+}
+.canvas-viewport .react-flow {
+  --xy-background-color: transparent;
+}
+.canvas-grid {
+  pointer-events: none;
+  opacity: var(--canvas-grid-opacity);
+}
+.canvas-grid-spotlight {
+  pointer-events: none;
+  opacity: 0;
+  mask-image: radial-gradient(
+    circle var(--canvas-grid-spotlight-radius) at var(--canvas-pointer-x, -1000px)
+      var(--canvas-pointer-y, -1000px),
+    black 0%,
+    rgb(0 0 0 / 0.75) 30%,
+    rgb(0 0 0 / 0.25) 65%,
+    transparent 100%
+  );
+  transition: opacity 220ms ease-out;
+}
+@media (hover: hover) and (pointer: fine) {
+  .workspace-background[data-pointer-inside="true"] .canvas-grid-spotlight {
+    opacity: var(--canvas-grid-spotlight-opacity);
+  }
+}
+.canvas-viewport .react-flow__node {
+  transition:
+    transform 160ms ease-out,
+    width 160ms ease-out,
+    height 160ms ease-out;
+}
+.canvas-viewport .react-flow__node.dragging,
+.canvas-viewport .react-flow__node.resizing {
+  transition: none;
+}
+.canvas-node {
+  opacity: var(--terminal-idle-opacity);
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+.canvas-node.selected {
+  opacity: 1;
+}
+.canvas-node .terminal-resize-grip {
+  @apply absolute right-px bottom-px z-10 flex size-7 items-end justify-end border-0 bg-transparent p-1.5 text-muted;
+  top: auto;
+  left: auto;
+  translate: none;
+  transform: scale(var(--canvas-chrome-scale));
+  transform-origin: bottom right;
+  opacity: 0.35;
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.terminal-resize-grip:hover {
+  opacity: 0.8;
+}
+.terminal-resize-pattern {
+  width: 11px;
+  height: 11px;
+  background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+.canvas-node .terminal-heading {
+  height: calc(var(--canvas-header-height) * var(--canvas-chrome-scale));
+}
+.canvas-node .terminal-header {
+  width: calc(100% / var(--canvas-chrome-scale));
+  height: var(--canvas-header-height);
+  padding: 7px 16px;
+  gap: 6px;
+  line-height: 16px;
+  transform: scale(var(--canvas-chrome-scale));
+  transform-origin: top left;
+  cursor: move;
+}
+.canvas-node.compact-header .terminal-header {
+  gap: 4px;
+  padding: 5px 6px;
+}
+.canvas-node.compact-header .terminal-title {
+  gap: 4px;
+  padding: 0 2px;
+  line-height: 16px;
+}
+.canvas-node.compact-header .terminal-actions {
+  justify-content: flex-end;
+  gap: 0;
+}
+.canvas-node.compact-header .terminal-actions .icon-button {
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  flex-shrink: 1;
+  padding: 0;
+}
+.canvas-node.minimized .terminal-header {
+  border-bottom: 0;
+  padding-right: 40px;
+}
+.canvas-node.minimized .terminal-resize-grip {
+  cursor: ew-resize;
+}
+.canvas-node .terminal-content {
+  overscroll-behavior: contain;
+  user-select: text;
+  cursor: text;
+}
+.canvas-controls {
+  opacity: 0.25;
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.canvas-controls:hover,
+.canvas-controls:has(:focus-visible) {
+  opacity: 1;
+}
+.canvas-controls .icon-button {
+  @apply size-7 p-1.5;
+}
+.canvas-controls .icon-button > svg {
+  @apply size-3;
+}
+.canvas-controls > span {
+  @apply w-8 text-center font-mono text-[9px];
+}
+.sidebar-scrim {
+  display: none;
+}
+.search-result-action {
+  opacity: 0.25;
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.search-results > button:is(:hover, :focus-visible) .search-result-action {
+  opacity: 1;
 }
 
 @media (min-width: 1650px) {
-  .terminal-content {
+  .terminal-content,
+  .terminal-compact .terminal-content {
     padding: 28px 32px;
   }
 }
-@media (min-width: 701px) and (max-width: 1000px) {
-  .app-header {
-    gap: 12px;
-    padding-inline: 16px;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-  .brand > span:last-child {
-    display: none;
-  }
-  .header-actions {
-    margin-left: 0;
-    gap: 8px;
-  }
-}
 @media (max-width: 700px) {
-  .app-header {
-    height: 60px;
-    padding: 0 12px;
-    gap: 8px;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-  .header-workspace {
-    gap: 8px;
-  }
-  .brand {
-    width: auto;
-    font-size: 17px;
-    gap: 7px;
-  }
-  .brand > span:last-child {
-    display: none;
-  }
-  .view-switch button > span {
-    display: none;
-  }
-  .brand-symbol {
-    width: 25px;
-    height: 25px;
-  }
-  .view-switch {
-    gap: 0;
-  }
-  .view-switch button {
-    min-width: 0;
-    width: 32px;
-    padding: 0 8px;
-    gap: 0;
-    font-size: 10px;
-  }
-  .header-actions {
-    display: flex;
-    flex-shrink: 0;
-    margin-left: 0;
-    gap: 0;
-  }
-  .header-search {
-    display: none;
-  }
   .sidebar {
     position: absolute;
     z-index: 20;
@@ -823,43 +452,23 @@
     visibility: visible;
     pointer-events: auto;
   }
-  .focus-stage {
-    padding: 6px;
-  }
-  .terminal-content {
+  .terminal-content,
+  .terminal-compact .terminal-content {
     padding: 18px 14px;
     font-size: calc(var(--terminal-font-size, 13px) - 1px);
   }
-  .file-list {
+  .file-list,
+  .terminal-compact .file-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 24px;
   }
-  .terminal-meta {
+  .terminal-meta,
+  .terminal-compact .terminal-meta {
     font-size: 10px;
     gap: 3px 10px;
   }
-  .footer-running {
-    display: none;
-  }
-  .app-footer {
-    padding: 0 12px;
-    font-size: 8px;
-  }
-  .app-footer > button {
-    gap: 5px;
-  }
-  .app-footer kbd {
-    display: none;
-  }
-  .grid-stage {
-    padding: 16px;
-  }
   .small-button {
     padding: 0 12px;
-  }
-  .canvas-controls {
-    right: 14px;
-    bottom: 18px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -935,5 +544,28 @@
   to {
     opacity: 1;
     translate: 0 0;
+  }
+}
+
+@layer components {
+  .icon-button {
+    @apply inline-flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
+  }
+  .icon-button:disabled {
+    @apply cursor-default bg-transparent text-muted;
+    opacity: 0.25;
+  }
+  .icon-button > svg,
+  .session-action > svg {
+    @apply shrink-0;
+  }
+  kbd {
+    @apply inline-flex min-h-5 items-center justify-center rounded-control border border-line bg-shell px-1.5 font-mono text-[9px];
+  }
+  .small-button {
+    @apply flex h-9 items-center gap-2 rounded-control border border-line bg-paper px-4 text-[11px] hover:bg-soft;
+  }
+  .small-button.primary {
+    @apply border-strong bg-strong text-white hover:bg-ink;
   }
 }

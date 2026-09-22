@@ -78,7 +78,7 @@ export const Grid = ({
 
   return (
     <div
-      className="grid-viewport workspace-background"
+      className="grid-viewport relative flex min-h-0 flex-1 overflow-hidden workspace-background"
       tabIndex={-1}
       {...backgroundPointerHandlers}
       onPointerDownCapture={(event) => {
@@ -93,9 +93,9 @@ export const Grid = ({
         if (id) onSelect(id)
       }}
     >
-      <div className="workspace-dots canvas-grid" aria-hidden="true" />
-      <div className="workspace-dots canvas-grid-spotlight" aria-hidden="true" />
-      <div className="grid-stage">
+      <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
+      <div className="workspace-dots absolute inset-0 canvas-grid-spotlight" aria-hidden="true" />
+      <div className="grid-stage relative z-1 min-h-0 flex-1 overflow-auto p-4 [scrollbar-gutter:stable]">
         <div ref={containerRef}>
           {mounted && (
             <ResponsiveGridLayout
@@ -114,11 +114,11 @@ export const Grid = ({
             >
               {sessions.map((session) => (
                 <div
-                  className={`grid-terminal ${selected === session.id ? "selected" : ""}`}
+                  className={`grid-terminal flex min-h-0 flex-col ${selected === session.id ? "selected" : ""}`}
                   key={session.id}
                   data-grid-terminal={session.id}
                 >
-                  <div className="grid-terminal-body">{render(session)}</div>
+                  <div className="grid-terminal-body min-h-0 flex-1">{render(session)}</div>
                 </div>
               ))}
             </ResponsiveGridLayout>

@@ -25,7 +25,7 @@ import {
 import { SessionList } from "./workspace/SessionList"
 import { mockReply, sessions as initialSessions, type Session } from "./workspace/sessions"
 import { SessionsPanel } from "./workspace/SessionsPanel"
-import { SidebarPanel } from "./workspace/SidebarPanel"
+import { SidebarPanel, sidebarCreateClasses } from "./workspace/SidebarPanel"
 import { Terminal, type Entry, type MinimizeControls } from "./workspace/Terminal"
 import {
   cancelTerminalTransition,
@@ -487,7 +487,7 @@ export const App = (): React.JSX.Element => {
 
   return (
     <main
-      className="workspace"
+      className="workspace flex h-dvh min-h-100 flex-col overflow-hidden bg-paper"
       onPointerDownCapture={cancelTerminalTransition}
       onKeyDownCapture={cancelTerminalTransition}
       style={
@@ -496,18 +496,18 @@ export const App = (): React.JSX.Element => {
         } as React.CSSProperties
       }
     >
-      <header className="app-header">
-        <div className="header-workspace">
+      <header className="app-header max-[1001px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
           <a
             href="#"
-            className="brand"
+            className="brand max-[701px]:w-auto max-[701px]:text-[17px] max-[701px]:gap-[7px] [&>span:last-child]:max-[1001px]:hidden flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px] no-underline"
             aria-label="NovaDeck home"
             onClick={(event) => {
               event.preventDefault()
               changeView(preferences.enabledViews[0]!)
             }}
           >
-            <span className="brand-symbol">
+            <span className="brand-symbol max-[701px]:size-[25px] flex size-7 items-center justify-center rounded-control border border-strong bg-strong text-white">
               <TerminalIcon size={18} strokeWidth={2} />
             </span>
             <span>
@@ -524,7 +524,10 @@ export const App = (): React.JSX.Element => {
             onCreate={createProject}
           />
         </div>
-        <nav className="view-switch" aria-label="Workspace layout">
+        <nav
+          className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5"
+          aria-label="Workspace layout"
+        >
           {views
             .filter(({ id }) => preferences.enabledViews.includes(id))
             .map(({ id, label, icon: Icon }) => (
@@ -543,17 +546,17 @@ export const App = (): React.JSX.Element => {
                 aria-label={label}
                 title={label}
                 aria-pressed={view === id}
-                className={view === id ? "active" : ""}
+                className={`flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink max-[701px]:min-w-0 max-[701px]:w-8 max-[701px]:px-2 max-[701px]:gap-0 max-[701px]:text-[10px] [&>span]:max-[701px]:hidden ${view === id ? "active" : ""}`}
               >
                 <Icon size={14} strokeWidth={1.6} />
                 <span>{label}</span>
               </button>
             ))}
         </nav>
-        <div className="header-actions">
+        <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
           <button
             ref={searchButton}
-            className="icon-button header-search"
+            className="icon-button header-search max-[701px]:hidden w-auto gap-2 border border-line bg-paper px-2.5 text-[11px] [&_kbd]:ml-3 [&_kbd]:border-0 [&_kbd]:p-0 [&_kbd]:text-[9px] [&_kbd]:text-muted"
             aria-label="Find a terminal"
             title="Find a terminal (⌘K / Ctrl+K)"
             onClick={() => setSearching(true)}
@@ -571,9 +574,9 @@ export const App = (): React.JSX.Element => {
           </button>
         </div>
       </header>
-      <div className="workspace-body">
+      <div className="workspace-body relative flex min-h-0 flex-1">
         <div
-          className="sidebar-tools"
+          className="sidebar-tools z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
           role="toolbar"
           aria-label="Sidebar actions"
           aria-orientation="vertical"
@@ -614,7 +617,7 @@ export const App = (): React.JSX.Element => {
           sidebar={
             <aside
               id="terminal-sidebar"
-              className={`sidebar ${sidebar ? "sidebar-open" : ""}`}
+              className={`sidebar relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell ${sidebar ? "sidebar-open" : ""}`}
               aria-label={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
               aria-hidden={!sidebarVisible}
               inert={!sidebarVisible}
@@ -651,7 +654,7 @@ export const App = (): React.JSX.Element => {
                 active={sidebarPanel === "terminals"}
                 onClose={hideSidebar}
               >
-                <button className="sidebar-create" onClick={add}>
+                <button className={sidebarCreateClasses} onClick={add}>
                   <Plus size={14} />
                   <span>New terminal</span>
                 </button>
@@ -670,13 +673,19 @@ export const App = (): React.JSX.Element => {
         >
           <section
             key={workspaceSessionId}
-            className={`main-area ${view}`}
+            className={`main-area flex min-w-0 flex-1 flex-col ${view}`}
             aria-label={`${view} view`}
           >
             {view === "focus" && active && (
-              <div className="focus-stage workspace-background" {...backgroundPointerHandlers}>
-                <div className="workspace-dots canvas-grid" aria-hidden="true" />
-                <div className="workspace-dots canvas-grid-spotlight" aria-hidden="true" />
+              <div
+                className="focus-stage max-[701px]:p-1.5 relative min-h-0 flex-1 overflow-hidden p-3 workspace-background"
+                {...backgroundPointerHandlers}
+              >
+                <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
+                <div
+                  className="workspace-dots absolute inset-0 canvas-grid-spotlight"
+                  aria-hidden="true"
+                />
                 {terminal(active, false)}
               </div>
             )}
@@ -704,21 +713,34 @@ export const App = (): React.JSX.Element => {
               />
             )}
             {!sessions.length && (
-              <div className="empty-workspace workspace-background" {...backgroundPointerHandlers}>
-                <div className="workspace-dots canvas-grid" aria-hidden="true" />
-                <div className="workspace-dots canvas-grid-spotlight" aria-hidden="true" />
-                <section className="empty-state">
-                  <span className="empty-state-icon">
+              <div
+                className="empty-workspace relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background"
+                {...backgroundPointerHandlers}
+              >
+                <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
+                <div
+                  className="workspace-dots absolute inset-0 canvas-grid-spotlight"
+                  aria-hidden="true"
+                />
+                <section className="empty-state relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8">
+                  <span className="empty-state-icon mb-4 flex size-11 items-center justify-center rounded-control border border-line bg-shell text-muted">
                     <TerminalIcon size={22} strokeWidth={1.4} />
                   </span>
-                  <h2>No terminals open</h2>
-                  <p>Open a terminal or pick up a previous session.</p>
-                  <div className="empty-state-actions">
+                  <h2 className="text-base font-medium tracking-tight text-ink">
+                    No terminals open
+                  </h2>
+                  <p className="mt-2 max-w-60 text-xs leading-relaxed">
+                    Open a terminal or pick up a previous session.
+                  </p>
+                  <div className="empty-state-actions mt-5 flex flex-wrap items-center justify-center gap-2">
                     <button className="small-button primary" onClick={add}>
                       <Plus size={14} />
                       New terminal
                     </button>
-                    <button className="empty-sessions-link" onClick={showSessions}>
+                    <button
+                      className="empty-sessions-link rounded-control px-3 py-2 text-[11px] text-muted hover:bg-soft hover:text-ink"
+                      onClick={showSessions}
+                    >
                       Browse sessions
                     </button>
                   </div>
@@ -728,19 +750,16 @@ export const App = (): React.JSX.Element => {
           </section>
         </WorkspacePanels>
       </div>
-      <footer className="app-footer">
+      <footer className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted">
         <span className="flex items-center gap-2">
           <span>{sessions.length} terminals</span>
-          <span className="footer-running">
+          <span className="footer-running max-[701px]:hidden ml-2 border-l border-line pl-3">
             {sessions.filter((session) => session.state === "running").length} running
           </span>
         </span>
-        <button onClick={() => setSearching(true)}>
-          <Search size={12} /> Find a terminal <kbd>{modifier} K</kbd>
-        </button>
       </footer>
       <div
-        className="search-backdrop"
+        className="search-backdrop fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh] bg-scrim backdrop-blur-[3px]"
         data-state={searching ? "open" : "closed"}
         aria-hidden={!searching}
         inert={!searching}
@@ -750,7 +769,7 @@ export const App = (): React.JSX.Element => {
           role="dialog"
           aria-modal="true"
           aria-label="Find a terminal"
-          className="search-dialog"
+          className="search-dialog w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
             if (event.key === "Tab") {
@@ -765,10 +784,11 @@ export const App = (): React.JSX.Element => {
             }
           }}
         >
-          <div className="search-field">
+          <div className="search-field flex min-h-17 items-center gap-3 border-b border-line px-5 py-3 text-muted">
             <Search size={18} />
             <input
               ref={searchInput}
+              className="min-w-0 flex-1 bg-transparent text-sm text-ink focus-visible:outline-none"
               aria-label="Search terminals"
               placeholder="Find a terminal…"
               value={query}
@@ -787,25 +807,33 @@ export const App = (): React.JSX.Element => {
               <X size={16} />
             </button>
           </div>
-          <div className="search-results">
+          <div className="search-results flex max-h-[50vh] flex-col gap-1 overflow-y-auto p-2 [scrollbar-width:thin] [scrollbar-color:var(--color-line)_transparent]">
             {matches.map((session) => (
-              <button key={session.id} onClick={() => openSearchResult(session.id)}>
+              <button
+                className="group flex min-h-15 w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell focus-visible:border-line focus-visible:bg-shell focus-visible:outline-offset-[-2px] [&>svg]:shrink-0 [&>svg]:text-muted"
+                key={session.id}
+                onClick={() => openSearchResult(session.id)}
+              >
                 <TerminalIcon size={15} strokeWidth={1.5} />
-                <span className="search-result-copy">
-                  <strong>{session.name}</strong>
-                  <small>
-                    <span>{session.command}</span>
-                    <span>{session.directory}</span>
+                <span className="search-result-copy flex min-w-0 flex-1 flex-col gap-1">
+                  <strong className="truncate text-xs font-medium">{session.name}</strong>
+                  <small className="flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted">
+                    <span className="shrink-0">{session.command}</span>
+                    <span className="truncate border-l border-line pl-2">{session.directory}</span>
                   </small>
                 </span>
                 <ArrowUpRight size={14} className="search-result-action" />
               </button>
             ))}
-            {!matches.length && <p className="search-empty">No terminals match “{query}”.</p>}
+            {!matches.length && (
+              <p className="search-empty px-4 py-10 text-center text-xs text-muted">
+                No terminals match “{query}”.
+              </p>
+            )}
           </div>
-          <div className="search-footnote">
+          <div className="search-footnote flex items-center justify-between border-t border-line bg-shell px-5 py-3 text-[10px] text-muted">
             <span>Open in {windowedLabel}</span>
-            <span className="search-dismiss">
+            <span className="search-dismiss flex items-center gap-2">
               <kbd>esc</kbd> Close
             </span>
           </div>

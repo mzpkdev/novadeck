@@ -13,6 +13,7 @@ import { useMemo, useState } from "react"
 
 import type { Session } from "./sessions"
 import { SessionTab } from "./SessionTab"
+import { sidebarListClasses } from "./SidebarItem"
 
 const sensors = [
   PointerSensor.configure({
@@ -70,7 +71,7 @@ export const SessionList = ({
         onReorder(order)
       }}
     >
-      <div className="session-list sidebar-list" ref={setList}>
+      <div className={`session-list ${sidebarListClasses}`} ref={setList}>
         {sessions.map((session, index) => (
           <SessionTab
             key={session.id}

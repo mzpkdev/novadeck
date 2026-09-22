@@ -91,7 +91,7 @@ export const WorkspacePanels = ({
 
   return (
     <div
-      className={`workspace-panels${motion.active ? " sidebar-transition" : ""}`}
+      className={`workspace-panels relative min-h-0 min-w-0 flex-1${motion.active ? " sidebar-transition" : ""}`}
       ref={container}
       style={{ "--sidebar-expanded-width": `${preferred}px` } as CSSProperties}
     >
@@ -130,7 +130,7 @@ export const WorkspacePanels = ({
       </Allotment>
       {!collapsed && (
         <div
-          className="sidebar-keyboard-resize"
+          className="sidebar-keyboard-resize pointer-events-none absolute inset-y-0 z-40 w-2 -translate-x-1/2"
           role="separator"
           aria-label="Resize sidebar"
           aria-orientation="vertical"

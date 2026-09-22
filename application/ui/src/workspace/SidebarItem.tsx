@@ -1,6 +1,10 @@
 import type { ComponentPropsWithoutRef, ReactNode, Ref } from "react"
 
-import "./SidebarItem.css"
+export const sidebarListClasses =
+  "sidebar-list mt-2.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-3 [scrollbar-color:var(--color-line)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-control [&::-webkit-scrollbar-thumb]:bg-line [&::-webkit-scrollbar]:w-[var(--spacing)]"
+
+const sidebarItemClasses =
+  "sidebar-item relative flex min-h-17 min-w-0 shrink-0 rounded-control border border-transparent text-ink transition-[background-color,border-color] duration-(--motion-feedback) ease-interface hover:bg-soft focus-within:bg-soft data-[selected=true]:border-line data-[selected=true]:bg-paper [&.dragging]:z-50 [&.dragging]:border-line [&.dragging]:bg-paper before:absolute before:top-2.5 before:bottom-2.5 before:-left-px before:w-0.5 before:rounded-control before:bg-strong before:opacity-0 before:content-[''] before:transition-opacity before:duration-(--motion-state) before:ease-interface data-[selected=true]:before:opacity-100"
 
 export const SidebarItem = ({
   name,
@@ -31,11 +35,16 @@ export const SidebarItem = ({
   ref?: Ref<HTMLDivElement>
   handleRef?: Ref<HTMLButtonElement>
 }): React.JSX.Element => (
-  <div {...attributes} ref={ref} className={`sidebar-item ${className}`} data-selected={selected}>
+  <div
+    {...attributes}
+    ref={ref}
+    className={`${sidebarItemClasses} ${className}`}
+    data-selected={selected}
+  >
     {editor ?? (
       <button
         ref={handleRef}
-        className="sidebar-item-select"
+        className="sidebar-item-select flex min-w-0 flex-1 items-start gap-2 rounded-[inherit] px-2.5 py-[9px] text-left text-inherit focus-visible:outline-offset-[-2px]"
         type="button"
         aria-label={selectLabel}
         aria-description={description}
@@ -43,13 +52,21 @@ export const SidebarItem = ({
         title={tooltip}
         onClick={onSelect}
       >
-        <span className="sidebar-item-icon">{icon}</span>
-        <span className="sidebar-item-copy">
-          <strong>{name}</strong>
-          <span className="sidebar-item-detail">{detail}</span>
+        <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
+          {icon}
+        </span>
+        <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
+          <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
+          <span className="sidebar-item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] text-muted [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[52px]">
+            {detail}
+          </span>
         </span>
       </button>
     )}
-    {actions && <div className="sidebar-item-actions">{actions}</div>}
+    {actions && (
+      <div className="sidebar-item-actions absolute right-2 bottom-[9px] flex h-6 items-center">
+        {actions}
+      </div>
+    )}
   </div>
 )

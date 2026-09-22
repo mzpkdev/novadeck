@@ -28,14 +28,14 @@ const Output = ({
   if (kind === "shell")
     return (
       <>
-        <div className="terminal-meta">
+        <div className="terminal-meta mb-8 grid gap-x-5 gap-y-0.5 text-[11px] grid-cols-[max-content_auto] [&>span:nth-child(odd)]:text-muted">
           <span>Last login</span>
           <span>Tue Sep 22, 09:41:08 on ttys001</span>
           <span>Workspace</span>
           <span>{directory}</span>
         </div>
         <p className="output-gap">
-          <span className="prompt-arrow">❯</span> git status
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> git status
         </p>
         <p>
           On branch <strong>main</strong>
@@ -43,9 +43,9 @@ const Output = ({
         <p className="text-muted">Your branch is up to date with 'origin/main'.</p>
         <p className="output-gap">Nothing to commit, working tree clean.</p>
         <p className="output-gap">
-          <span className="prompt-arrow">❯</span> ls
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> ls
         </p>
-        <p className="file-list">
+        <p className="file-list mt-1 grid w-max max-w-full grid-cols-3 gap-x-10">
           <span>application/</span>
           <span>package.json</span>
           <span>README.md</span>
@@ -59,7 +59,7 @@ const Output = ({
     return (
       <>
         <p>
-          <span className="prompt-arrow">❯</span> pnpm dev
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> pnpm dev
         </p>
         <p className="text-muted">
           {">"} @{projectName}/ui dev
@@ -80,7 +80,7 @@ const Output = ({
     return (
       <>
         <p>
-          <span className="prompt-arrow">❯</span> pnpm test --watch
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> pnpm test --watch
         </p>
         <p className="output-gap">
           <strong>DEV</strong> v5.0.1{" "}
@@ -97,7 +97,7 @@ const Output = ({
             ✓ canvas.spec.ts <span className="text-muted">(4 tests) 12ms</span>
           </p>
         </div>
-        <div className="test-summary">
+        <div className="test-summary mt-4 border-l-2 border-line py-1 pl-3 whitespace-pre">
           <p>
             Test Files <strong>3 passed</strong> (3)
           </p>
@@ -108,7 +108,10 @@ const Output = ({
           <p> Duration 684ms</p>
         </div>
         <p className="output-gap">
-          <span className="terminal-badge">PASS</span> Waiting for file changes…
+          <span className="terminal-badge mr-1 rounded-control bg-strong px-1.5 py-0.5 text-[9px] text-white">
+            PASS
+          </span>{" "}
+          Waiting for file changes…
         </p>
         <p className="text-muted">press h to show help, press q to quit</p>
       </>
@@ -117,7 +120,7 @@ const Output = ({
     return (
       <>
         <p>
-          <span className="prompt-arrow">❯</span> git log --oneline -5
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> git log --oneline -5
         </p>
         <div className="output-gap git-log">
           <p>
@@ -137,7 +140,7 @@ const Output = ({
           </p>
         </div>
         <p className="output-gap">
-          <span className="prompt-arrow">❯</span> git status --short
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> git status --short
         </p>
         <p className="text-muted">Working tree clean.</p>
       </>
@@ -146,7 +149,7 @@ const Output = ({
     return (
       <>
         <p>
-          <span className="prompt-arrow">❯</span> pnpm dev
+          <span className="prompt-arrow mr-2 font-semibold">❯</span> pnpm dev
         </p>
         <p className="output-gap">Runtime listening on :3000</p>
         <p className="text-muted">Watching for changes…</p>
@@ -173,7 +176,7 @@ const Output = ({
   return (
     <>
       <p>
-        <span className="prompt-arrow">❯</span> pnpm build
+        <span className="prompt-arrow mr-2 font-semibold">❯</span> pnpm build
       </p>
       <p className="output-gap text-muted">vite v7.3.6 building for production…</p>
       <p>✓ 1,428 modules transformed.</p>
@@ -257,17 +260,20 @@ export const Terminal = ({
   }, [])
   return (
     <section
-      className={`terminal-window ${compact ? "terminal-compact" : "terminal-focused"}`}
+      className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${session.name} terminal`}
       data-terminal={session.id}
     >
-      <div className="terminal-heading">
-        <header className="terminal-header">
-          <div className="terminal-title" title={session.name}>
+      <div className="terminal-heading relative shrink-0">
+        <header className="terminal-header flex h-12 shrink-0 flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted">
+          <div
+            className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium"
+            title={session.name}
+          >
             <TerminalIcon size={14} strokeWidth={1.5} />
             <Heading>{session.name}</Heading>
           </div>
-          <span className="terminal-actions">
+          <span className="terminal-actions flex shrink-0 items-center gap-1">
             {minimize && (
               <button
                 className="icon-button terminal-view-action nodrag nopan"
@@ -320,7 +326,7 @@ export const Terminal = ({
       </div>
       <div
         ref={output}
-        className="terminal-content nodrag nopan"
+        className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [scrollbar-width:thin] [scrollbar-color:var(--color-line)_transparent] [&_strong]:font-semibold nodrag nopan"
         hidden={minimize?.minimized}
         onScroll={(event) => onScrollChange(event.currentTarget.scrollTop)}
       >
@@ -330,13 +336,13 @@ export const Terminal = ({
         {entries.map((entry) => (
           <div className="output-gap" key={entry.id}>
             <p>
-              <span className="prompt-arrow">❯</span> {entry.command}
+              <span className="prompt-arrow mr-2 font-semibold">❯</span> {entry.command}
             </p>
             <p className="whitespace-pre-wrap text-muted">{entry.reply}</p>
           </div>
         ))}
         <form
-          className={`command-form${agent ? " agent-command-form" : ""}`}
+          className={`command-form mt-6 rounded-control border border-line bg-shell p-3 transition-[border-color] duration-(--motion-state) ease-interface focus-within:border-line-strong${agent ? " agent-command-form max-w-180 [&_input]:placeholder:text-muted" : ""}`}
           onSubmit={(event) => {
             event.preventDefault()
             if (input.trim()) {
@@ -346,14 +352,14 @@ export const Terminal = ({
           }}
         >
           {!agent && (
-            <div className="command-location">
+            <div className="command-location mb-1 flex items-center gap-2 text-[10px] text-muted [&>svg]:ml-1 [&>svg]:text-muted">
               <span>{projectName}</span>
               <GitBranch size={12} />
               <span className="text-muted">main</span>
             </div>
           )}
-          <label className="command-line">
-            <span className="prompt-arrow">❯</span>
+          <label className="command-line flex items-center border-b border-transparent transition-[border-color] duration-(--motion-state) ease-interface focus-within:border-b-line [&_input]:w-full [&_input]:flex-1 [&_input]:bg-transparent [&_input]:caret-ink [&_input:focus-visible]:outline-none">
+            <span className="prompt-arrow mr-2 font-semibold">❯</span>
             <input
               aria-label={`Command for ${session.name}`}
               autoComplete="off"

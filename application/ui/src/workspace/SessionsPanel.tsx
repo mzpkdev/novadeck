@@ -1,8 +1,7 @@
 import { Layers2, Plus } from "lucide-react"
 
-import { SidebarItem } from "./SidebarItem"
-
-import "./SessionsPanel.css"
+import { sidebarListClasses, SidebarItem } from "./SidebarItem"
+import { sidebarCreateClasses } from "./SidebarPanel"
 
 export type WorkspaceSessionSummary = {
   id: string
@@ -35,9 +34,9 @@ export const SessionsPanel = ({
   onFresh,
 }: SessionsPanelProps): React.JSX.Element => {
   return (
-    <div className="sessions-panel">
+    <div className="sessions-panel flex min-h-0 min-w-0 w-full flex-1 flex-col">
       <button
-        className="sidebar-create"
+        className={sidebarCreateClasses}
         type="button"
         onClick={onFresh}
         title="Open an empty session. Your other terminals keep running."
@@ -45,7 +44,11 @@ export const SessionsPanel = ({
         <Plus size={14} strokeWidth={1.65} />
         <span>Start fresh</span>
       </button>
-      <div className="sessions-panel-list sidebar-list" role="list" aria-label="Saved sessions">
+      <div
+        className={`sessions-panel-list ${sidebarListClasses}`}
+        role="list"
+        aria-label="Saved sessions"
+      >
         {items.map((item) => {
           const active = item.id === activeId
           const terminalCount = item.terminalNames.length
@@ -71,7 +74,9 @@ export const SessionsPanel = ({
                     {terminalCount} {terminalCount === 1 ? "terminal" : "terminals"}
                   </span>
                   {item.running > 0 && (
-                    <span className="session-running">{item.running} running</span>
+                    <span className="session-running before:mr-1.5 before:text-muted before:opacity-50 before:content-['·']">
+                      {item.running} running
+                    </span>
                   )}
                 </>
               }

@@ -56,7 +56,7 @@ type CanvasProps = {
 const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => (
   <div
     data-node={id}
-    className={`canvas-node ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
+    className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
   >
     <NodeResizeControl
       position="bottom-right"
@@ -210,7 +210,7 @@ const TerminalCanvas = ({
 
   return (
     <div
-      className="canvas-viewport workspace-background"
+      className="canvas-viewport relative min-h-0 flex-1 overflow-hidden bg-canvas touch-none workspace-background"
       ref={container}
       style={
         {
@@ -332,7 +332,7 @@ const TerminalCanvas = ({
           bgColor="transparent"
         />
       </ReactFlow>
-      <div className="canvas-controls">
+      <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5">
         <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
           <Minus size={15} />
         </button>
@@ -340,7 +340,7 @@ const TerminalCanvas = ({
         <button className="icon-button" aria-label="Zoom in" onClick={() => void zoomIn()}>
           <Plus size={15} />
         </button>
-        <div className="control-divider" />
+        <div className="control-divider mx-0.5 h-3 w-px bg-line" />
         <button
           className="icon-button"
           aria-label="Fit all terminals"
