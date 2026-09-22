@@ -29,7 +29,7 @@ const currentSessionName = (): string =>
     .getByRole("button", { current: true })
     .getAttribute("aria-label")!
 
-describe("NovaDeck workspace", () => {
+describe("novadeck. workspace", () => {
   beforeEach(() => localStorage.clear())
   context("when limiting available view modes", () => {
     it("keeps search in Focus when both windowed modes are disabled", async () => {
@@ -58,7 +58,7 @@ describe("NovaDeck workspace", () => {
       render(<App />)
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
       expect(screen.queryByRole("radio", { name: /^Focus/ })).not.toBeInTheDocument()
-      await interact("click", screen.getByRole("link", { name: "NovaDeck home" }))
+      await interact("click", screen.getByRole("link", { name: "novadeck. home" }))
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
       await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
@@ -109,28 +109,11 @@ describe("NovaDeck workspace", () => {
       ).not.toBeInTheDocument()
     })
 
-    it("creates an empty project and starts terminals in its directory", async () => {
+    it("keeps opening folders disabled until the native picker is available", async () => {
       render(<App />)
       await interact("click", screen.getByRole("button", { name: "Switch workspace" }))
-      await interact("click", screen.getByRole("button", { name: "Create workspace" }))
-      expect(screen.getByRole("button", { name: "Create" })).toBeDisabled()
-      const name = screen.getByRole("textbox", { name: "New workspace" })
-      await interact("change", name, { target: { value: "  docs-site  " } })
-      await interact("submit", name.closest("form")!)
-      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
-      expect(screen.getByRole("button", { name: "Switch workspace" })).toHaveTextContent(
-        "docs-site",
-      )
-      await interact("click", screen.getAllByRole("button", { name: "New terminal" })[0]!)
-      const command = screen.getByRole("textbox", { name: "Command for Terminal 01" })
-      await interact("change", command, { target: { value: "pwd" } })
-      await interact("submit", command.closest("form")!)
-      expect(screen.getByText("/Users/alex/projects/docs-site", { exact: true })).toBeVisible()
-      await switchTo("storefront")
-      expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
-      await switchTo("docs-site")
-      expect(screen.getByRole("heading", { name: "Terminal 01" })).toBeVisible()
-      expect(screen.getByText("/Users/alex/projects/docs-site", { exact: true })).toBeVisible()
+      expect(screen.getByRole("button", { name: "Open folder…" })).toBeDisabled()
+      expect(screen.queryByRole("textbox", { name: /workspace/i })).not.toBeInTheDocument()
     })
   })
 

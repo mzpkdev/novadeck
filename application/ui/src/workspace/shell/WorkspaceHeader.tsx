@@ -24,7 +24,6 @@ export const WorkspaceHeader = ({
   projects,
   project,
   onProjectSelect,
-  onProjectCreate,
   onViewChange,
   onHome,
   onSearch,
@@ -35,7 +34,6 @@ export const WorkspaceHeader = ({
   projects: Project[]
   project: Project
   onProjectSelect: (id: string) => void
-  onProjectCreate: (name: string) => void
   onViewChange: (mode: ViewMode) => void
   onHome: () => void
   onSearch: () => void
@@ -48,7 +46,7 @@ export const WorkspaceHeader = ({
         <a
           href="#"
           className="brand max-[701px]:w-auto max-[701px]:text-[17px] max-[701px]:gap-[7px] [&>span:last-child]:max-[1001px]:hidden flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px] no-underline"
-          aria-label="NovaDeck home"
+          aria-label="novadeck. home"
           onClick={(event) => {
             event.preventDefault()
             onHome()
@@ -61,12 +59,7 @@ export const WorkspaceHeader = ({
             novadeck<span className="text-muted">.</span>
           </span>
         </a>
-        <WorkspaceSwitcher
-          projects={projects}
-          current={project}
-          onSelect={onProjectSelect}
-          onCreate={onProjectCreate}
-        />
+        <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
       </div>
       <SegmentGroup
         label="Workspace layout"

@@ -264,12 +264,6 @@ export const App = (): React.JSX.Element => {
     })
     resetPresentation(restoredSession.state.view)
   }
-  const createProject = (name: string): void => {
-    const next = { id: crypto.randomUUID(), name, directory: `~/projects/${name}` }
-    const session = newWorkspaceSession([], view, windowedView)
-    dispatch({ type: "project/add", project: next, initialSession: session, activate: true })
-    resetPresentation(session.state.view)
-  }
   const select = (id: string, fit = false): void => {
     setSelected(id)
     setNavigation((value) => ({ count: value.count + 1, fit }))
@@ -466,7 +460,6 @@ export const App = (): React.JSX.Element => {
           const next = projects.find((item) => item.id === id)
           if (next) switchProject(next)
         }}
-        onProjectCreate={createProject}
         onViewChange={(id) => {
           if (view === id) return
           const direction = viewModes.indexOf(id) > viewModes.indexOf(view) ? 1 : -1

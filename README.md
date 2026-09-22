@@ -59,7 +59,9 @@ return to full opacity when focused, using the shared state transition.
 Grid shows all terminals at full opacity when no terminal is selected.
 
 The header workspace switcher starts on `storefront`, with `api-service` as another sample project.
-Its dropdown shows directory paths and offers Create workspace, which opens an empty mock project.
+Its dropdown shows directory paths and a disabled Open folder… action, reserved for Electron's
+native directory picker. Workspace names will come from the selected directory; there is no
+name-entry form or simulated folder browser.
 The Sessions icon in the left rail opens each project's ongoing sessions. Start fresh adds an
 empty session while keeping all previous terminals available; click a session to return to it.
 Sessions use automatic date/time names. Each retains terminal names,
@@ -68,7 +70,7 @@ Grid/Canvas layouts and camera. Switching to another project retains its own ses
 last active session. The same Sessions toggle is available in the left rail on mobile. Starting fresh and
 switching sessions do not close terminals or change their process state; process activity remains
 sample data in this frontend mockup, with no real shell processes connected.
-These are in-memory demo workspaces; creating one does not create a directory.
+These are in-memory demo workspaces; no filesystem directories are read or created.
 
 All three desktop views use Allotment for the sidebar split. Drag the divider to resize
 between 180–400px; its width is shared across views and saved locally. Double-click to reset
