@@ -30,7 +30,7 @@ const terminal = (id: string): Session => ({
 
 const workspaceState = (
   sessions: Session[],
-  nextSession = sessions.length + 1,
+  nextTerminalNumber = sessions.length + 1,
 ): WorkspaceState => ({
   view: "focus",
   windowedView: "grid",
@@ -43,7 +43,7 @@ const workspaceState = (
   scrollOffsets: {},
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
-  nextSession,
+  nextTerminalNumber,
 })
 
 const savedSession = (id: string, state: WorkspaceState) =>
@@ -295,25 +295,56 @@ describe("workspace state", () => {
   })
 
   context("when adding a terminal after restoration", () => {
-    it("accepts only the saved next monotonic ID", () => {
+    it("accepts unique terminal IDs independently of the saved mock ordinal", () => {
       let workspace = seed("storefront", "saved", workspaceState([terminal("01")], 7))
       const target = { projectId: "storefront", workspaceSessionId: "saved" }
       workspace = workspaceReducer(workspace, {
         type: "terminal/add",
         target,
-        session: terminal("06"),
+        session: terminal("runtime-terminal"),
       })
       workspace = workspaceReducer(workspace, {
         type: "terminal/add",
         target,
-        session: terminal("07"),
+        session: terminal("08"),
       })
 
       expect(activeSession(workspace)?.state.sessions.map((session) => session.id)).toEqual([
         "01",
-        "07",
+        "runtime-terminal",
+        "08",
       ])
-      expect(activeSession(workspace)?.state.nextSession).toBe(8)
+      expect(activeSession(workspace)?.state.nextTerminalNumber).toBe(9)
+    })
+
+    it("ignores empty or duplicate IDs and missing targets without consuming the mock ordinal", () => {
+      const workspace = seed(
+        "storefront",
+        "saved",
+        workspaceState([terminal("runtime-terminal")], 7),
+      )
+      for (const id of ["runtime-terminal", ""]) {
+        expect(
+          workspaceReducer(workspace, {
+            type: "terminal/add",
+            target: { projectId: "storefront", workspaceSessionId: "saved" },
+            session: terminal(id),
+          }),
+        ).toBe(workspace)
+      }
+      for (const target of [
+        { projectId: "missing", workspaceSessionId: "saved" },
+        { projectId: "storefront", workspaceSessionId: "missing" },
+      ]) {
+        expect(
+          workspaceReducer(workspace, {
+            type: "terminal/add",
+            target,
+            session: terminal("new-terminal"),
+          }),
+        ).toBe(workspace)
+      }
+      expect(activeSession(workspace)?.state.nextTerminalNumber).toBe(7)
     })
   })
 

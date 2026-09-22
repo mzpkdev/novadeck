@@ -132,7 +132,7 @@ export const App = (): React.JSX.Element => {
     scrollOffsets,
     canvasLayout,
     gridLayouts,
-    nextSession,
+    nextTerminalNumber,
   } = current.state
   const ordered = orderedSessions(current.state)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
@@ -306,7 +306,7 @@ export const App = (): React.JSX.Element => {
     dispatch({
       type: "terminal/add",
       target,
-      session: createMockTerminal(nextSession, project.directory),
+      session: createMockTerminal(nextTerminalNumber, project.directory),
     })
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     setSidebar(false)

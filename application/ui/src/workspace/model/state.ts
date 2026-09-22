@@ -89,7 +89,7 @@ export const createSessionState = (
   cleared: {},
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
-  nextSession: sessions.length + 1,
+  nextTerminalNumber: sessions.length + 1,
 })
 
 export const createWorkspace = ({
@@ -163,8 +163,6 @@ const apply = <Value>(value: Value, update: ValueUpdate<Value>): Value =>
 
 const hasTerminal = (state: WorkspaceState, terminalId: string): boolean =>
   state.sessions.some((session) => session.id === terminalId)
-
-const expectedTerminalId = (nextSession: number): string => String(nextSession).padStart(2, "0")
 
 const allViews: ViewMode[] = ["focus", "grid", "canvas"]
 
@@ -348,17 +346,13 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       })
     case "terminal/add":
       return updateTarget(workspace, action.target, (state) => {
-        if (
-          hasTerminal(state, action.session.id) ||
-          action.session.id !== expectedTerminalId(state.nextSession)
-        )
-          return state
+        if (!action.session.id || hasTerminal(state, action.session.id)) return state
         return {
           ...state,
           sessions: [...state.sessions, action.session],
           cleared: { ...state.cleared, [action.session.id]: true },
           selected: action.session.id,
-          nextSession: state.nextSession + 1,
+          nextTerminalNumber: state.nextTerminalNumber + 1,
         }
       })
     case "terminal/rename":

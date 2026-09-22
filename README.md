@@ -153,7 +153,7 @@ The source folders follow UI features and ownership:
 | `workspace/terminals/`   | Terminal cards and sortable terminal tabs                    |
 | `workspace/layouts/`     | Grid/Canvas views, background effects, and view transitions  |
 | `workspace/sidebar/`     | Shared sidebar presentation and saved-session list           |
-| `workspace/projects/`    | Project selection and creation                               |
+| `workspace/projects/`    | Project selection and the future native folder entry point   |
 | `workspace/preferences/` | Preferences UI and stored preference validation              |
 | `workspace/search/`      | Terminal search and its input/focus lifecycle                |
 | `workspace/shell/`       | Header, pane layout, and shared modal motion                 |
