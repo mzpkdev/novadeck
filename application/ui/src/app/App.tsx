@@ -1,6 +1,7 @@
 import { History, Plus, Terminal as TerminalIcon } from "lucide-react"
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react"
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 
+import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
 import { backgroundPointerHandlers } from "../workspace/layouts/background"
 import { Canvas } from "../workspace/layouts/Canvas"
 import { Grid } from "../workspace/layouts/Grid"
@@ -154,6 +155,13 @@ export const App = (): React.JSX.Element => {
   const [navigation, setNavigation] = useState({ count: 0, fit: false })
   const [settings, setSettings] = useState(false)
   const [searching, setSearching] = useState(false)
+  const pendingDialog = useRef<"search" | "preferences" | null>(null)
+  const openPendingDialog = useCallback((): void => {
+    const next = pendingDialog.current
+    pendingDialog.current = null
+    if (next === "search") setSearching(true)
+    if (next === "preferences") setSettings(true)
+  }, [setSearching, setSettings])
   const [sidebar, setSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const sidebarVisible = desktop ? !sidebarCollapsed : sidebar
@@ -186,6 +194,7 @@ export const App = (): React.JSX.Element => {
   }, [sidebarCollapsed])
 
   const resetPresentation = (nextView: ViewMode): void => {
+    pendingDialog.current = null
     cancelTerminalTransition()
     const restoredView = preferences.enabledViews.includes(nextView)
       ? nextView
@@ -227,7 +236,7 @@ export const App = (): React.JSX.Element => {
   const hideSidebar = (): void => {
     setSidebarCollapsed(true)
     setSidebar(false)
-    document.getElementById(`${sidebarPanel}-toggle`)?.focus()
+    if (desktop) document.getElementById(`${sidebarPanel}-toggle`)?.focus()
   }
   const toggleSidebar = (panel: "terminals" | "sessions"): void => {
     if (sidebarPanel === panel && sidebarVisible) hideSidebar()
@@ -370,27 +379,72 @@ export const App = (): React.JSX.Element => {
   )
 
   useEffect(() => {
+    const requestDialog = (next: "search" | "preferences"): void => {
+      if (pendingDialog.current) {
+        pendingDialog.current = next
+        return
+      }
+      if ((next === "search" && searching) || (next === "preferences" && settings)) return
+      pendingDialog.current = next
+      if (searching || settings) {
+        // The outgoing dialog's exit callback opens the latest requested modal.
+        setSearching(false)
+        setSettings(false)
+      } else {
+        openPendingDialog()
+      }
+    }
     const keydown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault()
-        setSettings(false)
-        setSearching(true)
+        requestDialog("search")
       }
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault()
-        setSearching(false)
-        setSettings(true)
-      }
-      if (event.key === "Escape") {
-        setSearching(false)
-        setSettings(false)
-        setSidebar(false)
+        requestDialog("preferences")
       }
     }
     window.addEventListener("keydown", keydown)
     return () => window.removeEventListener("keydown", keydown)
-  }, [])
+  }, [searching, settings, openPendingDialog])
+
+  const sidebarRail = (mobile = false): React.JSX.Element => (
+    <ToggleGroup
+      className="sidebar-tools z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
+      aria-label="Sidebar actions"
+      orientation="vertical"
+      value={sidebarVisible ? [sidebarPanel] : []}
+      onValueChange={(value) => {
+        const next = value[0]
+        if (next === "terminals" || next === "sessions") toggleSidebar(next)
+        else hideSidebar()
+      }}
+    >
+      {(
+        [
+          { id: "terminals", label: "Terminals", icon: TerminalIcon },
+          { id: "sessions", label: "Sessions", icon: History },
+        ] as const
+      ).map(({ id, label, icon: Icon }) => {
+        const activePanel = sidebarPanel === id && sidebarVisible
+        return (
+          <ToggleGroupItem
+            key={id}
+            tooltip={label}
+            value={id}
+            id={`${mobile ? "mobile-" : ""}${id}-toggle`}
+            className={`icon-button${activePanel ? " active" : ""}`}
+            aria-label={label}
+            aria-controls={`${id}-panel`}
+            aria-expanded={activePanel}
+          >
+            <Icon size={17} />
+          </ToggleGroupItem>
+        )
+      })}
+    </ToggleGroup>
+  )
 
   return (
     <main
@@ -423,49 +477,20 @@ export const App = (): React.JSX.Element => {
         onPreferences={() => setSettings(true)}
       />
       <div className="workspace-body relative flex min-h-0 flex-1">
-        <div
-          className="sidebar-tools z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
-          role="toolbar"
-          aria-label="Sidebar actions"
-          aria-orientation="vertical"
-        >
-          {(
-            [
-              { id: "terminals", label: "Terminals", icon: TerminalIcon },
-              { id: "sessions", label: "Sessions", icon: History },
-            ] as const
-          ).map(({ id, label, icon: Icon }) => {
-            const activePanel = sidebarPanel === id && sidebarVisible
-            return (
-              <button
-                key={id}
-                id={`${id}-toggle`}
-                className={`icon-button${activePanel ? " active" : ""}`}
-                title={label}
-                aria-label={label}
-                aria-controls={`${id}-panel`}
-                aria-expanded={activePanel}
-                aria-pressed={activePanel}
-                onClick={() => toggleSidebar(id)}
-              >
-                <Icon size={17} />
-              </button>
-            )
-          })}
-        </div>
-        <button
-          className={`sidebar-scrim${sidebar ? " open" : ""}`}
-          aria-label="Hide sidebar"
-          aria-hidden={!sidebar}
-          inert={!sidebar}
-          onClick={hideSidebar}
-        />
+        {sidebarRail()}
         <WorkspacePanels
           collapsed={sidebarCollapsed}
+          mobileOpen={sidebar}
+          onMobileOpenChange={(open) => {
+            if (!open) hideSidebar()
+          }}
+          mobileRail={sidebarRail(true)}
+          mobileLabel={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
+          mobileFinalFocusEl={() => document.getElementById(`${sidebarPanel}-toggle`)}
           sidebar={
             <aside
               id="terminal-sidebar"
-              className={`sidebar relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell ${sidebar ? "sidebar-open" : ""}`}
+              className="sidebar relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell"
               aria-label={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
               aria-hidden={!sidebarVisible}
               inert={!sidebarVisible}
@@ -607,6 +632,7 @@ export const App = (): React.JSX.Element => {
         </span>
       </footer>
       <TerminalSearch
+        onExitComplete={openPendingDialog}
         open={searching}
         key={workspaceSessionId}
         sessions={ordered}
@@ -615,6 +641,7 @@ export const App = (): React.JSX.Element => {
         onClose={() => setSearching(false)}
       />
       <Preferences
+        onExitComplete={openPendingDialog}
         open={settings}
         value={preferences}
         onChange={updatePreferences}

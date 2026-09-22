@@ -1,12 +1,23 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach } from "vitest"
 
 import { context, describe, expect, it } from "../test"
 import { App } from "./App"
 
-const switchTo = (name: string): void => {
-  fireEvent.click(screen.getByRole("button", { name: "Switch workspace" }))
-  fireEvent.click(
+const interact = async (
+  type: "click" | "change" | "keyDown" | "submit",
+  element: Element,
+  options?: object,
+): Promise<void> => {
+  await act(async () => {
+    fireEvent[type](element, options)
+  })
+}
+
+const switchTo = async (name: string): Promise<void> => {
+  await interact("click", screen.getByRole("button", { name: "Switch workspace" }))
+  await interact(
+    "click",
     within(screen.getByRole("dialog", { name: "Switch workspace" })).getByRole("button", {
       name: new RegExp(name),
     }),
@@ -21,24 +32,24 @@ const currentSessionName = (): string =>
 describe("NovaDeck workspace", () => {
   beforeEach(() => localStorage.clear())
   context("when limiting available view modes", () => {
-    it("keeps search in Focus when both windowed modes are disabled", () => {
+    it("keeps search in Focus when both windowed modes are disabled", async () => {
       localStorage.setItem(
         "novadeck.preferences",
         JSON.stringify({ fontSize: 13, enabledViews: ["focus"] }),
       )
       render(<App />)
-      expect(screen.queryByRole("button", { name: "Grid" })).not.toBeInTheDocument()
-      expect(screen.queryByRole("button", { name: "Canvas" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("radio", { name: "Grid" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("radio", { name: "Canvas" })).not.toBeInTheDocument()
       expect(screen.queryByRole("button", { name: /Open in/ })).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
+      await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
       expect(within(dialog).getByText("Open in Focus")).toBeVisible()
-      fireEvent.click(within(dialog).getByRole("button", { name: /Runtime/ }))
+      await interact("click", within(dialog).getByRole("option", { name: /Runtime/ }))
       expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
       expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
     })
 
-    it("starts in Grid and omits fullscreen actions when Focus is disabled", () => {
+    it("starts in Grid and omits fullscreen actions when Focus is disabled", async () => {
       localStorage.setItem(
         "novadeck.preferences",
         JSON.stringify({ fontSize: 13, enabledViews: ["grid"] }),
@@ -46,51 +57,51 @@ describe("NovaDeck workspace", () => {
       localStorage.setItem("novadeck.windowed-view", "canvas")
       render(<App />)
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
-      expect(screen.queryByRole("button", { name: /^Focus/ })).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole("link", { name: "NovaDeck home" }))
+      expect(screen.queryByRole("radio", { name: /^Focus/ })).not.toBeInTheDocument()
+      await interact("click", screen.getByRole("link", { name: "NovaDeck home" }))
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
+      await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
       expect(within(dialog).getByText("Open in Grid")).toBeVisible()
-      const input = within(dialog).getByRole("textbox")
-      fireEvent.change(input, { target: { value: "Runtime" } })
-      fireEvent.keyDown(input, { key: "Enter" })
+      const input = within(dialog).getByRole("combobox")
+      await interact("change", input, { target: { value: "Runtime" } })
+      await interact("keyDown", input, { key: "Enter" })
       expect(
         screen.getByRole("region", { name: "Runtime terminal" }).closest(".grid-terminal"),
       ).toHaveClass("selected")
     })
 
-    it("recovers from an empty or invalid saved mode list", () => {
+    it("recovers from an empty or invalid saved mode list", async () => {
       localStorage.setItem("novadeck.preferences", JSON.stringify({ enabledViews: ["invalid"] }))
       render(<App />)
-      const navigation = within(screen.getByRole("navigation", { name: "Workspace layout" }))
-      expect(navigation.getAllByRole("button")).toHaveLength(3)
-      expect(navigation.getByRole("button", { name: "Focus" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      )
+      const navigation = within(screen.getByRole("radiogroup", { name: "Workspace layout" }))
+      expect(navigation.getAllByRole("radio")).toHaveLength(3)
+      expect(navigation.getByRole("radio", { name: "Focus" })).toBeChecked()
     })
   })
 
   context("when switching mock workspaces", () => {
-    it("keeps terminal names, closed tabs, and command history separate for each project", () => {
+    it("keeps terminal names, closed tabs, and command history separate for each project", async () => {
       render(<App />)
       const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
-      fireEvent.change(command, { target: { value: "echo storefront history" } })
-      fireEvent.submit(command.closest("form")!)
-      fireEvent.click(screen.getByRole("button", { name: "Rename Checkout implementation" }))
+      await interact("change", command, { target: { value: "echo storefront history" } })
+      await interact("submit", command.closest("form")!)
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Rename Checkout implementation" }),
+      )
       const name = screen.getByRole("textbox", { name: "Rename Checkout implementation" })
-      fireEvent.change(name, { target: { value: "Shop shell" } })
-      fireEvent.submit(name.closest("form")!)
-      fireEvent.click(screen.getByRole("button", { name: "Close Checkout review" }))
-      switchTo("api-service")
+      await interact("change", name, { target: { value: "Shop shell" } })
+      await interact("keyDown", name, { key: "Enter" })
+      await interact("click", screen.getByRole("button", { name: "Close Checkout review" }))
+      await switchTo("api-service")
       expect(screen.getByRole("button", { name: "Select Checkout review" })).toBeVisible()
       expect(screen.queryByText("storefront history", { exact: true })).not.toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Switch workspace" })).toHaveAttribute(
         "title",
         "~/projects/api-service",
       )
-      switchTo("storefront")
+      await switchTo("storefront")
       expect(screen.getByRole("heading", { name: "Shop shell" })).toBeVisible()
       expect(screen.getByText("storefront history", { exact: true })).toBeVisible()
       expect(
@@ -98,134 +109,134 @@ describe("NovaDeck workspace", () => {
       ).not.toBeInTheDocument()
     })
 
-    it("creates an empty project and starts terminals in its directory", () => {
+    it("creates an empty project and starts terminals in its directory", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Switch workspace" }))
-      fireEvent.click(screen.getByRole("button", { name: "Create workspace" }))
+      await interact("click", screen.getByRole("button", { name: "Switch workspace" }))
+      await interact("click", screen.getByRole("button", { name: "Create workspace" }))
       expect(screen.getByRole("button", { name: "Create" })).toBeDisabled()
       const name = screen.getByRole("textbox", { name: "New workspace" })
-      fireEvent.change(name, { target: { value: "  docs-site  " } })
-      fireEvent.submit(name.closest("form")!)
+      await interact("change", name, { target: { value: "  docs-site  " } })
+      await interact("submit", name.closest("form")!)
       expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
       expect(screen.getByRole("button", { name: "Switch workspace" })).toHaveTextContent(
         "docs-site",
       )
-      fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!)
+      await interact("click", screen.getAllByRole("button", { name: "New terminal" })[0]!)
       const command = screen.getByRole("textbox", { name: "Command for Terminal 01" })
-      fireEvent.change(command, { target: { value: "pwd" } })
-      fireEvent.submit(command.closest("form")!)
+      await interact("change", command, { target: { value: "pwd" } })
+      await interact("submit", command.closest("form")!)
       expect(screen.getByText("/Users/alex/projects/docs-site", { exact: true })).toBeVisible()
-      switchTo("storefront")
+      await switchTo("storefront")
       expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
-      switchTo("docs-site")
+      await switchTo("docs-site")
       expect(screen.getByRole("heading", { name: "Terminal 01" })).toBeVisible()
       expect(screen.getByText("/Users/alex/projects/docs-site", { exact: true })).toBeVisible()
     })
   })
 
   context("when starting fresh", () => {
-    it("keeps previous terminals, output, drafts, and selection while opening an empty session", () => {
+    it("keeps previous terminals, output, drafts, and selection while opening an empty session", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Select Runtime" }))
+      await interact("click", screen.getByRole("button", { name: "Select Runtime" }))
       const input = screen.getByRole("textbox", { name: "Command for Runtime" })
-      fireEvent.change(input, { target: { value: "echo saved output" } })
-      fireEvent.submit(input.closest("form")!)
-      fireEvent.change(input, { target: { value: "echo unfinished" } })
-      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      await interact("change", input, { target: { value: "echo saved output" } })
+      await interact("submit", input.closest("form")!)
+      await interact("change", input, { target: { value: "echo unfinished" } })
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
       const morning = currentSessionName()
-      fireEvent.click(screen.getByRole("button", { name: "Start fresh" }))
+      await interact("click", screen.getByRole("button", { name: "Start fresh" }))
       expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
       expect(screen.getByRole("button", { name: morning })).toHaveTextContent("6 terminals")
       expect(screen.getByRole("button", { name: morning })).toHaveTextContent("5 running")
       const afternoon = currentSessionName()
-      fireEvent.click(screen.getByRole("button", { name: "New terminal" }))
+      await interact("click", screen.getByRole("button", { name: "New terminal" }))
       const fresh = screen.getByRole("textbox", { name: "Command for Terminal 01" })
       expect(fresh).toHaveValue("")
-      fireEvent.change(fresh, { target: { value: "new draft" } })
-      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
-      fireEvent.click(screen.getByRole("button", { name: morning }))
+      await interact("change", fresh, { target: { value: "new draft" } })
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: morning }))
       expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
       expect(screen.getByRole("textbox", { name: "Command for Runtime" })).toHaveValue(
         "echo unfinished",
       )
       expect(screen.getByText("saved output", { exact: true })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: afternoon }))
+      await interact("click", screen.getByRole("button", { name: afternoon }))
       expect(screen.getByRole("textbox", { name: "Command for Terminal 01" })).toHaveValue(
         "new draft",
       )
       expect(screen.queryByText("saved output", { exact: true })).not.toBeInTheDocument()
     })
 
-    it("keeps sessions within their project and restores the last active one", () => {
+    it("keeps sessions within their project and restores the last active one", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
       const morning = within(screen.getByRole("list", { name: "Saved sessions" })).getByRole(
         "button",
         { current: true },
       )
       const morningName = currentSessionName()
-      fireEvent.click(screen.getByRole("button", { name: "Start fresh" }))
+      await interact("click", screen.getByRole("button", { name: "Start fresh" }))
       const afternoon = currentSessionName()
-      switchTo("api-service")
+      await switchTo("api-service")
       expect(morning).not.toBeInTheDocument()
       expect(
         within(screen.getByRole("list", { name: "Saved sessions" })).getAllByRole("listitem"),
       ).toHaveLength(1)
       const api = currentSessionName()
-      switchTo("storefront")
+      await switchTo("storefront")
       expect(screen.getByRole("button", { name: afternoon })).toHaveAttribute(
         "aria-current",
         "true",
       )
       expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: morningName }))
+      await interact("click", screen.getByRole("button", { name: morningName }))
       expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
-      switchTo("api-service")
+      await switchTo("api-service")
       expect(screen.getByRole("button", { name: api })).toHaveAttribute("aria-current", "true")
     })
 
-    it("restores each session's selected view", () => {
+    it("restores each session's selected view", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
-      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
       const grid = currentSessionName()
-      fireEvent.click(screen.getByRole("button", { name: "Start fresh" }))
+      await interact("click", screen.getByRole("button", { name: "Start fresh" }))
       const focus = currentSessionName()
-      fireEvent.click(screen.getByRole("button", { name: "Focus" }))
-      fireEvent.click(screen.getByRole("button", { name: grid }))
+      await interact("click", screen.getByRole("radio", { name: "Focus" }))
+      await interact("click", screen.getByRole("button", { name: grid }))
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: focus }))
+      await interact("click", screen.getByRole("button", { name: focus }))
       expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
     })
   })
 
   context("when toggling sidebar panels", () => {
-    it("shows only the chosen panel and lets either toggle or close button hide it", () => {
+    it("shows only the chosen panel and lets either toggle or close button hide it", async () => {
       render(<App />)
-      const terminals = screen.getByRole("button", { name: "Terminals" })
-      const sessions = screen.getByRole("button", { name: "Sessions" })
+      const terminals = screen.getByRole("radio", { name: "Terminals" })
+      const sessions = screen.getByRole("radio", { name: "Sessions" })
       const input = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
-      fireEvent.change(input, { target: { value: "keep my draft" } })
-      expect(terminals).toHaveAttribute("aria-pressed", "true")
-      expect(sessions).toHaveAttribute("aria-pressed", "false")
-      fireEvent.click(sessions)
-      expect(terminals).toHaveAttribute("aria-pressed", "false")
-      expect(sessions).toHaveAttribute("aria-pressed", "true")
+      await interact("change", input, { target: { value: "keep my draft" } })
+      expect(terminals).toHaveAttribute("aria-checked", "true")
+      expect(sessions).toHaveAttribute("aria-checked", "false")
+      await interact("click", sessions)
+      expect(terminals).toHaveAttribute("aria-checked", "false")
+      expect(sessions).toHaveAttribute("aria-checked", "true")
       expect(screen.queryByRole("button", { name: "Select Runtime" })).not.toBeInTheDocument()
-      fireEvent.click(terminals)
-      expect(sessions).toHaveAttribute("aria-pressed", "false")
+      await interact("click", terminals)
+      expect(sessions).toHaveAttribute("aria-checked", "false")
       expect(screen.getByRole("button", { name: "Select Runtime" })).toBeVisible()
-      fireEvent.click(sessions)
-      fireEvent.click(sessions)
+      await interact("click", sessions)
+      await interact("click", sessions)
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
-      expect(terminals).toHaveAttribute("aria-pressed", "false")
-      expect(sessions).toHaveAttribute("aria-pressed", "false")
-      fireEvent.click(sessions)
-      fireEvent.click(screen.getByRole("button", { name: "Hide sessions" }))
+      expect(terminals).toHaveAttribute("aria-checked", "false")
+      expect(sessions).toHaveAttribute("aria-checked", "false")
+      await interact("click", sessions)
+      await interact("click", screen.getByRole("button", { name: "Hide sessions" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
       expect(sessions).toHaveFocus()
-      fireEvent.click(terminals)
-      fireEvent.click(screen.getByRole("button", { name: "Hide terminals" }))
+      await interact("click", terminals)
+      await interact("click", screen.getByRole("button", { name: "Hide terminals" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
       expect(terminals).toHaveFocus()
       expect(screen.getByRole("textbox", { name: "Command for Checkout implementation" })).toBe(
@@ -236,14 +247,14 @@ describe("NovaDeck workspace", () => {
   })
 
   context("when collapsing the desktop sidebar", () => {
-    it("hides sidebar controls without remounting the active terminal", () => {
+    it("hides sidebar controls without remounting the active terminal", async () => {
       render(<App />)
       const input = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
-      fireEvent.change(input, { target: { value: "echo draft" } })
-      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
+      await interact("change", input, { target: { value: "echo draft" } })
+      await interact("click", screen.getByRole("radio", { name: "Terminals" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
       expect(screen.queryByRole("separator", { name: "Resize sidebar" })).not.toBeInTheDocument()
-      expect(screen.getByRole("button", { name: "Terminals" })).toHaveAttribute(
+      expect(screen.getByRole("radio", { name: "Terminals" })).toHaveAttribute(
         "aria-expanded",
         "false",
       )
@@ -251,60 +262,64 @@ describe("NovaDeck workspace", () => {
         input,
       )
       expect(input).toHaveValue("echo draft")
-      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
+      await interact("click", screen.getByRole("radio", { name: "Terminals" }))
       expect(screen.getByRole("complementary")).toBeVisible()
       expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeVisible()
       expect(input).toHaveValue("echo draft")
     })
 
-    it("remembers the collapsed state across layouts and app mounts", () => {
+    it("remembers the collapsed state across layouts and app mounts", async () => {
       const first = render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Terminals" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
       expect(localStorage.getItem("novadeck.sidebar-collapsed")).toBe("true")
       first.unmount()
       render(<App />)
-      expect(screen.getByRole("button", { name: "Terminals" })).toBeEnabled()
+      expect(screen.getByRole("radio", { name: "Terminals" })).toBeEnabled()
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
+      await interact("click", screen.getByRole("radio", { name: "Terminals" }))
       expect(localStorage.getItem("novadeck.sidebar-collapsed")).toBe("false")
     })
   })
 
   context("when changing the layout", () => {
-    it("opens the active fullscreen terminal in Grid before any maximize action", () => {
+    it("opens the active fullscreen terminal in Grid before any maximize action", async () => {
       render(<App />)
       expect(screen.getByRole("button", { name: "Open in Grid" })).toBeEnabled()
-      fireEvent.click(screen.getByRole("button", { name: "Select Checkout review" }))
-      fireEvent.click(screen.getByRole("button", { name: "Open in Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Select Checkout review" }))
+      await interact("click", screen.getByRole("button", { name: "Open in Grid" }))
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
       expect(
         screen.getByRole("region", { name: "Checkout review terminal" }).closest(".grid-terminal"),
       ).toHaveClass("selected")
     })
 
-    it("opens a renamed fullscreen terminal in the preferred windowed mode", () => {
+    it("opens a renamed fullscreen terminal in the preferred windowed mode", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
-      fireEvent.click(screen.getByRole("button", { name: "Focus Checkout review" }))
-      fireEvent.click(screen.getByRole("button", { name: "Rename Checkout review" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Focus Checkout review" }))
+      await interact("click", screen.getByRole("button", { name: "Rename Checkout review" }))
       const name = screen.getByRole("textbox", { name: "Rename Checkout review" })
-      fireEvent.change(name, { target: { value: "Changes" } })
-      fireEvent.submit(name.closest("form")!)
-      fireEvent.click(screen.getByRole("button", { name: "Open in Grid" }))
+      await interact("change", name, { target: { value: "Changes" } })
+      await interact("keyDown", name, { key: "Enter" })
+      await interact("click", screen.getByRole("button", { name: "Open in Grid" }))
       expect(
         screen.getByRole("region", { name: "Changes terminal" }).closest(".grid-terminal"),
       ).toHaveClass("selected")
     })
 
-    it("keeps the windowed action available after switching or closing fullscreen terminals", () => {
+    it("keeps the windowed action available after switching or closing fullscreen terminals", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
-      fireEvent.click(screen.getByRole("button", { name: "Focus Checkout review" }))
-      fireEvent.click(screen.getByRole("button", { name: "Select Checkout implementation" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Focus Checkout review" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Select Checkout implementation" }),
+      )
       expect(screen.getByRole("button", { name: "Open in Grid" })).toBeEnabled()
-      fireEvent.click(
+      await interact(
+        "click",
         within(screen.getByRole("region", { name: "Checkout implementation terminal" })).getByRole(
           "button",
           {
@@ -312,28 +327,28 @@ describe("NovaDeck workspace", () => {
           },
         ),
       )
-      fireEvent.click(screen.getByRole("button", { name: "Open in Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Open in Grid" }))
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
       expect(
         screen.queryByRole("region", { name: "Checkout implementation terminal" }),
       ).not.toBeInTheDocument()
     })
 
-    it("keeps search in Focus after remount while retaining Canvas for windowed return", () => {
+    it("keeps search in Focus after remount while retaining Canvas for windowed return", async () => {
       const first = render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Canvas" }))
-      fireEvent.click(screen.getByRole("button", { name: "Focus" }))
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact("click", screen.getByRole("radio", { name: "Focus" }))
       expect(screen.getByRole("button", { name: "Open in Canvas" })).toBeEnabled()
       expect(localStorage.getItem("novadeck.windowed-view")).toBe("canvas")
       first.unmount()
       render(<App />)
       expect(screen.getByRole("button", { name: "Open in Canvas" })).toBeEnabled()
-      fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
+      await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
       expect(within(dialog).getByText("Open in Focus")).toBeVisible()
-      const input = within(dialog).getByRole("textbox")
-      fireEvent.change(input, { target: { value: "runtime" } })
-      fireEvent.keyDown(input, { key: "Enter" })
+      const input = within(dialog).getByRole("combobox")
+      await interact("change", input, { target: { value: "runtime" } })
+      await interact("keyDown", input, { key: "Enter" })
       expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
       expect(screen.getByRole("button", { name: "Select Runtime" })).toHaveAttribute(
         "aria-current",
@@ -344,21 +359,22 @@ describe("NovaDeck workspace", () => {
 
     for (const previous of ["Grid", "Canvas"] as const) {
       for (const entry of ["navigation", "maximize"] as const) {
-        it(`keeps a clicked search result in Focus entered by ${entry} from ${previous}`, () => {
+        it(`keeps a clicked search result in Focus entered by ${entry} from ${previous}`, async () => {
           render(<App />)
-          fireEvent.click(screen.getByRole("button", { name: previous }))
-          fireEvent.click(
-            screen.getByRole("button", {
+          await interact("click", screen.getByRole("radio", { name: previous }))
+          await interact(
+            "click",
+            screen.getByRole(entry === "navigation" ? "radio" : "button", {
               name: entry === "navigation" ? "Focus" : "Focus Checkout implementation",
             }),
           )
-          fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
+          await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
           const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
           expect(within(dialog).getByText("Open in Focus")).toBeVisible()
-          fireEvent.click(within(dialog).getByRole("button", { name: /Runtime/ }))
+          await interact("click", within(dialog).getByRole("option", { name: /Runtime/ }))
           expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
           expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
-          fireEvent.click(screen.getByRole("button", { name: `Open in ${previous}` }))
+          await interact("click", screen.getByRole("button", { name: `Open in ${previous}` }))
           expect(
             screen.getByRole("region", { name: `${previous.toLowerCase()} view` }),
           ).toBeVisible()
@@ -366,95 +382,111 @@ describe("NovaDeck workspace", () => {
       }
     }
 
-    it("replaces the preference when Grid is selected and ignores invalid saved modes", () => {
+    it("replaces the preference when Grid is selected and ignores invalid saved modes", async () => {
       localStorage.setItem("novadeck.windowed-view", "invalid")
       render(<App />)
       expect(screen.getByRole("button", { name: "Open in Grid" })).toBeEnabled()
-      fireEvent.click(screen.getByRole("button", { name: "Canvas" }))
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
-      fireEvent.click(screen.getByRole("button", { name: "Focus" }))
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Focus" }))
       expect(screen.getByRole("button", { name: "Open in Grid" })).toBeEnabled()
       expect(localStorage.getItem("novadeck.windowed-view")).toBe("grid")
     })
 
-    it("shows a single selected terminal in focus and uses sidebar tabs to select grid terminals", () => {
+    it("shows a single selected terminal in focus and uses sidebar tabs to select grid terminals", async () => {
       render(<App />)
       expect(screen.getByRole("region", { name: "Checkout implementation terminal" })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
       expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
       expect(
         screen.queryByRole("region", { name: "Checkout implementation terminal" }),
       ).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
       expect(screen.getByRole("complementary")).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: "Select Checkout review" }))
+      await interact("click", screen.getByRole("button", { name: "Select Checkout review" }))
       expect(
         screen.getByRole("region", { name: "Checkout review terminal" }).closest(".grid-terminal"),
       ).toHaveClass("selected")
       expect(screen.getAllByRole("region", { name: /terminal$/ })).toHaveLength(6)
-      fireEvent.click(screen.getByRole("button", { name: "Focus Checkout review" }))
+      await interact("click", screen.getByRole("button", { name: "Focus Checkout review" }))
       expect(screen.getByRole("heading", { name: "Checkout review" })).toBeVisible()
     })
   })
 
   context("when using the local preview shell", () => {
-    it("keeps command output when switching layouts and clears only the current session", () => {
+    it("keeps command output when switching layouts and clears only the current session", async () => {
       render(<App />)
       const input = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
-      fireEvent.change(input, { target: { value: "echo hello from the mock" } })
-      fireEvent.submit(input.closest("form")!)
+      await interact("change", input, { target: { value: "echo hello from the mock" } })
+      await interact("submit", input.closest("form")!)
       expect(screen.getByText("hello from the mock", { exact: true })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
       expect(screen.getByText("hello from the mock", { exact: true })).toBeVisible()
       const gridInput = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
-      fireEvent.change(gridInput, { target: { value: "clear" } })
-      fireEvent.submit(gridInput.closest("form")!)
+      await interact("change", gridInput, { target: { value: "clear" } })
+      await interact("submit", gridInput.closest("form")!)
       expect(screen.queryByText("hello from the mock", { exact: true })).not.toBeInTheDocument()
       expect(screen.getByText("Runtime listening on :3000")).toBeVisible()
     })
   })
 
   context("when finding and creating sessions", () => {
-    it("filters sessions and opens the chosen result", () => {
+    it("opens the keyboard-highlighted search result", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
+      await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
+      const input = screen.getByRole("combobox", { name: "Search terminals" })
+      await interact("keyDown", input, { key: "End" })
+      await interact("keyDown", input, { key: "Enter" })
+      expect(screen.getByRole("heading", { name: "Build" })).toBeVisible()
+      expect(screen.queryByRole("dialog", { name: "Find a terminal" })).not.toBeInTheDocument()
+    })
+
+    it("filters sessions and opens the chosen result", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("button", { name: "Find a terminal" }))
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
-      fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "runtime" } })
-      fireEvent.click(within(dialog).getByRole("button", { name: /Runtime/ }))
+      await interact("change", within(dialog).getByRole("combobox"), {
+        target: { value: "runtime" },
+      })
+      await interact("click", within(dialog).getByRole("option", { name: /Runtime/ }))
       expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
       expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
       expect(screen.getAllByRole("region", { name: /terminal$/ })).toHaveLength(1)
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
 
-    it("adds a selected, empty terminal", () => {
+    it("adds a selected, empty terminal", async () => {
       render(<App />)
-      fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!)
+      await interact("click", screen.getAllByRole("button", { name: "New terminal" })[0]!)
       expect(screen.getByRole("heading", { name: "Terminal 07" })).toBeVisible()
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveValue("")
       expect(screen.getByText("7 terminals", { selector: ".app-footer span" })).toBeVisible()
     })
   })
   context("when managing terminal tabs", () => {
-    it("renames a session across layouts and cancels an unfinished rename", () => {
+    it("renames a session across layouts and cancels an unfinished rename", async () => {
       render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Rename Checkout implementation" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Rename Checkout implementation" }),
+      )
       const input = screen.getByRole("textbox", { name: "Rename Checkout implementation" })
-      fireEvent.change(input, { target: { value: "  Local shell  " } })
-      fireEvent.submit(input.closest("form")!)
+      await interact("change", input, { target: { value: "  Local shell  " } })
+      await interact("keyDown", input, { key: "Enter" })
       expect(screen.getByRole("heading", { name: "Local shell" })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: "Rename Local shell" }))
+      await interact("click", screen.getByRole("button", { name: "Rename Local shell" }))
       const edit = screen.getByRole("textbox", { name: "Rename Local shell" })
-      fireEvent.change(edit, { target: { value: "Discard this" } })
-      fireEvent.keyDown(edit, { key: "Escape" })
+      await interact("change", edit, { target: { value: "Discard this" } })
+      await interact("keyDown", edit, { key: "Escape" })
       expect(screen.getByRole("button", { name: "Select Local shell" })).toBeVisible()
-      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
       expect(screen.getByRole("region", { name: "Local shell terminal" })).toBeVisible()
     })
 
-    it("closes an active terminal, selects its neighbor, and creates a distinct session", () => {
+    it("closes an active terminal, selects its neighbor, and creates a distinct session", async () => {
       render(<App />)
-      fireEvent.click(
+      await interact(
+        "click",
         within(screen.getByRole("region", { name: "Checkout implementation terminal" })).getByRole(
           "button",
           {
@@ -466,13 +498,13 @@ describe("NovaDeck workspace", () => {
       expect(
         screen.queryByRole("button", { name: "Select Checkout implementation" }),
       ).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole("button", { name: "New terminal" }))
+      await interact("click", screen.getByRole("button", { name: "New terminal" }))
       expect(screen.getByRole("heading", { name: "Terminal 07" })).toBeVisible()
       expect(screen.getByRole("button", { name: "Select Build" })).toBeVisible()
       expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
     })
 
-    it("shows an empty workspace after the last close and can start again", () => {
+    it("shows an empty workspace after the last close and can start again", async () => {
       render(<App />)
       for (const name of [
         "Checkout implementation",
@@ -482,13 +514,15 @@ describe("NovaDeck workspace", () => {
         "Runtime",
         "Build",
       ]) {
-        fireEvent.click(
+        // eslint-disable-next-line no-await-in-loop -- Each close changes the next active terminal.
+        await interact(
+          "click",
           within(screen.getByRole("complementary")).getByRole("button", { name: `Close ${name}` }),
         )
       }
       expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
       expect(screen.getByText("0 terminals", { selector: ".app-footer span" })).toBeVisible()
-      fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!)
+      await interact("click", screen.getAllByRole("button", { name: "New terminal" })[0]!)
       expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
     })
   })

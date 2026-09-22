@@ -17,6 +17,7 @@ export const SidebarItem = ({
   onSelect,
   actions,
   editor,
+  editing = editor !== undefined,
   ref,
   handleRef,
   className = "",
@@ -32,6 +33,7 @@ export const SidebarItem = ({
   onSelect: () => void
   actions?: ReactNode
   editor?: ReactNode
+  editing?: boolean
   ref?: Ref<HTMLDivElement>
   handleRef?: Ref<HTMLButtonElement>
 }): React.JSX.Element => (
@@ -41,28 +43,28 @@ export const SidebarItem = ({
     className={`${sidebarItemClasses} ${className}`}
     data-selected={selected}
   >
-    {editor ?? (
-      <button
-        ref={handleRef}
-        className="sidebar-item-select flex min-w-0 flex-1 items-start gap-2 rounded-[inherit] px-2.5 py-[9px] text-left text-inherit focus-visible:outline-offset-[-2px]"
-        type="button"
-        aria-label={selectLabel}
-        aria-description={description}
-        aria-current={selected ? "true" : undefined}
-        title={tooltip}
-        onClick={onSelect}
-      >
-        <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
-          {icon}
+    <button
+      ref={handleRef}
+      hidden={editing}
+      className="sidebar-item-select flex min-w-0 flex-1 items-start gap-2 rounded-[inherit] px-2.5 py-[9px] text-left text-inherit focus-visible:outline-offset-[-2px]"
+      type="button"
+      aria-label={selectLabel}
+      aria-description={description}
+      aria-current={selected ? "true" : undefined}
+      title={tooltip}
+      onClick={onSelect}
+    >
+      <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
+        {icon}
+      </span>
+      <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
+        <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
+        <span className="sidebar-item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] text-muted [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[52px]">
+          {detail}
         </span>
-        <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
-          <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
-          <span className="sidebar-item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] text-muted [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[52px]">
-            {detail}
-          </span>
-        </span>
-      </button>
-    )}
+      </span>
+    </button>
+    {editor}
     {actions && (
       <div className="sidebar-item-actions absolute right-2 bottom-[9px] flex h-6 items-center">
         {actions}

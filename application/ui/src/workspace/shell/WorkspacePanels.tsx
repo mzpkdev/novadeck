@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react"
 
+import { Dialog } from "../../ui-toolkit/Dialog"
+
 const storageKey = "novadeck.sidebar-width"
 const defaultWidth = 228
 const minWidth = 180
@@ -36,10 +38,20 @@ export const useDesktop = (): boolean => useSyncExternalStore(subscribe, isDeskt
 export const WorkspacePanels = ({
   sidebar,
   collapsed,
+  mobileOpen,
+  onMobileOpenChange,
+  mobileRail,
+  mobileLabel,
+  mobileFinalFocusEl,
   children,
 }: {
   sidebar: ReactNode
   collapsed: boolean
+  mobileOpen: boolean
+  onMobileOpenChange: (open: boolean) => void
+  mobileRail: ReactNode
+  mobileLabel: string
+  mobileFinalFocusEl: () => HTMLElement | null
   children: ReactNode
 }): React.JSX.Element => {
   const desktop = useDesktop()
@@ -83,7 +95,25 @@ export const WorkspacePanels = ({
   if (!desktop || !sidebar) {
     return (
       <>
-        {sidebar}
+        {sidebar && (
+          <Dialog
+            open={mobileOpen}
+            onOpenChange={onMobileOpenChange}
+            label={mobileLabel}
+            className="sidebar-drawer fixed top-15 bottom-7 left-0 flex w-[272px] max-w-full bg-shell text-ink shadow-panel"
+            backdropClassName="sidebar-scrim"
+            positionerClassName="sidebar-positioner"
+            initialFocusEl={() =>
+              document.querySelector<HTMLButtonElement>(
+                '.sidebar-drawer [data-active="true"] .sidebar-close',
+              )
+            }
+            finalFocusEl={mobileFinalFocusEl}
+          >
+            {mobileRail}
+            {sidebar}
+          </Dialog>
+        )}
         {children}
       </>
     )
@@ -133,6 +163,7 @@ export const WorkspacePanels = ({
           className="sidebar-keyboard-resize pointer-events-none absolute inset-y-0 z-40 w-2 -translate-x-1/2"
           role="separator"
           aria-label="Resize sidebar"
+          aria-controls="terminal-sidebar"
           aria-orientation="vertical"
           aria-valuemin={minWidth}
           aria-valuemax={maxWidth}

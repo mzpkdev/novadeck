@@ -25,6 +25,7 @@ import {
   type ReactNode,
 } from "react"
 
+import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Session, CanvasLayout } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
@@ -335,22 +336,27 @@ const TerminalCanvas = ({
         />
       </ReactFlow>
       <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5 shadow-control">
-        <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
-          <Minus size={15} />
-        </button>
+        <Tooltip content="Zoom out (−)">
+          <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
+            <Minus size={15} />
+          </button>
+        </Tooltip>
         <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-        <button className="icon-button" aria-label="Zoom in" onClick={() => void zoomIn()}>
-          <Plus size={15} />
-        </button>
+        <Tooltip content="Zoom in (+)">
+          <button className="icon-button" aria-label="Zoom in" onClick={() => void zoomIn()}>
+            <Plus size={15} />
+          </button>
+        </Tooltip>
         <div className="control-divider mx-0.5 h-3 w-px bg-line" />
-        <button
-          className="icon-button"
-          aria-label="Fit all terminals"
-          title="Fit all terminals (0)"
-          onClick={() => void fitView(fitOptions)}
-        >
-          <Maximize size={15} />
-        </button>
+        <Tooltip content="Fit all terminals (0)">
+          <button
+            className="icon-button"
+            aria-label="Fit all terminals"
+            onClick={() => void fitView(fitOptions)}
+          >
+            <Maximize size={15} />
+          </button>
+        </Tooltip>
       </div>
     </div>
   )

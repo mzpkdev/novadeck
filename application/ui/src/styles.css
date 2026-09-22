@@ -87,7 +87,7 @@
   }
 }
 
-.view-switch button.active {
+.view-switch .active {
   @apply border-line bg-paper text-ink shadow-control;
 }
 .sidebar-tools .icon-button {
@@ -407,14 +407,11 @@
 .canvas-controls > span {
   @apply w-8 text-center font-mono text-[9px];
 }
-.sidebar-scrim {
-  display: none;
-}
 .search-result-action {
   opacity: 0.25;
   transition: opacity var(--motion-feedback) var(--ease-interface);
 }
-.search-results > button:is(:hover, :focus-visible) .search-result-action {
+.search-results > :is(:hover, :focus-visible, [data-highlighted]) .search-result-action {
   opacity: 1;
 }
 
@@ -425,41 +422,37 @@
   }
 }
 @media (max-width: 700px) {
-  .sidebar {
-    position: absolute;
-    z-index: 20;
-    top: 0;
-    bottom: 0;
-    left: 44px;
-    width: 228px;
-    transform: translateX(-100%);
-    visibility: hidden;
-    transition:
-      transform var(--motion-state) var(--ease-interface),
-      visibility var(--motion-state);
+  .sidebar-positioner {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
   }
-  .sidebar-open {
-    transform: translateX(0);
-    visibility: visible;
+  .sidebar-drawer {
+    pointer-events: auto;
+  }
+  .sidebar-drawer .sidebar {
+    flex: 1;
+    min-width: 0;
+    width: 228px;
+  }
+  .sidebar-drawer[data-state="open"] {
+    animation: sidebar-enter var(--motion-state) var(--ease-interface);
+  }
+  .sidebar-drawer[data-state="closed"] {
+    animation: sidebar-exit var(--motion-state) var(--ease-interface);
   }
   .sidebar-scrim {
-    display: block;
-    position: absolute;
+    z-index: 40;
+    position: fixed;
     inset: 0;
-    left: 44px;
-    z-index: 19;
     background: var(--color-scrim);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition:
-      opacity var(--motion-state) var(--ease-interface),
-      visibility var(--motion-state);
   }
-  .sidebar-scrim.open {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
+  .sidebar-scrim[data-state="open"] {
+    animation: sidebar-backdrop-enter var(--motion-state) var(--ease-interface);
+  }
+  .sidebar-scrim[data-state="closed"] {
+    animation: sidebar-backdrop-exit var(--motion-state) var(--ease-interface);
   }
   .terminal-content,
   .terminal-compact .terminal-content {
@@ -480,6 +473,39 @@
     padding: 0 12px;
   }
 }
+@keyframes sidebar-enter {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sidebar-exit {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sidebar-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sidebar-backdrop-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -1,80 +1,75 @@
-.search-backdrop {
-  opacity: 1;
-  transition:
-    opacity var(--motion-feedback) ease-out,
-    display var(--motion-view) allow-discrete;
+.search-backdrop[data-state="open"],
+.preferences-backdrop[data-state="open"] {
+  animation: modal-backdrop-in var(--motion-feedback) ease-out;
 }
 
-.search-backdrop[data-state="closed"] {
-  display: none;
+.search-backdrop[data-state="closed"],
+.preferences-backdrop[data-state="closed"] {
+  animation: modal-backdrop-out var(--motion-feedback) ease-out forwards;
   pointer-events: none;
-  opacity: 0;
 }
 
-.search-dialog {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  transform-origin: top center;
-  transition:
-    opacity var(--motion-feedback) ease-out,
-    transform var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.search-backdrop[data-state="closed"] .search-dialog {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.985);
-}
-
+.search-dialog,
 .preferences-dialog {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.985);
   transform-origin: top center;
-  transition:
-    opacity var(--motion-feedback) ease-out,
-    transform var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1),
-    display var(--motion-view) allow-discrete,
-    overlay var(--motion-view) allow-discrete;
 }
 
-.preferences-dialog[open] {
-  opacity: 1;
-  transform: translateY(0) scale(1);
+.search-dialog[data-state="open"],
+.preferences-dialog[data-state="open"] {
+  animation: modal-in var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.preferences-dialog::backdrop {
-  opacity: 0;
-  transition:
-    opacity var(--motion-feedback) ease-out,
-    display var(--motion-view) allow-discrete,
-    overlay var(--motion-view) allow-discrete;
+.search-dialog[data-state="closed"],
+.preferences-dialog[data-state="closed"] {
+  animation: modal-out var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
 }
 
-.preferences-dialog[open]::backdrop {
-  opacity: 1;
-}
-
-@starting-style {
-  .search-backdrop[data-state="open"] {
+@keyframes modal-backdrop-in {
+  from {
     opacity: 0;
   }
+  to {
+    opacity: 1;
+  }
+}
 
-  .search-backdrop[data-state="open"] .search-dialog {
+@keyframes modal-backdrop-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-in {
+  from {
     opacity: 0;
     transform: translateY(-8px) scale(0.985);
   }
-
-  .preferences-dialog[open] {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.985);
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
+}
 
-  .preferences-dialog[open]::backdrop {
+@keyframes modal-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
     opacity: 0;
+    transform: translateY(-6px) scale(0.985);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .preferences-dialog::backdrop {
-    transition: none !important;
+  .search-dialog,
+  .search-backdrop,
+  .preferences-dialog,
+  .preferences-backdrop {
+    animation: none !important;
   }
 }

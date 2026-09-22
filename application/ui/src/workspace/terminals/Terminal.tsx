@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { useEffect, useRef } from "react"
 
+import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session } from "../model/types"
 
@@ -91,51 +92,55 @@ export const Terminal = ({
           </div>
           <span className="terminal-actions flex shrink-0 items-center gap-1">
             {minimize && (
-              <button
-                className="icon-button terminal-view-action nodrag nopan"
-                title={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
-                aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
-                aria-expanded={!minimize.minimized}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  minimize.onToggle()
-                }}
-              >
-                {minimize.minimized ? <Plus size={12} /> : <Minus size={12} />}
-              </button>
+              <Tooltip content={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}>
+                <button
+                  className="icon-button terminal-view-action nodrag nopan"
+                  aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
+                  aria-expanded={!minimize.minimized}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    minimize.onToggle()
+                  }}
+                >
+                  {minimize.minimized ? <Plus size={12} /> : <Minus size={12} />}
+                </button>
+              </Tooltip>
             )}
             {onFocus && (
-              <button
-                className="icon-button terminal-view-action nodrag nopan"
-                title={`Focus ${session.name}`}
-                aria-label={`Focus ${session.name}`}
-                onClick={onFocus}
-              >
-                <ArrowUpRight size={12} />
-              </button>
+              <Tooltip content={`Focus ${session.name}`}>
+                <button
+                  className="icon-button terminal-view-action nodrag nopan"
+                  aria-label={`Focus ${session.name}`}
+                  onClick={onFocus}
+                >
+                  <ArrowUpRight size={12} />
+                </button>
+              </Tooltip>
             )}
             {windowed && (
-              <button
-                className="icon-button terminal-view-action"
-                title={`Open in ${windowed.destination}`}
-                aria-label={`Open in ${windowed.destination}`}
-                onClick={windowed.onOpen}
-              >
-                <Minimize2 size={12} />
-              </button>
+              <Tooltip content={`Open in ${windowed.destination}`}>
+                <button
+                  className="icon-button terminal-view-action"
+                  aria-label={`Open in ${windowed.destination}`}
+                  onClick={windowed.onOpen}
+                >
+                  <Minimize2 size={12} />
+                </button>
+              </Tooltip>
             )}
             {onClose && (
-              <button
-                className="icon-button terminal-close nodrag nopan"
-                title={`Close ${session.name}`}
-                aria-label={`Close ${session.name}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onClose()
-                }}
-              >
-                <X size={12} />
-              </button>
+              <Tooltip content={`Close ${session.name}`}>
+                <button
+                  className="icon-button terminal-close nodrag nopan"
+                  aria-label={`Close ${session.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onClose()
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              </Tooltip>
             )}
           </span>
         </header>

@@ -1,6 +1,8 @@
 import { X } from "lucide-react"
 import type { ReactNode } from "react"
 
+import { Tooltip } from "../../ui-toolkit/Tooltip"
+
 export const sidebarCreateClasses =
   "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-line bg-paper px-2.5 shadow-control text-left text-[11px] text-ink hover:bg-soft focus-visible:bg-soft"
 
@@ -37,15 +39,16 @@ export const SidebarPanel = ({
           <span className="sidebar-panel-count tracking-normal">{count}</span>
         )}
       </h2>
-      <button
-        className="icon-button sidebar-close size-7 [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
-        type="button"
-        aria-label={`Hide ${title.toLowerCase()}`}
-        title={`Hide ${title.toLowerCase()}`}
-        onClick={onClose}
-      >
-        <X size={15} strokeWidth={1.6} />
-      </button>
+      <Tooltip content={`Hide ${title.toLowerCase()}`}>
+        <button
+          className="icon-button sidebar-close size-7 [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
+          type="button"
+          aria-label={`Hide ${title.toLowerCase()}`}
+          onClick={onClose}
+        >
+          <X size={15} strokeWidth={1.6} />
+        </button>
+      </Tooltip>
     </header>
     <div className="sidebar-panel-content flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
   </section>

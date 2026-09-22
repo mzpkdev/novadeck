@@ -113,7 +113,7 @@ General contains terminal text size and View modes toggles, applied immediately 
 Disable unused Focus, Grid, or Canvas modes to hide their navigation and actions; at least one mode
 must remain enabled. Disabling the active mode switches to an enabled view. Search and windowed
 actions use an available mode, and disabled layouts are retained until the page reloads.
-Theme and terminal text size use Ark UI Select dropdowns, rendered inside the modal’s top layer with keyboard navigation and focus restoration.
+Theme and terminal text size use Ark UI Select dropdowns, rendered inside the modal’s focus boundary with keyboard navigation and focus restoration.
 General also shows the hardcoded Monochrome theme and an appearance switch locked to Light; dark mode is not available.
 Shortcuts lists the existing search and preferences keyboard controls.
 Reloading resets the mock workspaces, sessions, and layouts, while sidebar width, collapsed state, and the preferred windowed mode remain saved.
@@ -128,7 +128,7 @@ Tailwind v4 tokens live in `application/ui/src/styles.css` using the
 `@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,
 and shadows are centralized there. Ordinary component styling uses Tailwind utility classes in JSX;
 `styles.css` retains the theme, shared primitives, contextual terminal/library rules, and canvas
-effects, while `workspace/shell/ModalMotion.css` owns native-dialog and search transitions. Shared motion tokens give controls 120ms feedback and selection
+effects, while `workspace/shell/ModalMotion.css` owns Search and Preferences presence animations. Shared motion tokens give controls 120ms feedback and selection
 states 180ms fades; dragging stays immediate and reduced motion disables these transitions.
 The UI's state model lives in `application/ui/src/workspace/model/types.ts`, with pure updates and
 selectors in `workspace/model/state.ts`. One reducer owns the project/session tree: each project retains
@@ -137,7 +137,7 @@ view choice, and layouts. Updates carry project and session IDs so delayed compo
 still update their original session. Closing a terminal prunes its output and layout records.
 
 `app/App.tsx` composes the views and coordinates browser effects, navigation, and transient controls.
-`WorkspaceHeader` renders navigation, `TerminalSearch` owns search input and focus, and the
+`WorkspaceHeader` renders navigation, `TerminalSearch` owns search queries and result actions, and the
 sidebar, terminal, Grid, and Canvas components handle their respective presentation and interactions.
 `workspace/preferences/preferences.ts` reads and validates persisted preferences. Sample projects, terminals,
 command replies, and transcripts live under `workspace/mock/`; they are separate from the state model.
@@ -145,6 +145,7 @@ The source folders follow UI features and ownership:
 
 | Folder (under `src/`)    | Responsibility                                               |
 | ------------------------ | ------------------------------------------------------------ |
+| `ui-toolkit/`            | Reusable styled controls; owns direct Ark UI imports         |
 | `app/`                   | Application composition and integration tests                |
 | `workspace/model/`       | Workspace types, pure reducer, selectors, and reducer tests  |
 | `workspace/terminals/`   | Terminal cards and sortable terminal tabs                    |
@@ -155,6 +156,20 @@ The source folders follow UI features and ownership:
 | `workspace/search/`      | Terminal search and its input/focus lifecycle                |
 | `workspace/shell/`       | Header, pane layout, and shared modal motion                 |
 | `workspace/mock/`        | Sample projects, terminals, command replies, and transcripts |
+
+`ui-toolkit/` isolates Ark UI behind React props: Dialog, Popover, Tabs, Select,
+SearchCombobox, Editable, SegmentGroup, ToggleGroup, and Tooltip. Features own their
+content, workspace state, and layout; toolkit controls own keyboard interaction, focus,
+and overlay dismissal. Keep direct Ark UI imports inside the toolkit. Select accepts an
+optional `portalContainer` to keep its popup within a modal’s focus boundary.
+
+Search and Preferences share Dialog; the mobile sidebar uses it as a drawer with its
+own toggle rail and trapped focus. Search uses Combobox for Arrow/Home/End navigation and
+Enter selection, defaulting to the first match when none is highlighted. Workspace selection
+uses Popover, preference sections use Tabs, and terminal renaming uses Editable. The view
+selector is a SegmentGroup, sidebar toggles form a deselectable ToggleGroup, and icon controls
+use Tooltip. Native form controls and the existing Allotment, dnd-kit, Grid, and Canvas
+libraries retain their specialized responsibilities.
 
 Keep tests beside their feature, import directly from the owning module, and avoid barrel files
 or extra domain/repository/service layers until a concrete integration needs them.

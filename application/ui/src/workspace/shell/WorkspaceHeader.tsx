@@ -7,6 +7,8 @@ import {
   Terminal as TerminalIcon,
 } from "lucide-react"
 
+import { SegmentGroup } from "../../ui-toolkit/SegmentGroup"
+import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Project, ViewMode } from "../model/types"
 import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
 
@@ -66,42 +68,46 @@ export const WorkspaceHeader = ({
           onCreate={onProjectCreate}
         />
       </div>
-      <nav
+      <SegmentGroup
+        label="Workspace layout"
         className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5 shadow-control"
-        aria-label="Workspace layout"
-      >
-        {views
+        itemClassName="flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink max-[701px]:min-w-0 max-[701px]:w-8 max-[701px]:px-2 max-[701px]:gap-0 max-[701px]:text-[10px] [&>span]:max-[701px]:hidden"
+        items={views
           .filter(({ id }) => enabledViews.includes(id))
-          .map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => onViewChange(id)}
-              aria-label={label}
-              title={label}
-              aria-pressed={view === id}
-              className={`flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink max-[701px]:min-w-0 max-[701px]:w-8 max-[701px]:px-2 max-[701px]:gap-0 max-[701px]:text-[10px] [&>span]:max-[701px]:hidden ${view === id ? "active" : ""}`}
-            >
-              <Icon size={14} strokeWidth={1.6} />
-              <span>{label}</span>
-            </button>
-          ))}
-      </nav>
+          .map(({ id, label, icon: Icon }) => ({
+            value: id,
+            label,
+            icon: <Icon size={14} strokeWidth={1.6} aria-hidden="true" />,
+          }))}
+        value={view}
+        onValueChange={(value) => {
+          const mode = enabledViews.find((candidate) => candidate === value)
+          if (mode) onViewChange(mode)
+        }}
+      />
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
-        <button
-          className="icon-button header-search w-auto gap-2 px-2.5 text-[11px] max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:px-0"
-          aria-label="Find a terminal"
-          title="Find a terminal (⌘K / Ctrl+K)"
-          onClick={onSearch}
-        >
-          <Search size={15} />
-          <span className="max-[701px]:hidden">Search</span>
-          <kbd className="mb-[-2px] ml-3 min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70 max-[701px]:hidden">
-            {modifier} K
-          </kbd>
-        </button>
-        <button className="icon-button" onClick={onPreferences} aria-label="Workspace preferences">
-          <Settings2 size={16} />
-        </button>
+        <Tooltip content="Find a terminal (⌘K / Ctrl+K)">
+          <button
+            className="icon-button header-search w-auto gap-2 px-2.5 text-[11px] max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:px-0"
+            aria-label="Find a terminal"
+            onClick={onSearch}
+          >
+            <Search size={15} />
+            <span className="max-[701px]:hidden">Search</span>
+            <kbd className="mb-[-2px] ml-3 min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70 max-[701px]:hidden">
+              {modifier} K
+            </kbd>
+          </button>
+        </Tooltip>
+        <Tooltip content="Workspace preferences">
+          <button
+            className="icon-button"
+            onClick={onPreferences}
+            aria-label="Workspace preferences"
+          >
+            <Settings2 size={16} />
+          </button>
+        </Tooltip>
       </div>
     </header>
   )
