@@ -1,0 +1,80 @@
+.search-backdrop {
+  opacity: 1;
+  transition:
+    opacity var(--motion-feedback) ease-out,
+    display var(--motion-view) allow-discrete;
+}
+
+.search-backdrop[data-state="closed"] {
+  display: none;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.search-dialog {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transform-origin: top center;
+  transition:
+    opacity var(--motion-feedback) ease-out,
+    transform var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.search-backdrop[data-state="closed"] .search-dialog {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+}
+
+.preferences-dialog {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+  transform-origin: top center;
+  transition:
+    opacity var(--motion-feedback) ease-out,
+    transform var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1),
+    display var(--motion-view) allow-discrete,
+    overlay var(--motion-view) allow-discrete;
+}
+
+.preferences-dialog[open] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.preferences-dialog::backdrop {
+  opacity: 0;
+  transition:
+    opacity var(--motion-feedback) ease-out,
+    display var(--motion-view) allow-discrete,
+    overlay var(--motion-view) allow-discrete;
+}
+
+.preferences-dialog[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .search-backdrop[data-state="open"] {
+    opacity: 0;
+  }
+
+  .search-backdrop[data-state="open"] .search-dialog {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+
+  .preferences-dialog[open] {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+
+  .preferences-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preferences-dialog::backdrop {
+    transition: none !important;
+  }
+}

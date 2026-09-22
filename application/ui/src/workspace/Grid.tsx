@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react"
+import { useLayoutEffect, useRef, useMemo, type ReactNode } from "react"
 import {
   ResponsiveGridLayout,
   useContainerWidth,
@@ -16,13 +16,39 @@ export type GridLayouts = ResponsiveLayouts<Breakpoint>
 
 type Props = {
   sessions: Session[]
+  navigation: number
+  selected: string
+  onSelect: (id: string) => void
   layouts: GridLayouts
   onLayoutsChange: (layouts: GridLayouts) => void
   render: (session: Session) => ReactNode
 }
 
-export const Grid = ({ sessions, layouts, onLayoutsChange, render }: Props): React.JSX.Element => {
-  const { width, containerRef, mounted } = useContainerWidth()
+export const Grid = ({
+  sessions,
+  selected,
+  navigation,
+  onSelect,
+  layouts,
+  onLayoutsChange,
+  render,
+}: Props): React.JSX.Element => {
+  const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
+  const lastNavigation = useRef({ navigation: 0, width: 0 })
+  useLayoutEffect(() => {
+    if (
+      !mounted ||
+      navigation === 0 ||
+      (navigation === lastNavigation.current.navigation && width === lastNavigation.current.width)
+    )
+      return
+    const terminal = containerRef.current?.querySelector<HTMLElement>(
+      `[data-grid-terminal="${selected}"]`,
+    )
+    if (!terminal) return
+    terminal.scrollIntoView({ block: "nearest", inline: "nearest" })
+    lastNavigation.current = { navigation, width }
+  }, [mounted, navigation, selected, width, containerRef])
   const current = useMemo(() => {
     const result: GridLayouts = {}
     for (const breakpoint of Object.keys(columns) as Breakpoint[]) {
@@ -51,9 +77,24 @@ export const Grid = ({ sessions, layouts, onLayoutsChange, render }: Props): Rea
   }, [sessions, layouts])
 
   return (
-    <div className="grid-viewport workspace-background" {...backgroundPointerHandlers}>
-      <div className="grid-dots canvas-grid" aria-hidden="true" />
-      <div className="grid-dots canvas-grid-spotlight" aria-hidden="true" />
+    <div
+      className="grid-viewport workspace-background"
+      tabIndex={-1}
+      {...backgroundPointerHandlers}
+      onPointerDownCapture={(event) => {
+        const id = (event.target as Element).closest<HTMLElement>("[data-grid-terminal]")?.dataset
+          .gridTerminal
+        onSelect(id ?? "")
+        if (!id) event.currentTarget.focus({ preventScroll: true })
+      }}
+      onFocusCapture={(event) => {
+        const id = (event.target as Element).closest<HTMLElement>("[data-grid-terminal]")?.dataset
+          .gridTerminal
+        if (id) onSelect(id)
+      }}
+    >
+      <div className="workspace-dots canvas-grid" aria-hidden="true" />
+      <div className="workspace-dots canvas-grid-spotlight" aria-hidden="true" />
       <div className="grid-stage">
         <div ref={containerRef}>
           {mounted && (
@@ -72,7 +113,11 @@ export const Grid = ({ sessions, layouts, onLayoutsChange, render }: Props): Rea
               onLayoutChange={(_, next) => onLayoutsChange(next)}
             >
               {sessions.map((session) => (
-                <div className="grid-terminal" key={session.id} data-grid-terminal={session.id}>
+                <div
+                  className={`grid-terminal ${selected === session.id ? "selected" : ""}`}
+                  key={session.id}
+                  data-grid-terminal={session.id}
+                >
                   <div className="grid-terminal-body">{render(session)}</div>
                 </div>
               ))}

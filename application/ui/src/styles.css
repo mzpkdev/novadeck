@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/base.css" layer(base);
 @import "react-grid-layout/css/styles.css" layer(base);
+@import "allotment/dist/style.css" layer(base);
 
 @theme {
   --color-paper: #ffffff;
@@ -20,6 +21,11 @@
   --shadow-panel: none;
   --shadow-floating: none;
   --shadow-modal: none;
+  --motion-feedback: 120ms;
+  --motion-state: 180ms;
+  --motion-layout: 200ms;
+  --motion-view: 140ms;
+  --ease-interface: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @layer base {
@@ -59,8 +65,10 @@
   }
   button {
     transition:
-      background 140ms,
-      color 140ms;
+      background-color var(--motion-feedback) var(--ease-interface),
+      color var(--motion-feedback) var(--ease-interface),
+      border-color var(--motion-feedback) var(--ease-interface),
+      opacity var(--motion-state) var(--ease-interface);
   }
   input {
     min-width: 0;
@@ -76,17 +84,17 @@
     @apply flex h-dvh min-h-100 flex-col overflow-hidden bg-paper;
   }
   .app-header {
-    @apply flex h-17 shrink-0 items-center border-b border-line px-6;
+    @apply flex h-17 shrink-0 items-center border-b border-line px-6 gap-6;
   }
   .brand {
-    @apply flex w-50.5 shrink-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.8px];
+    @apply flex shrink-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.8px];
     text-decoration: none;
   }
   .brand-symbol {
     @apply flex size-7 items-center justify-center rounded-control bg-strong text-white;
   }
   .view-switch {
-    @apply ml-auto flex gap-1 rounded-control border border-line bg-shell p-1;
+    @apply ml-auto flex shrink-0 gap-1 rounded-control border border-line bg-shell p-1;
   }
   .view-switch button {
     @apply flex h-9 items-center justify-center gap-2 rounded-control px-4 text-[11px] text-muted hover:text-ink;
@@ -100,6 +108,10 @@
   .icon-button {
     @apply inline-flex size-9 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
   }
+  .icon-button:disabled {
+    @apply cursor-default bg-transparent text-muted;
+    opacity: 0.25;
+  }
   .icon-button > svg,
   .session-action > svg {
     @apply shrink-0;
@@ -107,23 +119,45 @@
   .workspace-body {
     @apply relative flex min-h-0 flex-1;
   }
+  .sidebar-tools {
+    @apply z-20 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1 py-3;
+  }
+  .workspace-panels {
+    @apply relative min-h-0 min-w-0 flex-1;
+    --separator-border: var(--color-line);
+    --focus-border: var(--color-muted);
+    --sash-hover-size: 2px;
+  }
+  .workspace-panels .sidebar {
+    @apply h-full w-full border-r-0;
+  }
+  .workspace-panels .main-area {
+    @apply h-full;
+  }
+  .sidebar-transition .workspace-sidebar-pane,
+  .sidebar-transition .workspace-main-pane {
+    transition:
+      width var(--motion-state) var(--ease-interface),
+      left var(--motion-state) var(--ease-interface);
+  }
+  .sidebar-transition .sidebar-content {
+    display: block;
+    width: var(--sidebar-expanded-width);
+  }
+  .sidebar-transition .sash,
+  .sidebar-transition .sidebar-keyboard-resize {
+    pointer-events: none;
+    opacity: 0;
+  }
+  .sidebar-keyboard-resize {
+    @apply pointer-events-none absolute inset-y-0 z-40 w-2 -translate-x-1/2;
+  }
+  .sidebar-keyboard-resize:focus-visible {
+    outline: none;
+    background: linear-gradient(var(--color-muted), var(--color-muted)) center / 2px 100% no-repeat;
+  }
   .sidebar {
-    @apply flex w-57 shrink-0 flex-col border-r border-line bg-shell px-3;
-  }
-  .project-label {
-    @apply flex items-center gap-2.5 px-2 pt-6 pb-7;
-  }
-  .project-icon {
-    @apply flex size-8.5 items-center justify-center rounded-control border border-line bg-white;
-  }
-  .project-label > div {
-    @apply flex flex-1 flex-col gap-0.5;
-  }
-  .project-label strong {
-    @apply text-xs font-medium;
-  }
-  .project-label div > span {
-    @apply text-[10px] text-muted;
+    @apply flex w-57 shrink-0 flex-col border-r border-line bg-shell px-3 pt-3;
   }
   .sidebar-section-title {
     @apply flex h-9 shrink-0 items-center justify-between px-2 pb-2 text-[9px] font-medium tracking-[1.3px] text-muted;
@@ -148,17 +182,28 @@
   }
   .session-tab {
     @apply relative flex min-h-14 w-full shrink-0 items-center rounded-control px-2.5 text-left text-muted;
+    transition:
+      background-color var(--motion-state) var(--ease-interface),
+      color var(--motion-state) var(--ease-interface);
   }
   .session-tab:hover,
   .session-tab:focus-within {
     @apply bg-soft;
   }
+  .session-tab.dragging {
+    @apply z-50 bg-paper text-ink outline outline-1 outline-line;
+  }
   .session-tab.selected {
     @apply bg-soft text-ink;
   }
-  .session-tab.selected::before {
+  .session-tab::before {
     content: "";
     @apply absolute left-0 top-4 bottom-4 w-0.5 rounded-control bg-strong;
+    opacity: 0;
+    transition: opacity var(--motion-state) var(--ease-interface);
+  }
+  .session-tab.selected::before {
+    opacity: 1;
   }
   .session-select {
     @apply flex min-w-0 flex-1 items-center gap-2.5 self-stretch text-left;
@@ -179,37 +224,29 @@
   .session-tab-copy > span {
     @apply truncate font-mono text-[10px] text-muted;
   }
-  .session-index {
-    @apply font-mono text-[9px] text-muted;
-  }
   .session-controls {
     @apply relative ml-1 h-8 w-16 shrink-0;
   }
-  .session-rest-state {
-    @apply absolute inset-0 flex items-center justify-end;
-  }
   .session-actions {
     @apply absolute inset-0 flex items-center opacity-0;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .session-tab:hover .session-actions,
   .session-tab:focus-within .session-actions,
   .session-tab.editing .session-actions {
     @apply opacity-100;
   }
-  .session-tab:hover .session-rest-state,
-  .session-tab:focus-within .session-rest-state,
-  .session-tab.editing .session-rest-state {
-    @apply opacity-0;
-  }
   .session-action {
     @apply flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-line hover:text-ink;
   }
   .session-action > svg,
+  .terminal-view-action > svg,
   .terminal-close > svg {
     opacity: 0.25;
-    transition: opacity 140ms ease;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .session-action:hover > svg,
+  .terminal-view-action:hover > svg,
   .terminal-close:hover > svg {
     opacity: 1;
   }
@@ -231,41 +268,17 @@
   .empty-workspace p {
     @apply mb-3 text-xs;
   }
-  .status-dot {
-    @apply inline-block size-1.25 shrink-0 rounded-full bg-muted;
-  }
-  .sidebar-bottom {
-    @apply mt-auto pt-7;
-  }
-  .settings-button {
-    @apply flex h-13 w-full items-center gap-2.5 border-t border-line px-3 text-[11px] text-muted hover:text-ink;
-  }
-  .settings-button > span:last-child {
-    @apply ml-auto text-[10px];
-  }
   .main-area {
     @apply flex min-w-0 flex-1 flex-col;
   }
-  .view-toolbar {
-    @apply flex h-19 shrink-0 items-center justify-between gap-3 px-8;
-  }
-  .view-heading {
-    @apply flex min-w-0 items-center gap-3;
-  }
-  .focus-directory {
-    @apply hidden min-w-0 truncate font-mono text-[10px] text-muted sm:block;
-  }
-  .view-heading h1 {
-    @apply truncate text-[14px] font-medium tracking-[-0.2px];
-  }
   .focus-stage {
-    @apply min-h-0 flex-1 px-3 pb-3;
+    @apply relative min-h-0 flex-1 overflow-hidden p-3;
   }
-  .focus .view-toolbar {
-    @apply h-11 px-4;
+  .focus-stage > .terminal-window {
+    @apply relative z-1;
   }
-  .terminal-focused .terminal-heading {
-    display: none;
+  .focus-stage .workspace-dots {
+    background-position: -8px -8px;
   }
   .terminal-window {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper;
@@ -285,7 +298,7 @@
   .terminal-actions .icon-button {
     @apply size-8 p-2;
   }
-  .terminal-header strong {
+  .terminal-title > :is(h1, h2) {
     @apply truncate font-medium;
   }
   .terminal-header svg {
@@ -328,6 +341,7 @@
   }
   .command-line {
     @apply flex items-center border-b border-transparent;
+    transition: border-color var(--motion-state) var(--ease-interface);
   }
   .command-line input {
     @apply w-full flex-1 bg-transparent;
@@ -338,6 +352,53 @@
   }
   .command-line:focus-within {
     border-bottom-color: var(--color-line);
+  }
+  .agent-transcript {
+    @apply max-w-180;
+    overflow-wrap: anywhere;
+    line-height: 1.65;
+  }
+  .agent-banner {
+    @apply mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1;
+  }
+  .agent-codex .agent-banner {
+    @apply w-fit max-w-full flex-col border border-line px-3 py-2;
+  }
+  .agent-banner > span {
+    font-size: 0.85em;
+  }
+  .agent-request {
+    @apply mb-4 border-l-2 border-line bg-soft px-3 py-2;
+  }
+  .agent-tool {
+    @apply mt-4;
+  }
+  .agent-tool-result {
+    @apply pl-3 text-muted;
+  }
+  .agent-diff {
+    @apply mt-2 ml-3 overflow-x-auto border-l border-line py-1 pl-3;
+    font: inherit;
+    font-size: 0.9em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agent-answer {
+    @apply mt-5;
+  }
+  .agent-completion,
+  .agent-divider {
+    @apply mt-4 text-muted;
+    font-size: 0.85em;
+  }
+  .agent-divider {
+    @apply border-t border-line pt-3;
+  }
+  .agent-command-form {
+    @apply max-w-180 border-y border-line py-2;
+  }
+  .agent-command-form input::placeholder {
+    color: var(--color-muted);
   }
   .app-footer {
     @apply flex h-8 shrink-0 items-center justify-between border-t border-line bg-shell/50 px-5 text-[9px] text-muted;
@@ -351,37 +412,38 @@
   kbd {
     @apply rounded-control border border-line px-1 py-0.25 font-sans text-[9px];
   }
-  .grid .view-toolbar,
-  .canvas .view-toolbar {
-    @apply h-14;
-  }
-  .grid .view-heading,
-  .canvas .view-heading {
-    @apply flex-wrap gap-x-3 gap-y-1;
-  }
-  .grid .view-heading h1,
-  .canvas .view-heading h1 {
-    @apply text-[19px] tracking-[-0.6px];
-  }
-  .view-description {
-    @apply ml-2 text-[10px] text-muted;
-  }
   .small-button {
     @apply flex h-9 items-center gap-2 rounded-control border border-line bg-paper px-4 text-[11px] hover:bg-soft;
   }
   .grid-viewport {
-    @apply relative flex min-h-0 flex-1 overflow-hidden border-t border-line;
+    @apply relative flex min-h-0 flex-1 overflow-hidden;
   }
   .grid-stage {
     @apply relative z-1 min-h-0 flex-1 overflow-auto px-8 pt-6 pb-8;
+    scrollbar-gutter: stable;
   }
-  .grid-dots {
+  .workspace-dots {
     @apply absolute inset-0;
     background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
     background-size: 24px 24px;
   }
   .grid-terminal {
     @apply flex min-h-0 flex-col;
+    opacity: var(--terminal-idle-opacity);
+    transition: opacity var(--motion-state) var(--ease-interface);
+  }
+  .grid-terminal.selected {
+    opacity: 1;
+  }
+  .terminal-grid .grid-terminal.cssTransforms {
+    transition:
+      transform var(--motion-layout) ease,
+      width var(--motion-layout) ease,
+      height var(--motion-layout) ease,
+      opacity var(--motion-state) var(--ease-interface);
+  }
+  .terminal-grid .grid-terminal:is(.react-draggable-dragging, .resizing) {
+    transition: opacity var(--motion-state) var(--ease-interface);
   }
   .grid-terminal-body {
     @apply min-h-0 flex-1;
@@ -400,7 +462,7 @@
   .terminal-grid .react-resizable-handle {
     @apply size-7 text-muted;
     opacity: 0.35;
-    transition: opacity 140ms ease;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .terminal-grid .react-resizable-handle:hover {
     opacity: 0.8;
@@ -419,7 +481,8 @@
     font-size: calc(var(--terminal-font-size, 13px) - 2px);
     line-height: 1.9;
   }
-  .terminal-compact .terminal-header {
+  .terminal-compact .terminal-header,
+  .terminal-focused .terminal-header {
     @apply h-10 px-3;
   }
   .terminal-compact .terminal-meta {
@@ -449,11 +512,11 @@
     @apply mx-2 font-normal;
   }
   .canvas-viewport {
-    @apply relative min-h-0 flex-1 overflow-hidden border-t border-line bg-canvas;
-    --canvas-node-idle-opacity: 0.5;
+    @apply relative min-h-0 flex-1 overflow-hidden bg-canvas;
     touch-action: none;
   }
   .workspace-background {
+    --terminal-idle-opacity: 0.5;
     background-color: var(--color-canvas);
     --canvas-grid-opacity: 0.2;
     --canvas-grid-spotlight-opacity: 0.48;
@@ -500,10 +563,20 @@
       opacity: var(--canvas-grid-spotlight-opacity);
     }
   }
+  .canvas-viewport .react-flow__node {
+    transition:
+      transform 160ms ease-out,
+      width 160ms ease-out,
+      height 160ms ease-out;
+  }
+  .canvas-viewport .react-flow__node.dragging,
+  .canvas-viewport .react-flow__node.resizing {
+    transition: none;
+  }
   .canvas-node {
     @apply h-full w-full;
-    opacity: var(--canvas-node-idle-opacity);
-    transition: opacity 140ms ease;
+    opacity: var(--terminal-idle-opacity);
+    transition: opacity var(--motion-state) var(--ease-interface);
   }
   .canvas-node.selected {
     opacity: 1;
@@ -516,7 +589,7 @@
     transform: scale(var(--canvas-chrome-scale));
     transform-origin: bottom right;
     opacity: 0.35;
-    transition: opacity 140ms ease;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .terminal-resize-grip:hover {
     opacity: 0.8;
@@ -563,6 +636,10 @@
   }
   .canvas-node.minimized .terminal-header {
     border-bottom: 0;
+    padding-right: 40px;
+  }
+  .canvas-node.minimized .terminal-resize-grip {
+    cursor: ew-resize;
   }
   .canvas-node .terminal-content {
     overscroll-behavior: contain;
@@ -572,7 +649,7 @@
   .canvas-controls {
     @apply absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5;
     opacity: 0.25;
-    transition: opacity 140ms ease;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .canvas-controls:hover,
   .canvas-controls:has(:focus-visible) {
@@ -625,7 +702,7 @@
     @apply flex justify-between border-t border-line px-4 py-3 text-[10px] text-muted;
   }
   .preferences-dialog {
-    @apply fixed m-auto w-[calc(100%-40px)] max-w-105 rounded-popover border border-line bg-paper p-6 text-ink;
+    @apply fixed m-auto w-[calc(100%-40px)] max-w-120 max-h-[calc(100dvh-40px)] overflow-y-auto rounded-popover border border-line bg-paper p-6 text-ink;
   }
   .preferences-dialog::backdrop {
     background: #26282633;
@@ -638,13 +715,56 @@
     @apply text-lg font-medium tracking-tight;
   }
   .preference-row {
-    @apply mt-6 flex items-center justify-between gap-3 border-b border-line pb-5 text-xs;
+    @apply flex min-h-20 items-center justify-between gap-3 border-b border-line py-4 text-xs;
   }
   .preference-row select {
-    @apply rounded-control border border-line bg-shell p-2 text-xs;
+    @apply min-w-22 rounded-control border border-line bg-shell p-2 text-xs;
   }
-  .preferences-note {
-    @apply mt-6 text-[11px] leading-5 text-muted;
+  .view-preferences {
+    @apply mt-5 min-w-0 text-xs;
+  }
+  .view-preferences legend {
+    @apply mb-3;
+  }
+  .view-preference-options {
+    @apply flex flex-wrap gap-2;
+  }
+  .view-preference-options label {
+    @apply flex cursor-pointer items-center gap-2 rounded-control border border-line px-3 py-2 hover:bg-soft;
+  }
+  .view-preference-options label:has(:checked) {
+    @apply bg-shell;
+  }
+  .view-preference-options label:has(:disabled) {
+    @apply cursor-default;
+  }
+  .view-preference-options input {
+    @apply size-3.5;
+    accent-color: var(--color-ink);
+  }
+  .view-preferences p {
+    @apply mt-3 text-[10px] text-muted;
+  }
+  .preferences-tabs {
+    @apply flex gap-5 border-b border-line;
+  }
+  .preferences-tabs > button {
+    @apply border-b-2 border-transparent px-0.5 py-3 text-xs text-muted hover:text-ink;
+  }
+  .preferences-tabs > button[aria-selected="true"] {
+    @apply border-ink text-ink;
+  }
+  .preferences-panel {
+    @apply min-h-24 pt-2;
+  }
+  .shortcut-list > div {
+    @apply flex min-h-10 items-center justify-between gap-3 text-xs;
+  }
+  .shortcut-list dd {
+    @apply flex shrink-0 gap-1;
+  }
+  .shortcut-list kbd {
+    @apply min-w-6 py-1 text-center font-mono text-[10px];
   }
 }
 
@@ -653,17 +773,17 @@
     padding: 32px 40px;
   }
 }
-@media (max-width: 1100px) {
-  .sidebar {
-    width: 205px;
+@media (min-width: 701px) and (max-width: 1000px) {
+  .app-header {
+    gap: 12px;
+    padding-inline: 18px;
   }
-  .view-toolbar {
-    padding-left: 24px;
-    padding-right: 24px;
+  .brand > span:last-child {
+    display: none;
   }
-  .focus .view-toolbar {
-    padding-left: 16px;
-    padding-right: 16px;
+  .header-actions {
+    margin-left: 0;
+    gap: 8px;
   }
 }
 @media (max-width: 700px) {
@@ -676,6 +796,12 @@
     width: auto;
     font-size: 17px;
     gap: 7px;
+  }
+  .brand > span:last-child {
+    display: none;
+  }
+  .view-switch button > span {
+    display: none;
   }
   .brand-symbol {
     width: 25px;
@@ -690,6 +816,13 @@
     font-size: 10px;
   }
   .header-actions {
+    display: flex;
+    flex-shrink: 0;
+    margin-left: 0;
+    gap: 0;
+  }
+  .header-search,
+  .sidebar-tools {
     display: none;
   }
   .sidebar {
@@ -720,25 +853,14 @@
     left: 8px;
     z-index: 2;
   }
-  .view-toolbar {
-    height: 68px;
-    padding: 0 16px 0 49px;
-  }
-  .view-heading {
-    gap: 8px;
-  }
-  .view-heading h1 {
-    font-size: 13px;
-  }
   .focus-stage {
-    padding: 0 6px 6px;
+    padding: 6px;
   }
-  .focus .view-toolbar {
-    height: 44px;
-    padding: 0 12px 0 49px;
+  .terminal-focused .terminal-header {
+    padding-left: 44px;
   }
   .workspace-body:has(.main-area.focus) .mobile-sidebar-toggle {
-    top: 4px;
+    top: 8px;
   }
   .terminal-content {
     padding: 20px 17px;
@@ -765,30 +887,11 @@
   .app-footer kbd {
     display: none;
   }
-  .grid .view-toolbar {
-    height: 56px;
-    padding: 0 17px;
-  }
-  .canvas .view-toolbar {
-    height: 56px;
-    padding-left: 49px;
-  }
-  .grid .view-heading h1,
-  .canvas .view-heading h1 {
-    font-size: 16px;
-  }
-  .view-description {
-    width: 100%;
-    margin-left: 0;
-  }
   .grid-stage {
-    padding: 16px;
+    padding: 52px 16px 16px;
   }
   .small-button {
     padding: 0 12px;
-  }
-  .canvas .small-button span {
-    display: none;
   }
   .canvas-controls {
     right: 14px;
@@ -806,10 +909,73 @@
 }
 
 @media (hover: none) {
-  .session-rest-state {
-    opacity: 0;
-  }
   .session-actions {
     opacity: 1;
+  }
+}
+
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  display: none;
+}
+::view-transition-group(terminal-workspace) {
+  animation-duration: 160ms;
+}
+::view-transition-group(terminal-focus),
+::view-transition-group(terminal-content) {
+  animation-duration: 230ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+::view-transition-group(terminal-focus) {
+  z-index: 1;
+}
+::view-transition-group(terminal-content) {
+  z-index: 2;
+  overflow: clip;
+}
+::view-transition-old(terminal-content),
+::view-transition-new(terminal-content) {
+  width: 100%;
+  height: 100%;
+  object-fit: none;
+  object-position: top left;
+}
+
+::view-transition-group(root),
+::view-transition-group(workspace-mode) {
+  animation: none;
+}
+::view-transition-group(workspace-mode) {
+  overflow: clip;
+}
+::view-transition-old(workspace-mode) {
+  animation: workspace-leave 90ms ease-out both;
+  mix-blend-mode: normal;
+}
+::view-transition-new(workspace-mode) {
+  animation: workspace-enter var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1) both;
+  mix-blend-mode: normal;
+}
+@keyframes workspace-leave {
+  to {
+    opacity: 0;
+    translate: calc(var(--workspace-direction, 1) * -8px) 0;
+  }
+}
+@keyframes workspace-enter {
+  from {
+    opacity: 0;
+    translate: calc(var(--workspace-direction, 1) * 16px) 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
   }
 }

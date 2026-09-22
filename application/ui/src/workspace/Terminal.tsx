@@ -1,11 +1,30 @@
-import { ArrowUpRight, GitBranch, Minus, Plus, Terminal as TerminalIcon, X } from "lucide-react"
+import {
+  Minimize2,
+  ArrowUpRight,
+  GitBranch,
+  Minus,
+  Plus,
+  Terminal as TerminalIcon,
+  X,
+} from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
+import { AgentOutput } from "./AgentOutput"
 import type { Session } from "./sessions"
 
 export type Entry = { id: string; command: string; reply: string }
 
-const Output = ({ kind }: { kind: Session["kind"] }): React.JSX.Element => {
+const Output = ({
+  kind,
+  directory,
+  projectName,
+}: {
+  kind: Session["kind"]
+  directory: string
+  projectName: string
+}): React.JSX.Element => {
+  if (kind === "claude" || kind === "codex")
+    return <AgentOutput agent={kind} directory={directory} />
   if (kind === "shell")
     return (
       <>
@@ -13,7 +32,7 @@ const Output = ({ kind }: { kind: Session["kind"] }): React.JSX.Element => {
           <span>Last login</span>
           <span>Tue Sep 22, 09:41:08 on ttys001</span>
           <span>Workspace</span>
-          <span>~/projects/novadeck</span>
+          <span>{directory}</span>
         </div>
         <p className="output-gap">
           <span className="prompt-arrow">❯</span> git status
@@ -42,7 +61,9 @@ const Output = ({ kind }: { kind: Session["kind"] }): React.JSX.Element => {
         <p>
           <span className="prompt-arrow">❯</span> pnpm dev
         </p>
-        <p className="text-muted">{">"} @novadeck/ui dev</p>
+        <p className="text-muted">
+          {">"} @{projectName}/ui dev
+        </p>
         <p className="text-muted">{">"} vite</p>
         <p className="output-gap">
           <strong>VITE</strong> v7.3.6 <span className="text-muted">ready in</span> 184 ms
@@ -62,7 +83,8 @@ const Output = ({ kind }: { kind: Session["kind"] }): React.JSX.Element => {
           <span className="prompt-arrow">❯</span> pnpm test --watch
         </p>
         <p className="output-gap">
-          <strong>DEV</strong> v5.0.1 <span className="text-muted">/projects/novadeck/ui</span>
+          <strong>DEV</strong> v5.0.1{" "}
+          <span className="text-muted">{directory.replace("~", "")}</span>
         </p>
         <div className="output-gap">
           <p>
@@ -178,23 +200,29 @@ export type MinimizeControls = {
 
 export const Terminal = ({
   session,
+  projectName,
   entries,
   cleared,
   onCommand,
   onFocus,
   onClose,
+  windowed,
   minimize,
   compact = false,
 }: {
   session: Session
+  projectName: string
   entries: Entry[]
   cleared: boolean
   onCommand: (command: string) => void
   onFocus?: () => void
+  windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
   minimize?: MinimizeControls
   compact?: boolean
 }): React.JSX.Element => {
+  const Heading = compact ? "h2" : "h1"
+  const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const [input, setInput] = useState("")
   const output = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -215,17 +243,18 @@ export const Terminal = ({
     <section
       className={`terminal-window ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${session.name} terminal`}
+      data-terminal={session.id}
     >
       <div className="terminal-heading">
         <header className="terminal-header">
-          <span className="terminal-title" title={session.name}>
+          <div className="terminal-title" title={session.name}>
             <TerminalIcon size={14} strokeWidth={1.5} />
-            <strong>{session.name}</strong>
-          </span>
+            <Heading>{session.name}</Heading>
+          </div>
           <span className="terminal-actions">
             {minimize && (
               <button
-                className="icon-button nodrag nopan"
+                className="icon-button terminal-view-action nodrag nopan"
                 title={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
                 aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
                 aria-expanded={!minimize.minimized}
@@ -239,12 +268,22 @@ export const Terminal = ({
             )}
             {onFocus && (
               <button
-                className="icon-button nodrag nopan"
+                className="icon-button terminal-view-action nodrag nopan"
                 title={`Focus ${session.name}`}
                 aria-label={`Focus ${session.name}`}
                 onClick={onFocus}
               >
                 <ArrowUpRight size={12} />
+              </button>
+            )}
+            {windowed && (
+              <button
+                className="icon-button terminal-view-action"
+                title={`Open in ${windowed.destination}`}
+                aria-label={`Open in ${windowed.destination}`}
+                onClick={windowed.onOpen}
+              >
+                <Minimize2 size={12} />
               </button>
             )}
             {onClose && (
@@ -264,7 +303,9 @@ export const Terminal = ({
         </header>
       </div>
       <div ref={output} className="terminal-content nodrag nopan" hidden={minimize?.minimized}>
-        {!cleared && <Output kind={session.kind} />}
+        {!cleared && (
+          <Output kind={session.kind} directory={session.directory} projectName={projectName} />
+        )}
         {entries.map((entry) => (
           <div className="output-gap" key={entry.id}>
             <p>
@@ -274,7 +315,7 @@ export const Terminal = ({
           </div>
         ))}
         <form
-          className="command-form"
+          className={`command-form${agent ? " agent-command-form" : ""}`}
           onSubmit={(event) => {
             event.preventDefault()
             if (input.trim()) {
@@ -283,11 +324,13 @@ export const Terminal = ({
             }
           }}
         >
-          <div className="command-location">
-            <span>novadeck</span>
-            <GitBranch size={12} />
-            <span className="text-muted">main</span>
-          </div>
+          {!agent && (
+            <div className="command-location">
+              <span>{projectName}</span>
+              <GitBranch size={12} />
+              <span className="text-muted">main</span>
+            </div>
+          )}
           <label className="command-line">
             <span className="prompt-arrow">❯</span>
             <input
@@ -296,7 +339,7 @@ export const Terminal = ({
               spellCheck={false}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder=""
+              placeholder={agent ? `Message ${agent}…` : ""}
             />
           </label>
         </form>

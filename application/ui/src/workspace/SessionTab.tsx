@@ -1,3 +1,4 @@
+import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
@@ -5,18 +6,26 @@ import type { Session } from "./sessions"
 
 export const SessionTab = ({
   session,
+  index,
   selected,
   onSelect,
   onRename,
   onClose,
 }: {
   session: Session
+  index: number
   selected: boolean
   onSelect: () => void
   onRename: (name: string) => void
   onClose: () => void
 }): React.JSX.Element => {
   const [editing, setEditing] = useState(false)
+  const { ref, handleRef, isDragSource } = useSortable({
+    id: session.id,
+    index,
+    disabled: editing,
+    transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+  })
   const [draft, setDraft] = useState(session.name)
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -31,7 +40,11 @@ export const SessionTab = ({
     setEditing(false)
   }
   return (
-    <div className={`session-tab ${selected ? "selected" : ""} ${editing ? "editing" : ""}`}>
+    <div
+      ref={ref}
+      data-session-id={session.id}
+      className={`session-tab ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
+    >
       {editing ? (
         <form
           className="session-rename"
@@ -60,9 +73,10 @@ export const SessionTab = ({
         </form>
       ) : (
         <button
+          ref={handleRef}
           className="session-select"
           aria-label={`Select ${session.name}`}
-          aria-pressed={selected}
+          aria-current={selected ? "true" : undefined}
           title={`${session.directory} · ${session.command}`}
           onClick={onSelect}
         >
@@ -74,13 +88,6 @@ export const SessionTab = ({
         </button>
       )}
       <div className="session-controls">
-        <span className="session-rest-state" aria-hidden="true">
-          {session.state === "running" ? (
-            <span className="status-dot" title="Running" />
-          ) : (
-            <span className="session-index">{session.id}</span>
-          )}
-        </span>
         <div className="session-actions">
           <button
             className="session-action"

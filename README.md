@@ -38,25 +38,69 @@ Grid view uses React Grid Layout: drag terminal headers to rearrange panels and 
 bottom-right grip to resize. Panels snap to a responsive grid and fill vertical gaps. Each
 screen size retains its arrangement when switching views during the current app session.
 
-The terminal sessions and output are sample content. Local demo commands (`help`, `pwd`, `ls`,
+The terminal sessions and output are sample content. Checkout implementation (`claude`) and Checkout review (`codex`)
+terminals show distinct AI TUI-style transcripts with prompts, tool activity, and sample results.
+Their message inputs retain local demo commands and acknowledge other prompts without calling a model. Local demo commands (`help`, `pwd`, `ls`,
 `whoami`, `date`, `echo`, and `clear`) update in-memory history; they do not execute a shell.
-Switch layouts with the header controls. Sidebar tabs show each process and status; use the
+Switch layouts with the header controls. Sidebar tabs show each terminal’s name and command; use the
 pencil to rename a terminal (Enter saves, Escape cancels) and the × to close it.
+Sidebar tabs use [dnd-kit](https://dndkit.com/react/hooks/use-sortable/) for reordering: drag the
+name area, or hold briefly before dragging on touch. With a tab focused, Space picks it up,
+arrow keys move it, Space drops it, and Escape cancels; Enter still selects the terminal.
+Tab order is shared across views and retained per mock workspace for the current app session.
+Reordering leaves Grid/Canvas geometry, the active terminal, and command drafts intact.
+
+The header workspace switcher starts on `storefront`, with `api-service` as another sample project.
+Its dropdown shows directory paths and offers Create workspace, which opens an empty mock project.
+Each project retains its terminal names, submitted history, and Grid/Canvas layout during the app session.
+These are in-memory demo workspaces; creating one does not create a directory.
+
+All three desktop views use Allotment for the sidebar split. Drag the divider to resize
+between 180–400px; its width is shared across views and saved locally. Double-click to reset
+to 228px. Keyboard users can focus the divider and use arrow keys (Shift for larger steps),
+Home/End for the limits, or Enter to reset. The sidebar button in the narrow left action rail hides or restores
+the desktop sidebar in every view with a 180ms transition, preserving its width and keeping terminals mounted.
+Divider resizing stays immediate; reduced motion disables the transition. The
+collapsed preference is saved across reloads. Mobile keeps its independent sessions drawer.
+In Grid, selecting a sidebar tab highlights and scrolls to its terminal.
 
 The canvas uses [XYFlow / React Flow](https://reactflow.dev/) custom terminal nodes. Select a
 sidebar session to center it, drag the background to pan, and drag a terminal header to move it.
+Canvas nodes move and resize freely, then ease onto the 24px grid when released, matching the dot
+spacing and Grid’s vertical step. Arrow keys move a selected node by 24px (Shift for larger steps).
 Drag the bottom-right grip to resize, or use the minus/plus header control to fold and restore a
-terminal. Headers and resize grips scale more gently than the terminal body. Clicking the
+terminal. Collapsed terminals keep their resize grip for width-only changes and retain their expanded height.
+Headers and resize grips scale more gently than the terminal body. Clicking the
 background unfocuses the terminal; hovering over its content lets you scroll without focusing it.
 Zoom with the controls, a two-finger pinch, or Ctrl/Cmd + wheel, including over terminal cards.
 Use the fit button to see all terminals. A focused canvas also supports arrow keys, `+`/`-`,
-and `0` to fit. Cmd/Ctrl + K opens session search, and Cmd/Ctrl + comma opens preferences.
-Reloading resets the mockup.
+and `0` to fit. Choosing Grid or Canvas saves your preferred windowed mode across reloads
+(Grid by default). The fullscreen terminal's windowed button is available whenever a windowed mode is enabled and names its
+destination: “Open in Grid” or “Open in Canvas”. Search results use that same destination for
+both clicks and Enter. Grid scrolls to the selected terminal; Canvas centers it at the current zoom.
+Top navigation uses a quick 140ms fade with a small slide following the tab direction; the header
+and sidebar stay still.
+The terminal expand and return buttons animate the card between layouts over 230ms, with a
+separate content crossfade and stationary app chrome. Reduced motion and unsupported browsers
+switch immediately; offscreen terminals fade instead of flying across the workspace.
+Canvas positions, sizes, folded states, zoom, and pan survive ordinary mode switches. Windowed
+and search actions explicitly reveal their target; Canvas sidebar selection also centers its
+terminal without changing zoom. Cmd/Ctrl + K opens session
+search, and Cmd/Ctrl + comma opens preferences. Search and Preferences share a 140ms movement and 120ms fade on open and dismissal;
+reduced motion makes both immediate. Preferences has General and Shortcuts tabs.
+General contains terminal text size and View modes toggles, applied immediately and saved locally.
+Disable unused Focus, Grid, or Canvas modes to hide their navigation and actions; at least one mode
+must remain enabled. Disabling the active mode switches to an enabled view. Search and windowed
+actions use an available mode, and disabled layouts are retained until the page reloads.
+Shortcuts lists the existing search and preferences keyboard controls.
+Reloading resets the mock workspaces, sessions, and layouts, while sidebar width, collapsed state, and the preferred windowed mode remain saved.
 
 Tailwind v4 tokens live in `application/ui/src/styles.css` using the
 [CSS theme configuration](https://tailwindcss.com/docs/theme), with the existing
 `@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,
-and shadows are centralized there; terminal sample data lives in
+and shadows are centralized there. Shared motion tokens give controls 120ms feedback and selection
+states 180ms fades; dragging stays immediate and reduced motion disables these transitions.
+Terminal sample data lives in
 `application/ui/src/workspace/sessions.ts`.
 
 ## Deployment configuration

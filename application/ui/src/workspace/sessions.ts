@@ -5,7 +5,7 @@ export type Session = {
   command: string
   process: string
   state: "running" | "idle" | "finished"
-  kind: "shell" | "server" | "tests" | "git" | "logs" | "build"
+  kind: "shell" | "server" | "tests" | "git" | "logs" | "build" | "claude" | "codex"
   x: number
   y: number
   height: number
@@ -14,12 +14,12 @@ export type Session = {
 export const sessions: Session[] = [
   {
     id: "01",
-    name: "Workspace",
+    name: "Checkout implementation",
     directory: "~/projects/novadeck",
-    command: "zsh",
-    state: "idle",
-    kind: "shell",
-    process: "zsh",
+    command: "claude",
+    state: "running",
+    kind: "claude",
+    process: "claude",
     x: 80,
     y: 80,
     height: 400,
@@ -50,12 +50,12 @@ export const sessions: Session[] = [
   },
   {
     id: "04",
-    name: "Git",
+    name: "Checkout review",
     directory: "~/projects/novadeck",
-    command: "git status",
-    state: "idle",
-    kind: "git",
-    process: "git",
+    command: "codex",
+    state: "running",
+    kind: "codex",
+    process: "codex",
     x: 80,
     y: 540,
     height: 330,
@@ -97,5 +97,7 @@ export const mockReply = (command: string, session: Session): string => {
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
+  if (session.kind === "claude" || session.kind === "codex")
+    return "This is a mock AI session. Your message is saved here, but no model is connected."
   return `Preview shell: “${input}” isn't connected to a process. Type help to explore.`
 }

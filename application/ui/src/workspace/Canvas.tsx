@@ -1,5 +1,7 @@
 import {
   Background,
+  getNodesBounds,
+  getViewportForBounds,
   NodeResizeControl,
   ReactFlow,
   ReactFlowProvider,
@@ -9,10 +11,20 @@ import {
   type Node,
   type NodeProps,
   type OnNodesChange,
+  type Viewport,
   type XYPosition,
 } from "@xyflow/react"
 import { Maximize, Minus, Plus } from "lucide-react"
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+  type CSSProperties,
+  type ReactNode,
+} from "react"
 
 import { backgroundPointerHandlers } from "./background"
 import type { Session } from "./sessions"
@@ -22,7 +34,18 @@ type TerminalNode = Node<
   { content: ReactNode; compactHeader: boolean; minimized: boolean },
   "terminal"
 >
+export type CanvasLayout = {
+  viewport?: Viewport
+  minimized: Record<string, boolean>
+  geometry: Record<
+    string,
+    Pick<TerminalNode, "position" | "measured" | "dragging" | "resizing" | "width" | "height">
+  >
+}
 type CanvasProps = {
+  layout: CanvasLayout
+  revealOnMount: boolean
+  onLayoutChange: Dispatch<SetStateAction<CanvasLayout>>
   sessions: Session[]
   selected: string
   navigation: number
@@ -35,43 +58,57 @@ const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): Reac
     data-node={id}
     className={`canvas-node ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
   >
-    {!data.minimized && (
-      <NodeResizeControl
-        position="bottom-right"
-        minWidth={320}
-        minHeight={200}
-        autoScale={false}
-        className="terminal-resize-grip nopan"
-      >
-        <span className="terminal-resize-pattern" title="Drag to resize terminal" />
-      </NodeResizeControl>
-    )}
+    <NodeResizeControl
+      position="bottom-right"
+      minWidth={320}
+      minHeight={data.minimized ? 0 : 200}
+      {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
+      autoScale={false}
+      className="terminal-resize-grip nodrag nopan"
+    >
+      <span
+        className="terminal-resize-pattern"
+        title={data.minimized ? "Drag to resize terminal width" : "Drag to resize terminal"}
+      />
+    </NodeResizeControl>
     {data.content}
   </div>
 )
 const nodeTypes = { terminal: TerminalNodeView }
 const fitOptions = { padding: 0.08, maxZoom: 1 }
+const canvasStep = 24
+const snap = (value: number): number => Math.round(value / canvasStep) * canvasStep
 const terminalHeaderHeight = 52
 // Apply half the canvas zoom strength to node headers and resize grips.
 const chromeScaleAt = (zoom: number): number => 1 / Math.sqrt(zoom)
+const centerOf = (node: TerminalNode, zoom: number): XYPosition => ({
+  x: node.position.x + (node.width ?? 550) / 2,
+  y:
+    node.position.y +
+    (node.data.minimized ? terminalHeaderHeight * chromeScaleAt(zoom) + 2 : (node.height ?? 400)) /
+      2,
+})
 
 const TerminalCanvas = ({
+  layout,
+  revealOnMount,
+  onLayoutChange,
   sessions,
   selected,
   navigation,
   onSelect,
   render,
 }: CanvasProps): React.JSX.Element => {
-  const [minimized, setMinimized] = useState<Record<string, boolean>>({})
-  const [geometry, setGeometry] = useState<
-    Record<string, Pick<TerminalNode, "position" | "measured" | "dragging" | "width" | "height">>
-  >({})
+  const { minimized, geometry } = layout
   const { fitView, zoomIn, zoomOut, getViewport, setViewport, setCenter, getNode } =
     useReactFlow<TerminalNode>()
   const { zoom } = useViewport()
   const chromeScale = chromeScaleAt(zoom)
   const initialized = useNodesInitialized()
-  const lastNavigation = useRef(0)
+  const container = useRef<HTMLDivElement>(null)
+  const [initialViewport] = useState(layout.viewport)
+  // Returning to Canvas restores its camera; only new sidebar requests should recenter it.
+  const lastNavigation = useRef(layout.viewport ? navigation : 0)
 
   const nodes: TerminalNode[] = sessions.map((session) => {
     const compactHeader = (geometry[session.id]?.width ?? 550) / chromeScale < 240
@@ -88,6 +125,7 @@ const TerminalCanvas = ({
             geometry[session.id]?.height ?? session.height,
             (terminalHeaderHeight + 4) * chromeScale,
           ),
+      className: geometry[session.id]?.resizing ? "resizing" : "",
       dragHandle: ".terminal-header",
       selected: selected === session.id,
       ariaLabel: `${session.name} terminal`,
@@ -95,9 +133,9 @@ const TerminalCanvas = ({
         content: render(session, {
           minimized: isMinimized,
           onToggle: () =>
-            setMinimized((previous) => ({
+            onLayoutChange((previous) => ({
               ...previous,
-              [session.id]: !previous[session.id],
+              minimized: { ...previous.minimized, [session.id]: !previous.minimized[session.id] },
             })),
         }),
         compactHeader,
@@ -112,8 +150,8 @@ const TerminalCanvas = ({
         (change) => change.type === "position" || change.type === "dimensions",
       )
       if (updates.length)
-        setGeometry((previous) => {
-          const next = { ...previous }
+        onLayoutChange((previous) => {
+          const next = { ...previous.geometry }
           for (const change of updates) {
             const session = sessions.find((item) => item.id === change.id)
             if (!session) continue
@@ -123,53 +161,57 @@ const TerminalCanvas = ({
                 ? {
                     ...current,
                     measured: change.dimensions ?? current.measured ?? {},
+                    resizing: change.resizing ?? current.resizing ?? false,
+                    ...(change.resizing === false && change.dimensions
+                      ? {
+                          width: Math.max(336, snap(change.dimensions.width)),
+                          ...(!previous.minimized[change.id]
+                            ? { height: Math.max(216, snap(change.dimensions.height)) }
+                            : {}),
+                        }
+                      : {}),
                     ...(change.dimensions &&
                     (change.setAttributes === true || change.setAttributes === "width")
                       ? { width: change.dimensions.width }
                       : {}),
                     ...(change.dimensions &&
+                    !previous.minimized[change.id] &&
                     (change.setAttributes === true || change.setAttributes === "height")
                       ? { height: change.dimensions.height }
                       : {}),
                   }
                 : {
                     ...current,
-                    position: change.position ?? current.position,
+                    position:
+                      change.dragging === false && current.dragging && change.position
+                        ? { x: snap(change.position.x), y: snap(change.position.y) }
+                        : (change.position ?? current.position),
                     dragging: change.dragging ?? current.dragging ?? false,
                   }
           }
-          return next
+          return { ...previous, geometry: next }
         })
       for (const change of changes) {
         if (change.type === "select" && change.selected) onSelect(change.id)
       }
     },
-    [onSelect, sessions],
+    [onSelect, onLayoutChange, sessions],
   )
 
   useEffect(() => {
     if (!initialized || navigation === lastNavigation.current || !getNode(selected)) return
     lastNavigation.current = navigation
-    let cancelled = false
-    void fitView({ ...fitOptions, nodes: [{ id: selected }] }).then(() => {
-      const node = getNode(selected)
-      if (cancelled || !node?.data.minimized) return
-      const targetZoom = getViewport().zoom
-      const width = node.width ?? 550
-      const targetChromeScale = chromeScaleAt(targetZoom)
-      const height = terminalHeaderHeight * targetChromeScale + 2
-      void setCenter(node.position.x + width / 2, node.position.y + height / 2, {
-        zoom: targetZoom,
-      })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [initialized, navigation, selected, getNode, fitView, getViewport, setCenter])
+    const node = getNode(selected)
+    if (!node) return
+    const targetZoom = getViewport().zoom
+    const center = centerOf(node, targetZoom)
+    void setCenter(center.x, center.y, { zoom: targetZoom })
+  }, [initialized, navigation, selected, getNode, getViewport, setCenter])
 
   return (
     <div
       className="canvas-viewport workspace-background"
+      ref={container}
       style={
         {
           "--canvas-chrome-scale": chromeScale,
@@ -179,6 +221,32 @@ const TerminalCanvas = ({
       aria-label="Terminal canvas"
       tabIndex={0}
       {...backgroundPointerHandlers}
+      onKeyDownCapture={(event) => {
+        const target = event.target as HTMLElement
+        if (!target.matches(".react-flow__node")) return
+        const directions: Record<string, XYPosition> = {
+          ArrowLeft: { x: -1, y: 0 },
+          ArrowRight: { x: 1, y: 0 },
+          ArrowUp: { x: 0, y: -1 },
+          ArrowDown: { x: 0, y: 1 },
+        }
+        const direction = directions[event.key]
+        const node = getNode(target.dataset.id ?? "")
+        if (!direction || !node?.selected) return
+        event.preventDefault()
+        event.stopPropagation()
+        const step = canvasStep * (event.shiftKey ? 4 : 1)
+        onNodesChange([
+          {
+            id: node.id,
+            type: "position",
+            position: {
+              x: snap(node.position.x + direction.x * step),
+              y: snap(node.position.y + direction.y * step),
+            },
+          },
+        ])
+      }}
       onKeyDown={(event) => {
         if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
         const steps: Record<string, XYPosition> = {
@@ -215,8 +283,31 @@ const TerminalCanvas = ({
         selectionKeyCode={null}
         minZoom={0.15}
         maxZoom={1.5}
-        fitView
-        fitViewOptions={fitOptions}
+        defaultViewport={initialViewport ?? { x: 0, y: 0, zoom: 1 }}
+        onInit={(instance) => {
+          if (!container.current || (initialViewport && !revealOnMount)) return
+          const target = navigation ? instance.getNode(selected) : undefined
+          if (initialViewport && target) {
+            const center = centerOf(target, initialViewport.zoom)
+            lastNavigation.current = navigation
+            void instance.setCenter(center.x, center.y, { zoom: initialViewport.zoom })
+            return
+          }
+          const bounds = getNodesBounds(target ? [target] : instance.getNodes())
+          lastNavigation.current = navigation
+          // Compute the first camera before a view-transition snapshot, without waiting for paint.
+          void instance.setViewport(
+            getViewportForBounds(
+              bounds,
+              container.current.clientWidth,
+              container.current.clientHeight,
+              0.15,
+              fitOptions.maxZoom,
+              fitOptions.padding,
+            ),
+          )
+        }}
+        onViewportChange={(viewport) => onLayoutChange((previous) => ({ ...previous, viewport }))}
         panOnScroll
         panOnScrollSpeed={1}
         zoomOnScroll={false}
@@ -227,7 +318,7 @@ const TerminalCanvas = ({
         <Background
           id="grid"
           className="canvas-grid"
-          gap={24}
+          gap={canvasStep}
           size={1.6}
           color="var(--color-muted)"
           bgColor="transparent"
@@ -235,7 +326,7 @@ const TerminalCanvas = ({
         <Background
           id="grid-spotlight"
           className="canvas-grid-spotlight"
-          gap={24}
+          gap={canvasStep}
           size={1.6}
           color="var(--color-muted)"
           bgColor="transparent"
