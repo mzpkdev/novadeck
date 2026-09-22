@@ -1,4 +1,4 @@
-import type { Session } from "../types"
+import type { Session } from "../model/types"
 import { AgentOutput } from "./AgentOutput"
 
 export const TerminalOutput = ({

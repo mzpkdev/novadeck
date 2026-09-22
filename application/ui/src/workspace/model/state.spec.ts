@@ -1,4 +1,4 @@
-import { context, describe, expect, it } from "../test"
+import { context, describe, expect, it } from "../../test"
 import {
   activeProject,
   activeSession,

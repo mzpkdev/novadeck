@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach } from "vitest"
 
+import { context, describe, expect, it } from "../test"
 import { App } from "./App"
-import { context, describe, expect, it } from "./test"
 
 const switchTo = (name: string): void => {
   fireEvent.click(screen.getByRole("button", { name: "Switch workspace" }))
@@ -319,7 +319,7 @@ describe("NovaDeck workspace", () => {
       ).not.toBeInTheDocument()
     })
 
-    it("remembers Canvas across fullscreen, remounts, and search without choosing Grid", () => {
+    it("keeps search in Focus after remount while retaining Canvas for windowed return", () => {
       const first = render(<App />)
       fireEvent.click(screen.getByRole("button", { name: "Canvas" }))
       fireEvent.click(screen.getByRole("button", { name: "Focus" }))
@@ -330,17 +330,41 @@ describe("NovaDeck workspace", () => {
       expect(screen.getByRole("button", { name: "Open in Canvas" })).toBeEnabled()
       fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
-      expect(within(dialog).getByText("Open in Canvas")).toBeVisible()
+      expect(within(dialog).getByText("Open in Focus")).toBeVisible()
       const input = within(dialog).getByRole("textbox")
       fireEvent.change(input, { target: { value: "runtime" } })
       fireEvent.keyDown(input, { key: "Enter" })
-      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
       expect(screen.getByRole("button", { name: "Select Runtime" })).toHaveAttribute(
         "aria-current",
         "true",
       )
       expect(localStorage.getItem("novadeck.windowed-view")).toBe("canvas")
     })
+
+    for (const previous of ["Grid", "Canvas"] as const) {
+      for (const entry of ["navigation", "maximize"] as const) {
+        it(`keeps a clicked search result in Focus entered by ${entry} from ${previous}`, () => {
+          render(<App />)
+          fireEvent.click(screen.getByRole("button", { name: previous }))
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: entry === "navigation" ? "Focus" : "Focus Checkout implementation",
+            }),
+          )
+          fireEvent.click(screen.getByRole("button", { name: "Find a terminal" }))
+          const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
+          expect(within(dialog).getByText("Open in Focus")).toBeVisible()
+          fireEvent.click(within(dialog).getByRole("button", { name: /Runtime/ }))
+          expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+          expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
+          fireEvent.click(screen.getByRole("button", { name: `Open in ${previous}` }))
+          expect(
+            screen.getByRole("region", { name: `${previous.toLowerCase()} view` }),
+          ).toBeVisible()
+        })
+      }
+    }
 
     it("replaces the preference when Grid is selected and ignores invalid saved modes", () => {
       localStorage.setItem("novadeck.windowed-view", "invalid")
@@ -397,10 +421,9 @@ describe("NovaDeck workspace", () => {
       const dialog = screen.getByRole("dialog", { name: "Find a terminal" })
       fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "runtime" } })
       fireEvent.click(within(dialog).getByRole("button", { name: /Runtime/ }))
-      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
-      expect(
-        screen.getByRole("region", { name: "Runtime terminal" }).closest(".grid-terminal"),
-      ).toHaveClass("selected")
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
+      expect(screen.getAllByRole("region", { name: /terminal$/ })).toHaveLength(1)
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
 

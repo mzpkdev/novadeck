@@ -1,4 +1,4 @@
-import type { Project, Session } from "../types"
+import type { Project, Session } from "../model/types"
 
 export const sessions: Session[] = [
   {

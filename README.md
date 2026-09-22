@@ -94,8 +94,9 @@ Zoom with the controls, a two-finger pinch, or Ctrl/Cmd + wheel, including over 
 Use the fit button to see all terminals. A focused canvas also supports arrow keys, `+`/`-`,
 and `0` to fit. Choosing Grid or Canvas saves your preferred windowed mode across reloads
 (Grid by default). The fullscreen terminal's windowed button is available whenever a windowed mode is enabled and names its
-destination: “Open in Grid” or “Open in Canvas”. Search results use that same destination for
-both clicks and Enter. Grid scrolls to the selected terminal; Canvas centers it at the current zoom.
+destination: “Open in Grid” or “Open in Canvas”. Search results stay in the current view for
+both clicks and Enter, including Focus entered from navigation or a terminal’s maximize button. Grid scrolls to the selected terminal; Canvas pans and zooms to fit the
+searched terminal with a small margin. Canvas sidebar selection and fullscreen return preserve the current zoom.
 Top navigation uses a quick 140ms fade with a small slide following the tab direction; the header
 and sidebar stay still.
 The terminal expand and return buttons animate the card between layouts over 230ms, with a
@@ -110,6 +111,7 @@ General contains terminal text size and View modes toggles, applied immediately 
 Disable unused Focus, Grid, or Canvas modes to hide their navigation and actions; at least one mode
 must remain enabled. Disabling the active mode switches to an enabled view. Search and windowed
 actions use an available mode, and disabled layouts are retained until the page reloads.
+General also shows the hardcoded Monochrome theme and an appearance switch locked to Light; dark mode is not available.
 Shortcuts lists the existing search and preferences keyboard controls.
 Reloading resets the mock workspaces, sessions, and layouts, while sidebar width, collapsed state, and the preferred windowed mode remain saved.
 
@@ -123,19 +125,37 @@ Tailwind v4 tokens live in `application/ui/src/styles.css` using the
 `@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,
 and shadows are centralized there. Ordinary component styling uses Tailwind utility classes in JSX;
 `styles.css` retains the theme, shared primitives, contextual terminal/library rules, and canvas
-effects, while `workspace/ModalMotion.css` owns native-dialog and search transitions. Shared motion tokens give controls 120ms feedback and selection
+effects, while `workspace/shell/ModalMotion.css` owns native-dialog and search transitions. Shared motion tokens give controls 120ms feedback and selection
 states 180ms fades; dragging stays immediate and reduced motion disables these transitions.
-The UI's state model lives in `application/ui/src/workspace/types.ts`, with pure updates and
-selectors in `workspace/state.ts`. One reducer owns the project/session tree: each project retains
+The UI's state model lives in `application/ui/src/workspace/model/types.ts`, with pure updates and
+selectors in `workspace/model/state.ts`. One reducer owns the project/session tree: each project retains
 its active session and history, and each session owns its terminals, drafts, output, selection,
 view choice, and layouts. Updates carry project and session IDs so delayed component callbacks
 still update their original session. Closing a terminal prunes its output and layout records.
 
-`App.tsx` composes the views and coordinates browser effects, navigation, and transient controls.
+`app/App.tsx` composes the views and coordinates browser effects, navigation, and transient controls.
 `WorkspaceHeader` renders navigation, `TerminalSearch` owns search input and focus, and the
 sidebar, terminal, Grid, and Canvas components handle their respective presentation and interactions.
-`workspace/preferences.ts` reads and validates persisted preferences. Sample projects, terminals,
+`workspace/preferences/preferences.ts` reads and validates persisted preferences. Sample projects, terminals,
 command replies, and transcripts live under `workspace/mock/`; they are separate from the state model.
+The source folders follow UI features and ownership:
+
+| Folder (under `src/`)    | Responsibility                                               |
+| ------------------------ | ------------------------------------------------------------ |
+| `app/`                   | Application composition and integration tests                |
+| `workspace/model/`       | Workspace types, pure reducer, selectors, and reducer tests  |
+| `workspace/terminals/`   | Terminal cards and sortable terminal tabs                    |
+| `workspace/layouts/`     | Grid/Canvas views, background effects, and view transitions  |
+| `workspace/sidebar/`     | Shared sidebar presentation and saved-session list           |
+| `workspace/projects/`    | Project selection and creation                               |
+| `workspace/preferences/` | Preferences UI and stored preference validation              |
+| `workspace/search/`      | Terminal search and its input/focus lifecycle                |
+| `workspace/shell/`       | Header, pane layout, and shared modal motion                 |
+| `workspace/mock/`        | Sample projects, terminals, command replies, and transcripts |
+
+Keep tests beside their feature, import directly from the owning module, and avoid barrel files
+or extra domain/repository/service layers until a concrete integration needs them.
+
 Reducer tests cover session isolation, restoration, scoped updates, and terminal cleanup, alongside
 the App interaction tests. This remains an in-memory mockup; runtime/process integration and
 workspace persistence are future work.

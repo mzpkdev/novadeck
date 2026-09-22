@@ -9,8 +9,8 @@ import {
 } from "lucide-react"
 import { useEffect, useRef } from "react"
 
-import { TerminalOutput } from "./mock/TerminalOutput"
-import type { Entry, Session } from "./types"
+import { TerminalOutput } from "../mock/TerminalOutput"
+import type { Entry, Session } from "../model/types"
 
 export type MinimizeControls = {
   minimized: boolean

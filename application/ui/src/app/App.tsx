@@ -1,20 +1,20 @@
 import { History, Plus, Terminal as TerminalIcon } from "lucide-react"
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react"
 
-import { backgroundPointerHandlers } from "./workspace/background"
-import { Canvas } from "./workspace/Canvas"
-import { Grid } from "./workspace/Grid"
+import { backgroundPointerHandlers } from "../workspace/layouts/background"
+import { Canvas } from "../workspace/layouts/Canvas"
+import { Grid } from "../workspace/layouts/Grid"
+import {
+  cancelTerminalTransition,
+  transitionTerminal,
+  transitionWorkspace,
+} from "../workspace/layouts/transition"
 import {
   mockReply,
   initialProjects,
   projectSessions,
   createMockTerminal,
-} from "./workspace/mock/sessions"
-import { Preferences } from "./workspace/Preferences"
-import { viewModes, preferencesStorageKey, readPreferences } from "./workspace/preferences"
-import { SessionList } from "./workspace/SessionList"
-import { SessionsPanel } from "./workspace/SessionsPanel"
-import { SidebarPanel, sidebarCreateClasses } from "./workspace/SidebarPanel"
+} from "../workspace/mock/sessions"
 import {
   activeProject,
   activeSession,
@@ -24,14 +24,7 @@ import {
   orderedSessions,
   workspaceReducer,
   type ValueUpdate,
-} from "./workspace/state"
-import { Terminal, type MinimizeControls } from "./workspace/Terminal"
-import { TerminalSearch } from "./workspace/TerminalSearch"
-import {
-  cancelTerminalTransition,
-  transitionTerminal,
-  transitionWorkspace,
-} from "./workspace/transition"
+} from "../workspace/model/state"
 import type {
   Project,
   Session,
@@ -42,9 +35,20 @@ import type {
   CanvasLayout,
   GridLayouts,
   WorkspaceSession,
-} from "./workspace/types"
-import { WorkspaceHeader } from "./workspace/WorkspaceHeader"
-import { useDesktop, WorkspacePanels } from "./workspace/WorkspacePanels"
+} from "../workspace/model/types"
+import { Preferences } from "../workspace/preferences/Preferences"
+import {
+  viewModes,
+  preferencesStorageKey,
+  readPreferences,
+} from "../workspace/preferences/preferences"
+import { TerminalSearch } from "../workspace/search/TerminalSearch"
+import { WorkspaceHeader } from "../workspace/shell/WorkspaceHeader"
+import { useDesktop, WorkspacePanels } from "../workspace/shell/WorkspacePanels"
+import { SessionsPanel } from "../workspace/sidebar/SessionsPanel"
+import { SidebarPanel, sidebarCreateClasses } from "../workspace/sidebar/SidebarPanel"
+import { SessionList } from "../workspace/terminals/SessionList"
+import { Terminal, type MinimizeControls } from "../workspace/terminals/Terminal"
 
 const collapsedStorageKey = "novadeck.sidebar-collapsed"
 const readSidebarCollapsed = (): boolean => {
@@ -147,7 +151,7 @@ export const App = (): React.JSX.Element => {
     dispatch({ type: "terminal/reorder", target, tabOrder })
   const [sidebarPanel, setSidebarPanel] = useState<"terminals" | "sessions">("terminals")
   const [revealCanvas, setRevealCanvas] = useState(false)
-  const [navigation, setNavigation] = useState(0)
+  const [navigation, setNavigation] = useState({ count: 0, fit: false })
   const [settings, setSettings] = useState(false)
   const [searching, setSearching] = useState(false)
   const [sidebar, setSidebar] = useState(false)
@@ -157,9 +161,8 @@ export const App = (): React.JSX.Element => {
   const windowedDestination = preferences.enabledViews.includes(windowedView)
     ? windowedView
     : preferences.enabledViews.find((mode) => mode !== "focus")
-  const searchDestination = windowedDestination ?? "focus"
-  const windowedLabel =
-    searchDestination === "canvas" ? "Canvas" : searchDestination === "grid" ? "Grid" : "Focus"
+  const windowedLabel = windowedDestination === "canvas" ? "Canvas" : "Grid"
+  const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   useEffect(() => {
     try {
       localStorage.setItem(windowedStorageKey, windowedView)
@@ -187,7 +190,7 @@ export const App = (): React.JSX.Element => {
     const restoredView = preferences.enabledViews.includes(nextView)
       ? nextView
       : preferences.enabledViews[0]!
-    setNavigation(restoredView === "grid" ? 1 : 0)
+    setNavigation({ count: restoredView === "grid" ? 1 : 0, fit: false })
     setRevealCanvas(false)
     setSidebar(false)
     setSearching(false)
@@ -258,9 +261,9 @@ export const App = (): React.JSX.Element => {
     dispatch({ type: "project/add", project: next, initialSession: session, activate: true })
     resetPresentation(session.state.view)
   }
-  const select = (id: string): void => {
+  const select = (id: string, fit = false): void => {
     setSelected(id)
-    setNavigation((value) => value + 1)
+    setNavigation((value) => ({ count: value.count + 1, fit }))
     setSidebar(false)
   }
   const updatePreferences = (next: PreferencesValue): void => {
@@ -279,24 +282,21 @@ export const App = (): React.JSX.Element => {
     setSidebar(false)
   }
   const showWindowed = (id: string): void => {
+    if (!windowedDestination) return
     select(id)
-    setRevealCanvas(searchDestination === "canvas")
+    setRevealCanvas(windowedDestination === "canvas")
     dispatch({
       type: "view/change",
       target,
-      view: searchDestination,
+      view: windowedDestination,
       enabledViews: preferences.enabledViews,
       rememberWindowed: false,
     })
   }
   const openWindowed = (id: string): void => transitionTerminal(id, () => showWindowed(id))
   const openSearchResult = (id: string): void => {
-    const open = (): void => {
-      setSearching(false)
-      showWindowed(id)
-    }
-    if (view === searchDestination) open()
-    else transitionWorkspace(open, view === "canvas" ? -1 : 1)
+    setSearching(false)
+    select(id, view === "canvas")
   }
   const add = (): void => {
     setSidebarPanel("terminals")
@@ -305,14 +305,14 @@ export const App = (): React.JSX.Element => {
       target,
       session: createMockTerminal(nextSession, project.directory),
     })
-    setNavigation((value) => value + 1)
+    setNavigation((value) => ({ count: value.count + 1, fit: false }))
     setSidebar(false)
   }
   const rename = (terminalId: string, name: string): void =>
     dispatch({ type: "terminal/rename", target, terminalId, name })
   const close = (terminalId: string): void => {
     dispatch({ type: "terminal/close", target, terminalId })
-    if (selected === terminalId) setNavigation((value) => value + 1)
+    if (selected === terminalId) setNavigation((value) => ({ count: value.count + 1, fit: false }))
   }
   const run = (session: Session, command: string): void => {
     if (command.trim() === "clear") {
@@ -539,7 +539,7 @@ export const App = (): React.JSX.Element => {
                 sessions={sessions}
                 selected={selected}
                 onSelect={setSelected}
-                navigation={navigation}
+                navigation={navigation.count}
                 layouts={gridLayouts}
                 onLayoutsChange={setGridLayouts}
                 render={(session) => terminal(session, true)}
@@ -549,10 +549,11 @@ export const App = (): React.JSX.Element => {
               <Canvas
                 layout={canvasLayout}
                 revealOnMount={revealCanvas}
+                fitOnNavigate={navigation.fit}
                 onLayoutChange={setCanvasLayout}
                 sessions={sessions}
                 selected={selected}
-                navigation={navigation}
+                navigation={navigation.count}
                 onSelect={setSelected}
                 render={(session, minimize) => terminal(session, true, minimize)}
               />
@@ -607,7 +608,7 @@ export const App = (): React.JSX.Element => {
         open={searching}
         key={workspaceSessionId}
         sessions={ordered}
-        destination={windowedLabel}
+        destination={searchLabel}
         onSelect={openSearchResult}
         onClose={() => setSearching(false)}
       />

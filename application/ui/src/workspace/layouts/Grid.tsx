@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useMemo, type ReactNode } from "react"
 import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from "react-grid-layout"
 
+import type { Session, GridLayouts, GridBreakpoint } from "../model/types"
 import { backgroundPointerHandlers } from "./background"
-import type { Session, GridLayouts, GridBreakpoint } from "./types"
 
 const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
 const columns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }

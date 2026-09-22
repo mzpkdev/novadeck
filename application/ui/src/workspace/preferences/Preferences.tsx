@@ -1,9 +1,9 @@
-import { LayoutGrid, PanelLeft, SquareDashedMousePointer, X } from "lucide-react"
+import { LayoutGrid, Moon, PanelLeft, SquareDashedMousePointer, Sun, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import "./ModalMotion.css"
+import "../shell/ModalMotion.css"
+import type { PreferencesValue } from "../model/types"
 import { viewModes } from "./preferences"
-import type { PreferencesValue } from "./types"
 
 export const Preferences = ({
   open,
@@ -96,6 +96,47 @@ export const Preferences = ({
         hidden={tab !== "general"}
         tabIndex={0}
       >
+        <label
+          className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink"
+          htmlFor="theme"
+        >
+          <span>Theme</span>
+          <select
+            className="min-w-[120px] rounded-control border border-line bg-paper px-2 py-1.75 text-[11px] text-ink"
+            id="theme"
+            defaultValue="monochrome"
+          >
+            <option value="monochrome">Monochrome</option>
+          </select>
+        </label>
+        <div className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink">
+          <div className="flex flex-col gap-1">
+            <span>Appearance</span>
+            <span id="theme-mode-description" className="text-[10px] text-muted">
+              Light mode only
+            </span>
+          </div>
+          <div className="flex items-center gap-2" title="Dark mode is not available yet">
+            <Sun size={14} strokeWidth={1.5} aria-hidden="true" className="text-muted" />
+            <button
+              type="button"
+              role="switch"
+              aria-label="Dark mode"
+              aria-checked={false}
+              aria-describedby="theme-mode-description"
+              disabled
+              className="relative h-5 w-9 cursor-not-allowed rounded-control border border-line bg-soft opacity-50"
+            >
+              <span className="absolute top-0.5 left-0.5 size-3.5 rounded-control border border-line-strong bg-paper" />
+            </button>
+            <Moon
+              size={14}
+              strokeWidth={1.5}
+              aria-hidden="true"
+              className="text-muted opacity-40"
+            />
+          </div>
+        </div>
         <label
           className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink"
           htmlFor="font-size"

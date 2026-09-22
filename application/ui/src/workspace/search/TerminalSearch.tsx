@@ -1,9 +1,9 @@
 import { ArrowUpRight, Search, Terminal as TerminalIcon, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import type { Session } from "./types"
+import type { Session } from "../model/types"
 
-import "./ModalMotion.css"
+import "../shell/ModalMotion.css"
 
 export const TerminalSearch = ({
   open,
@@ -71,6 +71,7 @@ export const TerminalSearch = ({
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && matches[0]) {
+                event.preventDefault()
                 select(matches[0].id)
               }
             }}

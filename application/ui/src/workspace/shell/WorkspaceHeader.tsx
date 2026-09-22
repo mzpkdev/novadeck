@@ -7,8 +7,8 @@ import {
   Terminal as TerminalIcon,
 } from "lucide-react"
 
-import type { Project, ViewMode } from "./types"
-import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
+import type { Project, ViewMode } from "../model/types"
+import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
 
 const views = [
   { id: "focus", label: "Focus", icon: PanelLeft },

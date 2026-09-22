@@ -1,4 +1,4 @@
-import type { PreferencesValue, ViewMode } from "./types"
+import type { PreferencesValue, ViewMode } from "../model/types"
 
 export const viewModes: ViewMode[] = ["focus", "grid", "canvas"]
 export const preferencesStorageKey = "novadeck.preferences"

@@ -25,9 +25,9 @@ import {
   type ReactNode,
 } from "react"
 
+import type { Session, CanvasLayout } from "../model/types"
+import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
-import type { MinimizeControls } from "./Terminal"
-import type { Session, CanvasLayout } from "./types"
 
 type TerminalNode = Node<
   { content: ReactNode; compactHeader: boolean; minimized: boolean },
@@ -36,6 +36,7 @@ type TerminalNode = Node<
 type CanvasProps = {
   layout: CanvasLayout
   revealOnMount: boolean
+  fitOnNavigate: boolean
   onLayoutChange: Dispatch<SetStateAction<CanvasLayout>>
   sessions: Session[]
   selected: string
@@ -83,6 +84,7 @@ const centerOf = (node: TerminalNode, zoom: number): XYPosition => ({
 const TerminalCanvas = ({
   layout,
   revealOnMount,
+  fitOnNavigate,
   onLayoutChange,
   sessions,
   selected,
@@ -194,10 +196,19 @@ const TerminalCanvas = ({
     lastNavigation.current = navigation
     const node = getNode(selected)
     if (!node) return
+    if (fitOnNavigate) {
+      void fitView({
+        ...fitOptions,
+        nodes: [{ id: selected }],
+        maxZoom: 1.5,
+        duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180,
+      })
+      return
+    }
     const targetZoom = getViewport().zoom
     const center = centerOf(node, targetZoom)
     void setCenter(center.x, center.y, { zoom: targetZoom })
-  }, [initialized, navigation, selected, getNode, getViewport, setCenter])
+  }, [initialized, navigation, selected, fitOnNavigate, fitView, getNode, getViewport, setCenter])
 
   return (
     <div
@@ -278,7 +289,7 @@ const TerminalCanvas = ({
         onInit={(instance) => {
           if (!container.current || (initialViewport && !revealOnMount)) return
           const target = navigation ? instance.getNode(selected) : undefined
-          if (initialViewport && target) {
+          if (initialViewport && target && !fitOnNavigate) {
             const center = centerOf(target, initialViewport.zoom)
             lastNavigation.current = navigation
             void instance.setCenter(center.x, center.y, { zoom: initialViewport.zoom })
@@ -293,7 +304,7 @@ const TerminalCanvas = ({
               container.current.clientWidth,
               container.current.clientHeight,
               0.15,
-              fitOptions.maxZoom,
+              target && fitOnNavigate ? 1.5 : fitOptions.maxZoom,
               fitOptions.padding,
             ),
           )

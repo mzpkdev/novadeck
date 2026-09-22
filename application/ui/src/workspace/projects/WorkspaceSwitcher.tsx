@@ -1,7 +1,7 @@
 import { Check, ChevronDown, Folder, FolderPlus } from "lucide-react"
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 
-import type { Project } from "./types"
+import type { Project } from "../model/types"
 
 type WorkspaceSwitcherProps = {
   projects: Project[]
