@@ -49,19 +49,32 @@ name area, or hold briefly before dragging on touch. With a tab focused, Space p
 arrow keys move it, Space drops it, and Escape cancels; Enter still selects the terminal.
 Tab order is shared across views and retained per mock workspace for the current app session.
 Reordering leaves Grid/Canvas geometry, the active terminal, and command drafts intact.
+In Grid and Canvas, unfocused terminals fade to 50% opacity, brighten to 75% on hover, and
+return to full opacity when focused, using the shared state transition.
 
 The header workspace switcher starts on `storefront`, with `api-service` as another sample project.
 Its dropdown shows directory paths and offers Create workspace, which opens an empty mock project.
-Each project retains its terminal names, submitted history, and Grid/Canvas layout during the app session.
+The Sessions icon in the left rail opens each project's ongoing sessions. Start fresh adds an
+empty session while keeping all previous terminals available; click a session to return to it.
+Sessions use automatic date/time names. Each retains terminal names,
+tab order, selection, submitted output, unsent drafts, scroll positions, the selected view, and
+Grid/Canvas layouts and camera. Switching to another project retains its own session list and
+last active session. The same Sessions toggle is available in the left rail on mobile. Starting fresh and
+switching sessions do not close terminals or change their process state; process activity remains
+sample data in this frontend mockup, with no real shell processes connected.
 These are in-memory demo workspaces; creating one does not create a directory.
 
 All three desktop views use Allotment for the sidebar split. Drag the divider to resize
 between 180–400px; its width is shared across views and saved locally. Double-click to reset
 to 228px. Keyboard users can focus the divider and use arrow keys (Shift for larger steps),
-Home/End for the limits, or Enter to reset. The sidebar button in the narrow left action rail hides or restores
-the desktop sidebar in every view with a 180ms transition, preserving its width and keeping terminals mounted.
-Divider resizing stays immediate; reduced motion disables the transition. The
-collapsed preference is saved across reloads. Mobile keeps its independent sessions drawer.
+Home/End for the limits, or Enter to reset. The narrow left rail has separate Terminals and Sessions
+toggles: clicking the active one hides it, and opening the other switches panels. Both panels have
+an × close button that returns keyboard focus to their toggle. A shared `SidebarPanel` component
+owns the heading, count, close control, content spacing, and panel transition for both. Desktop opening/closing uses a
+180ms width transition, preserving the sidebar width and mounted terminals; switching panels uses
+a short fade/slide. Divider resizing stays immediate, and reduced motion disables transitions.
+The collapsed desktop preference is saved across reloads. On mobile, the same rail controls an
+animated drawer, with a fading backdrop that also dismisses it.
 In Grid, selecting a sidebar tab highlights and scrolls to its terminal.
 
 The canvas uses [XYFlow / React Flow](https://reactflow.dev/) custom terminal nodes. Select a

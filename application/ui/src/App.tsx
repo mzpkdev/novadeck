@@ -1,9 +1,8 @@
 import {
   ArrowUpRight,
+  History,
   LayoutGrid,
   PanelLeft,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Search,
   Settings2,
@@ -25,13 +24,15 @@ import {
 } from "./workspace/Preferences"
 import { SessionList } from "./workspace/SessionList"
 import { mockReply, sessions as initialSessions, type Session } from "./workspace/sessions"
+import { SessionsPanel } from "./workspace/SessionsPanel"
+import { SidebarPanel } from "./workspace/SidebarPanel"
 import { Terminal, type Entry, type MinimizeControls } from "./workspace/Terminal"
 import {
   cancelTerminalTransition,
   transitionTerminal,
   transitionWorkspace,
 } from "./workspace/transition"
-import { WorkspacePanels } from "./workspace/WorkspacePanels"
+import { useDesktop, WorkspacePanels } from "./workspace/WorkspacePanels"
 import { WorkspaceSwitcher, type Project } from "./workspace/WorkspaceSwitcher"
 
 type View = ViewMode
@@ -67,7 +68,11 @@ const projectSessions = (project: Project): Session[] =>
     ...session,
     directory: session.directory.replace(/^~\/projects\/[^/]+/, project.directory),
   }))
-type ProjectState = {
+type WorkspaceState = {
+  view: View
+  windowedView: WindowedView
+  drafts: Record<string, string>
+  scrollOffsets: Record<string, number>
   sessions: Session[]
   tabOrder: string[]
   selected: string
@@ -77,8 +82,46 @@ type ProjectState = {
   gridLayouts: GridLayouts
   nextSession: number
 }
+type WorkspaceSession = {
+  id: string
+  name: string
+  visitedAt: number
+  state: WorkspaceState
+}
+type ProjectState = { activeId: string; history: WorkspaceSession[] }
+const emptyEntries: Entry[] = []
+const createWorkspaceSession = (
+  terminals: Session[],
+  view: View,
+  windowedView: WindowedView,
+): WorkspaceSession => ({
+  id: crypto.randomUUID(),
+  name: new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date()),
+  visitedAt: Date.now(),
+  state: {
+    sessions: terminals,
+    tabOrder: [],
+    selected: terminals[0]?.id ?? "",
+    entries: {},
+    cleared: {},
+    drafts: {},
+    scrollOffsets: {},
+    canvasLayout: { geometry: {}, minimized: {} },
+    gridLayouts: {},
+    nextSession: terminals.length + 1,
+    view,
+    windowedView,
+  },
+})
 
 export const App = (): React.JSX.Element => {
+  const desktop = useDesktop()
   const [preferences, setPreferences] = useState(readPreferences)
   const [view, setView] = useState<View>(() =>
     preferences.enabledViews.includes("focus") ? "focus" : preferences.enabledViews[0]!,
@@ -87,6 +130,13 @@ export const App = (): React.JSX.Element => {
   const [projectId, setProjectId] = useState("storefront")
   const project = projects.find((item) => item.id === projectId) ?? initialProjects[0]!
   const savedProjects = useRef<Record<string, ProjectState>>({})
+  const [workspaceSessions, setWorkspaceSessions] = useState(() => [
+    createWorkspaceSession(projectSessions(initialProjects[0]!), view, readWindowedView()),
+  ])
+  const [workspaceSessionId, setWorkspaceSessionId] = useState(workspaceSessions[0]!.id)
+  const [sidebarPanel, setSidebarPanel] = useState<"terminals" | "sessions">("terminals")
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [scrollOffsets, setScrollOffsets] = useState<Record<string, number>>({})
   const [sessions, setSessions] = useState(() => projectSessions(initialProjects[0]!))
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const orderedSessions = [
@@ -128,6 +178,7 @@ export const App = (): React.JSX.Element => {
   }, [preferences])
   const [sidebar, setSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+  const sidebarVisible = desktop ? !sidebarCollapsed : sidebar
   useEffect(() => {
     try {
       localStorage.setItem(collapsedStorageKey, String(sidebarCollapsed))
@@ -144,48 +195,112 @@ export const App = (): React.JSX.Element => {
     `${session.name} ${session.directory}`.toLowerCase().includes(query.toLowerCase()),
   )
 
-  const switchProject = (next: Project): void => {
-    if (next.id === projectId) return
+  const snapshot = (): WorkspaceState => ({
+    sessions,
+    tabOrder,
+    selected,
+    entries,
+    cleared,
+    drafts,
+    scrollOffsets,
+    canvasLayout,
+    gridLayouts,
+    nextSession: nextSession.current,
+    view,
+    windowedView,
+  })
+  const saveCurrentSession = (): WorkspaceSession[] =>
+    workspaceSessions.map((item) =>
+      item.id === workspaceSessionId ? { ...item, visitedAt: Date.now(), state: snapshot() } : item,
+    )
+  const restoreSession = (next: WorkspaceSession): void => {
     cancelTerminalTransition()
-    savedProjects.current[projectId] = {
-      sessions,
-      tabOrder,
-      selected,
-      entries,
-      cleared,
-      canvasLayout,
-      gridLayouts,
-      nextSession: nextSession.current,
-    }
-    const saved = savedProjects.current[next.id]
-    setSessions(saved?.sessions ?? projectSessions(next))
-    setTabOrder(saved?.tabOrder ?? [])
-    setSelected(saved?.selected ?? "01")
-    setEntries(saved?.entries ?? {})
-    setCleared(saved?.cleared ?? {})
-    setCanvasLayout(saved?.canvasLayout ?? { geometry: {}, minimized: {} })
-    setGridLayouts(saved?.gridLayouts ?? {})
-    nextSession.current = saved?.nextSession ?? initialSessions.length + 1
-    setNavigation(0)
+    const saved = next.state
+    setSessions(saved.sessions)
+    setTabOrder(saved.tabOrder)
+    setSelected(saved.selected)
+    setEntries(saved.entries)
+    setCleared(saved.cleared)
+    setDrafts(saved.drafts)
+    setScrollOffsets(saved.scrollOffsets)
+    setCanvasLayout(saved.canvasLayout)
+    setGridLayouts(saved.gridLayouts)
+    nextSession.current = saved.nextSession
+    const restoredView = preferences.enabledViews.includes(saved.view)
+      ? saved.view
+      : preferences.enabledViews[0]!
+    setView(restoredView)
+    setWindowedView(saved.windowedView)
+    setWorkspaceSessionId(next.id)
+    setNavigation(restoredView === "grid" ? 1 : 0)
     setRevealCanvas(false)
     setSidebar(false)
     setSearching(false)
     setSettings(false)
     setQuery("")
+  }
+  const switchSession = (id: string): void => {
+    if (id === workspaceSessionId) return
+    const next = workspaceSessions.find((item) => item.id === id)
+    if (!next) return
+    setWorkspaceSessions(
+      saveCurrentSession().map((item) =>
+        item.id === id ? { ...item, visitedAt: Date.now() } : item,
+      ),
+    )
+    restoreSession(next)
+  }
+  const startFresh = (): void => {
+    const next = createWorkspaceSession([], view, windowedView)
+    const name = next.name
+    let suffix = 2
+    while (workspaceSessions.some((item) => item.name === next.name)) {
+      next.name = `${name} (${suffix++})`
+    }
+    setWorkspaceSessions([next, ...saveCurrentSession()])
+    restoreSession(next)
+  }
+  const showSessions = (): void => {
+    setSidebarPanel("sessions")
+    setSidebarCollapsed(false)
+    setSidebar(true)
+  }
+  const hideSidebar = (): void => {
+    setSidebarCollapsed(true)
+    setSidebar(false)
+    document.getElementById(`${sidebarPanel}-toggle`)?.focus()
+  }
+  const toggleSidebar = (panel: "terminals" | "sessions"): void => {
+    if (sidebarPanel === panel && sidebarVisible) hideSidebar()
+    else {
+      setSidebarPanel(panel)
+      setSidebarCollapsed(false)
+      setSidebar(true)
+    }
+  }
+  const switchProject = (next: Project): void => {
+    if (next.id === projectId) return
+    savedProjects.current[projectId] = {
+      activeId: workspaceSessionId,
+      history: saveCurrentSession(),
+    }
+    const saved = savedProjects.current[next.id]
+    const history = saved?.history ?? [
+      createWorkspaceSession(projectSessions(next), view, windowedView),
+    ]
+    const activeSession = history.find((item) => item.id === saved?.activeId) ?? history[0]!
+    setWorkspaceSessions(
+      history.map((item) =>
+        item.id === activeSession.id ? { ...item, visitedAt: Date.now() } : item,
+      ),
+    )
+    restoreSession(activeSession)
     setProjectId(next.id)
   }
   const createProject = (name: string): void => {
     const next = { id: crypto.randomUUID(), name, directory: `~/projects/${name}` }
-    savedProjects.current[next.id] = {
-      sessions: [],
-      tabOrder: [],
-      selected: "",
-      entries: {},
-      cleared: {},
-      canvasLayout: { geometry: {}, minimized: {} },
-      gridLayouts: {},
-      nextSession: 1,
-    }
+    const initial = createWorkspaceSession([], view, windowedView)
+    savedProjects.current[next.id] = { activeId: initial.id, history: [initial] }
     setProjects((previous) => [...previous, next])
     switchProject(next)
   }
@@ -229,6 +344,7 @@ export const App = (): React.JSX.Element => {
     else transitionWorkspace(open, view === "canvas" ? -1 : 1)
   }
   const add = (): void => {
+    setSidebarPanel("terminals")
     const number = nextSession.current++
     const id = String(number).padStart(2, "0")
     setSessions((previous) => [
@@ -273,6 +389,16 @@ export const App = (): React.JSX.Element => {
       delete next[id]
       return next
     })
+    setDrafts((previous) => {
+      const next = { ...previous }
+      delete next[id]
+      return next
+    })
+    setScrollOffsets((previous) => {
+      const next = { ...previous }
+      delete next[id]
+      return next
+    })
   }
   const run = (session: Session, command: string): void => {
     if (command.trim() === "clear") {
@@ -297,7 +423,15 @@ export const App = (): React.JSX.Element => {
       key={session.id}
       session={session}
       projectName={project.name}
-      entries={entries[session.id] ?? []}
+      entries={entries[session.id] ?? emptyEntries}
+      draft={drafts[session.id] ?? ""}
+      onDraftChange={(draft) => setDrafts((previous) => ({ ...previous, [session.id]: draft }))}
+      scrollOffset={scrollOffsets[session.id]}
+      onScrollChange={(offset) =>
+        setScrollOffsets((previous) =>
+          previous[session.id] === offset ? previous : { ...previous, [session.id]: offset },
+        )
+      }
       cleared={cleared[session.id] ?? false}
       onCommand={(command) => run(session, command)}
       compact={compact}
@@ -439,62 +573,101 @@ export const App = (): React.JSX.Element => {
           aria-label="Sidebar actions"
           aria-orientation="vertical"
         >
-          <button
-            className="icon-button"
-            title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-            aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-            aria-controls="terminal-sidebar"
-            aria-expanded={!sidebarCollapsed}
-            onClick={() => setSidebarCollapsed((previous) => !previous)}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
+          {(
+            [
+              { id: "terminals", label: "Terminals", icon: TerminalIcon },
+              { id: "sessions", label: "Sessions", icon: History },
+            ] as const
+          ).map(({ id, label, icon: Icon }) => {
+            const activePanel = sidebarPanel === id && sidebarVisible
+            return (
+              <button
+                key={id}
+                id={`${id}-toggle`}
+                className={`icon-button${activePanel ? " active" : ""}`}
+                title={label}
+                aria-label={label}
+                aria-controls={`${id}-panel`}
+                aria-expanded={activePanel}
+                aria-pressed={activePanel}
+                onClick={() => toggleSidebar(id)}
+              >
+                <Icon size={17} />
+              </button>
+            )
+          })}
         </div>
         <button
-          className="mobile-sidebar-toggle icon-button"
-          aria-label="Toggle sessions"
-          aria-expanded={sidebar}
-          onClick={() => setSidebar(!sidebar)}
-        >
-          <PanelLeft size={17} />
-        </button>
-        {sidebar && (
-          <button
-            className="sidebar-scrim"
-            aria-label="Close sessions"
-            onClick={() => setSidebar(false)}
-          />
-        )}
+          className={`sidebar-scrim${sidebar ? " open" : ""}`}
+          aria-label="Hide sidebar"
+          aria-hidden={!sidebar}
+          inert={!sidebar}
+          onClick={hideSidebar}
+        />
         <WorkspacePanels
           collapsed={sidebarCollapsed}
           sidebar={
             <aside
               id="terminal-sidebar"
               className={`sidebar ${sidebar ? "sidebar-open" : ""}`}
-              aria-label="Terminal sessions"
+              aria-label={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
+              aria-hidden={!sidebarVisible}
+              inert={!sidebarVisible}
             >
-              <div className="sidebar-section-title">
-                <span>
-                  TERMINALS <span className="session-count">{sessions.length}</span>
-                </span>
-              </div>
-              <SessionList
-                key={projectId}
-                sessions={orderedSessions}
-                selected={selected}
-                onSelect={select}
-                onRename={rename}
-                onClose={close}
-                onReorder={setTabOrder}
-              />
-              <button className="new-session" onClick={add}>
-                <Plus size={14} />
-                <span>New terminal</span>
-              </button>
+              <SidebarPanel
+                id="sessions-panel"
+                title="Sessions"
+                count={workspaceSessions.length}
+                active={sidebarPanel === "sessions"}
+                onClose={hideSidebar}
+              >
+                <SessionsPanel
+                  key={projectId}
+                  items={workspaceSessions.map((item) => {
+                    const terminals =
+                      item.id === workspaceSessionId ? sessions : item.state.sessions
+                    return {
+                      id: item.id,
+                      name: item.name,
+                      visitedAt: item.visitedAt,
+                      terminalNames: terminals.map((entry) => entry.name),
+                      running: terminals.filter((entry) => entry.state === "running").length,
+                    }
+                  })}
+                  activeId={workspaceSessionId}
+                  onSelect={switchSession}
+                  onFresh={startFresh}
+                />
+              </SidebarPanel>
+              <SidebarPanel
+                id="terminals-panel"
+                title="Terminals"
+                count={sessions.length}
+                active={sidebarPanel === "terminals"}
+                onClose={hideSidebar}
+              >
+                <SessionList
+                  key={workspaceSessionId}
+                  sessions={orderedSessions}
+                  selected={selected}
+                  onSelect={select}
+                  onRename={rename}
+                  onClose={close}
+                  onReorder={setTabOrder}
+                />
+                <button className="new-session" onClick={add}>
+                  <Plus size={14} />
+                  <span>New terminal</span>
+                </button>
+              </SidebarPanel>
             </aside>
           }
         >
-          <section key={projectId} className={`main-area ${view}`} aria-label={`${view} view`}>
+          <section
+            key={workspaceSessionId}
+            className={`main-area ${view}`}
+            aria-label={`${view} view`}
+          >
             {view === "focus" && active && (
               <div className="focus-stage workspace-background" {...backgroundPointerHandlers}>
                 <div className="workspace-dots canvas-grid" aria-hidden="true" />
@@ -529,10 +702,13 @@ export const App = (): React.JSX.Element => {
               <div className="empty-workspace">
                 <TerminalIcon size={24} strokeWidth={1.2} />
                 <h2>No terminals open</h2>
-                <p>Create a terminal to start a session.</p>
+                <p>Open a terminal or pick up a previous session.</p>
                 <button className="small-button" onClick={add}>
                   <Plus size={14} />
                   New terminal
+                </button>
+                <button className="empty-sessions-link" onClick={showSessions}>
+                  Browse sessions
                 </button>
               </div>
             )}
@@ -541,7 +717,7 @@ export const App = (): React.JSX.Element => {
       </div>
       <footer className="app-footer">
         <span className="flex items-center gap-2">
-          <span>{sessions.length} sessions</span>
+          <span>{sessions.length} terminals</span>
           <span className="footer-running">
             {sessions.filter((session) => session.state === "running").length} running
           </span>

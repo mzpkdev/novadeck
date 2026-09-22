@@ -13,6 +13,11 @@ const switchTo = (name: string): void => {
   )
 }
 
+const currentSessionName = (): string =>
+  within(screen.getByRole("list", { name: "Saved sessions" }))
+    .getByRole("button", { current: true })
+    .getAttribute("aria-label")!
+
 describe("NovaDeck workspace", () => {
   beforeEach(() => localStorage.clear())
   context("when limiting available view modes", () => {
@@ -111,10 +116,122 @@ describe("NovaDeck workspace", () => {
       fireEvent.submit(command.closest("form")!)
       expect(screen.getByText("/Users/alex/projects/docs-site", { exact: true })).toBeVisible()
       switchTo("storefront")
-      expect(screen.getByText("6 sessions")).toBeVisible()
+      expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
       switchTo("docs-site")
       expect(screen.getByRole("heading", { name: "Terminal 01" })).toBeVisible()
       expect(screen.getByText("/Users/alex/projects/docs-site", { exact: true })).toBeVisible()
+    })
+  })
+
+  context("when starting fresh", () => {
+    it("keeps previous terminals, output, drafts, and selection while opening an empty session", () => {
+      render(<App />)
+      fireEvent.click(screen.getByRole("button", { name: "Select Runtime" }))
+      const input = screen.getByRole("textbox", { name: "Command for Runtime" })
+      fireEvent.change(input, { target: { value: "echo saved output" } })
+      fireEvent.submit(input.closest("form")!)
+      fireEvent.change(input, { target: { value: "echo unfinished" } })
+      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      const morning = currentSessionName()
+      fireEvent.click(screen.getByRole("button", { name: "Start fresh" }))
+      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+      expect(screen.getByRole("button", { name: morning })).toHaveTextContent("6 terminals")
+      expect(screen.getByRole("button", { name: morning })).toHaveTextContent("5 running")
+      const afternoon = currentSessionName()
+      fireEvent.click(screen.getByRole("button", { name: "New terminal" }))
+      const fresh = screen.getByRole("textbox", { name: "Command for Terminal 01" })
+      expect(fresh).toHaveValue("")
+      fireEvent.change(fresh, { target: { value: "new draft" } })
+      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      fireEvent.click(screen.getByRole("button", { name: morning }))
+      expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
+      expect(screen.getByRole("textbox", { name: "Command for Runtime" })).toHaveValue(
+        "echo unfinished",
+      )
+      expect(screen.getByText("saved output", { exact: true })).toBeVisible()
+      fireEvent.click(screen.getByRole("button", { name: afternoon }))
+      expect(screen.getByRole("textbox", { name: "Command for Terminal 01" })).toHaveValue(
+        "new draft",
+      )
+      expect(screen.queryByText("saved output", { exact: true })).not.toBeInTheDocument()
+    })
+
+    it("keeps sessions within their project and restores the last active one", () => {
+      render(<App />)
+      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      const morning = within(screen.getByRole("list", { name: "Saved sessions" })).getByRole(
+        "button",
+        { current: true },
+      )
+      const morningName = currentSessionName()
+      fireEvent.click(screen.getByRole("button", { name: "Start fresh" }))
+      const afternoon = currentSessionName()
+      switchTo("api-service")
+      expect(morning).not.toBeInTheDocument()
+      expect(
+        within(screen.getByRole("list", { name: "Saved sessions" })).getAllByRole("listitem"),
+      ).toHaveLength(1)
+      const api = currentSessionName()
+      switchTo("storefront")
+      expect(screen.getByRole("button", { name: afternoon })).toHaveAttribute(
+        "aria-current",
+        "true",
+      )
+      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+      fireEvent.click(screen.getByRole("button", { name: morningName }))
+      expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
+      switchTo("api-service")
+      expect(screen.getByRole("button", { name: api })).toHaveAttribute("aria-current", "true")
+    })
+
+    it("restores each session's selected view", () => {
+      render(<App />)
+      fireEvent.click(screen.getByRole("button", { name: "Grid" }))
+      fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+      const grid = currentSessionName()
+      fireEvent.click(screen.getByRole("button", { name: "Start fresh" }))
+      const focus = currentSessionName()
+      fireEvent.click(screen.getByRole("button", { name: "Focus" }))
+      fireEvent.click(screen.getByRole("button", { name: grid }))
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+      fireEvent.click(screen.getByRole("button", { name: focus }))
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+    })
+  })
+
+  context("when toggling sidebar panels", () => {
+    it("shows only the chosen panel and lets either toggle or close button hide it", () => {
+      render(<App />)
+      const terminals = screen.getByRole("button", { name: "Terminals" })
+      const sessions = screen.getByRole("button", { name: "Sessions" })
+      const input = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      fireEvent.change(input, { target: { value: "keep my draft" } })
+      expect(terminals).toHaveAttribute("aria-pressed", "true")
+      expect(sessions).toHaveAttribute("aria-pressed", "false")
+      fireEvent.click(sessions)
+      expect(terminals).toHaveAttribute("aria-pressed", "false")
+      expect(sessions).toHaveAttribute("aria-pressed", "true")
+      expect(screen.queryByRole("button", { name: "Select Runtime" })).not.toBeInTheDocument()
+      fireEvent.click(terminals)
+      expect(sessions).toHaveAttribute("aria-pressed", "false")
+      expect(screen.getByRole("button", { name: "Select Runtime" })).toBeVisible()
+      fireEvent.click(sessions)
+      fireEvent.click(sessions)
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+      expect(terminals).toHaveAttribute("aria-pressed", "false")
+      expect(sessions).toHaveAttribute("aria-pressed", "false")
+      fireEvent.click(sessions)
+      fireEvent.click(screen.getByRole("button", { name: "Hide sessions" }))
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+      expect(sessions).toHaveFocus()
+      fireEvent.click(terminals)
+      fireEvent.click(screen.getByRole("button", { name: "Hide terminals" }))
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+      expect(terminals).toHaveFocus()
+      expect(screen.getByRole("textbox", { name: "Command for Checkout implementation" })).toBe(
+        input,
+      )
+      expect(input).toHaveValue("keep my draft")
     })
   })
 
@@ -123,10 +240,10 @@ describe("NovaDeck workspace", () => {
       render(<App />)
       const input = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
       fireEvent.change(input, { target: { value: "echo draft" } })
-      fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }))
+      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
       expect(screen.queryByRole("separator", { name: "Resize sidebar" })).not.toBeInTheDocument()
-      expect(screen.getByRole("button", { name: "Show sidebar" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "Terminals" })).toHaveAttribute(
         "aria-expanded",
         "false",
       )
@@ -134,7 +251,7 @@ describe("NovaDeck workspace", () => {
         input,
       )
       expect(input).toHaveValue("echo draft")
-      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }))
+      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
       expect(screen.getByRole("complementary")).toBeVisible()
       expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeVisible()
       expect(input).toHaveValue("echo draft")
@@ -142,15 +259,15 @@ describe("NovaDeck workspace", () => {
 
     it("remembers the collapsed state across layouts and app mounts", () => {
       const first = render(<App />)
-      fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }))
+      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
       fireEvent.click(screen.getByRole("button", { name: "Grid" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
       expect(localStorage.getItem("novadeck.sidebar-collapsed")).toBe("true")
       first.unmount()
       render(<App />)
-      expect(screen.getByRole("button", { name: "Show sidebar" })).toBeEnabled()
+      expect(screen.getByRole("button", { name: "Terminals" })).toBeEnabled()
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }))
+      fireEvent.click(screen.getByRole("button", { name: "Terminals" }))
       expect(localStorage.getItem("novadeck.sidebar-collapsed")).toBe("false")
     })
   })
@@ -292,7 +409,7 @@ describe("NovaDeck workspace", () => {
       fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!)
       expect(screen.getByRole("heading", { name: "Terminal 07" })).toBeVisible()
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveValue("")
-      expect(screen.getByText("7 sessions")).toBeVisible()
+      expect(screen.getByText("7 terminals", { selector: ".app-footer span" })).toBeVisible()
     })
   })
   context("when managing terminal tabs", () => {
@@ -329,7 +446,7 @@ describe("NovaDeck workspace", () => {
       fireEvent.click(screen.getByRole("button", { name: "New terminal" }))
       expect(screen.getByRole("heading", { name: "Terminal 07" })).toBeVisible()
       expect(screen.getByRole("button", { name: "Select Build" })).toBeVisible()
-      expect(screen.getByText("6 sessions")).toBeVisible()
+      expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
     })
 
     it("shows an empty workspace after the last close and can start again", () => {
@@ -347,7 +464,7 @@ describe("NovaDeck workspace", () => {
         )
       }
       expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
-      expect(screen.getByText("0 sessions")).toBeVisible()
+      expect(screen.getByText("0 terminals", { selector: ".app-footer span" })).toBeVisible()
       fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!)
       expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
     })

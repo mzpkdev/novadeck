@@ -120,7 +120,10 @@
     @apply relative flex min-h-0 flex-1;
   }
   .sidebar-tools {
-    @apply z-20 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1 py-3;
+    @apply z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1 py-3;
+  }
+  .sidebar-tools .icon-button.active {
+    @apply bg-soft text-ink;
   }
   .workspace-panels {
     @apply relative min-h-0 min-w-0 flex-1;
@@ -157,13 +160,7 @@
     background: linear-gradient(var(--color-muted), var(--color-muted)) center / 2px 100% no-repeat;
   }
   .sidebar {
-    @apply flex w-57 shrink-0 flex-col border-r border-line bg-shell px-3 pt-3;
-  }
-  .sidebar-section-title {
-    @apply flex h-9 shrink-0 items-center justify-between px-2 pb-2 text-[9px] font-medium tracking-[1.3px] text-muted;
-  }
-  .session-count {
-    @apply ml-1 text-[9px] tracking-normal;
+    @apply relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell;
   }
   .session-list {
     @apply flex min-h-0 flex-col gap-1 overflow-y-auto py-1;
@@ -267,6 +264,9 @@
   }
   .empty-workspace p {
     @apply mb-3 text-xs;
+  }
+  .empty-sessions-link {
+    @apply rounded-control px-3 py-2 text-[11px] text-muted hover:bg-soft hover:text-ink;
   }
   .main-area {
     @apply flex min-w-0 flex-1 flex-col;
@@ -435,6 +435,10 @@
   .grid-terminal.selected {
     opacity: 1;
   }
+  .grid-terminal:not(.selected):hover,
+  .canvas-node:not(.selected):hover {
+    opacity: var(--terminal-hover-opacity);
+  }
   .terminal-grid .grid-terminal.cssTransforms {
     transition:
       transform var(--motion-layout) ease,
@@ -517,6 +521,7 @@
   }
   .workspace-background {
     --terminal-idle-opacity: 0.5;
+    --terminal-hover-opacity: 0.75;
     background-color: var(--color-canvas);
     --canvas-grid-opacity: 0.2;
     --canvas-grid-spotlight-opacity: 0.48;
@@ -667,7 +672,6 @@
   .control-divider {
     @apply mx-0.5 h-3 w-px bg-line;
   }
-  .mobile-sidebar-toggle,
   .sidebar-scrim {
     display: none;
   }
@@ -821,8 +825,7 @@
     margin-left: 0;
     gap: 0;
   }
-  .header-search,
-  .sidebar-tools {
+  .header-search {
     display: none;
   }
   .sidebar {
@@ -830,10 +833,13 @@
     z-index: 20;
     top: 0;
     bottom: 0;
-    left: 0;
+    left: 44px;
     width: 228px;
     transform: translateX(-100%);
     visibility: hidden;
+    transition:
+      transform var(--motion-state) var(--ease-interface),
+      visibility var(--motion-state);
   }
   .sidebar-open {
     transform: translateX(0);
@@ -843,24 +849,23 @@
     display: block;
     position: absolute;
     inset: 0;
+    left: 44px;
     z-index: 19;
     background: #26282625;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity var(--motion-state) var(--ease-interface),
+      visibility var(--motion-state);
   }
-  .mobile-sidebar-toggle {
-    display: flex;
-    position: absolute;
-    top: 10px;
-    left: 8px;
-    z-index: 2;
+  .sidebar-scrim.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
   }
   .focus-stage {
     padding: 6px;
-  }
-  .terminal-focused .terminal-header {
-    padding-left: 44px;
-  }
-  .workspace-body:has(.main-area.focus) .mobile-sidebar-toggle {
-    top: 8px;
   }
   .terminal-content {
     padding: 20px 17px;
@@ -888,7 +893,7 @@
     display: none;
   }
   .grid-stage {
-    padding: 52px 16px 16px;
+    padding: 16px;
   }
   .small-button {
     padding: 0 12px;

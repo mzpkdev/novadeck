@@ -7,7 +7,7 @@ import {
   Terminal as TerminalIcon,
   X,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 
 import { AgentOutput } from "./AgentOutput"
 import type { Session } from "./sessions"
@@ -204,6 +204,10 @@ export const Terminal = ({
   entries,
   cleared,
   onCommand,
+  draft,
+  onDraftChange,
+  scrollOffset,
+  onScrollChange,
   onFocus,
   onClose,
   windowed,
@@ -215,6 +219,10 @@ export const Terminal = ({
   entries: Entry[]
   cleared: boolean
   onCommand: (command: string) => void
+  draft: string
+  onDraftChange: (draft: string) => void
+  scrollOffset: number | undefined
+  onScrollChange: (offset: number) => void
   onFocus?: () => void
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
@@ -223,12 +231,20 @@ export const Terminal = ({
 }): React.JSX.Element => {
   const Heading = compact ? "h2" : "h1"
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
-  const [input, setInput] = useState("")
+  const input = draft
+  const setInput = onDraftChange
+  const initialScroll = useRef(scrollOffset)
+  const previousOutput = useRef({ length: entries.length, cleared })
   const output = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if ((entries.length || cleared) && output.current)
-      output.current.scrollTop = output.current.scrollHeight
-  }, [entries, cleared])
+    if (!output.current) return
+    const changed =
+      previousOutput.current.length !== entries.length || previousOutput.current.cleared !== cleared
+    output.current.scrollTop = changed
+      ? output.current.scrollHeight
+      : (initialScroll.current ?? (entries.length || cleared ? output.current.scrollHeight : 0))
+    previousOutput.current = { length: entries.length, cleared }
+  }, [entries.length, cleared])
   useEffect(() => {
     const element = output.current
     if (!element) return
@@ -302,7 +318,12 @@ export const Terminal = ({
           </span>
         </header>
       </div>
-      <div ref={output} className="terminal-content nodrag nopan" hidden={minimize?.minimized}>
+      <div
+        ref={output}
+        className="terminal-content nodrag nopan"
+        hidden={minimize?.minimized}
+        onScroll={(event) => onScrollChange(event.currentTarget.scrollTop)}
+      >
         {!cleared && (
           <Output kind={session.kind} directory={session.directory} projectName={projectName} />
         )}

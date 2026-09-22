@@ -31,6 +31,7 @@ const subscribe = (notify: () => void): (() => void) => {
   return () => media.removeEventListener("change", notify)
 }
 const isDesktop = (): boolean => window.matchMedia(desktopQuery).matches
+export const useDesktop = (): boolean => useSyncExternalStore(subscribe, isDesktop)
 
 export const WorkspacePanels = ({
   sidebar,
@@ -41,7 +42,7 @@ export const WorkspacePanels = ({
   collapsed: boolean
   children: ReactNode
 }): React.JSX.Element => {
-  const desktop = useSyncExternalStore(subscribe, isDesktop)
+  const desktop = useDesktop()
   const [preferred, setPreferred] = useState(readWidth)
   const [width, setWidth] = useState(preferred)
   const [motion, setMotion] = useState({ collapsed, active: false })
