@@ -1,5 +1,7 @@
 import { Layers2, Plus } from "lucide-react"
 
+import { Tooltip } from "../../ui-toolkit/Tooltip"
+import { shortcutBindings } from "../shortcuts"
 import { sidebarListClasses, SidebarItem } from "./SidebarItem"
 import { sidebarCreateClasses } from "./SidebarPanel"
 
@@ -33,18 +35,23 @@ export const SessionsPanel = ({
   onSelect,
   onFresh,
 }: SessionsPanelProps): React.JSX.Element => {
+  const shortcut = shortcutBindings().newSession.display.join(" ")
   return (
     <div className="sessions-panel flex min-h-0 min-w-0 w-full flex-1 flex-col">
-      <button
-        className={sidebarCreateClasses}
-        type="button"
-        aria-label="New session"
-        onClick={onFresh}
-        title="Open an empty session. Your other terminals keep running."
-      >
-        <Plus size={14} strokeWidth={1.65} />
-        <span>Session</span>
-      </button>
+      <Tooltip content={`New session · ${shortcut}. Your other terminals keep running.`}>
+        <button
+          className={sidebarCreateClasses}
+          type="button"
+          aria-label="New session"
+          onClick={onFresh}
+        >
+          <Plus size={14} strokeWidth={1.65} className="shrink-0" />
+          <span className="min-w-0 truncate">Session</span>
+          <kbd className="mb-[-2px] ml-auto min-h-0 shrink-0 whitespace-nowrap border-0 bg-transparent p-0 text-[9px] text-muted opacity-70">
+            {shortcut}
+          </kbd>
+        </button>
+      </Tooltip>
       <div
         className={`sessions-panel-list ${sidebarListClasses}`}
         role="list"

@@ -12,7 +12,7 @@ Double-click or double-tap a terminal header to smoothly center and zoom that te
 to fit the canvas viewport. Minimized terminals restore first. The header's arrow
 opens Focus view.
 
-Click **New terminal** in Grid or Canvas to create its sidebar tab immediately, then
+Click **New terminal** or use its keyboard shortcut in Grid or Canvas to create its sidebar tab immediately, then
 move over the workspace and click to place the terminal preview at 75% opacity. The button
 and pending tab have dashed borders while placing. The ghost has the same dashed
 border; press **Esc** to cancel and remove
@@ -32,6 +32,7 @@ Its hidden setting stays unchanged; use the eye to make it visible permanently.
 Hidden terminals retain
 their content and layout and remain available in Focus view.
 Showing and hiding use a short fade and scale transition; reduced motion skips it.
+Switching terminal tabs in Focus uses the same transition.
 
 ## Keyboard shortcuts
 
@@ -41,15 +42,31 @@ Showing and hiding use a short fade and scale transition; reduced motion skips i
 | Recent terminals                                  | `Ctrl+Tab`       | `Ctrl+Tab`         |
 | Cycle backward through recent terminals           | `Ctrl+Shift+Tab` | `Ctrl+Shift+Tab`   |
 | Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`      | `Ctrl+Shift+Enter` |
-| New terminal beside the active terminal           | `Cmd+T`          | `Ctrl+Shift+T`     |
+| New terminal                                      | `Cmd+T`          | `Ctrl+Shift+T`     |
+| New session in the current project                | `Cmd+Shift+N`    | `Ctrl+Shift+N`     |
+| Toggle terminal sidebar                           | `Cmd+Shift+1`    | `Ctrl+Shift+1`     |
+| Toggle session sidebar                            | `Cmd+Shift+2`    | `Ctrl+Shift+2`     |
 | Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
 
+The new-session shortcut creates and selects an empty session in the current project
+and opens the Sessions sidebar.
+
+Sidebar shortcuts open or switch to their panel; pressing the same shortcut again hides it.
+
 Hold Ctrl while pressing Tab to choose a terminal, then release Ctrl to switch.
-While the switcher is open, Up and Down also cycle through terminals; canvas
-arrow controls resume when it closes.
-The keyboard shortcut for a new terminal places it automatically and focuses its
-command input. The **New terminal** button still opens the placement preview in
-Grid and Canvas. These shortcuts are available in the desktop app; browsers may
+Up and Down select terminals in sidebar order in Focus, Grid, and Canvas, wrapping
+at either end. Selection pans Canvas or scrolls Grid just like clicking a tab.
+Left and Right cycle through enabled views in Focus → Grid → Canvas order, wrapping
+at either end and retaining the selected terminal.
+Escape first deselects the active terminal in any view, then hides the open sidebar
+on the next press. Further presses do nothing. Focus keeps the displayed terminal
+in place; clicking it activates it again. Placement, dialogs, and renaming handle
+Escape before workspace selection.
+Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
+pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
+The new-terminal shortcut opens the Terminals sidebar and the same placement preview as the button in Grid
+and Canvas. In Focus, it creates the terminal immediately and focuses its command
+input. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
 shows the bindings for the current platform.
 

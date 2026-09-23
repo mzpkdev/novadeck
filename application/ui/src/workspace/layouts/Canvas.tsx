@@ -628,18 +628,6 @@ const TerminalCanvas = ({
       }}
       onKeyDown={(event) => {
         if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
-        const steps: Record<string, XYPosition> = {
-          ArrowLeft: { x: 60, y: 0 },
-          ArrowRight: { x: -60, y: 0 },
-          ArrowUp: { x: 0, y: 60 },
-          ArrowDown: { x: 0, y: -60 },
-        }
-        const step = steps[event.key]
-        if (step) {
-          event.preventDefault()
-          const viewport = getViewport()
-          void setViewport({ ...viewport, x: viewport.x + step.x, y: viewport.y + step.y })
-        }
         if (event.key === "+" || event.key === "=") void zoomIn()
         if (event.key === "-") void zoomOut()
         if (event.key === "0") fitAll()

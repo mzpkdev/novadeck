@@ -1,6 +1,7 @@
 export type Shortcut = {
   label: string
   key: string
+  code?: string
   ctrl: boolean
   meta: boolean
   shift: boolean
@@ -8,7 +9,15 @@ export type Shortcut = {
 }
 
 export const shortcutBindings = (): Record<
-  "find" | "recent" | "previous" | "focus" | "newTerminal" | "preferences",
+  | "find"
+  | "recent"
+  | "previous"
+  | "focus"
+  | "newTerminal"
+  | "newSession"
+  | "terminals"
+  | "sessions"
+  | "preferences",
   Shortcut
 > => {
   const mac = /Mac|iPhone|iPad/.test(navigator.platform)
@@ -53,6 +62,32 @@ export const shortcutBindings = (): Record<
       shift: !mac,
       display: mac ? ["⌘", "T"] : ["Ctrl", "Shift", "T"],
     },
+    newSession: {
+      label: "New session",
+      key: "n",
+      ctrl: !mac,
+      meta: mac,
+      shift: true,
+      display: [mac ? "⌘" : "Ctrl", "Shift", "N"],
+    },
+    terminals: {
+      label: "Toggle terminal sidebar",
+      key: "1",
+      code: "Digit1",
+      ctrl: !mac,
+      meta: mac,
+      shift: true,
+      display: [mac ? "⌘" : "Ctrl", "Shift", "1"],
+    },
+    sessions: {
+      label: "Toggle session sidebar",
+      key: "2",
+      code: "Digit2",
+      ctrl: !mac,
+      meta: mac,
+      shift: true,
+      display: [mac ? "⌘" : "Ctrl", "Shift", "2"],
+    },
     preferences: {
       label: "Open preferences",
       key: ",",
@@ -65,7 +100,8 @@ export const shortcutBindings = (): Record<
 }
 
 export const matchesShortcut = (event: KeyboardEvent, shortcut: Shortcut): boolean =>
-  event.key.toLowerCase() === shortcut.key.toLowerCase() &&
+  (event.key.toLowerCase() === shortcut.key.toLowerCase() ||
+    (shortcut.code !== undefined && event.code === shortcut.code)) &&
   event.ctrlKey === shortcut.ctrl &&
   event.metaKey === shortcut.meta &&
   event.shiftKey === shortcut.shift &&

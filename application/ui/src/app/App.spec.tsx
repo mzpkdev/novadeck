@@ -46,6 +46,253 @@ describe("novadeck. workspace", () => {
     window.history.replaceState(null, "", "/")
   })
   context("when using workspace shortcuts", () => {
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      for (const panel of ["Terminals", "Sessions"]) {
+        it(`deselects before hiding the ${panel} sidebar with Escape in ${view}`, async () => {
+          render(<App />)
+          await interact("click", screen.getByRole("radio", { name: view }))
+          await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+          if (panel === "Sessions")
+            await interact("click", screen.getByRole("radio", { name: panel }))
+          const command = screen.getByRole("textbox", { name: "Command for Dev server" })
+          command.focus()
+          await interact("keyDown", command, { key: "Escape" })
+          expect(new URLSearchParams(window.location.hash.split("?")[1]).get("terminal")).toBe("")
+          expect(screen.getByRole("complementary")).toBeVisible()
+          expect(command).not.toHaveFocus()
+          if (view === "Focus")
+            expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
+          expect(
+            document.querySelector(".grid-terminal.selected, .canvas-node.selected"),
+          ).toBeNull()
+          await interact("keyDown", window, { key: "Escape", repeat: true })
+          expect(screen.getByRole("complementary")).toBeVisible()
+          await interact("keyDown", document.activeElement!, { key: "Escape" })
+          expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+          const route = window.location.hash
+          await interact("keyDown", window, { key: "Escape" })
+          expect(window.location.hash).toBe(route)
+          expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+        })
+      }
+    }
+
+    it("reactivates the displayed Focus terminal when its input receives focus", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("keyDown", window, { key: "Escape" })
+      const command = screen.getByRole("textbox", { name: "Command for Dev server" })
+      await act(async () => command.focus())
+      expect(window.location.hash).toContain("terminal=02")
+      expect(screen.getByRole("button", { name: "Select Dev server" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      )
+    })
+
+    it("leaves selection and the sidebar intact when Escape dismisses the recent switcher", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+      await interact("keyDown", window, { key: "Escape" })
+      expect(screen.queryByRole("listbox", { name: "Recent terminals" })).not.toBeInTheDocument()
+      expect(window.location.hash).toContain("terminal=01")
+      expect(screen.getByRole("complementary")).toBeVisible()
+    })
+
+    for (const platform of ["MacIntel", "Win32", "Linux x86_64"]) {
+      it(`creates a session and shows its shortcut cues on ${platform}`, async () => {
+        vi.spyOn(navigator, "platform", "get").mockReturnValue(platform)
+        const mac = platform === "MacIntel"
+        const shortcut = { key: "N", ctrlKey: !mac, metaKey: mac, shiftKey: true }
+        render(<App />)
+        const original = window.location.hash
+        await interact("click", screen.getByRole("radio", { name: "Terminals" }))
+        expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+        const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+        await interact("keyDown", command, { ...shortcut, shiftKey: false })
+        expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
+        await interact("keyDown", command, shortcut)
+        expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+        expect(screen.getByRole("complementary", { name: "Workspace sessions" })).toBeVisible()
+        expect(window.location.hash).not.toBe(original)
+        expect(window.location.hash).toContain("/projects/storefront/")
+        const list = screen.getByRole("list", { name: "Saved sessions" })
+        expect(within(list).getAllByRole("listitem")).toHaveLength(2)
+        expect(within(list).getByRole("button", { current: true })).toHaveTextContent("0 terminals")
+        expect(screen.getByRole("button", { name: "New session" })).toHaveTextContent(
+          `${mac ? "⌘" : "Ctrl"} Shift N`,
+        )
+        await interact("keyDown", window, { ...shortcut, repeat: true })
+        expect(within(list).getAllByRole("listitem")).toHaveLength(2)
+        await interact("keyDown", window, { key: ",", ctrlKey: !mac, metaKey: mac })
+        const preferences = screen.getByRole("dialog", { name: "Preferences" })
+        await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
+        expect(within(preferences).getByText("New session").parentElement).toHaveTextContent(
+          `${mac ? "⌘" : "Ctrl"}ShiftN`,
+        )
+        const route = window.location.hash
+        await interact("keyDown", window, shortcut)
+        expect(window.location.hash).toBe(route)
+      })
+    }
+
+    for (const platform of ["MacIntel", "Win32", "Linux x86_64"]) {
+      it(`toggles sidebar panels and lists their shortcuts on ${platform}`, async () => {
+        vi.spyOn(navigator, "platform", "get").mockReturnValue(platform)
+        const mac = platform === "MacIntel"
+        const modifiers = { ctrlKey: !mac, metaKey: mac, shiftKey: true }
+        const terminalsKey = { key: "!", code: "Digit1", ...modifiers }
+        const sessionsKey = { key: "@", code: "Digit2", ...modifiers }
+        render(<App />)
+        const terminals = screen.getByRole("radio", { name: "Terminals" })
+        const sessions = screen.getByRole("radio", { name: "Sessions" })
+        const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+        await interact("keyDown", command, terminalsKey)
+        expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+        await interact("keyDown", window, { ...terminalsKey, repeat: true })
+        expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+        await interact("keyDown", window, terminalsKey)
+        expect(terminals).toHaveAttribute("aria-checked", "true")
+        await interact("keyDown", window, sessionsKey)
+        expect(sessions).toHaveAttribute("aria-checked", "true")
+        expect(terminals).toHaveAttribute("aria-checked", "false")
+        await interact("keyDown", window, sessionsKey)
+        expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+        await interact("keyDown", window, sessionsKey)
+        expect(sessions).toHaveAttribute("aria-checked", "true")
+        await interact("keyDown", window, terminalsKey)
+        expect(terminals).toHaveAttribute("aria-checked", "true")
+        await interact("keyDown", window, { key: ",", ctrlKey: !mac, metaKey: mac })
+        const preferences = screen.getByRole("dialog", { name: "Preferences" })
+        await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
+        expect(
+          within(preferences).getByText("Toggle terminal sidebar").parentElement,
+        ).toHaveTextContent(`${mac ? "⌘" : "Ctrl"}Shift1`)
+        expect(
+          within(preferences).getByText("Toggle session sidebar").parentElement,
+        ).toHaveTextContent(`${mac ? "⌘" : "Ctrl"}Shift2`)
+        const route = window.location.hash
+        await interact("keyDown", window, sessionsKey)
+        expect(window.location.hash).toBe(route)
+      })
+    }
+
+    it("cycles view modes in both directions and preserves terminal selection", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("keyDown", window, { key: "ArrowRight" })
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+      await interact("keyDown", window, { key: "ArrowRight" })
+      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+      const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="02"]')!
+      await interact("keyDown", node, { key: "ArrowRight" })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
+      await interact("keyDown", window, { key: "ArrowLeft" })
+      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+      expect(window.location.hash).toContain("terminal=02")
+    })
+
+    it("skips disabled views when using Left and Right", async () => {
+      localStorage.setItem(
+        "novadeck.preferences",
+        JSON.stringify({ enabledViews: ["focus", "canvas"] }),
+      )
+      render(<App />)
+      await interact("keyDown", window, { key: "ArrowRight" })
+      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+      await interact("keyDown", window, { key: "ArrowLeft" })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+    })
+
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`navigates terminal tabs after clicking the ${view} mode control`, async () => {
+        render(<App />)
+        const mode = screen.getByRole("radio", { name: view })
+        await interact("click", mode)
+        await act(async () => mode.focus())
+        expect(mode).toHaveFocus()
+        await interact("keyDown", mode, { key: "ArrowDown" })
+        expect(screen.getByRole("region", { name: `${view.toLowerCase()} view` })).toBeVisible()
+        const tab = screen.getByRole("button", { name: "Select Dev server" })
+        expect(tab).toHaveAttribute("aria-current", "true")
+        expect(tab).toHaveFocus()
+        await interact("keyDown", document.activeElement!, { key: "ArrowDown" })
+        const next = screen.getByRole("button", { name: "Select Tests" })
+        expect(next).toHaveAttribute("aria-current", "true")
+        expect(next).toHaveFocus()
+        expect(tab).not.toHaveFocus()
+        await interact("keyDown", document.activeElement!, { key: "ArrowUp" })
+        expect(tab).toHaveAttribute("aria-current", "true")
+        expect(tab).toHaveFocus()
+        expect(mode).toBeChecked()
+      })
+    }
+
+    it("keeps Left/Right view switching available from the focused mode control", async () => {
+      render(<App />)
+      const mode = screen.getByRole("radio", { name: "Grid" })
+      await interact("click", mode)
+      await act(async () => mode.focus())
+      await interact("keyDown", mode, { key: "ArrowRight" })
+      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+      await interact("keyDown", mode, { key: "ArrowLeft" })
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+      expect(window.location.hash).toContain("terminal=01")
+    })
+
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`selects terminals in sidebar order with arrows in ${view}`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        const first = screen.getByRole("button", { name: "Select Checkout implementation" })
+        const last = screen.getByRole("button", { name: "Select Build" })
+        await interact("keyDown", first, { key: "ArrowDown" })
+        expect(window.location.hash).toContain("terminal=02")
+        await interact("keyDown", first, { key: "ArrowUp" })
+        expect(window.location.hash).toContain("terminal=01")
+        await interact("keyDown", first, { key: "ArrowUp" })
+        expect(last).toHaveAttribute("aria-current", "true")
+        await interact("keyDown", first, { key: "ArrowDown" })
+        expect(window.location.hash).toContain("terminal=01")
+      })
+    }
+
+    it("leaves arrows in command inputs and dialogs alone", async () => {
+      render(<App />)
+      const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      const route = window.location.hash
+      await interact("keyDown", command, { key: "ArrowDown" })
+      expect(window.location.hash).toBe(route)
+      await interact("keyDown", command, { key: "ArrowRight" })
+      expect(window.location.hash).toBe(route)
+      await interact("keyDown", window, { key: "k", ctrlKey: true, shiftKey: true })
+      const searchRoute = window.location.hash
+      await interact("keyDown", window, { key: "ArrowDown" })
+      expect(window.location.hash).toBe(searchRoute)
+      await interact("keyDown", window, { key: "ArrowLeft" })
+      expect(window.location.hash).toBe(searchRoute)
+    })
+
+    it("selects from a focused Canvas node without moving it and disables camera arrows", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="01"]')!
+      const position = node.style.transform
+      await interact("keyDown", node, { key: "ArrowDown" })
+      expect(window.location.hash).toContain("terminal=02")
+      expect(node.style.transform).toBe(position)
+      const viewport = document.querySelector<HTMLElement>(".react-flow__viewport")!
+      const camera = viewport.style.transform
+      await act(async () => {
+        for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+          fireEvent.keyDown(screen.getByLabelText("Terminal canvas"), { key, shiftKey: true })
+          expect(viewport.style.transform).toBe(camera)
+        }
+      })
+    })
+
     it("keeps Ctrl+K available to the terminal and opens search with Ctrl+Shift+K", async () => {
       render(<App />)
       const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
@@ -179,11 +426,12 @@ describe("novadeck. workspace", () => {
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
     })
 
-    it("creates and focuses a terminal beside the selection without placement", async () => {
+    it("creates and focuses a terminal immediately in Focus", async () => {
       render(<App />)
-      await interact("click", screen.getByRole("radio", { name: "Grid" }))
       await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("click", screen.getByRole("radio", { name: "Terminals" }))
       await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("complementary", { name: "Terminal sessions" })).toBeVisible()
       expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
         "data-placing",
         "false",
@@ -229,6 +477,32 @@ describe("novadeck. workspace", () => {
   })
   context("when placing new terminals", () => {
     for (const view of ["Grid", "Canvas"]) {
+      it(`starts ghost placement from the keyboard in ${view} and cancels with Escape`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+        await interact(
+          "click",
+          screen.getByRole("radio", { name: view === "Grid" ? "Terminals" : "Sessions" }),
+        )
+        const command = screen.getByRole("textbox", { name: "Command for Dev server" })
+        command.focus()
+        await interact("keyDown", command, { key: "t", ctrlKey: true, shiftKey: true })
+        expect(screen.getByRole("complementary", { name: "Terminal sessions" })).toBeVisible()
+        expectPlacement()
+        expect(
+          screen.queryByRole("textbox", { name: "Command for Terminal 07" }),
+        ).not.toBeInTheDocument()
+        await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true, repeat: true })
+        expect(screen.queryByRole("button", { name: "Select Terminal 08" })).not.toBeInTheDocument()
+        await interact("keyDown", window, { key: "Escape" })
+        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+        expect(screen.getByRole("button", { name: "Select Dev server" })).toHaveAttribute(
+          "aria-current",
+          "true",
+        )
+      })
+
       it(`keeps placement active when switching from ${view} to the other layout and back`, async () => {
         render(<App />)
         await interact("click", screen.getByRole("radio", { name: view }))
@@ -824,7 +1098,7 @@ describe("novadeck. workspace", () => {
         .getByRole("region", { name: "Checkout implementation terminal" })
         .closest<HTMLElement>(".react-flow__node")!
       expect(node).toHaveStyle({ transform: "translate(80px,80px)" })
-      await interact("keyDown", node, { key: "ArrowRight" })
+      await interact("keyDown", node, { key: "ArrowRight", ctrlKey: true })
       expect(node).toHaveStyle({ transform: "translate(104px,80px)" })
       await interact("keyDown", node, { key: "ArrowDown", shiftKey: true })
       expect(node).toHaveStyle({ transform: "translate(104px,176px)" })
