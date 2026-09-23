@@ -653,9 +653,15 @@ export const WorkspaceApp = (): React.JSX.Element => {
   })
 
   useEffect(() => {
-    if (!placement || !pendingPlacement) return
+    if (!placement || !pendingPlacement || route.dialog) return
     const cancelPlacement = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), .session-tab.editing, .session-tab.dragging',
+        )
+      )
+        return
       event.preventDefault()
       event.stopPropagation()
       const previous = pendingPlacement.previousSelection
@@ -668,7 +674,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     }
     window.addEventListener("keydown", cancelPlacement, true)
     return () => window.removeEventListener("keydown", cancelPlacement, true)
-  }, [placement, pendingPlacement, navigateWorkspace, target, sessions])
+  }, [placement, pendingPlacement, route.dialog, navigateWorkspace, target, sessions])
 
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <ToggleGroup

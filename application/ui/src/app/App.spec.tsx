@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../test"
@@ -477,6 +477,53 @@ describe("novadeck. workspace", () => {
   })
   context("when placing new terminals", () => {
     for (const view of ["Grid", "Canvas"]) {
+      for (const dialog of ["Find a terminal", "Preferences", "Switch workspace"]) {
+        it(`dismisses ${dialog} before cancelling ${view} placement with Escape`, async () => {
+          render(<App />)
+          await interact("click", screen.getByRole("radio", { name: view }))
+          await interact("click", screen.getByRole("button", { name: "New terminal" }))
+          if (dialog === "Switch workspace")
+            await interact("click", screen.getByRole("button", { name: dialog }))
+          else
+            await interact("keyDown", window, {
+              key: dialog === "Preferences" ? "," : "k",
+              ctrlKey: true,
+              shiftKey: dialog !== "Preferences",
+            })
+          expect(screen.getByRole("dialog", { name: dialog })).toBeVisible()
+          await waitFor(() =>
+            expect(screen.getByRole("dialog", { name: dialog })).toContainElement(
+              document.activeElement as HTMLElement,
+            ),
+          )
+          await interact("keyDown", document.activeElement!, { key: "Escape" })
+          await waitFor(() =>
+            expect(screen.queryByRole("dialog", { name: dialog })).not.toBeInTheDocument(),
+          )
+          expectPlacement()
+          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
+          await interact("keyDown", document.body, { key: "Escape" })
+          expect(
+            screen.queryByRole("button", { name: "Select Terminal 07" }),
+          ).not.toBeInTheDocument()
+        })
+      }
+      it(`cancels renaming before cancelling ${view} placement with Escape`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        await interact("click", screen.getByRole("button", { name: "New terminal" }))
+        await interact("click", screen.getByRole("button", { name: "Rename Terminal 07" }))
+        const input = screen.getByRole("textbox", { name: "Rename Terminal 07" })
+        await interact("change", input, { target: { value: "Discard this" } })
+        await interact("keyDown", input, { key: "Escape" })
+        expect(
+          screen.queryByRole("textbox", { name: "Rename Terminal 07" }),
+        ).not.toBeInTheDocument()
+        expectPlacement()
+        expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
+        await interact("keyDown", document.body, { key: "Escape" })
+        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+      })
       it(`starts ghost placement from the keyboard in ${view} and cancels with Escape`, async () => {
         render(<App />)
         await interact("click", screen.getByRole("radio", { name: view }))
