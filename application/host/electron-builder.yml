@@ -12,6 +12,9 @@ extraResources:
     to: ui
 artifactName: novadeck-${version}-${os}-${arch}.${ext}
 mac:
+  # Electron resolves helpers from CFBundleName; builder strips the branding's trailing dot.
+  extendInfo:
+    CFBundleName: novadeck
   identity: null
   category: public.app-category.utilities
   target:

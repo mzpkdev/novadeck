@@ -1,6 +1,8 @@
 name: Quality
 
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -41,3 +43,10 @@ jobs:
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
+
+  package:
+    if: github.event.pull_request.draft == false
+    needs: quality
+    uses: ./.github/workflows/package.yml
+    with:
+      source-ref: ${{ github.sha }}
