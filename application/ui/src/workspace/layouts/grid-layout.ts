@@ -1,4 +1,4 @@
-import { verticalCompactor } from "react-grid-layout"
+import { cloneLayout, moveElement, verticalCompactor } from "react-grid-layout"
 
 import type { GridBreakpoint, GridLayouts, Session } from "../model/types"
 
@@ -38,6 +38,45 @@ export const visibleGridLayouts = (
     )
   }
   return result
+}
+
+export const previewGridPlacement = (
+  sessions: Session[],
+  layouts: GridLayouts,
+  minimized: Record<string, boolean>,
+  hidden: Record<string, boolean>,
+  placement: string,
+  breakpoint: GridBreakpoint,
+  x: number,
+  y: number,
+): GridLayouts => {
+  const full = visibleGridLayouts(sessions, layouts, minimized, hidden)
+  const item = full[breakpoint]?.find((entry) => entry.i === placement)
+  if (!item) return full
+
+  // Begin below the existing cards, then move with the same collision rules as a drag.
+  const existing = cloneLayout(
+    visibleGridLayouts(
+      sessions.filter((session) => session.id !== placement),
+      layouts,
+      minimized,
+      hidden,
+    )[breakpoint] ?? [],
+  )
+  const ghost = { ...item, y: existing.reduce((end, entry) => Math.max(end, entry.y + entry.h), 0) }
+  const movable = [...existing, ghost]
+  const moved = moveElement(
+    movable,
+    ghost,
+    x,
+    y,
+    true,
+    false,
+    "vertical",
+    gridColumns[breakpoint],
+    false,
+  )
+  return { ...full, [breakpoint]: verticalCompactor.compact(moved, gridColumns[breakpoint]) }
 }
 
 const sameGeometry = (next: GridLayouts, projected: GridLayouts): boolean =>

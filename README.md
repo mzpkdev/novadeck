@@ -12,6 +12,16 @@ Double-click or double-tap a terminal header to smoothly center and zoom that te
 to fit the canvas viewport. Minimized terminals restore first. The header's arrow
 opens Focus view.
 
+Click **New terminal** in Grid or Canvas to create its sidebar tab immediately, then
+move over the workspace and click to place the terminal preview at 75% opacity. The button
+and pending tab have dashed borders while placing. The ghost has the same dashed
+border; press **Esc** to cancel and remove
+the pending terminal. In Grid,
+the preview pushes neighboring terminals aside. In Canvas, drag to pan while placing;
+release, then click to place the ghost. Placement stays active when switching between
+Grid and Canvas. Switching to Focus or selecting another terminal tab before placing
+it uses the automatic position.
+
 In Grid, selecting a terminal from its tab smoothly scrolls it into view. With
 reduced motion enabled, it scrolls immediately.
 

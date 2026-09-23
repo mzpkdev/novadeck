@@ -169,6 +169,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
     dispatch({ type: "terminal/reorder", target, tabOrder })
   const sidebarPanel = route.panel
   const setSidebarPanel = (panel: "terminals" | "sessions"): void => go({ panel })
+  const [pendingPlacement, setPendingPlacement] = useState<{
+    id: string
+    context: string
+    previousSelection: string
+  } | null>(null)
   const [revealCanvas, setRevealCanvas] = useState(false)
   const [navigation, setNavigation] = useState({ count: 1, fit: false })
   const { searching, settings, onExitComplete } = useRouteDialog(
@@ -208,6 +213,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
 
   const presentation = `${projectId}/${workspaceSessionId}/${view}/${selected}`
   const context = `${projectId}/${workspaceSessionId}`
+  const placement =
+    view !== "focus" && pendingPlacement?.context === context && pendingPlacement.id === selected
+      ? pendingPlacement.id
+      : ""
+  if (pendingPlacement && !placement) setPendingPlacement(null)
   const [previousPresentation, setPreviousPresentation] = useState({ presentation, context })
   if (previousPresentation.presentation !== presentation) {
     setPreviousPresentation({ presentation, context })
@@ -320,12 +330,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setSidebar(false)
   }
   const add = (): void => {
+    const session = createMockTerminal(nextTerminalNumber, project.directory)
+    setPendingPlacement(
+      view === "focus"
+        ? null
+        : {
+            id: session.id,
+            previousSelection: selected,
+            context,
+          },
+    )
     navigateWorkspace(
       [
         {
           type: "terminal/add",
           target,
-          session: createMockTerminal(nextTerminalNumber, project.directory),
+          session,
         },
       ],
       { panel: "terminals" },
@@ -361,6 +381,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     <Terminal
       key={session.id}
       session={session}
+      placing={session.id === placement}
       projectName={project.name}
       entries={entries[session.id] ?? emptyEntries}
       draft={drafts[session.id] ?? ""}
@@ -412,6 +433,24 @@ export const WorkspaceApp = (): React.JSX.Element => {
     window.addEventListener("keydown", keydown)
     return () => window.removeEventListener("keydown", keydown)
   }, [go])
+
+  useEffect(() => {
+    if (!placement || !pendingPlacement) return
+    const cancelPlacement = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopPropagation()
+      const previous = pendingPlacement.previousSelection
+      setPendingPlacement(null)
+      navigateWorkspace(
+        [{ type: "terminal/close", target, terminalId: placement }],
+        { terminal: sessions.some((session) => session.id === previous) ? previous : "" },
+        true,
+      )
+    }
+    window.addEventListener("keydown", cancelPlacement, true)
+    return () => window.removeEventListener("keydown", cancelPlacement, true)
+  }, [placement, pendingPlacement, navigateWorkspace, target, sessions])
 
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <ToggleGroup
@@ -529,13 +568,27 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 active={sidebarPanel === "terminals"}
                 onClose={hideSidebar}
               >
-                <button className={sidebarCreateClasses} onClick={add}>
+                <button
+                  className={`${sidebarCreateClasses} data-[placing=true]:border-dashed data-[placing=true]:border-line-strong data-[placing=true]:bg-soft`}
+                  data-placing={Boolean(placement)}
+                  aria-label="New terminal"
+                  aria-description={
+                    placement ? "Placing a terminal. Press Escape to cancel." : undefined
+                  }
+                  onClick={add}
+                >
                   <Plus size={14} />
                   <span>New terminal</span>
+                  {placement && (
+                    <kbd className="mb-[-2px] ml-auto min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70">
+                      Esc
+                    </kbd>
+                  )}
                 </button>
                 <SessionList
                   key={`${projectId}/${workspaceSessionId}`}
                   sessions={ordered}
+                  placement={placement}
                   selected={selected}
                   hidden={hidden}
                   onVisibilityChange={setVisibility}
@@ -568,6 +621,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
             {view === "grid" && sessions.length > 0 && (
               <Grid
+                placement={placement}
+                onPlace={() => setPendingPlacement(null)}
                 sessions={sessions}
                 hidden={layoutHidden}
                 preview={preview}
@@ -583,6 +638,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
             {view === "canvas" && sessions.length > 0 && (
               <Canvas
+                placement={placement}
+                onPlace={() => setPendingPlacement(null)}
                 hidden={layoutHidden}
                 preview={preview}
                 layout={canvasLayout}

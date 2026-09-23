@@ -1,6 +1,6 @@
 import { context, describe, expect, it } from "../../test"
 import type { GridLayouts, Session } from "../model/types"
-import { expandedGridLayouts, visibleGridLayouts } from "./grid-layout"
+import { expandedGridLayouts, previewGridPlacement, visibleGridLayouts } from "./grid-layout"
 
 const terminal = (id: string): Session => ({
   id,
@@ -130,5 +130,21 @@ describe("hidden grid layouts", () => {
     expect(
       visibleGridLayouts(sessions, saved, {}, {}).desktop?.find((item) => item.i === "a")?.h,
     ).toBe(20)
+  })
+})
+
+describe("pending grid placement", () => {
+  it("pushes overlapping terminals like a grid drag without changing the saved layout", () => {
+    const pending = [...sessions, terminal("new")]
+    const projected = previewGridPlacement(pending, layouts, {}, {}, "new", "desktop", 0, 0)
+
+    expect(projected.desktop?.find((item) => item.i === "new")).toMatchObject({ x: 0, y: 0 })
+    expect(projected.desktop?.find((item) => item.i === "a")).toMatchObject({ x: 0, y: 18 })
+    expect(projected.desktop?.find((item) => item.i === "b")).toMatchObject({ x: 0, y: 38 })
+    expect(projected.mobile?.find((item) => item.i === "new")).toBeDefined()
+    expect(layouts.desktop).toMatchObject([
+      { i: "a", x: 0, y: 0 },
+      { i: "b", x: 0, y: 20 },
+    ])
   })
 })

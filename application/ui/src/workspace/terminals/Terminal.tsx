@@ -38,6 +38,7 @@ export const Terminal = ({
   windowed,
   minimize,
   compact = false,
+  placing = false,
 }: {
   session: Session
   projectName: string
@@ -54,6 +55,7 @@ export const Terminal = ({
   onClose?: () => void
   minimize?: MinimizeControls
   compact?: boolean
+  placing?: boolean
 }): React.JSX.Element => {
   const Heading = compact ? "h2" : "h1"
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
@@ -87,13 +89,15 @@ export const Terminal = ({
   }, [])
   return (
     <section
-      className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
+      className={`terminal-window data-[placing=true]:border-dashed data-[placing=true]:bg-soft data-[placing=true]:border-line-strong flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${session.name} terminal`}
       data-terminal={session.id}
+      data-placing={placing}
     >
       <div className="terminal-heading relative shrink-0">
         <header
-          className="terminal-header flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
+          data-placing={placing}
+          className="terminal-header data-[placing=true]:bg-soft data-[placing=true]:border-dashed flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
           onDoubleClick={(event) => {
             if (
               performance.now() < ignoreDoubleClickUntil.current ||
@@ -160,7 +164,9 @@ export const Terminal = ({
             <TerminalIcon size={14} strokeWidth={1.5} />
             <Heading>{session.name}</Heading>
           </div>
-          <span className="terminal-actions flex shrink-0 items-center gap-1">
+          <span
+            className={`terminal-actions shrink-0 items-center gap-1 ${placing ? "hidden" : "flex"}`}
+          >
             {minimize && (
               <Tooltip content={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}>
                 <button
