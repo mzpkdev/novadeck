@@ -42,7 +42,7 @@ import {
   viewModes,
   preferencesStorageKey,
   readPreferences,
-} from "../workspace/preferences/preferences"
+} from "../workspace/preferences/preferences-storage"
 import { TerminalSearch } from "../workspace/search/TerminalSearch"
 import { WorkspaceHeader } from "../workspace/shell/WorkspaceHeader"
 import { useDesktop, WorkspacePanels } from "../workspace/shell/WorkspacePanels"

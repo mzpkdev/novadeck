@@ -5,7 +5,7 @@ import { Dialog } from "../../ui-toolkit/Dialog"
 import { Select } from "../../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../../ui-toolkit/Tabs"
 import type { PreferencesValue } from "../model/types"
-import { viewModes } from "./preferences"
+import { viewModes } from "./preferences-storage"
 
 import motion from "../shell/ModalMotion.module.css"
 
