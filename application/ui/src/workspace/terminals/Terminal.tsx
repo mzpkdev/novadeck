@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session } from "../model/types"
+import { shortcutBindings } from "../shortcuts"
 
 export type MinimizeControls = {
   minimized: boolean
@@ -33,10 +34,15 @@ export const Terminal = ({
   scrollOffset,
   onScrollChange,
   onFocus,
+  onFlyTo,
   onClose,
   windowed,
   minimize,
   compact = false,
+  placing = false,
+  focusInput = false,
+  onInputFocused,
+  active = false,
 }: {
   session: Session
   projectName: string
@@ -48,22 +54,34 @@ export const Terminal = ({
   scrollOffset: number | undefined
   onScrollChange: (offset: number) => void
   onFocus?: () => void
+  onFlyTo?: () => void
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
   minimize?: MinimizeControls
   compact?: boolean
+  placing?: boolean
+  focusInput?: boolean
+  onInputFocused?: () => void
+  active?: boolean
 }): React.JSX.Element => {
   const Heading = compact ? "h2" : "h1"
+  const focusHint = active ? ` · ${shortcutBindings().focus.display.join(" ")}` : ""
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const input = draft
   const setInput = onDraftChange
   const savedScroll = useRef(scrollOffset)
   const previousOutput = useRef({ length: entries.length, cleared })
   const output = useRef<HTMLDivElement>(null)
+  const commandInput = useRef<HTMLInputElement>(null)
   const headerPress = useRef<{ x: number; y: number; time: number } | null>(null)
   const headerTap = useRef<{ x: number; y: number; time: number } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
-  const toggleView = onFocus ?? windowed?.onOpen
+  const toggleView = onFlyTo ?? onFocus ?? windowed?.onOpen
+  useEffect(() => {
+    if (!focusInput || !commandInput.current) return
+    commandInput.current.focus({ preventScroll: true })
+    onInputFocused?.()
+  }, [focusInput, onInputFocused])
   useEffect(() => {
     if (!output.current || minimize?.minimized) return
     const changed =
@@ -85,13 +103,15 @@ export const Terminal = ({
   }, [])
   return (
     <section
-      className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
+      className={`terminal-window data-[placing=true]:border-dashed data-[placing=true]:bg-soft data-[placing=true]:border-line-strong flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${session.name} terminal`}
       data-terminal={session.id}
+      data-placing={placing}
     >
       <div className="terminal-heading relative shrink-0">
         <header
-          className="terminal-header flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
+          data-placing={placing}
+          className="terminal-header data-[placing=true]:bg-soft data-[placing=true]:border-dashed flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
           onDoubleClick={(event) => {
             if (
               performance.now() < ignoreDoubleClickUntil.current ||
@@ -158,7 +178,9 @@ export const Terminal = ({
             <TerminalIcon size={14} strokeWidth={1.5} />
             <Heading>{session.name}</Heading>
           </div>
-          <span className="terminal-actions flex shrink-0 items-center gap-1">
+          <span
+            className={`terminal-actions shrink-0 items-center gap-1 ${placing ? "hidden" : "flex"}`}
+          >
             {minimize && (
               <Tooltip content={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}>
                 <button
@@ -175,18 +197,21 @@ export const Terminal = ({
               </Tooltip>
             )}
             {onFocus && (
-              <Tooltip content={`Focus ${session.name}`}>
+              <Tooltip content={`Focus ${session.name}${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`Focus ${session.name}`}
-                  onClick={onFocus}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onFocus()
+                  }}
                 >
                   <ArrowUpRight size={12} />
                 </button>
               </Tooltip>
             )}
             {windowed && (
-              <Tooltip content={`Open in ${windowed.destination}`}>
+              <Tooltip content={`Open in ${windowed.destination}${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action`}
                   aria-label={`Open in ${windowed.destination}`}
@@ -260,6 +285,7 @@ export const Terminal = ({
           <label className="command-line flex items-center border-b border-transparent transition-[border-color] duration-(--motion-state) ease-interface focus-within:border-b-line [&_input]:w-full [&_input]:flex-1 [&_input]:bg-transparent [&_input]:caret-ink [&_input:focus-visible]:outline-none">
             <span className="prompt-arrow mr-2 font-semibold">❯</span>
             <input
+              ref={commandInput}
               aria-label={`Command for ${session.name}`}
               autoComplete="off"
               spellCheck={false}

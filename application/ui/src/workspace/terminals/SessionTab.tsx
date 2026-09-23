@@ -1,5 +1,5 @@
 import { useSortable } from "@dnd-kit/react/sortable"
-import { Check, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
+import { Check, Eye, EyeOff, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 import { useState } from "react"
 
 import { Editable } from "../../ui-toolkit/Editable"
@@ -14,6 +14,9 @@ export const SessionTab = ({
   session,
   index,
   selected,
+  hidden,
+  placing = false,
+  onVisibilityChange,
   onSelect,
   onRename,
   onClose,
@@ -21,6 +24,9 @@ export const SessionTab = ({
   session: Session
   index: number
   selected: boolean
+  hidden: boolean
+  placing?: boolean
+  onVisibilityChange: (hidden: boolean) => void
   onSelect: () => void
   onRename: (name: string) => void
   onClose: () => void
@@ -46,22 +52,53 @@ export const SessionTab = ({
         icon={<TerminalIcon size={14} strokeWidth={1.5} />}
         detail={<span className="session-process truncate font-mono">{session.command}</span>}
         selected={selected}
-        selectLabel={`Select ${session.name}`}
+        selectLabel={`Select ${session.name}${hidden ? " (hidden)" : ""}`}
         tooltip={`${session.name}\n${session.directory} · ${session.command}`}
         onSelect={onSelect}
         data-session-id={session.id}
-        className={`session-tab ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
+        data-terminal-hidden={hidden}
+        data-placing={placing}
+        {...(placing
+          ? { description: "Placement active. Press Escape to cancel and remove this terminal." }
+          : {})}
+        className={`session-tab data-[placing=true]:border-dashed data-[placing=true]:border-line-strong! data-[placing=true]:bg-soft! [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
         editing={editing}
         editor={
           <Editable.Area
             hidden={!editing}
-            className="session-rename flex min-w-0 flex-1 items-start px-2.5 py-1.5 [&_input]:w-full [&_input]:rounded-control [&_input]:border [&_input]:border-line [&_input]:bg-paper [&_input]:px-1.5 [&_input]:py-0.5 [&_input]:text-[12px] [&_input]:leading-[18px] [&_input]:text-ink"
+            className="session-rename flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px]"
           >
-            <Editable.Input aria-label={`Rename ${session.name}`} />
+            <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
+              <TerminalIcon size={14} strokeWidth={1.5} />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <Editable.Input
+                aria-label={`Rename ${session.name}`}
+                className="w-full border-0 bg-transparent p-0 text-[12px] leading-[18px] font-medium text-ink shadow-none outline-none"
+              />
+              <span className="sidebar-item-detail flex h-6 min-w-0 items-center overflow-hidden pr-(--sidebar-actions-space) whitespace-nowrap text-[10px] leading-[18px] text-muted">
+                <span className="session-process truncate font-mono">{session.command}</span>
+              </span>
+            </div>
           </Editable.Area>
         }
         actions={
           <div className="session-actions flex items-center">
+            <Tooltip content={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}>
+              <button
+                className={`${actionClasses} disabled:pointer-events-none disabled:opacity-50 ${hidden ? "[&>svg]:opacity-100!" : ""}`}
+                aria-label={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}
+                aria-pressed={hidden}
+                disabled={editing}
+                onClick={() => onVisibilityChange(!hidden)}
+              >
+                {hidden ? (
+                  <EyeOff size={13} strokeWidth={1.5} />
+                ) : (
+                  <Eye size={13} strokeWidth={1.5} />
+                )}
+              </button>
+            </Tooltip>
             {editing ? (
               <Editable.SubmitTrigger
                 className={actionClasses}
@@ -79,15 +116,25 @@ export const SessionTab = ({
                 <Pencil size={13} strokeWidth={1.5} />
               </Editable.EditTrigger>
             )}
-            <Tooltip content="Close terminal">
-              <button
+            {editing ? (
+              <Editable.CancelTrigger
                 className={actionClasses}
-                aria-label={`Close ${session.name}`}
-                onClick={onClose}
+                aria-label={`Cancel renaming ${session.name}`}
+                tooltip="Cancel rename"
               >
                 <X size={14} strokeWidth={1.5} />
-              </button>
-            </Tooltip>
+              </Editable.CancelTrigger>
+            ) : (
+              <Tooltip content="Close terminal">
+                <button
+                  className={actionClasses}
+                  aria-label={`Close ${session.name}`}
+                  onClick={onClose}
+                >
+                  <X size={14} strokeWidth={1.5} />
+                </button>
+              </Tooltip>
+            )}
           </div>
         }
       />

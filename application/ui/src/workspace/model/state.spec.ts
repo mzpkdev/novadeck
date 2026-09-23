@@ -44,6 +44,7 @@ const workspaceState = (
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
   gridMinimized: {},
+  hidden: {},
   nextTerminalNumber,
 })
 
@@ -62,6 +63,41 @@ const seed = (projectId: string, sessionId: string, state: WorkspaceState) =>
   )
 
 describe("workspace state", () => {
+  context("when hiding terminals", () => {
+    it("changes only visibility and retains terminal data until it is closed", () => {
+      const state = workspaceState([terminal("01"), terminal("02")])
+      state.drafts = { "01": "unfinished command" }
+      state.canvasLayout.geometry = {
+        "01": { position: { x: 144, y: 192 }, width: 600, height: 480 },
+      }
+      const workspace = seed("storefront", "saved", state)
+      const target = { projectId: "storefront", workspaceSessionId: "saved" }
+      const hidden = workspaceReducer(workspace, {
+        type: "terminal/visibility",
+        target,
+        terminalId: "01",
+        hidden: true,
+      })
+      expect(activeSession(hidden)?.state).toEqual({ ...state, hidden: { "01": true } })
+      const shown = workspaceReducer(hidden, {
+        type: "terminal/visibility",
+        target,
+        terminalId: "01",
+        hidden: false,
+      })
+      expect(activeSession(shown)?.state).toEqual({ ...state, hidden: { "01": false } })
+      const closed = workspaceReducer(hidden, { type: "terminal/close", target, terminalId: "01" })
+      expect(activeSession(closed)?.state.hidden).toEqual({})
+      expect(
+        workspaceReducer(workspace, {
+          type: "terminal/visibility",
+          target,
+          terminalId: "missing",
+          hidden: true,
+        }),
+      ).toBe(workspace)
+    })
+  })
   context("when a project is opened for the first time", () => {
     it("seeds only the supplied initial session", () => {
       const workspace = createWorkspace({

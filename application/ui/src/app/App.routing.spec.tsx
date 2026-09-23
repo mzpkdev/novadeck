@@ -157,7 +157,7 @@ describe("workspace routing", () => {
       await travel(router, 1)
       expect(await screen.findByRole("dialog", { name: "Preferences" })).toBeVisible()
       await act(async () => {
-        fireEvent.keyDown(window, { key: "k", ctrlKey: true })
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true, shiftKey: true })
       })
       expect(await screen.findByRole("dialog", { name: "Find a terminal" })).toBeVisible()
       expect(screen.queryByRole("dialog", { name: "Preferences" })).not.toBeInTheDocument()
@@ -190,7 +190,7 @@ describe("workspace routing", () => {
       await click(screen.getByRole("button", { name: "Workspace preferences" }))
       await click(screen.getByRole("tab", { name: "Shortcuts" }))
       await act(async () => {
-        fireEvent.keyDown(window, { key: "k", ctrlKey: true })
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true, shiftKey: true })
       })
       await click(await screen.findByRole("button", { name: "Close search" }))
       expect(url(router)).toBe(api)

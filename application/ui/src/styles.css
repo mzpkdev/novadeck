@@ -150,6 +150,27 @@
   opacity: var(--terminal-idle-opacity);
   transition: opacity var(--motion-state) var(--ease-interface);
 }
+.terminal-visibility {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity 180ms var(--ease-interface),
+    scale 180ms var(--ease-interface);
+}
+.terminal-visibility[data-hiding="true"] {
+  opacity: 0;
+  scale: 0.97;
+  pointer-events: none;
+}
+@starting-style {
+  .terminal-visibility {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+.grid-terminal[aria-hidden="true"] > .react-resizable-handle {
+  visibility: hidden;
+}
 .grid-terminal.selected {
   opacity: 1;
 }
@@ -302,6 +323,10 @@
 }
 .canvas-node.selected {
   opacity: 1;
+}
+.grid-terminal[data-preview="true"],
+.canvas-node[data-preview="true"] {
+  opacity: 0.5;
 }
 .canvas-node .terminal-resize-grip {
   @apply absolute right-px bottom-px z-10 flex size-7 items-end justify-end border-0 bg-transparent p-1.5 text-muted;

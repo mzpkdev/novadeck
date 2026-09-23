@@ -3,6 +3,9 @@ import { useMemo, type ReactNode, type RefObject } from "react"
 
 import { cn } from "../class-name"
 
+export const searchResultClasses =
+  "group flex min-h-15 w-full cursor-pointer items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell data-highlighted:border-line data-highlighted:bg-shell [&>svg]:shrink-0 [&>svg]:text-muted"
+
 export type SearchOption = { value: string; label: string; content: ReactNode }
 
 export const SearchCombobox = ({
@@ -91,11 +94,7 @@ export const SearchCombobox = ({
         )}
       >
         {items.map((item) => (
-          <Combobox.Item
-            item={item}
-            key={item.value}
-            className="group flex min-h-15 w-full cursor-pointer items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell data-highlighted:border-line data-highlighted:bg-shell [&>svg]:shrink-0 [&>svg]:text-muted"
-          >
+          <Combobox.Item item={item} key={item.value} className={searchResultClasses}>
             {item.content}
           </Combobox.Item>
         ))}

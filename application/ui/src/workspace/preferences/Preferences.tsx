@@ -5,6 +5,7 @@ import { Dialog } from "../../ui-toolkit/Dialog"
 import { Select } from "../../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../../ui-toolkit/Tabs"
 import type { PreferencesValue } from "../model/types"
+import { shortcutBindings } from "../shortcuts"
 import { viewModes } from "./preferences-storage"
 
 import motion from "../shell/ModalMotion.module.css"
@@ -38,7 +39,7 @@ export const Preferences = ({
     setOpenSelect(null)
     if (panels.current) panels.current.scrollTop = 0
   }
-  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"
+  const shortcuts = Object.values(shortcutBindings())
   return (
     <Dialog
       open={open}
@@ -186,20 +187,21 @@ export const Preferences = ({
             className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
             <dl className="shortcut-list m-0 mt-4 grid gap-0">
-              <div className="flex min-h-[46px] items-center justify-between gap-4 border-b border-line text-[12px]">
-                <dt className="m-0">Find a terminal</dt>
-                <dd className="m-0 flex gap-1">
-                  <kbd className="text-muted">{modifier}</kbd>
-                  <kbd className="text-muted">K</kbd>
-                </dd>
-              </div>
-              <div className="flex min-h-[46px] items-center justify-between gap-4 border-b border-line text-[12px]">
-                <dt className="m-0">Open preferences</dt>
-                <dd className="m-0 flex gap-1">
-                  <kbd className="text-muted">{modifier}</kbd>
-                  <kbd className="text-muted">,</kbd>
-                </dd>
-              </div>
+              {shortcuts.map(({ label, display }) => (
+                <div
+                  key={label}
+                  className="flex min-h-[46px] items-center justify-between gap-4 border-b border-line text-[12px]"
+                >
+                  <dt className="m-0">{label}</dt>
+                  <dd className="m-0 flex gap-1">
+                    {display.map((key) => (
+                      <kbd key={key} className="text-muted">
+                        {key}
+                      </kbd>
+                    ))}
+                  </dd>
+                </div>
+              ))}
             </dl>
           </TabPanel>
         </div>

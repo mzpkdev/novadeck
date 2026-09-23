@@ -40,6 +40,9 @@ const cursor = Cursor.configure({ cursor: "pointer" })
 export const SessionList = ({
   sessions,
   selected,
+  placement = "",
+  hidden,
+  onVisibilityChange,
   onSelect,
   onRename,
   onClose,
@@ -47,6 +50,9 @@ export const SessionList = ({
 }: {
   sessions: Session[]
   selected: string
+  placement?: string
+  hidden: Record<string, boolean>
+  onVisibilityChange: (id: string, hidden: boolean) => void
   onSelect: (id: string) => void
   onRename: (id: string, name: string) => void
   onClose: (id: string) => void
@@ -78,6 +84,9 @@ export const SessionList = ({
             session={session}
             index={index}
             selected={selected === session.id}
+            placing={placement === session.id}
+            hidden={hidden[session.id] ?? false}
+            onVisibilityChange={(isHidden) => onVisibilityChange(session.id, isHidden)}
             onSelect={() => onSelect(session.id)}
             onRename={(name) => onRename(session.id, name)}
             onClose={() => onClose(session.id)}

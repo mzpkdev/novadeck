@@ -29,12 +29,16 @@ import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Session, CanvasLayout } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
+import { useTerminalVisibility } from "./useTerminalVisibility"
 
 type TerminalNode = Node<
   {
     content: ReactNode
     compactHeader: boolean
     minimized: boolean
+    hiding: boolean
+    preview: boolean
+    placing: boolean
     onResizeStart: () => void
     onResizeEnd: (width: number, height: number) => void
   },
@@ -46,34 +50,44 @@ type CanvasProps = {
   fitOnNavigate: boolean
   onLayoutChange: Dispatch<SetStateAction<CanvasLayout>>
   sessions: Session[]
+  hidden: Record<string, boolean>
+  preview: string
   selected: string
   navigation: number
+  placement?: string
+  onPlace?: () => void
   onSelect: (id: string) => void
-  render: (session: Session, minimize: MinimizeControls) => ReactNode
+  render: (session: Session, minimize: MinimizeControls, onFlyTo: () => void) => ReactNode
 }
 type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
 
 const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => (
   <div
     data-node={id}
+    data-preview={data.preview}
+    style={data.placing ? { opacity: 0.75 } : undefined}
+    inert={data.hiding}
+    aria-hidden={data.hiding}
     className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
   >
-    <NodeResizeControl
-      position="bottom-right"
-      minWidth={320}
-      minHeight={data.minimized ? 0 : 200}
-      {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
-      autoScale={false}
-      className="terminal-resize-grip nodrag nopan"
-      onResizeStart={data.onResizeStart}
-      onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
-    >
-      <span
-        className="terminal-resize-pattern"
-        title={data.minimized ? "Drag to resize terminal width" : "Drag to resize terminal"}
-      />
-    </NodeResizeControl>
-    {data.content}
+    <div className="terminal-visibility relative h-full w-full" data-hiding={data.hiding}>
+      <NodeResizeControl
+        position="bottom-right"
+        minWidth={320}
+        minHeight={data.minimized ? 0 : 200}
+        {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
+        autoScale={false}
+        className="terminal-resize-grip nodrag nopan"
+        onResizeStart={data.onResizeStart}
+        onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
+      >
+        <span
+          className="terminal-resize-pattern"
+          title={data.minimized ? "Drag to resize terminal width" : "Drag to resize terminal"}
+        />
+      </NodeResizeControl>
+      {data.content}
+    </div>
   </div>
 )
 const nodeTypes = { terminal: TerminalNodeView }
@@ -97,15 +111,36 @@ const TerminalCanvas = ({
   fitOnNavigate,
   onLayoutChange,
   sessions,
+  hidden,
+  preview,
   selected,
   navigation,
+  placement,
+  onPlace,
   onSelect,
   render,
 }: CanvasProps): React.JSX.Element => {
   const { minimized, geometry } = layout
-  const { fitView, zoomIn, zoomOut, getViewport, setViewport, setCenter, getNode, setNodes } =
-    useReactFlow<TerminalNode>()
+  const removed = useTerminalVisibility(hidden)
+  const {
+    fitView,
+    zoomIn,
+    zoomOut,
+    getViewport,
+    setViewport,
+    setCenter,
+    getNode,
+    setNodes,
+    screenToFlowPosition,
+  } = useReactFlow<TerminalNode>()
   const zoom = useStore((state) => state.transform[2])
+  const viewportWidth = useStore((state) => state.width)
+  const viewportHeight = useStore((state) => state.height)
+  const maxZoom = Math.max(
+    1.5,
+    layout.viewport?.zoom ?? 1,
+    Math.min(viewportWidth / 320, viewportHeight / 200),
+  )
   const chromeScale = chromeScaleAt(zoom)
   const initialized = useNodesInitialized()
   const container = useRef<HTMLDivElement>(null)
@@ -119,6 +154,17 @@ const TerminalCanvas = ({
   const latest = useRef({ sessions, onLayoutChange })
   // Returning to Canvas restores its camera; only new sidebar requests should recenter it.
   const lastNavigation = useRef(layout.viewport ? navigation : 0)
+  const placementPosition = useRef<XYPosition | null>(null)
+  const placementPointer = useRef<XYPosition | null>(null)
+  const lastPlacement = useRef(placement)
+  const fitAll = (): void => {
+    void fitView({
+      ...fitOptions,
+      nodes: sessions
+        .filter((session) => !hidden[session.id])
+        .map((session) => ({ id: session.id })),
+    })
+  }
 
   useEffect(() => {
     latest.current = { sessions, onLayoutChange }
@@ -225,31 +271,81 @@ const TerminalCanvas = ({
     [commitGeometry, getNode, updateNode],
   )
 
+  const flyTo = useCallback(
+    (session: Session) => {
+      const node = getNode(session.id)
+      if (!node) return
+      onSelect(session.id)
+      if (node.data.minimized) {
+        onLayoutChange((previous) => ({
+          ...previous,
+          minimized: { ...previous.minimized, [session.id]: false },
+        }))
+      }
+      if (!viewportWidth || !viewportHeight) return
+      const viewport = getViewportForBounds(
+        {
+          ...node.position,
+          width: node.width ?? 550,
+          height: node.data.minimized
+            ? (geometry[session.id]?.height ?? session.height)
+            : (node.height ?? session.height),
+        },
+        viewportWidth,
+        viewportHeight,
+        0,
+        Infinity,
+        0,
+      )
+      void setViewport(viewport, {
+        duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350,
+      })
+    },
+    [geometry, getNode, onLayoutChange, onSelect, setViewport, viewportHeight, viewportWidth],
+  )
+
   const nodeFrom = useCallback(
     (session: Session, source: CanvasLayout["geometry"][string] | undefined): TerminalNode => {
       const isMinimized = minimized[session.id] ?? false
       const width = source?.width ?? 550
+      const placing = placement === session.id
       return {
         id: session.id,
         type: "terminal",
+        hidden: placing ? true : (removed[session.id] ?? false),
         position: source?.position ?? { x: session.x, y: session.y },
         width,
         height: isMinimized
           ? terminalHeaderHeight * chromeScale + 2
           : Math.max(source?.height ?? session.height, (terminalHeaderHeight + 4) * chromeScale),
         dragHandle: ".terminal-header",
-        draggable: selected === session.id,
+        draggable: !placement && selected === session.id && !hidden[session.id],
+        selectable: !placement && !hidden[session.id],
+        focusable: !placement && !hidden[session.id],
         selected: selected === session.id,
         ariaLabel: `${session.name} terminal`,
+        ...(placement
+          ? { style: { pointerEvents: "none", ...(placing ? { transition: "none" } : {}) } }
+          : {}),
         data: {
-          content: render(session, {
-            minimized: isMinimized,
-            onToggle: () =>
-              onLayoutChange((previous) => ({
-                ...previous,
-                minimized: { ...previous.minimized, [session.id]: !previous.minimized[session.id] },
-              })),
-          }),
+          preview: placing || preview === session.id,
+          placing,
+          hiding: hidden[session.id] ?? false,
+          content: render(
+            session,
+            {
+              minimized: isMinimized,
+              onToggle: () =>
+                onLayoutChange((previous) => ({
+                  ...previous,
+                  minimized: {
+                    ...previous.minimized,
+                    [session.id]: !previous.minimized[session.id],
+                  },
+                })),
+            },
+            () => flyTo(session),
+          ),
           compactHeader: width / chromeScale < 240,
           minimized: isMinimized,
           onResizeStart: () => beginResize(session.id),
@@ -257,11 +353,31 @@ const TerminalCanvas = ({
         },
       }
     },
-    [beginResize, chromeScale, finishResize, minimized, onLayoutChange, render, selected],
+    [
+      beginResize,
+      chromeScale,
+      finishResize,
+      flyTo,
+      hidden,
+      preview,
+      removed,
+      minimized,
+      onLayoutChange,
+      placement,
+      render,
+      selected,
+    ],
   )
 
   // XYFlow owns pointer-time geometry so dragging does not rerender the application or terminals.
   // Parent updates refresh terminal content and selection while retaining any in-progress gesture.
+  useEffect(() => {
+    if (lastPlacement.current === placement) return
+    placementPosition.current = null
+    placementPointer.current = null
+    lastPlacement.current = placement
+  }, [placement])
+
   useEffect(() => {
     const sessionIds = new Set(sessions.map((session) => session.id))
     for (const id of Object.keys(geometryRef.current)) {
@@ -280,7 +396,11 @@ const TerminalCanvas = ({
     setNodes((previous) => {
       const existing = new Map(previous.map((node) => [node.id, node]))
       return sessions.map((session) => {
-        const next = nodeFrom(session, geometry[session.id])
+        const base = nodeFrom(session, geometry[session.id])
+        const next =
+          session.id === placement && placementPosition.current
+            ? { ...base, hidden: false, position: placementPosition.current }
+            : base
         const current = existing.get(session.id)
         if (!current || !dirtyGeometry.current.has(session.id)) return next
         const retained = {
@@ -292,7 +412,7 @@ const TerminalCanvas = ({
         return current.className ? { ...retained, className: current.className } : retained
       })
     })
-  }, [geometry, nodeFrom, sessions, setNodes])
+  }, [geometry, nodeFrom, placement, sessions, setNodes])
 
   useEffect(() => {
     if (!dirtyViewport.current && layout.viewport) viewportRef.current = { ...layout.viewport }
@@ -378,11 +498,51 @@ const TerminalCanvas = ({
     [commitGeometry, updateNode],
   )
 
+  const positionAt = useCallback(
+    (clientX: number, clientY: number): XYPosition => {
+      const point = screenToFlowPosition({ x: clientX, y: clientY })
+      const node = placement ? getNode(placement) : undefined
+      return {
+        x: snap(point.x - (node?.width ?? 550) / 2),
+        y: snap(point.y - (node?.height ?? 400) / 2),
+      }
+    },
+    [getNode, placement, screenToFlowPosition],
+  )
+
+  const previewPlacement = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!placement) return
+      placementPointer.current = { x: clientX, y: clientY }
+      const position = positionAt(clientX, clientY)
+      placementPosition.current = position
+      updateNode(placement, (node) => ({ ...node, hidden: false, position }))
+    },
+    [placement, positionAt, updateNode],
+  )
+
+  const hidePlacement = useCallback(() => {
+    placementPointer.current = null
+    if (!placement || !placementPosition.current) return
+    placementPosition.current = null
+    updateNode(placement, (node) => ({ ...node, hidden: true }))
+  }, [placement, updateNode])
+
   useEffect(() => {
-    if (!initialized || navigation === lastNavigation.current || !getNode(selected)) return
-    lastNavigation.current = navigation
+    if (selected === placement && placement) {
+      lastNavigation.current = navigation
+      return
+    }
+    if (
+      !initialized ||
+      navigation === lastNavigation.current ||
+      hidden[selected] ||
+      !getNode(selected)
+    )
+      return
     const node = getNode(selected)
-    if (!node) return
+    if (!node || node.hidden) return
+    lastNavigation.current = navigation
     const duration = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180
     if (fitOnNavigate) {
       void fitView({
@@ -396,7 +556,18 @@ const TerminalCanvas = ({
     const targetZoom = getViewport().zoom
     const center = centerOf(node, targetZoom)
     void setCenter(center.x, center.y, { zoom: targetZoom, duration, interpolate: "linear" })
-  }, [initialized, navigation, selected, fitOnNavigate, fitView, getNode, getViewport, setCenter])
+  }, [
+    initialized,
+    navigation,
+    selected,
+    placement,
+    hidden,
+    fitOnNavigate,
+    fitView,
+    getNode,
+    getViewport,
+    setCenter,
+  ])
 
   return (
     <div
@@ -411,6 +582,30 @@ const TerminalCanvas = ({
       aria-label="Terminal canvas"
       tabIndex={0}
       {...backgroundPointerHandlers}
+      onPointerMoveCapture={(event) => {
+        if (event.pointerType === "touch" || !placement) return
+        if (!(event.target as HTMLElement).closest(".react-flow")) {
+          hidePlacement()
+          return
+        }
+        previewPlacement(event.clientX, event.clientY)
+      }}
+      onClickCapture={(event) => {
+        if (!placement || !(event.target as HTMLElement).closest(".react-flow")) return
+        event.stopPropagation()
+        const position = positionAt(event.clientX, event.clientY)
+        placementPosition.current = null
+        moveNode(placement, position)
+        onPlace?.()
+      }}
+      onPointerLeave={(event) => {
+        backgroundPointerHandlers.onPointerLeave(event)
+        hidePlacement()
+      }}
+      onPointerCancel={(event) => {
+        backgroundPointerHandlers.onPointerCancel(event)
+        hidePlacement()
+      }}
       onKeyDownCapture={(event) => {
         const target = event.target as HTMLElement
         if (!target.matches(".react-flow__node")) return
@@ -433,29 +628,20 @@ const TerminalCanvas = ({
       }}
       onKeyDown={(event) => {
         if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
-        const steps: Record<string, XYPosition> = {
-          ArrowLeft: { x: 60, y: 0 },
-          ArrowRight: { x: -60, y: 0 },
-          ArrowUp: { x: 0, y: 60 },
-          ArrowDown: { x: 0, y: -60 },
-        }
-        const step = steps[event.key]
-        if (step) {
-          event.preventDefault()
-          const viewport = getViewport()
-          void setViewport({ ...viewport, x: viewport.x + step.x, y: viewport.y + step.y })
-        }
         if (event.key === "+" || event.key === "=") void zoomIn()
         if (event.key === "-") void zoomOut()
-        if (event.key === "0") void fitView(fitOptions)
+        if (event.key === "0") fitAll()
       }}
     >
       <ReactFlow<TerminalNode>
         defaultNodes={sessions.map((session) => nodeFrom(session, geometry[session.id]))}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
-        onNodeClick={(_, node) => onSelect(node.id)}
+        onNodeClick={(_, node) => {
+          if (!placement) onSelect(node.id)
+        }}
         onPaneClick={(event) => {
+          if (placement) return
           onSelect("")
           event.currentTarget
             .closest<HTMLElement>(".canvas-viewport")
@@ -466,18 +652,22 @@ const TerminalCanvas = ({
         multiSelectionKeyCode={null}
         selectionKeyCode={null}
         minZoom={0.15}
-        maxZoom={1.5}
+        maxZoom={maxZoom}
         defaultViewport={initialViewport ?? { x: 0, y: 0, zoom: 1 }}
         onInit={(instance) => {
           if (!container.current || (initialViewport && !revealOnMount)) return
-          const target = navigation ? instance.getNode(selected) : undefined
+          const selectedNode =
+            navigation && selected !== placement ? instance.getNode(selected) : undefined
+          const target = selectedNode?.hidden ? undefined : selectedNode
           if (initialViewport && target && !fitOnNavigate) {
             const center = centerOf(target, initialViewport.zoom)
             lastNavigation.current = navigation
             void instance.setCenter(center.x, center.y, { zoom: initialViewport.zoom })
             return
           }
-          const bounds = getNodesBounds(target ? [target] : instance.getNodes())
+          const visible = instance.getNodes().filter((node) => !node.hidden)
+          if (!visible.length) return
+          const bounds = getNodesBounds(target ? [target] : visible)
           lastNavigation.current = navigation
           // Compute the first camera before a view-transition snapshot, without waiting for paint.
           void instance.setViewport(
@@ -492,7 +682,11 @@ const TerminalCanvas = ({
           )
         }}
         onMoveStart={(_, viewport) => trackViewport(viewport)}
-        onMove={(_, viewport) => trackViewport(viewport)}
+        onMove={(_, viewport) => {
+          trackViewport(viewport)
+          const pointer = placementPointer.current
+          if (pointer) previewPlacement(pointer.x, pointer.y)
+        }}
         onMoveEnd={(_, viewport) => {
           const current = getViewport()
           if (
@@ -505,9 +699,9 @@ const TerminalCanvas = ({
           trackViewport(viewport)
           commitViewport()
         }}
-        panOnScroll
-        panOnScrollSpeed={1}
-        zoomOnScroll={false}
+        panOnDrag
+        panOnScroll={false}
+        zoomOnScroll
         zoomOnDoubleClick={false}
         zoomActivationKeyCode={["Control", "Meta"]}
         proOptions={{ hideAttribution: true }}
@@ -543,11 +737,7 @@ const TerminalCanvas = ({
         </Tooltip>
         <div className="control-divider mx-0.5 h-3 w-px bg-line" />
         <Tooltip content="Fit all terminals (0)">
-          <button
-            className="icon-button"
-            aria-label="Fit all terminals"
-            onClick={() => void fitView(fitOptions)}
-          >
+          <button className="icon-button" aria-label="Fit all terminals" onClick={fitAll}>
             <Maximize size={15} />
           </button>
         </Tooltip>
