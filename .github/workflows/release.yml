@@ -261,7 +261,11 @@ jobs:
             throw "The portable executable exited before the smoke-test interval with status $($process.ExitCode)."
           }
 
-          taskkill /PID $process.Id /T /F 2>$null | Out-Null
+          Write-Host "The Windows application stayed running for ten seconds; stopping its process tree."
+          $process.Kill($true)
+          if (-not $process.WaitForExit(5000)) {
+            throw "The Windows application did not stop after smoke-test cleanup."
+          }
 
       - name: Upload Packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
