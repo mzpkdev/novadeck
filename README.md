@@ -1,60 +1,89 @@
 # NovaDeck
 
-NovaDeck is a React application with a Hono backend and an optional cross-platform
-Electron host, built with TypeScript, Vite, and Turborepo.
+A terminal workspace for organizing projects, sessions, and parallel work.
 
-## Requirements
-
-- Node.js 26
-- pnpm 11.22.0
+Focus on one terminal, arrange several in a grid, or spread them across a zoomable
+canvas. Keep related work together and switch between sessions from the sidebar.
 
 ## Development
+
+Requires Node.js 26 and pnpm 11.22.0. Run commands from the repository root.
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-The repository contains three application workspace packages:
-
-- `application/ui` is the standalone Vite and React frontend. It starts as a blank white canvas and
-  is bootstrapped with Tailwind CSS, Ark UI, Lucide, clsx, and tailwind-merge directly instead of
-  depending on a separate design-system package.
-- `application/runtime` is the standalone Hono and Node.js backend. It exposes the API without
-  owning frontend delivery.
-- `application/host` is the Electron wrapper. It starts the runtime and loads the packaged UI for
-  desktop users.
-
-Run the browser-hosted application without Electron with:
+`pnpm dev` launches the Electron desktop application. To run the UI and runtime
+in a browser instead:
 
 ```sh
 pnpm dev:web
 ```
 
-The blank UI is then available at `http://127.0.0.1:5173`, with the runtime available for future
-application features.
+Open <http://127.0.0.1:5173>. For UI-only work, use
+`pnpm --filter @novadeck/ui dev`.
 
-## Deployment configuration
+## Repository map
 
-| Mode               | Configuration                                                                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Standalone UI      | `application/ui/.env` supplies the build-time `VITE_API_URL`; without it, the UI uses same-origin `/api`.                                                                                                     |
-| Standalone runtime | `application/runtime/.env` supplies `HOST`, `PORT`, and the comma-separated `CORS_ORIGINS` allowlist.                                                                                                         |
-| Electron           | The host starts the bundled runtime on `127.0.0.1` with an OS-selected port and desktop-only CORS, then provides the generated API URL through a sandboxed preload bridge. Package `.env` files are not used. |
+This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 
-Copy each package's environment template before changing standalone configuration:
+| Package               | Responsibility                                                   |
+| --------------------- | ---------------------------------------------------------------- |
+| `application/ui`      | React frontend built with Vite, Tailwind CSS, and Lucide icons.  |
+| `application/runtime` | Hono API running on Node.js, independent of frontend delivery.   |
+| `application/host`    | Electron host that starts the runtime and loads the packaged UI. |
+| `scripts`             | Repository checks and automation.                                |
+
+The terminal interface currently uses sample output and in-memory commands, not
+real shell processes or model calls. Projects, sessions, and layouts reset on
+reload; preferences and sidebar settings are stored locally. Keep this boundary
+in mind when changing terminal behavior or adding runtime integration.
+
+### Working on the UI
+
+Source lives in `application/ui/src/`:
+
+| Location                                                               | What belongs here                                                       |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `app/`                                                                 | App composition, browser effects, and integration tests.                |
+| `ui-toolkit/`                                                          | Reusable styled controls and direct Ark UI imports.                     |
+| `workspace/model/`                                                     | Shared types, the pure workspace reducer, selectors, and tests.         |
+| `workspace/terminals/`                                                 | Terminal cards and sortable tabs.                                       |
+| `workspace/layouts/`                                                   | Grid and Canvas views, layout logic, and view transitions.              |
+| `workspace/sidebar/`, `projects/`, `preferences/`, `search/`, `shell/` | Feature components, navigation, and app chrome, all under `workspace/`. |
+| `workspace/mock/`                                                      | Sample projects, transcripts, and command replies.                      |
+| `styles.css`                                                           | Theme tokens, global primitives, and specialized library/canvas styles. |
+
+Keep project and session state in the workspace reducer. Address updates by
+project and session IDs so delayed callbacks affect the session that created
+them. XYFlow owns live Canvas gestures; save geometry and camera state when a
+gesture ends or the view unmounts.
+
+Keep direct Ark UI imports in `ui-toolkit/`; features own their content and state.
+Use Tailwind utilities for ordinary component styling and colocate tests with
+the feature they cover. See [CODING.md](CODING.md) for broader conventions.
+
+## Configuration
+
+For standalone UI/runtime configuration, copy the environment templates:
 
 ```sh
 cp application/ui/example.env application/ui/.env
 cp application/runtime/example.env application/runtime/.env
 ```
 
-For a static host such as GitHub Pages, set `VITE_API_URL` to the public HTTPS API URL before
-building. The generated Content Security Policy permits that exact API origin. Add the static
-frontend's origin to the runtime's `CORS_ORIGINS` when the packages are deployed separately. Local
-`.env` files are ignored and must not be committed.
+- UI: `VITE_API_URL` sets the API URL at build time; the default is same-origin `/api`.
+- Runtime: `HOST`, `PORT`, and `CORS_ORIGINS` control the listener and allowed frontend origins.
+- Electron: the host starts the bundled runtime on a local, OS-selected port and
+  supplies its URL through a sandboxed preload bridge. Package `.env` files are not used.
 
-## Checks
+For a separately hosted frontend, set `VITE_API_URL` to the public HTTPS API URL
+before building and add the frontend origin to `CORS_ORIGINS`. The generated
+Content Security Policy permits the configured API origin. Local `.env` files
+are ignored; never commit credentials.
+
+## Validation
 
 ```sh
 pnpm format:check
@@ -64,10 +93,12 @@ pnpm test
 pnpm build
 ```
 
-Renderer behavior is tested with Vitest and React Testing Library. HTTP-facing
-code uses MSW so tests exercise `fetch` without replacing application modules.
+Use package filters for focused checks, for example `pnpm --filter @novadeck/ui test`.
+Tests use Vitest, React Testing Library for renderer interactions, and MSW for
+HTTP behavior. The PR workflows run formatting, lint, typechecking, tests,
+builds, and PR metadata checks.
 
-## Packaging
+## Packaging and releases
 
 ```sh
 pnpm package:linux
@@ -75,48 +106,26 @@ pnpm package:mac
 pnpm package:win
 ```
 
-The configured artifacts are:
+Artifacts go to `application/host/release/`: a Linux x64 AppImage, a macOS
+universal ZIP, or a Windows x64 portable executable. Builds are unsigned, so
+Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 
-- Linux x64: AppImage
-- macOS universal: ZIP archive containing the application bundle
-- Windows x64: portable executable
+The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
+prereleases from qualifying changes on `main`, with notes, checksums, and native
+packages. It smoke-tests each packaged application before upload. Conventional
+Commits determine release eligibility; versions are currently limited to patch
+increments. Documentation-only changes do not trigger a release. See
+[.release-it.json](.release-it.json) for the release configuration.
 
-Artifacts are written to `application/host/release/`. Builds are intentionally unsigned for now,
-so macOS Gatekeeper and Windows SmartScreen may warn when opening them. The
-permanent application ID is `dev.mzpk.novadeck`. Before upload, the release
-workflow launches every packaged application for ten seconds and fails if it
-exits early.
+Promote tested binaries on GitHub Releases by clearing **Set as a pre-release**
+and selecting **Set as the latest release**; no rebuild is needed. For an
+interrupted release, inspect the latest workflow first. An unpublished draft or
+orphaned version tag must be cleaned up before rerunning the latest release
+workflow; published immutable releases must remain intact.
 
-## Releases
+## Contributing
 
-The latest unreleased state of `main` produces an immutable GitHub prerelease for
-the dev channel. An active release always finishes. While it runs, GitHub keeps
-only the newest pending release run, so several rapid merges can still be
-combined into one release of the newest source. Release-it reads Conventional
-Commits across that range to determine whether a release qualifies. Until
-NovaDeck has an early working product, every qualifying release is explicitly
-limited to a patch increment: `feat`, breaking changes, `fix`, `perf`, and
-`build(deps)` all increment patch. Documentation, tests, CI, and other
-maintenance commits do not qualify on their own. The release workflow contains
-the single TODO that restores release-it's normal SemVer recommendation, where
-`feat` increments minor and a breaking change increments major. Release-it uses
-`v0.0.0` as the base when no release tag exists.
-
-Release-it generates the notes, creates the `vX.Y.Z` tag, uploads the checksums
-and native packages through a draft, then publishes the immutable prerelease.
-
-To promote tested binaries without rebuilding them, open the prerelease on the
-GitHub **Releases** page, choose **Edit**, clear **Set as a pre-release**, select
-**Set as the latest release**, and update it. Immutable releases still allow
-these two status changes; the tag and uploaded binaries remain locked.
-
-Automatic publishing uses GitHub's built-in workflow token and requires no
-long-lived repository secret. If an older run loses a race with a workflow-file
-change, the newer `main` run becomes authoritative. Rerun the latest failed
-workflow if no newer push superseded it. Release-it intentionally does not add
-project-specific rollback logic. If an interrupted run leaves an unpublished
-draft, delete it and its tag with
-`gh release delete vX.Y.Z --cleanup-tag --yes`. If only the tag exists, delete it
-with `git push origin --delete vX.Y.Z`, then rerun the latest workflow. Automatic
-runs fail before calculating another version while the latest SemVer tag is
-missing its published release or still has a draft.
+Start with [AGENTS.md](AGENTS.md) for the required reading,
+[CONTRIBUTING.md](CONTRIBUTING.md) for the issue and PR workflow, and
+[CODING.md](CODING.md) for code and test conventions. Follow
+[SECURITY.md](SECURITY.md) for credentials and vulnerability reports.

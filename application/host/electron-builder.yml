@@ -1,5 +1,5 @@
 appId: dev.mzpk.novadeck
-productName: NovaDeck
+productName: novadeck.
 executableName: novadeck
 asar: true
 directories:
@@ -10,7 +10,7 @@ files:
 extraResources:
   - from: ../ui/dist
     to: ui
-artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+artifactName: novadeck-${version}-${os}-${arch}.${ext}
 mac:
   identity: null
   category: public.app-category.utilities
