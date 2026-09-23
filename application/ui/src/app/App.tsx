@@ -122,7 +122,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const desktop = useDesktop()
   const navigationType = useNavigationType()
   const [preferences, setPreferences] = useState(readPreferences)
-  const { workspace, dispatch, route, go, navigateWorkspace } = useWorkspaceRoute(
+  const { workspace, dispatch, route, go, navigateWorkspace, closeDialog } = useWorkspaceRoute(
     preferences,
     initializeWorkspace,
   )
@@ -167,9 +167,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
     route.dialog,
     `${projectId}/${workspaceSessionId}`,
   )
-  const setSearching = (open: boolean): void => go({ dialog: open ? "search" : null }, !open)
-  const setSettings = (open: boolean): void =>
-    go({ dialog: open ? "preferences" : null, section: "general" }, !open)
   const [sidebar, setSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const sidebarVisible = desktop ? !sidebarCollapsed : sidebar
@@ -469,8 +466,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
           transitionWorkspace(() => changeView(id), direction)
         }}
         homeTo={routeUrl({ ...route, view: preferences.enabledViews[0]!, dialog: null })}
-        onSearch={() => setSearching(true)}
-        onPreferences={() => setSettings(true)}
+        onSearch={() => go({ dialog: "search" })}
+        onPreferences={() => go({ dialog: "preferences", section: "general" })}
       />
       <div className="workspace-body relative flex min-h-0 flex-1">
         {sidebarRail()}
@@ -636,7 +633,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         sessions={ordered}
         destination={searchLabel}
         onSelect={openSearchResult}
-        onClose={() => setSearching(false)}
+        onClose={closeDialog}
       />
       <Preferences
         key={`preferences/${projectId}/${workspaceSessionId}`}
@@ -646,7 +643,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         tab={route.section}
         onTabChange={(section) => go({ section })}
         onChange={updatePreferences}
-        onClose={() => setSettings(false)}
+        onClose={closeDialog}
       />
     </main>
   )

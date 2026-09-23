@@ -175,6 +175,29 @@ describe("workspace routing", () => {
       expect(screen.getAllByRole("dialog")).toHaveLength(1)
     })
 
+    it("adds only one history entry when Canvas reports selection twice", async () => {
+      const initial = storefront.replace("focus", "canvas")
+      const router = open(initial)
+      await click(document.querySelector('[data-id="02"]')!)
+      expect(url(router)).toBe(initial.replace("terminal=01", "terminal=02"))
+      await travel(router, -1)
+      expect(url(router)).toBe(initial)
+    })
+
+    it("dismisses app-opened dialogs back to their workspace without an extra Back step", async () => {
+      const router = open()
+      await navigate(router, api)
+      await click(screen.getByRole("button", { name: "Workspace preferences" }))
+      await click(screen.getByRole("tab", { name: "Shortcuts" }))
+      await act(async () => {
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true })
+      })
+      await click(screen.getByRole("button", { name: "Close search" }))
+      expect(url(router)).toBe(api)
+      await travel(router, -1)
+      expect(url(router)).toBe(storefront)
+    })
+
     it("normalizes a disabled view while keeping Preferences open", async () => {
       const router = open()
       await click(screen.getByRole("button", { name: "Workspace preferences" }))
