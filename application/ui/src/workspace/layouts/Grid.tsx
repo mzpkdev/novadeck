@@ -5,6 +5,7 @@ import type { Session, GridLayouts } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
 import { expandedGridLayouts, gridColumns, visibleGridLayouts } from "./grid-layout"
+import { useTerminalVisibility } from "./useTerminalVisibility"
 
 const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
 
@@ -16,6 +17,8 @@ type Props = {
   layouts: GridLayouts
   onLayoutsChange: (layouts: GridLayouts) => void
   minimized: Record<string, boolean>
+  hidden: Record<string, boolean>
+  preview: string
   onMinimize: (id: string) => void
   render: (session: Session, minimize: MinimizeControls) => ReactNode
 }
@@ -28,10 +31,13 @@ export const Grid = ({
   layouts,
   onLayoutsChange,
   minimized,
+  hidden,
+  preview,
   onMinimize,
   render,
 }: Props): React.JSX.Element => {
   const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
+  const removed = useTerminalVisibility(hidden)
   const lastNavigation = useRef({ navigation: 0, width: 0 })
   useLayoutEffect(() => {
     if (
@@ -40,16 +46,24 @@ export const Grid = ({
       (navigation === lastNavigation.current.navigation && width === lastNavigation.current.width)
     )
       return
-    const terminal = containerRef.current?.querySelector<HTMLElement>(
-      `[data-grid-terminal="${selected}"]`,
-    )
-    if (!terminal) return
-    terminal.scrollIntoView({ block: "nearest", inline: "nearest" })
-    lastNavigation.current = { navigation, width }
+    // The grid reconciles restored children after this render; scroll once they are placed.
+    const frame = requestAnimationFrame(() => {
+      const terminal = containerRef.current?.querySelector<HTMLElement>(
+        `[data-grid-terminal="${selected}"]`,
+      )
+      if (!terminal) return
+      terminal.scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "nearest",
+        inline: "nearest",
+      })
+      lastNavigation.current = { navigation, width }
+    })
+    return () => cancelAnimationFrame(frame)
   }, [mounted, navigation, selected, width, containerRef])
   const current = useMemo(
-    () => visibleGridLayouts(sessions, layouts, minimized),
-    [sessions, layouts, minimized],
+    () => visibleGridLayouts(sessions, layouts, minimized, removed),
+    [sessions, layouts, minimized, removed],
   )
 
   return (
@@ -87,26 +101,35 @@ export const Grid = ({
               compactor={verticalCompactor}
               dragConfig={{ handle: ".terminal-header", cancel: "button, input", threshold: 5 }}
               resizeConfig={{ handles: ["se"] }}
-              onLayoutChange={(_, next) =>
-                onLayoutsChange(expandedGridLayouts(next, layouts, sessions, minimized))
-              }
+              onLayoutChange={(_, next) => {
+                const saved = expandedGridLayouts(next, layouts, sessions, minimized, removed)
+                if (saved !== layouts) onLayoutsChange(saved)
+              }}
             >
-              {sessions.map((session) => (
-                <div
-                  className={`grid-terminal flex min-h-0 flex-col ${selected === session.id ? "selected" : ""} ${minimized[session.id] ? "minimized" : ""}`}
-                  key={session.id}
-                  data-grid-terminal={session.id}
-                >
-                  <div className="grid-terminal-body min-h-0 flex-1">
-                    {render(session, {
-                      minimized: minimized[session.id] ?? false,
-                      // Keep output painted while the grid's height transition clips it away.
-                      clipContent: true,
-                      onToggle: () => onMinimize(session.id),
-                    })}
+              {sessions
+                .filter((session) => !removed[session.id])
+                .map((session) => (
+                  <div
+                    className={`grid-terminal flex min-h-0 flex-col ${selected === session.id ? "selected" : ""} ${minimized[session.id] ? "minimized" : ""}`}
+                    key={session.id}
+                    data-grid-terminal={session.id}
+                    data-preview={preview === session.id}
+                    inert={hidden[session.id] ?? false}
+                    aria-hidden={hidden[session.id] ?? false}
+                  >
+                    <div
+                      className="grid-terminal-body terminal-visibility min-h-0 flex-1"
+                      data-hiding={hidden[session.id] ?? false}
+                    >
+                      {render(session, {
+                        minimized: minimized[session.id] ?? false,
+                        // Keep output painted while the grid's height transition clips it away.
+                        clipContent: true,
+                        onToggle: () => onMinimize(session.id),
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </ResponsiveGridLayout>
           )}
         </div>

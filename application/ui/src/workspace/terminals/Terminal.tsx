@@ -33,6 +33,7 @@ export const Terminal = ({
   scrollOffset,
   onScrollChange,
   onFocus,
+  onFlyTo,
   onClose,
   windowed,
   minimize,
@@ -48,6 +49,7 @@ export const Terminal = ({
   scrollOffset: number | undefined
   onScrollChange: (offset: number) => void
   onFocus?: () => void
+  onFlyTo?: () => void
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
   minimize?: MinimizeControls
@@ -63,7 +65,7 @@ export const Terminal = ({
   const headerPress = useRef<{ x: number; y: number; time: number } | null>(null)
   const headerTap = useRef<{ x: number; y: number; time: number } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
-  const toggleView = onFocus ?? windowed?.onOpen
+  const toggleView = onFlyTo ?? onFocus ?? windowed?.onOpen
   useEffect(() => {
     if (!output.current || minimize?.minimized) return
     const changed =
@@ -179,7 +181,10 @@ export const Terminal = ({
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`Focus ${session.name}`}
-                  onClick={onFocus}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onFocus()
+                  }}
                 >
                   <ArrowUpRight size={12} />
                 </button>

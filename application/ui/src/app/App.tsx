@@ -112,6 +112,9 @@ const initializeWorkspace = (preferences: PreferencesValue) => {
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
   useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
 
+const useLayoutHidden = (hidden: Record<string, boolean>, preview: string) =>
+  useMemo(() => (preview ? { ...hidden, [preview]: false } : hidden), [hidden, preview])
+
 export const App = (): React.JSX.Element => (
   <HashRouter useTransitions={false}>
     <WorkspaceApp />
@@ -144,11 +147,16 @@ export const WorkspaceApp = (): React.JSX.Element => {
     canvasLayout,
     gridLayouts,
     gridMinimized,
+    hidden,
     nextTerminalNumber,
   } = current.state
   const ordered = orderedSessions(current.state)
+  const preview = hidden[selected] ? selected : ""
+  const layoutHidden = useLayoutHidden(hidden, preview)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
   const setSelected = (terminal: string): void => go({ terminal })
+  const setVisibility = (terminalId: string, isHidden: boolean): void =>
+    dispatch({ type: "terminal/visibility", target, terminalId, hidden: isHidden })
   const setCanvasLayout = useCallback(
     (layout: ValueUpdate<CanvasLayout>) => dispatch({ type: "canvas/layout", target, layout }),
     [dispatch, target],
@@ -348,6 +356,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     session: Session,
     compact: boolean,
     minimize?: MinimizeControls,
+    onFlyTo?: () => void,
   ): React.JSX.Element => (
     <Terminal
       key={session.id}
@@ -367,6 +376,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       compact={compact}
       onClose={() => close(session.id)}
       {...(minimize ? { minimize } : {})}
+      {...(onFlyTo ? { onFlyTo } : {})}
       {...(compact && preferences.enabledViews.includes("focus")
         ? {
             onFocus: () =>
@@ -527,6 +537,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   key={`${projectId}/${workspaceSessionId}`}
                   sessions={ordered}
                   selected={selected}
+                  hidden={hidden}
+                  onVisibilityChange={setVisibility}
                   onSelect={select}
                   onRename={rename}
                   onClose={close}
@@ -538,7 +550,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         >
           <section
             key={`${projectId}/${workspaceSessionId}`}
-            className={`main-area flex min-w-0 flex-1 flex-col ${view}`}
+            className={`main-area relative flex min-w-0 flex-1 flex-col ${view}`}
             aria-label={`${view} view`}
           >
             {view === "focus" && active && (
@@ -557,6 +569,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
             {view === "grid" && sessions.length > 0 && (
               <Grid
                 sessions={sessions}
+                hidden={layoutHidden}
+                preview={preview}
                 selected={selected}
                 onSelect={setSelected}
                 navigation={navigation.count}
@@ -569,6 +583,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
             {view === "canvas" && sessions.length > 0 && (
               <Canvas
+                hidden={layoutHidden}
+                preview={preview}
                 layout={canvasLayout}
                 revealOnMount={revealCanvas}
                 fitOnNavigate={navigation.fit}
@@ -577,9 +593,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 selected={selected}
                 navigation={navigation.count}
                 onSelect={setSelected}
-                render={(session, minimize) => terminal(session, true, minimize)}
+                render={(session, minimize, onFlyTo) => terminal(session, true, minimize, onFlyTo)}
               />
             )}
+            {view !== "focus" &&
+              sessions.length > 0 &&
+              sessions.every((session) => layoutHidden[session.id]) && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center">
+                  <p className="text-sm text-muted">All terminals are hidden</p>
+                  <button
+                    className="small-button"
+                    onClick={() => sessions.forEach((session) => setVisibility(session.id, false))}
+                  >
+                    Show all terminals
+                  </button>
+                </div>
+              )}
             {!sessions.length && (
               <div
                 className="empty-workspace relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background"

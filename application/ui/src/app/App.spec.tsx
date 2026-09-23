@@ -34,6 +34,126 @@ describe("novadeck. workspace", () => {
     localStorage.clear()
     window.history.replaceState(null, "", "/")
   })
+  context("when hiding terminals from shared layouts", () => {
+    it("previews the active hidden terminal without changing its visibility in Grid or Canvas", async () => {
+      render(<App />)
+      await interact(
+        "change",
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+        { target: { value: "unfinished command" } },
+      )
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Hide Checkout implementation in Grid and Canvas" }),
+      )
+      expect(
+        screen
+          .getByRole("region", { name: "Checkout implementation terminal" })
+          .closest(".grid-terminal"),
+      ).toHaveAttribute("data-preview", "true")
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      expect(
+        screen.queryByRole("region", { name: "Checkout implementation terminal" }),
+      ).not.toBeInTheDocument()
+      const tab = screen.getByRole("button", { name: "Select Checkout implementation (hidden)" })
+      expect(tab).not.toHaveAttribute("aria-current")
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      expect(
+        screen.queryByRole("region", { name: "Checkout implementation terminal" }),
+      ).not.toBeInTheDocument()
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Select Checkout implementation (hidden)" }),
+      )
+      expect(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).toHaveValue("unfinished command")
+      expect(
+        screen.getByRole("button", { name: "Show Checkout implementation in Grid and Canvas" }),
+      ).toBeEnabled()
+      expect(
+        screen
+          .getByRole("region", { name: "Checkout implementation terminal" })
+          .closest(".canvas-node"),
+      ).toHaveAttribute("data-preview", "true")
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      expect(
+        screen.queryByRole("region", { name: "Checkout implementation terminal" }),
+      ).not.toBeInTheDocument()
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Select Checkout implementation (hidden)" }),
+      )
+      expect(
+        screen
+          .getByRole("region", { name: "Checkout implementation terminal" })
+          .closest(".grid-terminal"),
+      ).toHaveAttribute("data-preview", "true")
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Show Checkout implementation in Grid and Canvas" }),
+      )
+      expect(
+        screen
+          .getByRole("region", { name: "Checkout implementation terminal" })
+          .closest(".grid-terminal"),
+      ).toHaveAttribute("data-preview", "false")
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      expect(screen.getByRole("region", { name: "Checkout implementation terminal" })).toBeVisible()
+    })
+
+    it("toggles visibility without selecting a different tab and still allows Focus access", async () => {
+      render(<App />)
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Hide Dev server in Grid and Canvas" }),
+      )
+      expect(
+        screen.getByRole("button", { name: "Select Checkout implementation" }),
+      ).toHaveAttribute("aria-current", "true")
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Show Dev server in Grid and Canvas" }),
+      )
+      expect(
+        screen.getByRole("button", { name: "Select Checkout implementation" }),
+      ).toHaveAttribute("aria-current", "true")
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Hide Checkout implementation in Grid and Canvas" }),
+      )
+      expect(screen.getByRole("region", { name: "Checkout implementation terminal" })).toBeVisible()
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      expect(
+        screen
+          .getByRole("region", { name: "Checkout implementation terminal" })
+          .closest(".grid-terminal"),
+      ).toHaveAttribute("data-preview", "true")
+      await interact("click", screen.getByRole("radio", { name: "Focus" }))
+      expect(screen.getByRole("region", { name: "Checkout implementation terminal" })).toBeVisible()
+    })
+
+    it("can restore all terminals after hiding every tab", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await act(async () => {
+        for (const button of screen.getAllByRole("button", {
+          name: /^Hide .* in Grid and Canvas$/,
+        }))
+          fireEvent.click(button)
+      })
+      expect(screen.queryByText("All terminals are hidden")).not.toBeInTheDocument()
+      await interact("click", document.querySelector(".react-flow__pane")!)
+      expect(screen.getByText("All terminals are hidden")).toBeVisible()
+      expect(screen.queryAllByRole("textbox", { name: /^Command for / })).toHaveLength(0)
+      await interact("click", screen.getByRole("button", { name: "Show all terminals" }))
+      expect(screen.queryByText("All terminals are hidden")).not.toBeInTheDocument()
+      expect(screen.getAllByRole("textbox", { name: /^Command for / })).toHaveLength(6)
+    })
+  })
+
   context("when minimizing a Grid terminal", () => {
     it("retains drafts and folded state across views without folding Canvas or Focus", async () => {
       render(<App />)
@@ -456,7 +576,7 @@ describe("novadeck. workspace", () => {
 
   context("when toggling views from a terminal header", () => {
     for (const view of ["grid", "canvas"] as const) {
-      it(`returns to ${view} and back to Focus without changing the terminal`, async () => {
+      it(`returns to ${view} and uses its header action without changing the terminal`, async () => {
         localStorage.setItem("novadeck.windowed-view", view)
         const app = render(<App />)
         const header = (): HTMLElement =>
@@ -464,10 +584,31 @@ describe("novadeck. workspace", () => {
         await interact("doubleClick", header())
         expect(screen.getByRole("region", { name: `${view} view` })).toBeVisible()
         await interact("doubleClick", header())
-        expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+        expect(
+          screen.getByRole("region", { name: `${view === "canvas" ? "canvas" : "focus"} view` }),
+        ).toBeVisible()
         expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
       })
     }
+
+    it("flies to an inactive minimized Canvas terminal even when Focus is disabled", async () => {
+      localStorage.setItem("novadeck.preferences", JSON.stringify({ enabledViews: ["canvas"] }))
+      render(<App />)
+      const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+      await interact("click", within(terminal).getByRole("button", { name: "Minimize Dev server" }))
+      await interact(
+        "doubleClick",
+        within(terminal).getByRole("heading", { name: "Dev server" }).closest("header")!,
+      )
+      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+      expect(terminal.closest(".canvas-node")).toHaveClass("selected")
+      expect(
+        within(terminal).getByRole("textbox", { name: "Command for Dev server" }),
+      ).toBeVisible()
+      expect(
+        within(terminal).queryByRole("button", { name: "Focus Dev server" }),
+      ).not.toBeInTheDocument()
+    })
 
     it("ignores double-clicks originating from header buttons", async () => {
       render(<App />)

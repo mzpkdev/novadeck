@@ -1,5 +1,5 @@
 import { useSortable } from "@dnd-kit/react/sortable"
-import { Check, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
+import { Check, Eye, EyeOff, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 import { useState } from "react"
 
 import { Editable } from "../../ui-toolkit/Editable"
@@ -14,6 +14,8 @@ export const SessionTab = ({
   session,
   index,
   selected,
+  hidden,
+  onVisibilityChange,
   onSelect,
   onRename,
   onClose,
@@ -21,6 +23,8 @@ export const SessionTab = ({
   session: Session
   index: number
   selected: boolean
+  hidden: boolean
+  onVisibilityChange: (hidden: boolean) => void
   onSelect: () => void
   onRename: (name: string) => void
   onClose: () => void
@@ -46,11 +50,12 @@ export const SessionTab = ({
         icon={<TerminalIcon size={14} strokeWidth={1.5} />}
         detail={<span className="session-process truncate font-mono">{session.command}</span>}
         selected={selected}
-        selectLabel={`Select ${session.name}`}
+        selectLabel={`Select ${session.name}${hidden ? " (hidden)" : ""}`}
         tooltip={`${session.name}\n${session.directory} · ${session.command}`}
         onSelect={onSelect}
         data-session-id={session.id}
-        className={`session-tab ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
+        data-terminal-hidden={hidden}
+        className={`session-tab [&_.sidebar-item-detail]:pr-[76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
         editing={editing}
         editor={
           <Editable.Area
@@ -62,6 +67,20 @@ export const SessionTab = ({
         }
         actions={
           <div className="session-actions flex items-center">
+            <Tooltip content={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}>
+              <button
+                className={`${actionClasses} ${hidden ? "[&>svg]:opacity-100!" : ""}`}
+                aria-label={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}
+                aria-pressed={hidden}
+                onClick={() => onVisibilityChange(!hidden)}
+              >
+                {hidden ? (
+                  <EyeOff size={13} strokeWidth={1.5} />
+                ) : (
+                  <Eye size={13} strokeWidth={1.5} />
+                )}
+              </button>
+            </Tooltip>
             {editing ? (
               <Editable.SubmitTrigger
                 className={actionClasses}

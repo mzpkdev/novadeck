@@ -50,6 +50,7 @@ export type WorkspaceState = {
   canvasLayout: CanvasLayout
   gridLayouts: GridLayouts
   gridMinimized: Record<string, boolean>
+  hidden: Record<string, boolean>
   nextTerminalNumber: number
 }
 export type WorkspaceSession = {

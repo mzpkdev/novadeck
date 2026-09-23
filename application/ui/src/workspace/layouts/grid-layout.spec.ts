@@ -88,3 +88,47 @@ describe("minimized grid layouts", () => {
     })
   })
 })
+
+describe("hidden grid layouts", () => {
+  it("closes the visible gap and restores the saved arrangement when shown again", () => {
+    const projected = visibleGridLayouts(sessions, layouts, {}, { a: true })
+    expect(projected.desktop).toMatchObject([{ i: "b", x: 0, y: 0, w: 4, h: 12 }])
+    expect(projected.mobile).toMatchObject([{ i: "b", x: 0, y: 0, w: 4, h: 12 }])
+
+    // The grid reports its compacted projection when children change; that is not a user edit.
+    const saved = expandedGridLayouts(projected, layouts, sessions, {}, { a: true })
+    expect(saved).toBe(layouts)
+    expect(visibleGridLayouts(sessions, saved, {}, {}).desktop).toMatchObject(layouts.desktop!)
+    expect(visibleGridLayouts(sessions, saved, {}, {}).mobile).toMatchObject(layouts.mobile!)
+  })
+
+  it("retains hidden geometry when a visible terminal is dragged or resized", () => {
+    const projected = visibleGridLayouts(sessions, layouts, {}, { a: true })
+    const changed = {
+      ...projected,
+      desktop: projected.desktop!.map((item) => ({ ...item, x: 4, y: 5, w: 6, h: 18 })),
+    }
+    const saved = expandedGridLayouts(changed, layouts, sessions, {}, { a: true })
+    expect(saved.desktop?.find((item) => item.i === "a")).toEqual(layouts.desktop?.[0])
+    expect(saved.desktop?.find((item) => item.i === "b")).toMatchObject({
+      x: 4,
+      y: 5,
+      w: 6,
+      h: 18,
+    })
+    expect(saved.mobile).toEqual(layouts.mobile)
+  })
+
+  it("keeps a hidden minimized terminal's expanded height during visible edits", () => {
+    const projected = visibleGridLayouts(sessions, layouts, { a: true }, { a: true })
+    const changed = {
+      ...projected,
+      desktop: projected.desktop!.map((item) => ({ ...item, w: 5 })),
+    }
+    const saved = expandedGridLayouts(changed, layouts, sessions, { a: true }, { a: true })
+    expect(saved.desktop?.find((item) => item.i === "a")?.h).toBe(20)
+    expect(
+      visibleGridLayouts(sessions, saved, {}, {}).desktop?.find((item) => item.i === "a")?.h,
+    ).toBe(20)
+  })
+})

@@ -48,6 +48,7 @@ export type WorkspaceAction =
   | { type: "terminal/close"; target: WorkspaceTarget; terminalId: string }
   | { type: "terminal/reorder"; target: WorkspaceTarget; tabOrder: string[] }
   | { type: "terminal/select"; target: WorkspaceTarget; terminalId: string }
+  | { type: "terminal/visibility"; target: WorkspaceTarget; terminalId: string; hidden: boolean }
   | { type: "terminal/draft"; target: WorkspaceTarget; terminalId: string; draft: string }
   | { type: "terminal/scroll"; target: WorkspaceTarget; terminalId: string; offset: number }
   | { type: "terminal/output-clear"; target: WorkspaceTarget; terminalId: string }
@@ -91,6 +92,7 @@ export const createSessionState = (
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
   gridMinimized: {},
+  hidden: {},
   nextTerminalNumber: sessions.length + 1,
 })
 
@@ -256,6 +258,7 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
         : { ...state.canvasLayout, geometry, minimized },
     gridLayouts: withoutGridItem(state.gridLayouts, terminalId),
     gridMinimized,
+    hidden: withoutKey(state.hidden, terminalId),
   }
 }
 
@@ -389,6 +392,13 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         (hasTerminal(state, action.terminalId) || action.terminalId === "") &&
         state.selected !== action.terminalId
           ? { ...state, selected: action.terminalId }
+          : state,
+      )
+    case "terminal/visibility":
+      return updateTarget(workspace, action.target, (state) =>
+        hasTerminal(state, action.terminalId) &&
+        Boolean(state.hidden[action.terminalId]) !== action.hidden
+          ? { ...state, hidden: { ...state.hidden, [action.terminalId]: action.hidden } }
           : state,
       )
     case "terminal/draft":

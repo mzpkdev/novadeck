@@ -5,8 +5,23 @@ A terminal workspace for organizing projects, sessions, and parallel work.
 Focus on one terminal, arrange several in a grid, or spread them across a zoomable
 canvas. Keep related work together and switch between sessions from the sidebar.
 
-In Canvas, drag or scroll over an inactive terminal to pan the canvas. Click to
-activate it, then select its text, scroll its output, or drag its header to move it.
+In Canvas, scroll to zoom in or out, and drag the background or an inactive terminal
+to pan. Click a terminal to activate it, then select its text, scroll its output,
+or drag its header to move it.
+Double-click or double-tap a terminal header to smoothly center and zoom that terminal
+to fit the canvas viewport. Minimized terminals restore first. The header's arrow
+opens Focus view.
+
+In Grid, selecting a terminal from its tab smoothly scrolls it into view. With
+reduced motion enabled, it scrolls immediately.
+
+Use the eye on a terminal tab to hide it from Grid and Canvas without closing it.
+Hidden tabs stay in the list with a faded label. While selected, a hidden terminal
+appears at 50% opacity in Grid and Canvas, then disappears when it is no longer active.
+Its hidden setting stays unchanged; use the eye to make it visible permanently.
+Hidden terminals retain
+their content and layout and remain available in Focus view.
+Showing and hiding use a short fade and scale transition; reduced motion skips it.
 
 ## Development
 
