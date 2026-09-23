@@ -71,4 +71,14 @@ const SubmitTrigger = ({ tooltip, ...props }: TriggerProps): React.JSX.Element =
   </ArkEditable.Context>
 )
 
-export const Editable = { Root, Area, Input, EditTrigger, SubmitTrigger }
+const CancelTrigger = ({ tooltip, ...props }: TriggerProps): React.JSX.Element => (
+  <ArkEditable.Context>
+    {(editable) => (
+      <Tooltip content={tooltip}>
+        <ArkEditable.CancelTrigger {...props} id={editable.getCancelTriggerProps().id} />
+      </Tooltip>
+    )}
+  </ArkEditable.Context>
+)
+
+export const Editable = { Root, Area, Input, EditTrigger, SubmitTrigger, CancelTrigger }

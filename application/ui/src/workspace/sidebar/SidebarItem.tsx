@@ -59,16 +59,14 @@ export const SidebarItem = ({
       </span>
       <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
         <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
-        <span className="sidebar-item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] text-muted [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[52px]">
+        <span className="sidebar-item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] text-muted [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[var(--sidebar-actions-space,52px)]">
           {detail}
         </span>
       </span>
     </button>
     {editor}
     {actions && (
-      <div
-        className={`sidebar-item-actions flex h-6 shrink-0 items-center ${editing ? "mr-2 mb-1.5 self-end" : "absolute right-2 bottom-[9px]"}`}
-      >
+      <div className="sidebar-item-actions absolute right-2 bottom-[9px] flex h-6 shrink-0 items-center">
         {actions}
       </div>
     )}

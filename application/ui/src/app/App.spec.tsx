@@ -683,6 +683,37 @@ describe("novadeck. workspace", () => {
     })
   })
   context("when managing terminal tabs", () => {
+    it("cancels renaming with the tab's close control before allowing it to close the terminal", async () => {
+      render(<App />)
+      const visibility = screen.getByRole("button", {
+        name: "Hide Checkout implementation in Grid and Canvas",
+      })
+      expect(visibility).toBeEnabled()
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Rename Checkout implementation" }),
+      )
+      const input = screen.getByRole("textbox", { name: "Rename Checkout implementation" })
+      expect(visibility).toBeDisabled()
+      await interact("change", input, { target: { value: "Discard this" } })
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Cancel renaming Checkout implementation" }),
+      )
+      expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
+      expect(visibility).toBeEnabled()
+      const tab = screen
+        .getByRole("button", { name: "Select Checkout implementation" })
+        .closest(".session-tab")!
+      await interact(
+        "click",
+        within(tab as HTMLElement).getByRole("button", { name: "Close Checkout implementation" }),
+      )
+      expect(
+        screen.queryByRole("button", { name: "Select Checkout implementation" }),
+      ).not.toBeInTheDocument()
+    })
+
     it("renames a session across layouts and cancels an unfinished rename", async () => {
       render(<App />)
       await interact(
