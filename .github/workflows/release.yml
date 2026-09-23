@@ -154,8 +154,19 @@ jobs:
           smoke_directory="$RUNNER_TEMP/novadeck-smoke"
           mkdir -p "$smoke_directory"
           ditto -x -k "$artifact" "$smoke_directory"
-          executable="$smoke_directory/NovaDeck.app/Contents/MacOS/NovaDeck"
-          test -x "$executable"
+          shopt -s nullglob
+          bundles=("$smoke_directory"/*.app)
+          if [[ "${#bundles[@]}" -ne 1 || ! -d "${bundles[0]}" ]]; then
+            echo "::error::Expected exactly one top-level macOS app bundle."
+            exit 1
+          fi
+          bundle="${bundles[0]}"
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")"
+          executable="$bundle/Contents/MacOS/$executable_name"
+          if [[ -z "$executable_name" || ! -x "$executable" || -d "$executable" ]]; then
+            echo "::error::The macOS bundle executable is missing or not executable."
+            exit 1
+          fi
 
           "$executable" &
           pid=$!
