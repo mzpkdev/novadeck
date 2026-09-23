@@ -30,7 +30,10 @@ const currentSessionName = (): string =>
     .getAttribute("aria-label")!
 
 describe("novadeck. workspace", () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    window.history.replaceState(null, "", "/")
+  })
   context("when minimizing a Grid terminal", () => {
     it("retains drafts and folded state across views without folding Canvas or Focus", async () => {
       render(<App />)

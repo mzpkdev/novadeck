@@ -18,8 +18,12 @@ export const Preferences = ({
   onChange,
   onClose,
   onExitComplete,
+  tab,
+  onTabChange,
 }: {
   open: boolean
+  tab: "general" | "shortcuts"
+  onTabChange: (tab: "general" | "shortcuts") => void
   value: PreferencesValue
   onChange: (value: PreferencesValue) => void
   onClose: () => void
@@ -27,10 +31,10 @@ export const Preferences = ({
 }): React.JSX.Element => {
   const dialog = useRef<HTMLDivElement>(null)
   const panels = useRef<HTMLDivElement>(null)
-  const [tab, setTab] = useState("general")
   const [openSelect, setOpenSelect] = useState<string | null>(null)
   const changeTab = (next: string): void => {
-    setTab(next)
+    if (next !== "general" && next !== "shortcuts") return
+    onTabChange(next)
     setOpenSelect(null)
     if (panels.current) panels.current.scrollTop = 0
   }

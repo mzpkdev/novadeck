@@ -1,5 +1,6 @@
 import { History, Plus, Terminal as TerminalIcon } from "lucide-react"
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { HashRouter, useNavigationType } from "react-router"
 
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
 import { backgroundPointerHandlers } from "../workspace/layouts/background"
@@ -50,6 +51,9 @@ import { SessionsPanel } from "../workspace/sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../workspace/sidebar/SidebarPanel"
 import { SessionList } from "../workspace/terminals/SessionList"
 import { Terminal, type MinimizeControls } from "../workspace/terminals/Terminal"
+import { routeUrl } from "./routing"
+import { useRouteDialog } from "./useRouteDialog"
+import { useWorkspaceRoute } from "./useWorkspaceRoute"
 
 const collapsedStorageKey = "novadeck.sidebar-collapsed"
 const readSidebarCollapsed = (): boolean => {
@@ -92,29 +96,36 @@ const newWorkspaceSession = (
 
 const initializeWorkspace = (preferences: PreferencesValue) => {
   const view = preferences.enabledViews.includes("focus") ? "focus" : preferences.enabledViews[0]!
-  const initial = initialProjects[0]!
-  const session = newWorkspaceSession(projectSessions(initial), view, readWindowedView())
-  return workspaceReducer(
-    createWorkspace({ projects: initialProjects, activeProjectId: initial.id }),
-    {
-      type: "project/select",
-      projectId: initial.id,
-      now: session.visitedAt,
-      initialSession: session,
+  return initialProjects.reduce(
+    (workspace, project) => {
+      const session = newWorkspaceSession(projectSessions(project), view, readWindowedView())
+      return workspaceReducer(workspace, {
+        type: "session/add",
+        projectId: project.id,
+        session: { ...session, id: "initial" },
+      })
     },
+    createWorkspace({ projects: initialProjects, activeProjectId: initialProjects[0]!.id }),
   )
 }
-
-const useWorkspace = (preferences: PreferencesValue) =>
-  useReducer(workspaceReducer, preferences, initializeWorkspace)
 
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
   useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
 
-export const App = (): React.JSX.Element => {
+export const App = (): React.JSX.Element => (
+  <HashRouter useTransitions={false}>
+    <WorkspaceApp />
+  </HashRouter>
+)
+
+export const WorkspaceApp = (): React.JSX.Element => {
   const desktop = useDesktop()
+  const navigationType = useNavigationType()
   const [preferences, setPreferences] = useState(readPreferences)
-  const [workspace, dispatch] = useWorkspace(preferences)
+  const { workspace, dispatch, route, go, navigateWorkspace, closeDialog } = useWorkspaceRoute(
+    preferences,
+    initializeWorkspace,
+  )
   const project = activeProject(workspace)!
   const current = activeSession(workspace)!
   const projectId = project.id
@@ -137,10 +148,7 @@ export const App = (): React.JSX.Element => {
   } = current.state
   const ordered = orderedSessions(current.state)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
-  const setSelected = useCallback(
-    (terminalId: string) => dispatch({ type: "terminal/select", target, terminalId }),
-    [dispatch, target],
-  )
+  const setSelected = (terminal: string): void => go({ terminal })
   const setCanvasLayout = useCallback(
     (layout: ValueUpdate<CanvasLayout>) => dispatch({ type: "canvas/layout", target, layout }),
     [dispatch, target],
@@ -151,18 +159,14 @@ export const App = (): React.JSX.Element => {
   )
   const setTabOrder = (tabOrder: string[]): void =>
     dispatch({ type: "terminal/reorder", target, tabOrder })
-  const [sidebarPanel, setSidebarPanel] = useState<"terminals" | "sessions">("terminals")
+  const sidebarPanel = route.panel
+  const setSidebarPanel = (panel: "terminals" | "sessions"): void => go({ panel })
   const [revealCanvas, setRevealCanvas] = useState(false)
-  const [navigation, setNavigation] = useState({ count: 0, fit: false })
-  const [settings, setSettings] = useState(false)
-  const [searching, setSearching] = useState(false)
-  const pendingDialog = useRef<"search" | "preferences" | null>(null)
-  const openPendingDialog = useCallback((): void => {
-    const next = pendingDialog.current
-    pendingDialog.current = null
-    if (next === "search") setSearching(true)
-    if (next === "preferences") setSettings(true)
-  }, [setSearching, setSettings])
+  const [navigation, setNavigation] = useState({ count: 1, fit: false })
+  const { searching, settings, onExitComplete } = useRouteDialog(
+    route.dialog,
+    `${projectId}/${workspaceSessionId}`,
+  )
   const [sidebar, setSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const sidebarVisible = desktop ? !sidebarCollapsed : sidebar
@@ -194,31 +198,34 @@ export const App = (): React.JSX.Element => {
     }
   }, [sidebarCollapsed])
 
-  const resetPresentation = (nextView: ViewMode): void => {
-    pendingDialog.current = null
-    cancelTerminalTransition()
-    const restoredView = preferences.enabledViews.includes(nextView)
-      ? nextView
-      : preferences.enabledViews[0]!
-    setNavigation({ count: restoredView === "grid" ? 1 : 0, fit: false })
-    setRevealCanvas(false)
-    setSidebar(false)
-    setSearching(false)
-    setSettings(false)
+  const presentation = `${projectId}/${workspaceSessionId}/${view}/${selected}`
+  const context = `${projectId}/${workspaceSessionId}`
+  const [previousPresentation, setPreviousPresentation] = useState({ presentation, context })
+  if (previousPresentation.presentation !== presentation) {
+    setPreviousPresentation({ presentation, context })
+    if (previousPresentation.context !== context || navigationType === "POP") {
+      setNavigation((value) => ({ count: value.count + 1, fit: false }))
+      setRevealCanvas(false)
+      setSidebar(false)
+    }
   }
+  useEffect(() => {
+    if (navigationType === "POP" && presentation) cancelTerminalTransition()
+  }, [navigationType, presentation])
   const switchSession = (id: string): void => {
     if (id === workspaceSessionId) return
     const next = workspaceSessions.find((item) => item.id === id)
     if (!next) return
     const now = currentTimestamp()
-    dispatch({
-      type: "session/select",
-      projectId,
-      workspaceSessionId: id,
-      now,
-      enabledViews: preferences.enabledViews,
-    })
-    resetPresentation(next.state.view)
+    navigateWorkspace([
+      {
+        type: "session/select",
+        projectId,
+        workspaceSessionId: id,
+        now,
+        enabledViews: preferences.enabledViews,
+      },
+    ])
   }
   const startFresh = (): void => {
     const next = newWorkspaceSession([], view, windowedView)
@@ -226,8 +233,7 @@ export const App = (): React.JSX.Element => {
     let suffix = 2
     while (workspaceSessions.some((item) => item.name === next.name))
       next.name = `${name} (${suffix++})`
-    dispatch({ type: "session/add", projectId, session: next })
-    resetPresentation(next.state.view)
+    navigateWorkspace([{ type: "session/add", projectId, session: next }])
   }
   const showSessions = (): void => {
     setSidebarPanel("sessions")
@@ -249,21 +255,15 @@ export const App = (): React.JSX.Element => {
   }
   const switchProject = (next: Project): void => {
     if (next.id === projectId) return
-    const saved = projects.find((item) => item.id === next.id)
-    const history = saved?.history ?? []
-    const restoredSession =
-      history.find((item) => item.id === saved?.activeSessionId) ??
-      history[0] ??
-      newWorkspaceSession(projectSessions(next), view, windowedView)
     const now = currentTimestamp()
-    dispatch({
-      type: "project/select",
-      projectId: next.id,
-      now,
-      initialSession: restoredSession,
-      enabledViews: preferences.enabledViews,
-    })
-    resetPresentation(restoredSession.state.view)
+    navigateWorkspace([
+      {
+        type: "project/select",
+        projectId: next.id,
+        now,
+        enabledViews: preferences.enabledViews,
+      },
+    ])
   }
   const select = (id: string, fit = false): void => {
     setSelected(id)
@@ -281,41 +281,54 @@ export const App = (): React.JSX.Element => {
   }
   const changeView = (next: ViewMode): void => {
     if (!preferences.enabledViews.includes(next)) return
-    dispatch({ type: "view/change", target, view: next, enabledViews: preferences.enabledViews })
+    navigateWorkspace([
+      { type: "view/change", target, view: next, enabledViews: preferences.enabledViews },
+    ])
     setRevealCanvas(false)
     setSidebar(false)
   }
   const showWindowed = (id: string): void => {
     if (!windowedDestination) return
-    select(id)
+    setNavigation((value) => ({ count: value.count + 1, fit: false }))
+    setSidebar(false)
     setRevealCanvas(windowedDestination === "canvas")
-    dispatch({
-      type: "view/change",
-      target,
-      view: windowedDestination,
-      enabledViews: preferences.enabledViews,
-      rememberWindowed: false,
-    })
+    navigateWorkspace(
+      [
+        {
+          type: "view/change",
+          target,
+          view: windowedDestination,
+          enabledViews: preferences.enabledViews,
+          rememberWindowed: false,
+        },
+      ],
+      { terminal: id },
+    )
   }
   const openWindowed = (id: string): void => transitionTerminal(id, () => showWindowed(id))
   const openSearchResult = (id: string): void => {
-    setSearching(false)
-    select(id, view === "canvas")
+    go({ terminal: id, dialog: null })
+    setNavigation((value) => ({ count: value.count + 1, fit: view === "canvas" }))
+    setSidebar(false)
   }
   const add = (): void => {
-    setSidebarPanel("terminals")
-    dispatch({
-      type: "terminal/add",
-      target,
-      session: createMockTerminal(nextTerminalNumber, project.directory),
-    })
+    navigateWorkspace(
+      [
+        {
+          type: "terminal/add",
+          target,
+          session: createMockTerminal(nextTerminalNumber, project.directory),
+        },
+      ],
+      { panel: "terminals" },
+    )
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     setSidebar(false)
   }
   const rename = (terminalId: string, name: string): void =>
     dispatch({ type: "terminal/rename", target, terminalId, name })
   const close = (terminalId: string): void => {
-    dispatch({ type: "terminal/close", target, terminalId })
+    navigateWorkspace([{ type: "terminal/close", target, terminalId }], {}, true)
     if (selected === terminalId && view !== "canvas")
       setNavigation((value) => ({ count: value.count + 1, fit: false }))
   }
@@ -358,8 +371,9 @@ export const App = (): React.JSX.Element => {
         ? {
             onFocus: () =>
               transitionTerminal(session.id, () => {
-                select(session.id)
-                changeView("focus")
+                go({ terminal: session.id, view: "focus" })
+                setRevealCanvas(false)
+                setSidebar(false)
               }),
           }
         : !compact && windowedDestination
@@ -374,35 +388,20 @@ export const App = (): React.JSX.Element => {
   )
 
   useEffect(() => {
-    const requestDialog = (next: "search" | "preferences"): void => {
-      if (pendingDialog.current) {
-        pendingDialog.current = next
-        return
-      }
-      if ((next === "search" && searching) || (next === "preferences" && settings)) return
-      pendingDialog.current = next
-      if (searching || settings) {
-        // The outgoing dialog's exit callback opens the latest requested modal.
-        setSearching(false)
-        setSettings(false)
-      } else {
-        openPendingDialog()
-      }
-    }
     const keydown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault()
-        requestDialog("search")
+        go({ dialog: "search" })
       }
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault()
-        requestDialog("preferences")
+        go({ dialog: "preferences", section: "general" })
       }
     }
     window.addEventListener("keydown", keydown)
     return () => window.removeEventListener("keydown", keydown)
-  }, [searching, settings, openPendingDialog])
+  }, [go])
 
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <ToggleGroup
@@ -466,9 +465,9 @@ export const App = (): React.JSX.Element => {
           const direction = viewModes.indexOf(id) > viewModes.indexOf(view) ? 1 : -1
           transitionWorkspace(() => changeView(id), direction)
         }}
-        onHome={() => changeView(preferences.enabledViews[0]!)}
-        onSearch={() => setSearching(true)}
-        onPreferences={() => setSettings(true)}
+        homeTo={routeUrl({ ...route, view: preferences.enabledViews[0]!, dialog: null })}
+        onSearch={() => go({ dialog: "search" })}
+        onPreferences={() => go({ dialog: "preferences", section: "general" })}
       />
       <div className="workspace-body relative flex min-h-0 flex-1">
         {sidebarRail()}
@@ -525,7 +524,7 @@ export const App = (): React.JSX.Element => {
                   <span>New terminal</span>
                 </button>
                 <SessionList
-                  key={workspaceSessionId}
+                  key={`${projectId}/${workspaceSessionId}`}
                   sessions={ordered}
                   selected={selected}
                   onSelect={select}
@@ -538,7 +537,7 @@ export const App = (): React.JSX.Element => {
           }
         >
           <section
-            key={workspaceSessionId}
+            key={`${projectId}/${workspaceSessionId}`}
             className={`main-area flex min-w-0 flex-1 flex-col ${view}`}
             aria-label={`${view} view`}
           >
@@ -628,20 +627,23 @@ export const App = (): React.JSX.Element => {
         </span>
       </footer>
       <TerminalSearch
-        onExitComplete={openPendingDialog}
+        onExitComplete={onExitComplete}
         open={searching}
-        key={workspaceSessionId}
+        key={`${projectId}/${workspaceSessionId}`}
         sessions={ordered}
         destination={searchLabel}
         onSelect={openSearchResult}
-        onClose={() => setSearching(false)}
+        onClose={closeDialog}
       />
       <Preferences
-        onExitComplete={openPendingDialog}
+        key={`preferences/${projectId}/${workspaceSessionId}`}
+        onExitComplete={onExitComplete}
         open={settings}
         value={preferences}
+        tab={route.section}
+        onTabChange={(section) => go({ section })}
         onChange={updatePreferences}
-        onClose={() => setSettings(false)}
+        onClose={closeDialog}
       />
     </main>
   )
