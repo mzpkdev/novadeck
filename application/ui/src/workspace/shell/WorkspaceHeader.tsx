@@ -6,6 +6,7 @@ import {
   SquareDashedMousePointer,
   Terminal as TerminalIcon,
 } from "lucide-react"
+import { Link } from "react-router"
 
 import { SegmentGroup } from "../../ui-toolkit/SegmentGroup"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
@@ -25,7 +26,7 @@ export const WorkspaceHeader = ({
   project,
   onProjectSelect,
   onViewChange,
-  onHome,
+  homeTo,
   onSearch,
   onPreferences,
 }: {
@@ -35,7 +36,7 @@ export const WorkspaceHeader = ({
   project: Project
   onProjectSelect: (id: string) => void
   onViewChange: (mode: ViewMode) => void
-  onHome: () => void
+  homeTo: string
   onSearch: () => void
   onPreferences: () => void
 }): React.JSX.Element => {
@@ -43,14 +44,10 @@ export const WorkspaceHeader = ({
   return (
     <header className="app-header max-[1001px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
-        <a
-          href="#"
+        <Link
+          to={homeTo}
           className="brand max-[701px]:w-auto max-[701px]:text-[17px] max-[701px]:gap-[7px] [&>span:last-child]:max-[1001px]:hidden flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px] no-underline"
           aria-label="novadeck. home"
-          onClick={(event) => {
-            event.preventDefault()
-            onHome()
-          }}
         >
           <span className="brand-symbol max-[701px]:size-[25px] flex size-7 items-center justify-center rounded-control border border-strong bg-strong text-white">
             <TerminalIcon size={18} strokeWidth={2} />
@@ -58,7 +55,7 @@ export const WorkspaceHeader = ({
           <span>
             novadeck<span className="text-muted">.</span>
           </span>
-        </a>
+        </Link>
         <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
       </div>
       <SegmentGroup

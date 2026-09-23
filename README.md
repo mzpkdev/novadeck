@@ -58,7 +58,26 @@ Source lives in `application/ui/src/`:
 | `workspace/mock/`                                                      | Sample projects, transcripts, and command replies.                      |
 | `styles.css`                                                           | Theme tokens, global primitives, and specialized library/canvas styles. |
 
-Keep project and session state in the workspace reducer. Address updates by
+Navigation uses React Router with hash URLs in both the browser and Electron,
+so links work with the packaged `file://` UI and static hosting. For example:
+
+```text
+#/projects/storefront/sessions/initial/canvas?terminal=05&panel=sessions
+```
+
+The path selects a project, workspace session, and view. Query parameters select
+the terminal, sidebar panel, and dialog (`dialog=search` or `dialog=preferences`);
+Preferences also accepts `section=shortcuts`. Back and Forward restore navigation
+without discarding terminal drafts or output. Sidebar visibility, search text,
+canvas gestures, and other temporary controls stay local.
+
+Sample sessions use the stable ID `initial`. New sessions still live only in
+memory: reloading an expired session link falls back to that project's available
+session. Unknown routes, missing terminals, and disabled views are replaced with
+a valid URL. Routing does not persist terminal data across reloads.
+
+Keep project and session data in the workspace reducer; the URL owns the current
+navigation, while the reducer remembers each session's last selection. Address updates by
 project and session IDs so delayed callbacks affect the session that created
 them. XYFlow owns live Canvas gestures; save geometry and camera state when a
 gesture ends or the view unmounts.
