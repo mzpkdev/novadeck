@@ -8,7 +8,9 @@ export const AgentOutput = ({
   <div
     className={`agent-transcript max-w-180 [overflow-wrap:anywhere] leading-[1.65] agent-${agent}`}
   >
-    <div className="agent-banner mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1 [&>span]:text-[0.85em]">
+    <div
+      className={`agent-banner mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1 [&>span]:text-[0.85em] ${agent === "codex" ? "w-fit max-w-full flex-col border border-line px-3 py-2" : ""}`}
+    >
       <strong>{agent === "claude" ? "✳ Claude Code" : ">_ Codex"}</strong>
       <span className="text-muted">{directory}</span>
     </div>

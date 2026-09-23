@@ -7,6 +7,9 @@ import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Session } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
 
+const actionClasses =
+  "session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
+
 export const SessionTab = ({
   session,
   index,
@@ -61,7 +64,7 @@ export const SessionTab = ({
           <div className="session-actions flex items-center">
             {editing ? (
               <Editable.SubmitTrigger
-                className="session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink"
+                className={actionClasses}
                 aria-label={`Save name for ${session.name}`}
                 tooltip="Save name"
               >
@@ -69,7 +72,7 @@ export const SessionTab = ({
               </Editable.SubmitTrigger>
             ) : (
               <Editable.EditTrigger
-                className="session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink"
+                className={actionClasses}
                 aria-label={`Rename ${session.name}`}
                 tooltip="Rename terminal"
               >
@@ -78,7 +81,7 @@ export const SessionTab = ({
             )}
             <Tooltip content="Close terminal">
               <button
-                className="session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink"
+                className={actionClasses}
                 aria-label={`Close ${session.name}`}
                 onClick={onClose}
               >

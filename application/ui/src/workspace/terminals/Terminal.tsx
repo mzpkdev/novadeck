@@ -19,6 +19,9 @@ export type MinimizeControls = {
   onToggle: () => void
 }
 
+const headerActionClasses =
+  "icon-button [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100"
+
 export const Terminal = ({
   session,
   projectName,
@@ -159,7 +162,7 @@ export const Terminal = ({
             {minimize && (
               <Tooltip content={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}>
                 <button
-                  className="icon-button terminal-view-action nodrag nopan"
+                  className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
                   aria-expanded={!minimize.minimized}
                   onClick={(event) => {
@@ -174,7 +177,7 @@ export const Terminal = ({
             {onFocus && (
               <Tooltip content={`Focus ${session.name}`}>
                 <button
-                  className="icon-button terminal-view-action nodrag nopan"
+                  className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`Focus ${session.name}`}
                   onClick={onFocus}
                 >
@@ -185,7 +188,7 @@ export const Terminal = ({
             {windowed && (
               <Tooltip content={`Open in ${windowed.destination}`}>
                 <button
-                  className="icon-button terminal-view-action"
+                  className={`${headerActionClasses} terminal-view-action`}
                   aria-label={`Open in ${windowed.destination}`}
                   onClick={windowed.onOpen}
                 >
@@ -196,7 +199,7 @@ export const Terminal = ({
             {onClose && (
               <Tooltip content={`Close ${session.name}`}>
                 <button
-                  className="icon-button terminal-close nodrag nopan"
+                  className={`${headerActionClasses} terminal-close nodrag nopan`}
                   aria-label={`Close ${session.name}`}
                   onClick={(event) => {
                     event.stopPropagation()

@@ -78,7 +78,10 @@ export const TerminalSearch = ({
                   <span className="truncate border-l border-line pl-2">{session.directory}</span>
                 </small>
               </span>
-              <ArrowUpRight size={14} className="search-result-action" />
+              <ArrowUpRight
+                size={14}
+                className="search-result-action opacity-25 transition-opacity duration-(--motion-feedback) ease-interface group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[highlighted]:opacity-100"
+              />
             </>
           ),
         }))}

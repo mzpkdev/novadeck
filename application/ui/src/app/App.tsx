@@ -429,7 +429,7 @@ export const App = (): React.JSX.Element => {
             tooltip={label}
             value={id}
             id={`${mobile ? "mobile-" : ""}${id}-toggle`}
-            className={`icon-button${activePanel ? " active" : ""}`}
+            className={`icon-button border ${activePanel ? "active border-line bg-paper text-ink shadow-control" : "border-transparent"}`}
             aria-label={label}
             aria-controls={`${id}-panel`}
             aria-expanded={activePanel}
@@ -544,7 +544,7 @@ export const App = (): React.JSX.Element => {
           >
             {view === "focus" && active && (
               <div
-                className="focus-stage max-[701px]:p-1.5 relative min-h-0 flex-1 overflow-hidden p-3 workspace-background"
+                className="focus-stage max-[701px]:p-1.5 relative min-h-0 flex-1 overflow-hidden p-3 workspace-background [&>.terminal-window]:relative [&>.terminal-window]:z-1"
                 {...backgroundPointerHandlers}
               >
                 <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />

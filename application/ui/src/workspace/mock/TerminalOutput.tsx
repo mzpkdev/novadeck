@@ -109,7 +109,7 @@ export const TerminalOutput = ({
         <p>
           <span className="prompt-arrow mr-2 font-semibold">❯</span> git log --oneline -5
         </p>
-        <div className="output-gap git-log">
+        <div className="output-gap git-log [&_span]:mr-2 [&_span]:text-muted">
           <p>
             <span>e9a4c21</span> refine workspace layout
           </p>
@@ -140,7 +140,7 @@ export const TerminalOutput = ({
         </p>
         <p className="output-gap">Runtime listening on :3000</p>
         <p className="text-muted">Watching for changes…</p>
-        <div className="output-gap request-log">
+        <div className="output-gap request-log [&_span]:mr-2 [&_span]:text-muted [&_b]:mx-2 [&_b]:font-normal">
           <p>
             <span>09:41:02</span> GET /api/health <b>200</b> 2ms
           </p>

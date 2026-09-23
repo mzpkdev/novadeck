@@ -87,15 +87,6 @@
   }
 }
 
-.view-switch .active {
-  @apply border-line bg-paper text-ink shadow-control;
-}
-.sidebar-tools .icon-button {
-  @apply border border-transparent;
-}
-.sidebar-tools .icon-button.active {
-  @apply border-line bg-paper text-ink shadow-control;
-}
 .workspace-panels {
   --separator-border: var(--color-line);
   --focus-border: var(--color-muted);
@@ -129,21 +120,6 @@
 .session-action:focus-visible {
   outline-offset: -2px;
 }
-.session-action > svg,
-.terminal-view-action > svg,
-.terminal-close > svg {
-  opacity: 0.25;
-  transition: opacity var(--motion-feedback) var(--ease-interface);
-}
-.session-action:hover > svg,
-.session-action:focus-visible > svg,
-.terminal-view-action:hover > svg,
-.terminal-close:hover > svg {
-  opacity: 1;
-}
-.focus-stage > .terminal-window {
-  @apply relative z-1;
-}
 .focus-stage .workspace-dots {
   background-position: -8px -8px;
 }
@@ -163,14 +139,8 @@
 .canvas-node.selected .terminal-heading::before {
   opacity: 1;
 }
-.terminal-actions .icon-button {
-  @apply size-8 p-2;
-}
 .output-gap {
   margin-top: 19px;
-}
-.agent-codex .agent-banner {
-  @apply w-fit max-w-full flex-col border border-line px-3 py-2;
 }
 .workspace-dots {
   background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
@@ -263,13 +233,6 @@
 }
 .terminal-compact .command-form {
   @apply mt-4;
-}
-.git-log span,
-.request-log span {
-  @apply mr-2 text-muted;
-}
-.request-log b {
-  @apply mx-2 font-normal;
 }
 .canvas-viewport {
   touch-action: none;
@@ -428,14 +391,6 @@
 .canvas-controls > span {
   @apply w-8 text-center font-mono text-[9px];
 }
-.search-result-action {
-  opacity: 0.25;
-  transition: opacity var(--motion-feedback) var(--ease-interface);
-}
-.search-results > :is(:hover, :focus-visible, [data-highlighted]) .search-result-action {
-  opacity: 1;
-}
-
 @media (min-width: 1650px) {
   .terminal-content,
   .terminal-compact .terminal-content {
