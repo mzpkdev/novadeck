@@ -5,6 +5,9 @@ A terminal workspace for organizing projects, sessions, and parallel work.
 Focus on one terminal, arrange several in a grid, or spread them across a zoomable
 canvas. Keep related work together and switch between sessions from the sidebar.
 
+In Canvas, drag or scroll over an inactive terminal to pan the canvas. Click to
+activate it, then select its text, scroll its output, or drag its header to move it.
+
 ## Development
 
 Requires Node.js 26 and pnpm 11.22.0. Run commands from the repository root.

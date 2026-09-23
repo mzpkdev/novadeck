@@ -238,6 +238,7 @@ const TerminalCanvas = ({
           ? terminalHeaderHeight * chromeScale + 2
           : Math.max(source?.height ?? session.height, (terminalHeaderHeight + 4) * chromeScale),
         dragHandle: ".terminal-header",
+        draggable: selected === session.id,
         selected: selected === session.id,
         ariaLabel: `${session.name} terminal`,
         data: {

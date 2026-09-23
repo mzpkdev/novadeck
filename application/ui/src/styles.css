@@ -371,6 +371,16 @@
 }
 .canvas-node .terminal-content {
   overscroll-behavior: contain;
+}
+.canvas-node:not(.selected) .terminal-content {
+  pointer-events: none;
+  user-select: none;
+}
+.canvas-node:not(.selected) .terminal-window,
+.canvas-node:not(.selected) .terminal-header {
+  cursor: grab;
+}
+.canvas-node.selected .terminal-content {
   user-select: text;
   cursor: text;
 }
