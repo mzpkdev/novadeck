@@ -121,8 +121,10 @@ HTTP behavior. The PR workflows run formatting, lint, typechecking, tests,
 builds, and PR metadata checks on Linux. PRs marked ready for review package
 and smoke-test the app on Linux, macOS, and Windows using the same workflow as
 releases. Draft PRs skip packaging; PR checks never create tags or publish releases.
-Quality checks run on commits and PR updates; changing a PR from draft to ready
-starts only the packaging workflow, which waits for the matching Quality run.
+Quality checks run on PR opening, reopening, and commits. Marking a draft PR ready
+starts only the Release workflow, which reuses the matching Quality result before
+packaging and smoke testing. Release preparation, tagging, and publishing are
+disabled for PR runs.
 
 ## Packaging and releases
 

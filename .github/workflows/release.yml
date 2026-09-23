@@ -1,23 +1,28 @@
 name: Release
 
-run-name: Release latest main
+run-name: >-
+  ${{ github.event_name == 'pull_request' && format('Package PR #{0}', github.event.pull_request.number) || 'Release latest main' }}
 
 on:
   push:
     branches: [main]
   repository_dispatch:
     types: [release]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: release-latest-main
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.event.pull_request.number) || 'release-latest-main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   prepare:
     name: Prepare
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -85,16 +90,20 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   package:
-    if: needs.prepare.outputs.package == 'true'
+    if: >-
+      !cancelled() &&
+      ((github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+       (needs.prepare.result == 'success' && needs.prepare.outputs.package == 'true'))
     needs: prepare
     uses: ./.github/workflows/package.yml
     with:
-      source-ref: ${{ needs.prepare.outputs.source_sha }}
-      version: ${{ needs.prepare.outputs.version }}
+      source-ref: ${{ github.event.pull_request.head.sha || needs.prepare.outputs.source_sha }}
+      version: ${{ needs.prepare.outputs.version || '0.0.0' }}
+      wait-for-quality: ${{ github.event_name == 'pull_request' }}
 
   release:
     name: Publish Dev Release
-    if: needs.prepare.outputs.package == 'true'
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.package == 'true'
     needs: [prepare, package]
     runs-on: ubuntu-latest
     timeout-minutes: 10
