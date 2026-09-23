@@ -1,26 +1,21 @@
-.search-backdrop[data-state="open"],
-.preferences-backdrop[data-state="open"] {
+.backdrop[data-state="open"] {
   animation: modal-backdrop-in var(--motion-feedback) ease-out;
 }
 
-.search-backdrop[data-state="closed"],
-.preferences-backdrop[data-state="closed"] {
+.backdrop[data-state="closed"] {
   animation: modal-backdrop-out var(--motion-feedback) ease-out forwards;
   pointer-events: none;
 }
 
-.search-dialog,
-.preferences-dialog {
+.dialog {
   transform-origin: top center;
 }
 
-.search-dialog[data-state="open"],
-.preferences-dialog[data-state="open"] {
+.dialog[data-state="open"] {
   animation: modal-in var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.search-dialog[data-state="closed"],
-.preferences-dialog[data-state="closed"] {
+.dialog[data-state="closed"] {
   animation: modal-out var(--motion-view) cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: none;
 }
@@ -66,10 +61,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .search-dialog,
-  .search-backdrop,
-  .preferences-dialog,
-  .preferences-backdrop {
+  .dialog,
+  .backdrop {
     animation: none !important;
   }
 }

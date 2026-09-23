@@ -5,7 +5,7 @@ import { Dialog } from "../../ui-toolkit/Dialog"
 import { SearchCombobox } from "../../ui-toolkit/SearchCombobox"
 import type { Session } from "../model/types"
 
-import "../shell/ModalMotion.css"
+import motion from "../shell/ModalMotion.module.css"
 
 export const TerminalSearch = ({
   open,
@@ -40,9 +40,9 @@ export const TerminalSearch = ({
       label="Find a terminal"
       onExitComplete={onExitComplete}
       initialFocusEl={() => searchInput.current}
-      backdropClassName="search-backdrop fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]"
+      backdropClassName={`${motion.backdrop} fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]`}
       positionerClassName="fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh]"
-      className="search-dialog w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal"
+      className={`${motion.dialog} w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal`}
     >
       <SearchCombobox
         label="Search terminals"

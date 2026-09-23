@@ -1,12 +1,13 @@
 import { LayoutGrid, Moon, PanelLeft, SquareDashedMousePointer, Sun, X } from "lucide-react"
 import { useRef, useState } from "react"
 
-import "../shell/ModalMotion.css"
 import { Dialog } from "../../ui-toolkit/Dialog"
 import { Select } from "../../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../../ui-toolkit/Tabs"
 import type { PreferencesValue } from "../model/types"
 import { viewModes } from "./preferences"
+
+import motion from "../shell/ModalMotion.module.css"
 
 const themes = [{ label: "Monochrome", value: "monochrome" }]
 const fontSizes = [12, 13, 15].map((size) => ({ label: `${size}px`, value: String(size) }))
@@ -49,9 +50,9 @@ export const Preferences = ({
       }}
       contentRef={dialog}
       label="Preferences"
-      backdropClassName="preferences-backdrop fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]"
+      backdropClassName={`${motion.backdrop} fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]`}
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center"
-      className="preferences-dialog flex max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] flex-col overflow-visible rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4"
+      className={`${motion.dialog} flex max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] flex-col overflow-visible rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4`}
     >
       <div className="preferences-heading flex shrink-0 min-h-[30px] items-center justify-between gap-4">
         <h2 id="preferences-title" className="m-0 text-[14px] font-medium tracking-[-0.2px]">

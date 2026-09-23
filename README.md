@@ -140,7 +140,7 @@ Tailwind v4 tokens live in `application/ui/src/styles.css` using the
 `@tailwindcss/vite` plugin in `application/ui/vite.config.ts`. Colors, fonts, panel radius,
 and shadows are centralized there. Ordinary component styling uses Tailwind utility classes in JSX;
 `styles.css` retains the theme, shared primitives, contextual terminal/library rules, and canvas
-effects, while `workspace/shell/ModalMotion.css` owns Search and Preferences presence animations. Shared motion tokens give controls 120ms feedback and selection
+effects, while `workspace/shell/ModalMotion.module.css` owns Search and Preferences presence animations. Shared motion tokens give controls 120ms feedback and selection
 states 180ms fades; dragging stays immediate and reduced motion disables these transitions.
 The UI's state model lives in `application/ui/src/workspace/model/types.ts`, with pure updates and
 selectors in `workspace/model/state.ts`. One reducer owns the project/session tree: each project retains
