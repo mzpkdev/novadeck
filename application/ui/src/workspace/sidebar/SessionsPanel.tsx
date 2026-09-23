@@ -38,11 +38,12 @@ export const SessionsPanel = ({
       <button
         className={sidebarCreateClasses}
         type="button"
+        aria-label="New session"
         onClick={onFresh}
         title="Open an empty session. Your other terminals keep running."
       >
         <Plus size={14} strokeWidth={1.65} />
-        <span>New session</span>
+        <span>Session</span>
       </button>
       <div
         className={`sessions-panel-list ${sidebarListClasses}`}

@@ -481,6 +481,26 @@ export const WorkspaceApp = (): React.JSX.Element => {
   )
 
   useEffect(() => {
+    const switcherArrows = (event: KeyboardEvent): void => {
+      if (
+        !visibleRecentSwitcher ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.altKey ||
+        event.metaKey ||
+        (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+      )
+        return
+      event.preventDefault()
+      event.stopPropagation()
+      const { ids, index } = visibleRecentSwitcher
+      const direction = event.key === "ArrowUp" ? -1 : 1
+      setRecentSwitcher({
+        ...visibleRecentSwitcher,
+        index: (index + direction + ids.length) % ids.length,
+      })
+    }
     const keydown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
       const shortcuts = shortcutBindings()
@@ -554,10 +574,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
     }
     const blur = (): void => setRecentSwitcher(null)
+    window.addEventListener("keydown", switcherArrows, true)
     window.addEventListener("keydown", keydown)
     window.addEventListener("keyup", keyup)
     window.addEventListener("blur", blur)
     return () => {
+      window.removeEventListener("keydown", switcherArrows, true)
       window.removeEventListener("keydown", keydown)
       window.removeEventListener("keyup", keyup)
       window.removeEventListener("blur", blur)
@@ -722,7 +744,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                     onClick={() => add()}
                   >
                     <Plus size={14} className="shrink-0" />
-                    <span className="min-w-0 truncate">New terminal</span>
+                    <span className="min-w-0 truncate">Terminal</span>
                     <kbd className="mb-[-2px] ml-auto min-h-0 shrink-0 whitespace-nowrap border-0 bg-transparent p-0 text-[9px] text-muted opacity-70">
                       {placement ? "Esc" : shortcutBindings().newTerminal.display.join(" ")}
                     </kbd>
@@ -830,9 +852,13 @@ export const WorkspaceApp = (): React.JSX.Element => {
                     Open a terminal or pick up a previous session.
                   </p>
                   <div className="empty-state-actions mt-5 flex flex-wrap items-center justify-center gap-2">
-                    <button className="small-button primary" onClick={() => add()}>
+                    <button
+                      className="small-button primary"
+                      aria-label="New terminal"
+                      onClick={() => add()}
+                    >
                       <Plus size={14} />
-                      New terminal
+                      Terminal
                     </button>
                     <button
                       className="empty-sessions-link rounded-control px-3 py-2 text-[11px] text-muted hover:bg-soft hover:text-ink"
@@ -858,6 +884,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
       {visibleRecentSwitcher && (
         <TerminalSwitcher
           project={project.name}
+          onClose={() => setRecentSwitcher(null)}
+          onSelect={(id) => {
+            setRecentSwitcher(null)
+            select(id)
+          }}
           sessions={visibleRecentSwitcher.ids.flatMap((id) => {
             const session = sessions.find((item) => item.id === id)
             return session ? [session] : []

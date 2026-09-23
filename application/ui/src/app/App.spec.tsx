@@ -81,6 +81,30 @@ describe("novadeck. workspace", () => {
       expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
     })
 
+    it("cycles with arrows without moving the focused Canvas terminal", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="01"]')!
+      node.focus()
+      const position = node.style.transform
+      await interact("keyDown", node, { key: "Tab", ctrlKey: true })
+      await interact("keyDown", node, { key: "ArrowUp", ctrlKey: true })
+      expect(screen.getByRole("option", { name: "Checkout implementation" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      await interact("keyDown", node, { key: "ArrowUp", ctrlKey: true })
+      expect(screen.getByRole("option", { name: "Build" })).toHaveAttribute("aria-selected", "true")
+      await interact("keyDown", node, { key: "ArrowDown", ctrlKey: true })
+      expect(screen.getByRole("option", { name: "Checkout implementation" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      expect(node.style.transform).toBe(position)
+      await interact("keyUp", node, { key: "Control" })
+      expect(screen.queryByRole("listbox", { name: "Recent terminals" })).not.toBeInTheDocument()
+    })
+
     it("focuses the chosen terminal input when switching from a command input", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Grid" }))

@@ -45,6 +45,8 @@ Showing and hiding use a short fade and scale transition; reduced motion skips i
 | Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
 
 Hold Ctrl while pressing Tab to choose a terminal, then release Ctrl to switch.
+While the switcher is open, Up and Down also cycle through terminals; canvas
+arrow controls resume when it closes.
 The keyboard shortcut for a new terminal places it automatically and focuses its
 command input. The **New terminal** button still opens the placement preview in
 Grid and Canvas. These shortcuts are available in the desktop app; browsers may
