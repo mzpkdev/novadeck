@@ -118,9 +118,11 @@ pnpm build
 Use package filters for focused checks, for example `pnpm --filter @novadeck/ui test`.
 Tests use Vitest, React Testing Library for renderer interactions, and MSW for
 HTTP behavior. The PR workflows run formatting, lint, typechecking, tests,
-builds, and PR metadata checks on Linux. PRs marked ready for review also package
+builds, and PR metadata checks on Linux. PRs marked ready for review package
 and smoke-test the app on Linux, macOS, and Windows using the same workflow as
 releases. Draft PRs skip packaging; PR checks never create tags or publish releases.
+Quality checks run on commits and PR updates; changing a PR from draft to ready
+starts only the packaging workflow, which waits for the matching Quality run.
 
 ## Packaging and releases
 

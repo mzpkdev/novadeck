@@ -1,0 +1,66 @@
+name: Package PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality_gate:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      passed: ${{ steps.wait.outputs.passed }}
+    steps:
+      - name: Wait for matching Quality run
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            run="$(gh api "repos/${REPOSITORY}/actions/workflows/quality.yml/runs?event=pull_request&head_sha=${HEAD_SHA}&per_page=20" \
+              --jq '[.workflow_runs[] | select(.head_sha == env.HEAD_SHA)] | sort_by(.created_at) | last // empty | {status, conclusion, head_sha}')"
+
+            if [[ -n "$run" ]]; then
+              status="$(jq -r '.status' <<<"$run")"
+              conclusion="$(jq -r '.conclusion // empty' <<<"$run")"
+              echo "Quality run for ${HEAD_SHA}: ${status}${conclusion:+ (${conclusion})}"
+              if [[ "$status" == "completed" ]]; then
+                if [[ "$conclusion" == "success" ]]; then
+                  echo "passed=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                echo "Quality run completed with ${conclusion}." >&2
+                exit 1
+              fi
+            else
+              echo "No Quality run found yet for ${HEAD_SHA}."
+            fi
+
+            if [[ "$attempt" -lt 10 ]]; then
+              sleep 180
+            fi
+          done
+
+          echo "Quality run did not complete within the wait window." >&2
+          exit 1
+
+  package:
+    if: needs.quality_gate.result == 'success' && needs.quality_gate.outputs.passed == 'true'
+    needs: quality_gate
+    uses: ./.github/workflows/package.yml
+    with:
+      source-ref: ${{ github.event.pull_request.head.sha }}
