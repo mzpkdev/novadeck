@@ -148,7 +148,7 @@ export const Grid = ({
       <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
       <div className="workspace-dots absolute inset-0 canvas-grid-spotlight" aria-hidden="true" />
       <div
-        className="grid-stage relative z-1 min-h-0 flex-1 overflow-auto p-4 [scrollbar-gutter:stable]"
+        className="grid-stage relative z-1 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 [scrollbar-gutter:stable] [scrollbar-color:var(--color-line)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-control [&::-webkit-scrollbar-thumb]:bg-line [&::-webkit-scrollbar]:w-[var(--spacing)]"
         onPointerMove={(event) => {
           if (!placement || event.pointerType === "touch") {
             lastPointer.current = null

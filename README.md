@@ -33,6 +33,24 @@ Hidden terminals retain
 their content and layout and remain available in Focus view.
 Showing and hiding use a short fade and scale transition; reduced motion skips it.
 
+## Keyboard shortcuts
+
+| Action                                            | macOS            | Windows and Linux  |
+| ------------------------------------------------- | ---------------- | ------------------ |
+| Find a terminal                                   | `Cmd+K`          | `Ctrl+Shift+K`     |
+| Recent terminals                                  | `Ctrl+Tab`       | `Ctrl+Tab`         |
+| Cycle backward through recent terminals           | `Ctrl+Shift+Tab` | `Ctrl+Shift+Tab`   |
+| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`      | `Ctrl+Shift+Enter` |
+| New terminal beside the active terminal           | `Cmd+T`          | `Ctrl+Shift+T`     |
+| Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
+
+Hold Ctrl while pressing Tab to choose a terminal, then release Ctrl to switch.
+The keyboard shortcut for a new terminal places it automatically and focuses its
+command input. The **New terminal** button still opens the placement preview in
+Grid and Canvas. These shortcuts are available in the desktop app; browsers may
+reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
+shows the bindings for the current platform.
+
 ## Development
 
 Requires Node.js 26 and pnpm 11.22.0. Run commands from the repository root.

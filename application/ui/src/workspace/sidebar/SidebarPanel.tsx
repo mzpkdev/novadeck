@@ -9,6 +9,7 @@ export const sidebarCreateClasses =
 export const SidebarPanel = ({
   id,
   title,
+  titleHint,
   count,
   active,
   onClose,
@@ -16,6 +17,7 @@ export const SidebarPanel = ({
 }: {
   id: string
   title: string
+  titleHint?: string
   count?: number
   active: boolean
   onClose: () => void
@@ -30,15 +32,18 @@ export const SidebarPanel = ({
     inert={!active}
   >
     <header className="sidebar-panel-header flex h-[38px] shrink-0 items-center justify-between gap-3 px-0.5">
-      <h2
-        id={`${id}-title`}
-        className="m-0 flex min-w-0 items-center gap-1.5 text-[9px] font-medium tracking-[1.3px] text-muted uppercase"
-      >
-        {title}
-        {count !== undefined && (
-          <span className="sidebar-panel-count tracking-normal">{count}</span>
-        )}
-      </h2>
+      <Tooltip content={titleHint} disabled={!titleHint}>
+        <h2
+          id={`${id}-title`}
+          tabIndex={titleHint ? 0 : undefined}
+          className="m-0 flex min-w-0 items-center gap-1.5 text-[9px] font-medium tracking-[1.3px] text-muted uppercase"
+        >
+          {title}
+          {count !== undefined && (
+            <span className="sidebar-panel-count tracking-normal">{count}</span>
+          )}
+        </h2>
+      </Tooltip>
       <Tooltip content={`Hide ${title.toLowerCase()}`}>
         <button
           className="icon-button sidebar-close size-7 [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"

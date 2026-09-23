@@ -171,6 +171,7 @@ export const WorkspacePanels = ({
           tabIndex={0}
           style={{ left: width }}
           onKeyDown={(event) => {
+            if (event.ctrlKey || event.metaKey || event.altKey) return
             const increment = event.shiftKey ? 32 : 8
             const target = {
               ArrowLeft: width - increment,

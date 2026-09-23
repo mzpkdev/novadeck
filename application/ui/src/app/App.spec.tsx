@@ -1,12 +1,12 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach } from "vitest"
+import { beforeEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../test"
 import { App } from "./App"
 
 const interact = async (
-  type: "click" | "doubleClick" | "change" | "keyDown" | "submit",
-  element: Element,
+  type: "click" | "doubleClick" | "change" | "keyDown" | "keyUp" | "submit",
+  element: Element | Window,
   options?: object,
 ): Promise<void> => {
   await act(async () => {
@@ -44,6 +44,164 @@ describe("novadeck. workspace", () => {
   beforeEach(() => {
     localStorage.clear()
     window.history.replaceState(null, "", "/")
+  })
+  context("when using workspace shortcuts", () => {
+    it("keeps Ctrl+K available to the terminal and opens search with Ctrl+Shift+K", async () => {
+      render(<App />)
+      const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      await interact("keyDown", command, { key: "k", ctrlKey: true })
+      expect(screen.queryByRole("dialog", { name: "Find a terminal" })).not.toBeInTheDocument()
+      await interact("keyDown", command, { key: "k", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
+    })
+
+    it("cycles a stable recent list while Ctrl is held and commits on release", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("click", screen.getByRole("button", { name: "Select Runtime" }))
+      await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+      expect(screen.getByRole("listbox", { name: "Recent terminals" })).toBeVisible()
+      expect(screen.getByRole("option", { name: "Dev server" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      expect(screen.getByRole("heading", { name: "Runtime" })).toBeVisible()
+      await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+      expect(screen.getByRole("option", { name: "Checkout implementation" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      await interact("keyDown", window, { key: "Tab", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("option", { name: "Dev server" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      await interact("keyUp", window, { key: "Control" })
+      expect(screen.queryByRole("listbox", { name: "Recent terminals" })).not.toBeInTheDocument()
+      expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
+    })
+
+    it("focuses the chosen terminal input when switching from a command input", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      const command = screen.getByRole("textbox", { name: "Command for Dev server" })
+      command.focus()
+      await interact("keyDown", command, { key: "Tab", ctrlKey: true })
+      await interact("keyUp", command, { key: "Control" })
+      expect(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).toHaveFocus()
+    })
+
+    it("clears the recent switcher when search opens before Ctrl is released", async () => {
+      render(<App />)
+      await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+      expect(screen.getByRole("listbox", { name: "Recent terminals" })).toBeVisible()
+      await interact("keyDown", window, { key: "k", ctrlKey: true, shiftKey: true })
+      await interact("keyUp", window, { key: "Control" })
+      expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
+      await interact("click", screen.getByRole("button", { name: "Close search" }))
+      expect(screen.queryByRole("listbox", { name: "Recent terminals" })).not.toBeInTheDocument()
+    })
+
+    it("starts with the most recent terminal after the Canvas selection is cleared", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("click", document.querySelector(".react-flow__pane")!)
+      await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+      expect(screen.getByRole("option", { name: "Dev server" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+    })
+
+    it("toggles Focus and restores the previous windowed layout", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact("keyDown", window, { key: "Enter", ctrlKey: true, shiftKey: true })
+      expect(document.querySelector('[aria-label="focus view"]')).toBeVisible()
+      await interact("keyDown", window, { key: "Enter", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("region", { name: "canvas view" })).toBeVisible()
+    })
+
+    it("keeps command focus through Focus toggle and ignores held-key repeats", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      command.focus()
+      await interact("keyDown", command, { key: "Enter", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      expect(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).toHaveFocus()
+      await interact("keyDown", window, {
+        key: "Enter",
+        ctrlKey: true,
+        shiftKey: true,
+        repeat: true,
+      })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+    })
+
+    it("lets modified Enter toggle Focus from the sidebar separator without resizing it", async () => {
+      render(<App />)
+      const separator = screen.getByRole("separator", { name: "Resize sidebar" })
+      const width = separator.getAttribute("aria-valuenow")
+      separator.focus()
+      await interact("keyDown", separator, { key: "Enter", ctrlKey: true, shiftKey: true })
+      expect(separator).toHaveAttribute("aria-valuenow", width)
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+    })
+
+    it("creates and focuses a terminal beside the selection without placement", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+      await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
+        "data-placing",
+        "false",
+      )
+      expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveFocus()
+      expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
+      await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true, repeat: true })
+      expect(screen.queryByRole("button", { name: "Select Terminal 08" })).not.toBeInTheDocument()
+    })
+
+    it("leaves creation and layout shortcuts inactive in Preferences", async () => {
+      render(<App />)
+      await interact("keyDown", window, { key: ",", ctrlKey: true })
+      expect(screen.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+      await interact("keyDown", window, { key: "Enter", ctrlKey: true, shiftKey: true })
+      expect(screen.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+      expect(document.querySelector('[aria-label="focus view"]')).toBeVisible()
+    })
+
+    it("uses Command shortcuts and lists their Mac bindings", async () => {
+      const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel")
+      try {
+        render(<App />)
+        await interact("keyDown", window, { key: "k", ctrlKey: true, shiftKey: true })
+        expect(screen.queryByRole("dialog", { name: "Find a terminal" })).not.toBeInTheDocument()
+        await interact("keyDown", window, { key: "t", metaKey: true })
+        expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveFocus()
+        await interact("keyDown", window, { key: "k", metaKey: true })
+        expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
+        await interact("keyDown", window, { key: ",", metaKey: true })
+        const preferences = screen.getByRole("dialog", { name: "Preferences" })
+        await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
+        const search = within(preferences).getByText("Find a terminal").parentElement!
+        const create = within(preferences).getByText("New terminal").parentElement!
+        expect(search).toHaveTextContent("⌘K")
+        expect(create).toHaveTextContent("⌘T")
+      } finally {
+        platform.mockRestore()
+      }
+    })
   })
   context("when placing new terminals", () => {
     for (const view of ["Grid", "Canvas"]) {

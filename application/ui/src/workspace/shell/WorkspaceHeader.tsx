@@ -12,6 +12,7 @@ import { SegmentGroup } from "../../ui-toolkit/SegmentGroup"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Project, ViewMode } from "../model/types"
 import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
+import { shortcutBindings } from "../shortcuts"
 
 const views = [
   { id: "focus", label: "Focus", icon: PanelLeft },
@@ -40,7 +41,7 @@ export const WorkspaceHeader = ({
   onSearch: () => void
   onPreferences: () => void
 }): React.JSX.Element => {
-  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"
+  const searchShortcut = shortcutBindings().find.display.join(" ")
   return (
     <header className="app-header max-[1001px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
@@ -76,7 +77,7 @@ export const WorkspaceHeader = ({
         }}
       />
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
-        <Tooltip content="Find a terminal (⌘K / Ctrl+K)">
+        <Tooltip content={`Find a terminal (${searchShortcut})`}>
           <button
             className="icon-button header-search w-auto gap-2 px-2.5 text-[11px] max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:px-0"
             aria-label="Find a terminal"
@@ -85,11 +86,13 @@ export const WorkspaceHeader = ({
             <Search size={15} />
             <span className="max-[701px]:hidden">Search</span>
             <kbd className="mb-[-2px] ml-3 min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70 max-[701px]:hidden">
-              {modifier} K
+              {searchShortcut}
             </kbd>
           </button>
         </Tooltip>
-        <Tooltip content="Workspace preferences">
+        <Tooltip
+          content={`Workspace preferences · ${shortcutBindings().preferences.display.join(" ")}`}
+        >
           <button
             className="icon-button"
             onClick={onPreferences}

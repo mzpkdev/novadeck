@@ -1,5 +1,5 @@
 import { ArrowUpRight, Search, Terminal as TerminalIcon, X } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Dialog } from "../../ui-toolkit/Dialog"
 import { SearchCombobox } from "../../ui-toolkit/SearchCombobox"
@@ -23,10 +23,15 @@ export const TerminalSearch = ({
   onExitComplete?: () => void
 }): React.JSX.Element => {
   const [query, setQuery] = useState("")
+  const chosen = useRef<string | null>(null)
+  useEffect(() => {
+    if (open) chosen.current = null
+  }, [open])
   const matches = sessions.filter((session) =>
     `${session.name} ${session.directory}`.toLowerCase().includes(query.toLowerCase()),
   )
   const select = (id: string): void => {
+    chosen.current = id
     setQuery("")
     onSelect(id)
   }
@@ -40,6 +45,17 @@ export const TerminalSearch = ({
       label="Find a terminal"
       onExitComplete={onExitComplete}
       initialFocusEl={() => searchInput.current}
+      finalFocusEl={() => {
+        if (!chosen.current) return null
+        const terminal = Array.from(document.querySelectorAll<HTMLElement>("[data-terminal]")).find(
+          (element) => element.dataset.terminal === chosen.current,
+        )
+        return (
+          terminal?.querySelector<HTMLInputElement>("input") ??
+          terminal?.querySelector<HTMLButtonElement>("button") ??
+          null
+        )
+      }}
       backdropClassName={`${motion.backdrop} fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]`}
       positionerClassName="fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh]"
       className={`${motion.dialog} w-full max-w-130 overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal`}
