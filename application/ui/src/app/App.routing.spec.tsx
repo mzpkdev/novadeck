@@ -41,7 +41,7 @@ describe("workspace routing", () => {
   context("when opening a link", () => {
     it("loads the project, session, view, terminal, sidebar and preferences section", async () => {
       const router = open(`${api}&panel=sessions&dialog=preferences&section=shortcuts`)
-      expect(screen.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      expect(await screen.findByRole("dialog", { name: "Preferences" })).toBeVisible()
       expect(screen.getByRole("tab", { name: "Shortcuts" })).toHaveAttribute(
         "aria-selected",
         "true",
@@ -155,14 +155,14 @@ describe("workspace routing", () => {
       await travel(router, -1)
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
       await travel(router, 1)
-      expect(screen.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      expect(await screen.findByRole("dialog", { name: "Preferences" })).toBeVisible()
       await act(async () => {
         fireEvent.keyDown(window, { key: "k", ctrlKey: true })
       })
-      expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
+      expect(await screen.findByRole("dialog", { name: "Find a terminal" })).toBeVisible()
       expect(screen.queryByRole("dialog", { name: "Preferences" })).not.toBeInTheDocument()
       await travel(router, -1)
-      expect(screen.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      expect(await screen.findByRole("dialog", { name: "Preferences" })).toBeVisible()
       expect(screen.getAllByRole("dialog")).toHaveLength(1)
     })
 
@@ -171,7 +171,7 @@ describe("workspace routing", () => {
       await click(screen.getByRole("button", { name: "Find a terminal" }))
       await navigate(router, api)
       await click(screen.getByRole("button", { name: "Workspace preferences" }))
-      expect(screen.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      expect(await screen.findByRole("dialog", { name: "Preferences" })).toBeVisible()
       expect(screen.getAllByRole("dialog")).toHaveLength(1)
     })
 
@@ -192,7 +192,7 @@ describe("workspace routing", () => {
       await act(async () => {
         fireEvent.keyDown(window, { key: "k", ctrlKey: true })
       })
-      await click(screen.getByRole("button", { name: "Close search" }))
+      await click(await screen.findByRole("button", { name: "Close search" }))
       expect(url(router)).toBe(api)
       await travel(router, -1)
       expect(url(router)).toBe(storefront)
@@ -202,7 +202,7 @@ describe("workspace routing", () => {
       const router = open()
       await click(screen.getByRole("button", { name: "Workspace preferences" }))
       await click(
-        within(screen.getByRole("dialog", { name: "Preferences" })).getByRole("checkbox", {
+        within(await screen.findByRole("dialog", { name: "Preferences" })).getByRole("checkbox", {
           name: "Focus",
         }),
       )
