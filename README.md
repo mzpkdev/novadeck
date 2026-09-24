@@ -23,8 +23,10 @@ preferring the current viewport, and pans only as needed to reveal it without ch
 zoom. Terminals can be moved or resized immediately; there is no placement step.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
-**Enlarge terminal** sets 1200×800 and **Make compact** sets 600×400, independent of zoom,
-viewport size, or aspect ratio. Canvas grows or shrinks around the terminal's center
+**Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent
+to 1200×800, independent of zoom. **Compact** sets 600×400. Extreme ratios respect the
+minimum terminal dimensions. Double-click the enlarged terminal header to fill more
+of the viewport. Canvas grows or shrinks around the terminal's center
 without changing the camera. In Grid, **Make full width** fills the available columns
 and **Make compact** uses half of them (at least four columns), preserving terminal height.
 On four-column screens both widths are the same. Resizing restores minimized terminals.

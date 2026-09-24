@@ -268,7 +268,10 @@ const TerminalCanvas = ({
       const node = getNode(id)
       if (!node || !viewportWidth || !viewportHeight) return
       const preset = presets[id] === "large" ? "small" : "large"
-      const { width, height } = canvasPresetSize(preset)
+      const { width, height } = canvasPresetSize(preset, {
+        width: viewportWidth,
+        height: viewportHeight,
+      })
       const center = centerOf(node, getViewport().zoom)
       const next = {
         position: { x: center.x - width / 2, y: center.y - height / 2 },
