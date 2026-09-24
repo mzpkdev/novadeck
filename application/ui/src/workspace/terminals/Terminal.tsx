@@ -8,7 +8,6 @@ import {
   GitBranch,
   Minus,
   Plus,
-  Pencil,
   Terminal as TerminalIcon,
   X,
 } from "lucide-react"
@@ -53,7 +52,6 @@ export const Terminal = ({
   active = false,
   fresh = false,
   rename,
-  showRenameAction = false,
   onBeginRename,
   onRenameDraft,
   onRenameSave,
@@ -83,7 +81,6 @@ export const Terminal = ({
   active?: boolean
   fresh?: boolean
   rename: TerminalRename | null
-  showRenameAction?: boolean
   onBeginRename: () => void
   onRenameDraft: (value: string) => void
   onRenameSave: () => void
@@ -257,20 +254,6 @@ export const Terminal = ({
             </>
           </div>
           <span className="terminal-actions flex shrink-0 items-center gap-1">
-            {showRenameAction && !renaming && (
-              <Tooltip content={active ? "Rename · F2" : "Rename"}>
-                <button
-                  className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-                  aria-label={`Rename ${session.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onBeginRename()
-                  }}
-                >
-                  <Pencil size={12} />
-                </button>
-              </Tooltip>
-            )}
             {minimize && (
               <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
                 <button

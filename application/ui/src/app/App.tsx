@@ -564,7 +564,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
       active={selected === session.id}
       fresh={created?.context === context && created.id === session.id}
       rename={renameView?.id === session.id ? renameView : null}
-      showRenameAction={!sidebarVisible || sidebarPanel !== "terminals"}
       onBeginRename={() => startRename(session, "header")}
       onRenameDraft={(draft) => changeRenameDraft(session.id, draft)}
       onRenameSave={() => saveRename(session.id)}
