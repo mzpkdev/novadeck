@@ -84,7 +84,7 @@ export const SessionTab = ({
         }
         actions={
           <div className="session-actions flex items-center">
-            <Tooltip content={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}>
+            <Tooltip content={hidden ? "Show" : "Hide"}>
               <button
                 className={`${actionClasses} disabled:pointer-events-none disabled:opacity-50 ${hidden ? "[&>svg]:opacity-100!" : ""}`}
                 aria-label={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}
@@ -103,7 +103,7 @@ export const SessionTab = ({
               <Editable.SubmitTrigger
                 className={actionClasses}
                 aria-label={`Save name for ${session.name}`}
-                tooltip="Save name"
+                tooltip="Save"
               >
                 <Check size={13} strokeWidth={1.5} />
               </Editable.SubmitTrigger>
@@ -111,7 +111,7 @@ export const SessionTab = ({
               <Editable.EditTrigger
                 className={actionClasses}
                 aria-label={`Rename ${session.name}`}
-                tooltip="Rename terminal"
+                tooltip="Rename"
               >
                 <Pencil size={13} strokeWidth={1.5} />
               </Editable.EditTrigger>
@@ -120,12 +120,12 @@ export const SessionTab = ({
               <Editable.CancelTrigger
                 className={actionClasses}
                 aria-label={`Cancel renaming ${session.name}`}
-                tooltip="Cancel rename"
+                tooltip="Cancel"
               >
                 <X size={14} strokeWidth={1.5} />
               </Editable.CancelTrigger>
             ) : (
-              <Tooltip content="Close terminal">
+              <Tooltip content="Close">
                 <button
                   className={actionClasses}
                   aria-label={`Close ${session.name}`}

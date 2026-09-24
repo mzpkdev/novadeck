@@ -191,10 +191,7 @@ export const Terminal = ({
             toggleView()
           }}
         >
-          <div
-            className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium"
-            title={session.name}
-          >
+          <div className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">
             <TerminalIcon size={14} strokeWidth={1.5} />
             {!compact && switcher ? (
               <>
@@ -224,7 +221,7 @@ export const Terminal = ({
             className={`terminal-actions shrink-0 items-center gap-1 ${placing ? "hidden" : "flex"}`}
           >
             {minimize && (
-              <Tooltip content={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}>
+              <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
@@ -239,7 +236,9 @@ export const Terminal = ({
               </Tooltip>
             )}
             {onResizePreset && (
-              <Tooltip content={resizeLabel}>
+              <Tooltip
+                content={large ? "Compact" : resizeView === "grid" ? "Full width" : "Enlarge"}
+              >
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`${resizeLabel}: ${session.name}`}
@@ -254,7 +253,7 @@ export const Terminal = ({
               </Tooltip>
             )}
             {onFocus && (
-              <Tooltip content={`Focus ${session.name}${focusHint}`}>
+              <Tooltip content={`Focus${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`Focus ${session.name}`}
@@ -268,7 +267,7 @@ export const Terminal = ({
               </Tooltip>
             )}
             {windowed && (
-              <Tooltip content={`Open in ${windowed.destination}${focusHint}`}>
+              <Tooltip content={`${windowed.destination}${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action`}
                   aria-label={`Open in ${windowed.destination}`}
@@ -279,7 +278,7 @@ export const Terminal = ({
               </Tooltip>
             )}
             {onClose && (
-              <Tooltip content={`Close ${session.name}`}>
+              <Tooltip content="Close">
                 <button
                   className={`${headerActionClasses} terminal-close nodrag nopan`}
                   aria-label={`Close ${session.name}`}

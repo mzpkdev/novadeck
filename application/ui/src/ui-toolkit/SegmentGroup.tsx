@@ -12,6 +12,7 @@ export type SegmentOption = {
 
 export type SegmentGroupProps = {
   label: string
+  tooltips?: boolean
   items: SegmentOption[]
   value: string
   onValueChange: (value: string) => void
@@ -21,6 +22,7 @@ export type SegmentGroupProps = {
 
 export const SegmentGroup = ({
   label,
+  tooltips = false,
   items,
   value,
   onValueChange,
@@ -42,7 +44,7 @@ export const SegmentGroup = ({
       }}
     >
       {items.map((item) => (
-        <Tooltip key={item.value} content={item.label}>
+        <Tooltip key={item.value} content={item.label} disabled={!tooltips}>
           <ArkSegmentGroup.Item
             id={itemId(item.value)}
             value={item.value}

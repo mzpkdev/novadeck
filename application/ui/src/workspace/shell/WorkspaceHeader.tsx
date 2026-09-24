@@ -7,6 +7,7 @@ import {
   SquareDashedMousePointer,
   Terminal as TerminalIcon,
 } from "lucide-react"
+import { useSyncExternalStore } from "react"
 import { Link } from "react-router"
 
 import { SegmentGroup } from "../../ui-toolkit/SegmentGroup"
@@ -14,6 +15,14 @@ import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Project, ViewMode } from "../model/types"
 import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
 import { shortcutBindings } from "../shortcuts"
+
+const iconOnlyQuery = "(max-width: 701px)"
+const subscribe = (notify: () => void): (() => void) => {
+  const media = window.matchMedia(iconOnlyQuery)
+  media.addEventListener("change", notify)
+  return () => media.removeEventListener("change", notify)
+}
+const isIconOnly = (): boolean => window.matchMedia(iconOnlyQuery).matches
 
 const views = [
   { id: "focus", label: "Focus", icon: PanelLeft },
@@ -46,6 +55,7 @@ export const WorkspaceHeader = ({
   onPreferences: () => void
   onZen: () => void
 }): React.JSX.Element => {
+  const iconOnly = useSyncExternalStore(subscribe, isIconOnly)
   const searchShortcut = shortcutBindings().find.display.join(" ")
   return (
     <header
@@ -72,6 +82,7 @@ export const WorkspaceHeader = ({
       <div className="header-view-controls flex shrink-0 items-center gap-2 max-[701px]:gap-1">
         <SegmentGroup
           label="Workspace layout"
+          tooltips={iconOnly}
           className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5 shadow-control"
           itemClassName="flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink max-[701px]:min-w-0 max-[701px]:w-8 max-[701px]:px-2 max-[701px]:gap-0 max-[701px]:text-[10px] [&>span]:max-[701px]:hidden"
           items={views
@@ -88,14 +99,14 @@ export const WorkspaceHeader = ({
           }}
         />
         <div className="h-4 w-px bg-line" aria-hidden="true" />
-        <Tooltip content="Enter Zen mode">
+        <Tooltip content="Zen">
           <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
             <Scan size={16} />
           </button>
         </Tooltip>
       </div>
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
-        <Tooltip content={`Find a terminal (${searchShortcut})`}>
+        <Tooltip content={`Search · ${searchShortcut}`} disabled={!iconOnly}>
           <button
             className="icon-button header-search w-auto gap-2 px-2.5 text-[11px] max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:px-0"
             aria-label="Find a terminal"
@@ -108,9 +119,7 @@ export const WorkspaceHeader = ({
             </kbd>
           </button>
         </Tooltip>
-        <Tooltip
-          content={`Workspace preferences · ${shortcutBindings().preferences.display.join(" ")}`}
-        >
+        <Tooltip content={`Preferences · ${shortcutBindings().preferences.display.join(" ")}`}>
           <button
             className="icon-button"
             onClick={onPreferences}

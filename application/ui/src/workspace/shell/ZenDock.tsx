@@ -55,7 +55,7 @@ export const ZenDock = ({
       role="group"
       aria-label="Zen controls"
     >
-      <Tooltip content={placing ? "Click the workspace to place · Esc to cancel" : "New terminal"}>
+      <Tooltip content={placing ? "Click to place · Esc to cancel" : "New terminal"}>
         <button
           ref={create}
           className={`zen-create icon-button ${placing ? "border border-dashed border-line-strong bg-soft" : ""}`}
@@ -81,7 +81,7 @@ export const ZenDock = ({
             {views
               .filter(({ id }) => enabledViews.includes(id))
               .map(({ id, label, icon: Icon }) => (
-                <Tooltip key={id} content={`${label} view`}>
+                <Tooltip key={id} content={label}>
                   <button
                     className={`icon-button ${view === id ? "bg-soft text-ink" : "text-muted"}`}
                     aria-label={`${label} view`}

@@ -38,7 +38,7 @@ export const SessionsPanel = ({
   const shortcut = shortcutBindings().newSession.display.join(" ")
   return (
     <div className="sessions-panel flex min-h-0 min-w-0 w-full flex-1 flex-col">
-      <Tooltip content={`New session · ${shortcut}. Your other terminals keep running.`}>
+      <Tooltip content={`New session · ${shortcut}`}>
         <button
           className={sidebarCreateClasses}
           type="button"

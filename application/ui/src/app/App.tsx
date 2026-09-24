@@ -823,18 +823,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
               <SidebarPanel
                 id="terminals-panel"
                 title="Terminals"
-                titleHint={`Switch recent terminals · ${shortcutBindings().recent.display.join(" ")}`}
+                titleHint={`Recent · ${shortcutBindings().recent.display.join(" ")}`}
                 count={sessions.length}
                 active={sidebarPanel === "terminals"}
                 onClose={hideSidebar}
               >
-                <Tooltip
-                  content={
-                    placement
-                      ? "Placing terminal · Esc to cancel"
-                      : `New terminal · ${shortcutBindings().newTerminal.display.join(" ")}`
-                  }
-                >
+                <Tooltip content="Click to place · Esc to cancel" disabled={!placement}>
                   <button
                     className={`${sidebarCreateClasses} data-[placing=true]:border-dashed data-[placing=true]:border-line-strong data-[placing=true]:bg-soft`}
                     data-placing={Boolean(placement)}

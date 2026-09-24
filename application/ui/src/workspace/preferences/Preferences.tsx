@@ -104,7 +104,7 @@ export const Preferences = ({
                   Light mode only
                 </span>
               </div>
-              <div className="flex items-center gap-2" title="Dark mode is not available yet">
+              <div className="flex items-center gap-2" title="Unavailable">
                 <Sun size={14} strokeWidth={1.5} aria-hidden="true" className="text-muted" />
                 <button
                   type="button"

@@ -88,10 +88,7 @@ const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): Reac
         onResizeStart={data.onResizeStart}
         onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
       >
-        <span
-          className="terminal-resize-pattern"
-          title={data.minimized ? "Drag to resize terminal width" : "Drag to resize terminal"}
-        />
+        <span className="terminal-resize-pattern" title="Resize" />
       </NodeResizeControl>
       {data.content}
     </div>
