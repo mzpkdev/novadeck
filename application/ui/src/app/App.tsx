@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { HashRouter, useNavigationType } from "react-router"
 
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
-import { Tooltip } from "../ui-toolkit/Tooltip"
 import { backgroundPointerHandlers } from "../workspace/layouts/background"
 import { Canvas } from "../workspace/layouts/Canvas"
 import { Focus } from "../workspace/layouts/Focus"
@@ -39,6 +38,7 @@ import type {
   CanvasLayout,
   GridLayouts,
   WorkspaceSession,
+  WorkspaceTarget,
 } from "../workspace/model/types"
 import { Preferences } from "../workspace/preferences/Preferences"
 import {
@@ -49,11 +49,19 @@ import {
 import { TerminalSearch } from "../workspace/search/TerminalSearch"
 import { WorkspaceHeader } from "../workspace/shell/WorkspaceHeader"
 import { useDesktop, WorkspacePanels } from "../workspace/shell/WorkspacePanels"
-import { matchesShortcut, shortcutBindings } from "../workspace/shortcuts"
+import { ZenDock } from "../workspace/shell/ZenDock"
+import {
+  matchesShortcut,
+  shortcutBindings,
+  workspaceOverlayOpen,
+  workspaceShortcutBindings,
+  workspaceShortcutTarget,
+} from "../workspace/shortcuts"
 import { SessionsPanel } from "../workspace/sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../workspace/sidebar/SidebarPanel"
 import { SessionList } from "../workspace/terminals/SessionList"
 import { Terminal, type MinimizeControls } from "../workspace/terminals/Terminal"
+import type { TerminalRename } from "../workspace/terminals/TerminalRenameInput"
 import { TerminalSwitcher } from "../workspace/terminals/TerminalSwitcher"
 import { routeUrl } from "./routing"
 import { useRouteDialog } from "./useRouteDialog"
@@ -76,6 +84,16 @@ const readWindowedView = (): WindowedView => {
   }
 }
 const emptyEntries: Entry[] = []
+type RenameSession = {
+  context: string
+  id: string
+  original: string
+  draft: string
+  origin: "sidebar" | "header"
+  view: ViewMode
+  target: WorkspaceTarget
+  request: number
+}
 const currentTimestamp = (): number => Date.now()
 const newWorkspaceSession = (
   terminals: Session[],
@@ -150,7 +168,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
     scrollOffsets,
     canvasLayout,
     gridLayouts,
+    gridRestoreWidths,
     gridMinimized,
+    sizePresets,
     hidden,
     nextTerminalNumber,
   } = current.state
@@ -173,29 +193,82 @@ export const WorkspaceApp = (): React.JSX.Element => {
     dispatch({ type: "terminal/reorder", target, tabOrder })
   const sidebarPanel = route.panel
   const setSidebarPanel = (panel: "terminals" | "sessions"): void => go({ panel })
-  const [pendingPlacement, setPendingPlacement] = useState<{
-    id: string
-    context: string
-    previousSelection: string
-  } | null>(null)
+  const [created, setCreated] = useState<{ context: string; id: string } | null>(null)
+  const [renameSession, setRenameSession] = useState<RenameSession | null>(null)
+  const renameRequest = useRef(0)
   const [revealCanvas, setRevealCanvas] = useState(false)
   const [keyboardFocus, setKeyboardFocus] = useState<{ id: string; view: ViewMode } | null>(null)
+  const [canvasKeyboardFocus, setCanvasKeyboardFocus] = useState<{
+    context: string
+    id: string
+    request: number
+  } | null>(null)
+  const canvasFocusRequest = useRef(0)
   const [recentSwitcher, setRecentSwitcher] = useState<{
     context: string
     ids: string[]
     index: number
     fromInput: boolean
+    mode: "held" | "click"
   } | null>(null)
+  const switcherTrigger = useRef<HTMLButtonElement | null>(null)
   const recentByContext = useRef<Record<string, string[]>>({})
   const [navigation, setNavigation] = useState({ count: 1, fit: false })
   const { searching, settings, onExitComplete } = useRouteDialog(
     route.dialog,
     `${projectId}/${workspaceSessionId}`,
   )
+  const [zen, setZen] = useState<{
+    sidebar: boolean
+    collapsed: boolean
+    panel: "sessions" | "terminals"
+  } | null>(null)
   const [sidebar, setSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
-  const sidebarVisible = desktop ? !sidebarCollapsed : sidebar
+  const sidebarVisible = !zen && (desktop ? !sidebarCollapsed : sidebar)
   const context = `${projectId}/${workspaceSessionId}`
+  const activeRename = renameSession?.context === context ? renameSession : null
+  const renameView: TerminalRename | null = activeRename
+    ? {
+        id: activeRename.id,
+        value: activeRename.draft,
+        request: activeRename.request,
+        origin: activeRename.origin,
+      }
+    : null
+  const finishRename = useCallback(
+    (rename: RenameSession, save: boolean): void => {
+      const name = rename.draft.trim()
+      if (save && name && name !== rename.original)
+        dispatch({ type: "terminal/rename", target: rename.target, terminalId: rename.id, name })
+      setRenameSession((previous) => (previous?.request === rename.request ? null : previous))
+    },
+    [dispatch, setRenameSession],
+  )
+  const startRename = (session: Session, origin: RenameSession["origin"]): void => {
+    if (activeRename?.id === session.id) return
+    if (activeRename) finishRename(activeRename, true)
+    setRenameSession({
+      context,
+      id: session.id,
+      original: session.name,
+      draft: session.name,
+      origin,
+      view,
+      target,
+      request: ++renameRequest.current,
+    })
+  }
+  const changeRenameDraft = (id: string, draft: string): void =>
+    setRenameSession((previous) =>
+      previous?.context === context && previous.id === id ? { ...previous, draft } : previous,
+    )
+  const saveRename = (id: string): void => {
+    if (activeRename?.id === id) finishRename(activeRename, true)
+  }
+  const cancelRename = (id: string): void => {
+    if (activeRename?.id === id) finishRename(activeRename, false)
+  }
   const [focusPreview, setFocusPreview] = useState<{ context: string; id: string } | null>(null)
   const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
   const active = sessions.find((session) => session.id === displayed) ?? sessions[0]
@@ -230,6 +303,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const visibleRecentSwitcher =
     recentSwitcher?.context === context && !route.dialog ? recentSwitcher : null
   if (recentSwitcher && !visibleRecentSwitcher) setRecentSwitcher(null)
+  const closeRecentSwitcher = (): void => {
+    const trigger = visibleRecentSwitcher?.mode === "click" ? switcherTrigger.current : null
+    setRecentSwitcher(null)
+    queueMicrotask(() => trigger?.isConnected && trigger.focus({ preventScroll: true }))
+  }
+  const openRecentSwitcher = (id: string, trigger: HTMLButtonElement): void => {
+    const ids = recentByContext.current[context] ?? ordered.map((session) => session.id)
+    switcherTrigger.current = trigger
+    setRecentSwitcher({
+      context,
+      ids,
+      index: Math.max(0, ids.indexOf(id)),
+      fromInput: false,
+      mode: "click",
+    })
+  }
   useEffect(() => {
     const previous = recentByContext.current[context] ?? []
     recentByContext.current[context] = [
@@ -240,11 +329,53 @@ export const WorkspaceApp = (): React.JSX.Element => {
         .filter((id) => id !== selected && !previous.includes(id)),
     ]
   })
-  const placement =
-    view !== "focus" && pendingPlacement?.context === context && pendingPlacement.id === selected
-      ? pendingPlacement.id
-      : ""
-  if (pendingPlacement && !placement) setPendingPlacement(null)
+  useEffect(() => {
+    if (!created) return
+    const timeout = window.setTimeout(() => setCreated(null), 900)
+    return () => window.clearTimeout(timeout)
+  }, [created])
+  useEffect(() => {
+    if (!canvasKeyboardFocus) return
+    if (
+      canvasKeyboardFocus.context === context &&
+      view === "canvas" &&
+      canvasKeyboardFocus.id === selected
+    )
+      return
+    const request = canvasKeyboardFocus.request
+    queueMicrotask(() =>
+      setCanvasKeyboardFocus((previous) => (previous?.request === request ? null : previous)),
+    )
+  }, [canvasKeyboardFocus, context, selected, view])
+  useEffect(() => {
+    if (!renameSession) return
+    if (
+      renameSession.context === context &&
+      renameSession.view === view &&
+      sessions.some((session) => session.id === renameSession.id)
+    )
+      return
+    let canceled = false
+    queueMicrotask(() => {
+      if (!canceled) finishRename(renameSession, true)
+    })
+    return () => {
+      canceled = true
+    }
+  }, [context, finishRename, renameSession, sessions, view])
+  const lastSelectedForRename = useRef(selected)
+  useEffect(() => {
+    const changed = lastSelectedForRename.current !== selected
+    lastSelectedForRename.current = selected
+    if (!changed || !activeRename || activeRename.id === selected) return
+    let canceled = false
+    queueMicrotask(() => {
+      if (!canceled) finishRename(activeRename, true)
+    })
+    return () => {
+      canceled = true
+    }
+  }, [activeRename, finishRename, selected])
   const [freshSession, setFreshSession] = useState<string | null>(null)
   const [previousPresentation, setPreviousPresentation] = useState({ presentation, context })
   if (previousPresentation.presentation !== presentation) {
@@ -285,6 +416,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     navigateWorkspace([{ type: "session/add", projectId, session: next }], { panel: "sessions" })
   }
   const showSessions = (): void => {
+    setZen(null)
     setSidebarPanel("sessions")
     setSidebarCollapsed(false)
     setSidebar(true)
@@ -295,12 +427,30 @@ export const WorkspaceApp = (): React.JSX.Element => {
     if (desktop) document.getElementById(`${sidebarPanel}-toggle`)?.focus()
   }
   const toggleSidebar = (panel: "terminals" | "sessions"): void => {
+    if (zen) setZen(null)
     if (sidebarPanel === panel && sidebarVisible) hideSidebar()
     else {
       setSidebarPanel(panel)
       setSidebarCollapsed(false)
       setSidebar(true)
     }
+  }
+  const enterZen = (): void => {
+    if (zen) return
+    setZen({ sidebar, collapsed: sidebarCollapsed, panel: sidebarPanel })
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLButtonElement>(".zen-create")?.focus({ preventScroll: true }),
+    )
+  }
+  const exitZen = (): void => {
+    if (!zen) return
+    setSidebar(zen.sidebar)
+    setSidebarCollapsed(zen.collapsed)
+    setSidebarPanel(zen.panel)
+    setZen(null)
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLButtonElement>(".zen-enter")?.focus({ preventScroll: true }),
+    )
   }
   const switchProject = (next: Project): void => {
     if (next.id === projectId) return
@@ -361,29 +511,31 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setSidebar(false)
   }
   const add = (fromKeyboard = false): void => {
-    if (fromKeyboard && placement) return
+    setRecentSwitcher(null)
     const session = createMockTerminal(nextTerminalNumber, project.directory)
+    if (activeRename) finishRename(activeRename, true)
+    const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
+    setCreated({ context, id: session.id })
+    setRenameSession({
+      context,
+      id: session.id,
+      original: session.name,
+      draft: session.name,
+      origin,
+      view,
+      target,
+      request: ++renameRequest.current,
+    })
     const actions: Parameters<typeof navigateWorkspace>[0] = [
       { type: "terminal/add", target, session },
     ]
-    setPendingPlacement(
-      view === "focus"
-        ? null
-        : {
-            id: session.id,
-            previousSelection: selected,
-            context,
-          },
-    )
-    if (fromKeyboard && view === "focus") setKeyboardFocus({ id: session.id, view })
     navigateWorkspace(actions, { panel: "terminals" })
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     if (fromKeyboard) setSidebarCollapsed(false)
-    setSidebar(fromKeyboard)
+    setSidebar(false)
   }
-  const rename = (terminalId: string, name: string): void =>
-    dispatch({ type: "terminal/rename", target, terminalId, name })
   const close = (terminalId: string): void => {
+    if (activeRename?.id === terminalId) finishRename(activeRename, false)
     navigateWorkspace([{ type: "terminal/close", target, terminalId }], {}, true)
     if (selected === terminalId && view !== "canvas")
       setNavigation((value) => ({ count: value.count + 1, fit: false }))
@@ -405,12 +557,19 @@ export const WorkspaceApp = (): React.JSX.Element => {
     compact: boolean,
     minimize?: MinimizeControls,
     onFlyTo?: () => void,
+    onResizePreset?: (button: HTMLButtonElement) => void,
+    large = false,
   ): React.JSX.Element => (
     <Terminal
       key={session.id}
       session={session}
       active={selected === session.id}
-      placing={session.id === placement}
+      fresh={created?.context === context && created.id === session.id}
+      rename={renameView?.id === session.id ? renameView : null}
+      onBeginRename={() => startRename(session, "header")}
+      onRenameDraft={(draft) => changeRenameDraft(session.id, draft)}
+      onRenameSave={() => saveRename(session.id)}
+      onRenameCancel={() => cancelRename(session.id)}
       projectName={project.name}
       entries={entries[session.id] ?? emptyEntries}
       draft={drafts[session.id] ?? ""}
@@ -428,9 +587,20 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
       onInputFocused={() => setKeyboardFocus(null)}
       compact={compact}
+      switcher={{ onOpen: (button) => openRecentSwitcher(session.id, button) }}
       onClose={() => close(session.id)}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
+      {...(onResizePreset
+        ? {
+            onResizePreset: (button: HTMLButtonElement) => {
+              setSelected(session.id)
+              onResizePreset(button)
+            },
+            resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const),
+          }
+        : {})}
+      large={large}
       {...(compact && preferences.enabledViews.includes("focus")
         ? {
             onFocus: () =>
@@ -463,14 +633,15 @@ export const WorkspaceApp = (): React.JSX.Element => {
         event.altKey ||
         event.shiftKey ||
         route.dialog ||
-        placement ||
-        visibleRecentSwitcher
+        visibleRecentSwitcher ||
+        !workspaceShortcutTarget(event.target) ||
+        (event.target instanceof Element &&
+          Boolean(event.target.closest('.zen-dock[data-open="true"]')))
       )
         return
       if (
-        document.querySelector(
-          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), .session-tab.editing, .session-tab.dragging',
-        )
+        workspaceOverlayOpen() ||
+        document.querySelector(".session-tab.editing, .session-tab.dragging")
       )
         return
       if (!selected && !sidebarVisible) return
@@ -509,15 +680,14 @@ export const WorkspaceApp = (): React.JSX.Element => {
         })
         return
       }
-      if (route.dialog || placement || event.ctrlKey || event.shiftKey) return
+      if (route.dialog || event.ctrlKey || event.shiftKey) return
       const fromViewSwitch =
         event.target instanceof Element && Boolean(event.target.closest(".view-switch"))
       if (
         !fromViewSwitch &&
-        event.target instanceof Element &&
-        event.target.closest(
-          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="menu"], [role="listbox"], [role="combobox"], [role="slider"], [role="separator"], [role="radiogroup"], [role="tablist"]',
-        )
+        (!workspaceShortcutTarget(event.target) ||
+          (event.target instanceof Element &&
+            Boolean(event.target.closest('[role="separator"], [role="radiogroup"]'))))
       )
         return
       event.preventDefault()
@@ -538,6 +708,16 @@ export const WorkspaceApp = (): React.JSX.Element => {
           : (index + direction + ordered.length) % ordered.length
       const session = ordered[next]
       if (session) {
+        const fromCanvasNode =
+          view === "canvas" &&
+          event.target instanceof Element &&
+          Boolean(event.target.closest(".react-flow__node"))
+        if (fromCanvasNode)
+          setCanvasKeyboardFocus({
+            context,
+            id: session.id,
+            request: ++canvasFocusRequest.current,
+          })
         select(session.id)
         const fromTab =
           event.target instanceof Element && Boolean(event.target.closest(".session-tab"))
@@ -560,7 +740,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
       if (renamed) return
       if (visibleRecentSwitcher && event.key === "Escape") {
         event.preventDefault()
+        closeRecentSwitcher()
+        return
+      }
+      if (visibleRecentSwitcher?.mode === "click" && event.key === "Enter") {
+        if (
+          event.target instanceof Element &&
+          event.target.closest('[aria-label="Close terminal switcher"]')
+        )
+          return
+        event.preventDefault()
+        const id = visibleRecentSwitcher.ids[visibleRecentSwitcher.index]
         setRecentSwitcher(null)
+        if (id) {
+          setKeyboardFocus({ id, view })
+          select(id)
+        }
         return
       }
       if (matchesShortcut(event, shortcuts.find)) {
@@ -575,7 +770,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         go({ dialog: "preferences", section: "general" })
         return
       }
-      if (route.dialog || placement) return
+      if (route.dialog) return
       if (matchesShortcut(event, shortcuts.newSession)) {
         event.preventDefault()
         if (event.repeat) return
@@ -606,6 +801,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
           ids,
           index,
           fromInput: visibleRecentSwitcher?.fromInput ?? fromInput,
+          mode: visibleRecentSwitcher?.mode ?? "held",
         })
         return
       }
@@ -622,10 +818,45 @@ export const WorkspaceApp = (): React.JSX.Element => {
         event.preventDefault()
         if (event.repeat) return
         add(true)
+        return
+      }
+      const workspaceKeys = workspaceShortcutBindings()
+      if (
+        event.repeat ||
+        route.dialog ||
+        visibleRecentSwitcher ||
+        !workspaceShortcutTarget(event.target) ||
+        workspaceOverlayOpen()
+      )
+        return
+      if (matchesShortcut(event, workspaceKeys.find)) {
+        event.preventDefault()
+        go({ dialog: "search" })
+      } else if (matchesShortcut(event, workspaceKeys.focus)) {
+        const next = view === "focus" ? windowedDestination : "focus"
+        if (!next || !preferences.enabledViews.includes(next)) return
+        event.preventDefault()
+        changeView(next)
+      } else if (matchesShortcut(event, workspaceKeys.newTerminal)) {
+        event.preventDefault()
+        add(true)
+      } else if (matchesShortcut(event, workspaceKeys.zen)) {
+        event.preventDefault()
+        if (zen) exitZen()
+        else enterZen()
+      } else if (matchesShortcut(event, workspaceKeys.terminals)) {
+        event.preventDefault()
+        toggleSidebar("terminals")
+      } else if (matchesShortcut(event, workspaceKeys.rename)) {
+        const session =
+          sessions.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
+        if (!session) return
+        event.preventDefault()
+        startRename(session, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
       }
     }
     const keyup = (event: KeyboardEvent): void => {
-      if (event.key !== "Control" || !recentSwitcher) return
+      if (event.key !== "Control" || !recentSwitcher || recentSwitcher.mode !== "held") return
       if (!visibleRecentSwitcher) {
         setRecentSwitcher(null)
         return
@@ -637,7 +868,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
         select(id)
       }
     }
-    const blur = (): void => setRecentSwitcher(null)
+    const blur = (): void => {
+      if (recentSwitcher?.mode === "held") setRecentSwitcher(null)
+    }
     window.addEventListener("keydown", workspaceEscape, true)
     window.addEventListener("keydown", workspaceArrows, true)
     window.addEventListener("keydown", keydown)
@@ -652,34 +885,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
     }
   })
 
-  useEffect(() => {
-    if (!placement || !pendingPlacement || route.dialog) return
-    const cancelPlacement = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") return
-      if (
-        document.querySelector(
-          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), .session-tab.editing, .session-tab.dragging',
-        )
-      )
-        return
-      event.preventDefault()
-      event.stopPropagation()
-      const previous = pendingPlacement.previousSelection
-      setPendingPlacement(null)
-      navigateWorkspace(
-        [{ type: "terminal/close", target, terminalId: placement }],
-        { terminal: sessions.some((session) => session.id === previous) ? previous : "" },
-        true,
-      )
-    }
-    window.addEventListener("keydown", cancelPlacement, true)
-    return () => window.removeEventListener("keydown", cancelPlacement, true)
-  }, [placement, pendingPlacement, route.dialog, navigateWorkspace, target, sessions])
-
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <ToggleGroup
       className="sidebar-tools z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
       aria-label="Sidebar actions"
+      aria-hidden={Boolean(zen)}
       orientation="vertical"
       value={sidebarVisible ? [sidebarPanel] : []}
       onValueChange={(value) => {
@@ -698,7 +908,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
         return (
           <ToggleGroupItem
             key={id}
-            tooltip={label}
+            tooltip={
+              id === "terminals"
+                ? `Terminals · ${workspaceShortcutBindings().terminals.display.join(" ")}`
+                : label
+            }
             value={id}
             id={`${mobile ? "mobile-" : ""}${id}-toggle`}
             className={`icon-button border ${activePanel ? "active border-line bg-paper text-ink shadow-control" : "border-transparent"}`}
@@ -716,6 +930,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   return (
     <main
       className="workspace flex h-dvh min-h-100 flex-col overflow-hidden bg-paper"
+      data-zen={Boolean(zen)}
       onPointerDownCapture={cancelTerminalTransition}
       onKeyDownCapture={cancelTerminalTransition}
       style={
@@ -725,6 +940,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
     >
       <WorkspaceHeader
+        hidden={Boolean(zen)}
+        onZen={enterZen}
         view={view}
         enabledViews={preferences.enabledViews}
         projects={projects}
@@ -751,8 +968,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
       <div className="workspace-body relative flex min-h-0 flex-1">
         {sidebarRail()}
         <WorkspacePanels
-          collapsed={sidebarCollapsed}
-          mobileOpen={sidebar}
+          collapsed={Boolean(zen) || sidebarCollapsed}
+          mobileOpen={!zen && sidebar}
           onMobileOpenChange={(open) => {
             if (!open) hideSidebar()
           }}
@@ -794,43 +1011,37 @@ export const WorkspaceApp = (): React.JSX.Element => {
               <SidebarPanel
                 id="terminals-panel"
                 title="Terminals"
-                titleHint={`Switch recent terminals · ${shortcutBindings().recent.display.join(" ")}`}
+                titleHint={`Recent · ${shortcutBindings().recent.display.join(" ")}`}
                 count={sessions.length}
                 active={sidebarPanel === "terminals"}
                 onClose={hideSidebar}
               >
-                <Tooltip
-                  content={
-                    placement
-                      ? "Placing terminal · Esc to cancel"
-                      : `New terminal · ${shortcutBindings().newTerminal.display.join(" ")}`
-                  }
+                <button
+                  className={sidebarCreateClasses}
+                  aria-label="New terminal"
+                  onClick={() => add()}
                 >
-                  <button
-                    className={`${sidebarCreateClasses} data-[placing=true]:border-dashed data-[placing=true]:border-line-strong data-[placing=true]:bg-soft`}
-                    data-placing={Boolean(placement)}
-                    aria-label="New terminal"
-                    aria-description={
-                      placement ? "Placing a terminal. Press Escape to cancel." : undefined
-                    }
-                    onClick={() => add()}
-                  >
-                    <Plus size={14} className="shrink-0" />
-                    <span className="min-w-0 truncate">Terminal</span>
-                    <kbd className="mb-[-2px] ml-auto min-h-0 shrink-0 whitespace-nowrap border-0 bg-transparent p-0 text-[9px] text-muted opacity-70">
-                      {placement ? "Esc" : shortcutBindings().newTerminal.display.join(" ")}
-                    </kbd>
-                  </button>
-                </Tooltip>
+                  <Plus size={14} className="shrink-0" />
+                  <span className="min-w-0 truncate">Terminal</span>
+                  <kbd className="mb-[-2px] ml-auto min-h-0 shrink-0 whitespace-nowrap border-0 bg-transparent p-0 text-[9px] text-muted opacity-70">
+                    {workspaceShortcutBindings().newTerminal.display.join(" ")}
+                  </kbd>
+                </button>
                 <SessionList
                   key={`${projectId}/${workspaceSessionId}`}
                   sessions={ordered}
-                  placement={placement}
                   selected={selected}
                   hidden={hidden}
+                  rename={renameView}
                   onVisibilityChange={setVisibility}
                   onSelect={select}
-                  onRename={rename}
+                  onBeginRename={(id) => {
+                    const session = sessions.find((item) => item.id === id)
+                    if (session) startRename(session, "sidebar")
+                  }}
+                  onRenameDraft={changeRenameDraft}
+                  onRenameSave={saveRename}
+                  onRenameCancel={cancelRename}
                   onClose={close}
                   onReorder={setTabOrder}
                 />
@@ -853,36 +1064,75 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
             {view === "grid" && sessions.length > 0 && (
               <Grid
-                placement={placement}
-                onPlace={() => setPendingPlacement(null)}
                 sessions={sessions}
                 hidden={layoutHidden}
                 preview={preview}
                 selected={selected}
                 onSelect={setSelected}
                 navigation={navigation.count}
+                presets={sizePresets.grid}
+                restoreWidths={gridRestoreWidths}
+                onToggleWidth={(terminalId, change) =>
+                  dispatch({
+                    type: "grid/size-toggle",
+                    target,
+                    terminalId,
+                    change,
+                  })
+                }
                 layouts={gridLayouts}
                 onLayoutsChange={setGridLayouts}
                 minimized={gridMinimized}
                 onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
-                render={(session, minimize) => terminal(session, true, minimize)}
+                render={(session, minimize, resize) =>
+                  terminal(
+                    session,
+                    true,
+                    minimize,
+                    undefined,
+                    resize,
+                    sizePresets.grid[session.id] === "large",
+                  )
+                }
               />
             )}
             {view === "canvas" && sessions.length > 0 && (
               <Canvas
-                placement={placement}
-                onPlace={() => setPendingPlacement(null)}
                 hidden={layoutHidden}
                 preview={preview}
+                presets={sizePresets.canvas}
+                onPresetChange={(terminalId, preset) =>
+                  dispatch({
+                    type: "terminal/size-preset",
+                    target,
+                    terminalId,
+                    view: "canvas",
+                    preset,
+                  })
+                }
                 layout={canvasLayout}
                 revealOnMount={revealCanvas}
                 fitOnNavigate={navigation.fit}
                 onLayoutChange={setCanvasLayout}
                 sessions={sessions}
                 selected={selected}
+                keyboardFocusRequest={
+                  canvasKeyboardFocus?.context === context && canvasKeyboardFocus.id === selected
+                    ? canvasKeyboardFocus.request
+                    : null
+                }
                 navigation={navigation.count}
                 onSelect={setSelected}
-                render={(session, minimize, onFlyTo) => terminal(session, true, minimize, onFlyTo)}
+                render={(session, minimize, onFlyTo, resize) =>
+                  terminal(
+                    session,
+                    true,
+                    minimize,
+                    onFlyTo,
+                    resize,
+                    sizePresets.canvas[session.id] === "large",
+                  )
+                }
               />
             )}
             {view !== "focus" &&
@@ -921,7 +1171,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   <div className="empty-state-actions mt-5 flex flex-wrap items-center justify-center gap-2">
                     <button
                       className="small-button primary"
-                      aria-label="New terminal"
+                      aria-label={zen ? "Create first terminal" : "New terminal"}
                       onClick={() => add()}
                     >
                       <Plus size={14} />
@@ -939,8 +1189,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
           </section>
         </WorkspacePanels>
+        {zen && (
+          <ZenDock
+            view={view}
+            enabledViews={preferences.enabledViews}
+            onCreate={() => add()}
+            onViewChange={(next) => {
+              if (next !== view) changeView(next)
+            }}
+            onExit={exitZen}
+          />
+        )}
       </div>
-      <footer className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted">
+      <footer
+        hidden={Boolean(zen)}
+        className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted"
+      >
         <span className="flex items-center gap-2">
           <span>{sessions.length} terminals</span>
           <span className="footer-running max-[701px]:hidden ml-2 border-l border-line pl-3">
@@ -950,10 +1214,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
       </footer>
       {visibleRecentSwitcher && (
         <TerminalSwitcher
+          mode={visibleRecentSwitcher.mode}
           project={project.name}
-          onClose={() => setRecentSwitcher(null)}
+          onClose={closeRecentSwitcher}
           onSelect={(id) => {
             setRecentSwitcher(null)
+            if (visibleRecentSwitcher.mode === "click") setKeyboardFocus({ id, view })
             select(id)
           }}
           sessions={visibleRecentSwitcher.ids.flatMap((id) => {

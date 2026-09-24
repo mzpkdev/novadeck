@@ -29,15 +29,9 @@ const currentSessionName = (): string =>
     .getByRole("button", { current: true })
     .getAttribute("aria-label")!
 
-const expectPlacement = (): void => {
-  expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
-    "data-placing",
-    "true",
-  )
-  expect(
-    screen.getByRole("button", { name: "Select Terminal 07" }).closest(".session-tab"),
-  ).toHaveAttribute("data-placing", "true")
-  expect(screen.queryByRole("region", { name: "Terminal 07 terminal" })).not.toBeInTheDocument()
+const sidebarRenameInput = (name: string): HTMLElement => {
+  const inputs = screen.getAllByRole("textbox", { name: `Rename ${name}` })
+  return inputs.find((input) => input.closest(".session-tab")) ?? inputs[0]!
 }
 
 describe("novadeck. workspace", () => {
@@ -57,6 +51,12 @@ describe("novadeck. workspace", () => {
           const command = screen.getByRole("textbox", { name: "Command for Dev server" })
           command.focus()
           await interact("keyDown", command, { key: "Escape" })
+          expect(window.location.hash).toContain("terminal=02")
+          expect(command).toHaveFocus()
+          const surface = document.querySelector<HTMLElement>(
+            view === "Focus" ? ".focus-stage" : `.${view.toLowerCase()}-viewport`,
+          )!
+          await interact("keyDown", surface, { key: "Escape" })
           expect(new URLSearchParams(window.location.hash.split("?")[1]).get("terminal")).toBe("")
           expect(screen.getByRole("complementary")).toBeVisible()
           expect(command).not.toHaveFocus()
@@ -167,11 +167,19 @@ describe("novadeck. workspace", () => {
         const preferences = screen.getByRole("dialog", { name: "Preferences" })
         await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
         expect(
-          within(preferences).getByText("Toggle terminal sidebar").parentElement,
-        ).toHaveTextContent(`${mac ? "⌘" : "Ctrl"}Shift1`)
+          within(preferences)
+            .getAllByText("Toggle terminal sidebar")
+            .some((label) =>
+              label.parentElement?.textContent?.includes(`${mac ? "⌘" : "Ctrl"}Shift1`),
+            ),
+        ).toBe(true)
         expect(
-          within(preferences).getByText("Toggle session sidebar").parentElement,
-        ).toHaveTextContent(`${mac ? "⌘" : "Ctrl"}Shift2`)
+          within(preferences)
+            .getAllByText("Toggle session sidebar")
+            .some((label) =>
+              label.parentElement?.textContent?.includes(`${mac ? "⌘" : "Ctrl"}Shift2`),
+            ),
+        ).toBe(true)
         const route = window.location.hash
         await interact("keyDown", window, sessionsKey)
         expect(window.location.hash).toBe(route)
@@ -275,14 +283,61 @@ describe("novadeck. workspace", () => {
       expect(window.location.hash).toBe(searchRoute)
     })
 
+    it("uses single keys on the workspace while leaving command input keys alone", async () => {
+      render(<App />)
+      const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      command.focus()
+      await act(async () => {
+        for (const key of ["t", "f", "z", "b", "F2", "/"]) fireEvent.keyDown(command, { key })
+      })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole("textbox", { name: "Rename Checkout implementation" }),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+      expect(screen.getByRole("complementary")).toBeVisible()
+
+      const surface = document.querySelector<HTMLElement>(".focus-stage")!
+      surface.focus()
+      await interact("keyDown", surface, { key: "T", shiftKey: true })
+      await interact("keyDown", surface, { key: "z", repeat: true })
+      expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("group", { name: "Zen controls" })).not.toBeInTheDocument()
+      await interact("keyDown", surface, { key: "f" })
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+      await interact("keyDown", window, { key: "f" })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      await interact("keyDown", window, { key: "b" })
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+      await interact("keyDown", window, { key: "b" })
+      expect(screen.getByRole("complementary")).toBeVisible()
+      await interact("keyDown", window, { key: "z" })
+      expect(screen.getByRole("group", { name: "Zen controls" })).toBeVisible()
+      await interact("keyDown", window, { key: "z" })
+      expect(screen.queryByRole("group", { name: "Zen controls" })).not.toBeInTheDocument()
+      await interact("keyDown", window, { key: "F2" })
+      const name = sidebarRenameInput("Checkout implementation")
+      expect(name).toHaveFocus()
+      await interact("keyDown", name, { key: "Escape" })
+      await interact("keyDown", window, { key: "t" })
+      const newName = sidebarRenameInput("Terminal 07")
+      expect(newName).toHaveFocus()
+      await interact("keyDown", newName, { key: "Escape" })
+      await interact("keyDown", window, { key: "/" })
+      expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
+    })
+
     it("selects from a focused Canvas node without moving it and disables camera arrows", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))
       const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="01"]')!
       const position = node.style.transform
+      node.focus()
       await interact("keyDown", node, { key: "ArrowDown" })
       expect(window.location.hash).toContain("terminal=02")
       expect(node.style.transform).toBe(position)
+      expect(document.querySelector<HTMLElement>('.react-flow__node[data-id="02"]')).toHaveFocus()
       const viewport = document.querySelector<HTMLElement>(".react-flow__viewport")!
       const camera = viewport.style.transform
       await act(async () => {
@@ -291,6 +346,24 @@ describe("novadeck. workspace", () => {
           expect(viewport.style.transform).toBe(camera)
         }
       })
+    })
+
+    it("moves focus to a hidden Canvas node when arrow selection previews it", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Hide Dev server in Grid and Canvas" }),
+      )
+      const first = document.querySelector<HTMLElement>('.react-flow__node[data-id="01"]')!
+      first.focus()
+      await interact("keyDown", first, { key: "ArrowDown" })
+      expect(window.location.hash).toContain("terminal=02")
+      await waitFor(() =>
+        expect(
+          document.querySelector<HTMLElement>('.react-flow__node[data-id="02"]'),
+        ).toHaveFocus(),
+      )
     })
 
     it("keeps Ctrl+K available to the terminal and opens search with Ctrl+Shift+K", async () => {
@@ -326,6 +399,77 @@ describe("novadeck. workspace", () => {
       await interact("keyUp", window, { key: "Control" })
       expect(screen.queryByRole("listbox", { name: "Recent terminals" })).not.toBeInTheDocument()
       expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
+    })
+
+    for (const mode of ["click", "held"] as const) {
+      it(`dismisses the ${mode} terminal switcher before shortcut creation and ignores Ctrl release`, async () => {
+        render(<App />)
+        if (mode === "click") {
+          await interact("click", screen.getByRole("button", { name: "Switch terminal" }))
+          const list = screen.getByRole("listbox", { name: "Recent terminals" })
+          await interact("keyDown", list, { key: "ArrowDown" })
+          expect(screen.getByRole("option", { name: "Dev server" })).toHaveAttribute(
+            "aria-selected",
+            "true",
+          )
+          await interact("keyDown", list, { key: "T", ctrlKey: true, shiftKey: true })
+        } else {
+          await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+          expect(screen.getByRole("listbox", { name: "Recent terminals" })).toBeVisible()
+          await interact("keyDown", window, { key: "T", ctrlKey: true, shiftKey: true })
+        }
+        expect(screen.queryByRole("dialog", { name: "Terminal switcher" })).not.toBeInTheDocument()
+        expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
+        expect(window.location.hash).toContain("terminal=07")
+        await interact("keyUp", window, { key: "Control" })
+        expect(screen.queryByRole("dialog", { name: "Terminal switcher" })).not.toBeInTheDocument()
+        expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
+        expect(window.location.hash).toContain("terminal=07")
+      })
+    }
+
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`opens the ${view} icon switcher and switches with arrows and Enter`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        const trigger = within(
+          screen.getByRole("region", { name: "Checkout implementation terminal" }),
+        ).getByRole("button", { name: "Switch terminal" })
+        await interact("click", trigger)
+        const dialog = screen.getByRole("dialog", { name: "Terminal switcher" })
+        const list = within(dialog).getByRole("listbox", { name: "Recent terminals" })
+        expect(dialog).toHaveAttribute("aria-modal", "true")
+        expect(list).toHaveFocus()
+        expect(
+          within(list).getByRole("option", { name: "Checkout implementation" }),
+        ).toHaveAttribute("aria-selected", "true")
+        await interact("keyUp", list, { key: "Control" })
+        expect(dialog).toBeVisible()
+        await interact("keyDown", list, { key: "ArrowDown" })
+        expect(within(list).getByRole("option", { name: "Dev server" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        )
+        await interact("keyDown", list, { key: "Enter" })
+        expect(screen.queryByRole("dialog", { name: "Terminal switcher" })).not.toBeInTheDocument()
+        expect(screen.getByRole("region", { name: "Dev server terminal" })).toBeVisible()
+      })
+    }
+
+    it("opens the Focus icon switcher with one terminal and restores focus on Escape", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
+      await interact("click", screen.getByRole("button", { name: "New terminal" }))
+      const rename = sidebarRenameInput("Terminal 01")
+      await interact("keyDown", rename, { key: "Escape" })
+      const trigger = screen.getByRole("button", { name: "Switch terminal" })
+      await interact("click", trigger)
+      expect(screen.getAllByRole("option", { name: "Terminal 01" })).toHaveLength(1)
+      await interact("keyDown", screen.getByRole("listbox", { name: "Recent terminals" }), {
+        key: "Escape",
+      })
+      await waitFor(() => expect(trigger).toHaveFocus())
     })
 
     it("cycles with arrows without moving the focused Canvas terminal", async () => {
@@ -426,17 +570,13 @@ describe("novadeck. workspace", () => {
       expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
     })
 
-    it("creates and focuses a terminal immediately in Focus", async () => {
+    it("creates a terminal and focuses its name in Focus", async () => {
       render(<App />)
       await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
       await interact("click", screen.getByRole("radio", { name: "Terminals" }))
       await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
       expect(screen.getByRole("complementary", { name: "Terminal sessions" })).toBeVisible()
-      expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
-        "data-placing",
-        "false",
-      )
-      expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveFocus()
+      expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
       expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
       await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true, repeat: true })
       expect(screen.queryByRole("button", { name: "Select Terminal 08" })).not.toBeInTheDocument()
@@ -460,157 +600,146 @@ describe("novadeck. workspace", () => {
         await interact("keyDown", window, { key: "k", ctrlKey: true, shiftKey: true })
         expect(screen.queryByRole("dialog", { name: "Find a terminal" })).not.toBeInTheDocument()
         await interact("keyDown", window, { key: "t", metaKey: true })
-        expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveFocus()
+        expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
         await interact("keyDown", window, { key: "k", metaKey: true })
         expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
         await interact("keyDown", window, { key: ",", metaKey: true })
-        const preferences = screen.getByRole("dialog", { name: "Preferences" })
+        const preferences = await screen.findByRole("dialog", { name: "Preferences" })
         await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
-        const search = within(preferences).getByText("Find a terminal").parentElement!
-        const create = within(preferences).getByText("New terminal").parentElement!
-        expect(search).toHaveTextContent("⌘K")
-        expect(create).toHaveTextContent("⌘T")
+        expect(
+          within(preferences)
+            .getAllByText("Find a terminal")
+            .some((label) => label.parentElement?.textContent?.includes("⌘K")),
+        ).toBe(true)
+        expect(
+          within(preferences)
+            .getAllByText("New terminal")
+            .some((label) => label.parentElement?.textContent?.includes("⌘T")),
+        ).toBe(true)
       } finally {
         platform.mockRestore()
       }
     })
   })
-  context("when placing new terminals", () => {
-    for (const view of ["Grid", "Canvas"]) {
-      for (const dialog of ["Find a terminal", "Preferences", "Switch workspace"]) {
-        it(`dismisses ${dialog} before cancelling ${view} placement with Escape`, async () => {
+  context("when creating terminals immediately", () => {
+    it("starts renaming the new sidebar tab and trims its committed name", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("button", { name: "New terminal" }))
+      const name = sidebarRenameInput("Terminal 07")
+      expect(name).toHaveFocus()
+      await interact("change", name, { target: { value: "  My shell  " } })
+      await interact("keyDown", name, { key: "Enter" })
+      expect(screen.getByRole("button", { name: "Select My shell" })).toBeInTheDocument()
+      expect(screen.getByRole("textbox", { name: "Command for My shell" })).toBeVisible()
+    })
+
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      for (const keyboard of [false, true]) {
+        it(`creates a usable ${view} terminal via ${keyboard ? "shortcut" : "button"} and Escape never deletes it`, async () => {
           render(<App />)
           await interact("click", screen.getByRole("radio", { name: view }))
-          await interact("click", screen.getByRole("button", { name: "New terminal" }))
-          if (dialog === "Switch workspace")
-            await interact("click", screen.getByRole("button", { name: dialog }))
-          else
-            await interact("keyDown", window, {
-              key: dialog === "Preferences" ? "," : "k",
-              ctrlKey: true,
-              shiftKey: dialog !== "Preferences",
-            })
-          expect(screen.getByRole("dialog", { name: dialog })).toBeVisible()
-          await waitFor(() =>
-            expect(screen.getByRole("dialog", { name: dialog })).toContainElement(
-              document.activeElement as HTMLElement,
-            ),
+          if (keyboard)
+            await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+          else await interact("click", screen.getByRole("button", { name: "New terminal" }))
+          const rename = sidebarRenameInput("Terminal 07")
+          expect(rename).toHaveFocus()
+          await interact("keyDown", rename, { key: "Escape" })
+          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toHaveAttribute(
+            "aria-current",
+            "true",
           )
-          await interact("keyDown", document.activeElement!, { key: "Escape" })
-          await waitFor(() =>
-            expect(screen.queryByRole("dialog", { name: dialog })).not.toBeInTheDocument(),
+          expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toBeVisible()
+          await interact(
+            "change",
+            screen.getByRole("textbox", { name: "Command for Terminal 07" }),
+            { target: { value: "ready immediately" } },
           )
-          expectPlacement()
-          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
           await interact("keyDown", document.body, { key: "Escape" })
-          expect(
-            screen.queryByRole("button", { name: "Select Terminal 07" }),
-          ).not.toBeInTheDocument()
+          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
+          await interact("click", screen.getByRole("button", { name: "Select Terminal 07" }))
+          expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveValue(
+            "ready immediately",
+          )
+          if (keyboard)
+            await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+          else await interact("click", screen.getByRole("button", { name: "New terminal" }))
+          expect(screen.getByRole("textbox", { name: "Command for Terminal 08" })).toBeVisible()
+          expect(screen.getByText("8 terminals", { selector: ".app-footer span" })).toBeVisible()
         })
       }
-      it(`cancels renaming before cancelling ${view} placement with Escape`, async () => {
+    }
+  })
+  context("when renaming a terminal from its header", () => {
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`edits the ${view} name without activating the header gesture`, async () => {
         render(<App />)
         await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        await interact("click", screen.getByRole("button", { name: "Rename Terminal 07" }))
-        const input = screen.getByRole("textbox", { name: "Rename Terminal 07" })
-        await interact("change", input, { target: { value: "Discard this" } })
-        await interact("keyDown", input, { key: "Escape" })
-        expect(
-          screen.queryByRole("textbox", { name: "Rename Terminal 07" }),
-        ).not.toBeInTheDocument()
-        expectPlacement()
-        expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-      })
-      it(`starts ghost placement from the keyboard in ${view} and cancels with Escape`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        await interact(
-          "click",
-          screen.getByRole("radio", { name: view === "Grid" ? "Terminals" : "Sessions" }),
-        )
-        const command = screen.getByRole("textbox", { name: "Command for Dev server" })
-        command.focus()
-        await interact("keyDown", command, { key: "t", ctrlKey: true, shiftKey: true })
-        expect(screen.getByRole("complementary", { name: "Terminal sessions" })).toBeVisible()
-        expectPlacement()
-        expect(
-          screen.queryByRole("textbox", { name: "Command for Terminal 07" }),
-        ).not.toBeInTheDocument()
-        await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true, repeat: true })
-        expect(screen.queryByRole("button", { name: "Select Terminal 08" })).not.toBeInTheDocument()
-        await interact("keyDown", window, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-        expect(screen.getByRole("button", { name: "Select Dev server" })).toHaveAttribute(
-          "aria-current",
-          "true",
-        )
-      })
-
-      it(`keeps placement active when switching from ${view} to the other layout and back`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        const other = view === "Grid" ? "Canvas" : "Grid"
-        await interact("click", screen.getByRole("radio", { name: other }))
-        expectPlacement()
-        await interact("click", screen.getByRole("radio", { name: view }))
-        expectPlacement()
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-        expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
-          "data-placing",
-          "false",
-        )
-      })
-      it(`cancels ${view} placement with Escape and restores the previous terminal`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        const create = screen.getByRole("button", { name: "New terminal" })
-        await interact("click", create)
-        expect(create).toHaveAttribute("data-placing", "true")
-        expect(
-          screen.getByRole("button", { name: "Select Terminal 07" }).closest(".session-tab"),
-        ).toHaveAttribute("data-placing", "true")
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-        expect(create).toHaveAttribute("data-placing", "false")
-        expect(screen.getByRole("button", { name: "Select Dev server" })).toHaveAttribute(
-          "aria-current",
-          "true",
-        )
-        expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
-        await interact("click", create)
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.getByRole("button", { name: "Select Terminal 08" })).toBeInTheDocument()
-        expect(create).toHaveAttribute("data-placing", "false")
-      })
-      it(`creates the ${view} sidebar tab immediately and automatically places it on navigation`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        expect(screen.getByRole("button", { name: "Select Terminal 07" })).toHaveAttribute(
-          "aria-current",
-          "true",
-        )
-        expect(screen.getByText("7 terminals", { selector: ".app-footer span" })).toBeVisible()
-        expect(
-          screen.queryByRole("region", { name: "Terminal 07 terminal" }),
-        ).not.toBeInTheDocument()
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeInTheDocument()
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        await interact("click", screen.getByRole("radio", { name: "Focus" }))
-        expect(screen.getByRole("region", { name: "Terminal 08 terminal" })).toBeVisible()
-        await interact("click", screen.getByRole("radio", { name: view }))
-        expect(screen.getByRole("region", { name: "Terminal 08 terminal" })).toBeInTheDocument()
+        if (view === "Focus")
+          await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+        const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+        const title = within(terminal).getByRole("heading", { name: "Dev server" })
+        await interact("doubleClick", title)
+        const editor = within(terminal).getByRole("textbox", { name: "Rename Dev server" })
+        await interact("change", editor, { target: { value: "Discarded" } })
+        await interact("keyDown", editor, { key: "Escape" })
+        expect(title).toBeVisible()
+        expect(screen.getByRole("region", { name: `${view.toLowerCase()} view` })).toBeVisible()
+        await interact("doubleClick", title)
+        const next = within(terminal).getByRole("textbox", { name: "Rename Dev server" })
+        await interact("change", next, { target: { value: "My server" } })
+        await interact("keyDown", next, { key: "Enter" })
+        expect(within(terminal).getByRole("heading", { name: "My server" })).toBeVisible()
       })
     }
+  })
+  context("when both terminal names are visible", () => {
+    it("shares a draft between sidebar and header and cancels both with Escape", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("button", { name: "Rename Dev server" }))
+      const tab = screen
+        .getByRole("button", { name: "Save name for Dev server" })
+        .closest(".session-tab")!
+      const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+      const sidebar = within(tab as HTMLElement).getByRole("textbox", { name: "Rename Dev server" })
+      const header = within(terminal).getByRole("textbox", { name: "Rename Dev server" })
+      expect(sidebar).toHaveFocus()
+      await interact("change", sidebar, { target: { value: "Shared draft" } })
+      expect(header).toHaveValue("Shared draft")
+      await act(async () => {
+        fireEvent.blur(sidebar, { relatedTarget: header })
+        header.focus()
+      })
+      expect(sidebar).toHaveValue("Shared draft")
+      await interact("change", header, { target: { value: "Discard this" } })
+      expect(sidebar).toHaveValue("Discard this")
+      await interact("keyDown", header, { key: "Escape" })
+      expect(within(terminal).getByRole("heading", { name: "Dev server" })).toBeVisible()
+      expect(screen.getByRole("button", { name: "Select Dev server" })).toBeInTheDocument()
+      expect(screen.queryByRole("textbox", { name: "Rename Dev server" })).not.toBeInTheDocument()
+    })
+
+    it("saves a draft started in the header from the sidebar", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+      await interact("doubleClick", within(terminal).getByRole("heading", { name: "Dev server" }))
+      const header = within(terminal).getByRole("textbox", { name: "Rename Dev server" })
+      const tab = screen
+        .getByRole("button", { name: "Save name for Dev server" })
+        .closest(".session-tab")!
+      const sidebar = within(tab as HTMLElement).getByRole("textbox", { name: "Rename Dev server" })
+      expect(header).toHaveFocus()
+      await interact("change", header, { target: { value: "  Shared shell  " } })
+      expect(sidebar).toHaveValue("  Shared shell  ")
+      await act(async () => {
+        fireEvent.blur(header, { relatedTarget: sidebar })
+        sidebar.focus()
+      })
+      await interact("keyDown", sidebar, { key: "Enter" })
+      expect(screen.getByRole("button", { name: "Select Shared shell" })).toBeInTheDocument()
+      expect(screen.getByRole("region", { name: "Shared shell terminal" })).toBeVisible()
+    })
   })
   context("when hiding terminals from shared layouts", () => {
     it("previews the active hidden terminal without changing its visibility in Grid or Canvas", async () => {
@@ -831,7 +960,7 @@ describe("novadeck. workspace", () => {
         "click",
         screen.getByRole("button", { name: "Rename Checkout implementation" }),
       )
-      const name = screen.getByRole("textbox", { name: "Rename Checkout implementation" })
+      const name = sidebarRenameInput("Checkout implementation")
       await interact("change", name, { target: { value: "Shop shell" } })
       await interact("keyDown", name, { key: "Enter" })
       await interact("click", screen.getByRole("button", { name: "Close Checkout review" }))
@@ -1024,7 +1153,7 @@ describe("novadeck. workspace", () => {
       await interact("click", screen.getByRole("radio", { name: "Grid" }))
       await interact("click", screen.getByRole("button", { name: "Focus Checkout review" }))
       await interact("click", screen.getByRole("button", { name: "Rename Checkout review" }))
-      const name = screen.getByRole("textbox", { name: "Rename Checkout review" })
+      const name = sidebarRenameInput("Checkout review")
       await interact("change", name, { target: { value: "Changes" } })
       await interact("keyDown", name, { key: "Enter" })
       await interact("click", screen.getByRole("button", { name: "Open in Grid" }))
@@ -1137,8 +1266,8 @@ describe("novadeck. workspace", () => {
     })
   })
 
-  context("when moving Canvas terminals with the keyboard", () => {
-    it("moves by the requested step without snapping the other axis", async () => {
+  context("when using arrows on Canvas terminals", () => {
+    it("does not move nodes with modified arrows", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))
       const node = screen
@@ -1146,9 +1275,8 @@ describe("novadeck. workspace", () => {
         .closest<HTMLElement>(".react-flow__node")!
       expect(node).toHaveStyle({ transform: "translate(80px,80px)" })
       await interact("keyDown", node, { key: "ArrowRight", ctrlKey: true })
-      expect(node).toHaveStyle({ transform: "translate(104px,80px)" })
       await interact("keyDown", node, { key: "ArrowDown", shiftKey: true })
-      expect(node).toHaveStyle({ transform: "translate(104px,176px)" })
+      expect(node).toHaveStyle({ transform: "translate(80px,80px)" })
     })
   })
 
@@ -1255,7 +1383,7 @@ describe("novadeck. workspace", () => {
     it("adds a selected, empty terminal", async () => {
       render(<App />)
       await interact("click", screen.getAllByRole("button", { name: "New terminal" })[0]!)
-      expect(screen.getByRole("heading", { name: "Terminal 07" })).toBeVisible()
+      expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveValue("")
       expect(screen.getByText("7 terminals", { selector: ".app-footer span" })).toBeVisible()
     })
@@ -1271,7 +1399,7 @@ describe("novadeck. workspace", () => {
         "click",
         screen.getByRole("button", { name: "Rename Checkout implementation" }),
       )
-      const input = screen.getByRole("textbox", { name: "Rename Checkout implementation" })
+      const input = sidebarRenameInput("Checkout implementation")
       expect(visibility).toBeDisabled()
       await interact("change", input, { target: { value: "Discard this" } })
       await interact(
@@ -1298,12 +1426,12 @@ describe("novadeck. workspace", () => {
         "click",
         screen.getByRole("button", { name: "Rename Checkout implementation" }),
       )
-      const input = screen.getByRole("textbox", { name: "Rename Checkout implementation" })
+      const input = sidebarRenameInput("Checkout implementation")
       await interact("change", input, { target: { value: "  Local shell  " } })
       await interact("keyDown", input, { key: "Enter" })
       expect(screen.getByRole("heading", { name: "Local shell" })).toBeVisible()
       await interact("click", screen.getByRole("button", { name: "Rename Local shell" }))
-      const edit = screen.getByRole("textbox", { name: "Rename Local shell" })
+      const edit = sidebarRenameInput("Local shell")
       await interact("change", edit, { target: { value: "Discard this" } })
       await interact("keyDown", edit, { key: "Escape" })
       expect(screen.getByRole("button", { name: "Select Local shell" })).toBeVisible()
@@ -1327,7 +1455,7 @@ describe("novadeck. workspace", () => {
         screen.queryByRole("button", { name: "Select Checkout implementation" }),
       ).not.toBeInTheDocument()
       await interact("click", screen.getByRole("button", { name: "New terminal" }))
-      expect(screen.getByRole("heading", { name: "Terminal 07" })).toBeVisible()
+      expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
       expect(screen.getByRole("button", { name: "Select Build" })).toBeVisible()
       expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
     })

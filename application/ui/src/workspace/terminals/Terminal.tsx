@@ -1,5 +1,9 @@
 import {
   Minimize2,
+  Scaling,
+  Shrink,
+  FoldHorizontal,
+  UnfoldHorizontal,
   ArrowUpRight,
   GitBranch,
   Minus,
@@ -11,8 +15,9 @@ import { useEffect, useRef } from "react"
 
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
-import type { Entry, Session } from "../model/types"
-import { shortcutBindings } from "../shortcuts"
+import type { Entry, Session, WindowedView } from "../model/types"
+import { workspaceShortcutBindings } from "../shortcuts"
+import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 export type MinimizeControls = {
   minimized: boolean
@@ -34,15 +39,24 @@ export const Terminal = ({
   scrollOffset,
   onScrollChange,
   onFocus,
+  switcher,
   onFlyTo,
+  onResizePreset,
+  resizeView = "canvas",
+  large = false,
   onClose,
   windowed,
   minimize,
   compact = false,
-  placing = false,
   focusInput = false,
   onInputFocused,
   active = false,
+  fresh = false,
+  rename,
+  onBeginRename,
+  onRenameDraft,
+  onRenameSave,
+  onRenameCancel,
 }: {
   session: Session
   projectName: string
@@ -54,18 +68,36 @@ export const Terminal = ({
   scrollOffset: number | undefined
   onScrollChange: (offset: number) => void
   onFocus?: () => void
+  switcher?: { onOpen: (button: HTMLButtonElement) => void }
   onFlyTo?: () => void
+  onResizePreset?: (button: HTMLButtonElement) => void
+  resizeView?: WindowedView
+  large?: boolean
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
   minimize?: MinimizeControls
   compact?: boolean
-  placing?: boolean
   focusInput?: boolean
   onInputFocused?: () => void
   active?: boolean
+  fresh?: boolean
+  rename: TerminalRename | null
+  onBeginRename: () => void
+  onRenameDraft: (value: string) => void
+  onRenameSave: () => void
+  onRenameCancel: () => void
 }): React.JSX.Element => {
+  const resizeLabel = large
+    ? resizeView === "grid"
+      ? "Restore width"
+      : "Make compact"
+    : resizeView === "grid"
+      ? "Make full width"
+      : "Enlarge terminal"
+  const ResizeIcon =
+    resizeView === "grid" ? (large ? FoldHorizontal : UnfoldHorizontal) : large ? Shrink : Scaling
   const Heading = compact ? "h2" : "h1"
-  const focusHint = active ? ` · ${shortcutBindings().focus.display.join(" ")}` : ""
+  const focusHint = active ? ` · ${workspaceShortcutBindings().focus.display.join(" ")}` : ""
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const input = draft
   const setInput = onDraftChange
@@ -73,9 +105,10 @@ export const Terminal = ({
   const previousOutput = useRef({ length: entries.length, cleared })
   const output = useRef<HTMLDivElement>(null)
   const commandInput = useRef<HTMLInputElement>(null)
-  const headerPress = useRef<{ x: number; y: number; time: number } | null>(null)
-  const headerTap = useRef<{ x: number; y: number; time: number } | null>(null)
+  const headerPress = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
+  const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
+  const renaming = Boolean(rename)
   const toggleView = onFlyTo ?? onFocus ?? windowed?.onOpen
   useEffect(() => {
     if (!focusInput || !commandInput.current) return
@@ -103,21 +136,26 @@ export const Terminal = ({
   }, [])
   return (
     <section
-      className={`terminal-window data-[placing=true]:border-dashed data-[placing=true]:bg-soft data-[placing=true]:border-line-strong flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
+      className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${session.name} terminal`}
       data-terminal={session.id}
-      data-placing={placing}
+      data-new={fresh}
     >
       <div className="terminal-heading relative shrink-0">
         <header
-          data-placing={placing}
-          className="terminal-header data-[placing=true]:bg-soft data-[placing=true]:border-dashed flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
+          className="terminal-header flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
           onDoubleClick={(event) => {
             if (
               performance.now() < ignoreDoubleClickUntil.current ||
-              (event.target as Element).closest("button")
+              (event.target as Element).closest("button, input")
             )
               return
+            if ((event.target as Element).closest("[data-terminal-name]")) {
+              event.preventDefault()
+              event.stopPropagation()
+              onBeginRename()
+              return
+            }
             if (!toggleView) return
             event.preventDefault()
             event.stopPropagation()
@@ -125,12 +163,17 @@ export const Terminal = ({
           }}
           onPointerDown={(event) => {
             if (event.pointerType !== "touch") return
-            if (!event.isPrimary || (event.target as Element).closest("button")) {
+            if (!event.isPrimary || (event.target as Element).closest("button, input")) {
               headerPress.current = null
               headerTap.current = null
               return
             }
-            headerPress.current = { x: event.clientX, y: event.clientY, time: event.timeStamp }
+            headerPress.current = {
+              x: event.clientX,
+              y: event.clientY,
+              time: event.timeStamp,
+              rename: Boolean((event.target as Element).closest("[data-terminal-name]")),
+            }
           }}
           onPointerMove={(event) => {
             const press = headerPress.current
@@ -156,10 +199,15 @@ export const Terminal = ({
               return
             }
             const previous = headerTap.current
-            headerTap.current = { x: event.clientX, y: event.clientY, time: event.timeStamp }
+            headerTap.current = {
+              ...press,
+              x: event.clientX,
+              y: event.clientY,
+              time: event.timeStamp,
+            }
             if (
-              !toggleView ||
               !previous ||
+              previous.rename !== press.rename ||
               event.timeStamp - previous.time > 350 ||
               Math.hypot(event.clientX - previous.x, event.clientY - previous.y) > 24
             )
@@ -168,21 +216,49 @@ export const Terminal = ({
             ignoreDoubleClickUntil.current = performance.now() + 500
             event.preventDefault()
             event.stopPropagation()
-            toggleView()
+            if (press.rename) onBeginRename()
+            else toggleView?.()
           }}
         >
-          <div
-            className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium"
-            title={session.name}
-          >
-            <TerminalIcon size={14} strokeWidth={1.5} />
-            <Heading>{session.name}</Heading>
+          <div className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">
+            {switcher ? (
+              <Tooltip content="Switch terminal">
+                <button
+                  className="flex size-7 shrink-0 items-center justify-center rounded-control text-muted hover:bg-shell focus-visible:bg-shell nodrag nopan"
+                  aria-label="Switch terminal"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    switcher.onOpen(event.currentTarget)
+                  }}
+                >
+                  <TerminalIcon size={14} strokeWidth={1.5} />
+                </button>
+              </Tooltip>
+            ) : (
+              <TerminalIcon size={14} strokeWidth={1.5} />
+            )}
+            <>
+              <Heading hidden={renaming} data-terminal-name="">
+                {session.name}
+              </Heading>
+              {rename && (
+                <TerminalRenameInput
+                  id={session.id}
+                  name={session.name}
+                  value={rename.value}
+                  request={rename.request}
+                  autoFocus={rename.origin === "header"}
+                  onChange={onRenameDraft}
+                  onSave={onRenameSave}
+                  onCancel={onRenameCancel}
+                  className="w-full min-w-0 border-0 bg-transparent p-0 text-xs font-medium text-ink outline-none nodrag nopan"
+                />
+              )}
+            </>
           </div>
-          <span
-            className={`terminal-actions shrink-0 items-center gap-1 ${placing ? "hidden" : "flex"}`}
-          >
+          <span className="terminal-actions flex shrink-0 items-center gap-1">
             {minimize && (
-              <Tooltip content={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}>
+              <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
@@ -196,8 +272,33 @@ export const Terminal = ({
                 </button>
               </Tooltip>
             )}
+            {onResizePreset && (
+              <Tooltip
+                content={
+                  large
+                    ? resizeView === "grid"
+                      ? "Restore width"
+                      : "Compact"
+                    : resizeView === "grid"
+                      ? "Full width"
+                      : "Enlarge"
+                }
+              >
+                <button
+                  className={`${headerActionClasses} terminal-view-action nodrag nopan`}
+                  aria-label={`${resizeLabel}: ${session.name}`}
+                  aria-pressed={large}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onResizePreset(event.currentTarget)
+                  }}
+                >
+                  <ResizeIcon size={14} />
+                </button>
+              </Tooltip>
+            )}
             {onFocus && (
-              <Tooltip content={`Focus ${session.name}${focusHint}`}>
+              <Tooltip content={`Focus${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`Focus ${session.name}`}
@@ -211,7 +312,7 @@ export const Terminal = ({
               </Tooltip>
             )}
             {windowed && (
-              <Tooltip content={`Open in ${windowed.destination}${focusHint}`}>
+              <Tooltip content={`${windowed.destination}${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action`}
                   aria-label={`Open in ${windowed.destination}`}
@@ -222,7 +323,7 @@ export const Terminal = ({
               </Tooltip>
             )}
             {onClose && (
-              <Tooltip content={`Close ${session.name}`}>
+              <Tooltip content="Close">
                 <button
                   className={`${headerActionClasses} terminal-close nodrag nopan`}
                   aria-label={`Close ${session.name}`}
@@ -240,7 +341,7 @@ export const Terminal = ({
       </div>
       <div
         ref={output}
-        className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [scrollbar-width:thin] [scrollbar-color:var(--color-line)_transparent] [&_strong]:font-semibold nodrag nopan"
+        className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [&_strong]:font-semibold nodrag nopan"
         hidden={minimize?.minimized && !minimize.clipContent}
         aria-hidden={minimize?.minimized}
         inert={minimize?.minimized}

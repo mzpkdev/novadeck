@@ -87,7 +87,7 @@ export const WorkspaceSwitcher = ({
             className="workspace-switcher-new flex w-full items-center gap-2.25 rounded-control px-2.5 py-[9px] text-left text-[11px] text-muted disabled:cursor-not-allowed disabled:opacity-50"
             type="button"
             disabled
-            title="Native folder picker coming soon"
+            title="Unavailable"
           >
             <FolderOpen aria-hidden="true" className="shrink-0" size={15} strokeWidth={1.65} />
             <span>Open folder…</span>

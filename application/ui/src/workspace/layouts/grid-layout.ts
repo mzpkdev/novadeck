@@ -1,6 +1,7 @@
-import { cloneLayout, moveElement, verticalCompactor } from "react-grid-layout"
+import { verticalCompactor } from "react-grid-layout"
 
-import type { GridBreakpoint, GridLayouts, Session } from "../model/types"
+import type { GridBreakpoint, GridLayouts, GridRestoreWidths, Session } from "../model/types"
+import { canvasPresetSize, gridPresetWidth } from "./terminal-size"
 
 export const gridColumns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }
 const expandedHeight = (session: Session): number => Math.ceil((session.height + 16) / 24)
@@ -38,45 +39,6 @@ export const visibleGridLayouts = (
     )
   }
   return result
-}
-
-export const previewGridPlacement = (
-  sessions: Session[],
-  layouts: GridLayouts,
-  minimized: Record<string, boolean>,
-  hidden: Record<string, boolean>,
-  placement: string,
-  breakpoint: GridBreakpoint,
-  x: number,
-  y: number,
-): GridLayouts => {
-  const full = visibleGridLayouts(sessions, layouts, minimized, hidden)
-  const item = full[breakpoint]?.find((entry) => entry.i === placement)
-  if (!item) return full
-
-  // Begin below the existing cards, then move with the same collision rules as a drag.
-  const existing = cloneLayout(
-    visibleGridLayouts(
-      sessions.filter((session) => session.id !== placement),
-      layouts,
-      minimized,
-      hidden,
-    )[breakpoint] ?? [],
-  )
-  const ghost = { ...item, y: existing.reduce((end, entry) => Math.max(end, entry.y + entry.h), 0) }
-  const movable = [...existing, ghost]
-  const moved = moveElement(
-    movable,
-    ghost,
-    x,
-    y,
-    true,
-    false,
-    "vertical",
-    gridColumns[breakpoint],
-    false,
-  )
-  return { ...full, [breakpoint]: verticalCompactor.compact(moved, gridColumns[breakpoint]) }
 }
 
 const sameGeometry = (next: GridLayouts, projected: GridLayouts): boolean =>
@@ -137,4 +99,95 @@ export const expandedGridLayouts = (
       : (previous[breakpoint] ?? [])
   }
   return result
+}
+
+export type GridWidthToggle = {
+  layouts: GridLayouts
+  restoreWidths: GridRestoreWidths | null
+}
+
+export const toggleGridWidth = (
+  id: string,
+  expand: boolean,
+  sessions: Session[],
+  layouts: GridLayouts,
+  minimized: Record<string, boolean>,
+  hidden: Record<string, boolean>,
+  savedWidths: GridRestoreWidths = {},
+): GridWidthToggle => {
+  const restored = { ...minimized, [id]: false }
+  const visible = visibleGridLayouts(sessions, layouts, restored, hidden)
+  const next: GridLayouts = {}
+  const restoreWidths: GridRestoreWidths = {}
+  for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
+    const columns = gridColumns[breakpoint]
+    const current = visible[breakpoint]?.find((item) => item.i === id)
+    restoreWidths[breakpoint] =
+      current?.w ??
+      layouts[breakpoint]?.find((item) => item.i === id)?.w ??
+      gridPresetWidth(columns, "small")
+    const width = expand
+      ? columns
+      : Math.max(4, Math.min(columns, savedWidths[breakpoint] ?? gridPresetWidth(columns, "small")))
+    next[breakpoint] = verticalCompactor.compact(
+      (visible[breakpoint] ?? []).map((item) =>
+        item.i === id
+          ? {
+              ...item,
+              x: Math.min(item.x, columns - width),
+              w: width,
+            }
+          : item,
+      ),
+      columns,
+    )
+  }
+  return {
+    layouts: expandedGridLayouts(next, layouts, sessions, restored, hidden),
+    restoreWidths: expand ? restoreWidths : null,
+  }
+}
+
+export const addCompactGridTerminal = (
+  sessions: Session[],
+  layouts: GridLayouts,
+  terminal: Session,
+): GridLayouts => {
+  const current = visibleGridLayouts(sessions, layouts, {})
+  const next: GridLayouts = {}
+  for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
+    const existing = layouts[breakpoint] ?? current[breakpoint] ?? []
+    const width = gridPresetWidth(gridColumns[breakpoint], "small")
+    const height = Math.ceil((canvasPresetSize("small").height + 16) / 24)
+    const rows = [0, ...existing.map((item) => item.y + item.h)]
+    let position = { x: 0, y: Math.max(...rows) }
+    for (const y of rows) {
+      const x = Array.from(
+        { length: gridColumns[breakpoint] - width + 1 },
+        (_, index) => index,
+      ).find((candidate) =>
+        existing.every(
+          (item) =>
+            candidate + width <= item.x ||
+            candidate >= item.x + item.w ||
+            y + height <= item.y ||
+            y >= item.y + item.h,
+        ),
+      )
+      if (x === undefined || y >= position.y) continue
+      position = { x, y }
+    }
+    next[breakpoint] = [
+      ...existing,
+      {
+        i: terminal.id,
+        ...position,
+        w: width,
+        h: height,
+        minW: 4,
+        minH: 10,
+      },
+    ]
+  }
+  return next
 }

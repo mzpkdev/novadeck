@@ -7,20 +7,38 @@ canvas. Keep related work together and switch between sessions from the sidebar.
 
 In Canvas, scroll to zoom in or out, and drag the background or an inactive terminal
 to pan. Click a terminal to activate it, then select its text, scroll its output,
-or drag its header to move it.
-Double-click or double-tap a terminal header to smoothly center and zoom that terminal
-to fit the canvas viewport. Minimized terminals restore first. The header's arrow
-opens Focus view.
+or drag its header to move it. Activating a terminal brings it in front of the
+others; Canvas retains that stacking order until you leave the view.
+Double-click or double-tap a terminal header outside its name to smoothly center and zoom that terminal
+to fit the canvas viewport. Repeat the gesture on the same terminal to return to the
+previous camera position and zoom. Manual pan or zoom (including keyboard shortcuts),
+Fit all, sidebar camera navigation, leaving Canvas, or switching sessions clears that
+return point. Flying to a different terminal starts a new visit from the current camera.
+Repeated double gestures during a flight are ignored. Minimized terminals restore first;
+returning the camera does not minimize them again. The header's arrow opens Focus view.
 
-Click **New terminal** or use its keyboard shortcut in Grid or Canvas to create its sidebar tab immediately, then
-move over the workspace and click to place the terminal preview at 75% opacity. The button
-and pending tab have dashed borders while placing. The ghost has the same dashed
-border; press **Esc** to cancel and remove
-the pending terminal. In Grid,
-the preview pushes neighboring terminals aside. In Canvas, drag to pan while placing;
-release, then click to place the ghost. Placement stays active when switching between
-Grid and Canvas. Switching to Focus or selecting another terminal tab before placing
-it uses the automatic position.
+Click **New terminal** or use its keyboard shortcut to create and select a terminal
+immediately in any view, with or without Zen. Focus shows it right away. Grid uses
+an available slot and scrolls it into view. Canvas chooses a nearby free position,
+preferring the current viewport, and pans only as needed to reveal it without changing
+zoom. Terminals can be moved or resized immediately; there is no placement step.
+The new terminal opens in rename mode with its name selected: in the sidebar when
+visible, or in the terminal header otherwise. Enter or clicking away saves the name;
+Escape keeps the original name. In any view, double-click or double-tap a
+terminal name to rename it directly. The header and sidebar share rename mode and
+the live draft. Move between either name field to continue editing; saving or
+canceling ends the edit in both places.
+
+Use the terminal header's resize control to alternate between two sizes. In Canvas,
+**Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent
+to 1200×800, independent of zoom. **Compact** sets 600×400. Extreme ratios respect the
+minimum terminal dimensions. Double-click the enlarged terminal header to fill more
+of the viewport. Canvas grows or shrinks around the terminal's center
+without changing the camera. In Grid, **Make full width** fills the available columns;
+**Restore width** returns to the width at each breakpoint from before that click,
+preserving terminal height. Resizing restores minimized terminals.
+Preset choices are remembered per terminal, session, and view. New terminals start
+compact: 600×400 in Canvas and compact column width in Grid, with no placement preview.
 
 In Grid, selecting a terminal from its tab smoothly scrolls it into view. With
 reduced motion enabled, it scrolls immediately.
@@ -33,6 +51,26 @@ Hidden terminals retain
 their content and layout and remain available in Focus view.
 Showing and hiding use a short fade and scale transition; reduced motion skips it.
 Switching terminal tabs in Focus uses the same transition.
+
+## Zen mode
+
+Choose **Enter Zen mode** in the top bar to hide the header, sidebar, rail, and footer
+without leaving the current Focus, Grid, or Canvas view. The floating dock provides
+New terminal, enabled view choices, and Exit Zen. At rest it folds to New terminal and a
+small chevron. Click or tap the chevron to toggle the remaining controls, or activate
+it with Enter or Space. Clicking outside, leaving with keyboard focus, or pressing Escape folds it again.
+Canvas navigation uses gestures and
+keyboard shortcuts: +/− to zoom and 0 to fit all terminals.
+Focus becomes an edge-to-edge terminal, while Grid and Canvas gain the available space.
+In any view, click the terminal icon beside the name to open the terminal switcher.
+Choose a terminal, or use Up/Down and Enter. Escape closes the switcher.
+This also works outside Zen; double-click or double-tap the name still renames it.
+Terminal names stay visible; header actions appear on hover or keyboard focus on desktop
+and stay visible on touch devices. Search and terminal shortcuts remain available.
+
+Zen preserves the active terminal and Canvas camera on entry. Exit Zen restores the
+previous sidebar visibility and panel. Explicit sidebar shortcuts or Browse sessions
+leave Zen to show the requested panel. Zen is temporary and resets on reload.
 
 ## Keyboard shortcuts
 
@@ -48,6 +86,21 @@ Switching terminal tabs in Focus uses the same transition.
 | Toggle session sidebar                            | `Cmd+Shift+2`    | `Ctrl+Shift+2`     |
 | Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
 
+When navigating the workspace outside terminal input, text editors, and dialogs,
+these simpler keys work in both normal and Zen mode:
+
+| Key  | Action                                            |
+| ---- | ------------------------------------------------- |
+| `T`  | New terminal                                      |
+| `/`  | Find a terminal                                   |
+| `F`  | Toggle Focus and the previous Grid or Canvas view |
+| `Z`  | Toggle Zen                                        |
+| `B`  | Toggle terminal sidebar (leaves Zen to show it)   |
+| `F2` | Rename the active terminal                        |
+
+The modifier shortcuts above remain available from terminal input. Workspace keys
+never replace typing, editing, or dialog navigation.
+
 The new-session shortcut creates and selects an empty session in the current project
 and opens the Sessions sidebar.
 
@@ -60,15 +113,15 @@ Left and Right cycle through enabled views in Focus → Grid → Canvas order, w
 at either end and retaining the selected terminal.
 Escape first deselects the active terminal in any view, then hides the open sidebar
 on the next press. Further presses do nothing. Focus keeps the displayed terminal
-in place; clicking it activates it again. Placement, dialogs, and renaming handle
-Escape before workspace selection.
+in place; clicking it activates it again. Terminal input, editors, and dialogs
+retain Escape without changing workspace selection.
 Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
 pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
-The new-terminal shortcut opens the Terminals sidebar and the same placement preview as the button in Grid
-and Canvas. In Focus, it creates the terminal immediately and focuses its command
-input. These shortcuts are available in the desktop app; browsers may
+The new-terminal shortcut creates a terminal immediately and opens the desktop Terminals sidebar
+when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. The name editor receives focus. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
-shows the bindings for the current platform.
+groups bindings into Anywhere and Workspace for the current platform. On the Canvas
+background, `+`/`−` zoom and `0` fits all terminals.
 
 ## Development
 

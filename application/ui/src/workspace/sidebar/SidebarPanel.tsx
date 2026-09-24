@@ -44,7 +44,7 @@ export const SidebarPanel = ({
           )}
         </h2>
       </Tooltip>
-      <Tooltip content={`Hide ${title.toLowerCase()}`}>
+      <Tooltip content="Hide">
         <button
           className="icon-button sidebar-close size-7 [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
           type="button"

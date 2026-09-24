@@ -13,7 +13,6 @@ import {
   type OnNodesChange,
   type XYPosition,
 } from "@xyflow/react"
-import { Maximize, Minus, Plus } from "lucide-react"
 import {
   useCallback,
   useEffect,
@@ -25,10 +24,13 @@ import {
   type ReactNode,
 } from "react"
 
-import { Tooltip } from "../../ui-toolkit/Tooltip"
-import type { Session, CanvasLayout } from "../model/types"
+import type { SizePreset, Session, CanvasLayout } from "../model/types"
+import { workspaceOverlayOpen, workspaceShortcutTarget } from "../shortcuts"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
+import { viewportCanvasPosition } from "./canvas-placement"
+import { createCanvasVisit } from "./canvas-visit"
+import { canvasPresetSize } from "./terminal-size"
 import { useTerminalVisibility } from "./useTerminalVisibility"
 
 type TerminalNode = Node<
@@ -38,13 +40,15 @@ type TerminalNode = Node<
     minimized: boolean
     hiding: boolean
     preview: boolean
-    placing: boolean
+    focusRequest: number | null
     onResizeStart: () => void
     onResizeEnd: (width: number, height: number) => void
   },
   "terminal"
 >
 type CanvasProps = {
+  presets: Record<string, SizePreset>
+  onPresetChange: (id: string, preset: SizePreset) => void
   layout: CanvasLayout
   revealOnMount: boolean
   fitOnNavigate: boolean
@@ -53,43 +57,51 @@ type CanvasProps = {
   hidden: Record<string, boolean>
   preview: string
   selected: string
+  keyboardFocusRequest: number | null
   navigation: number
-  placement?: string
-  onPlace?: () => void
   onSelect: (id: string) => void
-  render: (session: Session, minimize: MinimizeControls, onFlyTo: () => void) => ReactNode
+  render: (
+    session: Session,
+    minimize: MinimizeControls,
+    onFlyTo: () => void,
+    resize: () => void,
+  ) => ReactNode
 }
 type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
 
-const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => (
-  <div
-    data-node={id}
-    data-preview={data.preview}
-    style={data.placing ? { opacity: 0.75 } : undefined}
-    inert={data.hiding}
-    aria-hidden={data.hiding}
-    className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
-  >
-    <div className="terminal-visibility relative h-full w-full" data-hiding={data.hiding}>
-      <NodeResizeControl
-        position="bottom-right"
-        minWidth={320}
-        minHeight={data.minimized ? 0 : 200}
-        {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
-        autoScale={false}
-        className="terminal-resize-grip nodrag nopan"
-        onResizeStart={data.onResizeStart}
-        onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
-      >
-        <span
-          className="terminal-resize-pattern"
-          title={data.minimized ? "Drag to resize terminal width" : "Drag to resize terminal"}
-        />
-      </NodeResizeControl>
-      {data.content}
+const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => {
+  const content = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (data.focusRequest === null) return
+    content.current?.closest<HTMLElement>(".react-flow__node")?.focus({ preventScroll: true })
+  }, [data.focusRequest])
+  return (
+    <div
+      ref={content}
+      data-node={id}
+      data-preview={data.preview}
+      inert={data.hiding}
+      aria-hidden={data.hiding}
+      className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
+    >
+      <div className="terminal-visibility relative h-full w-full" data-hiding={data.hiding}>
+        <NodeResizeControl
+          position="bottom-right"
+          minWidth={320}
+          minHeight={data.minimized ? 0 : 200}
+          {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
+          autoScale={false}
+          className="terminal-resize-grip nodrag nopan"
+          onResizeStart={data.onResizeStart}
+          onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
+        >
+          <span className="terminal-resize-pattern" title="Resize" />
+        </NodeResizeControl>
+        {data.content}
+      </div>
     </div>
-  </div>
-)
+  )
+}
 const nodeTypes = { terminal: TerminalNodeView }
 const fitOptions = { padding: 0.08, maxZoom: 1 }
 const canvasStep = 24
@@ -106,6 +118,8 @@ const centerOf = (node: TerminalNode, zoom: number): XYPosition => ({
 })
 
 const TerminalCanvas = ({
+  presets,
+  onPresetChange,
   layout,
   revealOnMount,
   fitOnNavigate,
@@ -114,25 +128,15 @@ const TerminalCanvas = ({
   hidden,
   preview,
   selected,
+  keyboardFocusRequest,
   navigation,
-  placement,
-  onPlace,
   onSelect,
   render,
 }: CanvasProps): React.JSX.Element => {
   const { minimized, geometry } = layout
   const removed = useTerminalVisibility(hidden)
-  const {
-    fitView,
-    zoomIn,
-    zoomOut,
-    getViewport,
-    setViewport,
-    setCenter,
-    getNode,
-    setNodes,
-    screenToFlowPosition,
-  } = useReactFlow<TerminalNode>()
+  const { fitView, zoomIn, zoomOut, getViewport, setViewport, setCenter, getNode, setNodes } =
+    useReactFlow<TerminalNode>()
   const zoom = useStore((state) => state.transform[2])
   const viewportWidth = useStore((state) => state.width)
   const viewportHeight = useStore((state) => state.height)
@@ -145,6 +149,7 @@ const TerminalCanvas = ({
   const initialized = useNodesInitialized()
   const container = useRef<HTMLDivElement>(null)
   const [initialViewport] = useState(layout.viewport)
+  const [visit] = useState(createCanvasVisit)
   const geometryRef = useRef<CanvasLayout["geometry"]>({ ...layout.geometry })
   const dirtyGeometry = useRef(new Set<string>())
   const resizing = useRef(new Set<string>())
@@ -154,18 +159,18 @@ const TerminalCanvas = ({
   const latest = useRef({ sessions, onLayoutChange })
   // Returning to Canvas restores its camera; only new sidebar requests should recenter it.
   const lastNavigation = useRef(layout.viewport ? navigation : 0)
-  const placementPosition = useRef<XYPosition | null>(null)
-  const placementPointer = useRef<XYPosition | null>(null)
-  const lastPlacement = useRef(placement)
-  const fitAll = (): void => {
+  const knownSessions = useRef(new Set(sessions.map((session) => session.id)))
+  const createdPositions = useRef(new Map<string, XYPosition>())
+  const stacking = useRef<string[]>([])
+  const fitAll = useCallback((): void => {
+    visit.clear()
     void fitView({
       ...fitOptions,
       nodes: sessions
         .filter((session) => !hidden[session.id])
         .map((session) => ({ id: session.id })),
     })
-  }
-
+  }, [fitView, sessions, hidden, visit])
   useEffect(() => {
     latest.current = { sessions, onLayoutChange }
   }, [onLayoutChange, sessions])
@@ -271,8 +276,34 @@ const TerminalCanvas = ({
     [commitGeometry, getNode, updateNode],
   )
 
+  const resizeToViewport = useCallback(
+    (id: string) => {
+      const node = getNode(id)
+      if (!node || !viewportWidth || !viewportHeight) return
+      const preset = presets[id] === "large" ? "small" : "large"
+      const { width, height } = canvasPresetSize(preset, {
+        width: viewportWidth,
+        height: viewportHeight,
+      })
+      const center = centerOf(node, getViewport().zoom)
+      const next = {
+        position: { x: center.x - width / 2, y: center.y - height / 2 },
+        width,
+        height,
+      }
+      onLayoutChange((previous) => ({
+        ...previous,
+        geometry: { ...previous.geometry, [id]: next },
+        minimized: { ...previous.minimized, [id]: false },
+      }))
+      onPresetChange(id, preset)
+    },
+    [getNode, getViewport, onLayoutChange, viewportWidth, viewportHeight, presets, onPresetChange],
+  )
+
   const flyTo = useCallback(
     (session: Session) => {
+      if (visit.flying) return
       const node = getNode(session.id)
       if (!node) return
       onSelect(session.id)
@@ -297,39 +328,50 @@ const TerminalCanvas = ({
         Infinity,
         0,
       )
-      void setViewport(viewport, {
+      const flight = visit.begin(session.id, getViewport(), viewport)
+      if (!flight) return
+      void setViewport(flight.viewport, {
         duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350,
-      })
+      }).then(
+        (completed) => visit.finish(flight, completed),
+        () => visit.finish(flight, false),
+      )
     },
-    [geometry, getNode, onLayoutChange, onSelect, setViewport, viewportHeight, viewportWidth],
+    [
+      geometry,
+      getNode,
+      getViewport,
+      onLayoutChange,
+      onSelect,
+      setViewport,
+      viewportHeight,
+      viewportWidth,
+      visit,
+    ],
   )
 
   const nodeFrom = useCallback(
     (session: Session, source: CanvasLayout["geometry"][string] | undefined): TerminalNode => {
       const isMinimized = minimized[session.id] ?? false
       const width = source?.width ?? 550
-      const placing = placement === session.id
       return {
         id: session.id,
         type: "terminal",
-        hidden: placing ? true : (removed[session.id] ?? false),
+        hidden: removed[session.id] ?? false,
         position: source?.position ?? { x: session.x, y: session.y },
         width,
         height: isMinimized
           ? terminalHeaderHeight * chromeScale + 2
           : Math.max(source?.height ?? session.height, (terminalHeaderHeight + 4) * chromeScale),
         dragHandle: ".terminal-header",
-        draggable: !placement && selected === session.id && !hidden[session.id],
-        selectable: !placement && !hidden[session.id],
-        focusable: !placement && !hidden[session.id],
+        draggable: selected === session.id && !hidden[session.id],
+        selectable: !hidden[session.id],
+        focusable: !hidden[session.id],
         selected: selected === session.id,
         ariaLabel: `${session.name} terminal`,
-        ...(placement
-          ? { style: { pointerEvents: "none", ...(placing ? { transition: "none" } : {}) } }
-          : {}),
         data: {
-          preview: placing || preview === session.id,
-          placing,
+          preview: preview === session.id,
+          focusRequest: selected === session.id ? keyboardFocusRequest : null,
           hiding: hidden[session.id] ?? false,
           content: render(
             session,
@@ -345,6 +387,7 @@ const TerminalCanvas = ({
                 })),
             },
             () => flyTo(session),
+            () => resizeToViewport(session.id),
           ),
           compactHeader: width / chromeScale < 240,
           minimized: isMinimized,
@@ -358,26 +401,20 @@ const TerminalCanvas = ({
       chromeScale,
       finishResize,
       flyTo,
+      resizeToViewport,
       hidden,
       preview,
       removed,
       minimized,
       onLayoutChange,
-      placement,
       render,
       selected,
+      keyboardFocusRequest,
     ],
   )
 
   // XYFlow owns pointer-time geometry so dragging does not rerender the application or terminals.
   // Parent updates refresh terminal content and selection while retaining any in-progress gesture.
-  useEffect(() => {
-    if (lastPlacement.current === placement) return
-    placementPosition.current = null
-    placementPointer.current = null
-    lastPlacement.current = placement
-  }, [placement])
-
   useEffect(() => {
     const sessionIds = new Set(sessions.map((session) => session.id))
     for (const id of Object.keys(geometryRef.current)) {
@@ -393,14 +430,63 @@ const TerminalCanvas = ({
           position: { x: session.x, y: session.y },
         }
     }
+    const created = sessions.filter((session) => !knownSessions.current.has(session.id))
+    if (created.length && viewportWidth && viewportHeight) {
+      const viewport = getViewport()
+      const occupied = sessions
+        .filter((session) => knownSessions.current.has(session.id))
+        .map((session) => {
+          const saved = geometryRef.current[session.id]
+          const live = getNode(session.id)
+          return {
+            position: live?.position ?? saved?.position ?? { x: session.x, y: session.y },
+            width: live?.width ?? saved?.width ?? 550,
+            height: saved?.height ?? session.height,
+          }
+        })
+      for (const session of created) {
+        const saved = geometryRef.current[session.id]
+        const size = {
+          width: saved?.width ?? 600,
+          height: saved?.height ?? session.height,
+        }
+        const position = viewportCanvasPosition(
+          occupied,
+          viewport,
+          { width: viewportWidth, height: viewportHeight },
+          size,
+        )
+        geometryRef.current[session.id] = { ...saved, position, ...size }
+        dirtyGeometry.current.add(session.id)
+        createdPositions.current.set(session.id, position)
+        knownSessions.current.add(session.id)
+        occupied.push({ position, ...size })
+      }
+      commitGeometry(created.map((session) => session.id))
+    }
+    for (const id of knownSessions.current) {
+      if (!sessionIds.has(id)) {
+        knownSessions.current.delete(id)
+        createdPositions.current.delete(id)
+      }
+    }
+    // Keep activation history instead of temporarily elevating only the selected node.
+    const order = stacking.current.filter((id) => sessionIds.has(id))
+    const known = new Set(order)
+    const stack = [
+      ...order,
+      ...sessions.filter((session) => !known.has(session.id)).map((session) => session.id),
+    ].filter((id) => id !== selected)
+    if (sessionIds.has(selected)) stack.push(selected)
+    stacking.current = stack
+    const levels = new Map(stack.map((id, index) => [id, index]))
     setNodes((previous) => {
       const existing = new Map(previous.map((node) => [node.id, node]))
       return sessions.map((session) => {
-        const base = nodeFrom(session, geometry[session.id])
-        const next =
-          session.id === placement && placementPosition.current
-            ? { ...base, hidden: false, position: placementPosition.current }
-            : base
+        const next = {
+          ...nodeFrom(session, geometryRef.current[session.id]),
+          zIndex: levels.get(session.id) ?? 0,
+        }
         const current = existing.get(session.id)
         if (!current || !dirtyGeometry.current.has(session.id)) return next
         const retained = {
@@ -412,7 +498,18 @@ const TerminalCanvas = ({
         return current.className ? { ...retained, className: current.className } : retained
       })
     })
-  }, [geometry, nodeFrom, placement, sessions, setNodes])
+  }, [
+    commitGeometry,
+    geometry,
+    getNode,
+    getViewport,
+    nodeFrom,
+    selected,
+    sessions,
+    setNodes,
+    viewportHeight,
+    viewportWidth,
+  ])
 
   useEffect(() => {
     if (!dirtyViewport.current && layout.viewport) viewportRef.current = { ...layout.viewport }
@@ -488,51 +585,7 @@ const TerminalCanvas = ({
     [commitGeometry, finishResize, getNode, onSelect, updateNode],
   )
 
-  const moveNode = useCallback(
-    (id: string, position: XYPosition) => {
-      geometryRef.current[id] = { ...geometryRef.current[id], position }
-      dirtyGeometry.current.add(id)
-      updateNode(id, (node) => ({ ...node, position }))
-      commitGeometry([id])
-    },
-    [commitGeometry, updateNode],
-  )
-
-  const positionAt = useCallback(
-    (clientX: number, clientY: number): XYPosition => {
-      const point = screenToFlowPosition({ x: clientX, y: clientY })
-      const node = placement ? getNode(placement) : undefined
-      return {
-        x: snap(point.x - (node?.width ?? 550) / 2),
-        y: snap(point.y - (node?.height ?? 400) / 2),
-      }
-    },
-    [getNode, placement, screenToFlowPosition],
-  )
-
-  const previewPlacement = useCallback(
-    (clientX: number, clientY: number) => {
-      if (!placement) return
-      placementPointer.current = { x: clientX, y: clientY }
-      const position = positionAt(clientX, clientY)
-      placementPosition.current = position
-      updateNode(placement, (node) => ({ ...node, hidden: false, position }))
-    },
-    [placement, positionAt, updateNode],
-  )
-
-  const hidePlacement = useCallback(() => {
-    placementPointer.current = null
-    if (!placement || !placementPosition.current) return
-    placementPosition.current = null
-    updateNode(placement, (node) => ({ ...node, hidden: true }))
-  }, [placement, updateNode])
-
   useEffect(() => {
-    if (selected === placement && placement) {
-      lastNavigation.current = navigation
-      return
-    }
     if (
       !initialized ||
       navigation === lastNavigation.current ||
@@ -543,7 +596,34 @@ const TerminalCanvas = ({
     const node = getNode(selected)
     if (!node || node.hidden) return
     lastNavigation.current = navigation
+    visit.clear()
     const duration = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180
+    const created = createdPositions.current.get(selected)
+    if (created) {
+      createdPositions.current.delete(selected)
+      const viewport = getViewport()
+      const size = geometryRef.current[selected]
+      const width = size?.width ?? node.width ?? 600
+      const height = size?.height ?? node.height ?? 400
+      const margin = 24 / viewport.zoom
+      const left = -viewport.x / viewport.zoom
+      const top = -viewport.y / viewport.zoom
+      const right = (viewportWidth - viewport.x) / viewport.zoom
+      const bottom = (viewportHeight - viewport.y) / viewport.zoom
+      if (
+        created.x >= left + margin &&
+        created.y >= top + margin &&
+        created.x + width <= right - margin &&
+        created.y + height <= bottom - margin
+      )
+        return
+      void setCenter(created.x + width / 2, created.y + height / 2, {
+        zoom: viewport.zoom,
+        duration,
+        interpolate: "linear",
+      })
+      return
+    }
     if (fitOnNavigate) {
       void fitView({
         ...fitOptions,
@@ -560,13 +640,15 @@ const TerminalCanvas = ({
     initialized,
     navigation,
     selected,
-    placement,
     hidden,
     fitOnNavigate,
     fitView,
     getNode,
     getViewport,
     setCenter,
+    visit,
+    viewportHeight,
+    viewportWidth,
   ])
 
   return (
@@ -582,82 +664,58 @@ const TerminalCanvas = ({
       aria-label="Terminal canvas"
       tabIndex={0}
       {...backgroundPointerHandlers}
-      onPointerMoveCapture={(event) => {
-        if (event.pointerType === "touch" || !placement) return
-        if (!(event.target as HTMLElement).closest(".react-flow")) {
-          hidePlacement()
-          return
-        }
-        previewPlacement(event.clientX, event.clientY)
-      }}
-      onClickCapture={(event) => {
-        if (!placement || !(event.target as HTMLElement).closest(".react-flow")) return
-        event.stopPropagation()
-        const position = positionAt(event.clientX, event.clientY)
-        placementPosition.current = null
-        moveNode(placement, position)
-        onPlace?.()
-      }}
-      onPointerLeave={(event) => {
-        backgroundPointerHandlers.onPointerLeave(event)
-        hidePlacement()
-      }}
-      onPointerCancel={(event) => {
-        backgroundPointerHandlers.onPointerCancel(event)
-        hidePlacement()
-      }}
-      onKeyDownCapture={(event) => {
-        const target = event.target as HTMLElement
-        if (!target.matches(".react-flow__node")) return
-        const directions: Record<string, XYPosition> = {
-          ArrowLeft: { x: -1, y: 0 },
-          ArrowRight: { x: 1, y: 0 },
-          ArrowUp: { x: 0, y: -1 },
-          ArrowDown: { x: 0, y: 1 },
-        }
-        const direction = directions[event.key]
-        const node = getNode(target.dataset.id ?? "")
-        if (!direction || !node?.selected) return
-        event.preventDefault()
-        event.stopPropagation()
-        const step = canvasStep * (event.shiftKey ? 4 : 1)
-        moveNode(node.id, {
-          x: node.position.x + direction.x * step,
-          y: node.position.y + direction.y * step,
-        })
-      }}
       onKeyDown={(event) => {
-        if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
-        if (event.key === "+" || event.key === "=") void zoomIn()
-        if (event.key === "-") void zoomOut()
-        if (event.key === "0") fitAll()
+        if (
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          event.nativeEvent.keyCode === 229 ||
+          event.repeat ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          !workspaceShortcutTarget(event.target) ||
+          workspaceOverlayOpen()
+        )
+          return
+        if (event.key === "+" || (event.key === "=" && !event.shiftKey)) {
+          event.preventDefault()
+          visit.clear()
+          void zoomIn()
+        }
+        if (event.key === "-" && !event.shiftKey) {
+          event.preventDefault()
+          visit.clear()
+          void zoomOut()
+        }
+        if (event.key === "0" && !event.shiftKey) {
+          event.preventDefault()
+          fitAll()
+        }
       }}
     >
       <ReactFlow<TerminalNode>
         defaultNodes={sessions.map((session) => nodeFrom(session, geometry[session.id]))}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
-        onNodeClick={(_, node) => {
-          if (!placement) onSelect(node.id)
-        }}
+        onNodeClick={(_, node) => onSelect(node.id)}
         onPaneClick={(event) => {
-          if (placement) return
           onSelect("")
           event.currentTarget
             .closest<HTMLElement>(".canvas-viewport")
             ?.focus({ preventScroll: true })
         }}
+        elevateNodesOnSelect={false}
         nodesConnectable={false}
         deleteKeyCode={null}
         multiSelectionKeyCode={null}
         selectionKeyCode={null}
+        disableKeyboardA11y
         minZoom={0.15}
         maxZoom={maxZoom}
         defaultViewport={initialViewport ?? { x: 0, y: 0, zoom: 1 }}
         onInit={(instance) => {
           if (!container.current || (initialViewport && !revealOnMount)) return
-          const selectedNode =
-            navigation && selected !== placement ? instance.getNode(selected) : undefined
+          const selectedNode = navigation ? instance.getNode(selected) : undefined
           const target = selectedNode?.hidden ? undefined : selectedNode
           if (initialViewport && target && !fitOnNavigate) {
             const center = centerOf(target, initialViewport.zoom)
@@ -682,10 +740,16 @@ const TerminalCanvas = ({
           )
         }}
         onMoveStart={(_, viewport) => trackViewport(viewport)}
-        onMove={(_, viewport) => {
+        onMove={(event, viewport) => {
+          const previous = viewportRef.current
+          if (
+            event &&
+            (viewport.x !== previous.x ||
+              viewport.y !== previous.y ||
+              viewport.zoom !== previous.zoom)
+          )
+            visit.clear()
           trackViewport(viewport)
-          const pointer = placementPointer.current
-          if (pointer) previewPlacement(pointer.x, pointer.y)
         }}
         onMoveEnd={(_, viewport) => {
           const current = getViewport()
@@ -723,25 +787,6 @@ const TerminalCanvas = ({
           bgColor="transparent"
         />
       </ReactFlow>
-      <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5 shadow-control">
-        <Tooltip content="Zoom out (−)">
-          <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
-            <Minus size={15} />
-          </button>
-        </Tooltip>
-        <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-        <Tooltip content="Zoom in (+)">
-          <button className="icon-button" aria-label="Zoom in" onClick={() => void zoomIn()}>
-            <Plus size={15} />
-          </button>
-        </Tooltip>
-        <div className="control-divider mx-0.5 h-3 w-px bg-line" />
-        <Tooltip content="Fit all terminals (0)">
-          <button className="icon-button" aria-label="Fit all terminals" onClick={fitAll}>
-            <Maximize size={15} />
-          </button>
-        </Tooltip>
-      </div>
     </div>
   )
 }

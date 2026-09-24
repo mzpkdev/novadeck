@@ -22,6 +22,10 @@ vi.stubGlobal(
   },
 )
 
+Object.defineProperty(Element.prototype, "scrollTo", {
+  configurable: true,
+  value: vi.fn<() => void>(),
+})
 Element.prototype.scrollIntoView = vi.fn<Element["scrollIntoView"]>()
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }))

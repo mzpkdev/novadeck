@@ -10,32 +10,50 @@ export const TerminalSwitcher = ({
   sessions,
   selected,
   project,
+  mode,
   onSelect,
   onClose,
 }: {
   sessions: Session[]
   selected: string | undefined
   project: string
+  mode: "held" | "click"
   onSelect: (id: string) => void
   onClose: () => void
 }): React.JSX.Element => {
   const active = useRef<HTMLDivElement>(null)
+  const listbox = useRef<HTMLDivElement>(null)
+  const close = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (mode === "click") listbox.current?.focus({ preventScroll: true })
+  }, [mode])
   useEffect(() => {
     if (!selected) return
     active.current?.scrollIntoView?.({ block: "nearest" })
   }, [selected])
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh]">
+    <div
+      className={`${mode === "held" ? "pointer-events-none " : ""}fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh]`}
+    >
       <div
         aria-hidden="true"
         data-state="open"
         className={`${motion.backdrop} absolute inset-0 bg-scrim backdrop-blur-[3px]`}
+        onPointerDown={mode === "click" ? onClose : undefined}
       />
       <section
+        role="dialog"
         aria-label="Terminal switcher"
+        aria-modal={mode === "click"}
         data-state="open"
         className={`${motion.dialog} pointer-events-auto relative flex max-h-[calc(84dvh-20px)] w-full max-w-130 flex-col overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal`}
+        onKeyDown={(event) => {
+          if (mode !== "click" || event.key !== "Tab" || event.ctrlKey) return
+          event.preventDefault()
+          if (document.activeElement === close.current) listbox.current?.focus()
+          else close.current?.focus()
+        }}
       >
         <header className="flex min-h-17 shrink-0 items-center gap-3 border-b border-line px-5 py-3 text-muted">
           <Layers size={16} className="shrink-0 text-muted" aria-hidden="true" />
@@ -46,20 +64,29 @@ export const TerminalSwitcher = ({
           <span className="shrink-0 font-mono text-[10px] text-muted">
             {sessions.findIndex((session) => session.id === selected) + 1} / {sessions.length}
           </span>
-          <button className="icon-button" aria-label="Close terminal switcher" onClick={onClose}>
+          <button
+            ref={close}
+            className="icon-button"
+            aria-label="Close terminal switcher"
+            onClick={onClose}
+          >
             <X size={16} />
           </button>
         </header>
         <div
+          ref={listbox}
           role="listbox"
           aria-label="Recent terminals"
-          className="flex min-h-0 max-h-[50vh] flex-col gap-1 overflow-y-auto p-2 [scrollbar-color:var(--color-line)_transparent] [scrollbar-width:thin]"
+          aria-activedescendant={selected ? `recent-terminal-${selected}` : undefined}
+          tabIndex={mode === "click" ? 0 : -1}
+          className="flex min-h-0 max-h-[50vh] flex-col gap-1 overflow-y-auto p-2"
         >
           {sessions.map((session) => {
             const current = session.id === selected
             return (
               <div
                 key={session.id}
+                id={`recent-terminal-${session.id}`}
                 ref={current ? active : undefined}
                 role="option"
                 aria-label={session.name}
@@ -87,17 +114,39 @@ export const TerminalSwitcher = ({
         <footer className="shrink-0 border-t border-line bg-shell px-5 py-3 text-[10px] text-muted">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
             <span>
-              <kbd>Tab</kbd> / <kbd>↓</kbd> next
+              {mode === "held" ? (
+                <>
+                  <kbd>Tab</kbd> / <kbd>↓</kbd>
+                </>
+              ) : (
+                <kbd>↓</kbd>
+              )}{" "}
+              next
             </span>
             <span>
-              <kbd>Shift Tab</kbd> / <kbd>↑</kbd> previous
+              {mode === "held" ? (
+                <>
+                  <kbd>Shift Tab</kbd> / <kbd>↑</kbd>
+                </>
+              ) : (
+                <kbd>↑</kbd>
+              )}{" "}
+              previous
             </span>
             <span className="ml-auto">
-              <kbd>Esc</kbd> cancel
+              <kbd>Esc</kbd> close
             </span>
           </div>
           <p className="m-0 mt-2">
-            Release <span className="font-medium text-ink">Ctrl</span> to switch
+            {mode === "held" ? (
+              <>
+                Release <span className="font-medium text-ink">Ctrl</span> to switch
+              </>
+            ) : (
+              <>
+                <kbd>Enter</kbd> to switch
+              </>
+            )}
           </p>
         </footer>
       </section>

@@ -35,6 +35,7 @@ const createWindow = (runtimeOrigin: string): BrowserWindow => {
     minWidth: 760,
     minHeight: 520,
     show: false,
+    autoHideMenuBar: true,
     backgroundColor: "#090b10",
     webPreferences: {
       additionalArguments: [`${apiUrlArgumentPrefix}${apiUrl}`],

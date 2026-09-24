@@ -1,6 +1,11 @@
 import { context, describe, expect, it } from "../../test"
 import type { GridLayouts, Session } from "../model/types"
-import { expandedGridLayouts, previewGridPlacement, visibleGridLayouts } from "./grid-layout"
+import {
+  addCompactGridTerminal,
+  expandedGridLayouts,
+  toggleGridWidth,
+  visibleGridLayouts,
+} from "./grid-layout"
 
 const terminal = (id: string): Session => ({
   id,
@@ -133,18 +138,145 @@ describe("hidden grid layouts", () => {
   })
 })
 
-describe("pending grid placement", () => {
-  it("pushes overlapping terminals like a grid drag without changing the saved layout", () => {
-    const pending = [...sessions, terminal("new")]
-    const projected = previewGridPlacement(pending, layouts, {}, {}, "new", "desktop", 0, 0)
+describe("automatic grid placement", () => {
+  it("uses free room beside existing terminals before adding a row", () => {
+    const placed = addCompactGridTerminal(
+      [terminal("a")],
+      { desktop: [{ i: "a", x: 0, y: 0, w: 6, h: 20 }] },
+      terminal("new"),
+    )
+    expect(placed.desktop?.find((item) => item.i === "new")).toMatchObject({
+      x: 6,
+      y: 0,
+      w: 6,
+      h: 18,
+    })
+  })
 
-    expect(projected.desktop?.find((item) => item.i === "new")).toMatchObject({ x: 0, y: 0 })
-    expect(projected.desktop?.find((item) => item.i === "a")).toMatchObject({ x: 0, y: 18 })
-    expect(projected.desktop?.find((item) => item.i === "b")).toMatchObject({ x: 0, y: 38 })
-    expect(projected.mobile?.find((item) => item.i === "new")).toBeDefined()
-    expect(layouts.desktop).toMatchObject([
-      { i: "a", x: 0, y: 0 },
-      { i: "b", x: 0, y: 20 },
+  it("uses a new row when a narrow breakpoint has no horizontal room", () => {
+    const placed = addCompactGridTerminal(sessions, layouts, terminal("new"))
+    expect(placed.desktop?.find((item) => item.i === "new")).toMatchObject({
+      x: 5,
+      y: 0,
+      w: 6,
+      h: 18,
+    })
+    expect(placed.mobile?.find((item) => item.i === "new")).toMatchObject({
+      x: 0,
+      y: 26,
+      w: 4,
+      h: 18,
+    })
+    expect(layouts.desktop?.map((item) => ({ x: item.x, y: item.y }))).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 20 },
     ])
+  })
+})
+
+describe("grid width toggle", () => {
+  const responsive: GridLayouts = {
+    wide: [
+      { i: "a", x: 2, y: 0, w: 6, h: 24, minH: 10 },
+      { i: "b", x: 8, y: 0, w: 6, h: 16, minH: 10 },
+    ],
+    desktop: layouts.desktop!,
+    tablet: [
+      { i: "a", x: 2, y: 0, w: 4, h: 16, minH: 10 },
+      { i: "b", x: 0, y: 16, w: 4, h: 19, minH: 10 },
+    ],
+    mobile: layouts.mobile!,
+  }
+
+  it("restores each breakpoint's prior width without changing its height", () => {
+    const large = toggleGridWidth("a", true, sessions, responsive, {}, {})
+    expect(large.restoreWidths).toEqual({ wide: 6, desktop: 5, tablet: 4, mobile: 4 })
+    const restored = toggleGridWidth(
+      "a",
+      false,
+      sessions,
+      large.layouts,
+      {},
+      {},
+      large.restoreWidths ?? {},
+    )
+
+    for (const [breakpoint, largeWidth] of [
+      ["wide", 16],
+      ["desktop", 12],
+      ["tablet", 8],
+      ["mobile", 4],
+    ] as const) {
+      const before = responsive[breakpoint]?.find((item) => item.i === "a")
+      expect(large.layouts[breakpoint]?.find((item) => item.i === "a")).toMatchObject({
+        w: largeWidth,
+        h: before?.h,
+      })
+      expect(restored.layouts[breakpoint]?.find((item) => item.i === "a")).toMatchObject({
+        w: before?.w,
+        h: before?.h,
+      })
+    }
+    expect(restored.restoreWidths).toBeNull()
+  })
+
+  it("restores a minimized terminal and preserves hidden terminal geometry", () => {
+    const changed = toggleGridWidth("a", true, sessions, responsive, { a: true }, { b: true })
+    const restored = toggleGridWidth(
+      "a",
+      false,
+      sessions,
+      changed.layouts,
+      {},
+      { b: true },
+      changed.restoreWidths ?? {},
+    )
+    for (const breakpoint of ["wide", "desktop", "tablet", "mobile"] as const) {
+      const previous = responsive[breakpoint]
+      expect(changed.layouts[breakpoint]?.find((item) => item.i === "a")?.h).toBe(
+        previous?.find((item) => item.i === "a")?.h,
+      )
+      expect(changed.layouts[breakpoint]?.find((item) => item.i === "b")).toEqual(
+        previous?.find((item) => item.i === "b"),
+      )
+      expect(restored.layouts[breakpoint]?.find((item) => item.i === "b")).toEqual(
+        previous?.find((item) => item.i === "b"),
+      )
+    }
+  })
+
+  it("captures a fresh manually adjusted width after the previous width is restored", () => {
+    const first = toggleGridWidth("a", true, sessions, responsive, {}, {})
+    const editedExpanded: GridLayouts = {
+      ...first.layouts,
+      desktop: first.layouts.desktop!.map((item) => (item.i === "a" ? { ...item, w: 9 } : item)),
+    }
+    const restored = toggleGridWidth(
+      "a",
+      false,
+      sessions,
+      editedExpanded,
+      {},
+      {},
+      first.restoreWidths ?? {},
+    )
+    expect(restored.layouts.desktop?.find((item) => item.i === "a")?.w).toBe(5)
+    const adjusted: GridLayouts = {
+      ...restored.layouts,
+      desktop: restored.layouts.desktop!.map((item) => (item.i === "a" ? { ...item, w: 7 } : item)),
+    }
+    const second = toggleGridWidth("a", true, sessions, adjusted, {}, {})
+    expect(second.restoreWidths?.desktop).toBe(7)
+    expect(
+      toggleGridWidth(
+        "a",
+        false,
+        sessions,
+        second.layouts,
+        {},
+        {},
+        second.restoreWidths ?? {},
+      ).layouts.desktop?.find((item) => item.i === "a")?.w,
+    ).toBe(7)
   })
 })

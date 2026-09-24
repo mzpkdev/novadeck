@@ -14,6 +14,7 @@ import { useMemo, useState } from "react"
 import type { Session } from "../model/types"
 import { sidebarListClasses } from "../sidebar/SidebarItem"
 import { SessionTab } from "./SessionTab"
+import type { TerminalRename } from "./TerminalRenameInput"
 
 const sensors = [
   PointerSensor.configure({
@@ -40,21 +41,27 @@ const cursor = Cursor.configure({ cursor: "pointer" })
 export const SessionList = ({
   sessions,
   selected,
-  placement = "",
   hidden,
+  rename,
   onVisibilityChange,
   onSelect,
-  onRename,
+  onBeginRename,
+  onRenameDraft,
+  onRenameSave,
+  onRenameCancel,
   onClose,
   onReorder,
 }: {
   sessions: Session[]
   selected: string
-  placement?: string
   hidden: Record<string, boolean>
+  rename: TerminalRename | null
   onVisibilityChange: (id: string, hidden: boolean) => void
   onSelect: (id: string) => void
-  onRename: (id: string, name: string) => void
+  onBeginRename: (id: string) => void
+  onRenameDraft: (id: string, value: string) => void
+  onRenameSave: (id: string) => void
+  onRenameCancel: (id: string) => void
   onClose: (id: string) => void
   onReorder: (ids: string[]) => void
 }): React.JSX.Element => {
@@ -84,11 +91,14 @@ export const SessionList = ({
             session={session}
             index={index}
             selected={selected === session.id}
-            placing={placement === session.id}
             hidden={hidden[session.id] ?? false}
+            rename={rename?.id === session.id ? rename : null}
             onVisibilityChange={(isHidden) => onVisibilityChange(session.id, isHidden)}
             onSelect={() => onSelect(session.id)}
-            onRename={(name) => onRename(session.id, name)}
+            onBeginRename={() => onBeginRename(session.id)}
+            onRenameDraft={(value) => onRenameDraft(session.id, value)}
+            onRenameSave={() => onRenameSave(session.id)}
+            onRenameCancel={() => onRenameCancel(session.id)}
             onClose={() => onClose(session.id)}
           />
         ))}
