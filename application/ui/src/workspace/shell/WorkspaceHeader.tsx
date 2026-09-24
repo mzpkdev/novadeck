@@ -62,7 +62,7 @@ export const WorkspaceHeader = ({
       hidden={hidden}
       inert={hidden}
       aria-hidden={hidden}
-      className="app-header max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+      className="app-header max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 max-[335px]:px-1 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
     >
       <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
         <Link
