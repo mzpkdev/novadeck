@@ -9,8 +9,12 @@ import {
 import type { SizePreset, Session, GridBreakpoint, GridLayouts } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
-import { expandedGridLayouts, gridColumns, visibleGridLayouts } from "./grid-layout"
-import { gridPresetWidth } from "./terminal-size"
+import {
+  expandedGridLayouts,
+  gridColumns,
+  gridLayoutsForPreset,
+  visibleGridLayouts,
+} from "./grid-layout"
 import { useTerminalVisibility } from "./useTerminalVisibility"
 
 const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
@@ -111,26 +115,9 @@ export const Grid = ({
   const resizeToViewport = useCallback(
     (id: string): void => {
       if (!width) return
-      const breakpoint = getBreakpointFromWidth(breakpoints, width) as GridBreakpoint
       const preset = presets[id] === "large" ? "small" : "large"
-      const columns = gridPresetWidth(gridColumns[breakpoint], preset)
-      const restored = { ...minimized, [id]: false }
-      const visible = visibleGridLayouts(sessions, layouts, restored, removed)
-      const next = {
-        ...visible,
-        [breakpoint]: visible[breakpoint]?.map((item) =>
-          item.i === id
-            ? {
-                ...item,
-                x: Math.min(item.x, gridColumns[breakpoint] - columns),
-                w: columns,
-              }
-            : item,
-        ),
-      }
-      next[breakpoint] = verticalCompactor.compact(next[breakpoint] ?? [], gridColumns[breakpoint])
       if (minimized[id]) onMinimize(id)
-      const fitted = expandedGridLayouts(next, layouts, sessions, restored, removed)
+      const fitted = gridLayoutsForPreset(id, preset, sessions, layouts, minimized, removed)
       onLayoutsChange(fitted)
       onPresetChange(id, preset)
       setResizeRequest({ id, navigation })

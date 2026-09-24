@@ -1,6 +1,11 @@
 import { context, describe, expect, it } from "../../test"
 import type { GridLayouts, Session } from "../model/types"
-import { addCompactGridTerminal, expandedGridLayouts, visibleGridLayouts } from "./grid-layout"
+import {
+  addCompactGridTerminal,
+  expandedGridLayouts,
+  gridLayoutsForPreset,
+  visibleGridLayouts,
+} from "./grid-layout"
 
 const terminal = (id: string): Session => ({
   id,
@@ -166,5 +171,62 @@ describe("automatic grid placement", () => {
       { x: 0, y: 0 },
       { x: 0, y: 20 },
     ])
+  })
+})
+
+describe("grid size presets", () => {
+  const responsive: GridLayouts = {
+    wide: [
+      { i: "a", x: 2, y: 0, w: 6, h: 24, minH: 10 },
+      { i: "b", x: 8, y: 0, w: 6, h: 16, minH: 10 },
+    ],
+    desktop: layouts.desktop!,
+    tablet: [
+      { i: "a", x: 2, y: 0, w: 4, h: 16, minH: 10 },
+      { i: "b", x: 0, y: 16, w: 4, h: 19, minH: 10 },
+    ],
+    mobile: layouts.mobile!,
+  }
+
+  it("applies the selected width at every breakpoint without changing saved heights", () => {
+    const large = gridLayoutsForPreset("a", "large", sessions, responsive, {}, {})
+    const compact = gridLayoutsForPreset("a", "small", sessions, large, {}, {})
+
+    for (const [breakpoint, largeWidth, compactWidth] of [
+      ["wide", 16, 8],
+      ["desktop", 12, 6],
+      ["tablet", 8, 4],
+      ["mobile", 4, 4],
+    ] as const) {
+      const before = responsive[breakpoint]?.find((item) => item.i === "a")
+      expect(large[breakpoint]?.find((item) => item.i === "a")).toMatchObject({
+        w: largeWidth,
+        h: before?.h,
+      })
+      expect(compact[breakpoint]?.find((item) => item.i === "a")).toMatchObject({
+        w: compactWidth,
+        h: before?.h,
+      })
+    }
+  })
+
+  it("restores a minimized terminal and preserves hidden terminal geometry", () => {
+    const changed = gridLayoutsForPreset(
+      "a",
+      "large",
+      sessions,
+      responsive,
+      { a: true },
+      { b: true },
+    )
+    for (const breakpoint of ["wide", "desktop", "tablet", "mobile"] as const) {
+      const previous = responsive[breakpoint]
+      expect(changed[breakpoint]?.find((item) => item.i === "a")?.h).toBe(
+        previous?.find((item) => item.i === "a")?.h,
+      )
+      expect(changed[breakpoint]?.find((item) => item.i === "b")).toEqual(
+        previous?.find((item) => item.i === "b"),
+      )
+    }
   })
 })

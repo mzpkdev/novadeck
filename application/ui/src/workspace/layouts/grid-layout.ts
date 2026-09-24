@@ -1,6 +1,6 @@
 import { verticalCompactor } from "react-grid-layout"
 
-import type { GridBreakpoint, GridLayouts, Session } from "../model/types"
+import type { GridBreakpoint, GridLayouts, Session, SizePreset } from "../model/types"
 import { canvasPresetSize, gridPresetWidth } from "./terminal-size"
 
 export const gridColumns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }
@@ -99,6 +99,35 @@ export const expandedGridLayouts = (
       : (previous[breakpoint] ?? [])
   }
   return result
+}
+
+export const gridLayoutsForPreset = (
+  id: string,
+  preset: SizePreset,
+  sessions: Session[],
+  layouts: GridLayouts,
+  minimized: Record<string, boolean>,
+  hidden: Record<string, boolean>,
+): GridLayouts => {
+  const restored = { ...minimized, [id]: false }
+  const visible = visibleGridLayouts(sessions, layouts, restored, hidden)
+  const next: GridLayouts = {}
+  for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
+    const columns = gridPresetWidth(gridColumns[breakpoint], preset)
+    next[breakpoint] = verticalCompactor.compact(
+      (visible[breakpoint] ?? []).map((item) =>
+        item.i === id
+          ? {
+              ...item,
+              x: Math.min(item.x, gridColumns[breakpoint] - columns),
+              w: columns,
+            }
+          : item,
+      ),
+      gridColumns[breakpoint],
+    )
+  }
+  return expandedGridLayouts(next, layouts, sessions, restored, hidden)
 }
 
 export const addCompactGridTerminal = (
