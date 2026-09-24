@@ -156,6 +156,9 @@ export const Grid = ({
       tabIndex={-1}
       data-has-selection={Boolean(selected)}
       {...backgroundPointerHandlers}
+      onMouseDownCapture={(event) => {
+        if ((event.target as Element).closest(".react-resizable-handle")) event.preventDefault()
+      }}
       onPointerDownCapture={(event) => {
         setResizeRequest(null)
         const id = (event.target as Element).closest<HTMLElement>("[data-grid-terminal]")?.dataset

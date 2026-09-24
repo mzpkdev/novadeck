@@ -5,7 +5,15 @@ import { context, describe, expect, it } from "../test"
 import { App } from "./App"
 
 const interact = async (
-  type: "click" | "doubleClick" | "change" | "keyDown" | "keyUp" | "submit",
+  type:
+    | "click"
+    | "doubleClick"
+    | "pointerDown"
+    | "pointerUp"
+    | "change"
+    | "keyDown"
+    | "keyUp"
+    | "submit",
   element: Element | Window,
   options?: object,
 ): Promise<void> => {
@@ -680,6 +688,10 @@ describe("novadeck. workspace", () => {
         const title = within(terminal).getByRole("heading", { name: "Dev server" })
         await interact("doubleClick", title)
         const editor = within(terminal).getByRole("textbox", { name: "Rename Dev server" })
+        await waitFor(() => {
+          expect(editor).toHaveFocus()
+          expect(editor).toHaveSelection("Dev server")
+        })
         await interact("change", editor, { target: { value: "Discarded" } })
         await interact("keyDown", editor, { key: "Escape" })
         expect(title).toBeVisible()
@@ -691,6 +703,44 @@ describe("novadeck. workspace", () => {
         expect(within(terminal).getByRole("heading", { name: "My server" })).toBeVisible()
       })
     }
+
+    it("keeps Grid header double-click and double-tap in Grid while names rename and the Focus button still opens Focus", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+      const header = terminal.querySelector(".terminal-header")!
+
+      await interact("doubleClick", header)
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+
+      const touch = { pointerType: "touch", isPrimary: true, clientX: 40, clientY: 20 }
+      await interact("pointerDown", header, touch)
+      await interact("pointerUp", header, touch)
+      await interact("pointerDown", header, touch)
+      await interact("pointerUp", header, touch)
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+
+      const title = within(terminal).getByRole("heading", { name: "Dev server" })
+      await interact("pointerDown", title, touch)
+      await interact("pointerUp", title, touch)
+      await interact("pointerDown", title, touch)
+      await interact("pointerUp", title, touch)
+      const editor = within(terminal).getByRole("textbox", { name: "Rename Dev server" })
+      await waitFor(() => expect(editor).toHaveSelection("Dev server"))
+      await interact("keyDown", editor, { key: "Escape" })
+
+      await interact("click", within(terminal).getByRole("button", { name: "Focus Dev server" }))
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+    })
+
+    it("prevents native text selection when a Grid resize starts", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+      const handle = terminal.closest(".grid-terminal")!.querySelector(".react-resizable-handle")!
+
+      expect(fireEvent.mouseDown(handle)).toBe(false)
+    })
   })
   context("when both terminal names are visible", () => {
     it("shares a draft between sidebar and header and cancels both with Escape", async () => {
@@ -1282,17 +1332,20 @@ describe("novadeck. workspace", () => {
 
   context("when toggling views from a terminal header", () => {
     for (const view of ["grid", "canvas"] as const) {
-      it(`returns to ${view} and uses its header action without changing the terminal`, async () => {
+      it(`keeps the Focus and ${view} header inert outside the name`, async () => {
         localStorage.setItem("novadeck.windowed-view", view)
         const app = render(<App />)
         const header = (): HTMLElement =>
           app.getByRole("heading", { name: "Checkout implementation" }).closest("header")!
         await interact("doubleClick", header())
+        expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+        await interact(
+          "click",
+          screen.getByRole("button", { name: new RegExp(`Open in ${view}`, "i") }),
+        )
         expect(screen.getByRole("region", { name: `${view} view` })).toBeVisible()
         await interact("doubleClick", header())
-        expect(
-          screen.getByRole("region", { name: `${view === "canvas" ? "canvas" : "focus"} view` }),
-        ).toBeVisible()
+        expect(screen.getByRole("region", { name: `${view} view` })).toBeVisible()
         expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
       })
     }
