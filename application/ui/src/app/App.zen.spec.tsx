@@ -31,6 +31,8 @@ describe("Zen workspace", () => {
         expect(screen.queryByRole("button", { name: "Enter Zen mode" })).not.toBeInTheDocument()
         expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
         const dock = screen.getByRole("group", { name: "Zen controls" })
+        const reveal = within(dock).queryByRole("button", { name: "Show Zen controls" })
+        if (reveal) await click(reveal)
         expect(within(dock).getByRole("button", { name: `${view} view` })).toHaveAttribute(
           "aria-pressed",
           "true",
@@ -48,6 +50,8 @@ describe("Zen workspace", () => {
       await click(screen.getByRole("button", { name: "Hide terminals" }))
       await click(screen.getByRole("button", { name: "Enter Zen mode" }))
       const dock = screen.getByRole("group", { name: "Zen controls" })
+      const reveal = within(dock).queryByRole("button", { name: "Show Zen controls" })
+      if (reveal) await click(reveal)
       await click(within(dock).getByRole("button", { name: "New terminal" }))
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toBeVisible()
       await click(within(dock).getByRole("button", { name: "Exit Zen" }))
@@ -59,6 +63,8 @@ describe("Zen workspace", () => {
       render(<App />)
       await click(screen.getByRole("button", { name: "Enter Zen mode" }))
       const dock = screen.getByRole("group", { name: "Zen controls" })
+      const reveal = within(dock).queryByRole("button", { name: "Show Zen controls" })
+      if (reveal) await click(reveal)
       await click(within(dock).getByRole("button", { name: `${view} view` }))
       expect(screen.getByRole("region", { name: `${view.toLowerCase()} view` })).toBeVisible()
       expect(screen.queryByRole("button", { name: "Fit all terminals" })).not.toBeInTheDocument()
@@ -103,6 +109,8 @@ describe("Zen workspace", () => {
     await click(screen.getByRole("radio", { name: "Grid" }))
     await click(screen.getByRole("button", { name: "Enter Zen mode" }))
     const dock = screen.getByRole("group", { name: "Zen controls" })
+    const reveal = within(dock).queryByRole("button", { name: "Show Zen controls" })
+    if (reveal) await click(reveal)
     await click(within(dock).getByRole("button", { name: "New terminal" }))
     expect(within(dock).getByRole("button", { name: "New terminal" })).toHaveAttribute(
       "aria-pressed",

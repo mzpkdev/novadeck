@@ -480,7 +480,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
         event.shiftKey ||
         route.dialog ||
         placement ||
-        visibleRecentSwitcher
+        visibleRecentSwitcher ||
+        (event.target instanceof Element &&
+          Boolean(event.target.closest('.zen-dock[data-open="true"]')))
       )
         return
       if (
@@ -747,7 +749,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
         onZen={() => {
           setZen({ sidebar, collapsed: sidebarCollapsed, panel: sidebarPanel })
           requestAnimationFrame(() =>
-            document.querySelector<HTMLButtonElement>(".zen-exit")?.focus({ preventScroll: true }),
+            document
+              .querySelector<HTMLButtonElement>(".zen-create")
+              ?.focus({ preventScroll: true }),
           )
         }}
         view={view}

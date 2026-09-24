@@ -639,6 +639,26 @@
   view-transition-name: zen-dock;
   animation: zen-enter var(--motion-state) var(--ease-interface);
 }
+.zen-dock-reveal {
+  display: grid;
+  grid-template-columns: 0fr;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    grid-template-columns var(--motion-state) var(--ease-interface),
+    opacity var(--motion-feedback) var(--ease-interface),
+    visibility var(--motion-state);
+}
+.zen-dock-actions {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.zen-dock[data-open="true"] .zen-dock-reveal {
+  grid-template-columns: 1fr;
+  visibility: visible;
+  opacity: 1;
+}
 @keyframes zen-enter {
   from {
     opacity: 0;
@@ -654,6 +674,7 @@
     opacity: 0.35;
     transition: opacity var(--motion-feedback) var(--ease-interface);
   }
+  .zen-dock[data-open="true"],
   .zen-dock:hover,
   .zen-dock:has(:focus-visible) {
     opacity: 1;
@@ -661,7 +682,8 @@
   .zen-dock .icon-button {
     @apply size-7 p-1.5;
   }
-  .zen-dock .zen-exit {
+  .zen-dock .zen-exit,
+  .zen-dock .zen-reveal {
     @apply h-7;
   }
   .workspace[data-zen="true"] .terminal-actions {
