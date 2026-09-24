@@ -44,6 +44,7 @@ const workspaceState = (
   sizePresets: { grid: {}, canvas: {} },
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
+  gridRestoreWidths: {},
   gridMinimized: {},
   hidden: {},
   nextTerminalNumber,
@@ -551,6 +552,62 @@ describe("workspace state", () => {
       expect(
         workspaceReducer(workspace, { type: "grid/minimize", target, terminalId: "missing" }),
       ).toBe(workspace)
+    })
+  })
+
+  context("when Grid width is expanded", () => {
+    it("keeps its restore widths through view changes and clears them on close", () => {
+      const target = { projectId: "storefront", workspaceSessionId: "saved" }
+      const state = workspaceState([terminal("01")])
+      state.gridLayouts.desktop = [{ i: "01", x: 2, y: 0, w: 5, h: 20 }]
+      state.gridMinimized["01"] = true
+      state.sizePresets.canvas["01"] = "large"
+      const workspace = seed("storefront", "saved", state)
+      const expanded = workspaceReducer(workspace, {
+        type: "grid/size-toggle",
+        target,
+        terminalId: "01",
+        change: {
+          layouts: { desktop: [{ i: "01", x: 0, y: 0, w: 12, h: 20 }] },
+          restoreWidths: { desktop: 5, tablet: 4 },
+        },
+      })
+      const focused = workspaceReducer(expanded, {
+        type: "view/change",
+        target,
+        view: "focus",
+        enabledViews: ["focus", "grid", "canvas"],
+      })
+      const canvas = workspaceReducer(focused, {
+        type: "view/change",
+        target,
+        view: "canvas",
+        enabledViews: ["focus", "grid", "canvas"],
+      })
+
+      expect(activeSession(canvas)?.state).toMatchObject({
+        gridRestoreWidths: { "01": { desktop: 5, tablet: 4 } },
+        gridMinimized: { "01": false },
+        sizePresets: { grid: { "01": "large" }, canvas: { "01": "large" } },
+        gridLayouts: { desktop: [{ i: "01", w: 12, h: 20 }] },
+      })
+      const restored = workspaceReducer(canvas, {
+        type: "grid/size-toggle",
+        target,
+        terminalId: "01",
+        change: {
+          layouts: { desktop: [{ i: "01", x: 0, y: 0, w: 5, h: 20 }] },
+          restoreWidths: null,
+        },
+      })
+      expect(activeSession(restored)?.state.gridRestoreWidths).toEqual({})
+      expect(activeSession(restored)?.state.sizePresets.grid["01"]).toBe("small")
+      const closed = workspaceReducer(expanded, {
+        type: "terminal/close",
+        target,
+        terminalId: "01",
+      })
+      expect(activeSession(closed)?.state.gridRestoreWidths).toEqual({})
     })
   })
 })

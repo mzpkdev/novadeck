@@ -36,6 +36,7 @@ export type CanvasLayout = {
 }
 export type GridBreakpoint = "wide" | "desktop" | "tablet" | "mobile"
 export type GridLayouts = ResponsiveLayouts<GridBreakpoint>
+export type GridRestoreWidths = Partial<Record<GridBreakpoint, number>>
 
 export type SizePreset = "large" | "small"
 
@@ -52,6 +53,7 @@ export type WorkspaceState = {
   cleared: Record<string, boolean>
   canvasLayout: CanvasLayout
   gridLayouts: GridLayouts
+  gridRestoreWidths: Record<string, GridRestoreWidths>
   gridMinimized: Record<string, boolean>
   hidden: Record<string, boolean>
   nextTerminalNumber: number

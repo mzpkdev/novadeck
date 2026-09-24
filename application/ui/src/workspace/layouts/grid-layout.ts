@@ -1,6 +1,6 @@
 import { verticalCompactor } from "react-grid-layout"
 
-import type { GridBreakpoint, GridLayouts, Session, SizePreset } from "../model/types"
+import type { GridBreakpoint, GridLayouts, GridRestoreWidths, Session } from "../model/types"
 import { canvasPresetSize, gridPresetWidth } from "./terminal-size"
 
 export const gridColumns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }
@@ -101,33 +101,51 @@ export const expandedGridLayouts = (
   return result
 }
 
-export const gridLayoutsForPreset = (
+export type GridWidthToggle = {
+  layouts: GridLayouts
+  restoreWidths: GridRestoreWidths | null
+}
+
+export const toggleGridWidth = (
   id: string,
-  preset: SizePreset,
+  expand: boolean,
   sessions: Session[],
   layouts: GridLayouts,
   minimized: Record<string, boolean>,
   hidden: Record<string, boolean>,
-): GridLayouts => {
+  savedWidths: GridRestoreWidths = {},
+): GridWidthToggle => {
   const restored = { ...minimized, [id]: false }
   const visible = visibleGridLayouts(sessions, layouts, restored, hidden)
   const next: GridLayouts = {}
+  const restoreWidths: GridRestoreWidths = {}
   for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
-    const columns = gridPresetWidth(gridColumns[breakpoint], preset)
+    const columns = gridColumns[breakpoint]
+    const current = visible[breakpoint]?.find((item) => item.i === id)
+    restoreWidths[breakpoint] =
+      current?.w ??
+      layouts[breakpoint]?.find((item) => item.i === id)?.w ??
+      gridPresetWidth(columns, "small")
+    const width = expand
+      ? columns
+      : Math.max(4, Math.min(columns, savedWidths[breakpoint] ?? gridPresetWidth(columns, "small")))
     next[breakpoint] = verticalCompactor.compact(
       (visible[breakpoint] ?? []).map((item) =>
         item.i === id
           ? {
               ...item,
-              x: Math.min(item.x, gridColumns[breakpoint] - columns),
-              w: columns,
+              x: Math.min(item.x, columns - width),
+              w: width,
             }
           : item,
       ),
-      gridColumns[breakpoint],
+      columns,
     )
   }
-  return expandedGridLayouts(next, layouts, sessions, restored, hidden)
+  return {
+    layouts: expandedGridLayouts(next, layouts, sessions, restored, hidden),
+    restoreWidths: expand ? restoreWidths : null,
+  }
 }
 
 export const addCompactGridTerminal = (

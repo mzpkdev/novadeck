@@ -6,13 +6,20 @@ import {
   verticalCompactor,
 } from "react-grid-layout"
 
-import type { SizePreset, Session, GridBreakpoint, GridLayouts } from "../model/types"
+import type {
+  SizePreset,
+  Session,
+  GridBreakpoint,
+  GridLayouts,
+  GridRestoreWidths,
+} from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
 import {
   expandedGridLayouts,
   gridColumns,
-  gridLayoutsForPreset,
+  toggleGridWidth,
+  type GridWidthToggle,
   visibleGridLayouts,
 } from "./grid-layout"
 import { useTerminalVisibility } from "./useTerminalVisibility"
@@ -21,7 +28,8 @@ const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
 
 type Props = {
   presets: Record<string, SizePreset>
-  onPresetChange: (id: string, preset: SizePreset) => void
+  restoreWidths: Record<string, GridRestoreWidths>
+  onToggleWidth: (id: string, change: GridWidthToggle) => void
   sessions: Session[]
   navigation: number
   selected: string
@@ -41,7 +49,8 @@ type Props = {
 
 export const Grid = ({
   presets,
-  onPresetChange,
+  restoreWidths,
+  onToggleWidth,
   sessions,
   selected,
   navigation,
@@ -115,11 +124,17 @@ export const Grid = ({
   const resizeToViewport = useCallback(
     (id: string): void => {
       if (!width) return
-      const preset = presets[id] === "large" ? "small" : "large"
-      if (minimized[id]) onMinimize(id)
-      const fitted = gridLayoutsForPreset(id, preset, sessions, layouts, minimized, removed)
-      onLayoutsChange(fitted)
-      onPresetChange(id, preset)
+      const expand = presets[id] !== "large"
+      const change = toggleGridWidth(
+        id,
+        expand,
+        sessions,
+        layouts,
+        minimized,
+        removed,
+        restoreWidths[id],
+      )
+      onToggleWidth(id, change)
       setResizeRequest({ id, navigation })
     },
     [
@@ -128,11 +143,10 @@ export const Grid = ({
       sessions,
       layouts,
       removed,
-      onMinimize,
-      onLayoutsChange,
       navigation,
       presets,
-      onPresetChange,
+      restoreWidths,
+      onToggleWidth,
     ],
   )
 

@@ -87,7 +87,9 @@ export const Terminal = ({
   onRenameCancel: () => void
 }): React.JSX.Element => {
   const resizeLabel = large
-    ? "Make compact"
+    ? resizeView === "grid"
+      ? "Restore width"
+      : "Make compact"
     : resizeView === "grid"
       ? "Make full width"
       : "Enlarge terminal"
@@ -271,7 +273,15 @@ export const Terminal = ({
             )}
             {onResizePreset && (
               <Tooltip
-                content={large ? "Compact" : resizeView === "grid" ? "Full width" : "Enlarge"}
+                content={
+                  large
+                    ? resizeView === "grid"
+                      ? "Restore width"
+                      : "Compact"
+                    : resizeView === "grid"
+                      ? "Full width"
+                      : "Enlarge"
+                }
               >
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}

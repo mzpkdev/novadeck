@@ -5,6 +5,7 @@ import type {
   CanvasLayout,
   Entry,
   GridLayouts,
+  GridRestoreWidths,
   PreferencesValue,
   Project,
   Session,
@@ -68,6 +69,12 @@ export type WorkspaceAction =
   | { type: "canvas/layout"; target: WorkspaceTarget; layout: ValueUpdate<CanvasLayout> }
   | { type: "grid/layouts"; target: WorkspaceTarget; layouts: ValueUpdate<GridLayouts> }
   | {
+      type: "grid/size-toggle"
+      target: WorkspaceTarget
+      terminalId: string
+      change: { layouts: GridLayouts; restoreWidths: GridRestoreWidths | null }
+    }
+  | {
       type: "terminal/size-preset"
       target: WorkspaceTarget
       terminalId: string
@@ -103,6 +110,7 @@ export const createSessionState = (
   sizePresets: { grid: {}, canvas: {} },
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
+  gridRestoreWidths: {},
   gridMinimized: {},
   hidden: {},
   nextTerminalNumber: sessions.length + 1,
@@ -269,6 +277,7 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
         ? state.canvasLayout
         : { ...state.canvasLayout, geometry, minimized },
     gridLayouts: withoutGridItem(state.gridLayouts, terminalId),
+    gridRestoreWidths: withoutKey(state.gridRestoreWidths, terminalId),
     gridMinimized,
     sizePresets: {
       grid: withoutKey(state.sizePresets.grid, terminalId),
@@ -510,6 +519,29 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
           state.sessions,
         )
         return gridLayouts === state.gridLayouts ? state : { ...state, gridLayouts }
+      })
+    case "grid/size-toggle":
+      return updateTarget(workspace, action.target, (state) => {
+        if (!hasTerminal(state, action.terminalId)) return state
+        const widths = action.change.restoreWidths
+        return {
+          ...state,
+          gridLayouts: pruneGridLayouts(action.change.layouts, state.sessions),
+          gridRestoreWidths:
+            widths === null
+              ? withoutKey(state.gridRestoreWidths, action.terminalId)
+              : { ...state.gridRestoreWidths, [action.terminalId]: widths },
+          gridMinimized: state.gridMinimized[action.terminalId]
+            ? { ...state.gridMinimized, [action.terminalId]: false }
+            : state.gridMinimized,
+          sizePresets: {
+            ...state.sizePresets,
+            grid: {
+              ...state.sizePresets.grid,
+              [action.terminalId]: widths === null ? "small" : "large",
+            },
+          },
+        }
       })
     case "terminal/size-preset":
       return updateTarget(workspace, action.target, (state) =>

@@ -34,9 +34,9 @@ Use the terminal header's resize control to alternate between two sizes. In Canv
 to 1200×800, independent of zoom. **Compact** sets 600×400. Extreme ratios respect the
 minimum terminal dimensions. Double-click the enlarged terminal header to fill more
 of the viewport. Canvas grows or shrinks around the terminal's center
-without changing the camera. In Grid, **Make full width** fills the available columns
-and **Make compact** uses half of them (at least four columns), preserving terminal height.
-On four-column screens both widths are the same. Resizing restores minimized terminals.
+without changing the camera. In Grid, **Make full width** fills the available columns;
+**Restore width** returns to the width at each breakpoint from before that click,
+preserving terminal height. Resizing restores minimized terminals.
 Preset choices are remembered per terminal, session, and view. New terminals start
 compact: 600×400 in Canvas and compact column width in Grid, with no placement preview.
 

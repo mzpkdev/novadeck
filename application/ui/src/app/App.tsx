@@ -168,6 +168,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     scrollOffsets,
     canvasLayout,
     gridLayouts,
+    gridRestoreWidths,
     gridMinimized,
     sizePresets,
     hidden,
@@ -1065,13 +1066,13 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 onSelect={setSelected}
                 navigation={navigation.count}
                 presets={sizePresets.grid}
-                onPresetChange={(terminalId, preset) =>
+                restoreWidths={gridRestoreWidths}
+                onToggleWidth={(terminalId, change) =>
                   dispatch({
-                    type: "terminal/size-preset",
+                    type: "grid/size-toggle",
                     target,
                     terminalId,
-                    view: "grid",
-                    preset,
+                    change,
                   })
                 }
                 layouts={gridLayouts}
