@@ -511,6 +511,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setSidebar(false)
   }
   const add = (fromKeyboard = false): void => {
+    setRecentSwitcher(null)
     const session = createMockTerminal(nextTerminalNumber, project.directory)
     if (activeRename) finishRename(activeRename, true)
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"

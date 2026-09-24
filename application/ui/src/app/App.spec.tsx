@@ -401,6 +401,33 @@ describe("novadeck. workspace", () => {
       expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
     })
 
+    for (const mode of ["click", "held"] as const) {
+      it(`dismisses the ${mode} terminal switcher before shortcut creation and ignores Ctrl release`, async () => {
+        render(<App />)
+        if (mode === "click") {
+          await interact("click", screen.getByRole("button", { name: "Switch terminal" }))
+          const list = screen.getByRole("listbox", { name: "Recent terminals" })
+          await interact("keyDown", list, { key: "ArrowDown" })
+          expect(screen.getByRole("option", { name: "Dev server" })).toHaveAttribute(
+            "aria-selected",
+            "true",
+          )
+          await interact("keyDown", list, { key: "T", ctrlKey: true, shiftKey: true })
+        } else {
+          await interact("keyDown", window, { key: "Tab", ctrlKey: true })
+          expect(screen.getByRole("listbox", { name: "Recent terminals" })).toBeVisible()
+          await interact("keyDown", window, { key: "T", ctrlKey: true, shiftKey: true })
+        }
+        expect(screen.queryByRole("dialog", { name: "Terminal switcher" })).not.toBeInTheDocument()
+        expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
+        expect(window.location.hash).toContain("terminal=07")
+        await interact("keyUp", window, { key: "Control" })
+        expect(screen.queryByRole("dialog", { name: "Terminal switcher" })).not.toBeInTheDocument()
+        expect(sidebarRenameInput("Terminal 07")).toHaveFocus()
+        expect(window.location.hash).toContain("terminal=07")
+      })
+    }
+
     for (const view of ["Focus", "Grid", "Canvas"]) {
       it(`opens the ${view} icon switcher and switches with arrows and Enter`, async () => {
         render(<App />)
