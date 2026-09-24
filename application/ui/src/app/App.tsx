@@ -439,6 +439,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
       onInputFocused={() => setKeyboardFocus(null)}
       compact={compact}
+      {...(!compact ? { switcher: { sessions: ordered, onSelect: select } } : {})}
       onClose={() => close(session.id)}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
@@ -484,7 +485,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         return
       if (
         document.querySelector(
-          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), .session-tab.editing, .session-tab.dragging',
+          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), [data-scope="select"][role="listbox"][data-state="open"], .session-tab.editing, .session-tab.dragging',
         )
       )
         return
@@ -673,7 +674,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       if (event.key !== "Escape") return
       if (
         document.querySelector(
-          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), .session-tab.editing, .session-tab.dragging',
+          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), [data-scope="select"][role="listbox"][data-state="open"], .session-tab.editing, .session-tab.dragging',
         )
       )
         return

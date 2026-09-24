@@ -54,6 +54,8 @@ without leaving the current Focus, Grid, or Canvas view. The floating dock provi
 New terminal, enabled view choices, and Exit Zen. Canvas navigation uses gestures and
 keyboard shortcuts: +/− to zoom and 0 to fit all terminals.
 Focus becomes an edge-to-edge terminal, while Grid and Canvas gain the available space.
+In Focus, click the terminal title to switch between terminals in the current session;
+the list marks the active terminal and shows process status. This also works outside Zen.
 Terminal names stay visible; header actions appear on hover or keyboard focus on desktop
 and stay visible on touch devices. Search and terminal shortcuts remain available.
 

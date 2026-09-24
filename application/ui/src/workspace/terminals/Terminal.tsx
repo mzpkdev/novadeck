@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { useEffect, useRef } from "react"
 
+import { Select } from "../../ui-toolkit/Select"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session, WindowedView } from "../model/types"
@@ -38,6 +39,7 @@ export const Terminal = ({
   scrollOffset,
   onScrollChange,
   onFocus,
+  switcher,
   onFlyTo,
   onResizePreset,
   resizeView = "canvas",
@@ -61,6 +63,7 @@ export const Terminal = ({
   scrollOffset: number | undefined
   onScrollChange: (offset: number) => void
   onFocus?: () => void
+  switcher?: { sessions: Session[]; onSelect: (id: string) => void }
   onFlyTo?: () => void
   onResizePreset?: (button: HTMLButtonElement) => void
   resizeView?: WindowedView
@@ -193,7 +196,29 @@ export const Terminal = ({
             title={session.name}
           >
             <TerminalIcon size={14} strokeWidth={1.5} />
-            <Heading>{session.name}</Heading>
+            {!compact && switcher ? (
+              <>
+                <Heading className="sr-only">{session.name}</Heading>
+                <Select
+                  label="Switch terminal"
+                  variant="title"
+                  value={session.id}
+                  items={switcher.sessions.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                    description:
+                      item.state === "running"
+                        ? "Running"
+                        : item.state === "finished"
+                          ? "Finished"
+                          : "Idle",
+                  }))}
+                  onValueChange={switcher.onSelect}
+                />
+              </>
+            ) : (
+              <Heading>{session.name}</Heading>
+            )}
           </div>
           <span
             className={`terminal-actions shrink-0 items-center gap-1 ${placing ? "hidden" : "flex"}`}

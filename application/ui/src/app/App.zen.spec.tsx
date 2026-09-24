@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach } from "vitest"
 
 import { context, describe, expect, it } from "../test"
@@ -63,6 +63,39 @@ describe("Zen workspace", () => {
       expect(screen.getByRole("region", { name: `${view.toLowerCase()} view` })).toBeVisible()
       expect(screen.queryByRole("button", { name: "Fit all terminals" })).not.toBeInTheDocument()
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+    })
+  }
+  for (const zen of [false, true]) {
+    it(`switches Focus terminals from the title with Zen ${zen ? "on" : "off"} and preserves drafts`, async () => {
+      render(<App />)
+      if (zen) await click(screen.getByRole("button", { name: "Enter Zen mode" }))
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+        { target: { value: "unfinished command" } },
+      )
+      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      expect(screen.getByRole("option", { name: /Checkout implementation/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      )
+      await click(screen.getByRole("option", { name: /Dev server/ }))
+      expect(screen.getByRole("textbox", { name: "Command for Dev server" })).toBeVisible()
+      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      await click(screen.getByRole("option", { name: /Checkout implementation/ }))
+      expect(
+        screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
+      ).toHaveValue("unfinished command")
+      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      await waitFor(() => expect(screen.getByRole("listbox")).toHaveFocus())
+      await act(async () => {
+        fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" })
+      })
+      await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument())
+      expect(screen.getByRole("combobox", { name: "Switch terminal" })).toHaveTextContent(
+        "Checkout implementation",
+      )
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      if (zen) expect(screen.getByRole("group", { name: "Zen controls" })).toBeVisible()
     })
   }
   it("keeps placement active across Grid and Canvas and lets Escape cancel it", async () => {
