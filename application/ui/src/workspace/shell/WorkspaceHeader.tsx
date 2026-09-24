@@ -1,5 +1,6 @@
 import {
   LayoutGrid,
+  Scan,
   PanelLeft,
   Search,
   Settings2,
@@ -21,6 +22,7 @@ const views = [
 ] as const
 
 export const WorkspaceHeader = ({
+  hidden = false,
   view,
   enabledViews,
   projects,
@@ -30,7 +32,9 @@ export const WorkspaceHeader = ({
   homeTo,
   onSearch,
   onPreferences,
+  onZen,
 }: {
+  hidden?: boolean
   view: ViewMode
   enabledViews: ViewMode[]
   projects: Project[]
@@ -40,10 +44,16 @@ export const WorkspaceHeader = ({
   homeTo: string
   onSearch: () => void
   onPreferences: () => void
+  onZen: () => void
 }): React.JSX.Element => {
   const searchShortcut = shortcutBindings().find.display.join(" ")
   return (
-    <header className="app-header max-[1001px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+    <header
+      hidden={hidden}
+      inert={hidden}
+      aria-hidden={hidden}
+      className="app-header max-[1001px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+    >
       <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
         <Link
           to={homeTo}
@@ -88,6 +98,11 @@ export const WorkspaceHeader = ({
             <kbd className="mb-[-2px] ml-3 min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70 max-[701px]:hidden">
               {searchShortcut}
             </kbd>
+          </button>
+        </Tooltip>
+        <Tooltip content="Enter Zen mode">
+          <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
+            <Scan size={16} />
           </button>
         </Tooltip>
         <Tooltip

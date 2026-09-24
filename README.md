@@ -10,7 +10,7 @@ to pan. Click a terminal to activate it, then select its text, scroll its output
 or drag its header to move it.
 Double-click or double-tap a terminal header to smoothly center and zoom that terminal
 to fit the canvas viewport. Repeat the gesture on the same terminal to return to the
-previous camera position and zoom. Manual pan or zoom (including controls and shortcuts),
+previous camera position and zoom. Manual pan or zoom (including keyboard shortcuts),
 Fit all, sidebar camera navigation, leaving Canvas, or switching sessions clears that
 return point. Flying to a different terminal starts a new visit from the current camera.
 Repeated double gestures during a flight are ignored. Minimized terminals restore first;
@@ -46,6 +46,20 @@ Hidden terminals retain
 their content and layout and remain available in Focus view.
 Showing and hiding use a short fade and scale transition; reduced motion skips it.
 Switching terminal tabs in Focus uses the same transition.
+
+## Zen mode
+
+Choose **Enter Zen mode** in the top bar to hide the header, sidebar, rail, and footer
+without leaving the current Focus, Grid, or Canvas view. The floating dock provides
+New terminal, enabled view choices, and Exit Zen. Canvas navigation uses gestures and
+keyboard shortcuts: +/− to zoom and 0 to fit all terminals.
+Focus becomes an edge-to-edge terminal, while Grid and Canvas gain the available space.
+Terminal names stay visible; header actions appear on hover or keyboard focus on desktop
+and stay visible on touch devices. Search and terminal shortcuts remain available.
+
+Zen preserves the active terminal and Canvas camera on entry. Exit Zen restores the
+previous sidebar visibility and panel. Explicit sidebar shortcuts or Browse sessions
+leave Zen to show the requested panel. Zen is temporary and resets on reload.
 
 ## Keyboard shortcuts
 

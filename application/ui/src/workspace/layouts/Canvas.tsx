@@ -13,7 +13,6 @@ import {
   type OnNodesChange,
   type XYPosition,
 } from "@xyflow/react"
-import { Maximize, Minus, Plus } from "lucide-react"
 import {
   useCallback,
   useEffect,
@@ -25,7 +24,6 @@ import {
   type ReactNode,
 } from "react"
 
-import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { SizePreset, Session, CanvasLayout } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
@@ -169,7 +167,7 @@ const TerminalCanvas = ({
   const placementPosition = useRef<XYPosition | null>(null)
   const placementPointer = useRef<XYPosition | null>(null)
   const lastPlacement = useRef(placement)
-  const fitAll = (): void => {
+  const fitAll = useCallback((): void => {
     visit.clear()
     void fitView({
       ...fitOptions,
@@ -177,8 +175,7 @@ const TerminalCanvas = ({
         .filter((session) => !hidden[session.id])
         .map((session) => ({ id: session.id })),
     })
-  }
-
+  }, [fitView, sessions, hidden, visit])
   useEffect(() => {
     latest.current = { sessions, onLayoutChange }
   }, [onLayoutChange, sessions])
@@ -792,39 +789,6 @@ const TerminalCanvas = ({
           bgColor="transparent"
         />
       </ReactFlow>
-      <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5 shadow-control">
-        <Tooltip content="Zoom out (−)">
-          <button
-            className="icon-button"
-            aria-label="Zoom out"
-            onClick={() => {
-              visit.clear()
-              void zoomOut()
-            }}
-          >
-            <Minus size={15} />
-          </button>
-        </Tooltip>
-        <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-        <Tooltip content="Zoom in (+)">
-          <button
-            className="icon-button"
-            aria-label="Zoom in"
-            onClick={() => {
-              visit.clear()
-              void zoomIn()
-            }}
-          >
-            <Plus size={15} />
-          </button>
-        </Tooltip>
-        <div className="control-divider mx-0.5 h-3 w-px bg-line" />
-        <Tooltip content="Fit all terminals (0)">
-          <button className="icon-button" aria-label="Fit all terminals" onClick={fitAll}>
-            <Maximize size={15} />
-          </button>
-        </Tooltip>
-      </div>
     </div>
   )
 }

@@ -409,23 +409,6 @@
   user-select: text;
   cursor: text;
 }
-.canvas-controls {
-  opacity: 0.25;
-  transition: opacity var(--motion-feedback) var(--ease-interface);
-}
-.canvas-controls:hover,
-.canvas-controls:has(:focus-visible) {
-  opacity: 1;
-}
-.canvas-controls .icon-button {
-  @apply size-7 p-1.5;
-}
-.canvas-controls .icon-button > svg {
-  @apply size-3;
-}
-.canvas-controls > span {
-  @apply w-8 text-center font-mono text-[9px];
-}
 @media (min-width: 1650px) {
   .terminal-content,
   .terminal-compact .terminal-content {
@@ -549,6 +532,17 @@
 ::view-transition-group(terminal-focus) {
   z-index: 1;
 }
+::view-transition-group(zen-dock) {
+  z-index: 3;
+  animation: none;
+}
+::view-transition-old(zen-dock) {
+  display: none;
+}
+::view-transition-new(zen-dock) {
+  animation: none;
+  mix-blend-mode: normal;
+}
 ::view-transition-group(terminal-content) {
   z-index: 2;
   overflow: clip;
@@ -613,5 +607,69 @@
   }
   .small-button.primary {
     @apply border-strong bg-strong text-white hover:bg-ink;
+  }
+}
+
+/* Zen keeps the active workspace mounted while removing its surrounding chrome. */
+.workspace[data-zen="true"] > .app-header,
+.workspace[data-zen="true"] > .app-footer,
+.workspace[data-zen="true"] .sidebar-tools {
+  display: none;
+}
+.workspace[data-zen="true"] .workspace-background {
+  --canvas-grid-opacity: 0.07;
+  --canvas-grid-spotlight-opacity: 0.18;
+  --canvas-grain-opacity: 0.02;
+}
+.workspace[data-zen="true"] .focus-stage > .terminal-visibility {
+  inset: 0;
+}
+.workspace[data-zen="true"] .terminal-focused {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.workspace[data-zen="true"] .terminal-focused .terminal-content {
+  padding-bottom: 5rem;
+}
+.workspace[data-zen="true"] .grid-stage {
+  padding-bottom: 5rem;
+}
+.zen-dock {
+  view-transition-name: zen-dock;
+  animation: zen-enter var(--motion-state) var(--ease-interface);
+}
+@keyframes zen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .zen-dock {
+    opacity: 0.35;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
+  }
+  .zen-dock:hover,
+  .zen-dock:has(:focus-visible) {
+    opacity: 1;
+  }
+  .zen-dock .icon-button {
+    @apply size-7 p-1.5;
+  }
+  .zen-dock .zen-exit {
+    @apply h-7;
+  }
+  .workspace[data-zen="true"] .terminal-actions {
+    opacity: 0;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
+  }
+  .workspace[data-zen="true"] .terminal-header:hover .terminal-actions,
+  .workspace[data-zen="true"] .terminal-header:focus-within .terminal-actions {
+    opacity: 1;
   }
 }

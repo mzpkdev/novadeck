@@ -49,6 +49,7 @@ import {
 import { TerminalSearch } from "../workspace/search/TerminalSearch"
 import { WorkspaceHeader } from "../workspace/shell/WorkspaceHeader"
 import { useDesktop, WorkspacePanels } from "../workspace/shell/WorkspacePanels"
+import { ZenDock } from "../workspace/shell/ZenDock"
 import { matchesShortcut, shortcutBindings } from "../workspace/shortcuts"
 import { SessionsPanel } from "../workspace/sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../workspace/sidebar/SidebarPanel"
@@ -193,9 +194,14 @@ export const WorkspaceApp = (): React.JSX.Element => {
     route.dialog,
     `${projectId}/${workspaceSessionId}`,
   )
+  const [zen, setZen] = useState<{
+    sidebar: boolean
+    collapsed: boolean
+    panel: "sessions" | "terminals"
+  } | null>(null)
   const [sidebar, setSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
-  const sidebarVisible = desktop ? !sidebarCollapsed : sidebar
+  const sidebarVisible = !zen && (desktop ? !sidebarCollapsed : sidebar)
   const context = `${projectId}/${workspaceSessionId}`
   const [focusPreview, setFocusPreview] = useState<{ context: string; id: string } | null>(null)
   const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
@@ -286,6 +292,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     navigateWorkspace([{ type: "session/add", projectId, session: next }], { panel: "sessions" })
   }
   const showSessions = (): void => {
+    setZen(null)
     setSidebarPanel("sessions")
     setSidebarCollapsed(false)
     setSidebar(true)
@@ -296,6 +303,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     if (desktop) document.getElementById(`${sidebarPanel}-toggle`)?.focus()
   }
   const toggleSidebar = (panel: "terminals" | "sessions"): void => {
+    if (zen) setZen(null)
     if (sidebarPanel === panel && sidebarVisible) hideSidebar()
     else {
       setSidebarPanel(panel)
@@ -687,6 +695,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     <ToggleGroup
       className="sidebar-tools z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
       aria-label="Sidebar actions"
+      aria-hidden={Boolean(zen)}
       orientation="vertical"
       value={sidebarVisible ? [sidebarPanel] : []}
       onValueChange={(value) => {
@@ -723,6 +732,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   return (
     <main
       className="workspace flex h-dvh min-h-100 flex-col overflow-hidden bg-paper"
+      data-zen={Boolean(zen)}
       onPointerDownCapture={cancelTerminalTransition}
       onKeyDownCapture={cancelTerminalTransition}
       style={
@@ -732,6 +742,13 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
     >
       <WorkspaceHeader
+        hidden={Boolean(zen)}
+        onZen={() => {
+          setZen({ sidebar, collapsed: sidebarCollapsed, panel: sidebarPanel })
+          requestAnimationFrame(() =>
+            document.querySelector<HTMLButtonElement>(".zen-exit")?.focus({ preventScroll: true }),
+          )
+        }}
         view={view}
         enabledViews={preferences.enabledViews}
         projects={projects}
@@ -758,8 +775,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
       <div className="workspace-body relative flex min-h-0 flex-1">
         {sidebarRail()}
         <WorkspacePanels
-          collapsed={sidebarCollapsed}
-          mobileOpen={sidebar}
+          collapsed={Boolean(zen) || sidebarCollapsed}
+          mobileOpen={!zen && sidebar}
           onMobileOpenChange={(open) => {
             if (!open) hideSidebar()
           }}
@@ -966,7 +983,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   <div className="empty-state-actions mt-5 flex flex-wrap items-center justify-center gap-2">
                     <button
                       className="small-button primary"
-                      aria-label="New terminal"
+                      aria-label={zen ? "Create first terminal" : "New terminal"}
                       onClick={() => add()}
                     >
                       <Plus size={14} />
@@ -984,8 +1001,35 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
           </section>
         </WorkspacePanels>
+        {zen && (
+          <ZenDock
+            view={view}
+            enabledViews={preferences.enabledViews}
+            placing={Boolean(placement)}
+            onCreate={() => {
+              if (!placement) add()
+            }}
+            onViewChange={(next) => {
+              if (next !== view) changeView(next)
+            }}
+            onExit={() => {
+              setSidebar(zen.sidebar)
+              setSidebarCollapsed(zen.collapsed)
+              setSidebarPanel(zen.panel)
+              setZen(null)
+              requestAnimationFrame(() =>
+                document
+                  .querySelector<HTMLButtonElement>(".zen-enter")
+                  ?.focus({ preventScroll: true }),
+              )
+            }}
+          />
+        )}
       </div>
-      <footer className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted">
+      <footer
+        hidden={Boolean(zen)}
+        className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted"
+      >
         <span className="flex items-center gap-2">
           <span>{sessions.length} terminals</span>
           <span className="footer-running max-[701px]:hidden ml-2 border-l border-line pl-3">
