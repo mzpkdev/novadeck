@@ -1,5 +1,9 @@
 import {
   Minimize2,
+  Scaling,
+  Shrink,
+  FoldHorizontal,
+  UnfoldHorizontal,
   ArrowUpRight,
   GitBranch,
   Minus,
@@ -11,7 +15,7 @@ import { useEffect, useRef } from "react"
 
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
-import type { Entry, Session } from "../model/types"
+import type { Entry, Session, WindowedView } from "../model/types"
 import { shortcutBindings } from "../shortcuts"
 
 export type MinimizeControls = {
@@ -35,6 +39,9 @@ export const Terminal = ({
   onScrollChange,
   onFocus,
   onFlyTo,
+  onResizePreset,
+  resizeView = "canvas",
+  large = false,
   onClose,
   windowed,
   minimize,
@@ -55,6 +62,9 @@ export const Terminal = ({
   onScrollChange: (offset: number) => void
   onFocus?: () => void
   onFlyTo?: () => void
+  onResizePreset?: (button: HTMLButtonElement) => void
+  resizeView?: WindowedView
+  large?: boolean
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
   minimize?: MinimizeControls
@@ -64,6 +74,13 @@ export const Terminal = ({
   onInputFocused?: () => void
   active?: boolean
 }): React.JSX.Element => {
+  const resizeLabel = large
+    ? "Make compact"
+    : resizeView === "grid"
+      ? "Make full width"
+      : "Enlarge terminal"
+  const ResizeIcon =
+    resizeView === "grid" ? (large ? FoldHorizontal : UnfoldHorizontal) : large ? Shrink : Scaling
   const Heading = compact ? "h2" : "h1"
   const focusHint = active ? ` · ${shortcutBindings().focus.display.join(" ")}` : ""
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
@@ -193,6 +210,21 @@ export const Terminal = ({
                   }}
                 >
                   {minimize.minimized ? <Plus size={12} /> : <Minus size={12} />}
+                </button>
+              </Tooltip>
+            )}
+            {onResizePreset && (
+              <Tooltip content={resizeLabel}>
+                <button
+                  className={`${headerActionClasses} terminal-view-action nodrag nopan`}
+                  aria-label={`${resizeLabel}: ${session.name}`}
+                  aria-pressed={large}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onResizePreset(event.currentTarget)
+                  }}
+                >
+                  <ResizeIcon size={14} />
                 </button>
               </Tooltip>
             )}

@@ -1,6 +1,7 @@
 import { cloneLayout, moveElement, verticalCompactor } from "react-grid-layout"
 
 import type { GridBreakpoint, GridLayouts, Session } from "../model/types"
+import { canvasPresetSize, gridPresetWidth } from "./terminal-size"
 
 export const gridColumns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }
 const expandedHeight = (session: Session): number => Math.ceil((session.height + 16) / 24)
@@ -137,4 +138,29 @@ export const expandedGridLayouts = (
       : (previous[breakpoint] ?? [])
   }
   return result
+}
+
+export const addCompactGridTerminal = (
+  sessions: Session[],
+  layouts: GridLayouts,
+  terminal: Session,
+): GridLayouts => {
+  const current = visibleGridLayouts(sessions, layouts, {})
+  const next: GridLayouts = {}
+  for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
+    const existing = layouts[breakpoint] ?? current[breakpoint] ?? []
+    next[breakpoint] = [
+      ...existing,
+      {
+        i: terminal.id,
+        x: 0,
+        y: existing.reduce((bottom, item) => Math.max(bottom, item.y + item.h), 0),
+        w: gridPresetWidth(gridColumns[breakpoint], "small"),
+        h: Math.ceil((canvasPresetSize("small").height + 16) / 24),
+        minW: 4,
+        minH: 10,
+      },
+    ]
+  }
+  return next
 }

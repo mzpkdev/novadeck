@@ -26,9 +26,11 @@ import {
 } from "react"
 
 import { Tooltip } from "../../ui-toolkit/Tooltip"
-import type { Session, CanvasLayout } from "../model/types"
+import type { SizePreset, Session, CanvasLayout } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
+import { createCanvasVisit } from "./canvas-visit"
+import { canvasPresetSize } from "./terminal-size"
 import { useTerminalVisibility } from "./useTerminalVisibility"
 
 type TerminalNode = Node<
@@ -45,6 +47,8 @@ type TerminalNode = Node<
   "terminal"
 >
 type CanvasProps = {
+  presets: Record<string, SizePreset>
+  onPresetChange: (id: string, preset: SizePreset) => void
   layout: CanvasLayout
   revealOnMount: boolean
   fitOnNavigate: boolean
@@ -57,7 +61,12 @@ type CanvasProps = {
   placement?: string
   onPlace?: () => void
   onSelect: (id: string) => void
-  render: (session: Session, minimize: MinimizeControls, onFlyTo: () => void) => ReactNode
+  render: (
+    session: Session,
+    minimize: MinimizeControls,
+    onFlyTo: () => void,
+    resize: () => void,
+  ) => ReactNode
 }
 type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
 
@@ -106,6 +115,8 @@ const centerOf = (node: TerminalNode, zoom: number): XYPosition => ({
 })
 
 const TerminalCanvas = ({
+  presets,
+  onPresetChange,
   layout,
   revealOnMount,
   fitOnNavigate,
@@ -145,6 +156,7 @@ const TerminalCanvas = ({
   const initialized = useNodesInitialized()
   const container = useRef<HTMLDivElement>(null)
   const [initialViewport] = useState(layout.viewport)
+  const [visit] = useState(createCanvasVisit)
   const geometryRef = useRef<CanvasLayout["geometry"]>({ ...layout.geometry })
   const dirtyGeometry = useRef(new Set<string>())
   const resizing = useRef(new Set<string>())
@@ -158,6 +170,7 @@ const TerminalCanvas = ({
   const placementPointer = useRef<XYPosition | null>(null)
   const lastPlacement = useRef(placement)
   const fitAll = (): void => {
+    visit.clear()
     void fitView({
       ...fitOptions,
       nodes: sessions
@@ -271,8 +284,31 @@ const TerminalCanvas = ({
     [commitGeometry, getNode, updateNode],
   )
 
+  const resizeToViewport = useCallback(
+    (id: string) => {
+      const node = getNode(id)
+      if (!node || !viewportWidth || !viewportHeight) return
+      const preset = presets[id] === "large" ? "small" : "large"
+      const { width, height } = canvasPresetSize(preset)
+      const center = centerOf(node, getViewport().zoom)
+      const next = {
+        position: { x: center.x - width / 2, y: center.y - height / 2 },
+        width,
+        height,
+      }
+      onLayoutChange((previous) => ({
+        ...previous,
+        geometry: { ...previous.geometry, [id]: next },
+        minimized: { ...previous.minimized, [id]: false },
+      }))
+      onPresetChange(id, preset)
+    },
+    [getNode, getViewport, onLayoutChange, viewportWidth, viewportHeight, presets, onPresetChange],
+  )
+
   const flyTo = useCallback(
     (session: Session) => {
+      if (visit.flying) return
       const node = getNode(session.id)
       if (!node) return
       onSelect(session.id)
@@ -297,11 +333,26 @@ const TerminalCanvas = ({
         Infinity,
         0,
       )
-      void setViewport(viewport, {
+      const flight = visit.begin(session.id, getViewport(), viewport)
+      if (!flight) return
+      void setViewport(flight.viewport, {
         duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350,
-      })
+      }).then(
+        (completed) => visit.finish(flight, completed),
+        () => visit.finish(flight, false),
+      )
     },
-    [geometry, getNode, onLayoutChange, onSelect, setViewport, viewportHeight, viewportWidth],
+    [
+      geometry,
+      getNode,
+      getViewport,
+      onLayoutChange,
+      onSelect,
+      setViewport,
+      viewportHeight,
+      viewportWidth,
+      visit,
+    ],
   )
 
   const nodeFrom = useCallback(
@@ -345,6 +396,7 @@ const TerminalCanvas = ({
                 })),
             },
             () => flyTo(session),
+            () => resizeToViewport(session.id),
           ),
           compactHeader: width / chromeScale < 240,
           minimized: isMinimized,
@@ -358,6 +410,7 @@ const TerminalCanvas = ({
       chromeScale,
       finishResize,
       flyTo,
+      resizeToViewport,
       hidden,
       preview,
       removed,
@@ -543,6 +596,7 @@ const TerminalCanvas = ({
     const node = getNode(selected)
     if (!node || node.hidden) return
     lastNavigation.current = navigation
+    visit.clear()
     const duration = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180
     if (fitOnNavigate) {
       void fitView({
@@ -567,6 +621,7 @@ const TerminalCanvas = ({
     getNode,
     getViewport,
     setCenter,
+    visit,
   ])
 
   return (
@@ -628,8 +683,14 @@ const TerminalCanvas = ({
       }}
       onKeyDown={(event) => {
         if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
-        if (event.key === "+" || event.key === "=") void zoomIn()
-        if (event.key === "-") void zoomOut()
+        if (event.key === "+" || event.key === "=") {
+          visit.clear()
+          void zoomIn()
+        }
+        if (event.key === "-") {
+          visit.clear()
+          void zoomOut()
+        }
         if (event.key === "0") fitAll()
       }}
     >
@@ -682,7 +743,15 @@ const TerminalCanvas = ({
           )
         }}
         onMoveStart={(_, viewport) => trackViewport(viewport)}
-        onMove={(_, viewport) => {
+        onMove={(event, viewport) => {
+          const previous = viewportRef.current
+          if (
+            event &&
+            (viewport.x !== previous.x ||
+              viewport.y !== previous.y ||
+              viewport.zoom !== previous.zoom)
+          )
+            visit.clear()
           trackViewport(viewport)
           const pointer = placementPointer.current
           if (pointer) previewPlacement(pointer.x, pointer.y)
@@ -725,13 +794,27 @@ const TerminalCanvas = ({
       </ReactFlow>
       <div className="canvas-controls max-[701px]:right-3.5 max-[701px]:bottom-4.5 absolute right-6 bottom-5 z-10 flex items-center gap-0.5 rounded-control border border-line bg-paper p-0.5 shadow-control">
         <Tooltip content="Zoom out (−)">
-          <button className="icon-button" aria-label="Zoom out" onClick={() => void zoomOut()}>
+          <button
+            className="icon-button"
+            aria-label="Zoom out"
+            onClick={() => {
+              visit.clear()
+              void zoomOut()
+            }}
+          >
             <Minus size={15} />
           </button>
         </Tooltip>
         <span aria-live="polite">{Math.round(zoom * 100)}%</span>
         <Tooltip content="Zoom in (+)">
-          <button className="icon-button" aria-label="Zoom in" onClick={() => void zoomIn()}>
+          <button
+            className="icon-button"
+            aria-label="Zoom in"
+            onClick={() => {
+              visit.clear()
+              void zoomIn()
+            }}
+          >
             <Plus size={15} />
           </button>
         </Tooltip>

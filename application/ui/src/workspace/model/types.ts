@@ -37,7 +37,10 @@ export type CanvasLayout = {
 export type GridBreakpoint = "wide" | "desktop" | "tablet" | "mobile"
 export type GridLayouts = ResponsiveLayouts<GridBreakpoint>
 
+export type SizePreset = "large" | "small"
+
 export type WorkspaceState = {
+  sizePresets: Record<WindowedView, Record<string, SizePreset>>
   view: ViewMode
   windowedView: WindowedView
   drafts: Record<string, string>

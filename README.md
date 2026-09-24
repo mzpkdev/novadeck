@@ -9,8 +9,12 @@ In Canvas, scroll to zoom in or out, and drag the background or an inactive term
 to pan. Click a terminal to activate it, then select its text, scroll its output,
 or drag its header to move it.
 Double-click or double-tap a terminal header to smoothly center and zoom that terminal
-to fit the canvas viewport. Minimized terminals restore first. The header's arrow
-opens Focus view.
+to fit the canvas viewport. Repeat the gesture on the same terminal to return to the
+previous camera position and zoom. Manual pan or zoom (including controls and shortcuts),
+Fit all, sidebar camera navigation, leaving Canvas, or switching sessions clears that
+return point. Flying to a different terminal starts a new visit from the current camera.
+Repeated double gestures during a flight are ignored. Minimized terminals restore first;
+returning the camera does not minimize them again. The header's arrow opens Focus view.
 
 Click **New terminal** or use its keyboard shortcut in Grid or Canvas to create its sidebar tab immediately, then
 move over the workspace and click to place the terminal preview at 75% opacity. The button
@@ -21,6 +25,15 @@ the preview pushes neighboring terminals aside. In Canvas, drag to pan while pla
 release, then click to place the ghost. Placement stays active when switching between
 Grid and Canvas. Switching to Focus or selecting another terminal tab before placing
 it uses the automatic position.
+
+Use the terminal header's resize control to alternate between two sizes. In Canvas,
+**Enlarge terminal** sets 1200×800 and **Make compact** sets 600×400, independent of zoom,
+viewport size, or aspect ratio. Canvas grows or shrinks around the terminal's center
+without changing the camera. In Grid, **Make full width** fills the available columns
+and **Make compact** uses half of them (at least four columns), preserving terminal height.
+On four-column screens both widths are the same. Resizing restores minimized terminals.
+Preset choices are remembered per terminal, session, and view. New terminals start
+compact: 600×400 in Canvas and compact column width in Grid, including placement previews.
 
 In Grid, selecting a terminal from its tab smoothly scrolls it into view. With
 reduced motion enabled, it scrolls immediately.

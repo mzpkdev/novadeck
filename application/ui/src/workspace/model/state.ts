@@ -1,3 +1,5 @@
+import { addCompactGridTerminal } from "../layouts/grid-layout"
+import { canvasPresetSize } from "../layouts/terminal-size"
 import type {
   CanvasLayout,
   Entry,
@@ -5,6 +7,7 @@ import type {
   PreferencesValue,
   Project,
   Session,
+  SizePreset,
   ViewMode,
   WindowedView,
   Workspace,
@@ -63,6 +66,13 @@ export type WorkspaceAction =
   | { type: "preferences/reconcile"; target: WorkspaceTarget; preferences: PreferencesValue }
   | { type: "canvas/layout"; target: WorkspaceTarget; layout: ValueUpdate<CanvasLayout> }
   | { type: "grid/layouts"; target: WorkspaceTarget; layouts: ValueUpdate<GridLayouts> }
+  | {
+      type: "terminal/size-preset"
+      target: WorkspaceTarget
+      terminalId: string
+      view: WindowedView
+      preset: SizePreset
+    }
   | { type: "grid/minimize"; target: WorkspaceTarget; terminalId: string }
 
 export const createWorkspaceSession = (
@@ -89,6 +99,7 @@ export const createSessionState = (
   selected: sessions[0]?.id ?? "",
   entries: {},
   cleared: {},
+  sizePresets: { grid: {}, canvas: {} },
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
   gridMinimized: {},
@@ -258,6 +269,10 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
         : { ...state.canvasLayout, geometry, minimized },
     gridLayouts: withoutGridItem(state.gridLayouts, terminalId),
     gridMinimized,
+    sizePresets: {
+      grid: withoutKey(state.sizePresets.grid, terminalId),
+      canvas: withoutKey(state.sizePresets.canvas, terminalId),
+    },
     hidden: withoutKey(state.hidden, terminalId),
   }
 }
@@ -357,6 +372,21 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         return {
           ...state,
           sessions: [...state.sessions, action.session],
+          canvasLayout: {
+            ...state.canvasLayout,
+            geometry: {
+              ...state.canvasLayout.geometry,
+              [action.session.id]: {
+                position: { x: action.session.x, y: action.session.y },
+                ...canvasPresetSize("small"),
+              },
+            },
+          },
+          gridLayouts: addCompactGridTerminal(state.sessions, state.gridLayouts, action.session),
+          sizePresets: {
+            canvas: { ...state.sizePresets.canvas, [action.session.id]: "small" },
+            grid: { ...state.sizePresets.grid, [action.session.id]: "small" },
+          },
           cleared: { ...state.cleared, [action.session.id]: true },
           selected: action.session.id,
           nextTerminalNumber: state.nextTerminalNumber + 1,
@@ -470,6 +500,21 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         )
         return gridLayouts === state.gridLayouts ? state : { ...state, gridLayouts }
       })
+    case "terminal/size-preset":
+      return updateTarget(workspace, action.target, (state) =>
+        hasTerminal(state, action.terminalId)
+          ? {
+              ...state,
+              sizePresets: {
+                ...state.sizePresets,
+                [action.view]: {
+                  ...state.sizePresets[action.view],
+                  [action.terminalId]: action.preset,
+                },
+              },
+            }
+          : state,
+      )
     case "grid/minimize":
       return updateTarget(workspace, action.target, (state) =>
         hasTerminal(state, action.terminalId)

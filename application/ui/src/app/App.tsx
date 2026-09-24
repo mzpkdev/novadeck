@@ -151,6 +151,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     canvasLayout,
     gridLayouts,
     gridMinimized,
+    sizePresets,
     hidden,
     nextTerminalNumber,
   } = current.state
@@ -405,6 +406,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
     compact: boolean,
     minimize?: MinimizeControls,
     onFlyTo?: () => void,
+    onResizePreset?: (button: HTMLButtonElement) => void,
+    large = false,
   ): React.JSX.Element => (
     <Terminal
       key={session.id}
@@ -431,6 +434,10 @@ export const WorkspaceApp = (): React.JSX.Element => {
       onClose={() => close(session.id)}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
+      {...(onResizePreset
+        ? { onResizePreset, resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const) }
+        : {})}
+      large={large}
       {...(compact && preferences.enabledViews.includes("focus")
         ? {
             onFocus: () =>
@@ -861,11 +868,30 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 selected={selected}
                 onSelect={setSelected}
                 navigation={navigation.count}
+                presets={sizePresets.grid}
+                onPresetChange={(terminalId, preset) =>
+                  dispatch({
+                    type: "terminal/size-preset",
+                    target,
+                    terminalId,
+                    view: "grid",
+                    preset,
+                  })
+                }
                 layouts={gridLayouts}
                 onLayoutsChange={setGridLayouts}
                 minimized={gridMinimized}
                 onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
-                render={(session, minimize) => terminal(session, true, minimize)}
+                render={(session, minimize, resize) =>
+                  terminal(
+                    session,
+                    true,
+                    minimize,
+                    undefined,
+                    resize,
+                    sizePresets.grid[session.id] === "large",
+                  )
+                }
               />
             )}
             {view === "canvas" && sessions.length > 0 && (
@@ -874,6 +900,16 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 onPlace={() => setPendingPlacement(null)}
                 hidden={layoutHidden}
                 preview={preview}
+                presets={sizePresets.canvas}
+                onPresetChange={(terminalId, preset) =>
+                  dispatch({
+                    type: "terminal/size-preset",
+                    target,
+                    terminalId,
+                    view: "canvas",
+                    preset,
+                  })
+                }
                 layout={canvasLayout}
                 revealOnMount={revealCanvas}
                 fitOnNavigate={navigation.fit}
@@ -882,7 +918,16 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 selected={selected}
                 navigation={navigation.count}
                 onSelect={setSelected}
-                render={(session, minimize, onFlyTo) => terminal(session, true, minimize, onFlyTo)}
+                render={(session, minimize, onFlyTo, resize) =>
+                  terminal(
+                    session,
+                    true,
+                    minimize,
+                    onFlyTo,
+                    resize,
+                    sizePresets.canvas[session.id] === "large",
+                  )
+                }
               />
             )}
             {view !== "focus" &&

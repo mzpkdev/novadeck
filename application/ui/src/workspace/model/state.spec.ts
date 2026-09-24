@@ -41,6 +41,7 @@ const workspaceState = (
   cleared: {},
   drafts: {},
   scrollOffsets: {},
+  sizePresets: { grid: {}, canvas: {} },
   canvasLayout: { geometry: {}, minimized: {} },
   gridLayouts: {},
   gridMinimized: {},
@@ -334,6 +335,38 @@ describe("workspace state", () => {
   })
 
   context("when adding a terminal after restoration", () => {
+    it("starts new terminals compact in both layouts without resizing existing terminals", () => {
+      const state = workspaceState([terminal("01")])
+      state.canvasLayout.geometry["01"] = { position: { x: 10, y: 20 }, width: 900, height: 700 }
+      state.gridLayouts.desktop = [{ i: "01", x: 2, y: 0, w: 8, h: 25 }]
+      const workspace = seed("storefront", "saved", state)
+      const next = workspaceReducer(workspace, {
+        type: "terminal/add",
+        target: { projectId: "storefront", workspaceSessionId: "saved" },
+        session: terminal("02"),
+      })
+      const result = activeSession(next)!.state
+      expect(result.canvasLayout.geometry["02"]).toEqual({
+        position: { x: 80, y: 80 },
+        width: 600,
+        height: 400,
+      })
+      expect(result.canvasLayout.geometry["01"]).toEqual(state.canvasLayout.geometry["01"])
+      expect(result.gridLayouts.desktop?.[0]).toEqual(state.gridLayouts.desktop[0])
+      for (const [breakpoint, width] of [
+        ["wide", 8],
+        ["desktop", 6],
+        ["tablet", 4],
+        ["mobile", 4],
+      ] as const) {
+        expect(result.gridLayouts[breakpoint]?.find((item) => item.i === "02")).toMatchObject({
+          w: width,
+          h: 18,
+        })
+      }
+      expect(result.sizePresets).toEqual({ canvas: { "02": "small" }, grid: { "02": "small" } })
+      expect(state.canvasLayout.geometry["02"]).toBeUndefined()
+    })
     it("accepts unique terminal IDs independently of the saved mock ordinal", () => {
       let workspace = seed("storefront", "saved", workspaceState([terminal("01")], 7))
       const target = { projectId: "storefront", workspaceSessionId: "saved" }
