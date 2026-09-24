@@ -69,23 +69,31 @@ export const WorkspaceHeader = ({
         </Link>
         <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
       </div>
-      <SegmentGroup
-        label="Workspace layout"
-        className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5 shadow-control"
-        itemClassName="flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink max-[701px]:min-w-0 max-[701px]:w-8 max-[701px]:px-2 max-[701px]:gap-0 max-[701px]:text-[10px] [&>span]:max-[701px]:hidden"
-        items={views
-          .filter(({ id }) => enabledViews.includes(id))
-          .map(({ id, label, icon: Icon }) => ({
-            value: id,
-            label,
-            icon: <Icon size={14} strokeWidth={1.6} aria-hidden="true" />,
-          }))}
-        value={view}
-        onValueChange={(value) => {
-          const mode = enabledViews.find((candidate) => candidate === value)
-          if (mode) onViewChange(mode)
-        }}
-      />
+      <div className="header-view-controls flex shrink-0 items-center gap-2 max-[701px]:gap-1">
+        <SegmentGroup
+          label="Workspace layout"
+          className="view-switch max-[701px]:gap-0 flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5 shadow-control"
+          itemClassName="flex h-8 min-w-22 items-center justify-center gap-2 rounded-control border border-transparent px-3 text-[11px] text-muted hover:bg-soft hover:text-ink max-[701px]:min-w-0 max-[701px]:w-8 max-[701px]:px-2 max-[701px]:gap-0 max-[701px]:text-[10px] [&>span]:max-[701px]:hidden"
+          items={views
+            .filter(({ id }) => enabledViews.includes(id))
+            .map(({ id, label, icon: Icon }) => ({
+              value: id,
+              label,
+              icon: <Icon size={14} strokeWidth={1.6} aria-hidden="true" />,
+            }))}
+          value={view}
+          onValueChange={(value) => {
+            const mode = enabledViews.find((candidate) => candidate === value)
+            if (mode) onViewChange(mode)
+          }}
+        />
+        <div className="h-4 w-px bg-line" aria-hidden="true" />
+        <Tooltip content="Enter Zen mode">
+          <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
+            <Scan size={16} />
+          </button>
+        </Tooltip>
+      </div>
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
         <Tooltip content={`Find a terminal (${searchShortcut})`}>
           <button
@@ -98,11 +106,6 @@ export const WorkspaceHeader = ({
             <kbd className="mb-[-2px] ml-3 min-h-0 border-0 bg-transparent p-0 text-[9px] text-muted opacity-70 max-[701px]:hidden">
               {searchShortcut}
             </kbd>
-          </button>
-        </Tooltip>
-        <Tooltip content="Enter Zen mode">
-          <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
-            <Scan size={16} />
           </button>
         </Tooltip>
         <Tooltip
