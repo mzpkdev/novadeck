@@ -109,7 +109,7 @@ export const Terminal = ({
   const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
-  const toggleView = onFlyTo ?? onFocus ?? windowed?.onOpen
+  const headerDoubleAction = onFlyTo ?? windowed?.onOpen
   useEffect(() => {
     if (!focusInput || !commandInput.current) return
     commandInput.current.focus({ preventScroll: true })
@@ -156,10 +156,10 @@ export const Terminal = ({
               onBeginRename()
               return
             }
-            if (!toggleView) return
+            if (!headerDoubleAction) return
             event.preventDefault()
             event.stopPropagation()
-            toggleView()
+            headerDoubleAction()
           }}
           onPointerDown={(event) => {
             if (event.pointerType !== "touch") return
@@ -213,11 +213,12 @@ export const Terminal = ({
             )
               return
             headerTap.current = null
+            if (!press.rename && !headerDoubleAction) return
             ignoreDoubleClickUntil.current = performance.now() + 500
             event.preventDefault()
             event.stopPropagation()
             if (press.rename) onBeginRename()
-            else toggleView?.()
+            else headerDoubleAction?.()
           }}
         >
           <div className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">

@@ -62,7 +62,7 @@ export const WorkspaceHeader = ({
       hidden={hidden}
       inert={hidden}
       aria-hidden={hidden}
-      className="app-header max-[1001px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+      className="app-header max-[1001px]:gap-3 max-[701px]:h-15 max-[701px]:px-3 max-[701px]:gap-2 grid h-16 shrink-0 items-center gap-6 border-b border-line bg-paper px-4 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
     >
       <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
         <Link
@@ -79,7 +79,7 @@ export const WorkspaceHeader = ({
         </Link>
         <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
       </div>
-      <div className="header-view-controls flex shrink-0 items-center gap-2 max-[701px]:gap-1">
+      <div className="header-view-controls relative flex shrink-0 items-center">
         <SegmentGroup
           label="Workspace layout"
           tooltips={iconOnly}
@@ -98,12 +98,14 @@ export const WorkspaceHeader = ({
             if (mode) onViewChange(mode)
           }}
         />
-        <div className="h-4 w-px bg-line" aria-hidden="true" />
-        <Tooltip content={`Zen · ${workspaceShortcutBindings().zen.display.join(" ")}`}>
-          <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
-            <Scan size={16} />
-          </button>
-        </Tooltip>
+        <div className="absolute left-[calc(100%+0.5rem)] flex items-center gap-2 max-[701px]:left-[calc(100%+0.25rem)] max-[701px]:gap-1">
+          <div className="h-4 w-px bg-line" aria-hidden="true" />
+          <Tooltip content={`Zen · ${workspaceShortcutBindings().zen.display.join(" ")}`}>
+            <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
+              <Scan size={16} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
         <Tooltip content={`Search · ${searchShortcut}`} disabled={!iconOnly}>

@@ -50,6 +50,26 @@ export const TerminalRenameInput = ({
     }
   })
 
+  useLayoutEffect(() => {
+    const field = input.current
+    if (!autoFocus || !field) return
+    const restoreSelection = (): void => {
+      if (
+        focus.current.request !== request ||
+        focus.current.interacted ||
+        document.activeElement !== field ||
+        value !== name ||
+        (field.selectionStart === 0 && field.selectionEnd === field.value.length)
+      )
+        return
+      // Replacing Grid's draggable heading can make Chrome finish the original
+      // double-click selection against the new input and collapse its range.
+      field.select()
+    }
+    document.addEventListener("selectionchange", restoreSelection)
+    return () => document.removeEventListener("selectionchange", restoreSelection)
+  }, [autoFocus, name, request, value])
+
   return (
     <input
       ref={input}

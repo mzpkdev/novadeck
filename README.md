@@ -42,6 +42,8 @@ compact: 600×400 in Canvas and compact column width in Grid, with no placement 
 
 In Grid, selecting a terminal from its tab smoothly scrolls it into view. With
 reduced motion enabled, it scrolls immediately.
+Double-clicking or double-tapping a Grid terminal header outside its name has no
+effect; use the header's arrow to open that terminal in Focus.
 
 Use the eye on a terminal tab to hide it from Grid and Canvas without closing it.
 Hidden tabs stay in the list with a faded label. While selected, a hidden terminal
