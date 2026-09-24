@@ -16,6 +16,7 @@ import { useEffect, useRef } from "react"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session, WindowedView } from "../model/types"
+import { workspaceShortcutBindings } from "../shortcuts"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 export type MinimizeControls = {
@@ -96,7 +97,7 @@ export const Terminal = ({
   const ResizeIcon =
     resizeView === "grid" ? (large ? FoldHorizontal : UnfoldHorizontal) : large ? Shrink : Scaling
   const Heading = compact ? "h2" : "h1"
-  const focusHint = active ? " · F" : ""
+  const focusHint = active ? ` · ${workspaceShortcutBindings().focus.display.join(" ")}` : ""
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const input = draft
   const setInput = onDraftChange

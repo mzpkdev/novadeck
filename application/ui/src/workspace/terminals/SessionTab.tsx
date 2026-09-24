@@ -3,6 +3,7 @@ import { Check, Eye, EyeOff, Pencil, Terminal as TerminalIcon, X } from "lucide-
 
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { Session } from "../model/types"
+import { workspaceShortcutBindings } from "../shortcuts"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
@@ -114,7 +115,13 @@ export const SessionTab = ({
                 </button>
               </Tooltip>
             ) : (
-              <Tooltip content={selected ? "Rename · F2" : "Rename"}>
+              <Tooltip
+                content={
+                  selected
+                    ? `Rename · ${workspaceShortcutBindings().rename.display.join(" ")}`
+                    : "Rename"
+                }
+              >
                 <button
                   className={actionClasses}
                   aria-label={`Rename ${session.name}`}

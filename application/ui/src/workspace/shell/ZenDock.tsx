@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react"
 
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { ViewMode } from "../model/types"
+import { workspaceShortcutBindings } from "../shortcuts"
 
 const views = [
   { id: "focus", label: "Focus", icon: PanelLeft },
@@ -53,7 +54,9 @@ export const ZenDock = ({
       role="group"
       aria-label="Zen controls"
     >
-      <Tooltip content="New terminal · T">
+      <Tooltip
+        content={`New terminal · ${workspaceShortcutBindings().newTerminal.display.join(" ")}`}
+      >
         <button
           ref={create}
           className="zen-create icon-button"

@@ -908,7 +908,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
         return (
           <ToggleGroupItem
             key={id}
-            tooltip={id === "terminals" ? "Terminals · B" : label}
+            tooltip={
+              id === "terminals"
+                ? `Terminals · ${workspaceShortcutBindings().terminals.display.join(" ")}`
+                : label
+            }
             value={id}
             id={`${mobile ? "mobile-" : ""}${id}-toggle`}
             className={`icon-button border ${activePanel ? "active border-line bg-paper text-ink shadow-control" : "border-transparent"}`}
@@ -1020,7 +1024,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   <Plus size={14} className="shrink-0" />
                   <span className="min-w-0 truncate">Terminal</span>
                   <kbd className="mb-[-2px] ml-auto min-h-0 shrink-0 whitespace-nowrap border-0 bg-transparent p-0 text-[9px] text-muted opacity-70">
-                    {shortcutBindings().newTerminal.display.join(" ")}
+                    {workspaceShortcutBindings().newTerminal.display.join(" ")}
                   </kbd>
                 </button>
                 <SessionList
