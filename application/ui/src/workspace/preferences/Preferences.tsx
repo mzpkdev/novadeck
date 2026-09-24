@@ -77,7 +77,7 @@ export const Preferences = ({
       label="Preferences"
       backdropClassName={`${motion.backdrop} fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]`}
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center"
-      className={`${motion.dialog} flex max-h-[calc(100dvh-32px)] w-[min(480px,calc(100vw-32px))] flex-col overflow-visible rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4`}
+      className={`${motion.dialog} flex h-[75dvh] w-[min(480px,calc(100vw-32px))] flex-col overflow-visible rounded-popover border border-line-strong bg-paper p-5 text-ink shadow-modal max-[360px]:w-[calc(100vw-24px)] max-[360px]:p-4`}
     >
       <div className="preferences-heading flex shrink-0 min-h-[30px] items-center justify-between gap-4">
         <h2 id="preferences-title" className="m-0 text-[14px] font-medium tracking-[-0.2px]">
@@ -87,7 +87,7 @@ export const Preferences = ({
           <X size={17} />
         </button>
       </div>
-      <Tabs value={tab} onValueChange={changeTab} className="flex min-h-0 flex-col">
+      <Tabs value={tab} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
         <TabList
           className="preferences-tabs mt-4.5 flex shrink-0 gap-4 border-b border-line"
           label="Preference sections"
@@ -104,7 +104,6 @@ export const Preferences = ({
         </TabList>
         <div ref={panels} className="preferences-panels grid min-h-0 overflow-y-auto">
           <TabPanel
-            preserveHeight
             value="general"
             className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
@@ -202,7 +201,6 @@ export const Preferences = ({
             </fieldset>
           </TabPanel>
           <TabPanel
-            preserveHeight
             value="shortcuts"
             className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
