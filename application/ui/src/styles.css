@@ -223,7 +223,12 @@
 .terminal-grid .react-resizable-handle {
   @apply size-7 text-muted;
   opacity: 0.35;
+  user-select: none;
   transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.terminal-grid:has(.grid-terminal.resizing),
+.terminal-grid:has(.grid-terminal.resizing) * {
+  user-select: none;
 }
 .terminal-grid .grid-terminal.minimized .react-resizable-handle {
   width: 16px;

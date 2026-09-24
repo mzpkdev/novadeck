@@ -732,6 +732,15 @@ describe("novadeck. workspace", () => {
       await interact("click", within(terminal).getByRole("button", { name: "Focus Dev server" }))
       expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
     })
+
+    it("prevents native text selection when a Grid resize starts", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const terminal = screen.getByRole("region", { name: "Dev server terminal" })
+      const handle = terminal.closest(".grid-terminal")!.querySelector(".react-resizable-handle")!
+
+      expect(fireEvent.mouseDown(handle)).toBe(false)
+    })
   })
   context("when both terminal names are visible", () => {
     it("shares a draft between sidebar and header and cancels both with Escape", async () => {
