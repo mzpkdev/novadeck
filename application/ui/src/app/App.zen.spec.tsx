@@ -54,6 +54,8 @@ describe("Zen workspace", () => {
       if (reveal) await click(reveal)
       await click(within(dock).getByRole("button", { name: "New terminal" }))
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toBeVisible()
+      const reopen = within(dock).queryByRole("button", { name: "Show Zen controls" })
+      if (reopen) await click(reopen)
       await click(within(dock).getByRole("button", { name: "Exit Zen" }))
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
     })
@@ -112,11 +114,18 @@ describe("Zen workspace", () => {
       const dock = screen.getByRole("group", { name: "Zen controls" })
       await click(within(dock).getByRole("button", { name: "New terminal" }))
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toBeVisible()
+      const firstName = screen.getByRole("textbox", { name: "Rename Terminal 07" })
+      expect(firstName).toHaveFocus()
       await act(async () => {
-        fireEvent.keyDown(document.body, { key: "Escape" })
+        fireEvent.keyDown(firstName, { key: "Escape" })
       })
       await click(within(dock).getByRole("button", { name: "New terminal" }))
       expect(screen.getByRole("textbox", { name: "Command for Terminal 08" })).toBeVisible()
+      await act(async () => {
+        fireEvent.keyDown(screen.getByRole("textbox", { name: "Rename Terminal 08" }), {
+          key: "Escape",
+        })
+      })
       await click(within(dock).getByRole("button", { name: "Show Zen controls" }))
       await click(within(dock).getByRole("button", { name: "Focus view" }))
       await click(screen.getByRole("combobox", { name: "Switch terminal" }))

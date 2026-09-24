@@ -9,7 +9,7 @@ export type SelectOption = { label: string; value: string; description?: string 
 
 export type SelectProps = {
   label: string
-  variant?: "field" | "title"
+  variant?: "field" | "icon"
   items: SelectOption[]
   value: string
   onValueChange?: (value: string) => void
@@ -45,8 +45,8 @@ export const Select = ({
       open={open}
       onOpenChange={(details) => onOpenChange?.(details.open)}
       positioning={{
-        placement: variant === "title" ? "bottom-start" : "bottom-end",
-        sameWidth: variant !== "title",
+        placement: variant === "icon" ? "bottom-start" : "bottom-end",
+        sameWidth: variant !== "icon",
         gutter: 4,
         strategy: "fixed",
         overflowPadding: 12,
@@ -54,18 +54,18 @@ export const Select = ({
       lazyMount
       unmountOnExit
     >
-      <ArkSelect.Label className={variant === "title" ? "sr-only" : undefined}>
+      <ArkSelect.Label className={variant === "icon" ? "sr-only" : undefined}>
         {label}
       </ArkSelect.Label>
       <ArkSelect.Control className="min-w-0">
         <ArkSelect.Trigger
           className={
-            variant === "title"
-              ? "flex min-h-8 max-w-full items-center gap-2 rounded-control px-2 text-xs font-medium text-ink hover:bg-shell data-[state=open]:bg-shell"
+            variant === "icon"
+              ? "flex size-8 shrink-0 items-center justify-center rounded-control text-ink hover:bg-shell data-[state=open]:bg-shell"
               : "flex min-h-8 min-w-30 items-center justify-between gap-4 rounded-control border border-line bg-paper px-2.5 py-1.75 text-[11px] text-ink shadow-control hover:bg-shell data-[state=open]:border-line-strong"
           }
         >
-          <ArkSelect.ValueText className="truncate" />
+          <ArkSelect.ValueText className={variant === "icon" ? "sr-only" : "truncate"} />
           <ArkSelect.Indicator className="text-muted">
             <ChevronDown size={13} aria-hidden="true" />
           </ArkSelect.Indicator>
@@ -77,7 +77,7 @@ export const Select = ({
           <ArkSelect.Content
             className={cn(
               "z-50 max-h-[min(240px,var(--available-height))] overflow-y-auto rounded-control border border-line bg-paper p-1 text-[11px] text-ink shadow-floating focus-visible:outline-none",
-              variant === "title" && "min-w-48 max-w-[calc(100vw-24px)]",
+              variant === "icon" && "min-w-48 max-w-[calc(100vw-24px)]",
             )}
           >
             {collection.items.map((item) => (

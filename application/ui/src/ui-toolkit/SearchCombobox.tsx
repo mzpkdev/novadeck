@@ -88,10 +88,7 @@ export const SearchCombobox = ({
       </Combobox.Control>
       <Combobox.Content
         aria-label={resultsLabel}
-        className={cn(
-          "flex max-h-[50vh] flex-col gap-1 overflow-y-auto p-2 [scrollbar-width:thin] [scrollbar-color:var(--color-line)_transparent]",
-          contentClassName,
-        )}
+        className={cn("flex max-h-[50vh] flex-col gap-1 overflow-y-auto p-2", contentClassName)}
       >
         {items.map((item) => (
           <Combobox.Item item={item} key={item.value} className={searchResultClasses}>

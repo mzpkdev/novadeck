@@ -33,6 +33,16 @@
 @layer base {
   * {
     box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: var(--spacing);
+    height: var(--spacing);
+  }
+  *::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-control);
+    background: var(--color-line);
   }
   body {
     @apply m-0 bg-paper font-sans text-ink antialiased;

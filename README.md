@@ -8,7 +8,7 @@ canvas. Keep related work together and switch between sessions from the sidebar.
 In Canvas, scroll to zoom in or out, and drag the background or an inactive terminal
 to pan. Click a terminal to activate it, then select its text, scroll its output,
 or drag its header to move it.
-Double-click or double-tap a terminal header to smoothly center and zoom that terminal
+Double-click or double-tap a terminal header outside its name to smoothly center and zoom that terminal
 to fit the canvas viewport. Repeat the gesture on the same terminal to return to the
 previous camera position and zoom. Manual pan or zoom (including keyboard shortcuts),
 Fit all, sidebar camera navigation, leaving Canvas, or switching sessions clears that
@@ -21,6 +21,12 @@ immediately in any view, with or without Zen. Focus shows it right away. Grid us
 an available slot and scrolls it into view. Canvas chooses a nearby free position,
 preferring the current viewport, and pans only as needed to reveal it without changing
 zoom. Terminals can be moved or resized immediately; there is no placement step.
+The new terminal opens in rename mode with its name selected: in the sidebar when
+visible, or in the terminal header otherwise. Enter or clicking away saves the name;
+Escape keeps the original name. In any view, double-click or double-tap a
+terminal name to rename it directly. The header and sidebar share rename mode and
+the live draft. Move between either name field to continue editing; saving or
+canceling ends the edit in both places.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent
@@ -55,7 +61,7 @@ it with Enter or Space. Clicking outside, leaving with keyboard focus, or pressi
 Canvas navigation uses gestures and
 keyboard shortcuts: +/− to zoom and 0 to fit all terminals.
 Focus becomes an edge-to-edge terminal, while Grid and Canvas gain the available space.
-In Focus, click the terminal title to switch between terminals in the current session;
+In Focus, click the chevron beside the terminal name to switch between terminals in the current session;
 the list marks the active terminal and shows process status. This also works outside Zen.
 Terminal names stay visible; header actions appear on hover or keyboard focus on desktop
 and stay visible on touch devices. Search and terminal shortcuts remain available.
@@ -95,7 +101,7 @@ Escape before workspace selection.
 Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
 pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
 The new-terminal shortcut creates a terminal immediately and opens the desktop Terminals sidebar
-when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. In Focus, it also focuses the command input. These shortcuts are available in the desktop app; browsers may
+when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. The name editor receives focus. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
 shows the bindings for the current platform.
 

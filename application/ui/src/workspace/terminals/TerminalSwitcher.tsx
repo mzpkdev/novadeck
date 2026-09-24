@@ -53,7 +53,7 @@ export const TerminalSwitcher = ({
         <div
           role="listbox"
           aria-label="Recent terminals"
-          className="flex min-h-0 max-h-[50vh] flex-col gap-1 overflow-y-auto p-2 [scrollbar-color:var(--color-line)_transparent] [scrollbar-width:thin]"
+          className="flex min-h-0 max-h-[50vh] flex-col gap-1 overflow-y-auto p-2"
         >
           {sessions.map((session) => {
             const current = session.id === selected

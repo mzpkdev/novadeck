@@ -8,16 +8,18 @@ import {
   GitBranch,
   Minus,
   Plus,
+  Pencil,
   Terminal as TerminalIcon,
   X,
 } from "lucide-react"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Select } from "../../ui-toolkit/Select"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session, WindowedView } from "../model/types"
 import { shortcutBindings } from "../shortcuts"
+import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 export type MinimizeControls = {
   minimized: boolean
@@ -52,6 +54,12 @@ export const Terminal = ({
   onInputFocused,
   active = false,
   fresh = false,
+  rename,
+  showRenameAction = false,
+  onBeginRename,
+  onRenameDraft,
+  onRenameSave,
+  onRenameCancel,
 }: {
   session: Session
   projectName: string
@@ -76,6 +84,12 @@ export const Terminal = ({
   onInputFocused?: () => void
   active?: boolean
   fresh?: boolean
+  rename: TerminalRename | null
+  showRenameAction?: boolean
+  onBeginRename: () => void
+  onRenameDraft: (value: string) => void
+  onRenameSave: () => void
+  onRenameCancel: () => void
 }): React.JSX.Element => {
   const resizeLabel = large
     ? "Make compact"
@@ -93,9 +107,11 @@ export const Terminal = ({
   const previousOutput = useRef({ length: entries.length, cleared })
   const output = useRef<HTMLDivElement>(null)
   const commandInput = useRef<HTMLInputElement>(null)
-  const headerPress = useRef<{ x: number; y: number; time: number } | null>(null)
-  const headerTap = useRef<{ x: number; y: number; time: number } | null>(null)
+  const headerPress = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
+  const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
+  const renaming = Boolean(rename)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
   const toggleView = onFlyTo ?? onFocus ?? windowed?.onOpen
   useEffect(() => {
     if (!focusInput || !commandInput.current) return
@@ -134,9 +150,15 @@ export const Terminal = ({
           onDoubleClick={(event) => {
             if (
               performance.now() < ignoreDoubleClickUntil.current ||
-              (event.target as Element).closest("button")
+              (event.target as Element).closest("button, input")
             )
               return
+            if ((event.target as Element).closest("[data-terminal-name]")) {
+              event.preventDefault()
+              event.stopPropagation()
+              onBeginRename()
+              return
+            }
             if (!toggleView) return
             event.preventDefault()
             event.stopPropagation()
@@ -144,12 +166,17 @@ export const Terminal = ({
           }}
           onPointerDown={(event) => {
             if (event.pointerType !== "touch") return
-            if (!event.isPrimary || (event.target as Element).closest("button")) {
+            if (!event.isPrimary || (event.target as Element).closest("button, input")) {
               headerPress.current = null
               headerTap.current = null
               return
             }
-            headerPress.current = { x: event.clientX, y: event.clientY, time: event.timeStamp }
+            headerPress.current = {
+              x: event.clientX,
+              y: event.clientY,
+              time: event.timeStamp,
+              rename: Boolean((event.target as Element).closest("[data-terminal-name]")),
+            }
           }}
           onPointerMove={(event) => {
             const press = headerPress.current
@@ -175,10 +202,15 @@ export const Terminal = ({
               return
             }
             const previous = headerTap.current
-            headerTap.current = { x: event.clientX, y: event.clientY, time: event.timeStamp }
+            headerTap.current = {
+              ...press,
+              x: event.clientX,
+              y: event.clientY,
+              time: event.timeStamp,
+            }
             if (
-              !toggleView ||
               !previous ||
+              previous.rename !== press.rename ||
               event.timeStamp - previous.time > 350 ||
               Math.hypot(event.clientX - previous.x, event.clientY - previous.y) > 24
             )
@@ -187,17 +219,59 @@ export const Terminal = ({
             ignoreDoubleClickUntil.current = performance.now() + 500
             event.preventDefault()
             event.stopPropagation()
-            toggleView()
+            if (press.rename) onBeginRename()
+            else toggleView?.()
           }}
         >
           <div className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">
             <TerminalIcon size={14} strokeWidth={1.5} />
-            {!compact && switcher ? (
-              <>
-                <Heading className="sr-only">{session.name}</Heading>
+            <>
+              <Heading hidden={renaming} data-terminal-name="">
+                {session.name}
+              </Heading>
+              {rename && (
+                <TerminalRenameInput
+                  id={session.id}
+                  name={session.name}
+                  value={rename.value}
+                  request={rename.request}
+                  autoFocus={rename.origin === "header"}
+                  onChange={onRenameDraft}
+                  onSave={onRenameSave}
+                  onCancel={onRenameCancel}
+                  className="w-full min-w-0 border-0 bg-transparent p-0 text-xs font-medium text-ink outline-none nodrag nopan"
+                />
+              )}
+            </>
+            {!compact && switcher && (
+              <span
+                className="shrink-0"
+                onPointerDownCapture={(event) => {
+                  if (
+                    event.button !== 0 ||
+                    !(event.target as Element).closest('[data-scope="select"][data-part="trigger"]')
+                  )
+                    return
+                  // Saving on pointer-down can move the trigger before the click arrives.
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setSwitcherOpen((open) => !open)
+                }}
+                onClickCapture={(event) => {
+                  if (
+                    event.detail === 0 ||
+                    !(event.target as Element).closest('[data-scope="select"][data-part="trigger"]')
+                  )
+                    return
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+              >
                 <Select
                   label="Switch terminal"
-                  variant="title"
+                  variant="icon"
+                  open={switcherOpen}
+                  onOpenChange={setSwitcherOpen}
                   value={session.id}
                   items={switcher.sessions.map((item) => ({
                     value: item.id,
@@ -211,12 +285,24 @@ export const Terminal = ({
                   }))}
                   onValueChange={switcher.onSelect}
                 />
-              </>
-            ) : (
-              <Heading>{session.name}</Heading>
+              </span>
             )}
           </div>
           <span className="terminal-actions flex shrink-0 items-center gap-1">
+            {showRenameAction && !renaming && (
+              <Tooltip content="Rename">
+                <button
+                  className={`${headerActionClasses} terminal-view-action nodrag nopan`}
+                  aria-label={`Rename ${session.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onBeginRename()
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
+              </Tooltip>
+            )}
             {minimize && (
               <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
                 <button
@@ -293,7 +379,7 @@ export const Terminal = ({
       </div>
       <div
         ref={output}
-        className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [scrollbar-width:thin] [scrollbar-color:var(--color-line)_transparent] [&_strong]:font-semibold nodrag nopan"
+        className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [&_strong]:font-semibold nodrag nopan"
         hidden={minimize?.minimized && !minimize.clipContent}
         aria-hidden={minimize?.minimized}
         inert={minimize?.minimized}

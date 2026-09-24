@@ -38,6 +38,7 @@ import type {
   CanvasLayout,
   GridLayouts,
   WorkspaceSession,
+  WorkspaceTarget,
 } from "../workspace/model/types"
 import { Preferences } from "../workspace/preferences/Preferences"
 import {
@@ -54,6 +55,7 @@ import { SessionsPanel } from "../workspace/sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../workspace/sidebar/SidebarPanel"
 import { SessionList } from "../workspace/terminals/SessionList"
 import { Terminal, type MinimizeControls } from "../workspace/terminals/Terminal"
+import type { TerminalRename } from "../workspace/terminals/TerminalRenameInput"
 import { TerminalSwitcher } from "../workspace/terminals/TerminalSwitcher"
 import { routeUrl } from "./routing"
 import { useRouteDialog } from "./useRouteDialog"
@@ -76,6 +78,16 @@ const readWindowedView = (): WindowedView => {
   }
 }
 const emptyEntries: Entry[] = []
+type RenameSession = {
+  context: string
+  id: string
+  original: string
+  draft: string
+  origin: "sidebar" | "header"
+  view: ViewMode
+  target: WorkspaceTarget
+  request: number
+}
 const currentTimestamp = (): number => Date.now()
 const newWorkspaceSession = (
   terminals: Session[],
@@ -175,6 +187,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const sidebarPanel = route.panel
   const setSidebarPanel = (panel: "terminals" | "sessions"): void => go({ panel })
   const [created, setCreated] = useState<{ context: string; id: string } | null>(null)
+  const [renameSession, setRenameSession] = useState<RenameSession | null>(null)
+  const renameRequest = useRef(0)
   const [revealCanvas, setRevealCanvas] = useState(false)
   const [keyboardFocus, setKeyboardFocus] = useState<{ id: string; view: ViewMode } | null>(null)
   const [recentSwitcher, setRecentSwitcher] = useState<{
@@ -198,6 +212,48 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const sidebarVisible = !zen && (desktop ? !sidebarCollapsed : sidebar)
   const context = `${projectId}/${workspaceSessionId}`
+  const activeRename = renameSession?.context === context ? renameSession : null
+  const renameView: TerminalRename | null = activeRename
+    ? {
+        id: activeRename.id,
+        value: activeRename.draft,
+        request: activeRename.request,
+        origin: activeRename.origin,
+      }
+    : null
+  const finishRename = useCallback(
+    (rename: RenameSession, save: boolean): void => {
+      const name = rename.draft.trim()
+      if (save && name && name !== rename.original)
+        dispatch({ type: "terminal/rename", target: rename.target, terminalId: rename.id, name })
+      setRenameSession((previous) => (previous?.request === rename.request ? null : previous))
+    },
+    [dispatch, setRenameSession],
+  )
+  const startRename = (session: Session, origin: RenameSession["origin"]): void => {
+    if (activeRename?.id === session.id) return
+    if (activeRename) finishRename(activeRename, true)
+    setRenameSession({
+      context,
+      id: session.id,
+      original: session.name,
+      draft: session.name,
+      origin,
+      view,
+      target,
+      request: ++renameRequest.current,
+    })
+  }
+  const changeRenameDraft = (id: string, draft: string): void =>
+    setRenameSession((previous) =>
+      previous?.context === context && previous.id === id ? { ...previous, draft } : previous,
+    )
+  const saveRename = (id: string): void => {
+    if (activeRename?.id === id) finishRename(activeRename, true)
+  }
+  const cancelRename = (id: string): void => {
+    if (activeRename?.id === id) finishRename(activeRename, false)
+  }
   const [focusPreview, setFocusPreview] = useState<{ context: string; id: string } | null>(null)
   const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
   const active = sessions.find((session) => session.id === displayed) ?? sessions[0]
@@ -247,6 +303,35 @@ export const WorkspaceApp = (): React.JSX.Element => {
     const timeout = window.setTimeout(() => setCreated(null), 900)
     return () => window.clearTimeout(timeout)
   }, [created])
+  useEffect(() => {
+    if (!renameSession) return
+    if (
+      renameSession.context === context &&
+      renameSession.view === view &&
+      sessions.some((session) => session.id === renameSession.id)
+    )
+      return
+    let canceled = false
+    queueMicrotask(() => {
+      if (!canceled) finishRename(renameSession, true)
+    })
+    return () => {
+      canceled = true
+    }
+  }, [context, finishRename, renameSession, sessions, view])
+  const lastSelectedForRename = useRef(selected)
+  useEffect(() => {
+    const changed = lastSelectedForRename.current !== selected
+    lastSelectedForRename.current = selected
+    if (!changed || !activeRename || activeRename.id === selected) return
+    let canceled = false
+    queueMicrotask(() => {
+      if (!canceled) finishRename(activeRename, true)
+    })
+    return () => {
+      canceled = true
+    }
+  }, [activeRename, finishRename, selected])
   const [freshSession, setFreshSession] = useState<string | null>(null)
   const [previousPresentation, setPreviousPresentation] = useState({ presentation, context })
   if (previousPresentation.presentation !== presentation) {
@@ -366,19 +451,29 @@ export const WorkspaceApp = (): React.JSX.Element => {
   }
   const add = (fromKeyboard = false): void => {
     const session = createMockTerminal(nextTerminalNumber, project.directory)
+    if (activeRename) finishRename(activeRename, true)
+    const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
     setCreated({ context, id: session.id })
+    setRenameSession({
+      context,
+      id: session.id,
+      original: session.name,
+      draft: session.name,
+      origin,
+      view,
+      target,
+      request: ++renameRequest.current,
+    })
     const actions: Parameters<typeof navigateWorkspace>[0] = [
       { type: "terminal/add", target, session },
     ]
-    if (fromKeyboard && view === "focus") setKeyboardFocus({ id: session.id, view })
     navigateWorkspace(actions, { panel: "terminals" })
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     if (fromKeyboard) setSidebarCollapsed(false)
     setSidebar(false)
   }
-  const rename = (terminalId: string, name: string): void =>
-    dispatch({ type: "terminal/rename", target, terminalId, name })
   const close = (terminalId: string): void => {
+    if (activeRename?.id === terminalId) finishRename(activeRename, false)
     navigateWorkspace([{ type: "terminal/close", target, terminalId }], {}, true)
     if (selected === terminalId && view !== "canvas")
       setNavigation((value) => ({ count: value.count + 1, fit: false }))
@@ -408,6 +503,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
       session={session}
       active={selected === session.id}
       fresh={created?.context === context && created.id === session.id}
+      rename={renameView?.id === session.id ? renameView : null}
+      showRenameAction={!sidebarVisible || sidebarPanel !== "terminals"}
+      onBeginRename={() => startRename(session, "header")}
+      onRenameDraft={(draft) => changeRenameDraft(session.id, draft)}
+      onRenameSave={() => saveRename(session.id)}
+      onRenameCancel={() => cancelRename(session.id)}
       projectName={project.name}
       entries={entries[session.id] ?? emptyEntries}
       draft={drafts[session.id] ?? ""}
@@ -467,7 +568,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
         route.dialog ||
         visibleRecentSwitcher ||
         (event.target instanceof Element &&
-          Boolean(event.target.closest('.zen-dock[data-open="true"]')))
+          Boolean(
+            event.target.closest('.zen-dock[data-open="true"], input[aria-label^="Rename "]'),
+          ))
       )
         return
       if (
@@ -805,9 +908,16 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   sessions={ordered}
                   selected={selected}
                   hidden={hidden}
+                  rename={renameView}
                   onVisibilityChange={setVisibility}
                   onSelect={select}
-                  onRename={rename}
+                  onBeginRename={(id) => {
+                    const session = sessions.find((item) => item.id === id)
+                    if (session) startRename(session, "sidebar")
+                  }}
+                  onRenameDraft={changeRenameDraft}
+                  onRenameSave={saveRename}
+                  onRenameCancel={cancelRename}
                   onClose={close}
                   onReorder={setTabOrder}
                 />
