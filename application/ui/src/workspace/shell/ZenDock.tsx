@@ -53,7 +53,7 @@ export const ZenDock = ({
       role="group"
       aria-label="Zen controls"
     >
-      <Tooltip content="New terminal">
+      <Tooltip content="New terminal · T">
         <button
           ref={create}
           className="zen-create icon-button"

@@ -86,6 +86,21 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 | Toggle session sidebar                            | `Cmd+Shift+2`    | `Ctrl+Shift+2`     |
 | Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
 
+When navigating the workspace outside terminal input, text editors, and dialogs,
+these simpler keys work in both normal and Zen mode:
+
+| Key  | Action                                            |
+| ---- | ------------------------------------------------- |
+| `T`  | New terminal                                      |
+| `/`  | Find a terminal                                   |
+| `F`  | Toggle Focus and the previous Grid or Canvas view |
+| `Z`  | Toggle Zen                                        |
+| `B`  | Toggle terminal sidebar (leaves Zen to show it)   |
+| `F2` | Rename the active terminal                        |
+
+The modifier shortcuts above remain available from terminal input. Workspace keys
+never replace typing, editing, or dialog navigation.
+
 The new-session shortcut creates and selects an empty session in the current project
 and opens the Sessions sidebar.
 
@@ -98,14 +113,15 @@ Left and Right cycle through enabled views in Focus → Grid → Canvas order, w
 at either end and retaining the selected terminal.
 Escape first deselects the active terminal in any view, then hides the open sidebar
 on the next press. Further presses do nothing. Focus keeps the displayed terminal
-in place; clicking it activates it again. Dialogs and renaming handle
-Escape before workspace selection.
+in place; clicking it activates it again. Terminal input, editors, and dialogs
+retain Escape without changing workspace selection.
 Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
 pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
 The new-terminal shortcut creates a terminal immediately and opens the desktop Terminals sidebar
 when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. The name editor receives focus. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
-shows the bindings for the current platform.
+groups bindings into Anywhere and Workspace for the current platform. On the Canvas
+background, `+`/`−` zoom and `0` fits all terminals.
 
 ## Development
 

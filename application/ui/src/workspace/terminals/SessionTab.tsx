@@ -114,7 +114,7 @@ export const SessionTab = ({
                 </button>
               </Tooltip>
             ) : (
-              <Tooltip content="Rename">
+              <Tooltip content={selected ? "Rename · F2" : "Rename"}>
                 <button
                   className={actionClasses}
                   aria-label={`Rename ${session.name}`}

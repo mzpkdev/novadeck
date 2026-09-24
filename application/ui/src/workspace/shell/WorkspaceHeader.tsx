@@ -99,14 +99,14 @@ export const WorkspaceHeader = ({
           }}
         />
         <div className="h-4 w-px bg-line" aria-hidden="true" />
-        <Tooltip content="Zen">
+        <Tooltip content="Zen · Z">
           <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
             <Scan size={16} />
           </button>
         </Tooltip>
       </div>
       <div className="header-actions max-[1001px]:ml-0 max-[701px]:shrink-0 max-[701px]:gap-0 flex items-center justify-self-end gap-2">
-        <Tooltip content={`Search · ${searchShortcut}`} disabled={!iconOnly}>
+        <Tooltip content={`Search · / · ${searchShortcut}`} disabled={!iconOnly}>
           <button
             className="icon-button header-search w-auto gap-2 px-2.5 text-[11px] max-[701px]:w-8 max-[701px]:gap-0 max-[701px]:px-0"
             aria-label="Find a terminal"

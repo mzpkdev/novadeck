@@ -5,7 +5,7 @@ import { Dialog } from "../../ui-toolkit/Dialog"
 import { Select } from "../../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../../ui-toolkit/Tabs"
 import type { PreferencesValue } from "../model/types"
-import { shortcutBindings } from "../shortcuts"
+import { shortcutBindings, workspaceShortcutBindings } from "../shortcuts"
 import { viewModes } from "./preferences-storage"
 
 import motion from "../shell/ModalMotion.module.css"
@@ -39,7 +39,27 @@ export const Preferences = ({
     setOpenSelect(null)
     if (panels.current) panels.current.scrollTop = 0
   }
-  const shortcuts = Object.values(shortcutBindings())
+  const shortcutGroups = [
+    {
+      title: "Workspace",
+      description:
+        "When navigating the workspace, outside text inputs, editors, and dialogs. Works with Zen on or off.",
+      items: [
+        ...Object.values(workspaceShortcutBindings()),
+        { label: "Previous / next terminal", display: ["↑", "↓"] },
+        { label: "Previous / next view", display: ["←", "→"] },
+        { label: "Deselect, then hide sidebar", display: ["Esc"] },
+        { label: "Zoom in / out · Canvas background", display: ["+", "−"] },
+        { label: "Fit all · Canvas background", display: ["0"] },
+      ],
+    },
+    {
+      title: "Anywhere",
+      description:
+        "Modifier shortcuts also work from terminal input. Editors and dialogs keep their own controls.",
+      items: Object.values(shortcutBindings()),
+    },
+  ]
   return (
     <Dialog
       open={open}
@@ -186,23 +206,29 @@ export const Preferences = ({
             value="shortcuts"
             className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
-            <dl className="shortcut-list m-0 mt-4 grid gap-0">
-              {shortcuts.map(({ label, display }) => (
-                <div
-                  key={label}
-                  className="flex min-h-[46px] items-center justify-between gap-4 border-b border-line text-[12px]"
-                >
-                  <dt className="m-0">{label}</dt>
-                  <dd className="m-0 flex gap-1">
-                    {display.map((key) => (
-                      <kbd key={key} className="text-muted">
-                        {key}
-                      </kbd>
-                    ))}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            {shortcutGroups.map(({ title, description, items }) => (
+              <section key={title} className="mt-5" aria-label={`${title} shortcuts`}>
+                <h3 className="m-0 text-xs font-medium">{title}</h3>
+                <p className="mt-1 mb-2 text-[10px] leading-relaxed text-muted">{description}</p>
+                <dl className="shortcut-list m-0 grid gap-0">
+                  {items.map(({ label, display }) => (
+                    <div
+                      key={label}
+                      className="flex min-h-[46px] items-center justify-between gap-4 border-b border-line text-[12px]"
+                    >
+                      <dt className="m-0">{label}</dt>
+                      <dd className="m-0 flex shrink-0 gap-1">
+                        {display.map((key) => (
+                          <kbd key={key} className="text-muted">
+                            {key}
+                          </kbd>
+                        ))}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
           </TabPanel>
         </div>
       </Tabs>

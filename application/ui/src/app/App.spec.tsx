@@ -51,6 +51,12 @@ describe("novadeck. workspace", () => {
           const command = screen.getByRole("textbox", { name: "Command for Dev server" })
           command.focus()
           await interact("keyDown", command, { key: "Escape" })
+          expect(window.location.hash).toContain("terminal=02")
+          expect(command).toHaveFocus()
+          const surface = document.querySelector<HTMLElement>(
+            view === "Focus" ? ".focus-stage" : `.${view.toLowerCase()}-viewport`,
+          )!
+          await interact("keyDown", surface, { key: "Escape" })
           expect(new URLSearchParams(window.location.hash.split("?")[1]).get("terminal")).toBe("")
           expect(screen.getByRole("complementary")).toBeVisible()
           expect(command).not.toHaveFocus()
@@ -161,11 +167,19 @@ describe("novadeck. workspace", () => {
         const preferences = screen.getByRole("dialog", { name: "Preferences" })
         await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
         expect(
-          within(preferences).getByText("Toggle terminal sidebar").parentElement,
-        ).toHaveTextContent(`${mac ? "⌘" : "Ctrl"}Shift1`)
+          within(preferences)
+            .getAllByText("Toggle terminal sidebar")
+            .some((label) =>
+              label.parentElement?.textContent?.includes(`${mac ? "⌘" : "Ctrl"}Shift1`),
+            ),
+        ).toBe(true)
         expect(
-          within(preferences).getByText("Toggle session sidebar").parentElement,
-        ).toHaveTextContent(`${mac ? "⌘" : "Ctrl"}Shift2`)
+          within(preferences)
+            .getAllByText("Toggle session sidebar")
+            .some((label) =>
+              label.parentElement?.textContent?.includes(`${mac ? "⌘" : "Ctrl"}Shift2`),
+            ),
+        ).toBe(true)
         const route = window.location.hash
         await interact("keyDown", window, sessionsKey)
         expect(window.location.hash).toBe(route)
@@ -269,14 +283,61 @@ describe("novadeck. workspace", () => {
       expect(window.location.hash).toBe(searchRoute)
     })
 
+    it("uses single keys on the workspace while leaving command input keys alone", async () => {
+      render(<App />)
+      const command = screen.getByRole("textbox", { name: "Command for Checkout implementation" })
+      command.focus()
+      await act(async () => {
+        for (const key of ["t", "f", "z", "b", "F2", "/"]) fireEvent.keyDown(command, { key })
+      })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole("textbox", { name: "Rename Checkout implementation" }),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+      expect(screen.getByRole("complementary")).toBeVisible()
+
+      const surface = document.querySelector<HTMLElement>(".focus-stage")!
+      surface.focus()
+      await interact("keyDown", surface, { key: "T", shiftKey: true })
+      await interact("keyDown", surface, { key: "z", repeat: true })
+      expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("group", { name: "Zen controls" })).not.toBeInTheDocument()
+      await interact("keyDown", surface, { key: "f" })
+      expect(screen.getByRole("region", { name: "grid view" })).toBeVisible()
+      await interact("keyDown", window, { key: "f" })
+      expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+      await interact("keyDown", window, { key: "b" })
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
+      await interact("keyDown", window, { key: "b" })
+      expect(screen.getByRole("complementary")).toBeVisible()
+      await interact("keyDown", window, { key: "z" })
+      expect(screen.getByRole("group", { name: "Zen controls" })).toBeVisible()
+      await interact("keyDown", window, { key: "z" })
+      expect(screen.queryByRole("group", { name: "Zen controls" })).not.toBeInTheDocument()
+      await interact("keyDown", window, { key: "F2" })
+      const name = sidebarRenameInput("Checkout implementation")
+      expect(name).toHaveFocus()
+      await interact("keyDown", name, { key: "Escape" })
+      await interact("keyDown", window, { key: "t" })
+      const newName = sidebarRenameInput("Terminal 07")
+      expect(newName).toHaveFocus()
+      await interact("keyDown", newName, { key: "Escape" })
+      await interact("keyDown", window, { key: "/" })
+      expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
+    })
+
     it("selects from a focused Canvas node without moving it and disables camera arrows", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))
       const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="01"]')!
       const position = node.style.transform
+      node.focus()
       await interact("keyDown", node, { key: "ArrowDown" })
       expect(window.location.hash).toContain("terminal=02")
       expect(node.style.transform).toBe(position)
+      expect(document.querySelector<HTMLElement>('.react-flow__node[data-id="02"]')).toHaveFocus()
       const viewport = document.querySelector<HTMLElement>(".react-flow__viewport")!
       const camera = viewport.style.transform
       await act(async () => {
@@ -285,6 +346,24 @@ describe("novadeck. workspace", () => {
           expect(viewport.style.transform).toBe(camera)
         }
       })
+    })
+
+    it("moves focus to a hidden Canvas node when arrow selection previews it", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact(
+        "click",
+        screen.getByRole("button", { name: "Hide Dev server in Grid and Canvas" }),
+      )
+      const first = document.querySelector<HTMLElement>('.react-flow__node[data-id="01"]')!
+      first.focus()
+      await interact("keyDown", first, { key: "ArrowDown" })
+      expect(window.location.hash).toContain("terminal=02")
+      await waitFor(() =>
+        expect(
+          document.querySelector<HTMLElement>('.react-flow__node[data-id="02"]'),
+        ).toHaveFocus(),
+      )
     })
 
     it("keeps Ctrl+K available to the terminal and opens search with Ctrl+Shift+K", async () => {
@@ -500,10 +579,16 @@ describe("novadeck. workspace", () => {
         await interact("keyDown", window, { key: ",", metaKey: true })
         const preferences = await screen.findByRole("dialog", { name: "Preferences" })
         await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
-        const search = within(preferences).getByText("Find a terminal").parentElement!
-        const create = within(preferences).getByText("New terminal").parentElement!
-        expect(search).toHaveTextContent("⌘K")
-        expect(create).toHaveTextContent("⌘T")
+        expect(
+          within(preferences)
+            .getAllByText("Find a terminal")
+            .some((label) => label.parentElement?.textContent?.includes("⌘K")),
+        ).toBe(true)
+        expect(
+          within(preferences)
+            .getAllByText("New terminal")
+            .some((label) => label.parentElement?.textContent?.includes("⌘T")),
+        ).toBe(true)
       } finally {
         platform.mockRestore()
       }
@@ -1154,8 +1239,8 @@ describe("novadeck. workspace", () => {
     })
   })
 
-  context("when moving Canvas terminals with the keyboard", () => {
-    it("moves by the requested step without snapping the other axis", async () => {
+  context("when using arrows on Canvas terminals", () => {
+    it("does not move nodes with modified arrows", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))
       const node = screen
@@ -1163,9 +1248,8 @@ describe("novadeck. workspace", () => {
         .closest<HTMLElement>(".react-flow__node")!
       expect(node).toHaveStyle({ transform: "translate(80px,80px)" })
       await interact("keyDown", node, { key: "ArrowRight", ctrlKey: true })
-      expect(node).toHaveStyle({ transform: "translate(104px,80px)" })
       await interact("keyDown", node, { key: "ArrowDown", shiftKey: true })
-      expect(node).toHaveStyle({ transform: "translate(104px,176px)" })
+      expect(node).toHaveStyle({ transform: "translate(80px,80px)" })
     })
   })
 

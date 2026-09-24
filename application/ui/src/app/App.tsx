@@ -50,7 +50,13 @@ import { TerminalSearch } from "../workspace/search/TerminalSearch"
 import { WorkspaceHeader } from "../workspace/shell/WorkspaceHeader"
 import { useDesktop, WorkspacePanels } from "../workspace/shell/WorkspacePanels"
 import { ZenDock } from "../workspace/shell/ZenDock"
-import { matchesShortcut, shortcutBindings } from "../workspace/shortcuts"
+import {
+  matchesShortcut,
+  shortcutBindings,
+  workspaceOverlayOpen,
+  workspaceShortcutBindings,
+  workspaceShortcutTarget,
+} from "../workspace/shortcuts"
 import { SessionsPanel } from "../workspace/sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../workspace/sidebar/SidebarPanel"
 import { SessionList } from "../workspace/terminals/SessionList"
@@ -191,6 +197,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const renameRequest = useRef(0)
   const [revealCanvas, setRevealCanvas] = useState(false)
   const [keyboardFocus, setKeyboardFocus] = useState<{ id: string; view: ViewMode } | null>(null)
+  const [canvasKeyboardFocus, setCanvasKeyboardFocus] = useState<{
+    context: string
+    id: string
+    request: number
+  } | null>(null)
+  const canvasFocusRequest = useRef(0)
   const [recentSwitcher, setRecentSwitcher] = useState<{
     context: string
     ids: string[]
@@ -322,6 +334,19 @@ export const WorkspaceApp = (): React.JSX.Element => {
     return () => window.clearTimeout(timeout)
   }, [created])
   useEffect(() => {
+    if (!canvasKeyboardFocus) return
+    if (
+      canvasKeyboardFocus.context === context &&
+      view === "canvas" &&
+      canvasKeyboardFocus.id === selected
+    )
+      return
+    const request = canvasKeyboardFocus.request
+    queueMicrotask(() =>
+      setCanvasKeyboardFocus((previous) => (previous?.request === request ? null : previous)),
+    )
+  }, [canvasKeyboardFocus, context, selected, view])
+  useEffect(() => {
     if (!renameSession) return
     if (
       renameSession.context === context &&
@@ -408,6 +433,23 @@ export const WorkspaceApp = (): React.JSX.Element => {
       setSidebarCollapsed(false)
       setSidebar(true)
     }
+  }
+  const enterZen = (): void => {
+    if (zen) return
+    setZen({ sidebar, collapsed: sidebarCollapsed, panel: sidebarPanel })
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLButtonElement>(".zen-create")?.focus({ preventScroll: true }),
+    )
+  }
+  const exitZen = (): void => {
+    if (!zen) return
+    setSidebar(zen.sidebar)
+    setSidebarCollapsed(zen.collapsed)
+    setSidebarPanel(zen.panel)
+    setZen(null)
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLButtonElement>(".zen-enter")?.focus({ preventScroll: true }),
+    )
   }
   const switchProject = (next: Project): void => {
     if (next.id === projectId) return
@@ -591,16 +633,14 @@ export const WorkspaceApp = (): React.JSX.Element => {
         event.shiftKey ||
         route.dialog ||
         visibleRecentSwitcher ||
+        !workspaceShortcutTarget(event.target) ||
         (event.target instanceof Element &&
-          Boolean(
-            event.target.closest('.zen-dock[data-open="true"], input[aria-label^="Rename "]'),
-          ))
+          Boolean(event.target.closest('.zen-dock[data-open="true"]')))
       )
         return
       if (
-        document.querySelector(
-          '[role="dialog"]:not(.sidebar-drawer):not([aria-hidden="true"]), [role="menu"]:not([hidden]), [data-scope="select"][role="listbox"][data-state="open"], .session-tab.editing, .session-tab.dragging',
-        )
+        workspaceOverlayOpen() ||
+        document.querySelector(".session-tab.editing, .session-tab.dragging")
       )
         return
       if (!selected && !sidebarVisible) return
@@ -644,10 +684,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
         event.target instanceof Element && Boolean(event.target.closest(".view-switch"))
       if (
         !fromViewSwitch &&
-        event.target instanceof Element &&
-        event.target.closest(
-          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="menu"], [role="listbox"], [role="combobox"], [role="slider"], [role="separator"], [role="radiogroup"], [role="tablist"]',
-        )
+        (!workspaceShortcutTarget(event.target) ||
+          (event.target instanceof Element &&
+            Boolean(event.target.closest('[role="separator"], [role="radiogroup"]'))))
       )
         return
       event.preventDefault()
@@ -668,6 +707,16 @@ export const WorkspaceApp = (): React.JSX.Element => {
           : (index + direction + ordered.length) % ordered.length
       const session = ordered[next]
       if (session) {
+        const fromCanvasNode =
+          view === "canvas" &&
+          event.target instanceof Element &&
+          Boolean(event.target.closest(".react-flow__node"))
+        if (fromCanvasNode)
+          setCanvasKeyboardFocus({
+            context,
+            id: session.id,
+            request: ++canvasFocusRequest.current,
+          })
         select(session.id)
         const fromTab =
           event.target instanceof Element && Boolean(event.target.closest(".session-tab"))
@@ -768,6 +817,41 @@ export const WorkspaceApp = (): React.JSX.Element => {
         event.preventDefault()
         if (event.repeat) return
         add(true)
+        return
+      }
+      const workspaceKeys = workspaceShortcutBindings()
+      if (
+        event.repeat ||
+        route.dialog ||
+        visibleRecentSwitcher ||
+        !workspaceShortcutTarget(event.target) ||
+        workspaceOverlayOpen()
+      )
+        return
+      if (matchesShortcut(event, workspaceKeys.find)) {
+        event.preventDefault()
+        go({ dialog: "search" })
+      } else if (matchesShortcut(event, workspaceKeys.focus)) {
+        const next = view === "focus" ? windowedDestination : "focus"
+        if (!next || !preferences.enabledViews.includes(next)) return
+        event.preventDefault()
+        changeView(next)
+      } else if (matchesShortcut(event, workspaceKeys.newTerminal)) {
+        event.preventDefault()
+        add(true)
+      } else if (matchesShortcut(event, workspaceKeys.zen)) {
+        event.preventDefault()
+        if (zen) exitZen()
+        else enterZen()
+      } else if (matchesShortcut(event, workspaceKeys.terminals)) {
+        event.preventDefault()
+        toggleSidebar("terminals")
+      } else if (matchesShortcut(event, workspaceKeys.rename)) {
+        const session =
+          sessions.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
+        if (!session) return
+        event.preventDefault()
+        startRename(session, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
       }
     }
     const keyup = (event: KeyboardEvent): void => {
@@ -823,7 +907,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         return (
           <ToggleGroupItem
             key={id}
-            tooltip={label}
+            tooltip={id === "terminals" ? "Terminals · B" : label}
             value={id}
             id={`${mobile ? "mobile-" : ""}${id}-toggle`}
             className={`icon-button border ${activePanel ? "active border-line bg-paper text-ink shadow-control" : "border-transparent"}`}
@@ -852,14 +936,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     >
       <WorkspaceHeader
         hidden={Boolean(zen)}
-        onZen={() => {
-          setZen({ sidebar, collapsed: sidebarCollapsed, panel: sidebarPanel })
-          requestAnimationFrame(() =>
-            document
-              .querySelector<HTMLButtonElement>(".zen-create")
-              ?.focus({ preventScroll: true }),
-          )
-        }}
+        onZen={enterZen}
         view={view}
         enabledViews={preferences.enabledViews}
         projects={projects}
@@ -1034,6 +1111,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 onLayoutChange={setCanvasLayout}
                 sessions={sessions}
                 selected={selected}
+                keyboardFocusRequest={
+                  canvasKeyboardFocus?.context === context && canvasKeyboardFocus.id === selected
+                    ? canvasKeyboardFocus.request
+                    : null
+                }
                 navigation={navigation.count}
                 onSelect={setSelected}
                 render={(session, minimize, onFlyTo, resize) =>
@@ -1110,17 +1192,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
             onViewChange={(next) => {
               if (next !== view) changeView(next)
             }}
-            onExit={() => {
-              setSidebar(zen.sidebar)
-              setSidebarCollapsed(zen.collapsed)
-              setSidebarPanel(zen.panel)
-              setZen(null)
-              requestAnimationFrame(() =>
-                document
-                  .querySelector<HTMLButtonElement>(".zen-enter")
-                  ?.focus({ preventScroll: true }),
-              )
-            }}
+            onExit={exitZen}
           />
         )}
       </div>

@@ -17,7 +17,6 @@ import { useEffect, useRef } from "react"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session, WindowedView } from "../model/types"
-import { shortcutBindings } from "../shortcuts"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 export type MinimizeControls = {
@@ -98,7 +97,7 @@ export const Terminal = ({
   const ResizeIcon =
     resizeView === "grid" ? (large ? FoldHorizontal : UnfoldHorizontal) : large ? Shrink : Scaling
   const Heading = compact ? "h2" : "h1"
-  const focusHint = active ? ` · ${shortcutBindings().focus.display.join(" ")}` : ""
+  const focusHint = active ? " · F" : ""
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const input = draft
   const setInput = onDraftChange
@@ -259,7 +258,7 @@ export const Terminal = ({
           </div>
           <span className="terminal-actions flex shrink-0 items-center gap-1">
             {showRenameAction && !renaming && (
-              <Tooltip content="Rename">
+              <Tooltip content={active ? "Rename · F2" : "Rename"}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
                   aria-label={`Rename ${session.name}`}

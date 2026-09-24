@@ -25,6 +25,7 @@ import {
 } from "react"
 
 import type { SizePreset, Session, CanvasLayout } from "../model/types"
+import { workspaceOverlayOpen, workspaceShortcutTarget } from "../shortcuts"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
 import { viewportCanvasPosition } from "./canvas-placement"
@@ -39,6 +40,7 @@ type TerminalNode = Node<
     minimized: boolean
     hiding: boolean
     preview: boolean
+    focusRequest: number | null
     onResizeStart: () => void
     onResizeEnd: (width: number, height: number) => void
   },
@@ -55,6 +57,7 @@ type CanvasProps = {
   hidden: Record<string, boolean>
   preview: string
   selected: string
+  keyboardFocusRequest: number | null
   navigation: number
   onSelect: (id: string) => void
   render: (
@@ -66,31 +69,39 @@ type CanvasProps = {
 }
 type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
 
-const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => (
-  <div
-    data-node={id}
-    data-preview={data.preview}
-    inert={data.hiding}
-    aria-hidden={data.hiding}
-    className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
-  >
-    <div className="terminal-visibility relative h-full w-full" data-hiding={data.hiding}>
-      <NodeResizeControl
-        position="bottom-right"
-        minWidth={320}
-        minHeight={data.minimized ? 0 : 200}
-        {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
-        autoScale={false}
-        className="terminal-resize-grip nodrag nopan"
-        onResizeStart={data.onResizeStart}
-        onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
-      >
-        <span className="terminal-resize-pattern" title="Resize" />
-      </NodeResizeControl>
-      {data.content}
+const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => {
+  const content = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (data.focusRequest === null) return
+    content.current?.closest<HTMLElement>(".react-flow__node")?.focus({ preventScroll: true })
+  }, [data.focusRequest])
+  return (
+    <div
+      ref={content}
+      data-node={id}
+      data-preview={data.preview}
+      inert={data.hiding}
+      aria-hidden={data.hiding}
+      className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
+    >
+      <div className="terminal-visibility relative h-full w-full" data-hiding={data.hiding}>
+        <NodeResizeControl
+          position="bottom-right"
+          minWidth={320}
+          minHeight={data.minimized ? 0 : 200}
+          {...(data.minimized ? { resizeDirection: "horizontal" as const } : {})}
+          autoScale={false}
+          className="terminal-resize-grip nodrag nopan"
+          onResizeStart={data.onResizeStart}
+          onResizeEnd={(_, { width, height }) => data.onResizeEnd(width, height)}
+        >
+          <span className="terminal-resize-pattern" title="Resize" />
+        </NodeResizeControl>
+        {data.content}
+      </div>
     </div>
-  </div>
-)
+  )
+}
 const nodeTypes = { terminal: TerminalNodeView }
 const fitOptions = { padding: 0.08, maxZoom: 1 }
 const canvasStep = 24
@@ -117,6 +128,7 @@ const TerminalCanvas = ({
   hidden,
   preview,
   selected,
+  keyboardFocusRequest,
   navigation,
   onSelect,
   render,
@@ -359,6 +371,7 @@ const TerminalCanvas = ({
         ariaLabel: `${session.name} terminal`,
         data: {
           preview: preview === session.id,
+          focusRequest: selected === session.id ? keyboardFocusRequest : null,
           hiding: hidden[session.id] ?? false,
           content: render(
             session,
@@ -396,6 +409,7 @@ const TerminalCanvas = ({
       onLayoutChange,
       render,
       selected,
+      keyboardFocusRequest,
     ],
   )
 
@@ -571,16 +585,6 @@ const TerminalCanvas = ({
     [commitGeometry, finishResize, getNode, onSelect, updateNode],
   )
 
-  const moveNode = useCallback(
-    (id: string, position: XYPosition) => {
-      geometryRef.current[id] = { ...geometryRef.current[id], position }
-      dirtyGeometry.current.add(id)
-      updateNode(id, (node) => ({ ...node, position }))
-      commitGeometry([id])
-    },
-    [commitGeometry, updateNode],
-  )
-
   useEffect(() => {
     if (
       !initialized ||
@@ -660,37 +664,33 @@ const TerminalCanvas = ({
       aria-label="Terminal canvas"
       tabIndex={0}
       {...backgroundPointerHandlers}
-      onKeyDownCapture={(event) => {
-        const target = event.target as HTMLElement
-        if (!target.matches(".react-flow__node")) return
-        const directions: Record<string, XYPosition> = {
-          ArrowLeft: { x: -1, y: 0 },
-          ArrowRight: { x: 1, y: 0 },
-          ArrowUp: { x: 0, y: -1 },
-          ArrowDown: { x: 0, y: 1 },
-        }
-        const direction = directions[event.key]
-        const node = getNode(target.dataset.id ?? "")
-        if (!direction || !node?.selected) return
-        event.preventDefault()
-        event.stopPropagation()
-        const step = canvasStep * (event.shiftKey ? 4 : 1)
-        moveNode(node.id, {
-          x: node.position.x + direction.x * step,
-          y: node.position.y + direction.y * step,
-        })
-      }}
       onKeyDown={(event) => {
-        if ((event.target as HTMLElement).closest("input, button, .react-flow__node")) return
-        if (event.key === "+" || event.key === "=") {
+        if (
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          event.nativeEvent.keyCode === 229 ||
+          event.repeat ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          !workspaceShortcutTarget(event.target) ||
+          workspaceOverlayOpen()
+        )
+          return
+        if (event.key === "+" || (event.key === "=" && !event.shiftKey)) {
+          event.preventDefault()
           visit.clear()
           void zoomIn()
         }
-        if (event.key === "-") {
+        if (event.key === "-" && !event.shiftKey) {
+          event.preventDefault()
           visit.clear()
           void zoomOut()
         }
-        if (event.key === "0") fitAll()
+        if (event.key === "0" && !event.shiftKey) {
+          event.preventDefault()
+          fitAll()
+        }
       }}
     >
       <ReactFlow<TerminalNode>
@@ -709,6 +709,7 @@ const TerminalCanvas = ({
         deleteKeyCode={null}
         multiSelectionKeyCode={null}
         selectionKeyCode={null}
+        disableKeyboardA11y
         minZoom={0.15}
         maxZoom={maxZoom}
         defaultViewport={initialViewport ?? { x: 0, y: 0, zoom: 1 }}
