@@ -109,7 +109,7 @@ export const Terminal = ({
   const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
-  const headerDoubleAction = onFlyTo ?? windowed?.onOpen
+  const headerDoubleAction = onFlyTo
   useEffect(() => {
     if (!focusInput || !commandInput.current) return
     commandInput.current.focus({ preventScroll: true })

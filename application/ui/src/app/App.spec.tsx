@@ -1323,12 +1323,17 @@ describe("novadeck. workspace", () => {
 
   context("when toggling views from a terminal header", () => {
     for (const view of ["grid", "canvas"] as const) {
-      it(`returns to ${view} and keeps its header gesture within that view`, async () => {
+      it(`keeps the Focus and ${view} header inert outside the name`, async () => {
         localStorage.setItem("novadeck.windowed-view", view)
         const app = render(<App />)
         const header = (): HTMLElement =>
           app.getByRole("heading", { name: "Checkout implementation" }).closest("header")!
         await interact("doubleClick", header())
+        expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
+        await interact(
+          "click",
+          screen.getByRole("button", { name: new RegExp(`Open in ${view}`, "i") }),
+        )
         expect(screen.getByRole("region", { name: `${view} view` })).toBeVisible()
         await interact("doubleClick", header())
         expect(screen.getByRole("region", { name: `${view} view` })).toBeVisible()
