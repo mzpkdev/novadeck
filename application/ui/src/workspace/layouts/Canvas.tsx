@@ -149,6 +149,7 @@ const TerminalCanvas = ({
   const lastNavigation = useRef(layout.viewport ? navigation : 0)
   const knownSessions = useRef(new Set(sessions.map((session) => session.id)))
   const createdPositions = useRef(new Map<string, XYPosition>())
+  const stacking = useRef<string[]>([])
   const fitAll = useCallback((): void => {
     visit.clear()
     void fitView({
@@ -455,10 +456,23 @@ const TerminalCanvas = ({
         createdPositions.current.delete(id)
       }
     }
+    // Keep activation history instead of temporarily elevating only the selected node.
+    const order = stacking.current.filter((id) => sessionIds.has(id))
+    const known = new Set(order)
+    const stack = [
+      ...order,
+      ...sessions.filter((session) => !known.has(session.id)).map((session) => session.id),
+    ].filter((id) => id !== selected)
+    if (sessionIds.has(selected)) stack.push(selected)
+    stacking.current = stack
+    const levels = new Map(stack.map((id, index) => [id, index]))
     setNodes((previous) => {
       const existing = new Map(previous.map((node) => [node.id, node]))
       return sessions.map((session) => {
-        const next = nodeFrom(session, geometryRef.current[session.id])
+        const next = {
+          ...nodeFrom(session, geometryRef.current[session.id]),
+          zIndex: levels.get(session.id) ?? 0,
+        }
         const current = existing.get(session.id)
         if (!current || !dirtyGeometry.current.has(session.id)) return next
         const retained = {
@@ -476,6 +490,7 @@ const TerminalCanvas = ({
     getNode,
     getViewport,
     nodeFrom,
+    selected,
     sessions,
     setNodes,
     viewportHeight,
@@ -689,6 +704,7 @@ const TerminalCanvas = ({
             .closest<HTMLElement>(".canvas-viewport")
             ?.focus({ preventScroll: true })
         }}
+        elevateNodesOnSelect={false}
         nodesConnectable={false}
         deleteKeyCode={null}
         multiSelectionKeyCode={null}

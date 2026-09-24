@@ -7,7 +7,8 @@ canvas. Keep related work together and switch between sessions from the sidebar.
 
 In Canvas, scroll to zoom in or out, and drag the background or an inactive terminal
 to pan. Click a terminal to activate it, then select its text, scroll its output,
-or drag its header to move it.
+or drag its header to move it. Activating a terminal brings it in front of the
+others; Canvas retains that stacking order until you leave the view.
 Double-click or double-tap a terminal header outside its name to smoothly center and zoom that terminal
 to fit the canvas viewport. Repeat the gesture on the same terminal to return to the
 previous camera position and zoom. Manual pan or zoom (including keyboard shortcuts),
@@ -61,8 +62,9 @@ it with Enter or Space. Clicking outside, leaving with keyboard focus, or pressi
 Canvas navigation uses gestures and
 keyboard shortcuts: +/− to zoom and 0 to fit all terminals.
 Focus becomes an edge-to-edge terminal, while Grid and Canvas gain the available space.
-In Focus, click the chevron beside the terminal name to switch between terminals in the current session;
-the list marks the active terminal and shows process status. This also works outside Zen.
+In any view, click the terminal icon beside the name to open the terminal switcher.
+Choose a terminal, or use Up/Down and Enter. Escape closes the switcher.
+This also works outside Zen; double-click or double-tap the name still renames it.
 Terminal names stay visible; header actions appear on hover or keyboard focus on desktop
 and stay visible on touch devices. Search and terminal shortcuts remain available.
 

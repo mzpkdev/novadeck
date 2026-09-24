@@ -74,34 +74,34 @@ describe("Zen workspace", () => {
     })
   }
   for (const zen of [false, true]) {
-    it(`switches Focus terminals from the title with Zen ${zen ? "on" : "off"} and preserves drafts`, async () => {
+    it(`switches Focus terminals from the icon with Zen ${zen ? "on" : "off"} and preserves drafts`, async () => {
       render(<App />)
       if (zen) await click(screen.getByRole("button", { name: "Enter Zen mode" }))
       fireEvent.change(
         screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
         { target: { value: "unfinished command" } },
       )
-      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      await click(screen.getByRole("button", { name: "Switch terminal" }))
       expect(screen.getByRole("option", { name: /Checkout implementation/ })).toHaveAttribute(
         "aria-selected",
         "true",
       )
       await click(screen.getByRole("option", { name: /Dev server/ }))
       expect(screen.getByRole("textbox", { name: "Command for Dev server" })).toBeVisible()
-      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      await click(screen.getByRole("button", { name: "Switch terminal" }))
       await click(screen.getByRole("option", { name: /Checkout implementation/ }))
       expect(
         screen.getByRole("textbox", { name: "Command for Checkout implementation" }),
       ).toHaveValue("unfinished command")
-      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      const trigger = screen.getByRole("button", { name: "Switch terminal" })
+      await click(trigger)
       await waitFor(() => expect(screen.getByRole("listbox")).toHaveFocus())
       await act(async () => {
         fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" })
       })
       await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument())
-      expect(screen.getByRole("combobox", { name: "Switch terminal" })).toHaveTextContent(
-        "Checkout implementation",
-      )
+      expect(trigger).toHaveFocus()
+      expect(screen.getByRole("heading", { name: "Checkout implementation" })).toBeVisible()
       expect(screen.getByRole("region", { name: "focus view" })).toBeVisible()
       if (zen) expect(screen.getByRole("group", { name: "Zen controls" })).toBeVisible()
     })
@@ -128,7 +128,7 @@ describe("Zen workspace", () => {
       })
       await click(within(dock).getByRole("button", { name: "Show Zen controls" }))
       await click(within(dock).getByRole("button", { name: "Focus view" }))
-      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      await click(screen.getByRole("button", { name: "Switch terminal" }))
       expect(screen.getByRole("option", { name: /Terminal 07/ })).toBeInTheDocument()
       expect(screen.getByRole("option", { name: /Terminal 08/ })).toBeInTheDocument()
     })

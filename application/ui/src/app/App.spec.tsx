@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../test"
@@ -322,6 +322,50 @@ describe("novadeck. workspace", () => {
       expect(screen.getByRole("heading", { name: "Dev server" })).toBeVisible()
     })
 
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`opens the ${view} icon switcher and switches with arrows and Enter`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        const trigger = within(
+          screen.getByRole("region", { name: "Checkout implementation terminal" }),
+        ).getByRole("button", { name: "Switch terminal" })
+        await interact("click", trigger)
+        const dialog = screen.getByRole("dialog", { name: "Terminal switcher" })
+        const list = within(dialog).getByRole("listbox", { name: "Recent terminals" })
+        expect(dialog).toHaveAttribute("aria-modal", "true")
+        expect(list).toHaveFocus()
+        expect(
+          within(list).getByRole("option", { name: "Checkout implementation" }),
+        ).toHaveAttribute("aria-selected", "true")
+        await interact("keyUp", list, { key: "Control" })
+        expect(dialog).toBeVisible()
+        await interact("keyDown", list, { key: "ArrowDown" })
+        expect(within(list).getByRole("option", { name: "Dev server" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        )
+        await interact("keyDown", list, { key: "Enter" })
+        expect(screen.queryByRole("dialog", { name: "Terminal switcher" })).not.toBeInTheDocument()
+        expect(screen.getByRole("region", { name: "Dev server terminal" })).toBeVisible()
+      })
+    }
+
+    it("opens the Focus icon switcher with one terminal and restores focus on Escape", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
+      await interact("click", screen.getByRole("button", { name: "New terminal" }))
+      const rename = sidebarRenameInput("Terminal 01")
+      await interact("keyDown", rename, { key: "Escape" })
+      const trigger = screen.getByRole("button", { name: "Switch terminal" })
+      await interact("click", trigger)
+      expect(screen.getAllByRole("option", { name: "Terminal 01" })).toHaveLength(1)
+      await interact("keyDown", screen.getByRole("listbox", { name: "Recent terminals" }), {
+        key: "Escape",
+      })
+      await waitFor(() => expect(trigger).toHaveFocus())
+    })
+
     it("cycles with arrows without moving the focused Canvas terminal", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))
@@ -454,7 +498,7 @@ describe("novadeck. workspace", () => {
         await interact("keyDown", window, { key: "k", metaKey: true })
         expect(screen.getByRole("dialog", { name: "Find a terminal" })).toBeVisible()
         await interact("keyDown", window, { key: ",", metaKey: true })
-        const preferences = screen.getByRole("dialog", { name: "Preferences" })
+        const preferences = await screen.findByRole("dialog", { name: "Preferences" })
         await interact("click", within(preferences).getByRole("tab", { name: "Shortcuts" }))
         const search = within(preferences).getByText("Find a terminal").parentElement!
         const create = within(preferences).getByText("New terminal").parentElement!

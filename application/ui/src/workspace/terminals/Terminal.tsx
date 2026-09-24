@@ -12,9 +12,8 @@ import {
   Terminal as TerminalIcon,
   X,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 
-import { Select } from "../../ui-toolkit/Select"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { TerminalOutput } from "../mock/TerminalOutput"
 import type { Entry, Session, WindowedView } from "../model/types"
@@ -71,7 +70,7 @@ export const Terminal = ({
   scrollOffset: number | undefined
   onScrollChange: (offset: number) => void
   onFocus?: () => void
-  switcher?: { sessions: Session[]; onSelect: (id: string) => void }
+  switcher?: { onOpen: (button: HTMLButtonElement) => void }
   onFlyTo?: () => void
   onResizePreset?: (button: HTMLButtonElement) => void
   resizeView?: WindowedView
@@ -111,7 +110,6 @@ export const Terminal = ({
   const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
-  const [switcherOpen, setSwitcherOpen] = useState(false)
   const toggleView = onFlyTo ?? onFocus ?? windowed?.onOpen
   useEffect(() => {
     if (!focusInput || !commandInput.current) return
@@ -224,7 +222,22 @@ export const Terminal = ({
           }}
         >
           <div className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">
-            <TerminalIcon size={14} strokeWidth={1.5} />
+            {switcher ? (
+              <Tooltip content="Switch terminal">
+                <button
+                  className="flex size-7 shrink-0 items-center justify-center rounded-control text-muted hover:bg-shell focus-visible:bg-shell nodrag nopan"
+                  aria-label="Switch terminal"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    switcher.onOpen(event.currentTarget)
+                  }}
+                >
+                  <TerminalIcon size={14} strokeWidth={1.5} />
+                </button>
+              </Tooltip>
+            ) : (
+              <TerminalIcon size={14} strokeWidth={1.5} />
+            )}
             <>
               <Heading hidden={renaming} data-terminal-name="">
                 {session.name}
@@ -243,50 +256,6 @@ export const Terminal = ({
                 />
               )}
             </>
-            {!compact && switcher && (
-              <span
-                className="shrink-0"
-                onPointerDownCapture={(event) => {
-                  if (
-                    event.button !== 0 ||
-                    !(event.target as Element).closest('[data-scope="select"][data-part="trigger"]')
-                  )
-                    return
-                  // Saving on pointer-down can move the trigger before the click arrives.
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setSwitcherOpen((open) => !open)
-                }}
-                onClickCapture={(event) => {
-                  if (
-                    event.detail === 0 ||
-                    !(event.target as Element).closest('[data-scope="select"][data-part="trigger"]')
-                  )
-                    return
-                  event.preventDefault()
-                  event.stopPropagation()
-                }}
-              >
-                <Select
-                  label="Switch terminal"
-                  variant="icon"
-                  open={switcherOpen}
-                  onOpenChange={setSwitcherOpen}
-                  value={session.id}
-                  items={switcher.sessions.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                    description:
-                      item.state === "running"
-                        ? "Running"
-                        : item.state === "finished"
-                          ? "Finished"
-                          : "Idle",
-                  }))}
-                  onValueChange={switcher.onSelect}
-                />
-              </span>
-            )}
           </div>
           <span className="terminal-actions flex shrink-0 items-center gap-1">
             {showRenameAction && !renaming && (

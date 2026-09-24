@@ -196,7 +196,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
     ids: string[]
     index: number
     fromInput: boolean
+    mode: "held" | "click"
   } | null>(null)
+  const switcherTrigger = useRef<HTMLButtonElement | null>(null)
   const recentByContext = useRef<Record<string, string[]>>({})
   const [navigation, setNavigation] = useState({ count: 1, fit: false })
   const { searching, settings, onExitComplete } = useRouteDialog(
@@ -288,6 +290,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const visibleRecentSwitcher =
     recentSwitcher?.context === context && !route.dialog ? recentSwitcher : null
   if (recentSwitcher && !visibleRecentSwitcher) setRecentSwitcher(null)
+  const closeRecentSwitcher = (): void => {
+    const trigger = visibleRecentSwitcher?.mode === "click" ? switcherTrigger.current : null
+    setRecentSwitcher(null)
+    queueMicrotask(() => trigger?.isConnected && trigger.focus({ preventScroll: true }))
+  }
+  const openRecentSwitcher = (id: string, trigger: HTMLButtonElement): void => {
+    const ids = recentByContext.current[context] ?? ordered.map((session) => session.id)
+    switcherTrigger.current = trigger
+    setRecentSwitcher({
+      context,
+      ids,
+      index: Math.max(0, ids.indexOf(id)),
+      fromInput: false,
+      mode: "click",
+    })
+  }
   useEffect(() => {
     const previous = recentByContext.current[context] ?? []
     recentByContext.current[context] = [
@@ -526,12 +544,18 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
       onInputFocused={() => setKeyboardFocus(null)}
       compact={compact}
-      {...(!compact ? { switcher: { sessions: ordered, onSelect: select } } : {})}
+      switcher={{ onOpen: (button) => openRecentSwitcher(session.id, button) }}
       onClose={() => close(session.id)}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
       {...(onResizePreset
-        ? { onResizePreset, resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const) }
+        ? {
+            onResizePreset: (button: HTMLButtonElement) => {
+              setSelected(session.id)
+              onResizePreset(button)
+            },
+            resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const),
+          }
         : {})}
       large={large}
       {...(compact && preferences.enabledViews.includes("focus")
@@ -666,7 +690,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
       if (renamed) return
       if (visibleRecentSwitcher && event.key === "Escape") {
         event.preventDefault()
+        closeRecentSwitcher()
+        return
+      }
+      if (visibleRecentSwitcher?.mode === "click" && event.key === "Enter") {
+        if (
+          event.target instanceof Element &&
+          event.target.closest('[aria-label="Close terminal switcher"]')
+        )
+          return
+        event.preventDefault()
+        const id = visibleRecentSwitcher.ids[visibleRecentSwitcher.index]
         setRecentSwitcher(null)
+        if (id) {
+          setKeyboardFocus({ id, view })
+          select(id)
+        }
         return
       }
       if (matchesShortcut(event, shortcuts.find)) {
@@ -712,6 +751,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
           ids,
           index,
           fromInput: visibleRecentSwitcher?.fromInput ?? fromInput,
+          mode: visibleRecentSwitcher?.mode ?? "held",
         })
         return
       }
@@ -731,7 +771,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       }
     }
     const keyup = (event: KeyboardEvent): void => {
-      if (event.key !== "Control" || !recentSwitcher) return
+      if (event.key !== "Control" || !recentSwitcher || recentSwitcher.mode !== "held") return
       if (!visibleRecentSwitcher) {
         setRecentSwitcher(null)
         return
@@ -743,7 +783,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
         select(id)
       }
     }
-    const blur = (): void => setRecentSwitcher(null)
+    const blur = (): void => {
+      if (recentSwitcher?.mode === "held") setRecentSwitcher(null)
+    }
     window.addEventListener("keydown", workspaceEscape, true)
     window.addEventListener("keydown", workspaceArrows, true)
     window.addEventListener("keydown", keydown)
@@ -1095,10 +1137,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
       </footer>
       {visibleRecentSwitcher && (
         <TerminalSwitcher
+          mode={visibleRecentSwitcher.mode}
           project={project.name}
-          onClose={() => setRecentSwitcher(null)}
+          onClose={closeRecentSwitcher}
           onSelect={(id) => {
             setRecentSwitcher(null)
+            if (visibleRecentSwitcher.mode === "click") setKeyboardFocus({ id, view })
             select(id)
           }}
           sessions={visibleRecentSwitcher.ids.flatMap((id) => {
