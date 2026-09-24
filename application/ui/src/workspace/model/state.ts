@@ -1,3 +1,4 @@
+import { adjacentCanvasPosition } from "../layouts/canvas-placement"
 import { addCompactGridTerminal } from "../layouts/grid-layout"
 import { canvasPresetSize } from "../layouts/terminal-size"
 import type {
@@ -369,6 +370,16 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
     case "terminal/add":
       return updateTarget(workspace, action.target, (state) => {
         if (!action.session.id || hasTerminal(state, action.session.id)) return state
+        const anchor =
+          state.sessions.find((session) => session.id === state.selected) ?? state.sessions.at(-1)
+        const position = anchor
+          ? adjacentCanvasPosition(
+              anchor,
+              state.sessions,
+              state.canvasLayout,
+              canvasPresetSize("small").height,
+            )
+          : { x: action.session.x, y: action.session.y }
         return {
           ...state,
           sessions: [...state.sessions, action.session],
@@ -377,7 +388,7 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
             geometry: {
               ...state.canvasLayout.geometry,
               [action.session.id]: {
-                position: { x: action.session.x, y: action.session.y },
+                position,
                 ...canvasPresetSize("small"),
               },
             },

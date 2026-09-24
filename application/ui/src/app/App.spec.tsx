@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../test"
@@ -28,17 +28,6 @@ const currentSessionName = (): string =>
   within(screen.getByRole("list", { name: "Saved sessions" }))
     .getByRole("button", { current: true })
     .getAttribute("aria-label")!
-
-const expectPlacement = (): void => {
-  expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
-    "data-placing",
-    "true",
-  )
-  expect(
-    screen.getByRole("button", { name: "Select Terminal 07" }).closest(".session-tab"),
-  ).toHaveAttribute("data-placing", "true")
-  expect(screen.queryByRole("region", { name: "Terminal 07 terminal" })).not.toBeInTheDocument()
-}
 
 describe("novadeck. workspace", () => {
   beforeEach(() => {
@@ -432,10 +421,6 @@ describe("novadeck. workspace", () => {
       await interact("click", screen.getByRole("radio", { name: "Terminals" }))
       await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
       expect(screen.getByRole("complementary", { name: "Terminal sessions" })).toBeVisible()
-      expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
-        "data-placing",
-        "false",
-      )
       expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveFocus()
       expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
       await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true, repeat: true })
@@ -475,141 +460,38 @@ describe("novadeck. workspace", () => {
       }
     })
   })
-  context("when placing new terminals", () => {
-    for (const view of ["Grid", "Canvas"]) {
-      for (const dialog of ["Find a terminal", "Preferences", "Switch workspace"]) {
-        it(`dismisses ${dialog} before cancelling ${view} placement with Escape`, async () => {
+  context("when creating terminals immediately", () => {
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      for (const keyboard of [false, true]) {
+        it(`creates a usable ${view} terminal via ${keyboard ? "shortcut" : "button"} and Escape never deletes it`, async () => {
           render(<App />)
           await interact("click", screen.getByRole("radio", { name: view }))
-          await interact("click", screen.getByRole("button", { name: "New terminal" }))
-          if (dialog === "Switch workspace")
-            await interact("click", screen.getByRole("button", { name: dialog }))
-          else
-            await interact("keyDown", window, {
-              key: dialog === "Preferences" ? "," : "k",
-              ctrlKey: true,
-              shiftKey: dialog !== "Preferences",
-            })
-          expect(screen.getByRole("dialog", { name: dialog })).toBeVisible()
-          await waitFor(() =>
-            expect(screen.getByRole("dialog", { name: dialog })).toContainElement(
-              document.activeElement as HTMLElement,
-            ),
+          if (keyboard)
+            await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+          else await interact("click", screen.getByRole("button", { name: "New terminal" }))
+          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toHaveAttribute(
+            "aria-current",
+            "true",
           )
-          await interact("keyDown", document.activeElement!, { key: "Escape" })
-          await waitFor(() =>
-            expect(screen.queryByRole("dialog", { name: dialog })).not.toBeInTheDocument(),
+          expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toBeVisible()
+          await interact(
+            "change",
+            screen.getByRole("textbox", { name: "Command for Terminal 07" }),
+            { target: { value: "ready immediately" } },
           )
-          expectPlacement()
-          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
           await interact("keyDown", document.body, { key: "Escape" })
-          expect(
-            screen.queryByRole("button", { name: "Select Terminal 07" }),
-          ).not.toBeInTheDocument()
+          expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
+          await interact("click", screen.getByRole("button", { name: "Select Terminal 07" }))
+          expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toHaveValue(
+            "ready immediately",
+          )
+          if (keyboard)
+            await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true })
+          else await interact("click", screen.getByRole("button", { name: "New terminal" }))
+          expect(screen.getByRole("textbox", { name: "Command for Terminal 08" })).toBeVisible()
+          expect(screen.getByText("8 terminals", { selector: ".app-footer span" })).toBeVisible()
         })
       }
-      it(`cancels renaming before cancelling ${view} placement with Escape`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        await interact("click", screen.getByRole("button", { name: "Rename Terminal 07" }))
-        const input = screen.getByRole("textbox", { name: "Rename Terminal 07" })
-        await interact("change", input, { target: { value: "Discard this" } })
-        await interact("keyDown", input, { key: "Escape" })
-        expect(
-          screen.queryByRole("textbox", { name: "Rename Terminal 07" }),
-        ).not.toBeInTheDocument()
-        expectPlacement()
-        expect(screen.getByRole("button", { name: "Select Terminal 07" })).toBeInTheDocument()
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-      })
-      it(`starts ghost placement from the keyboard in ${view} and cancels with Escape`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        await interact(
-          "click",
-          screen.getByRole("radio", { name: view === "Grid" ? "Terminals" : "Sessions" }),
-        )
-        const command = screen.getByRole("textbox", { name: "Command for Dev server" })
-        command.focus()
-        await interact("keyDown", command, { key: "t", ctrlKey: true, shiftKey: true })
-        expect(screen.getByRole("complementary", { name: "Terminal sessions" })).toBeVisible()
-        expectPlacement()
-        expect(
-          screen.queryByRole("textbox", { name: "Command for Terminal 07" }),
-        ).not.toBeInTheDocument()
-        await interact("keyDown", window, { key: "t", ctrlKey: true, shiftKey: true, repeat: true })
-        expect(screen.queryByRole("button", { name: "Select Terminal 08" })).not.toBeInTheDocument()
-        await interact("keyDown", window, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-        expect(screen.getByRole("button", { name: "Select Dev server" })).toHaveAttribute(
-          "aria-current",
-          "true",
-        )
-      })
-
-      it(`keeps placement active when switching from ${view} to the other layout and back`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        const other = view === "Grid" ? "Canvas" : "Grid"
-        await interact("click", screen.getByRole("radio", { name: other }))
-        expectPlacement()
-        await interact("click", screen.getByRole("radio", { name: view }))
-        expectPlacement()
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-        expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute(
-          "data-placing",
-          "false",
-        )
-      })
-      it(`cancels ${view} placement with Escape and restores the previous terminal`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        const create = screen.getByRole("button", { name: "New terminal" })
-        await interact("click", create)
-        expect(create).toHaveAttribute("data-placing", "true")
-        expect(
-          screen.getByRole("button", { name: "Select Terminal 07" }).closest(".session-tab"),
-        ).toHaveAttribute("data-placing", "true")
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.queryByRole("button", { name: "Select Terminal 07" })).not.toBeInTheDocument()
-        expect(create).toHaveAttribute("data-placing", "false")
-        expect(screen.getByRole("button", { name: "Select Dev server" })).toHaveAttribute(
-          "aria-current",
-          "true",
-        )
-        expect(screen.getByText("6 terminals", { selector: ".app-footer span" })).toBeVisible()
-        await interact("click", create)
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        await interact("keyDown", document.body, { key: "Escape" })
-        expect(screen.getByRole("button", { name: "Select Terminal 08" })).toBeInTheDocument()
-        expect(create).toHaveAttribute("data-placing", "false")
-      })
-      it(`creates the ${view} sidebar tab immediately and automatically places it on navigation`, async () => {
-        render(<App />)
-        await interact("click", screen.getByRole("radio", { name: view }))
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        expect(screen.getByRole("button", { name: "Select Terminal 07" })).toHaveAttribute(
-          "aria-current",
-          "true",
-        )
-        expect(screen.getByText("7 terminals", { selector: ".app-footer span" })).toBeVisible()
-        expect(
-          screen.queryByRole("region", { name: "Terminal 07 terminal" }),
-        ).not.toBeInTheDocument()
-        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
-        expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeInTheDocument()
-        await interact("click", screen.getByRole("button", { name: "New terminal" }))
-        await interact("click", screen.getByRole("radio", { name: "Focus" }))
-        expect(screen.getByRole("region", { name: "Terminal 08 terminal" })).toBeVisible()
-        await interact("click", screen.getByRole("radio", { name: view }))
-        expect(screen.getByRole("region", { name: "Terminal 08 terminal" })).toBeInTheDocument()
-      })
     }
   })
   context("when hiding terminals from shared layouts", () => {

@@ -15,7 +15,6 @@ export const SessionTab = ({
   index,
   selected,
   hidden,
-  placing = false,
   onVisibilityChange,
   onSelect,
   onRename,
@@ -25,7 +24,6 @@ export const SessionTab = ({
   index: number
   selected: boolean
   hidden: boolean
-  placing?: boolean
   onVisibilityChange: (hidden: boolean) => void
   onSelect: () => void
   onRename: (name: string) => void
@@ -57,11 +55,8 @@ export const SessionTab = ({
         onSelect={onSelect}
         data-session-id={session.id}
         data-terminal-hidden={hidden}
-        data-placing={placing}
-        {...(placing
-          ? { description: "Placement active. Press Escape to cancel and remove this terminal." }
-          : {})}
-        className={`session-tab data-[placing=true]:border-dashed data-[placing=true]:border-line-strong! data-[placing=true]:bg-soft! [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
+
+        className={`session-tab [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
         editing={editing}
         editor={
           <Editable.Area

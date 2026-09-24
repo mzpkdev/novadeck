@@ -1,6 +1,6 @@
 import { context, describe, expect, it } from "../../test"
 import type { GridLayouts, Session } from "../model/types"
-import { expandedGridLayouts, previewGridPlacement, visibleGridLayouts } from "./grid-layout"
+import { addCompactGridTerminal, expandedGridLayouts, visibleGridLayouts } from "./grid-layout"
 
 const terminal = (id: string): Session => ({
   id,
@@ -133,18 +133,38 @@ describe("hidden grid layouts", () => {
   })
 })
 
-describe("pending grid placement", () => {
-  it("pushes overlapping terminals like a grid drag without changing the saved layout", () => {
-    const pending = [...sessions, terminal("new")]
-    const projected = previewGridPlacement(pending, layouts, {}, {}, "new", "desktop", 0, 0)
+describe("automatic grid placement", () => {
+  it("uses free room beside existing terminals before adding a row", () => {
+    const placed = addCompactGridTerminal(
+      [terminal("a")],
+      { desktop: [{ i: "a", x: 0, y: 0, w: 6, h: 20 }] },
+      terminal("new"),
+    )
+    expect(placed.desktop?.find((item) => item.i === "new")).toMatchObject({
+      x: 6,
+      y: 0,
+      w: 6,
+      h: 18,
+    })
+  })
 
-    expect(projected.desktop?.find((item) => item.i === "new")).toMatchObject({ x: 0, y: 0 })
-    expect(projected.desktop?.find((item) => item.i === "a")).toMatchObject({ x: 0, y: 18 })
-    expect(projected.desktop?.find((item) => item.i === "b")).toMatchObject({ x: 0, y: 38 })
-    expect(projected.mobile?.find((item) => item.i === "new")).toBeDefined()
-    expect(layouts.desktop).toMatchObject([
-      { i: "a", x: 0, y: 0 },
-      { i: "b", x: 0, y: 20 },
+  it("uses a new row when a narrow breakpoint has no horizontal room", () => {
+    const placed = addCompactGridTerminal(sessions, layouts, terminal("new"))
+    expect(placed.desktop?.find((item) => item.i === "new")).toMatchObject({
+      x: 5,
+      y: 0,
+      w: 6,
+      h: 18,
+    })
+    expect(placed.mobile?.find((item) => item.i === "new")).toMatchObject({
+      x: 0,
+      y: 26,
+      w: 4,
+      h: 18,
+    })
+    expect(layouts.desktop?.map((item) => ({ x: item.x, y: item.y }))).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 20 },
     ])
   })
 })

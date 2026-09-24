@@ -104,30 +104,24 @@ describe("Zen workspace", () => {
       if (zen) expect(screen.getByRole("group", { name: "Zen controls" })).toBeVisible()
     })
   }
-  it("keeps placement active across Grid and Canvas and lets Escape cancel it", async () => {
-    render(<App />)
-    await click(screen.getByRole("radio", { name: "Grid" }))
-    await click(screen.getByRole("button", { name: "Enter Zen mode" }))
-    const dock = screen.getByRole("group", { name: "Zen controls" })
-    const reveal = within(dock).queryByRole("button", { name: "Show Zen controls" })
-    if (reveal) await click(reveal)
-    await click(within(dock).getByRole("button", { name: "New terminal" }))
-    expect(within(dock).getByRole("button", { name: "New terminal" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    )
-    await click(within(dock).getByRole("button", { name: "Canvas view" }))
-    expect(within(dock).getByRole("button", { name: "New terminal" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    )
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape" })
+  for (const view of ["Focus", "Grid", "Canvas"]) {
+    it(`creates terminals immediately in Zen ${view} without a placement step`, async () => {
+      render(<App />)
+      await click(screen.getByRole("radio", { name: view }))
+      await click(screen.getByRole("button", { name: "Enter Zen mode" }))
+      const dock = screen.getByRole("group", { name: "Zen controls" })
+      await click(within(dock).getByRole("button", { name: "New terminal" }))
+      expect(screen.getByRole("textbox", { name: "Command for Terminal 07" })).toBeVisible()
+      await act(async () => {
+        fireEvent.keyDown(document.body, { key: "Escape" })
+      })
+      await click(within(dock).getByRole("button", { name: "New terminal" }))
+      expect(screen.getByRole("textbox", { name: "Command for Terminal 08" })).toBeVisible()
+      await click(within(dock).getByRole("button", { name: "Show Zen controls" }))
+      await click(within(dock).getByRole("button", { name: "Focus view" }))
+      await click(screen.getByRole("combobox", { name: "Switch terminal" }))
+      expect(screen.getByRole("option", { name: /Terminal 07/ })).toBeInTheDocument()
+      expect(screen.getByRole("option", { name: /Terminal 08/ })).toBeInTheDocument()
     })
-    expect(within(dock).getByRole("button", { name: "New terminal" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    )
-    expect(screen.getByRole("group", { name: "Zen controls" })).toBeVisible()
-  })
+  }
 })

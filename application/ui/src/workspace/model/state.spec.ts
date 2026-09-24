@@ -347,7 +347,7 @@ describe("workspace state", () => {
       })
       const result = activeSession(next)!.state
       expect(result.canvasLayout.geometry["02"]).toEqual({
-        position: { x: 80, y: 80 },
+        position: { x: 970, y: 20 },
         width: 600,
         height: 400,
       })

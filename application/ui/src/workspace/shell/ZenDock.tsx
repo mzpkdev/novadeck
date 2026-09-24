@@ -13,14 +13,12 @@ const views = [
 export const ZenDock = ({
   view,
   enabledViews,
-  placing,
   onCreate,
   onViewChange,
   onExit,
 }: {
   view: ViewMode
   enabledViews: ViewMode[]
-  placing: boolean
   onCreate: () => void
   onViewChange: (view: ViewMode) => void
   onExit: () => void
@@ -55,12 +53,11 @@ export const ZenDock = ({
       role="group"
       aria-label="Zen controls"
     >
-      <Tooltip content={placing ? "Click to place · Esc to cancel" : "New terminal"}>
+      <Tooltip content="New terminal">
         <button
           ref={create}
-          className={`zen-create icon-button ${placing ? "border border-dashed border-line-strong bg-soft" : ""}`}
+          className="zen-create icon-button"
           aria-label="New terminal"
-          aria-pressed={placing}
           onClick={onCreate}
         >
           <Plus size={16} />

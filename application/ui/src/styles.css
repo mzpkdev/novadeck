@@ -695,3 +695,17 @@
     opacity: 1;
   }
 }
+
+.terminal-window[data-new="true"] {
+  animation: terminal-created 900ms var(--ease-interface);
+}
+@keyframes terminal-created {
+  from {
+    outline: 2px solid var(--color-line-strong);
+    outline-offset: -2px;
+  }
+  to {
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+  }
+}

@@ -1,22 +1,15 @@
 import { useCallback, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from "react"
 import {
-  calcXY,
   getBreakpointFromWidth,
   ResponsiveGridLayout,
   useContainerWidth,
   verticalCompactor,
 } from "react-grid-layout"
-import { calcGridColWidth, calcGridItemWHPx } from "react-grid-layout/core"
 
 import type { SizePreset, Session, GridBreakpoint, GridLayouts } from "../model/types"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
-import {
-  expandedGridLayouts,
-  gridColumns,
-  previewGridPlacement,
-  visibleGridLayouts,
-} from "./grid-layout"
+import { expandedGridLayouts, gridColumns, visibleGridLayouts } from "./grid-layout"
 import { gridPresetWidth } from "./terminal-size"
 import { useTerminalVisibility } from "./useTerminalVisibility"
 
@@ -25,8 +18,6 @@ const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
 type Props = {
   presets: Record<string, SizePreset>
   onPresetChange: (id: string, preset: SizePreset) => void
-  placement?: string | null
-  onPlace?: () => void
   sessions: Session[]
   navigation: number
   selected: string
@@ -47,8 +38,6 @@ type Props = {
 export const Grid = ({
   presets,
   onPresetChange,
-  placement,
-  onPlace,
   sessions,
   selected,
   navigation,
@@ -68,14 +57,7 @@ export const Grid = ({
   const resized = resizeRequest?.navigation === navigation ? resizeRequest.id : null
   const removed = useTerminalVisibility(hidden)
   const lastNavigation = useRef({ navigation: 0, width: 0 })
-  const lastPointer = useRef<{ x: number; y: number } | null>(null)
-  const [placing, setPlacing] = useState<{ id: string; layouts: GridLayouts } | null>(null)
-  const activePreview = placing && placing.id === placement ? placing.layouts : null
   useLayoutEffect(() => {
-    if (selected === placement) {
-      lastNavigation.current = { navigation, width }
-      return
-    }
     if (
       resized ||
       !mounted ||
@@ -83,11 +65,12 @@ export const Grid = ({
       (navigation === lastNavigation.current.navigation && width === lastNavigation.current.width)
     )
       return
-    // The grid reconciles restored children after this render; scroll once they are placed.
-    const frame = requestAnimationFrame(() => {
-      const terminal = containerRef.current?.querySelector<HTMLElement>(
-        `[data-grid-terminal="${selected}"]`,
-      )
+    const container = containerRef.current
+    if (!container) return
+    let frame = 0
+    const scroll = (): void => {
+      frame = 0
+      const terminal = container.querySelector<HTMLElement>(`[data-grid-terminal="${selected}"]`)
       if (!terminal) return
       terminal.scrollIntoView({
         behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
@@ -95,20 +78,24 @@ export const Grid = ({
         inline: "nearest",
       })
       lastNavigation.current = { navigation, width }
+      observer.disconnect()
+    }
+    // ResponsiveGridLayout may render the new card after this effect's first frame.
+    const observer = new MutationObserver(() => {
+      if (!frame) frame = requestAnimationFrame(scroll)
     })
-    return () => cancelAnimationFrame(frame)
-  }, [mounted, navigation, selected, placement, width, containerRef, resized])
+    observer.observe(container, { childList: true, subtree: true })
+    frame = requestAnimationFrame(scroll)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+    }
+  }, [mounted, navigation, selected, width, containerRef, resized])
   const base = useMemo(
-    () =>
-      visibleGridLayouts(
-        sessions.filter((session) => session.id !== placement),
-        layouts,
-        minimized,
-        removed,
-      ),
-    [sessions, layouts, minimized, removed, placement],
+    () => visibleGridLayouts(sessions, layouts, minimized, removed),
+    [sessions, layouts, minimized, removed],
   )
-  const current = activePreview ?? base
+  const current = base
 
   useLayoutEffect(() => {
     if (!resized) return
@@ -162,35 +149,6 @@ export const Grid = ({
     ],
   )
 
-  const previewAt = (clientX: number, clientY: number): GridLayouts | null => {
-    if (!placement || !width || !mounted) return null
-    const bounds = containerRef.current?.getBoundingClientRect()
-    if (!bounds) return null
-    const breakpoint = getBreakpointFromWidth(breakpoints, width) as GridBreakpoint
-    const item = visibleGridLayouts(sessions, layouts, minimized, removed)[breakpoint]?.find(
-      (entry) => entry.i === placement,
-    )
-    if (!item) return null
-    const params = {
-      margin: [16, 16] as const,
-      containerPadding: [0, 0] as const,
-      containerWidth: width,
-      cols: gridColumns[breakpoint],
-      rowHeight: 8,
-      maxRows: Infinity,
-    }
-    const itemWidth = calcGridItemWHPx(item.w, calcGridColWidth(params), 16)
-    const itemHeight = calcGridItemWHPx(item.h, 8, 16)
-    const { x, y } = calcXY(
-      params,
-      clientY - bounds.top - itemHeight / 2,
-      clientX - bounds.left - itemWidth / 2,
-      item.w,
-      item.h,
-    )
-    return previewGridPlacement(sessions, layouts, minimized, removed, placement, breakpoint, x, y)
-  }
-
   return (
     <div
       className="grid-viewport relative flex min-h-0 flex-1 overflow-hidden workspace-background"
@@ -198,7 +156,6 @@ export const Grid = ({
       data-has-selection={Boolean(selected)}
       {...backgroundPointerHandlers}
       onPointerDownCapture={(event) => {
-        if (placement) return
         setResizeRequest(null)
         const id = (event.target as Element).closest<HTMLElement>("[data-grid-terminal]")?.dataset
           .gridTerminal
@@ -206,7 +163,6 @@ export const Grid = ({
         if (!id) event.currentTarget.focus({ preventScroll: true })
       }}
       onFocusCapture={(event) => {
-        if (placement) return
         const id = (event.target as Element).closest<HTMLElement>("[data-grid-terminal]")?.dataset
           .gridTerminal
         if (id) onSelect(id)
@@ -222,38 +178,6 @@ export const Grid = ({
           const breakpoint = getBreakpointFromWidth(breakpoints, width) as GridBreakpoint
           const item = current[breakpoint]?.find((entry) => entry.i === resized)
           if (item) event.currentTarget.scrollTo({ top: item.y * 24, behavior: "instant" })
-        }}
-        onPointerMove={(event) => {
-          if (!placement || event.pointerType === "touch") {
-            lastPointer.current = null
-            return
-          }
-          lastPointer.current = { x: event.clientX, y: event.clientY }
-          const next = previewAt(event.clientX, event.clientY)
-          if (next) setPlacing({ id: placement, layouts: next })
-        }}
-        onPointerLeave={() => {
-          lastPointer.current = null
-          setPlacing(null)
-        }}
-        onScroll={() => {
-          if (!placement || !lastPointer.current) return
-          const next = previewAt(lastPointer.current.x, lastPointer.current.y)
-          if (next) setPlacing({ id: placement, layouts: next })
-        }}
-        onPointerDownCapture={(event) => {
-          if (!placement || event.button !== 0 || !event.isPrimary) return
-          event.preventDefault()
-          event.stopPropagation()
-        }}
-        onClickCapture={(event) => {
-          if (!placement || event.button !== 0) return
-          event.preventDefault()
-          event.stopPropagation()
-          const next = previewAt(event.clientX, event.clientY)
-          if (!next) return
-          onLayoutsChange(expandedGridLayouts(next, layouts, sessions, minimized, removed))
-          onPlace?.()
         }}
       >
         <div ref={containerRef}>
@@ -271,25 +195,19 @@ export const Grid = ({
               dragConfig={{ handle: ".terminal-header", cancel: "button, input", threshold: 5 }}
               resizeConfig={{ handles: ["se"] }}
               onLayoutChange={(_, next) => {
-                if (placement) return
                 const saved = expandedGridLayouts(next, layouts, sessions, minimized, removed)
                 if (saved !== layouts) onLayoutsChange(saved)
               }}
             >
               {sessions
-                .filter(
-                  (session) =>
-                    !removed[session.id] && (session.id !== placement || activePreview !== null),
-                )
+                .filter((session) => !removed[session.id])
                 .map((session) => (
                   <div
-                    className={`grid-terminal flex min-h-0 flex-col ${selected === session.id ? "selected" : ""} ${minimized[session.id] ? "minimized" : ""} ${placement === session.id ? "pointer-events-none" : ""}`}
+                    className={`grid-terminal flex min-h-0 flex-col ${selected === session.id ? "selected" : ""} ${minimized[session.id] ? "minimized" : ""}`}
                     key={session.id}
                     data-grid-terminal={session.id}
-                    data-grid-placement={placement === session.id}
                     data-preview={preview === session.id}
-                    style={placement === session.id ? { opacity: 0.75 } : undefined}
-                    inert={placement === session.id || (hidden[session.id] ?? false)}
+                    inert={hidden[session.id] ?? false}
                     aria-hidden={hidden[session.id] ?? false}
                   >
                     <div

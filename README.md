@@ -16,15 +16,11 @@ return point. Flying to a different terminal starts a new visit from the current
 Repeated double gestures during a flight are ignored. Minimized terminals restore first;
 returning the camera does not minimize them again. The header's arrow opens Focus view.
 
-Click **New terminal** or use its keyboard shortcut in Grid or Canvas to create its sidebar tab immediately, then
-move over the workspace and click to place the terminal preview at 75% opacity. The button
-and pending tab have dashed borders while placing. The ghost has the same dashed
-border; press **Esc** to cancel and remove
-the pending terminal. In Grid,
-the preview pushes neighboring terminals aside. In Canvas, drag to pan while placing;
-release, then click to place the ghost. Placement stays active when switching between
-Grid and Canvas. Switching to Focus or selecting another terminal tab before placing
-it uses the automatic position.
+Click **New terminal** or use its keyboard shortcut to create and select a terminal
+immediately in any view, with or without Zen. Focus shows it right away. Grid uses
+an available slot and scrolls it into view. Canvas chooses a nearby free position,
+preferring the current viewport, and pans only as needed to reveal it without changing
+zoom. Terminals can be moved or resized immediately; there is no placement step.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge terminal** sets 1200×800 and **Make compact** sets 600×400, independent of zoom,
@@ -33,7 +29,7 @@ without changing the camera. In Grid, **Make full width** fills the available co
 and **Make compact** uses half of them (at least four columns), preserving terminal height.
 On four-column screens both widths are the same. Resizing restores minimized terminals.
 Preset choices are remembered per terminal, session, and view. New terminals start
-compact: 600×400 in Canvas and compact column width in Grid, including placement previews.
+compact: 600×400 in Canvas and compact column width in Grid, with no placement preview.
 
 In Grid, selecting a terminal from its tab smoothly scrolls it into view. With
 reduced motion enabled, it scrolls immediately.
@@ -92,13 +88,12 @@ Left and Right cycle through enabled views in Focus → Grid → Canvas order, w
 at either end and retaining the selected terminal.
 Escape first deselects the active terminal in any view, then hides the open sidebar
 on the next press. Further presses do nothing. Focus keeps the displayed terminal
-in place; clicking it activates it again. Placement, dialogs, and renaming handle
+in place; clicking it activates it again. Dialogs and renaming handle
 Escape before workspace selection.
 Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
 pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
-The new-terminal shortcut opens the Terminals sidebar and the same placement preview as the button in Grid
-and Canvas. In Focus, it creates the terminal immediately and focuses its command
-input. These shortcuts are available in the desktop app; browsers may
+The new-terminal shortcut creates a terminal immediately and opens the desktop Terminals sidebar
+when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. In Focus, it also focuses the command input. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
 shows the bindings for the current platform.
 
