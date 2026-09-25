@@ -98,6 +98,27 @@ describe("novadeck. workspace", () => {
       )
     })
 
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`deletes the same active ${view} terminal that F2 targets without affecting inputs`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+        const command = screen.getByRole("textbox", { name: "Command for Dev server" })
+        await interact("keyDown", command, { key: "Delete" })
+        expect(screen.getByRole("button", { name: "Select Dev server" })).toBeInTheDocument()
+        const surface = document.querySelector<HTMLElement>(
+          view === "Focus" ? ".focus-stage" : `.${view.toLowerCase()}-viewport`,
+        )!
+        if (view === "Focus") {
+          await interact("keyDown", surface, { key: "Escape" })
+          expect(new URLSearchParams(window.location.hash.split("?")[1]).get("terminal")).toBe("")
+        }
+        await interact("keyDown", surface, { key: "Delete" })
+        expect(screen.queryByRole("button", { name: "Select Dev server" })).not.toBeInTheDocument()
+        expect(screen.getByText("5 terminals", { selector: ".app-footer span" })).toBeVisible()
+      })
+    }
+
     it("leaves selection and the sidebar intact when Escape dismisses the recent switcher", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Grid" }))

@@ -645,11 +645,15 @@ export const WorkspaceApp = (): React.JSX.Element => {
         document.querySelector(".session-tab.editing, .session-tab.dragging")
       )
         return
+      if (!event.repeat && view === "canvas" && canvas.current?.returnToOrigin()) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       if (!selected && !sidebarVisible) return
       event.preventDefault()
       event.stopPropagation()
       if (event.repeat) return
-      if (view === "canvas" && canvas.current?.returnToOrigin()) return
       if (selected) {
         if (view === "focus") setFocusPreview({ context, id: selected })
         setKeyboardFocus(null)
@@ -849,12 +853,24 @@ export const WorkspaceApp = (): React.JSX.Element => {
       } else if (matchesShortcut(event, workspaceKeys.terminals)) {
         event.preventDefault()
         toggleSidebar("terminals")
-      } else if (matchesShortcut(event, workspaceKeys.rename)) {
+      } else if (
+        (event.key === "Delete" &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !event.shiftKey) ||
+        matchesShortcut(event, workspaceKeys.rename)
+      ) {
         const session =
           sessions.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
         if (!session) return
         event.preventDefault()
-        startRename(session, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
+        if (event.key === "Delete") close(session.id)
+        else
+          startRename(
+            session,
+            sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header",
+          )
       }
     }
     const keyup = (event: KeyboardEvent): void => {
