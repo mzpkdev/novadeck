@@ -94,6 +94,7 @@ type RenameSession = {
   target: WorkspaceTarget
   request: number
 }
+type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
 const currentTimestamp = (): number => Date.now()
 const newWorkspaceSession = (
   terminals: Session[],
@@ -511,22 +512,23 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setNavigation((value) => ({ count: value.count + 1, fit: view === "canvas" }))
     setSidebar(false)
   }
-  const add = (fromKeyboard = false): void => {
+  const add = ({ fromKeyboard = false, beginRename = true }: AddTerminalOptions = {}): string => {
     setRecentSwitcher(null)
     const session = createMockTerminal(nextTerminalNumber, project.directory)
     if (activeRename) finishRename(activeRename, true)
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
     setCreated({ context, id: session.id })
-    setRenameSession({
-      context,
-      id: session.id,
-      original: session.name,
-      draft: session.name,
-      origin,
-      view,
-      target,
-      request: ++renameRequest.current,
-    })
+    if (beginRename)
+      setRenameSession({
+        context,
+        id: session.id,
+        original: session.name,
+        draft: session.name,
+        origin,
+        view,
+        target,
+        request: ++renameRequest.current,
+      })
     const actions: Parameters<typeof navigateWorkspace>[0] = [
       { type: "terminal/add", target, session },
     ]
@@ -534,6 +536,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     if (fromKeyboard) setSidebarCollapsed(false)
     setSidebar(false)
+    return session.id
   }
   const close = (terminalId: string): void => {
     if (activeRename?.id === terminalId) finishRename(activeRename, false)
@@ -823,7 +826,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       if (matchesShortcut(event, shortcuts.newTerminal)) {
         event.preventDefault()
         if (event.repeat) return
-        add(true)
+        add({ fromKeyboard: true })
         return
       }
       const workspaceKeys = workspaceShortcutBindings()
@@ -845,7 +848,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         changeView(next)
       } else if (matchesShortcut(event, workspaceKeys.newTerminal)) {
         event.preventDefault()
-        add(true)
+        add({ fromKeyboard: true })
       } else if (matchesShortcut(event, workspaceKeys.zen)) {
         event.preventDefault()
         if (zen) exitZen()
@@ -1143,6 +1146,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 }
                 navigation={navigation.count}
                 onSelect={setSelected}
+                onCreate={() => add({ beginRename: false })}
                 render={(session, minimize, onFlyTo, resize) =>
                   terminal(
                     session,

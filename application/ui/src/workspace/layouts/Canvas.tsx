@@ -13,6 +13,7 @@ import {
   type OnNodesChange,
   type XYPosition,
 } from "@xyflow/react"
+import { Plus } from "lucide-react"
 import {
   forwardRef,
   useCallback,
@@ -27,11 +28,12 @@ import {
   type ReactNode,
 } from "react"
 
+import { ContextMenu } from "../../ui-toolkit/ContextMenu"
 import type { SizePreset, Session, CanvasLayout } from "../model/types"
 import { workspaceOverlayOpen, workspaceShortcutTarget } from "../shortcuts"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
-import { viewportCanvasPosition } from "./canvas-placement"
+import { canvasPointPosition, viewportCanvasPosition } from "./canvas-placement"
 import { createCanvasVisit } from "./canvas-visit"
 import { canvasNewTerminalSize, canvasPresetSize } from "./terminal-size"
 import { useTerminalVisibility } from "./useTerminalVisibility"
@@ -64,6 +66,7 @@ type CanvasProps = {
   keyboardFocusRequest: number | null
   navigation: number
   onSelect: (id: string) => void
+  onCreate: () => string
   render: (
     session: Session,
     minimize: MinimizeControls,
@@ -140,13 +143,23 @@ const TerminalCanvas = ({
   keyboardFocusRequest,
   navigation,
   onSelect,
+  onCreate,
   render,
   handleRef,
 }: TerminalCanvasProps): React.JSX.Element => {
   const { minimized, geometry } = layout
   const removed = useTerminalVisibility(hidden)
-  const { fitView, zoomIn, zoomOut, getViewport, setViewport, setCenter, getNode, setNodes } =
-    useReactFlow<TerminalNode>()
+  const {
+    fitView,
+    zoomIn,
+    zoomOut,
+    getViewport,
+    setViewport,
+    setCenter,
+    getNode,
+    setNodes,
+    screenToFlowPosition,
+  } = useReactFlow<TerminalNode>()
   const zoom = useStore((state) => state.transform[2])
   const viewportWidth = useStore((state) => state.width)
   const viewportHeight = useStore((state) => state.height)
@@ -171,6 +184,9 @@ const TerminalCanvas = ({
   const lastNavigation = useRef(layout.viewport ? navigation : 0)
   const knownSessions = useRef(new Set(sessions.map((session) => session.id)))
   const createdPositions = useRef(new Map<string, XYPosition>())
+  const pointerCreated = useRef(new Set<string>())
+  const pendingCreatedPositions = useRef(new Map<string, XYPosition>())
+  const contextPosition = useRef<XYPosition | null>(null)
   const stacking = useRef<string[]>([])
   const fitAll = useCallback((): void => {
     visit.clear()
@@ -487,15 +503,21 @@ const TerminalCanvas = ({
           matchCreatedTerminalRatio,
           { width: saved?.width ?? 600, height: saved?.height ?? session.height },
         )
-        const position = viewportCanvasPosition(
-          occupied,
-          viewport,
-          { width: viewportWidth, height: viewportHeight },
-          size,
-        )
+        const requested = pendingCreatedPositions.current.get(session.id)
+        const position = requested
+          ? canvasPointPosition(requested, size)
+          : viewportCanvasPosition(
+              occupied,
+              viewport,
+              { width: viewportWidth, height: viewportHeight },
+              size,
+            )
         geometryRef.current[session.id] = { ...saved, position, ...size }
         dirtyGeometry.current.add(session.id)
-        createdPositions.current.set(session.id, position)
+        if (requested) {
+          pendingCreatedPositions.current.delete(session.id)
+          pointerCreated.current.add(session.id)
+        } else createdPositions.current.set(session.id, position)
         knownSessions.current.add(session.id)
         occupied.push({ position, ...size })
       }
@@ -636,6 +658,7 @@ const TerminalCanvas = ({
     lastNavigation.current = navigation
     visit.clear()
     const duration = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180
+    if (pointerCreated.current.delete(selected)) return
     const created = createdPositions.current.get(selected)
     if (created) {
       createdPositions.current.delete(selected)
@@ -689,7 +712,7 @@ const TerminalCanvas = ({
     viewportWidth,
   ])
 
-  return (
+  const canvas = (
     <div
       className="canvas-viewport relative min-h-0 flex-1 overflow-hidden bg-canvas touch-none workspace-background"
       ref={container}
@@ -702,6 +725,9 @@ const TerminalCanvas = ({
       aria-label="Terminal canvas"
       tabIndex={0}
       {...backgroundPointerHandlers}
+      onContextMenu={(event) => {
+        contextPosition.current = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      }}
       onKeyDown={(event) => {
         if (
           event.defaultPrevented ||
@@ -826,6 +852,24 @@ const TerminalCanvas = ({
         />
       </ReactFlow>
     </div>
+  )
+  return (
+    <ContextMenu
+      label="Canvas actions"
+      items={[
+        {
+          value: "terminal",
+          label: "Terminal",
+          icon: <Plus size={13} aria-hidden="true" />,
+          onSelect: () => {
+            if (!contextPosition.current) return
+            const id = onCreate()
+            pendingCreatedPositions.current.set(id, contextPosition.current)
+          },
+        },
+      ]}
+      trigger={canvas}
+    />
   )
 }
 
