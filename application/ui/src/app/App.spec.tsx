@@ -665,9 +665,7 @@ describe("novadeck. workspace", () => {
       expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
       await interact("contextMenu", canvas, { clientX: 520, clientY: 360 })
       expect(canvas).toHaveAttribute("data-state", "open")
-      const menu = document.querySelector<HTMLElement>('[data-scope="menu"][data-part="content"]')!
-      expect(menu).toHaveAttribute("role", "menu")
-      expect(menu).toHaveAttribute("aria-label", "Canvas actions")
+      const menu = screen.getByRole("menu", { name: "Canvas actions" })
       await waitFor(() => expect(menu).toHaveFocus())
       const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
       await interact("pointerMove", terminal, { pointerType: "mouse" })
@@ -682,6 +680,25 @@ describe("novadeck. workspace", () => {
       expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
       await interact("click", screen.getByRole("radio", { name: "Grid" }))
       expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
+    })
+
+    it("offers Canvas pointer placement before the first terminal exists", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
+      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+      const canvas = screen.getByLabelText("Terminal canvas")
+      await interact("contextMenu", canvas, { clientX: 520, clientY: 360 })
+      const menu = screen.getByRole("menu", { name: "Canvas actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("region", { name: "Terminal 01 terminal" })).toBeVisible()
+      expect(screen.queryByRole("heading", { name: "No terminals open" })).not.toBeInTheDocument()
     })
 
     it("starts renaming the new sidebar tab and trims its committed name", async () => {

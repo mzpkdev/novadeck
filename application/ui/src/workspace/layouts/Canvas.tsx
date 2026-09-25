@@ -506,7 +506,7 @@ const TerminalCanvas = ({
         )
         const requested = pendingCreatedPositions.current.get(session.id)
         const position = requested
-          ? canvasPointPosition(requested, size)
+          ? canvasPointPosition(requested)
           : viewportCanvasPosition(
               occupied,
               viewport,

@@ -1117,7 +1117,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 }
               />
             )}
-            {view === "canvas" && sessions.length > 0 && (
+            {view === "canvas" && (
               <Canvas
                 ref={canvas}
                 hidden={layoutHidden}
@@ -1174,15 +1174,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
               )}
             {!sessions.length && (
               <div
-                className="empty-workspace relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background"
-                {...backgroundPointerHandlers}
+                className={`empty-workspace flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background ${view === "canvas" ? "pointer-events-none absolute inset-0 z-10" : "relative"}`}
+                {...(view === "canvas" ? {} : backgroundPointerHandlers)}
               >
-                <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
-                <div
-                  className="workspace-dots absolute inset-0 canvas-grid-spotlight"
-                  aria-hidden="true"
-                />
-                <section className="empty-state relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8 shadow-panel">
+                {view !== "canvas" && (
+                  <>
+                    <div
+                      className="workspace-dots absolute inset-0 canvas-grid"
+                      aria-hidden="true"
+                    />
+                    <div
+                      className="workspace-dots absolute inset-0 canvas-grid-spotlight"
+                      aria-hidden="true"
+                    />
+                  </>
+                )}
+                <section className="empty-state pointer-events-auto relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8 shadow-panel">
                   <span className="empty-state-icon mb-4 flex size-11 items-center justify-center rounded-control border border-line bg-shell text-muted">
                     <TerminalIcon size={22} strokeWidth={1.4} />
                   </span>

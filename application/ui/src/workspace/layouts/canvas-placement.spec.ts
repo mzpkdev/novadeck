@@ -64,10 +64,10 @@ describe("automatic viewport placement", () => {
 })
 
 describe("pointer placement", () => {
-  it("centers and snaps a terminal under the selected canvas point", () => {
-    expect(canvasPointPosition({ x: 503, y: 397 }, { width: 600, height: 400 })).toEqual({
-      x: 192,
-      y: 192,
+  it("anchors and snaps a terminal's top-left corner at the selected canvas point", () => {
+    expect(canvasPointPosition({ x: 503, y: 397 })).toEqual({
+      x: 504,
+      y: 408,
     })
   })
 })
