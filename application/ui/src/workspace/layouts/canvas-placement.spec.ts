@@ -1,6 +1,10 @@
 import { context, describe, expect, it } from "../../test"
 import { sessions } from "../mock/sessions"
-import { adjacentCanvasPosition, viewportCanvasPosition } from "./canvas-placement"
+import {
+  adjacentCanvasPosition,
+  canvasPointPosition,
+  viewportCanvasPosition,
+} from "./canvas-placement"
 
 describe("keyboard canvas placement", () => {
   context("when neighboring slots are occupied", () => {
@@ -56,5 +60,14 @@ describe("automatic viewport placement", () => {
     expect(
       position.x >= 860 || position.x + 660 <= 0 || position.y >= 660 || position.y + 460 <= 0,
     ).toBe(true)
+  })
+})
+
+describe("pointer placement", () => {
+  it("anchors and snaps a terminal's top-left corner at the selected canvas point", () => {
+    expect(canvasPointPosition({ x: 503, y: 397 })).toEqual({
+      x: 504,
+      y: 408,
+    })
   })
 })

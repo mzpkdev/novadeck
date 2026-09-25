@@ -1,5 +1,5 @@
 import { context, describe, expect, it } from "../../test"
-import { canvasPresetSize, gridPresetWidth } from "./terminal-size"
+import { canvasNewTerminalSize, canvasPresetSize, gridPresetWidth } from "./terminal-size"
 
 describe("terminal size presets", () => {
   context("on Canvas", () => {
@@ -28,6 +28,14 @@ describe("terminal size presets", () => {
         width: 1200,
         height: 800,
       })
+    })
+    it("matches new terminals to the viewport ratio at the compact area only when requested", () => {
+      const viewport = { width: 1600, height: 900 }
+      const size = canvasNewTerminalSize(viewport, true)
+      expect(size.width / size.height).toBeCloseTo(1600 / 900, 2)
+      expect(Math.abs(size.width * size.height - 240000)).toBeLessThan(700)
+      expect(canvasNewTerminalSize(viewport, false)).toEqual({ width: 600, height: 400 })
+      expect(canvasNewTerminalSize(undefined, true)).toEqual({ width: 600, height: 400 })
     })
   })
   context("in Grid", () => {

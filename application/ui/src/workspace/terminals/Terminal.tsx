@@ -225,7 +225,7 @@ export const Terminal = ({
             {switcher ? (
               <Tooltip content="Switch terminal">
                 <button
-                  className="flex size-7 shrink-0 items-center justify-center rounded-control text-muted hover:bg-shell focus-visible:bg-shell nodrag nopan"
+                  className={`${headerActionClasses} nodrag nopan`}
                   aria-label="Switch terminal"
                   onClick={(event) => {
                     event.stopPropagation()

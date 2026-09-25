@@ -22,9 +22,12 @@ immediately in any view, with or without Zen. Focus shows it right away. Grid us
 an available slot and scrolls it into view. Canvas chooses a nearby free position,
 preferring the current viewport, and pans only as needed to reveal it without changing
 zoom. Terminals can be moved or resized immediately; there is no placement step.
-The new terminal opens in rename mode with its name selected: in the sidebar when
-visible, or in the terminal header otherwise. Enter or clicking away saves the name;
-Escape keeps the original name. In any view, double-click or double-tap a
+Right-click the Grid or Canvas background and choose **Terminal** to create one without entering
+rename mode. In Canvas, its top-left corner is placed at that canvas point without moving the
+camera. Terminals created with the New terminal control open in rename mode with their name
+selected: in the sidebar when visible, or in the terminal header otherwise. Enter or clicking
+away saves the name; Escape keeps the original name. In any
+view, double-click or double-tap a
 terminal name to rename it directly. The header and sidebar share rename mode and
 the live draft. Move between either name field to continue editing; saving or
 canceling ends the edit in both places.

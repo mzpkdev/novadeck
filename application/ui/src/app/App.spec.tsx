@@ -9,8 +9,10 @@ const interact = async (
     | "click"
     | "doubleClick"
     | "pointerDown"
+    | "pointerMove"
     | "pointerUp"
     | "change"
+    | "contextMenu"
     | "keyDown"
     | "keyUp"
     | "submit",
@@ -97,6 +99,27 @@ describe("novadeck. workspace", () => {
         "true",
       )
     })
+
+    for (const view of ["Focus", "Grid", "Canvas"]) {
+      it(`deletes the same active ${view} terminal that F2 targets without affecting inputs`, async () => {
+        render(<App />)
+        await interact("click", screen.getByRole("radio", { name: view }))
+        await interact("click", screen.getByRole("button", { name: "Select Dev server" }))
+        const command = screen.getByRole("textbox", { name: "Command for Dev server" })
+        await interact("keyDown", command, { key: "Delete" })
+        expect(screen.getByRole("button", { name: "Select Dev server" })).toBeInTheDocument()
+        const surface = document.querySelector<HTMLElement>(
+          view === "Focus" ? ".focus-stage" : `.${view.toLowerCase()}-viewport`,
+        )!
+        if (view === "Focus") {
+          await interact("keyDown", surface, { key: "Escape" })
+          expect(new URLSearchParams(window.location.hash.split("?")[1]).get("terminal")).toBe("")
+        }
+        await interact("keyDown", surface, { key: "Delete" })
+        expect(screen.queryByRole("button", { name: "Select Dev server" })).not.toBeInTheDocument()
+        expect(screen.getByText("5 terminals", { selector: ".app-footer span" })).toBeVisible()
+      })
+    }
 
     it("leaves selection and the sidebar intact when Escape dismisses the recent switcher", async () => {
       render(<App />)
@@ -630,6 +653,94 @@ describe("novadeck. workspace", () => {
     })
   })
   context("when creating terminals immediately", () => {
+    it("offers pointer placement only from the Canvas context menu", async () => {
+      render(<App />)
+      expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      const canvas = screen.getByLabelText("Terminal canvas")
+      const terminalHeader = within(
+        screen.getByRole("region", { name: "Checkout implementation terminal" }),
+      ).getByRole("heading", { name: "Checkout implementation" })
+      await interact("contextMenu", terminalHeader, { clientX: 300, clientY: 220 })
+      expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
+      await interact("contextMenu", canvas, { clientX: 520, clientY: 360 })
+      expect(canvas).toHaveAttribute("data-state", "open")
+      const menu = screen.getByRole("menu", { name: "Canvas actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("button", { name: "Select Terminal 07" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      )
+      expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
+      expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
+    })
+
+    it("offers terminal creation from the Grid background only", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const grid = screen.getByLabelText("Terminal grid")
+      const terminalHeader = within(
+        screen.getByRole("region", { name: "Checkout implementation terminal" }),
+      ).getByRole("heading", { name: "Checkout implementation" })
+      await interact("contextMenu", terminalHeader, { clientX: 300, clientY: 220 })
+      expect(screen.queryByRole("menu", { name: "Grid actions" })).not.toBeInTheDocument()
+      await interact("contextMenu", grid, { clientX: 520, clientY: 360 })
+      const menu = screen.getByRole("menu", { name: "Grid actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
+      expect(screen.queryByRole("menu", { name: "Grid actions" })).not.toBeInTheDocument()
+    })
+
+    it("offers Grid context creation before the first terminal exists", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
+      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+      const grid = screen.getByLabelText("Terminal grid")
+      await interact("contextMenu", grid, { clientX: 520, clientY: 360 })
+      const menu = screen.getByRole("menu", { name: "Grid actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("region", { name: "Terminal 01 terminal" })).toBeVisible()
+      expect(screen.queryByRole("heading", { name: "No terminals open" })).not.toBeInTheDocument()
+    })
+
+    it("offers Canvas pointer placement before the first terminal exists", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Canvas" }))
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
+      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+      const canvas = screen.getByLabelText("Terminal canvas")
+      await interact("contextMenu", canvas, { clientX: 520, clientY: 360 })
+      const menu = screen.getByRole("menu", { name: "Canvas actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("region", { name: "Terminal 01 terminal" })).toBeVisible()
+      expect(screen.queryByRole("heading", { name: "No terminals open" })).not.toBeInTheDocument()
+    })
+
     it("starts renaming the new sidebar tab and trims its committed name", async () => {
       render(<App />)
       await interact("click", screen.getByRole("button", { name: "New terminal" }))

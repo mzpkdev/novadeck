@@ -8,6 +8,11 @@ const snap = (value: number): number => Math.round(value / 24) * 24
 type CanvasBox = { position: { x: number; y: number }; width: number; height: number }
 type Viewport = { x: number; y: number; zoom: number }
 
+export const canvasPointPosition = (point: { x: number; y: number }): { x: number; y: number } => ({
+  x: snap(point.x),
+  y: snap(point.y),
+})
+
 export const viewportCanvasPosition = (
   occupied: CanvasBox[],
   viewport: Viewport,

@@ -4,7 +4,7 @@ import { HashRouter, useNavigationType } from "react-router"
 
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
 import { backgroundPointerHandlers } from "../workspace/layouts/background"
-import { Canvas } from "../workspace/layouts/Canvas"
+import { Canvas, type CanvasHandle } from "../workspace/layouts/Canvas"
 import { Focus } from "../workspace/layouts/Focus"
 import { Grid } from "../workspace/layouts/Grid"
 import {
@@ -94,6 +94,7 @@ type RenameSession = {
   target: WorkspaceTarget
   request: number
 }
+type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
 const currentTimestamp = (): number => Date.now()
 const newWorkspaceSession = (
   terminals: Session[],
@@ -204,6 +205,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     request: number
   } | null>(null)
   const canvasFocusRequest = useRef(0)
+  const canvas = useRef<CanvasHandle>(null)
   const [recentSwitcher, setRecentSwitcher] = useState<{
     context: string
     ids: string[]
@@ -510,22 +512,23 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setNavigation((value) => ({ count: value.count + 1, fit: view === "canvas" }))
     setSidebar(false)
   }
-  const add = (fromKeyboard = false): void => {
+  const add = ({ fromKeyboard = false, beginRename = true }: AddTerminalOptions = {}): string => {
     setRecentSwitcher(null)
     const session = createMockTerminal(nextTerminalNumber, project.directory)
     if (activeRename) finishRename(activeRename, true)
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
     setCreated({ context, id: session.id })
-    setRenameSession({
-      context,
-      id: session.id,
-      original: session.name,
-      draft: session.name,
-      origin,
-      view,
-      target,
-      request: ++renameRequest.current,
-    })
+    if (beginRename)
+      setRenameSession({
+        context,
+        id: session.id,
+        original: session.name,
+        draft: session.name,
+        origin,
+        view,
+        target,
+        request: ++renameRequest.current,
+      })
     const actions: Parameters<typeof navigateWorkspace>[0] = [
       { type: "terminal/add", target, session },
     ]
@@ -533,6 +536,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     if (fromKeyboard) setSidebarCollapsed(false)
     setSidebar(false)
+    return session.id
   }
   const close = (terminalId: string): void => {
     if (activeRename?.id === terminalId) finishRename(activeRename, false)
@@ -644,6 +648,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
         document.querySelector(".session-tab.editing, .session-tab.dragging")
       )
         return
+      if (!event.repeat && view === "canvas" && canvas.current?.returnToOrigin()) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       if (!selected && !sidebarVisible) return
       event.preventDefault()
       event.stopPropagation()
@@ -817,7 +826,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       if (matchesShortcut(event, shortcuts.newTerminal)) {
         event.preventDefault()
         if (event.repeat) return
-        add(true)
+        add({ fromKeyboard: true })
         return
       }
       const workspaceKeys = workspaceShortcutBindings()
@@ -839,7 +848,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         changeView(next)
       } else if (matchesShortcut(event, workspaceKeys.newTerminal)) {
         event.preventDefault()
-        add(true)
+        add({ fromKeyboard: true })
       } else if (matchesShortcut(event, workspaceKeys.zen)) {
         event.preventDefault()
         if (zen) exitZen()
@@ -847,12 +856,24 @@ export const WorkspaceApp = (): React.JSX.Element => {
       } else if (matchesShortcut(event, workspaceKeys.terminals)) {
         event.preventDefault()
         toggleSidebar("terminals")
-      } else if (matchesShortcut(event, workspaceKeys.rename)) {
+      } else if (
+        (event.key === "Delete" &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !event.shiftKey) ||
+        matchesShortcut(event, workspaceKeys.rename)
+      ) {
         const session =
           sessions.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
         if (!session) return
         event.preventDefault()
-        startRename(session, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
+        if (event.key === "Delete") close(session.id)
+        else
+          startRename(
+            session,
+            sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header",
+          )
       }
     }
     const keyup = (event: KeyboardEvent): void => {
@@ -1062,7 +1083,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 render={(session) => terminal(session, false)}
               />
             )}
-            {view === "grid" && sessions.length > 0 && (
+            {view === "grid" && (
               <Grid
                 sessions={sessions}
                 hidden={layoutHidden}
@@ -1084,6 +1105,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 onLayoutsChange={setGridLayouts}
                 minimized={gridMinimized}
                 onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
+                onCreate={() => {
+                  add({ beginRename: false })
+                }}
                 render={(session, minimize, resize) =>
                   terminal(
                     session,
@@ -1096,8 +1120,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 }
               />
             )}
-            {view === "canvas" && sessions.length > 0 && (
+            {view === "canvas" && (
               <Canvas
+                ref={canvas}
                 hidden={layoutHidden}
                 preview={preview}
                 presets={sizePresets.canvas}
@@ -1111,6 +1136,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   })
                 }
                 layout={canvasLayout}
+                matchCreatedTerminalRatio={Boolean(zen)}
                 revealOnMount={revealCanvas}
                 fitOnNavigate={navigation.fit}
                 onLayoutChange={setCanvasLayout}
@@ -1123,6 +1149,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 }
                 navigation={navigation.count}
                 onSelect={setSelected}
+                onCreate={() => add({ beginRename: false })}
                 render={(session, minimize, onFlyTo, resize) =>
                   terminal(
                     session,
@@ -1150,15 +1177,22 @@ export const WorkspaceApp = (): React.JSX.Element => {
               )}
             {!sessions.length && (
               <div
-                className="empty-workspace relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background"
-                {...backgroundPointerHandlers}
+                className={`empty-workspace flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background ${view === "canvas" || view === "grid" ? "pointer-events-none absolute inset-0 z-10" : "relative"}`}
+                {...(view === "canvas" || view === "grid" ? {} : backgroundPointerHandlers)}
               >
-                <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
-                <div
-                  className="workspace-dots absolute inset-0 canvas-grid-spotlight"
-                  aria-hidden="true"
-                />
-                <section className="empty-state relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8 shadow-panel">
+                {view !== "canvas" && view !== "grid" && (
+                  <>
+                    <div
+                      className="workspace-dots absolute inset-0 canvas-grid"
+                      aria-hidden="true"
+                    />
+                    <div
+                      className="workspace-dots absolute inset-0 canvas-grid-spotlight"
+                      aria-hidden="true"
+                    />
+                  </>
+                )}
+                <section className="empty-state pointer-events-auto relative z-1 flex w-full max-w-96 flex-col items-center rounded-panel border border-line bg-paper p-8 shadow-panel">
                   <span className="empty-state-icon mb-4 flex size-11 items-center justify-center rounded-control border border-line bg-shell text-muted">
                     <TerminalIcon size={22} strokeWidth={1.4} />
                   </span>
