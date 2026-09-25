@@ -658,6 +658,11 @@ describe("novadeck. workspace", () => {
       expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))
       const canvas = screen.getByLabelText("Terminal canvas")
+      const terminalHeader = within(
+        screen.getByRole("region", { name: "Checkout implementation terminal" }),
+      ).getByRole("heading", { name: "Checkout implementation" })
+      await interact("contextMenu", terminalHeader, { clientX: 300, clientY: 220 })
+      expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
       await interact("contextMenu", canvas, { clientX: 520, clientY: 360 })
       expect(canvas).toHaveAttribute("data-state", "open")
       const menu = document.querySelector<HTMLElement>('[data-scope="menu"][data-part="content"]')!

@@ -94,6 +94,7 @@ const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): Reac
       inert={data.hiding}
       aria-hidden={data.hiding}
       className={`canvas-node h-full w-full ${selected ? "selected" : ""} ${data.compactHeader ? "compact-header" : ""} ${data.minimized ? "minimized" : ""}`}
+      onContextMenu={(event) => event.stopPropagation()}
     >
       <div className="terminal-visibility relative h-full w-full" data-hiding={data.hiding}>
         <NodeResizeControl
