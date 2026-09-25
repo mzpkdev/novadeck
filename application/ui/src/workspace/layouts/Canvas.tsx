@@ -33,7 +33,7 @@ import type { MinimizeControls } from "../terminals/Terminal"
 import { backgroundPointerHandlers } from "./background"
 import { viewportCanvasPosition } from "./canvas-placement"
 import { createCanvasVisit } from "./canvas-visit"
-import { canvasPresetSize } from "./terminal-size"
+import { canvasNewTerminalSize, canvasPresetSize } from "./terminal-size"
 import { useTerminalVisibility } from "./useTerminalVisibility"
 
 type TerminalNode = Node<
@@ -53,6 +53,7 @@ type CanvasProps = {
   presets: Record<string, SizePreset>
   onPresetChange: (id: string, preset: SizePreset) => void
   layout: CanvasLayout
+  matchCreatedTerminalRatio: boolean
   revealOnMount: boolean
   fitOnNavigate: boolean
   onLayoutChange: Dispatch<SetStateAction<CanvasLayout>>
@@ -128,6 +129,7 @@ const TerminalCanvas = ({
   presets,
   onPresetChange,
   layout,
+  matchCreatedTerminalRatio,
   revealOnMount,
   fitOnNavigate,
   onLayoutChange,
@@ -475,10 +477,11 @@ const TerminalCanvas = ({
         })
       for (const session of created) {
         const saved = geometryRef.current[session.id]
-        const size = {
-          width: saved?.width ?? 600,
-          height: saved?.height ?? session.height,
-        }
+        const size = canvasNewTerminalSize(
+          { width: viewportWidth, height: viewportHeight },
+          matchCreatedTerminalRatio,
+          { width: saved?.width ?? 600, height: saved?.height ?? session.height },
+        )
         const position = viewportCanvasPosition(
           occupied,
           viewport,
@@ -532,6 +535,7 @@ const TerminalCanvas = ({
     geometry,
     getNode,
     getViewport,
+    matchCreatedTerminalRatio,
     nodeFrom,
     selected,
     sessions,

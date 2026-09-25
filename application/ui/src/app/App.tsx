@@ -1114,6 +1114,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   })
                 }
                 layout={canvasLayout}
+                matchCreatedTerminalRatio={Boolean(zen)}
                 revealOnMount={revealCanvas}
                 fitOnNavigate={navigation.fit}
                 onLayoutChange={setCanvasLayout}
