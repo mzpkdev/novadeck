@@ -47,6 +47,7 @@
   body {
     @apply m-0 bg-paper font-sans text-ink antialiased;
     font-size: 13px;
+    user-select: none;
   }
   button,
   input,
@@ -253,6 +254,9 @@
   @apply px-4 pt-4;
   font-size: calc(var(--terminal-font-size, 13px) - 2px);
   line-height: 1.8;
+}
+.terminal-content {
+  user-select: text;
 }
 .terminal-compact .terminal-header,
 .terminal-focused .terminal-header {
