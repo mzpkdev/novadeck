@@ -682,6 +682,46 @@ describe("novadeck. workspace", () => {
       expect(screen.queryByRole("menu", { name: "Canvas actions" })).not.toBeInTheDocument()
     })
 
+    it("offers terminal creation from the Grid background only", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      const grid = screen.getByLabelText("Terminal grid")
+      const terminalHeader = within(
+        screen.getByRole("region", { name: "Checkout implementation terminal" }),
+      ).getByRole("heading", { name: "Checkout implementation" })
+      await interact("contextMenu", terminalHeader, { clientX: 300, clientY: 220 })
+      expect(screen.queryByRole("menu", { name: "Grid actions" })).not.toBeInTheDocument()
+      await interact("contextMenu", grid, { clientX: 520, clientY: 360 })
+      const menu = screen.getByRole("menu", { name: "Grid actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("region", { name: "Terminal 07 terminal" })).toBeVisible()
+      expect(screen.queryByRole("menu", { name: "Grid actions" })).not.toBeInTheDocument()
+    })
+
+    it("offers Grid context creation before the first terminal exists", async () => {
+      render(<App />)
+      await interact("click", screen.getByRole("radio", { name: "Grid" }))
+      await interact("click", screen.getByRole("radio", { name: "Sessions" }))
+      await interact("click", screen.getByRole("button", { name: "New session" }))
+      expect(screen.getByRole("heading", { name: "No terminals open" })).toBeVisible()
+      const grid = screen.getByLabelText("Terminal grid")
+      await interact("contextMenu", grid, { clientX: 520, clientY: 360 })
+      const menu = screen.getByRole("menu", { name: "Grid actions" })
+      await waitFor(() => expect(menu).toHaveFocus())
+      const terminal = within(menu).getByRole("menuitem", { name: "Terminal" })
+      await interact("pointerMove", terminal, { pointerType: "mouse" })
+      await interact("pointerDown", terminal, { pointerType: "mouse" })
+      await interact("pointerUp", terminal, { pointerType: "mouse" })
+      await interact("click", terminal)
+      expect(screen.getByRole("region", { name: "Terminal 01 terminal" })).toBeVisible()
+      expect(screen.queryByRole("heading", { name: "No terminals open" })).not.toBeInTheDocument()
+    })
+
     it("offers Canvas pointer placement before the first terminal exists", async () => {
       render(<App />)
       await interact("click", screen.getByRole("radio", { name: "Canvas" }))

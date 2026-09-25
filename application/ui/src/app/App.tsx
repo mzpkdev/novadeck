@@ -1083,7 +1083,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 render={(session) => terminal(session, false)}
               />
             )}
-            {view === "grid" && sessions.length > 0 && (
+            {view === "grid" && (
               <Grid
                 sessions={sessions}
                 hidden={layoutHidden}
@@ -1105,6 +1105,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
                 onLayoutsChange={setGridLayouts}
                 minimized={gridMinimized}
                 onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
+                onCreate={() => {
+                  add({ beginRename: false })
+                }}
                 render={(session, minimize, resize) =>
                   terminal(
                     session,
@@ -1174,10 +1177,10 @@ export const WorkspaceApp = (): React.JSX.Element => {
               )}
             {!sessions.length && (
               <div
-                className={`empty-workspace flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background ${view === "canvas" ? "pointer-events-none absolute inset-0 z-10" : "relative"}`}
-                {...(view === "canvas" ? {} : backgroundPointerHandlers)}
+                className={`empty-workspace flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center text-muted workspace-background ${view === "canvas" || view === "grid" ? "pointer-events-none absolute inset-0 z-10" : "relative"}`}
+                {...(view === "canvas" || view === "grid" ? {} : backgroundPointerHandlers)}
               >
-                {view !== "canvas" && (
+                {view !== "canvas" && view !== "grid" && (
                   <>
                     <div
                       className="workspace-dots absolute inset-0 canvas-grid"

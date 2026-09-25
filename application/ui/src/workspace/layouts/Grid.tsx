@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from "react"
 import {
   getBreakpointFromWidth,
@@ -6,6 +7,7 @@ import {
   verticalCompactor,
 } from "react-grid-layout"
 
+import { ContextMenu } from "../../ui-toolkit/ContextMenu"
 import type {
   SizePreset,
   Session,
@@ -40,6 +42,7 @@ type Props = {
   hidden: Record<string, boolean>
   preview: string
   onMinimize: (id: string) => void
+  onCreate: () => void
   render: (
     session: Session,
     minimize: MinimizeControls,
@@ -61,6 +64,7 @@ export const Grid = ({
   hidden,
   preview,
   onMinimize,
+  onCreate,
   render,
 }: Props): React.JSX.Element => {
   const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
@@ -150,9 +154,10 @@ export const Grid = ({
     ],
   )
 
-  return (
+  const grid = (
     <div
       className="grid-viewport relative flex min-h-0 flex-1 overflow-hidden workspace-background"
+      aria-label="Terminal grid"
       tabIndex={-1}
       data-has-selection={Boolean(selected)}
       {...backgroundPointerHandlers}
@@ -213,6 +218,7 @@ export const Grid = ({
                     data-preview={preview === session.id}
                     inert={hidden[session.id] ?? false}
                     aria-hidden={hidden[session.id] ?? false}
+                    onContextMenu={(event) => event.stopPropagation()}
                   >
                     <div
                       className="grid-terminal-body terminal-visibility min-h-0 flex-1"
@@ -236,5 +242,19 @@ export const Grid = ({
         </div>
       </div>
     </div>
+  )
+  return (
+    <ContextMenu
+      label="Grid actions"
+      items={[
+        {
+          value: "terminal",
+          label: "Terminal",
+          icon: <Plus size={13} aria-hidden="true" />,
+          onSelect: onCreate,
+        },
+      ]}
+      trigger={grid}
+    />
   )
 }
