@@ -22,6 +22,12 @@ export const createCanvasVisit = () => {
       }
       return active
     },
+    back(): Flight | null {
+      if (active || !origin) return null
+      active = { viewport: origin.viewport }
+      origin = null
+      return active
+    },
     finish(flight: Flight, completed = true): void {
       if (active !== flight) return
       active = null

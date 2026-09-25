@@ -14,13 +14,16 @@ import {
   type XYPosition,
 } from "@xyflow/react"
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
   type Dispatch,
   type SetStateAction,
   type CSSProperties,
+  type Ref,
   type ReactNode,
 } from "react"
 
@@ -68,6 +71,10 @@ type CanvasProps = {
   ) => ReactNode
 }
 type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
+export type CanvasHandle = {
+  returnToOrigin: () => boolean
+}
+type TerminalCanvasProps = CanvasProps & { handleRef: Ref<CanvasHandle> }
 
 const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): React.JSX.Element => {
   const content = useRef<HTMLDivElement>(null)
@@ -132,7 +139,8 @@ const TerminalCanvas = ({
   navigation,
   onSelect,
   render,
-}: CanvasProps): React.JSX.Element => {
+  handleRef,
+}: TerminalCanvasProps): React.JSX.Element => {
   const { minimized, geometry } = layout
   const removed = useTerminalVisibility(hidden)
   const { fitView, zoomIn, zoomOut, getViewport, setViewport, setCenter, getNode, setNodes } =
@@ -301,6 +309,32 @@ const TerminalCanvas = ({
     [getNode, getViewport, onLayoutChange, viewportWidth, viewportHeight, presets, onPresetChange],
   )
 
+  const animateVisit = useCallback(
+    (flight: { viewport: CanvasViewport }) => {
+      void setViewport(flight.viewport, {
+        duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350,
+      }).then(
+        (completed) => visit.finish(flight, completed),
+        () => visit.finish(flight, false),
+      )
+    },
+    [setViewport, visit],
+  )
+
+  useImperativeHandle(
+    handleRef,
+    () => ({
+      returnToOrigin: () => {
+        if (visit.flying) return true
+        const flight = visit.back()
+        if (!flight) return false
+        animateVisit(flight)
+        return true
+      },
+    }),
+    [animateVisit, visit],
+  )
+
   const flyTo = useCallback(
     (session: Session) => {
       if (visit.flying) return
@@ -330,20 +364,15 @@ const TerminalCanvas = ({
       )
       const flight = visit.begin(session.id, getViewport(), viewport)
       if (!flight) return
-      void setViewport(flight.viewport, {
-        duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350,
-      }).then(
-        (completed) => visit.finish(flight, completed),
-        () => visit.finish(flight, false),
-      )
+      animateVisit(flight)
     },
     [
+      animateVisit,
       geometry,
       getNode,
       getViewport,
       onLayoutChange,
       onSelect,
-      setViewport,
       viewportHeight,
       viewportWidth,
       visit,
@@ -791,8 +820,10 @@ const TerminalCanvas = ({
   )
 }
 
-export const Canvas = (props: CanvasProps): React.JSX.Element => (
-  <ReactFlowProvider>
-    <TerminalCanvas {...props} />
-  </ReactFlowProvider>
-)
+export const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
+  return (
+    <ReactFlowProvider>
+      <TerminalCanvas {...props} handleRef={ref} />
+    </ReactFlowProvider>
+  )
+})

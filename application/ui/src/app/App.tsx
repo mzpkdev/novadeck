@@ -4,7 +4,7 @@ import { HashRouter, useNavigationType } from "react-router"
 
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
 import { backgroundPointerHandlers } from "../workspace/layouts/background"
-import { Canvas } from "../workspace/layouts/Canvas"
+import { Canvas, type CanvasHandle } from "../workspace/layouts/Canvas"
 import { Focus } from "../workspace/layouts/Focus"
 import { Grid } from "../workspace/layouts/Grid"
 import {
@@ -204,6 +204,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     request: number
   } | null>(null)
   const canvasFocusRequest = useRef(0)
+  const canvas = useRef<CanvasHandle>(null)
   const [recentSwitcher, setRecentSwitcher] = useState<{
     context: string
     ids: string[]
@@ -648,6 +649,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       event.preventDefault()
       event.stopPropagation()
       if (event.repeat) return
+      if (view === "canvas" && canvas.current?.returnToOrigin()) return
       if (selected) {
         if (view === "focus") setFocusPreview({ context, id: selected })
         setKeyboardFocus(null)
@@ -1098,6 +1100,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
             )}
             {view === "canvas" && sessions.length > 0 && (
               <Canvas
+                ref={canvas}
                 hidden={layoutHidden}
                 preview={preview}
                 presets={sizePresets.canvas}

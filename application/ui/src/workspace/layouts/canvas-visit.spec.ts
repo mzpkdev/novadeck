@@ -16,6 +16,16 @@ describe("Canvas fly-to visits", () => {
     visit.finish(returning)
     expect(visit.begin("a", overview, closeup)?.viewport).toEqual(closeup)
   })
+  it("returns to the exact camera without repeating the terminal gesture", () => {
+    const visit = createCanvasVisit()
+    const outward = visit.begin("a", overview, closeup)!
+    expect(visit.back()).toBeNull()
+    visit.finish(outward)
+    const returning = visit.back()!
+    expect(returning.viewport).toEqual(overview)
+    visit.finish(returning)
+    expect(visit.back()).toBeNull()
+  })
   it("starts a new pair when flying to another terminal", () => {
     const visit = createCanvasVisit()
     visit.finish(visit.begin("a", overview, closeup)!)
