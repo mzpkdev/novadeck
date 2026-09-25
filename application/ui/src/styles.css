@@ -157,6 +157,9 @@
   background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
   background-size: 24px 24px;
 }
+.context-menu-positioner {
+  z-index: 50 !important;
+}
 .grid-terminal {
   opacity: var(--terminal-idle-opacity);
   transition: opacity var(--motion-state) var(--ease-interface);
