@@ -155,8 +155,8 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 | Package                | Responsibility                                                   |
 | ---------------------- | ---------------------------------------------------------------- |
 | `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons.  |
-| `application/runtime`  | Hono API running on Node.js, independent of frontend delivery.   |
-| `application/protocol` | Shared Zod contracts and the typed oRPC WebSocket client.        |
+| `application/runtime`  | The runner: shells and metadata, served over WebSocket or port.  |
+| `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.     |
 | `application/host`     | Electron host that starts the runtime and loads the packaged UI. |
 | `scripts`              | Repository checks and automation.                                |
 

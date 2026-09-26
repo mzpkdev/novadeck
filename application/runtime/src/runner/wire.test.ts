@@ -4,8 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { protocolVersion, type RuntimeClient, type TerminalEvent } from "@novadeck/protocol"
-import { createRuntimeClient, type RuntimeSocket } from "@novadeck/protocol/client"
+import { protocolVersion, type TerminalEvent, type WireClient } from "@novadeck/protocol"
+import { createWireClient, socketChannel, type WebSocketLike } from "@novadeck/protocol/wire"
 import headless from "@xterm/headless"
 import { WebSocket as NodeWebSocket } from "ws"
 
@@ -49,12 +49,12 @@ const fixture = async (resources: Resources, options: RuntimeOptions = {}) => {
     }
     resources.defer(disconnect)
     await once(socket, "open", { signal: AbortSignal.timeout(5_000) })
-    const client = createRuntimeClient(socket as unknown as RuntimeSocket)
-    if (authenticate) await client.runtime.handshake({ protocolVersion, token })
+    const client = createWireClient(socketChannel(socket as unknown as WebSocketLike))
+    if (authenticate) await client.runner.handshake({ protocolVersion, token })
     return { client, socket, disconnect }
   }
 
-  const setup = async (client: RuntimeClient) => {
+  const setup = async (client: WireClient) => {
     const project = await client.projects.create({ name: "API workspace", cwd: directory })
     const session = await client.sessions.create({ projectId: project.id, name: "Session" })
     return { project, session }
@@ -65,7 +65,7 @@ const fixture = async (resources: Resources, options: RuntimeOptions = {}) => {
 
 const reader = async (
   resources: Resources,
-  client: RuntimeClient,
+  client: WireClient,
   terminalId: string,
   options: { afterSequence?: number; mode?: "control" | "observe" } = {},
 ) => {
@@ -79,6 +79,7 @@ const reader = async (
   )
   const events: TerminalEvent[] = []
   let text = ""
+  let attached = false
   const next = async (checkpoint = "next terminal event") => {
     const timeout = setTimeout(() => {
       const last = events.at(-1)
@@ -92,10 +93,19 @@ const reader = async (
     }, 3_000)
     timeout.unref()
     try {
+      if (!attached) {
+        // Every attachment opens with a marker outside the sequenced event stream.
+        expect((await stream.next()).value).toEqual({
+          type: "attached",
+          terminalId,
+          mode: options.mode ?? "control",
+        })
+        attached = true
+      }
       const result = await stream.next()
       controller.signal.throwIfAborted()
       if (result.done) throw new Error("Terminal stream ended before the expected event")
-      const event = result.value
+      const event = result.value as TerminalEvent
       events.push(event)
       if (event.type === "snapshot") text = event.data
       if (event.type === "output") text += event.data
@@ -123,16 +133,25 @@ const reader = async (
     until,
     events,
     text: () => text,
-    untilText: (value: string) =>
-      text.includes(value)
-        ? Promise.resolve(events.at(-1)!)
-        : until(() => text.includes(value), JSON.stringify(value)),
+    untilText: (value: string) => {
+      if (text.includes(value)) return Promise.resolve(events.at(-1)!)
+      // Check each new chunk once, retaining only enough overlap for a marker
+      // split across events. Rescanning megabytes of history per chunk is quadratic.
+      let tail = value.length > 1 ? text.slice(1 - value.length) : ""
+      return until((event) => {
+        if (event.type !== "output" && event.type !== "snapshot") return false
+        const data = event.type === "snapshot" ? event.data : tail + event.data
+        const found = data.includes(value)
+        tail = value.length > 1 ? data.slice(1 - value.length) : ""
+        return found
+      }, JSON.stringify(value))
+    },
     detach: () => controller.abort(),
     stream,
   }
 }
 
-const print = (client: RuntimeClient, terminalId: string, first: string, second: string) =>
+const print = (client: WireClient, terminalId: string, first: string, second: string) =>
   client.terminals.write({
     terminalId,
     data: command({ type: "write", data: `${first}${second}\r\n` }),
@@ -203,24 +222,24 @@ describe("WebSocket authentication and protocol", () => {
     const { client } = await app.connect(false)
     await expect(client.projects.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" })
     await expect(
-      client.runtime.handshake({ protocolVersion, token: "wrong" }),
+      client.runner.handshake({ protocolVersion, token: "wrong" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" })
     await expect(
       client.sessions.create({ projectId: randomUUID(), name: "denied" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" })
-    const info = await client.runtime.handshake({ protocolVersion, token })
+    const info = await client.runner.handshake({ protocolVersion, token })
     expect(info).toMatchObject({
       protocolVersion,
       capabilities: expect.arrayContaining(["terminal-replay", "terminal-ack"]),
     })
-    expect(info.runtimeId).toEqual(expect.any(String))
+    expect(info.runnerId).toEqual(expect.any(String))
     await expect(client.projects.list()).resolves.toEqual([])
   })
 
   it("protocol compatibility and failed handshake authentication", async ({ resources }) => {
     const app = await fixture(resources)
     const { client } = await app.connect(false)
-    await expect(client.runtime.handshake({ protocolVersion: 99, token })).rejects.toMatchObject({
+    await expect(client.runner.handshake({ protocolVersion: 99, token })).rejects.toMatchObject({
       code: "INCOMPATIBLE_PROTOCOL",
     })
     await expect(client.projects.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" })
@@ -436,6 +455,27 @@ describe("PTY lifecycle API", () => {
 })
 
 describe("terminal attachment and recovery API", () => {
+  it("recognizes an output checkpoint split across acknowledged events", async ({ resources }) => {
+    const app = await fixture(resources)
+    const { client } = await app.connect()
+    const { session } = await app.setup(client)
+    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const output = await reader(resources, client, terminal.id)
+    await output.untilText("PTY_READY")
+    await client.terminals.write({
+      terminalId: terminal.id,
+      data: command({ type: "write", data: "CROSS_EVENT_" }),
+    })
+    const first = await output.untilText("CROSS_EVENT_")
+    await client.terminals.write({
+      terminalId: terminal.id,
+      data: command({ type: "write", data: "CHECKPOINT" }),
+    })
+    const completed = await output.untilText("CROSS_EVENT_CHECKPOINT")
+    expect(completed.sequence).toBeGreaterThan(first.sequence)
+    expect(await output.untilText("CROSS_EVENT_CHECKPOINT")).toEqual(completed)
+  })
+
   it("API usability after connection loss during terminal creation", async ({ resources }) => {
     const app = await fixture(resources)
     const replacement = await app.connect()
@@ -444,8 +484,8 @@ describe("terminal attachment and recovery API", () => {
     socket.binaryType = "arraybuffer"
     resources.defer(() => socket.terminate())
     await once(socket, "open", { signal: AbortSignal.timeout(5_000) })
-    const client = createRuntimeClient(socket as unknown as RuntimeSocket)
-    await client.runtime.handshake({ protocolVersion, token })
+    const client = createWireClient(socketChannel(socket as unknown as WebSocketLike))
+    await client.runner.handshake({ protocolVersion, token })
     // Flush the request onto TCP, then drop the connection without a close frame.
     // The server may either reject the request or finish creation after release.
     const originalSend = socket.send.bind(socket)
@@ -453,7 +493,7 @@ describe("terminal attachment and recovery API", () => {
       originalSend(data, () => socket.terminate())
     }) as NodeWebSocket["send"]
     const created = client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-    await expect(created).rejects.toThrow("Runtime connection is closed")
+    await expect(created).rejects.toThrow("Runner connection is closed")
     // Delivery is ambiguous: the connection may close before creation starts.
     // Any already-visible record must be controllable by the replacement.
     // The manager suite covers release during an in-flight create directly.
@@ -727,7 +767,7 @@ describe("terminal attachment and recovery API", () => {
     await output.untilText("PTY_READY")
     await disconnect()
     output.detach()
-    await expect(client.projects.list()).rejects.toThrow("Runtime connection is closed")
+    await expect(client.projects.list()).rejects.toThrow("Runner connection is closed")
   })
 
   it("process survival and replay after the saved cursor", async ({ resources }) => {

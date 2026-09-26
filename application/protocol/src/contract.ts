@@ -10,6 +10,7 @@ import {
   protocolVersion,
   rows,
   sequence,
+  terminalAttached,
   terminalEvent,
   terminalSummary,
   workspaceSession,
@@ -37,17 +38,21 @@ export const errors = {
 const procedure = oc.errors(errors)
 
 export const contract = {
-  runtime: {
+  runner: {
+    // Trusted transports, such as a host-provided MessagePort, need no token.
     handshake: procedure
       .input(
         z.strictObject({
           protocolVersion: z.number().int(),
-          token: z.string().min(1).max(512),
+          token: z.string().min(1).max(512).optional(),
+          // Stable per client across reconnections. A new connection with the same
+          // client ID takes over from the old one, even if that one is still half-open.
+          clientId: id.optional(),
         }),
       )
       .output(
         z.strictObject({
-          runtimeId: id,
+          runnerId: id,
           protocolVersion: z.literal(protocolVersion),
           capabilities: z.array(
             z.enum(["workspace-metadata", "terminal-replay", "terminal-ack", "terminal-observers"]),
@@ -78,7 +83,7 @@ export const contract = {
           mode: z.enum(["control", "observe"]).optional(),
         }),
       )
-      .output(eventIterator(terminalEvent)),
+      .output(eventIterator(z.union([terminalAttached, terminalEvent]))),
     write: procedure
       .input(z.strictObject({ terminalId: id, data: z.string().min(1).max(16_384) }))
       .output(z.void()),
@@ -90,4 +95,6 @@ export const contract = {
   },
 }
 
-export type RuntimeClient = ContractRouterClient<typeof contract>
+/** The raw oRPC client. Applications use `connectRunner` from `@novadeck/protocol/client`. */
+export type WireClient = ContractRouterClient<typeof contract>
+export type ErrorCode = keyof typeof errors

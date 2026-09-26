@@ -39,6 +39,10 @@ currently requires restarting the runtime, which ends its shells. The token is
 removed from inherited PTY environment variables, but processes sharing the OS
 account are not isolated from the runtime.
 
+A runner served over a MessagePort (`servePort`) trusts whoever holds the port and
+skips the token. Hand such a port only to a renderer the host itself loaded, such
+as an Electron window with context isolation, and never forward it to web content.
+
 Bind to loopback by default. Remote access requires a trusted HTTPS/WSS reverse
 proxy (or a private encrypted network), explicit browser origins in
 `CORS_ORIGINS`, and firewall rules preventing direct public access to the plaintext

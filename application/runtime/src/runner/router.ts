@@ -1,5 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto"
-
 import { contract, errors as contractErrors, protocolVersion } from "@novadeck/protocol"
 import { implement, ORPCError } from "@orpc/server"
 
@@ -7,8 +5,13 @@ import { DomainError } from "../errors.js"
 import type { TerminalManager } from "../terminals/index.js"
 import type { WorkspaceStore } from "../workspaces/store.js"
 
+/** One client of a runner. Its transport decides how the handshake token is checked. */
 export type Connection = {
-  id: string
+  readonly id: string
+  readonly verify: (token: string | undefined) => boolean
+  /** Ends the transport, e.g. when a newer connection of the same client takes over. */
+  readonly terminate: () => void
+  clientId: string | undefined
   authenticated: boolean
   closed: boolean
   calls: number
@@ -16,8 +19,6 @@ export type Connection = {
 }
 
 type Context = { connection: Connection }
-
-const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
 
 const apiError = (error: unknown): unknown =>
   error instanceof DomainError
@@ -28,13 +29,12 @@ const apiError = (error: unknown): unknown =>
     : error
 
 export const createRouter = (options: {
-  token: string
-  runtimeId: string
+  runnerId: string
+  claim: (connection: Connection, clientId: string) => void
   store: WorkspaceStore
   terminals: TerminalManager
 }) => {
   const { store, terminals } = options
-  const secret = digest(options.token)
   const api = implement(contract).$context<Context>()
   const protectedApi = api.use(async ({ context, next }) => {
     const connection = context.connection
@@ -51,17 +51,18 @@ export const createRouter = (options: {
   })
 
   return api.router({
-    runtime: {
-      handshake: api.runtime.handshake.handler(({ input, context, errors }) => {
+    runner: {
+      handshake: api.runner.handshake.handler(({ input, context, errors }) => {
         const connection = context.connection
-        if (connection.closed || !timingSafeEqual(secret, digest(input.token))) {
+        if (connection.closed || !connection.verify(input.token)) {
           throw errors.UNAUTHORIZED()
         }
         if (input.protocolVersion !== protocolVersion) throw errors.INCOMPATIBLE_PROTOCOL()
         connection.authenticated = true
+        if (input.clientId !== undefined) options.claim(connection, input.clientId)
         connection.onAuthenticated()
         return {
-          runtimeId: options.runtimeId,
+          runnerId: options.runnerId,
           protocolVersion,
           capabilities: [
             "workspace-metadata",

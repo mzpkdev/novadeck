@@ -9,6 +9,11 @@ import { TerminalManager } from "./manager.js"
 const cwd = process.cwd()
 const { Terminal } = headless
 
+/** Omits the transport marker that opens each attachment. */
+const withoutMarker = async function* (stream: ReturnType<TerminalManager["attach"]>) {
+  for await (const event of stream) if (event.type !== "attached") yield event
+}
+
 const fixture = (resources: Resources) => {
   const manager = (options: ConstructorParameters<typeof TerminalManager>[0] = {}) => {
     const runtime = new TerminalManager({ shell: "/bin/sh", env: { PS1: "" }, ...options })
@@ -32,7 +37,7 @@ const fixture = (resources: Resources) => {
       controller.abort()
       await stream.return(undefined)
     })
-    return stream
+    return withoutMarker(stream)
   }
   return { manager, attach }
 }
@@ -156,7 +161,8 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       signal.abort()
       await controller.return(undefined)
     })
-    await controller.next()
+    expect((await controller.next()).value).toMatchObject({ type: "attached", mode: "control" })
+    expect((await controller.next()).value).toMatchObject({ type: "snapshot" })
     const observer = terminals.attach(runtime, terminal.id, "observer", undefined, "observe")
     await observer.next()
     expect(() => runtime.write({ terminalId: terminal.id, data: "input" }, "observer")).toThrow(

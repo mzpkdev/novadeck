@@ -7,6 +7,8 @@ exact schemas and implementation choices left for the first working slice.
 
 The first backend-only slice is now implemented: shared contracts, authenticated
 WebSocket RPC, real PTYs, replay, consumption ACKs, and SQLite projects/sessions.
+The UI-facing `connectRunner` client wraps this wire API: attachments acknowledge,
+resume, and resynchronize on their own, over WebSocket or a host MessagePort.
 See [backend API](backend-api.md) for its setup and current contract. UI wiring,
 Electron process integration, and deployment packaging remain separate work.
 
@@ -43,8 +45,8 @@ network connections.
 
 ```ts
 // Check compatibility before attaching or changing anything.
-const runtime = await client.runtime.handshake({ protocolVersion: 1, token })
-// Returns runtime identity, negotiated protocol version, and capabilities.
+const runner = await client.runner.handshake({ protocolVersion: 2, token })
+// Returns runner identity, negotiated protocol version, and capabilities.
 
 const projects = await client.projects.list()
 const sessions = await client.sessions.list({ projectId })

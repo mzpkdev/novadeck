@@ -1,4 +1,4 @@
-import type { TerminalEvent } from "@novadeck/protocol"
+import type { TerminalAttached, TerminalEvent } from "@novadeck/protocol"
 import * as fc from "fast-check"
 
 import { describe, expect, it } from "../test.js"
@@ -7,7 +7,10 @@ import { TerminalManager } from "./manager.js"
 
 type Mode = "control" | "observe"
 type Model = { controller: number | undefined; attached: Map<number, Mode> }
-type Attachment = { stream: AsyncGenerator<TerminalEvent>; signal: AbortController }
+type Attachment = {
+  stream: AsyncGenerator<TerminalAttached | TerminalEvent>
+  signal: AbortController
+}
 type Real = { manager: TerminalManager; id: string; attached: Map<number, Attachment> }
 type Action =
   | { type: "attach"; client: number; mode: Mode }
@@ -62,9 +65,11 @@ class Step implements fc.AsyncCommand<Model, Real> {
           : undefined
       if (error) await expect(stream.next()).rejects.toMatchObject({ code: error })
       else {
-        const event = await stream.next()
-        expect(event.value).toMatchObject({ type: "snapshot", status: "running" })
-        real.manager.ack({ terminalId: real.id, sequence: event.value!.sequence }, owner(client))
+        expect((await stream.next()).value).toEqual({ type: "attached", terminalId: real.id, mode })
+        const { value: event } = await stream.next()
+        if (event?.type !== "snapshot") throw new Error(`Expected a snapshot, got ${event?.type}`)
+        expect(event).toMatchObject({ status: "running" })
+        real.manager.ack({ terminalId: real.id, sequence: event.sequence }, owner(client))
         real.attached.set(client, { stream, signal })
         model.attached.set(client, mode)
         if (mode === "control") model.controller = client

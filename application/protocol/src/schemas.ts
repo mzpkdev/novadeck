@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const protocolVersion = 1
+export const protocolVersion = 2
 export const id = z.uuid()
 export const name = z.string().trim().min(1).max(200)
 export const directory = z.string().min(1).max(4096)
@@ -40,7 +40,15 @@ export const terminalEvent = z.discriminatedUnion("type", [
   }),
 ])
 
+/** Wire-only marker: the attachment is established and holds the reported mode. */
+export const terminalAttached = z.strictObject({
+  terminalId: id,
+  type: z.literal("attached"),
+  mode: z.enum(["control", "observe"]),
+})
+
 export type Project = z.infer<typeof project>
 export type WorkspaceSession = z.infer<typeof workspaceSession>
 export type TerminalSummary = z.infer<typeof terminalSummary>
 export type TerminalEvent = z.infer<typeof terminalEvent>
+export type TerminalAttached = z.infer<typeof terminalAttached>

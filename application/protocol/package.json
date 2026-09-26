@@ -12,6 +12,10 @@
     "./client": {
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
+    },
+    "./wire": {
+      "types": "./dist/wire.d.ts",
+      "default": "./dist/wire.js"
     }
   },
   "scripts": {

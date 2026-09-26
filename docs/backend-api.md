@@ -55,8 +55,8 @@ verification gates before integration.
 Without a token, the runtime exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set.
-Programmatic `startRuntime` from `@novadeck/runtime/terminal` uses an in-memory
-database when no path is supplied. The original package entry remains HTTP-only
+Programmatic `startRuntime` from `@novadeck/runtime/terminal` and `createRunner` use
+an in-memory database when no path is supplied. The original package entry remains HTTP-only
 so existing Electron builds do not pull in native terminal dependencies.
 
 For a VPS, terminate TLS at a trusted reverse proxy and forward WebSocket upgrades.
@@ -65,59 +65,114 @@ connect directly over WSS; it does not need a terminal backend on Cloudflare.
 Follow the [runtime trust boundary](../SECURITY.md#terminal-runtime) before exposing
 the service. There is no TLS, login page, or public multi-user hosting layer here.
 
-## Contract shape
+## Runner API
 
-`@novadeck/protocol` contains runtime-validated Zod schemas, oRPC contracts, inferred
-TypeScript types, and a browser-compatible client. The runtime implements that
-contract; it does not expose arbitrary event-name handlers. oRPC is pinned to
-1.15.4: its installed API uses `eventIterator` and the server's `ws` adapter.
-The client keeps the standard oRPC wire protocol with a small transport adapter
-that safely settles cancellation when a socket closes.
+The runner owns shells and workspace metadata. The UI talks to it through one
+`Runner` interface, whether the runner is bundled with the host or deployed
+separately; only the transport differs.
 
 ```ts
-import { protocolVersion } from "@novadeck/protocol"
-import { createRuntimeClient } from "@novadeck/protocol/client"
+import { connectRunner, messagePort, websocket } from "@novadeck/protocol/client"
 
-const socket = new WebSocket("ws://127.0.0.1:8787/api/rpc")
-socket.binaryType = "arraybuffer"
-const client = createRuntimeClient(socket)
-const runtime = await client.runtime.handshake({ protocolVersion, token })
+// Deployed separately: a token-authenticated WebSocket (use wss:// remotely).
+const runner = await connectRunner(websocket("ws://127.0.0.1:8787/api/rpc", { token }))
 
-const project = await client.projects.create({ name: "My project", cwd: "/work/project" })
-const session = await client.sessions.create({ projectId: project.id, name: "Development" })
-const terminal = await client.terminals.create({ sessionId: session.id, cols: 120, rows: 30 })
+// Bundled in a host such as Electron: a MessagePort to the runner process.
+const runner = await connectRunner(messagePort(port))
 ```
 
-The handshake is required for every connection and returns `runtimeId`, protocol
-version, and capabilities. The token is sent in-band, never in a URL. Unauthenticated
-connections time out after ten seconds. Existing projects/sessions can be listed
-and renamed; `terminals.list({ sessionId })` discovers live and retained exited
-terminals. Creation uses the project's directory unless `cwd` is supplied.
-Directories must exist and be absolute. The server chooses the shell; clients
-send terminal input, not executable configuration.
+`connectRunner` resolves after the first handshake and rejects with a typed
+`RunnerError` (for example `UNAUTHORIZED` or `INCOMPATIBLE_PROTOCOL`). After that
+it reconnects on its own. `runner.status` holds the current state, and
+`runner.watch()` yields it and every change, so a UI reads connection state with
+`for await` instead of registering callbacks.
 
 ```ts
-const controller = new AbortController()
-const events = await client.terminals.attach(
-  { terminalId: terminal.id, mode: "control" },
-  { signal: controller.signal },
-)
+const project = await runner.projects.create({ name: "My project", cwd: "/work/project" })
+const session = await runner.sessions.create({ projectId: project.id, name: "Development" })
+const { id } = await runner.terminals.create({ sessionId: session.id, cols: 120, rows: 30 })
 
-for await (const event of events) {
-  // Apply snapshot/output/resized/exited, then ACK after actual consumption.
-  await client.terminals.ack({ terminalId: terminal.id, sequence: event.sequence })
-}
+const terminal = await runner.terminals.attach(id)
+for await (const event of terminal) render(event) // snapshot, output, resized, exited
 
-// Independent of reading the stream:
-await client.terminals.write({ terminalId: terminal.id, data: "pwd\r" })
-await client.terminals.resize({ terminalId: terminal.id, cols: 100, rows: 32 })
-await client.terminals.close({ terminalId: terminal.id })
+// Independent of reading, typically from keyboard and layout handlers:
+await terminal.write("pwd\r")
+await terminal.resize({ cols: 100, rows: 32 })
+await terminal.close() // ends the shell; iteration then finishes after `exited`
+await terminal.detach() // or `break` out of the loop; the shell keeps running
 ```
 
-The last three calls illustrate the separate command path; in a client they run
-alongside the event consumer. `write` accepts control characters, including Ctrl-C
-(`\u0003`). A successful write means accepted input, not command completion.
-Never automatically retry input or creation after uncertain delivery.
+An attached terminal is a single async stream of events. The client handles
+everything else:
+
+- **Acknowledgement.** Requesting the next event acknowledges the previous one, so
+  flow control follows the renderer's actual pace.
+- **Reconnection.** After a connection drops, the attachment resumes after the
+  last event it produced. Missed output is replayed, or a fresh snapshot replaces
+  the screen when the history has expired. A cursor never crosses runner
+  lifetimes.
+- **Slow viewers.** A viewer that falls too far behind skips its backlog and
+  resumes from a fresh snapshot instead of failing.
+- **Errors.** Iteration ends normally when the shell exits, the terminal is
+  detached, or the client closes. It throws a `RunnerError` only when the attachment
+  cannot continue, such as `CONTROL_IN_USE` after another client took control
+  during a disconnection or `TERMINAL_NOT_FOUND` after the runner restarted.
+
+Calls made while reconnecting reject with `DISCONNECTED`; input and creation are
+never retried automatically. Each client sends a random client ID in its handshake,
+so when it reconnects after a link only it saw fail, the runner releases the stale
+connection immediately instead of after missed heartbeats, and the attachment
+reclaims control. Opening a connection and completing its handshake time out after
+ten seconds (`timeout`). `connectRunner` accepts a `signal` to cancel the first
+connection; it does not retry that one, so a UI can report a wrong URL or token.
+A MessagePort transport detects a closed runner through the port's `close` event,
+which Electron and Node.js provide. `attach(id, { mode: "observe" })` follows a terminal
+without controlling it; its `write`, `resize`, and `close` reject with
+`CONTROL_REQUIRED`.
+
+### Serving a runner
+
+`@novadeck/runtime/runner` separates the runner from how clients reach it:
+
+```ts
+import { createRunner, servePort, serveWebSocket } from "@novadeck/runtime/runner"
+
+const runner = createRunner({ databasePath })
+
+// Deployed: token-authenticated WebSockets at /api/rpc on an HTTP server.
+serveWebSocket(runner, { token, origins }).attach(httpServer)
+
+// Bundled: one trusted client per MessagePort, such as an Electron renderer's port
+// to a utility process. Holding the port is the credential.
+const dispose = servePort(runner, port)
+```
+
+The CLI (`pnpm --filter @novadeck/runtime start`) and `startRuntime` from
+`@novadeck/runtime/terminal` compose the WebSocket form with the HTTP status
+endpoint. Electron wiring is not part of this change.
+
+### Wire contract
+
+`@novadeck/protocol` contains runtime-validated Zod schemas, the oRPC contract, and
+inferred TypeScript types. The runtime implements that contract; it does not expose
+arbitrary event-name handlers. oRPC is pinned to 1.15.4: its installed API uses
+`eventIterator` and the server's `ws` and `message-port` adapters. The client keeps
+oRPC's standard wire protocol over a small channel adapter that settles pending
+calls when a socket or port closes. `@novadeck/protocol/wire` exposes the raw
+`WireClient` for protocol tests. Applications use `connectRunner`.
+
+Every connection starts with `runner.handshake({ protocolVersion, token })`, which
+returns `runnerId`, the protocol version, and capabilities. WebSocket connections
+require the token in the handshake, never in a URL, and time out after ten seconds
+without it. MessagePort connections omit it. Each `terminals.attach` stream begins
+with an unsequenced `attached` marker confirming the granted mode, followed by
+sequenced terminal events.
+
+`terminals.list({ sessionId })` discovers live and retained exited terminals.
+Creation uses the project's directory unless `cwd` is supplied. Directories must
+exist and be absolute. The server chooses the shell; clients send terminal input,
+not executable configuration. `write` accepts control characters, including
+Ctrl-C (`\u0003`). A successful write means accepted input, not command completion.
 
 ## Stream and lifetime rules
 
@@ -132,8 +187,8 @@ Never automatically retry input or creation after uncertain delivery.
 - Reconnect with a new socket/client and handshake. Attach using `afterSequence`
   from the last fully applied event. Available history is replayed; an expired
   cursor falls back to a fresh snapshot. A future cursor is rejected. Scope saved
-  cursors to both runtime identity and terminal ID. Reconnection is explicit, not
-  hidden in the client helper.
+  cursors to both runner identity and terminal ID. `connectRunner` does this for
+  its attachments; raw wire clients must do it themselves.
 - Default limits are 32 connections and 32 retained terminals, 64 KiB incoming
   WebSocket messages, 16,384 characters per input call, 1 MiB replay per terminal,
   4 MiB queued/unacknowledged events per attachment, and a 256 KiB ACK window.

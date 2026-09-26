@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, timingSafeEqual } from "node:crypto"
 import type { IncomingMessage } from "node:http"
 import type { Duplex } from "node:stream"
 
@@ -6,24 +6,23 @@ import type { ServerType } from "@hono/node-server"
 import { RPCHandler } from "@orpc/server/ws"
 import { WebSocket, WebSocketServer } from "ws"
 
-import { TerminalManager, type TerminalManagerOptions } from "../terminals/index.js"
-import { WorkspaceStore } from "../workspaces/store.js"
-import { createRouter, type Connection } from "./router.js"
+import type { Runner } from "./runner.js"
 
-export type ApiOptions = {
+export type WebSocketOptions = {
   token: string
   origins: readonly string[]
-  databasePath?: string
-  terminal?: TerminalManagerOptions
   maxConnections?: number
   heartbeatIntervalMs?: number
 }
+
+const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
 
 const rejectUpgrade = (socket: Duplex, status: number, message: string): void => {
   socket.end(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
 }
 
-export const createApi = (options: ApiOptions) => {
+/** Serves a runner to token-authenticated WebSocket clients at `/api/rpc`. */
+export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
   if (options.token.length < 32 || options.token.length > 512) {
     throw new Error("NOVADECK_TOKEN must contain between 32 and 512 characters")
   }
@@ -35,12 +34,11 @@ export const createApi = (options: ApiOptions) => {
   if (!Number.isSafeInteger(heartbeatIntervalMs) || heartbeatIntervalMs < 1) {
     throw new Error("heartbeatIntervalMs must be a positive integer")
   }
-  const terminals = new TerminalManager(options.terminal)
-  const transportBudget = (options.terminal?.snapshotBytes ?? 32 * 1024 * 1024) + 8 * 1024 * 1024
-  const store = new WorkspaceStore(options.databasePath)
-  const handler = new RPCHandler(
-    createRouter({ token: options.token, runtimeId: randomUUID(), terminals, store }),
-  )
+  const secret = digest(options.token)
+  const verify = (token: string | undefined) =>
+    token !== undefined && timingSafeEqual(secret, digest(token))
+  const transportBudget = runner.snapshotBytes + 8 * 1024 * 1024
+  const handler = new RPCHandler(runner.router)
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: 64 * 1024,
@@ -54,19 +52,12 @@ export const createApi = (options: ApiOptions) => {
     const timer = setTimeout(() => socket.close(1008, "Authentication required"), 10_000)
     timer.unref()
     let heartbeat: ReturnType<typeof setInterval> | undefined
-    const connection: Connection = {
-      id: randomUUID(),
-      authenticated: false,
-      closed: false,
-      calls: 0,
-      onAuthenticated: () => clearTimeout(timer),
-    }
+    const connection = runner.connect(verify, () => socket.terminate())
+    connection.onAuthenticated = () => clearTimeout(timer)
     const cleanup = () => {
-      if (connection.closed) return
-      connection.closed = true
       clearTimeout(timer)
       if (heartbeat) clearInterval(heartbeat)
-      terminals.release(connection.id)
+      runner.disconnect(connection)
     }
     // ws calls close() when receiving the peer's close frame. Release ownership
     // before replying, so a client that observes closure can immediately reconnect.
@@ -134,11 +125,6 @@ export const createApi = (options: ApiOptions) => {
         await new Promise<void>((resolve, reject) => {
           wss.close((error) => (error ? reject(error) : resolve()))
         })
-        try {
-          await terminals.shutdown()
-        } finally {
-          store.close()
-        }
       })()
       return stop
     },

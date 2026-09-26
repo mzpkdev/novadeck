@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { createRuntimeClient } from "@novadeck/protocol/client"
+import { connectRunner, websocket } from "@novadeck/protocol/client"
 
 import type { Resources } from "./resources.js"
 
@@ -87,31 +87,14 @@ export const launchCli = async (directory: string, resources: Resources) => {
   })
   const origin = await bounded(ready, "Built runtime did not announce its listener")
 
-  const connect = async () => {
-    const socket = new WebSocket(`${origin.replace(/^http/, "ws")}/api/rpc`)
-    socket.binaryType = "arraybuffer"
-    resources.defer(async () => {
-      if (socket.readyState === WebSocket.CLOSED) return
-      const closed = new Promise<void>((resolve) => {
-        socket.addEventListener("close", () => resolve(), { once: true })
-      })
-      socket.close()
-      await bounded(closed, "Built runtime client did not disconnect")
-    })
-    await bounded(
-      new Promise<void>((resolve, reject) => {
-        socket.addEventListener("open", () => resolve(), { once: true })
-        socket.addEventListener(
-          "error",
-          () => reject(new Error("Built runtime connection failed")),
-          {
-            once: true,
-          },
-        )
-      }),
+  /** Connects through the public runner client, closed with the test's resources. */
+  const connect = async (token: string) => {
+    const runner = await bounded(
+      connectRunner(websocket(`${origin.replace(/^http/, "ws")}/api/rpc`, { token })),
       "Built runtime client did not connect",
     )
-    return createRuntimeClient(socket)
+    resources.defer(() => runner.close())
+    return runner
   }
   return { origin, connect, stop, output: () => output, diagnostics: () => diagnostics }
 }

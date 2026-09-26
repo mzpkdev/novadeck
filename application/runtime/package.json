@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/server.ts",
     "./terminal": "./src/terminal-server.ts",
+    "./runner": "./src/runner/index.ts",
     "./app": "./src/app.ts"
   },
   "scripts": {

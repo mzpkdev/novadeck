@@ -3,7 +3,7 @@ import { constants } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
 import { delimiter, isAbsolute, resolve as resolvePath } from "node:path"
 
-import type { TerminalEvent, TerminalSummary } from "@novadeck/protocol"
+import type { TerminalAttached, TerminalEvent, TerminalSummary } from "@novadeck/protocol"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import type { SerializeAddon as Serializer } from "@xterm/addon-serialize"
 import headless from "@xterm/headless"
@@ -203,11 +203,12 @@ export class TerminalManager {
     await this.terminate(record)
   }
 
+  /** Streams an `attached` marker once established, then snapshot or replay and live events. */
   async *attach(
     input: Attach,
     ownerId: string,
     signal?: AbortSignal,
-  ): AsyncGenerator<TerminalEvent> {
+  ): AsyncGenerator<TerminalAttached | TerminalEvent> {
     const record = this.record(input.terminalId)
     const pending = this.pending(ownerId)
     record.pendingAttachments += 1
@@ -275,6 +276,8 @@ export class TerminalManager {
         record.pendingAttachments -= 1
       })
       if (!subscription) return
+      // Tells the client that control or observation is established before any event arrives.
+      yield { type: "attached", terminalId: input.terminalId, mode: subscription.mode }
       while (true) {
         // eslint-disable-next-line no-await-in-loop -- Each delivery waits for consumption ACKs.
         const event = await subscription.next()

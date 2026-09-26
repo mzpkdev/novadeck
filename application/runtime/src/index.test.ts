@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { protocolVersion, type RuntimeClient } from "@novadeck/protocol"
+import type { AttachedTerminal } from "@novadeck/protocol/client"
 
 import { describe, expect, it } from "./test.js"
 import { launchCli } from "./testing/cli.js"
@@ -26,23 +26,20 @@ const directoryFixture = async (resources: Resources) => {
   return directory
 }
 
-const attach = async (client: RuntimeClient, terminalId: string, resources: Resources) => {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error("CLI terminal timed out")), 10_000)
+const reader = (terminal: AttachedTerminal, resources: Resources) => {
+  const timeout = setTimeout(() => void terminal.detach(), 10_000)
   timeout.unref()
   resources.defer(() => {
     clearTimeout(timeout)
-    controller.abort()
+    return terminal.detach()
   })
-  const stream = await client.terminals.attach({ terminalId }, { signal: controller.signal })
   let output = ""
   const next = async () => {
-    const result = await stream.next()
+    const result = await terminal.next()
     if (result.done) throw new Error("CLI terminal ended before the expected event")
     const event = result.value
     if (event.type === "snapshot") output = event.data
     if (event.type === "output") output += event.data
-    await client.terminals.ack({ terminalId, sequence: event.sequence })
     return event
   }
   const untilOutput = async (pattern: RegExp) => {
@@ -77,54 +74,43 @@ describe("built runtime CLI", () => {
     ).toBe(200)
     expect((await stat(join(directory, "workspace.sqlite"))).isFile()).toBe(true)
     expect(runtime.output()).not.toContain(token)
-    const client = await runtime.connect()
-    const call = { signal: AbortSignal.timeout(10_000) }
-    await expect(client.projects.list(undefined, call)).rejects.toMatchObject({
-      code: "UNAUTHORIZED",
-    })
-    await expect(
-      client.runtime.handshake({ protocolVersion, token: "wrong" }, call),
-    ).rejects.toMatchObject({ code: "UNAUTHORIZED" })
-    const info = await client.runtime.handshake({ protocolVersion, token }, call)
-    const project = await client.projects.create({ name: "CLI workspace", cwd: directory }, call)
-    const session = await client.sessions.create(
-      { projectId: project.id, name: "CLI session" },
-      call,
-    )
-    const terminal = await client.terminals.create(
-      { sessionId: session.id, cols: 80, rows: 24 },
-      call,
-    )
-    const reader = await attach(client, terminal.id, resources)
+    await expect(runtime.connect("wrong")).rejects.toMatchObject({ code: "UNAUTHORIZED" })
+    const runner = await runtime.connect(token)
+    expect(runner.status).toEqual({ state: "connected", runnerId: expect.any(String) })
+    const project = await runner.projects.create({ name: "CLI workspace", cwd: directory })
+    const session = await runner.sessions.create({ projectId: project.id, name: "CLI session" })
+    const created = await runner.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await runner.terminals.attach(created.id)
+    const output = reader(terminal, resources)
     const command =
       process.platform === "win32"
         ? `"${process.execPath}" "${join(directory, "check.mjs")}"\r`
         : `'${process.execPath.replaceAll("'", "'\\''")}' '${join(directory, "check.mjs").replaceAll("'", "'\\''")}'\r`
-    await client.terminals.write({ terminalId: terminal.id, data: command }, call)
-    await reader.untilOutput(/CLI_SHELL_OK/)
-    await client.terminals.write({ terminalId: terminal.id, data: "exit 7\r" }, call)
-    let event = await reader.next()
+    await terminal.write(command)
+    await output.untilOutput(/CLI_SHELL_OK/)
+    await terminal.write("exit 7\r")
+    let event = await output.next()
     while (event.type !== "exited") {
       // eslint-disable-next-line no-await-in-loop -- The exit follows the shell's remaining output.
-      event = await reader.next()
+      event = await output.next()
     }
     expect(event.exitCode).toBe(7)
-    expect(reader.output()).not.toContain(token)
+    await expect(terminal.next()).resolves.toEqual({ value: undefined, done: true })
+    expect(output.output()).not.toContain(token)
+    const { runnerId } = runner.status as { runnerId: string }
+    await runner.close()
     const stopped = await runtime.stop()
     if (process.platform !== "win32") expect(stopped).toEqual({ code: 0, signal: null })
 
     const restarted = await launchCli(directory, resources)
-    const connection = await restarted.connect()
-    const restartCall = { signal: AbortSignal.timeout(10_000) }
-    const restart = await connection.runtime.handshake({ protocolVersion, token }, restartCall)
-    expect(restart.runtimeId).not.toBe(info.runtimeId)
-    await expect(connection.projects.list(undefined, restartCall)).resolves.toEqual([project])
-    await expect(connection.sessions.list({ projectId: project.id }, restartCall)).resolves.toEqual(
-      [session],
-    )
-    await expect(
-      connection.terminals.list({ sessionId: session.id }, restartCall),
-    ).resolves.toEqual([])
+    const again = await restarted.connect(token)
+    expect(again.status).toEqual({
+      state: "connected",
+      runnerId: expect.not.stringMatching(runnerId),
+    })
+    await expect(again.projects.list()).resolves.toEqual([project])
+    await expect(again.sessions.list({ projectId: project.id })).resolves.toEqual([session])
+    await expect(again.terminals.list({ sessionId: session.id })).resolves.toEqual([])
   }, 30_000)
 
   it.skipIf(process.platform === "win32")(
@@ -132,25 +118,15 @@ describe("built runtime CLI", () => {
     async ({ resources }) => {
       const directory = await directoryFixture(resources)
       const runtime = await launchCli(directory, resources)
-      const client = await runtime.connect()
-      const call = { signal: AbortSignal.timeout(10_000) }
-      await client.runtime.handshake({ protocolVersion, token }, call)
-      const project = await client.projects.create({ name: "Shutdown", cwd: directory }, call)
-      const session = await client.sessions.create(
-        { projectId: project.id, name: "Live shell" },
-        call,
-      )
-      const terminal = await client.terminals.create(
-        { sessionId: session.id, cols: 80, rows: 24 },
-        call,
-      )
-      const reader = await attach(client, terminal.id, resources)
-      await client.terminals.write(
-        { terminalId: terminal.id, data: "printf 'OWNED_%s_PID=%s\\n' SHELL \"$$\"\r" },
-        call,
-      )
-      const output = await reader.untilOutput(/OWNED_SHELL_PID=\d+/)
-      const pid = Number(/OWNED_SHELL_PID=(\d+)/.exec(output)?.[1])
+      const runner = await runtime.connect(token)
+      const project = await runner.projects.create({ name: "Shutdown", cwd: directory })
+      const session = await runner.sessions.create({ projectId: project.id, name: "Live shell" })
+      const created = await runner.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+      const terminal = await runner.terminals.attach(created.id)
+      const output = reader(terminal, resources)
+      await terminal.write("printf 'OWNED_%s_PID=%s\\n' SHELL \"$$\"\r")
+      const text = await output.untilOutput(/OWNED_SHELL_PID=\d+/)
+      const pid = Number(/OWNED_SHELL_PID=(\d+)/.exec(text)?.[1])
       expect(pid).toBeGreaterThan(0)
       expect(() => process.kill(pid, 0)).not.toThrow()
       expect(await runtime.stop()).toEqual({ code: 0, signal: null })
