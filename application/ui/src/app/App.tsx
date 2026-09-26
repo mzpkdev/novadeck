@@ -17,11 +17,14 @@ import { SidebarSection } from "./SidebarSection"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceStage } from "./WorkspaceStage"
 
-export type AppProps = { readonly backend?: CreateBackend }
+export type AppProps = {
+  // Read once when the app mounts; later changes are ignored. Defaults to app/backend.ts.
+  readonly createBackend?: CreateBackend
+}
 
-export const App = ({ backend = selectBackend }: AppProps): React.JSX.Element => (
+export const App = ({ createBackend = selectBackend }: AppProps): React.JSX.Element => (
   <HashRouter useTransitions={false}>
-    <WorkspaceApp createBackend={backend} />
+    <WorkspaceApp createBackend={createBackend} />
   </HashRouter>
 )
 
