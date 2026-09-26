@@ -34,11 +34,17 @@ const adapterRule = (layer: string): readonly string[] => [
   "model/",
   "ui-toolkit/",
 ]
-// The only file that may import a backend adapter.
+// The only file that may import a backend adapter; it exports nothing else.
 const adapterSelection = "app/backend.ts"
-// Layers that may not use packages at all, or only the listed ones as `import type`.
+const adapterSelectionExports = ["selectBackend"]
+// Packages are denied unless listed here, owned through `vendors`, or used by an
+// adapter or test code. model/ uses none; core backend/ uses React types only.
+const everywherePackages = new Set(["react", "lucide-react"])
 const typeOnlyPackages: Record<string, readonly string[]> = { "model/": [], "backend/": ["react"] }
+const testLayers = new Set(["specs/", "test/", "test.ts"])
 const vendors: Record<string, readonly string[]> = {
+  clsx: ["class-name.ts"],
+  "tailwind-merge": ["class-name.ts"],
   "@ark-ui": ["ui-toolkit/"],
   "@xyflow/react": ["layouts/canvas/"],
   "react-grid-layout": ["layouts/grid/"],
@@ -60,12 +66,14 @@ const imports = (file: string) =>
     specifier: match[3]!,
     typeOnly: Boolean(match[1]),
   }))
-const resolveFile = (file: string, specifier: string): string => {
+const resolveFile = (file: string, specifier: string): string | undefined => {
   const target = posix.normalize(posix.join(posix.dirname(file), specifier))
-  const candidates = [target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`]
+  const candidates = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"].map(
+    (suffix) => `${target}${suffix}`,
+  )
   const isFile = (path: string): boolean =>
     existsSync(join(src, path)) && statSync(join(src, path)).isFile()
-  return candidates.find(isFile) ?? target
+  return candidates.find(isFile)
 }
 const isTest = (file: string): boolean => /\.test\.tsx?$/.test(file)
 const rootTest = (file: string): boolean => isTest(file) && !file.includes("/")
@@ -94,11 +102,15 @@ const importViolation = (file: string, layer: string | undefined) => {
   const allowed = layer ? allowedFor(file, layer) : []
   return ({ specifier, typeOnly }: { specifier: string; typeOnly: boolean }): string[] => {
     if (!specifier.startsWith(".")) {
+      if (isTest(file) || (layer && (adapterOf(layer) || testLayers.has(layer)))) return []
       const limited = layer ? typeOnlyPackages[layer] : undefined
-      if (!limited || isTest(file)) return []
-      return limited.includes(packageName(specifier)) && typeOnly ? [] : [`${file} -> ${specifier}`]
+      const ok = limited
+        ? limited.includes(packageName(specifier)) && typeOnly
+        : everywherePackages.has(packageName(specifier)) || Boolean(vendorOf(specifier))
+      return ok ? [] : [`${file} -> ${specifier}`]
     }
     const target = resolveFile(file, specifier)
+    if (!target) return [`${file} -> ${specifier} (unresolved)`]
     const targetLayer = layerOf(target)
     if (targetLayer && adapterOf(targetLayer) && targetLayer !== layer)
       return file === adapterSelection
@@ -158,7 +170,14 @@ describe("UI architecture", () => {
   })
 
   it("keeps imports statically resolvable", () => {
-    expect(files.filter((file) => /\bimport\(\s*`/.test(source(file)))).toEqual([])
+    expect(files.filter((file) => /\bimport\(\s*[^"'\s]/.test(source(file)))).toEqual([])
+  })
+
+  it("lets the adapter selection export only its choice", () => {
+    const text = source(adapterSelection)
+    const exported = [...text.matchAll(/^export\s+(?:const|let|function|class|type)\s+(\w+)/gm)]
+    expect(/^export\s*(?:\*|\{|default)/m.test(text)).toBe(false)
+    expect(exported.map((match) => match[1])).toEqual(adapterSelectionExports)
   })
 
   it("names hook contracts instead of inferring them from the hook", () => {
