@@ -20,7 +20,7 @@ export type TerminalKey = WorkspaceTarget & { readonly terminalId: string }
 //   `minimized`; Grid keeps a minimizing surface painted while its height animates.
 // - The element that takes typed input carries `data-terminal-input`, so shortcuts
 //   treat it as terminal input and search returns focus to it.
-// Start I/O such as attaching to a process in the surface's effects, not in `commit`.
+// Attach to a running terminal from the surface's effects; `commit` handles lifecycle.
 export type TerminalSurfaceProps = {
   // Stable for the terminal's lifetime, so it is safe in effect dependencies.
   readonly terminalKey: TerminalKey
@@ -42,9 +42,12 @@ export type Backend = {
   // Allocates a terminal synchronously so commands can select and rename it at once.
   readonly newTerminal: (input: { number: number; directory: string }) => TerminalMetadata
   // Called inside every workspace store commit, before listeners, and once with []
-  // for the initial workspace. It runs during a render (a useState initializer) and,
-  // under StrictMode, possibly on an instance React then discards: keep it
-  // synchronous bookkeeping that is safe to repeat, with no I/O.
+  // for the initial workspace. That initial call runs during a render (a useState
+  // initializer), possibly on an instance StrictMode then discards, so it must be
+  // synchronous bookkeeping with no I/O. Later commits come from event handlers and
+  // effects on the kept store; they stay synchronous but may start fire-and-forget
+  // I/O, such as ending the process of a closed terminal that no view shows. Make
+  // that I/O safe to repeat for the same terminal.
   readonly commit: (workspace: Workspace, actions: readonly WorkspaceAction[]) => void
   // Created once per backend instance so its identity is stable across renders.
   readonly TerminalSurface: ComponentType<TerminalSurfaceProps>
