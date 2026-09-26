@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { terminalFixture } from "../test/fixtures"
 import { createTerminalState, workspaceReducer, type WorkspaceAction } from "./state"
-import { createWorkspaceStore } from "./store"
+import { createStore, createWorkspaceStore } from "./store"
 import type { Workspace } from "./types"
 
 const target = { projectId: "project", workspaceSessionId: "initial" }
@@ -276,5 +276,22 @@ describe("workspace store commits", () => {
     expect(state(store.getSnapshot()).selected).toBe("01")
     store.dispatch({ type: "terminal/select", target, terminalId: "" })
     expect(state(store.getSnapshot()).selected).toBe("")
+  })
+})
+
+describe("store", () => {
+  it("notifies subscribers after a change and not after one that keeps the value", () => {
+    const store = createStore({ count: 0 })
+    let notifications = 0
+    const unsubscribe = store.subscribe(() => notifications++)
+    store.update((value) => value)
+    expect(notifications).toBe(0)
+    const next = store.update((value) => ({ count: value.count + 1 }))
+    expect(next).toEqual({ count: 1 })
+    expect(store.getSnapshot()).toBe(next)
+    expect(notifications).toBe(1)
+    unsubscribe()
+    store.update((value) => ({ count: value.count + 1 }))
+    expect(notifications).toBe(1)
   })
 })
