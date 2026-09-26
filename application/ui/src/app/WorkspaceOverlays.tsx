@@ -1,10 +1,22 @@
-import { Suspense } from "react"
+import { Suspense, useLayoutEffect } from "react"
 
 import { orderedTerminals } from "../model/roster"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
 import { useWorkspace } from "./controller/context"
-import { useRouteDialog } from "./controller/useRouteDialog"
+import { useRouteDialog, type RouteDialog } from "./controller/useRouteDialog"
 import { Preferences, TerminalSearch } from "./deferred-views"
+
+// Rendered beside a deferred dialog, so it mounts only once the dialog's view has loaded.
+const Loaded = ({
+  dialog,
+  onLoaded,
+}: {
+  readonly dialog: RouteDialog
+  readonly onLoaded: (dialog: RouteDialog) => void
+}): null => {
+  useLayoutEffect(() => onLoaded(dialog), [dialog, onLoaded])
+  return null
+}
 
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = (): React.JSX.Element => {
@@ -27,7 +39,7 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
   const { visibleRecentSwitcher, setRecentSwitcher, closeRecentSwitcher } = recent
   const { select, updatePreferences, openSearchResult } = commands
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
-  const { searching, settings, onExitComplete } = useRouteDialog(route.dialog, context)
+  const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(route.dialog, context)
   return (
     <>
       {visibleRecentSwitcher && (
@@ -49,6 +61,7 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
       )}
       {/* Each dialog loads on its own; one opened before its chunk arrives appears once it does. */}
       <Suspense fallback={null}>
+        <Loaded dialog="search" onLoaded={onLoaded} />
         <TerminalSearch
           onExitComplete={onExitComplete}
           open={searching}
@@ -60,6 +73,7 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
         />
       </Suspense>
       <Suspense fallback={null}>
+        <Loaded dialog="preferences" onLoaded={onLoaded} />
         <Preferences
           key={`preferences/${context}`}
           onExitComplete={onExitComplete}
