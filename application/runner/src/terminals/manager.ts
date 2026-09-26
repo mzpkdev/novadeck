@@ -51,20 +51,6 @@ type Record = {
   closing: Promise<void> | undefined
 }
 
-/**
- * node-pty on Windows writes input through a socket with no error listener, so an
- * asynchronous write failure such as EAGAIN would crash the runner. Input is never
- * retried, so a failed write is dropped like any other undelivered keystroke; the
- * drop is logged, without the input itself.
- */
-const guardInput = (child: pty.IPty): void => {
-  // eslint-disable-next-line no-underscore-dangle -- node-pty exposes no public input socket.
-  const agent = (child as { _agent?: { inSocket?: NodeJS.EventEmitter } })._agent
-  agent?.inSocket?.on("error", (error: NodeJS.ErrnoException) => {
-    console.warn(`NovaDeck dropped terminal input: ${error.code ?? error.message}`)
-  })
-}
-
 const positive = (value: number | undefined, fallback: number): number => {
   const result = value ?? fallback
   if (!Number.isSafeInteger(result) || result < 1)
@@ -168,7 +154,6 @@ export class Terminals {
         closing: undefined,
       }
       this.records.set(record.summary.id, record)
-      guardInput(child)
       record.listeners.push(child.onData((data) => this.output(record, data)))
       record.listeners.push(
         child.onExit(({ exitCode, signal }) => this.exit(record, signal ? null : exitCode)),

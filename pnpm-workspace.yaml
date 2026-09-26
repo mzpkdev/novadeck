@@ -11,3 +11,5 @@ allowBuilds:
   node-pty: true
 minimumReleaseAgeExclude:
   - "@types/node@26.6.2"
+patchedDependencies:
+  node-pty@1.2.0-beta.14: patches/node-pty@1.2.0-beta.14.patch

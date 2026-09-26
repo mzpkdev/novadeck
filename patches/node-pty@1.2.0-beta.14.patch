@@ -1,0 +1,17 @@
+diff --git a/lib/windowsPtyAgent.js b/lib/windowsPtyAgent.js
+index 2728b765aa8f03bcfdadf46db0be5f77dcf20a25..70514e175e896cda37510774f721fc059cc42f6e 100644
+--- a/lib/windowsPtyAgent.js
++++ b/lib/windowsPtyAgent.js
+@@ -82,6 +82,12 @@ var WindowsPtyAgent = /** @class */ (function () {
+             writable: true
+         });
+         this._inSocket.setEncoding('utf8');
++        // A failed input write, such as EAGAIN, would otherwise be an uncaught exception
++        // that ends the host process (microsoft/node-pty#942, #976). Input is not retried,
++        // so the write is dropped; report it without the input itself.
++        this._inSocket.on('error', function (err) {
++            console.warn('node-pty dropped terminal input: ' + (err.code || err.message));
++        });
+     }
+     Object.defineProperty(WindowsPtyAgent.prototype, "onError", {
+         get: function () { return this._onError.event; },

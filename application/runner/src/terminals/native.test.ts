@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import { EventEmitter } from "node:events"
 
 import * as pty from "node-pty"
+import { vi } from "vitest"
 
 import { describe, expect, it } from "../test.js"
 import { command, ptyOptions } from "../testing/pty.js"
@@ -169,5 +170,23 @@ describe("installed native PTY dependency", () => {
       expect(descriptors()).toEqual(before)
     },
     60_000,
+  )
+
+  it.skipIf(process.platform !== "win32")(
+    "reports a failed Windows input write instead of ending the process",
+    async ({ resources }) => {
+      const terminal = spawn(resources)
+      await terminal.until("PTY_READY")
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      resources.defer(() => warn.mockRestore())
+      // Our node-pty patch guards this private socket; unpatched, the emit below throws.
+      const agent = (terminal.child as unknown as { _agent: { inSocket: NodeJS.EventEmitter } })
+        // eslint-disable-next-line no-underscore-dangle -- The patched socket is private to node-pty.
+        ._agent
+      agent.inSocket.emit("error", Object.assign(new Error("write EAGAIN"), { code: "EAGAIN" }))
+      expect(warn).toHaveBeenCalledWith("node-pty dropped terminal input: EAGAIN")
+      terminal.child.write(command({ type: "write", data: "STILL_ALIVE\r\n" }))
+      await terminal.until("STILL_ALIVE")
+    },
   )
 })

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  node-pty@1.2.0-beta.14: d219da0d82db5d7f4ef9b8a6f5bcb51bd0e3d0c81b1eab4e043169a6cbae0c07
+
 importers:
 
   .:
@@ -46,7 +49,7 @@ importers:
     dependencies:
       node-pty:
         specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
+        version: 1.2.0-beta.14(patch_hash=d219da0d82db5d7f4ef9b8a6f5bcb51bd0e3d0c81b1eab4e043169a6cbae0c07)
       ws:
         specifier: 8.21.3
         version: 8.21.3
@@ -132,7 +135,7 @@ importers:
         version: 4.13.8
       node-pty:
         specifier: 1.2.0-beta.14
-        version: 1.2.0-beta.14
+        version: 1.2.0-beta.14(patch_hash=d219da0d82db5d7f4ef9b8a6f5bcb51bd0e3d0c81b1eab4e043169a6cbae0c07)
       ws:
         specifier: 8.21.3
         version: 8.21.3
@@ -7969,7 +7972,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.2.0-beta.14:
+  node-pty@1.2.0-beta.14(patch_hash=d219da0d82db5d7f4ef9b8a6f5bcb51bd0e3d0c81b1eab4e043169a6cbae0c07):
     dependencies:
       node-addon-api: 7.1.1
 
