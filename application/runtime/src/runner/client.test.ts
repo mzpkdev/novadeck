@@ -51,6 +51,8 @@ const deployed = async (resources: Resources, options: RuntimeOptions = {}) => {
 }
 
 const bundled = async (resources: Resources) => {
+  // Created first so it is removed last, after the runner ends shells running inside it.
+  const directory = await temporary(resources)
   const runner = createRunner({ terminal: ptyOptions })
   resources.defer(() => runner.close())
   const connect = async () => {
@@ -61,7 +63,7 @@ const bundled = async (resources: Resources) => {
     resources.defer(() => client.close())
     return { client, dispose }
   }
-  return { directory: await temporary(resources), connect }
+  return { directory, connect }
 }
 
 /**
