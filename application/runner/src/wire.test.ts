@@ -11,7 +11,7 @@ import { WebSocket as NodeWebSocket } from "ws"
 
 import { startServer, type ServerOptions } from "./server.js"
 import { describe, expect, it } from "./test.js"
-import { command, ptyOptions } from "./testing/pty.js"
+import { command, ptyOptions, ptyTrace } from "./testing/pty.js"
 import type { Resources } from "./testing/resources.js"
 
 const token = "novadeck-api-tests-only-not-a-production-credential"
@@ -87,7 +87,8 @@ const reader = async (
         new Error(
           `Terminal ${terminalId} timed out waiting for ${checkpoint}; ` +
             `last event=${last?.type ?? "none"}, sequence=${last?.sequence ?? "none"}; ` +
-            `text tail=${JSON.stringify(text.slice(-512))}`,
+            `text tail=${JSON.stringify(text.slice(-512))}; ` +
+            `child trace:\n${ptyTrace()}`,
         ),
       )
     }, 3_000)

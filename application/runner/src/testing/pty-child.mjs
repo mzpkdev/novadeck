@@ -1,6 +1,18 @@
 // A controllable program running inside a real PTY. Base64 JSON lines ensure
 // startup input echoed by the OS cannot masquerade as the program's output.
 // Raw input keeps the protocol independent of shell syntax and line discipline.
+import { appendFileSync } from "node:fs"
+
+// Records what reached the child and what it finished writing, so a test that times
+// out can tell lost input from lost output.
+const trace = (entry) => {
+  if (!process.env.NOVADECK_PTY_TRACE) return
+  try {
+    appendFileSync(process.env.NOVADECK_PTY_TRACE, `${process.pid} ${entry}\n`)
+  } catch {
+    // Tracing must never change the child's behaviour.
+  }
+}
 process.stdin.setRawMode(true)
 process.stdin.setEncoding("utf8")
 const reportInfo = () => {
@@ -41,13 +53,17 @@ const produceNoise = () => {
   })
 }
 process.stdin.on("data", (data) => {
+  trace(`received ${data.length} chars`)
   input += data
   let newline
   while ((newline = input.indexOf("\n")) !== -1) {
     const line = input.slice(0, newline)
     input = input.slice(newline + 1)
     const command = JSON.parse(Buffer.from(line, "base64").toString("utf8"))
-    if (command.type === "write") process.stdout.write(command.data)
+    trace(`command ${command.type}`)
+    if (command.type === "write") {
+      process.stdout.write(command.data, () => trace(`wrote ${command.data.length} chars`))
+    }
     if (command.type === "info") reportWhenSized(command)
     if (command.type === "burst") process.stdout.write(command.data.repeat(command.count))
     if (command.type === "startNoise" && !noise) {
