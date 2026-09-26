@@ -269,9 +269,10 @@ pnpm build
 
 Use package filters for focused checks, for example `pnpm --filter @novadeck/ui test`.
 Tests use Vitest: UI behaviour specs run in Vitest Browser Mode on Chromium, and
-MSW covers HTTP behavior. The PR workflows run formatting, lint, typechecking, tests,
-builds, and PR metadata checks on Linux. Backend API, real PTY, and built-CLI tests
-also run on Linux, macOS, and Windows, including for draft PRs. PRs marked ready for review package
+MSW covers HTTP behavior. The PR workflows run formatting, lint, typechecking,
+builds, and PR metadata checks on Linux. The Test jobs run all package and repository
+tests on Linux, macOS, and Windows, including for draft PRs. Each runs UI tests in
+Chromium alongside backend API, real PTY, and built-CLI tests. PRs marked ready for review package
 and smoke-test the app on Linux, macOS, and Windows using the same workflow as
 releases. Draft PRs skip packaging; PR checks never create tags or publish releases.
 Quality checks run on PR opening, reopening, and commits. Marking a draft PR ready

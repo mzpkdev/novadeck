@@ -14,21 +14,35 @@ concurrency:
 jobs:
   quality:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.browser && 15 || 10 }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Format
+            os: ubuntu-latest
             command: npm run format:check
           - name: Lint
+            os: ubuntu-latest
             command: npm run lint
           - name: Typecheck
+            os: ubuntu-latest
             command: npm run typecheck
-          - name: Test
+          - name: Test (Linux)
+            os: ubuntu-latest
+            browser: true
+            command: npm run test
+          - name: Test (macOS)
+            os: macos-latest
+            browser: true
+            command: npm run test
+          - name: Test (Windows)
+            os: windows-latest
+            browser: true
             command: npm run test
           - name: Build
+            os: ubuntu-latest
             command: npm run build
     steps:
       - name: Check Out Repository
@@ -42,33 +56,8 @@ jobs:
           require-lockfile: true
 
       - name: Install Test Browser
-        if: matrix.name == 'Test'
+        if: matrix.browser
         run: pnpm --filter @novadeck/ui exec playwright install --with-deps chromium
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
-
-  backend:
-    name: Backend (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - name: Check Out Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set Up Toolchain
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
-        with:
-          runtime: node@26
-          cache: true
-          require-lockfile: true
-
-      - name: Build Public Protocol
-        run: pnpm --filter @novadeck/protocol build
-
-      - name: Test Backend and Built CLI
-        run: pnpm --filter @novadeck/runtime test
