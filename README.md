@@ -207,7 +207,9 @@ within it only `app/backend.ts` imports a backend adapter. Vendor libraries stay
 in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout in
 `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
-`layouts/transition.ts` and `main.tsx`. Hooks declare named contracts instead of
+`layouts/transition.ts` and `main.tsx`. Other packages are denied unless the
+test lists them: React and Lucide are allowed everywhere, while backend adapters
+and test code may use any package. Hooks declare named contracts instead of
 `ReturnType<typeof useHook>`. `src/architecture.test.ts` enforces these rules and
 fails for a source file that belongs to no layer.
 
