@@ -157,7 +157,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     await continuation.return(undefined)
     const replay = terminals.attach(manager, terminal.id, "third", cursor)
     const replayed: TerminalEvent[] = []
-    for (const _event of resumed) {
+    while (replayed.length < resumed.length) {
       // eslint-disable-next-line no-await-in-loop -- Replay is read in order.
       replayed.push((await replay.next()).value!)
     }
