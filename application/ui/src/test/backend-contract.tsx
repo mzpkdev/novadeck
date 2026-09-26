@@ -104,7 +104,8 @@ export const describeBackendContract = (name: string, options: BackendContractOp
     return { ...created, target, terminal, key, workspace, close, mount }
   }
 
-  const hasDriver = Boolean(options.create().driver)
+  // Only an adapter with `start` reports on its own, and it must bring a driver to test it.
+  const starts = Boolean(options.create().backend.start)
 
   describe(`${name} backend contract`, () => {
     context("before the app mounts", () => {
@@ -253,10 +254,11 @@ export const describeBackendContract = (name: string, options: BackendContractOp
     })
 
     context("when the far side reports terminal status", () => {
-      it.skipIf(!hasDriver)(
+      it.skipIf(!starts)(
         "delivers each report once through the latest sink and nothing after stop",
         async () => {
           const { backend, driver, key } = withTerminal()
+          expect(driver, "an adapter with start needs a driver").toBeDefined()
           const received: { readonly sink: number; readonly action: BackendAction }[] = []
           const sink = (number: number): BackendSink => ({
             dispatch: (actions) =>
