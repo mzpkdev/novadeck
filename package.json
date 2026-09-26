@@ -7,8 +7,8 @@
   "author": "mzpkdev",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @novadeck/host dev",
-    "dev:web": "concurrently --kill-others-on-fail --names runtime,ui \"pnpm --filter @novadeck/runtime dev\" \"pnpm --filter @novadeck/ui dev\"",
+    "dev": "pnpm --filter @novadeck/protocol build && pnpm --filter @novadeck/host dev",
+    "dev:web": "pnpm --filter @novadeck/protocol build && concurrently --kill-others-on-fail --names runtime,ui \"pnpm --filter @novadeck/runtime dev\" \"pnpm --filter @novadeck/ui dev\"",
     "build": "turbo run build",
     "preview": "pnpm --filter @novadeck/runtime start",
     "package": "pnpm --filter @novadeck/host package",

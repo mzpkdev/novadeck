@@ -150,7 +150,8 @@ Set a random `NOVADECK_TOKEN` in `application/runtime/.env` first (see
 and choose a project directory and session. The UI dev server proxies `/api` to
 the runtime on port 8787. Electron starts its own runtime and connects automatically.
 
-For UI-only work, use `pnpm --filter @novadeck/ui dev` and open
+For UI-only work, build the shared contract with `pnpm --filter @novadeck/protocol build`,
+then use `pnpm --filter @novadeck/ui dev` and open
 <http://127.0.0.1:5173/?demo=1>. This explicit preview uses sample projects and
 in-memory terminal replies. Connection failures never switch the app to demo data.
 
