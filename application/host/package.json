@@ -19,8 +19,7 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "node-pty": "1.2.0-beta.14",
-    "ws": "8.21.3"
+    "node-pty": "1.2.0-beta.14"
   },
   "devDependencies": {
     "@novadeck/protocol": "workspace:*",

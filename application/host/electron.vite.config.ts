@@ -17,8 +17,8 @@ export default defineConfig({
           // The runner runs in its own utility process.
           runner: resolve("src/runner/index.ts"),
         },
-        // Native PTYs and ws's optional helpers load through Node's own resolver.
-        external: ["node-pty", "ws"],
+        // Native PTYs load through Node's own resolver, from the unpacked package.
+        external: ["node-pty"],
       },
     },
   },

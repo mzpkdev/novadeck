@@ -22,12 +22,17 @@ const bounded = async <T>(operation: Promise<T>, label: string): Promise<T> => {
   }
 }
 
-const spawn = (resources: Resources, args = ptyOptions.shellArgs) => {
+const spawn = (
+  resources: Resources,
+  args = ptyOptions.shellArgs,
+  options: { useConptyDll?: boolean } = {},
+) => {
   // Exercise the installed native package directly so failures retain their cause.
   const child = pty.spawn(process.execPath, args, {
     cwd: process.cwd(),
     cols: 80,
     rows: 24,
+    ...options,
   })
   const events = new EventEmitter()
   let output = ""
@@ -172,10 +177,13 @@ describe("installed native PTY dependency", () => {
     60_000,
   )
 
-  it.skipIf(process.platform !== "win32")(
-    "reports a failed Windows input write instead of ending the process",
-    async ({ resources }) => {
-      const terminal = spawn(resources)
+  it.skipIf(process.platform !== "win32").for([
+    { conpty: "system", useConptyDll: false },
+    { conpty: "bundled", useConptyDll: true },
+  ])(
+    "ends a Windows terminal whose input failed instead of crashing the process ($conpty ConPTY)",
+    async ({ useConptyDll }, { resources }) => {
+      const terminal = spawn(resources, ptyOptions.shellArgs, { useConptyDll })
       await terminal.until("PTY_READY")
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
       resources.defer(() => warn.mockRestore())
@@ -184,9 +192,12 @@ describe("installed native PTY dependency", () => {
         // eslint-disable-next-line no-underscore-dangle -- The patched socket is private to node-pty.
         ._agent
       agent.inSocket.emit("error", Object.assign(new Error("write EAGAIN"), { code: "EAGAIN" }))
-      expect(warn).toHaveBeenCalledWith("node-pty dropped terminal input: EAGAIN")
-      terminal.child.write(command({ type: "write", data: "STILL_ALIVE\r\n" }))
-      await terminal.until("STILL_ALIVE")
+      expect(warn).toHaveBeenCalledWith(
+        "node-pty ended a terminal after an input write failed: EAGAIN",
+      )
+      // A terminal that can no longer take input ends visibly; ending it again is harmless.
+      await terminal.exit()
+      expect(() => terminal.child.kill()).not.toThrow()
     },
   )
 })

@@ -11,7 +11,10 @@ import { databaseArgumentPrefix, runnerPortChannel, type RunnerCommand } from ".
 export type RunnerHost = {
   /** Gives a renderer a fresh port to the runner, starting the runner again if it stopped. */
   connect(contents: WebContents, id: string): void
-  /** Ends the runner's shells, then the process; forcibly after `timeoutMs`. */
+  /**
+   * Ends the runner's shells, then the process; forcibly after `timeoutMs`. Final:
+   * later connection requests are ignored.
+   */
   close(timeoutMs?: number): Promise<void>
 }
 
@@ -28,8 +31,10 @@ export const startRunner = (options: { entry: string; database: string }): Runne
       [`${databaseArgumentPrefix}${options.database}`],
       { serviceName: "NovaDeck Runner" },
     )
-    worker.once("exit", () => {
+    worker.once("exit", (code) => {
       if (child === worker) child = undefined
+      // The next connection request starts a new runner.
+      if (!closing) console.error(`NovaDeck runner exited unexpectedly (code ${code})`)
     })
     child = worker
     return worker

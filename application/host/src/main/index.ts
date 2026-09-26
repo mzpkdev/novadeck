@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
 import { app, BrowserWindow, ipcMain, session, shell } from "electron"
@@ -27,6 +27,14 @@ const waitFor = async (origin: string, attempts = 100): Promise<void> => {
 
   await new Promise((resolve) => setTimeout(resolve, 100))
   return waitFor(origin, attempts - 1)
+}
+
+/** Whether a frame shows this app's own UI: the packaged page or the dev server. */
+const isAppPage = (url: string): boolean => {
+  const page = new URL(url)
+  if (!app.isPackaged) return page.origin === developmentOrigin
+  const packaged = pathToFileURL(join(process.resourcesPath, "ui", "index.html"))
+  return page.protocol === "file:" && page.pathname === packaged.pathname
 }
 
 const createWindow = (origin: string): BrowserWindow => {
@@ -71,10 +79,12 @@ const launch = async (): Promise<void> => {
     entry: join(currentDirectory, "runner.js"),
     database: join(app.getPath("userData"), "workspace.sqlite"),
   })
-  // Only the main frame of a window this app created may reach the runner.
+  // A port is shell access: only the main frame of this app's own window showing its
+  // own UI may ask for one.
   ipcMain.on(runnerPortChannel, (event, id: unknown) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window || event.senderFrame !== event.sender.mainFrame || typeof id !== "string") return
+    const frame = event.senderFrame
+    if (!BrowserWindow.fromWebContents(event.sender) || frame !== event.sender.mainFrame) return
+    if (!frame || !isAppPage(frame.url) || typeof id !== "string") return
     runner?.connect(event.sender, id)
   })
   server = await startHttpServer({

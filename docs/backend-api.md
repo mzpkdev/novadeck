@@ -11,10 +11,12 @@ installation can require Python and a C/C++ toolchain for your platform.
 `node-pty` is pinned exactly to `1.2.0-beta.14` for its native cleanup fixes and
 correct macOS spawn-helper permissions. One local patch
 (`patches/node-pty@1.2.0-beta.14.patch`) adds an error listener to its Windows input
-socket: a failed write, such as EAGAIN, is logged and dropped instead of crashing the
-process ([#942](https://github.com/microsoft/node-pty/issues/942),
-[#976](https://github.com/microsoft/node-pty/issues/976)). Drop it once upstream fixes
-those issues; pnpm refuses an install whose patch no longer matches the pinned version.
+socket ([#942](https://github.com/microsoft/node-pty/issues/942),
+[#976](https://github.com/microsoft/node-pty/issues/976)). A failed write, such as
+EAGAIN, used to crash the process. The failed socket cannot take input again, so the
+patch logs it and ends that terminal, which its viewers see as an exit. It also makes
+ending a terminal twice harmless. Drop the patch once upstream fixes those issues; pnpm
+refuses an install whose patch no longer matches the pinned version.
 Do not advance the pin without checking the reported
 [Windows startup regression in beta.15](https://github.com/microsoft/node-pty/issues/955).
 Beta.14 retains the older [delayed-worker startup deadlock risk](https://github.com/microsoft/node-pty/pull/943),

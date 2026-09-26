@@ -156,7 +156,11 @@ export class Terminals {
       this.records.set(record.summary.id, record)
       record.listeners.push(child.onData((data) => this.output(record, data)))
       record.listeners.push(
-        child.onExit(({ exitCode, signal }) => this.exit(record, signal ? null : exitCode)),
+        // node-pty can report an exit before it learns the code, e.g. after ending a
+        // Windows terminal whose input failed.
+        child.onExit(({ exitCode, signal }) =>
+          this.exit(record, signal ? null : (exitCode ?? null)),
+        ),
       )
       // Device-status queries are answered by the runner's screen, even with no viewer.
       record.listeners.push(
