@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createMockTerminal } from "../backend/demo/samples"
+import { terminalFixture } from "../test/fixtures"
 import { createSessionState, workspaceReducer } from "./state"
 import { createWorkspaceStore } from "./store"
 import type { Workspace } from "./types"
@@ -18,7 +18,7 @@ const initial = (): Workspace => ({
         id,
         name: id,
         visitedAt: 0,
-        state: createSessionState([createMockTerminal(1, "~/project")], "grid", "grid"),
+        state: createSessionState([terminalFixture(1, "~/project")], "grid", "grid"),
       })),
     },
   ],
@@ -29,7 +29,7 @@ describe("workspace commands", () => {
   it("preserves a rename dispatched before adding a terminal in a transaction", () => {
     const store = createWorkspaceStore(initial())
     store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Server" })
-    store.transact([{ type: "terminal/add", target, session: createMockTerminal(2, "~/project") }])
+    store.transact([{ type: "terminal/add", target, session: terminalFixture(2, "~/project") }])
     expect(state(store.getSnapshot()).sessions.map((terminal) => terminal.name)).toEqual([
       "Server",
       "Terminal 02",
@@ -43,7 +43,7 @@ describe("workspace commands", () => {
         {
           type: "terminal/add",
           target,
-          session: createMockTerminal(state(workspace).nextTerminalNumber, "~/project"),
+          session: terminalFixture(state(workspace).nextTerminalNumber, "~/project"),
         },
       ])
     add()
@@ -85,7 +85,7 @@ describe("workspace commands", () => {
   })
 
   it("keeps layout initialization separate from terminal metadata", () => {
-    const terminal = createMockTerminal(1, "~/project")
+    const terminal = terminalFixture(1, "~/project")
     const canvasLayout = {
       geometry: { "01": { position: { x: 200, y: 300 }, width: 600, height: 400 } },
       minimized: {},
@@ -96,7 +96,7 @@ describe("workspace commands", () => {
     store.dispatch({
       type: "terminal/add",
       target,
-      session: createMockTerminal(2, "~/project"),
+      session: terminalFixture(2, "~/project"),
       canvasGeometry: { position: { x: 900, y: 500 }, width: 600, height: 400 },
       gridLayouts: {
         desktop: [

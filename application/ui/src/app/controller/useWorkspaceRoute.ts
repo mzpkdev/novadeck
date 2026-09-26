@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useLocation, useNavigate } from "react-router"
 
-import { createTerminalRuntime } from "../../backend/demo/engine"
+import { createDemoEngine } from "../../backend/demo/engine"
 import type { WorkspaceAction } from "../../model/state"
 import { createWorkspaceStore, type WorkspaceTransaction } from "../../model/store"
 import type { PreferencesValue, Workspace } from "../../model/types"
@@ -22,17 +22,9 @@ export const useWorkspaceRoute = (
       preferences,
       currentTimestamp(),
     ).workspace
-    const terminalRuntime = createTerminalRuntime(initial)
-    const workspaceStore = createWorkspaceStore(initial, (next, actions) => {
-      terminalRuntime.reconcile(
-        next,
-        actions.flatMap((action) =>
-          action.type === "terminal/add"
-            ? [{ ...action.target, terminalId: action.session.id }]
-            : [],
-        ),
-      )
-    })
+    const terminalRuntime = createDemoEngine()
+    terminalRuntime.reconcile(initial, [])
+    const workspaceStore = createWorkspaceStore(initial, terminalRuntime.reconcile)
     return { store: workspaceStore, runtime: terminalRuntime }
   })
   const saved = useSyncExternalStore(store.subscribe, store.getSnapshot)

@@ -30,7 +30,7 @@ const headerActionClasses =
 export type TerminalProps = {
   session: TerminalMetadata
   projectName: string
-  entries: Entry[]
+  entries: readonly Entry[]
   cleared: boolean
   onCommand: (command: string) => void
   draft: string

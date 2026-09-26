@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { createMockTerminal } from "../backend/demo/samples"
 import { createSessionState } from "../model/state"
 import { createWorkspaceStore } from "../model/store"
 import type { PreferencesValue, Workspace } from "../model/types"
+import { terminalFixture } from "../test/fixtures"
 import { resolveRoute, routeUrl, workspaceRoute } from "./routing"
 
 const preferences: PreferencesValue = { fontSize: 13, enabledViews: ["focus", "grid", "canvas"] }
@@ -21,7 +21,7 @@ const fixture = (): Workspace => ({
           id: "initial",
           name: "Session",
           visitedAt: 0,
-          state: createSessionState([createMockTerminal(1, "~/project")], "grid", "grid"),
+          state: createSessionState([terminalFixture(1, "~/project")], "grid", "grid"),
         },
       ],
     },
@@ -53,7 +53,7 @@ describe("route reconciliation", () => {
     const store = createWorkspaceStore(fixture())
     store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Saved" })
     const next = store.transact([
-      { type: "terminal/add", target, session: createMockTerminal(2, "~/project") },
+      { type: "terminal/add", target, session: terminalFixture(2, "~/project") },
     ])
     expect(routeUrl(workspaceRoute(next))).toBe(
       "/projects/project/sessions/initial/grid?terminal=02",

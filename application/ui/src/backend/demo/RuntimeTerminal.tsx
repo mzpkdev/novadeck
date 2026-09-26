@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react"
 
 import type { WorkspaceTarget } from "../../model/types"
 import { Terminal, type TerminalProps } from "../../terminals/Terminal"
-import type { TerminalRuntimeStore } from "./engine"
+import type { DemoEngine } from "./engine"
 
 export type RuntimeTerminalProps = Omit<
   TerminalProps,
@@ -14,7 +14,7 @@ export type RuntimeTerminalProps = Omit<
   | "scrollOffset"
   | "onScrollChange"
 > & {
-  runtime: TerminalRuntimeStore
+  runtime: DemoEngine
   target: WorkspaceTarget
 }
 

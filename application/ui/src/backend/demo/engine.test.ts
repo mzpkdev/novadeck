@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { createSessionState, workspaceReducer } from "../../model/state"
 import type { Workspace } from "../../model/types"
-import { createTerminalRuntime } from "./engine"
+import { createDemoEngine } from "./engine"
 import { createMockTerminal } from "./samples"
 
 const target = { projectId: "project", workspaceSessionId: "initial" }
@@ -30,9 +30,10 @@ const fixture = (): Workspace => ({
   ],
 })
 
-describe("terminal runtime ownership", () => {
+describe("demo terminal engine", () => {
   it("publishes draft, output and scroll changes only to their terminal", () => {
-    const runtime = createTerminalRuntime(fixture())
+    const runtime = createDemoEngine()
+    runtime.reconcile(fixture(), [])
     let firstUpdates = 0
     let secondUpdates = 0
     runtime.subscribe(first, () => firstUpdates++)
@@ -53,7 +54,8 @@ describe("terminal runtime ownership", () => {
 
   it("retains inactive and hidden terminals across view changes and presentation remounts", () => {
     let workspace = fixture()
-    const runtime = createTerminalRuntime(workspace)
+    const runtime = createDemoEngine()
+    runtime.reconcile(workspace, [])
     const unsubscribe = runtime.subscribe(first, () => {})
     runtime.setDraft(first, "unfinished")
     runtime.run(first, "pwd")
@@ -78,7 +80,7 @@ describe("terminal runtime ownership", () => {
       workspaceSessionId: "other",
       now: 1,
     })
-    runtime.reconcile(workspace)
+    runtime.reconcile(workspace, [])
     expect(runtime.getSnapshot(first)).toBe(snapshot)
     expect(runtime.getSnapshot(first).draft).toBe("next command")
     expect(runtime.getSnapshot({ ...first, workspaceSessionId: "other" }).entries).toEqual([])
@@ -86,10 +88,12 @@ describe("terminal runtime ownership", () => {
 
   it("destroys a closed terminal and ignores its delayed callbacks", () => {
     const workspace = fixture()
-    const runtime = createTerminalRuntime(workspace)
+    const runtime = createDemoEngine()
+    runtime.reconcile(workspace, [])
     runtime.run(first, "echo before close")
     runtime.reconcile(
       workspaceReducer(workspace, { type: "terminal/close", target, terminalId: "01" }),
+      [],
     )
     const removed = runtime.getSnapshot(first)
     runtime.setDraft(first, "stale")
@@ -101,14 +105,15 @@ describe("terminal runtime ownership", () => {
 
   it("starts created terminals blank and preserves the demo clear command", () => {
     const workspace = fixture()
-    const runtime = createTerminalRuntime(workspace)
+    const runtime = createDemoEngine()
+    runtime.reconcile(workspace, [])
     const third = { ...target, terminalId: "03" }
-    const added = workspaceReducer(workspace, {
+    const add = {
       type: "terminal/add",
       target,
       session: createMockTerminal(3, "~/project"),
-    })
-    runtime.reconcile(added, [third])
+    } as const
+    runtime.reconcile(workspaceReducer(workspace, add), [add])
     expect(runtime.getSnapshot(third).cleared).toBe(true)
     runtime.run(third, "help")
     expect(runtime.getSnapshot(third).entries[0]!.reply).toContain("Local demo commands")

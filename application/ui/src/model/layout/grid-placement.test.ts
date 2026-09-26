@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { createMockTerminal } from "../../backend/demo/samples"
+import { terminalFixture } from "../../test/fixtures"
 import { addCompactGridTerminal, gridColumns, initialGridLayouts } from "./grid-placement"
 
 describe("initial Grid placement", () => {
   it("stacks terminals in each breakpoint's columns using the saved heights", () => {
-    const terminals = Array.from({ length: 6 }, (_, index) =>
-      createMockTerminal(index + 1, "/demo"),
-    )
+    const terminals = Array.from({ length: 6 }, (_, index) => terminalFixture(index + 1, "/demo"))
     const layouts = initialGridLayouts(terminals, {
       "01": { position: { x: 0, y: 0 }, height: 200 },
       "02": { position: { x: 0, y: 0 }, height: 500 },
@@ -21,8 +19,8 @@ describe("initial Grid placement", () => {
   })
 
   it("uses an available gap without moving or overlapping saved terminals", () => {
-    const first = createMockTerminal(1, "/demo")
-    const next = createMockTerminal(2, "/demo")
+    const first = terminalFixture(1, "/demo")
+    const next = terminalFixture(2, "/demo")
     const existing = { i: first.id, x: 6, y: 0, w: 6, h: 18 }
     const result = addCompactGridTerminal([first], { desktop: [existing] }, next)
     expect(result.desktop?.[0]).toEqual(existing)
