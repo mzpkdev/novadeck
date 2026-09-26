@@ -12,7 +12,6 @@ import {
 } from "lucide-react"
 import { useRef, type ReactNode } from "react"
 
-import { DemoTerminalSurface } from "../backend/demo/DemoTerminalSurface"
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { Entry, TerminalMetadata, WindowedView } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
@@ -319,9 +318,3 @@ export type TerminalFrameProps = Omit<
   | "focusInput"
   | "onInputFocused"
 > & { children: ReactNode }
-
-export const Terminal = (props: TerminalProps): React.JSX.Element => (
-  <TerminalFrame {...props}>
-    <DemoTerminalSurface {...props} />
-  </TerminalFrame>
-)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 
-import { createMockTerminal } from "../../backend/demo/samples"
+import type { Backend } from "../../backend/port"
 import { cancelTerminalTransition, transitionTerminal } from "../../layouts/transition"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
 import { activeProject, activeSession } from "../../model/state"
@@ -8,7 +8,7 @@ import type { Project, PreferencesValue, ViewMode, WorkspaceTarget } from "../..
 import type { useWorkspaceShell } from "../../shell/useWorkspaceShell"
 import type { useRecentSwitcher } from "../../terminals/useRecentSwitcher"
 import type { useTerminalRename } from "../../terminals/useTerminalRename"
-import { newWorkspaceSession } from "../demo-workspace"
+import { newWorkspaceSession } from "./sessions"
 import type { useWorkspaceRoute } from "./useWorkspaceRoute"
 
 type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
@@ -21,7 +21,9 @@ export const useWorkspaceCommands = ({
   shell,
   rename,
   recent,
+  newTerminal,
 }: {
+  newTerminal: Backend["newTerminal"]
   routeState: ReturnType<typeof useWorkspaceRoute>
   preferences: PreferencesValue
   setPreferences: (preferences: PreferencesValue) => void
@@ -76,7 +78,7 @@ export const useWorkspaceCommands = ({
     ])
   }
   const startFresh = (): void => {
-    const next = newWorkspaceSession([], view, windowedView)
+    const next = newWorkspaceSession(view, windowedView)
     const name = next.name
     let suffix = 2
     const history = getWorkspace().projects.find((item) => item.id === projectId)?.history ?? []
@@ -148,10 +150,10 @@ export const useWorkspaceCommands = ({
     const latestProject = getWorkspace().projects.find((item) => item.id === projectId)
     const latestSession = latestProject?.history.find((item) => item.id === workspaceSessionId)
     if (!latestProject || !latestSession) return ""
-    const session = createMockTerminal(
-      latestSession.state.nextTerminalNumber,
-      latestProject.directory,
-    )
+    const session = newTerminal({
+      number: latestSession.state.nextTerminalNumber,
+      directory: latestProject.directory,
+    })
     if (!beginRename && activeRename) finishRename(activeRename, true)
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
     setCreated({ context, id: session.id })

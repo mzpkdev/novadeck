@@ -1,7 +1,6 @@
 import type { WorkspaceAction } from "../model/state"
-import type { TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
-
-export type TerminalKey = WorkspaceTarget & { readonly terminalId: string }
+import type { TerminalMetadata, Workspace } from "../model/types"
+import type { TerminalKey } from "./port"
 
 export type TerminalLifecycle<Entry> = {
   // `created` is true only for a terminal added by the committed actions,

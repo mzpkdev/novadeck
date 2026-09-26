@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useMemo, useRef } from "react"
 import { HashRouter, useNavigationType } from "react-router"
 
-import { RuntimeTerminal } from "../backend/demo/RuntimeTerminal"
+import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
 import type { CanvasHandle } from "../layouts/canvas/types"
 import { Focus } from "../layouts/focus/Focus"
@@ -23,16 +23,16 @@ import { WorkspaceHeader } from "../shell/WorkspaceHeader"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { WorkspaceSidebar } from "../shell/WorkspaceSidebar"
 import { ZenDock } from "../shell/ZenDock"
-import type { MinimizeControls } from "../terminals/Terminal"
+import { TerminalFrame, type MinimizeControls } from "../terminals/Terminal"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
 import { useRecentSwitcher } from "../terminals/useRecentSwitcher"
 import { useTerminalRename } from "../terminals/useTerminalRename"
+import { selectBackend } from "./backend"
 import { useRouteDialog } from "./controller/useRouteDialog"
 import { useWorkspaceCommands } from "./controller/useWorkspaceCommands"
 import { useWorkspaceKeyboard } from "./controller/useWorkspaceKeyboard"
 import { useWorkspaceRoute } from "./controller/useWorkspaceRoute"
 import { Canvas, Grid } from "./deferred-views"
-import { initializeWorkspace } from "./demo-workspace"
 import { routeUrl } from "./routing"
 
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
@@ -41,17 +41,23 @@ const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
 const useLayoutHidden = (hidden: Record<string, boolean>, preview: string) =>
   useMemo(() => (preview ? { ...hidden, [preview]: false } : hidden), [hidden, preview])
 
-export const App = (): React.JSX.Element => (
+export type AppProps = { readonly backend?: CreateBackend }
+
+export const App = ({ backend = selectBackend }: AppProps): React.JSX.Element => (
   <HashRouter useTransitions={false}>
-    <WorkspaceApp />
+    <WorkspaceApp createBackend={backend} />
   </HashRouter>
 )
 
-export const WorkspaceApp = (): React.JSX.Element => {
+export const WorkspaceApp = ({
+  createBackend,
+}: {
+  readonly createBackend: CreateBackend
+}): React.JSX.Element => {
   const navigationType = useNavigationType()
   const { preferences, setPreferences } = useWorkspacePreferences()
-  const routeState = useWorkspaceRoute(preferences, initializeWorkspace)
-  const { workspace, dispatch, route, go, closeDialog, runtime } = routeState
+  const routeState = useWorkspaceRoute(preferences, createBackend)
+  const { workspace, dispatch, route, go, closeDialog, backend } = routeState
   const project = activeProject(workspace)!
   const current = activeSession(workspace)!
   const projectId = project.id
@@ -118,6 +124,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     shell,
     rename,
     recent,
+    newTerminal: backend.newTerminal,
   })
   const {
     created,
@@ -161,7 +168,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     onResizePreset?: (button: HTMLButtonElement) => void,
     large = false,
   ): React.JSX.Element => (
-    <RuntimeTerminal
+    <TerminalFrame
       key={session.id}
       session={session}
       active={selected === session.id}
@@ -171,13 +178,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
       onRenameDraft={(draft) => changeRenameDraft(session.id, draft)}
       onRenameSave={() => saveRename(session.id)}
       onRenameCancel={() => cancelRename(session.id)}
-      projectName={project.name}
-      runtime={runtime}
-      target={target}
-      focusInput={
-        keyboardFocus?.id === session.id && keyboardFocus.view === view && selected === session.id
-      }
-      onInputFocused={() => setKeyboardFocus(null)}
       compact={compact}
       switcher={{ onOpen: (button) => openRecentSwitcher(session.id, button) }}
       onClose={() => close(session.id)}
@@ -210,7 +210,19 @@ export const WorkspaceApp = (): React.JSX.Element => {
               },
             }
           : {})}
-    />
+    >
+      <backend.TerminalSurface
+        terminalKey={{ ...target, terminalId: session.id }}
+        terminal={session}
+        projectName={project.name}
+        minimized={minimize?.minimized}
+        clipContent={minimize?.clipContent}
+        focusInput={
+          keyboardFocus?.id === session.id && keyboardFocus.view === view && selected === session.id
+        }
+        onInputFocused={() => setKeyboardFocus(null)}
+      />
+    </TerminalFrame>
   )
 
   const sidebarRail = (mobile = false): React.JSX.Element => (

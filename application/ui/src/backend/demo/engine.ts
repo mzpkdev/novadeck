@@ -1,6 +1,7 @@
 import type { WorkspaceAction } from "../../model/state"
 import type { Entry, Workspace } from "../../model/types"
-import { createTerminalRegistry, terminalKeyId, type TerminalKey } from "../registry"
+import type { TerminalKey } from "../port"
+import { createTerminalRegistry, terminalKeyId } from "../registry"
 import { mockReply } from "./samples"
 
 export type DemoTerminalSnapshot = {

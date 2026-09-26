@@ -1,3 +1,5 @@
+import type { WorkspaceSeed } from "../../model/seed"
+import { sessionName } from "../../model/session-name"
 import type { CanvasLayout, Project, TerminalMetadata } from "../../model/types"
 
 const samples: (TerminalMetadata & { x: number; y: number; height: number })[] = [
@@ -103,6 +105,21 @@ export const projectSessions = (project: Project): TerminalMetadata[] =>
     ...session,
     directory: session.directory.replace(/^~\/projects\/[^/]+/, project.directory),
   }))
+
+// Each sample project opens one session with the stable ID "initial".
+export const demoSeed = (now: number): WorkspaceSeed => ({
+  projects: initialProjects.map((project) => ({
+    ...project,
+    sessions: [
+      {
+        id: "initial",
+        name: sessionName(now),
+        terminals: projectSessions(project),
+        canvasLayout: demoCanvasLayout(),
+      },
+    ],
+  })),
+})
 
 export const createMockTerminal = (number: number, directory: string): TerminalMetadata => {
   const id = String(number).padStart(2, "0")

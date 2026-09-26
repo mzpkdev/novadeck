@@ -1,27 +1,19 @@
 import { GitBranch } from "lucide-react"
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 
-import type { TerminalProps } from "../../terminals/Terminal"
+import type { TerminalSurfaceProps } from "../port"
+import type { DemoEngine, DemoTerminalSnapshot } from "./engine"
 import { TerminalOutput } from "./TerminalOutput"
 
-export type DemoTerminalSurfaceProps = Pick<
-  TerminalProps,
-  | "session"
-  | "projectName"
-  | "entries"
-  | "cleared"
-  | "onCommand"
-  | "draft"
-  | "onDraftChange"
-  | "scrollOffset"
-  | "onScrollChange"
-  | "focusInput"
-  | "onInputFocused"
-  | "minimize"
->
+type DemoTerminalSurfaceProps = Omit<TerminalSurfaceProps, "terminalKey"> &
+  DemoTerminalSnapshot & {
+    onCommand: (command: string) => void
+    onDraftChange: (draft: string) => void
+    onScrollChange: (offset: number) => void
+  }
 
-export const DemoTerminalSurface = ({
-  session,
+const DemoTerminalSurface = ({
+  terminal: session,
   projectName,
   entries,
   cleared,
@@ -32,7 +24,8 @@ export const DemoTerminalSurface = ({
   onScrollChange,
   focusInput,
   onInputFocused,
-  minimize,
+  minimized,
+  clipContent,
 }: DemoTerminalSurfaceProps): React.JSX.Element => {
   const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
   const input = draft
@@ -44,17 +37,17 @@ export const DemoTerminalSurface = ({
   useEffect(() => {
     if (!focusInput || !commandInput.current) return
     commandInput.current.focus({ preventScroll: true })
-    onInputFocused?.()
+    onInputFocused()
   }, [focusInput, onInputFocused])
   useEffect(() => {
-    if (!output.current || minimize?.minimized) return
+    if (!output.current || minimized) return
     const changed =
       previousOutput.current.length !== entries.length || previousOutput.current.cleared !== cleared
     output.current.scrollTop = changed
       ? output.current.scrollHeight
       : (savedScroll.current ?? (entries.length || cleared ? output.current.scrollHeight : 0))
     previousOutput.current = { length: entries.length, cleared }
-  }, [entries.length, cleared, minimize?.minimized])
+  }, [entries.length, cleared, minimized])
   useEffect(() => {
     const element = output.current
     if (!element) return
@@ -70,11 +63,11 @@ export const DemoTerminalSurface = ({
       ref={output}
       data-terminal-content
       className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [&_strong]:font-semibold nodrag nopan"
-      hidden={minimize?.minimized && !minimize.clipContent}
-      aria-hidden={minimize?.minimized}
-      inert={minimize?.minimized}
+      hidden={minimized && !clipContent}
+      aria-hidden={minimized}
+      inert={minimized}
       onScroll={(event) => {
-        if (minimize?.minimized) return
+        if (minimized) return
         savedScroll.current = event.currentTarget.scrollTop
         onScrollChange(event.currentTarget.scrollTop)
       }}
@@ -126,4 +119,32 @@ export const DemoTerminalSurface = ({
       </form>
     </div>
   )
+}
+
+// One component per engine, so its identity stays stable while the backend lives.
+export const createDemoTerminal = (engine: DemoEngine) => {
+  const DemoTerminal = ({ terminalKey, ...props }: TerminalSurfaceProps): React.JSX.Element => {
+    const { projectId, workspaceSessionId, terminalId } = terminalKey
+    const subscribe = useCallback(
+      (listener: () => void) =>
+        engine.subscribe({ projectId, workspaceSessionId, terminalId }, listener),
+      [projectId, workspaceSessionId, terminalId],
+    )
+    const getSnapshot = useCallback(
+      () => engine.getSnapshot({ projectId, workspaceSessionId, terminalId }),
+      [projectId, workspaceSessionId, terminalId],
+    )
+    const snapshot = useSyncExternalStore(subscribe, getSnapshot)
+    const key = { projectId, workspaceSessionId, terminalId }
+    return (
+      <DemoTerminalSurface
+        {...props}
+        {...snapshot}
+        onDraftChange={(draft) => engine.setDraft(key, draft)}
+        onScrollChange={(offset) => engine.setScrollOffset(key, offset)}
+        onCommand={(command) => engine.run(key, command)}
+      />
+    )
+  }
+  return DemoTerminal
 }

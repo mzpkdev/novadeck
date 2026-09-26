@@ -1,31 +1,32 @@
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useLocation, useNavigate } from "react-router"
 
-import { createDemoEngine } from "../../backend/demo/engine"
+import type { CreateBackend } from "../../backend/port"
+import { workspaceFromSeed } from "../../model/seed"
 import type { WorkspaceAction } from "../../model/state"
 import { createWorkspaceStore, type WorkspaceTransaction } from "../../model/store"
-import type { PreferencesValue, Workspace } from "../../model/types"
+import type { PreferencesValue } from "../../model/types"
+import { readWindowedView } from "../../shell/shell-storage"
 import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "../routing"
 
 const currentTimestamp = (): number => Date.now()
 
-export const useWorkspaceRoute = (
-  preferences: PreferencesValue,
-  initialize: (preferences: PreferencesValue) => Workspace,
-) => {
+export const useWorkspaceRoute = (preferences: PreferencesValue, createBackend: CreateBackend) => {
   const location = useLocation()
   const navigate = useNavigate()
-  const [{ store, runtime }] = useState(() => {
-    const initial = resolveRoute(
-      initialize(preferences),
-      location,
-      preferences,
-      currentTimestamp(),
-    ).workspace
-    const terminalRuntime = createDemoEngine()
-    terminalRuntime.reconcile(initial, [])
-    const workspaceStore = createWorkspaceStore(initial, terminalRuntime.reconcile)
-    return { store: workspaceStore, runtime: terminalRuntime }
+  const [{ backend, store }] = useState(() => {
+    const created = createBackend()
+    const view = preferences.enabledViews.includes("focus") ? "focus" : preferences.enabledViews[0]!
+    const seeded = workspaceFromSeed(created.seed, {
+      view,
+      windowedView: readWindowedView(),
+      now: currentTimestamp(),
+    })
+    const initial = resolveRoute(seeded, location, preferences, currentTimestamp()).workspace
+    const workspaceStore = createWorkspaceStore(initial, created.commit)
+    // The store only reports later commits; give the backend the starting terminals now.
+    created.commit(initial, [])
+    return { backend: created, store: workspaceStore }
   })
   const saved = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { workspace, route } = resolveRoute(saved, location, preferences, currentTimestamp())
@@ -117,6 +118,6 @@ export const useWorkspaceRoute = (
     navigateWorkspace,
     closeDialog,
     getWorkspace: store.getSnapshot,
-    runtime,
+    backend,
   }
 }
