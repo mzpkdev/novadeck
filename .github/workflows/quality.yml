@@ -61,3 +61,15 @@ jobs:
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
+
+  test:
+    name: Test
+    needs: quality
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require All Quality Checks
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+        run: test "$QUALITY_RESULT" = success
