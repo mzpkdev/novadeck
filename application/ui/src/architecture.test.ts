@@ -21,7 +21,7 @@ const rules: Record<string, readonly string[]> = {
   "specs/": ["specs/", "app/App.tsx", "styles.css"],
   // Entry point and support modules outside the feature layers.
   "main.tsx": ["app/", "styles.css"],
-  "test/": ["test/", "model/"],
+  "test/": ["test/", "test.ts", "model/", "backend/"],
   "test.ts": [],
   "class-name.ts": [],
   "content-security-policy.ts": [],

@@ -15,6 +15,8 @@ export type DemoTerminalSnapshot = {
 
 export type DemoEngine = {
   readonly reconcile: (workspace: Workspace, actions: readonly WorkspaceAction[]) => void
+  // Whether the engine keeps a simulated process for the terminal.
+  readonly has: (key: TerminalKey) => boolean
   readonly getSnapshot: (key: TerminalKey) => DemoTerminalSnapshot
   readonly subscribe: (key: TerminalKey, listener: () => void) => () => void
   readonly setDraft: (key: TerminalKey, draft: string) => void
@@ -53,6 +55,7 @@ export const createDemoEngine = (): DemoEngine => {
   }
   return {
     reconcile: registry.reconcile,
+    has: (key) => registry.get(key) !== undefined,
     getSnapshot: (key) => registry.get(key)?.entry.snapshot ?? empty,
     subscribe: (key, listener) => {
       const id = terminalKeyId(key)

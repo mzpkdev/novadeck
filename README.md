@@ -192,7 +192,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                         |
 | `interaction/`                                     | Shortcut bindings and shared DOM focus/overlay contracts.                   |
 | `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                         |
-| `test/`                                            | Shared unit-test fixtures.                                                  |
+| `test/`                                            | Shared unit-test fixtures, a render helper, and the backend contract suite. |
 | `assets/`                                          | Static files referenced from CSS.                                           |
 | `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.               |
 | `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                    |
@@ -206,7 +206,7 @@ within it only `app/backend.ts` imports a backend adapter. Vendor libraries stay
 in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout in
 `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
-`layouts/transition.ts` and `main.tsx`. Other packages are denied unless the
+`layouts/transition.ts`, `main.tsx`, and `test/`. Other packages are denied unless the
 test lists them: React and Lucide are allowed everywhere, while backend adapters
 and test code may use any package. Hooks declare named contracts instead of
 `ReturnType<typeof useHook>`. `src/architecture.test.ts` enforces these rules and
@@ -246,7 +246,9 @@ each terminal frame. A surface marks the element that takes typed input with
 per terminal with one subscription each, so output does not trigger
 workspace-wide renders. A terminal's presentation can unmount during view or
 session changes without losing that state; closing the terminal removes it.
-`backend/registry.ts` provides this lifecycle for any adapter. `App` reads a
+`backend/registry.ts` provides this lifecycle for any adapter. An adapter
+checks itself against the port by calling `describeBackendContract` from
+`test/backend-contract.tsx` in a colocated `contract.test.ts`. `App` reads a
 `createBackend` factory once at mount, and `app/backend.ts` chooses the default.
 
 A backend reports changes of its own, such as a process exiting or failing to
