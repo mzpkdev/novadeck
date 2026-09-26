@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigationType } from "react-router"
 
 import type { Backend, CreateBackend } from "../../backend/port"
@@ -12,11 +12,13 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
-import { useWorkspacePreferences } from "../../preferences/useWorkspacePreferences"
+import { readPreferences } from "../../preferences/preferences-storage"
 import { useWorkspaceShell, type ShellController } from "../../shell/useWorkspaceShell"
 import { useRecentSwitcher, type RecentSwitcherController } from "../../terminals/useRecentSwitcher"
 import { useTerminalRename, type TerminalRenameController } from "../../terminals/useTerminalRename"
 import type { WorkspaceRoute } from "../routing"
+import { createUiStore, persistUi, type UiState } from "../ui-store"
+import { useStoreSelector } from "./useStoreSelector"
 import { useWorkspaceCommands, type WorkspaceCommands } from "./useWorkspaceCommands"
 import { useWorkspaceRoute, type WorkspaceNavigation } from "./useWorkspaceRoute"
 
@@ -40,12 +42,18 @@ export type WorkspaceController = {
   readonly active: TerminalMetadata | undefined
 }
 
+const selectPreferences = (state: UiState): PreferencesValue => state.preferences
+
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string): WorkspaceTarget =>
   useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
 
 export const useWorkspaceController = (createBackend: CreateBackend): WorkspaceController => {
   const navigationType = useNavigationType()
-  const { preferences, setPreferences } = useWorkspacePreferences()
+  const [ui] = useState(() => createUiStore({ preferences: readPreferences() }))
+  useEffect(() => persistUi(ui), [ui])
+  const preferences = useStoreSelector(ui, selectPreferences)
+  const setPreferences = (next: PreferencesValue): void =>
+    void ui.update((state) => ({ ...state, preferences: next }))
   const { backend, workspace, route, navigation } = useWorkspaceRoute(preferences, createBackend)
   const { go, dispatch } = navigation
   const project = activeProject(workspace)!

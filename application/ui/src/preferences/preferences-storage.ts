@@ -20,3 +20,11 @@ export const readPreferences = (): PreferencesValue => {
     return defaults
   }
 }
+
+export const writePreferences = (preferences: PreferencesValue): void => {
+  try {
+    localStorage.setItem(preferencesStorageKey, JSON.stringify(preferences))
+  } catch {
+    /* Preferences still apply when storage is unavailable. */
+  }
+}
