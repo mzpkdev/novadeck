@@ -251,7 +251,8 @@ through accessible markup, improve the markup rather than adding test IDs.
 Install the browser once with `pnpm --filter @novadeck/ui exec playwright install chromium`.
 Run a single spec with `pnpm --filter @novadeck/ui exec vitest run --project behaviour src/specs/canvas.spec.tsx`,
 or `--project unit` for reducer invariants, runtime lifecycle, layout rules, and
-build/service checks. Use `--project motion` for transition behavior. The build
+build/service checks in colocated `*.test.ts` files. Files in `src/specs/` keep
+the `*.spec.tsx` suffix. Use `--project motion` for transition behavior. The build
 checks validate both entry assets and deferred chunks with relative packaged paths.
 
 ## Configuration
