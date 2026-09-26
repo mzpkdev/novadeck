@@ -1,0 +1,173 @@
+import { Suspense, useCallback, useMemo, type RefObject } from "react"
+
+import type { CanvasHandle } from "../layouts/canvas/types"
+import { Focus } from "../layouts/focus/Focus"
+import type { ValueUpdate } from "../model/state"
+import type { CanvasLayout, GridLayouts } from "../model/types"
+import { EmptyWorkspace } from "../shell/EmptyWorkspace"
+import { useWorkspace } from "./controller/context"
+import { Canvas, Grid } from "./deferred-views"
+import { renderTerminal } from "./WorkspaceTerminal"
+
+const useLayoutHidden = (hidden: Record<string, boolean>, preview: string) =>
+  useMemo(() => (preview ? { ...hidden, [preview]: false } : hidden), [hidden, preview])
+
+// The current session's view, remounted per session so each keeps its own view state.
+export const WorkspaceStage = ({
+  canvas,
+}: {
+  readonly canvas: RefObject<CanvasHandle | null>
+}): React.JSX.Element => {
+  const { session: current, target, context, navigation, shell, commands, active } = useWorkspace()
+  const { dispatch } = navigation
+  const {
+    view,
+    sessions,
+    selected,
+    canvasLayout,
+    gridLayouts,
+    gridRestoreWidths,
+    gridMinimized,
+    sizePresets,
+    hidden,
+  } = current.state
+  const {
+    zen,
+    showSessions,
+    revealCanvas,
+    canvasKeyboardFocus,
+    navigation: shellNavigation,
+  } = shell
+  const { setSelected, add } = commands
+  const preview = hidden[selected] ? selected : ""
+  const layoutHidden = useLayoutHidden(hidden, preview)
+  const setCanvasLayout = useCallback(
+    (layout: ValueUpdate<CanvasLayout>) => dispatch({ type: "canvas/layout", target, layout }),
+    [dispatch, target],
+  )
+  const setGridLayouts = useCallback(
+    (layouts: ValueUpdate<GridLayouts>) => dispatch({ type: "grid/layouts", target, layouts }),
+    [dispatch, target],
+  )
+  return (
+    <section
+      key={context}
+      data-workspace-area
+      className={`main-area relative flex min-w-0 flex-1 flex-col ${view}`}
+      aria-label={`${view} view`}
+    >
+      <Suspense
+        key={view}
+        fallback={
+          <div
+            role="status"
+            aria-label="Loading workspace"
+            className="flex flex-1 items-center justify-center text-sm text-muted"
+          >
+            Loading workspace…
+          </div>
+        }
+      >
+        {view === "focus" && active && (
+          <Focus
+            sessions={sessions}
+            displayed={active.id}
+            onSelect={setSelected}
+            render={renderTerminal}
+          />
+        )}
+        {view === "grid" && (
+          <Grid
+            sessions={sessions}
+            hidden={layoutHidden}
+            preview={preview}
+            selected={selected}
+            onSelect={setSelected}
+            navigation={shellNavigation.count}
+            presets={sizePresets.grid}
+            restoreWidths={gridRestoreWidths}
+            onToggleWidth={(terminalId, change) =>
+              dispatch({
+                type: "grid/size-toggle",
+                target,
+                terminalId,
+                change,
+              })
+            }
+            layouts={gridLayouts}
+            onLayoutsChange={setGridLayouts}
+            minimized={gridMinimized}
+            onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
+            onCreate={() => {
+              add({ beginRename: false })
+            }}
+            render={renderTerminal}
+          />
+        )}
+        {view === "canvas" && (
+          <Canvas
+            ref={canvas}
+            hidden={layoutHidden}
+            preview={preview}
+            presets={sizePresets.canvas}
+            onPresetChange={(terminalId, preset) =>
+              dispatch({
+                type: "terminal/size-preset",
+                target,
+                terminalId,
+                view: "canvas",
+                preset,
+              })
+            }
+            layout={canvasLayout}
+            matchCreatedTerminalRatio={Boolean(zen)}
+            revealOnMount={revealCanvas}
+            fitOnNavigate={shellNavigation.fit}
+            onLayoutChange={setCanvasLayout}
+            sessions={sessions}
+            selected={selected}
+            keyboardFocusRequest={
+              canvasKeyboardFocus?.context === context && canvasKeyboardFocus.id === selected
+                ? canvasKeyboardFocus.request
+                : null
+            }
+            navigation={shellNavigation.count}
+            onSelect={setSelected}
+            onCreate={() => add({ beginRename: false })}
+            render={renderTerminal}
+          />
+        )}
+      </Suspense>
+      {view !== "focus" &&
+        sessions.length > 0 &&
+        sessions.every((session) => layoutHidden[session.id]) && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center">
+            <p className="text-sm text-muted">All terminals are hidden</p>
+            <button
+              className="small-button"
+              onClick={() =>
+                sessions.forEach((session) =>
+                  dispatch({
+                    type: "terminal/visibility",
+                    target,
+                    terminalId: session.id,
+                    hidden: false,
+                  }),
+                )
+              }
+            >
+              Show all terminals
+            </button>
+          </div>
+        )}
+      {!sessions.length && (
+        <EmptyWorkspace
+          view={view}
+          zen={Boolean(zen)}
+          onCreate={() => add()}
+          onShowSessions={showSessions}
+        />
+      )}
+    </section>
+  )
+}

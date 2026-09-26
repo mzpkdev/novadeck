@@ -2,7 +2,7 @@ import type { Node } from "@xyflow/react"
 import type { Dispatch, SetStateAction, Ref, ReactNode } from "react"
 
 import type { SizePreset, TerminalMetadata, CanvasLayout } from "../../model/types"
-import type { MinimizeControls } from "../../terminals/TerminalFrame"
+import type { TerminalLayoutControls } from "../../terminals/TerminalFrame"
 
 export type TerminalNode = Node<
   {
@@ -32,12 +32,7 @@ export type CanvasProps = {
   navigation: number
   onSelect: (id: string) => void
   onCreate: () => string
-  render: (
-    session: TerminalMetadata,
-    minimize: MinimizeControls,
-    onFlyTo: () => void,
-    resize: () => void,
-  ) => ReactNode
+  render: (session: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
 }
 export type CanvasViewport = NonNullable<CanvasLayout["viewport"]>
 export type CanvasHandle = {

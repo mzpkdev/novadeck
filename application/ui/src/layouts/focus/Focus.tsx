@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react"
 
 import type { TerminalMetadata } from "../../model/types"
+import type { TerminalLayoutControls } from "../../terminals/TerminalFrame"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
 
@@ -13,7 +14,7 @@ export const Focus = ({
   sessions: TerminalMetadata[]
   displayed: string
   onSelect: (id: string) => void
-  render: (session: TerminalMetadata) => ReactNode
+  render: (session: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
 }): React.JSX.Element => {
   const hidden = useMemo(
     () => Object.fromEntries(sessions.map((session) => [session.id, session.id !== displayed])),
@@ -45,7 +46,7 @@ export const Focus = ({
             aria-hidden={hidden[session.id]}
             inert={hidden[session.id]}
           >
-            {render(session)}
+            {render(session, {})}
           </div>
         ))}
     </div>

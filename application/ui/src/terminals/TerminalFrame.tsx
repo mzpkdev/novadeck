@@ -23,6 +23,13 @@ export type MinimizeControls = {
   onToggle: () => void
 }
 
+// What a layout contributes to each terminal it places.
+export type TerminalLayoutControls = {
+  readonly minimize?: MinimizeControls
+  readonly onFlyTo?: () => void
+  readonly onResizePreset?: (button: HTMLButtonElement) => void
+}
+
 const headerActionClasses =
   "icon-button [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100"
 

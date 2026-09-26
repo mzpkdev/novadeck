@@ -232,9 +232,8 @@ const TerminalCanvas = ({
     (id: string): ReactNode => {
       const session = sessions.find((item) => item.id === id)
       if (!session) return null
-      return render(
-        session,
-        {
+      return render(session, {
+        minimize: {
           minimized: minimized[id] ?? false,
           onToggle: () =>
             onLayoutChange((previous) => ({
@@ -242,9 +241,9 @@ const TerminalCanvas = ({
               minimized: { ...previous.minimized, [id]: !previous.minimized[id] },
             })),
         },
-        () => flyTo(session),
-        () => resizeToViewport(id),
-      )
+        onFlyTo: () => flyTo(session),
+        onResizePreset: () => resizeToViewport(id),
+      })
     },
     [flyTo, minimized, onLayoutChange, render, resizeToViewport, sessions],
   )

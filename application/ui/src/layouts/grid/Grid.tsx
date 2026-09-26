@@ -15,7 +15,7 @@ import type {
   GridLayouts,
   GridRestoreWidths,
 } from "../../model/types"
-import type { MinimizeControls } from "../../terminals/TerminalFrame"
+import type { TerminalLayoutControls } from "../../terminals/TerminalFrame"
 import { ContextMenu } from "../../ui-toolkit/ContextMenu"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
@@ -44,11 +44,7 @@ type Props = {
   preview: string
   onMinimize: (id: string) => void
   onCreate: () => void
-  render: (
-    session: TerminalMetadata,
-    minimize: MinimizeControls,
-    resize: (button: HTMLButtonElement) => void,
-  ) => ReactNode
+  render: (session: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
 }
 
 export const Grid = ({
@@ -226,16 +222,15 @@ export const Grid = ({
                       className="grid-terminal-body terminal-visibility min-h-0 flex-1"
                       data-hiding={hidden[session.id] ?? false}
                     >
-                      {render(
-                        session,
-                        {
+                      {render(session, {
+                        minimize: {
                           minimized: minimized[session.id] ?? false,
                           // Keep output painted while the grid's height transition clips it away.
                           clipContent: true,
                           onToggle: () => onMinimize(session.id),
                         },
-                        () => resizeToViewport(session.id),
-                      )}
+                        onResizePreset: () => resizeToViewport(session.id),
+                      })}
                     </div>
                   </div>
                 ))}
