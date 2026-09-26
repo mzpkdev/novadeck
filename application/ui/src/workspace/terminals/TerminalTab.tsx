@@ -2,7 +2,7 @@ import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Eye, EyeOff, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 
 import { Tooltip } from "../../ui-toolkit/Tooltip"
-import type { Session } from "../model/types"
+import type { TerminalMetadata } from "../model/types"
 import { workspaceShortcutBindings } from "../shortcuts"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
@@ -10,7 +10,7 @@ import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 const actionClasses =
   "session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
 
-export const SessionTab = ({
+export const TerminalTab = ({
   session,
   index,
   selected,
@@ -24,7 +24,7 @@ export const SessionTab = ({
   onRenameCancel,
   onClose,
 }: {
-  session: Session
+  session: TerminalMetadata
   index: number
   selected: boolean
   hidden: boolean

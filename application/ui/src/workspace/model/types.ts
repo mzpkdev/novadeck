@@ -1,12 +1,10 @@
-import type { ResponsiveLayouts } from "react-grid-layout"
-
 export type ViewMode = "focus" | "grid" | "canvas"
 export type WindowedView = Exclude<ViewMode, "focus">
 export type PreferencesValue = { fontSize: number; enabledViews: ViewMode[] }
 export type Project = { id: string; name: string; directory: string }
 export type Entry = { id: string; command: string; reply: string }
 
-export type Session = {
+export type TerminalMetadata = {
   id: string
   name: string
   directory: string
@@ -14,9 +12,6 @@ export type Session = {
   process: string
   state: "running" | "idle" | "finished"
   kind: "shell" | "server" | "tests" | "git" | "logs" | "build" | "claude" | "codex"
-  x: number
-  y: number
-  height: number
 }
 
 export type CanvasLayout = {
@@ -35,7 +30,24 @@ export type CanvasLayout = {
   >
 }
 export type GridBreakpoint = "wide" | "desktop" | "tablet" | "mobile"
-export type GridLayouts = ResponsiveLayouts<GridBreakpoint>
+export type GridItem = {
+  i: string
+  x: number
+  y: number
+  w: number
+  h: number
+  minW?: number
+  maxW?: number
+  minH?: number
+  maxH?: number
+  static?: boolean
+  isDraggable?: boolean
+  isResizable?: boolean
+  resizeHandles?: ("s" | "w" | "e" | "n" | "sw" | "nw" | "se" | "ne")[]
+  isBounded?: boolean
+  moved?: boolean
+}
+export type GridLayouts = Partial<Record<GridBreakpoint, readonly GridItem[]>>
 export type GridRestoreWidths = Partial<Record<GridBreakpoint, number>>
 
 export type SizePreset = "large" | "small"
@@ -44,13 +56,9 @@ export type WorkspaceState = {
   sizePresets: Record<WindowedView, Record<string, SizePreset>>
   view: ViewMode
   windowedView: WindowedView
-  drafts: Record<string, string>
-  scrollOffsets: Record<string, number>
-  sessions: Session[]
+  sessions: TerminalMetadata[]
   tabOrder: string[]
   selected: string
-  entries: Record<string, Entry[]>
-  cleared: Record<string, boolean>
   canvasLayout: CanvasLayout
   gridLayouts: GridLayouts
   gridRestoreWidths: Record<string, GridRestoreWidths>

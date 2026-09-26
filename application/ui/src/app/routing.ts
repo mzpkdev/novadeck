@@ -1,6 +1,11 @@
 import { matchPath } from "react-router"
 
-import { activeProject, activeSession, workspaceReducer } from "../workspace/model/state"
+import {
+  activeProject,
+  activeSession,
+  workspaceReducer,
+  type WorkspaceAction,
+} from "../workspace/model/state"
 import type { PreferencesValue, ViewMode, Workspace } from "../workspace/model/types"
 
 export type WorkspaceRoute = {
@@ -39,7 +44,7 @@ export const resolveRoute = (
   location: { pathname: string; search: string },
   preferences: PreferencesValue,
   now: number,
-): { workspace: Workspace; route: WorkspaceRoute } => {
+): { workspace: Workspace; route: WorkspaceRoute; actions: WorkspaceAction[] } => {
   const match = matchPath("/projects/:projectId/sessions/:sessionId/:view", location.pathname)
   const params = match?.params
   const project =
@@ -48,10 +53,16 @@ export const resolveRoute = (
     project.history.find((item) => item.id === params?.sessionId) ??
     project.history.find((item) => item.id === project.activeSessionId)!
   let next = workspace
+  const actions: WorkspaceAction[] = []
+  const apply = (action: WorkspaceAction): Workspace => {
+    actions.push(action)
+    next = workspaceReducer(next, action)
+    return next
+  }
   if (next.activeProjectId !== project.id)
-    next = workspaceReducer(next, { type: "project/select", projectId: project.id, now })
+    next = apply({ type: "project/select", projectId: project.id, now })
   if (project.activeSessionId !== session.id)
-    next = workspaceReducer(next, {
+    next = apply({
       type: "session/select",
       projectId: project.id,
       workspaceSessionId: session.id,
@@ -70,17 +81,18 @@ export const resolveRoute = (
       : session.state.selected
   const target = { projectId: project.id, workspaceSessionId: session.id }
   if (session.state.view !== view)
-    next = workspaceReducer(next, {
+    next = apply({
       type: "view/change",
       target,
       view,
       enabledViews: preferences.enabledViews,
     })
   if (session.state.selected !== terminal)
-    next = workspaceReducer(next, { type: "terminal/select", target, terminalId: terminal })
+    next = apply({ type: "terminal/select", target, terminalId: terminal })
   const dialog = search.get("dialog")
   return {
     workspace: next,
+    actions,
     route: {
       projectId: project.id,
       sessionId: session.id,

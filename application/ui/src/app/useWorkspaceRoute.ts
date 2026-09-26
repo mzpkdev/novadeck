@@ -1,8 +1,10 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useLocation, useNavigate } from "react-router"
 
-import { workspaceReducer, type WorkspaceAction } from "../workspace/model/state"
+import type { WorkspaceAction } from "../workspace/model/state"
+import { createWorkspaceStore, type WorkspaceTransaction } from "../workspace/model/store"
 import type { PreferencesValue, Workspace } from "../workspace/model/types"
+import { createTerminalRuntime } from "../workspace/runtime/store"
 import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "./routing"
 
 const currentTimestamp = (): number => Date.now()
@@ -13,11 +15,39 @@ export const useWorkspaceRoute = (
 ) => {
   const location = useLocation()
   const navigate = useNavigate()
-  const [saved, setSaved] = useState(() => initialize(preferences))
+  const [{ store, runtime }] = useState(() => {
+    const initial = resolveRoute(
+      initialize(preferences),
+      location,
+      preferences,
+      currentTimestamp(),
+    ).workspace
+    const terminalRuntime = createTerminalRuntime(initial)
+    const workspaceStore = createWorkspaceStore(initial, (next, actions) => {
+      terminalRuntime.reconcile(
+        next,
+        actions.flatMap((action) =>
+          action.type === "terminal/add"
+            ? [{ ...action.target, terminalId: action.session.id }]
+            : [],
+        ),
+      )
+    })
+    return { store: workspaceStore, runtime: terminalRuntime }
+  })
+  const saved = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { workspace, route } = resolveRoute(saved, location, preferences, currentTimestamp())
-  // The URL owns navigation. Keep the reducer's last-visited selections as history
-  // for switching projects/sessions, without rendering a stale destination first.
-  if (workspace !== saved) setSaved(workspace)
+  const input = `${location.key}:${location.pathname}${location.search}:${preferences.enabledViews.join(",")}`
+  const committed = useRef(input)
+  useLayoutEffect(() => {
+    if (committed.current === input) return
+    committed.current = input
+    // Reconcile actual URL/preference changes against the latest snapshot. A pending
+    // navigation must not reapply the previous URL over a newer command transaction.
+    store.transact(
+      (current) => resolveRoute(current, location, preferences, currentTimestamp()).actions,
+    )
+  }, [input, location, preferences, store])
   const url = routeUrl(route)
   const requested = useRef(url)
   const history = location.state as { dialogDepth?: number } | null
@@ -39,9 +69,12 @@ export const useWorkspaceRoute = (
     [navigate],
   )
 
-  const dispatch = useCallback((action: WorkspaceAction): void => {
-    setSaved((current) => workspaceReducer(current, action))
-  }, [])
+  const dispatch = useCallback(
+    (action: WorkspaceAction): void => {
+      store.dispatch(action)
+    },
+    [store],
+  )
   const go = useCallback(
     (changes: Partial<WorkspaceRoute>, replace = false): void => {
       const next = { ...route, ...changes }
@@ -60,12 +93,11 @@ export const useWorkspaceRoute = (
     [visit, route, dialogDepth, url],
   )
   const navigateWorkspace = (
-    actions: WorkspaceAction[],
+    actions: WorkspaceTransaction,
     changes: Partial<WorkspaceRoute> = {},
     replace = false,
   ): void => {
-    const next = actions.reduce(workspaceReducer, workspace)
-    setSaved(next)
+    const next = store.transact(actions)
     const destination = routeUrl({
       ...route,
       ...workspaceRoute(next),
@@ -85,5 +117,14 @@ export const useWorkspaceRoute = (
       visit(destination, true)
     }
   }
-  return { workspace, dispatch, route, go, navigateWorkspace, closeDialog }
+  return {
+    workspace,
+    dispatch,
+    route,
+    go,
+    navigateWorkspace,
+    closeDialog,
+    getWorkspace: store.getSnapshot,
+    runtime,
+  }
 }

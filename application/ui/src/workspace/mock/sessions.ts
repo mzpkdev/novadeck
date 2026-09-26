@@ -1,6 +1,6 @@
-import type { Project, Session } from "../model/types"
+import type { CanvasLayout, Project, TerminalMetadata } from "../model/types"
 
-export const sessions: Session[] = [
+const samples: (TerminalMetadata & { x: number; y: number; height: number })[] = [
   {
     id: "01",
     name: "Checkout implementation",
@@ -75,18 +75,36 @@ export const sessions: Session[] = [
   },
 ]
 
+export const sessions: TerminalMetadata[] = samples.map(
+  ({ x: _x, y: _y, height: _height, ...terminal }) => terminal,
+)
+
+export const demoCanvasLayout = (): CanvasLayout => ({
+  minimized: {},
+  geometry: Object.fromEntries(
+    samples.map(({ id, x, y, height }) => [
+      id,
+      {
+        position: { x, y },
+        width: 550,
+        height,
+      },
+    ]),
+  ),
+})
+
 export const initialProjects: Project[] = [
   { id: "storefront", name: "storefront", directory: "~/projects/storefront" },
   { id: "api-service", name: "api-service", directory: "~/projects/api-service" },
 ]
 
-export const projectSessions = (project: Project): Session[] =>
+export const projectSessions = (project: Project): TerminalMetadata[] =>
   sessions.map((session) => ({
     ...session,
     directory: session.directory.replace(/^~\/projects\/[^/]+/, project.directory),
   }))
 
-export const createMockTerminal = (number: number, directory: string): Session => {
+export const createMockTerminal = (number: number, directory: string): TerminalMetadata => {
   const id = String(number).padStart(2, "0")
   return {
     id,
@@ -96,13 +114,10 @@ export const createMockTerminal = (number: number, directory: string): Session =
     process: "zsh",
     state: "idle",
     kind: "shell",
-    x: 80 + ((number - 1) % 3) * 610,
-    y: 80 + Math.floor((number - 1) / 3) * 470,
-    height: 400,
   }
 }
 
-export const mockReply = (command: string, session: Session): string => {
+export const mockReply = (command: string, session: TerminalMetadata): string => {
   const input = command.trim()
   if (input === "help")
     return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, clear"
