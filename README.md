@@ -200,9 +200,9 @@ Source lives in `application/ui/src/`, grouped in layers:
 
 Imports point down the layers. `model/` imports nothing else, not even packages.
 `backend/` builds on `model/` and uses React only for the port's types; adapters
-may add `ui-toolkit/`. `interaction/` builds on `model/`; features add
+may add `ui-toolkit/` and `services/` (runner endpoint configuration). `interaction/` builds on `model/`; features add
 `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use `terminals/`;
-`shell/` may use `layouts/` and `projects/`. Only `app/` sees everything, and
+`shell/` may use `layouts/` and `projects/`. `app/` composes every feature layer, `backend/`, and `services/`, and
 within it only `app/backend.ts` imports a backend adapter. Vendor libraries stay
 in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout in
 `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
