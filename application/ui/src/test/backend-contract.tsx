@@ -211,7 +211,7 @@ export const describeBackendContract = (name: string, options: BackendContractOp
         const closed = close()
         await settle()
         expect(probe.holds(key)).toBe(false)
-        const io = probe.io()
+        const io = [...probe.io()]
         backend.commit(closed, [])
         await settle()
         expect(probe.io()).toEqual(io)
@@ -224,7 +224,7 @@ export const describeBackendContract = (name: string, options: BackendContractOp
           close()
           await settle()
         })
-        const io = probe.io()
+        const io = [...probe.io()]
         const errors: unknown[] = []
         const report = (event: ErrorEvent): void => {
           event.preventDefault()
