@@ -1,3 +1,4 @@
+import "./demo.css"
 import { GitBranch } from "lucide-react"
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 

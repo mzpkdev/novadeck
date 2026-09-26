@@ -20,6 +20,8 @@ export type TerminalKey = WorkspaceTarget & { readonly terminalId: string }
 //   `minimized`; Grid keeps a minimizing surface painted while its height animates.
 // - The element that takes typed input carries `data-terminal-input`, so shortcuts
 //   treat it as terminal input and search returns focus to it.
+// - Its own styles may key off the frame's `terminal-compact` (Grid and Canvas) and
+//   `terminal-focused` (Focus) classes; ship them with the adapter.
 // Attach to a running terminal from the surface's effects; `commit` handles lifecycle.
 export type TerminalSurfaceProps = {
   // Stable for the terminal's lifetime, so it is safe in effect dependencies.

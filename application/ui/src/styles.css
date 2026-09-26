@@ -148,9 +148,6 @@
 .canvas-node.selected .terminal-heading::before {
   opacity: 1;
 }
-.output-gap {
-  margin-top: 19px;
-}
 .workspace-dots {
   background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
   background-size: 24px 24px;
@@ -195,18 +192,6 @@
 .terminal-compact .terminal-header,
 .terminal-focused .terminal-header {
   @apply h-12 px-4;
-}
-.terminal-compact .terminal-meta {
-  @apply mb-3 gap-x-3 text-[9px];
-}
-.terminal-compact .output-gap {
-  margin-top: 13px;
-}
-.terminal-compact .file-list {
-  @apply grid-cols-2 gap-x-4;
-}
-.terminal-compact .command-form {
-  @apply mt-4;
 }
 .workspace-background {
   --terminal-idle-opacity: 0.5;
@@ -297,16 +282,6 @@
   .terminal-compact .terminal-content {
     padding: 18px 14px;
     font-size: calc(var(--terminal-font-size, 13px) - 1px);
-  }
-  .file-list,
-  .terminal-compact .file-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 24px;
-  }
-  .terminal-meta,
-  .terminal-compact .terminal-meta {
-    font-size: 10px;
-    gap: 3px 10px;
   }
   .small-button {
     padding: 0 12px;
