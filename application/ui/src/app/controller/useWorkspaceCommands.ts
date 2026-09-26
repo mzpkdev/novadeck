@@ -190,7 +190,7 @@ export const useWorkspaceCommands = ({
     const latestSession = latestProject?.history.find((item) => item.id === workspaceSessionId)
     if (!latestProject || !latestSession) return ""
     const terminal = newTerminal({
-      number: latestSession.state.nextTerminalNumber,
+      number: latestSession.state.roster.nextNumber,
       directory: latestProject.directory,
     })
     if (!beginRename && activeRename) finishRename(activeRename, true)
@@ -203,8 +203,8 @@ export const useWorkspaceCommands = ({
         target,
         terminal,
         gridLayouts: addCompactGridTerminal(
-          latestSession.state.terminals,
-          latestSession.state.gridLayouts,
+          latestSession.state.roster.terminals,
+          latestSession.state.layout.grid,
           terminal,
         ),
       },

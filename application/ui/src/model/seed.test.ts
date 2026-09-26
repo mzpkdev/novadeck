@@ -45,11 +45,12 @@ describe("workspace from a backend seed", () => {
       expect(session.state).toMatchObject({
         view: "focus",
         windowedView: "canvas",
-        terminals,
         selected: "01",
-        nextTerminalNumber: 3,
-        canvasLayout,
-        gridLayouts: initialGridLayouts(terminals, canvasLayout.geometry),
+        roster: { terminals, order: [], nextNumber: 3 },
+        layout: {
+          canvas: canvasLayout,
+          grid: initialGridLayouts(terminals, canvasLayout.geometry),
+        },
       })
     })
   })

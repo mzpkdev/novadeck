@@ -51,19 +51,28 @@ export type GridRestoreWidths = Partial<Record<GridBreakpoint, number>>
 
 export type SizePreset = "large" | "small"
 
+// The session's terminals: metadata, sidebar order, and the next default number.
+export type TerminalRoster = {
+  readonly terminals: TerminalMetadata[]
+  readonly order: string[]
+  readonly nextNumber: number
+}
+// Where each terminal sits and how big it is in each view.
+export type TerminalLayout = {
+  readonly canvas: CanvasLayout
+  readonly grid: GridLayouts
+  readonly gridRestoreWidths: Record<string, GridRestoreWidths>
+  readonly gridMinimized: Record<string, boolean>
+  readonly sizePresets: Record<WindowedView, Record<string, SizePreset>>
+  readonly hidden: Record<string, boolean>
+}
 export type WorkspaceState = {
-  sizePresets: Record<WindowedView, Record<string, SizePreset>>
-  view: ViewMode
-  windowedView: WindowedView
-  terminals: TerminalMetadata[]
-  tabOrder: string[]
-  selected: string
-  canvasLayout: CanvasLayout
-  gridLayouts: GridLayouts
-  gridRestoreWidths: Record<string, GridRestoreWidths>
-  gridMinimized: Record<string, boolean>
-  hidden: Record<string, boolean>
-  nextTerminalNumber: number
+  readonly roster: TerminalRoster
+  readonly layout: TerminalLayout
+  // Navigation memory mirrored from the URL, which stays authoritative.
+  readonly view: ViewMode
+  readonly windowedView: WindowedView
+  readonly selected: string
 }
 export type WorkspaceSession = {
   id: string

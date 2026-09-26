@@ -2,7 +2,8 @@ import { useMemo } from "react"
 import { useNavigationType } from "react-router"
 
 import type { Backend, CreateBackend } from "../../backend/port"
-import { activeProject, activeSession, orderedTerminals } from "../../model/state"
+import { orderedTerminals } from "../../model/roster"
+import { activeProject, activeSession } from "../../model/state"
 import type {
   PreferencesValue,
   TerminalMetadata,
@@ -52,8 +53,9 @@ export const useWorkspaceController = (createBackend: CreateBackend): WorkspaceC
   const projectId = project.id
   const workspaceSessionId = session.id
   const context = `${projectId}/${workspaceSessionId}`
-  const { view, windowedView, terminals, selected } = session.state
-  const ordered = orderedTerminals(session.state)
+  const { view, windowedView, selected } = session.state
+  const { terminals } = session.state.roster
+  const ordered = orderedTerminals(session.state.roster)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
   const shell = useWorkspaceShell({
     context,

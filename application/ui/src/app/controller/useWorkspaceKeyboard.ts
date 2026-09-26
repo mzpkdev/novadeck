@@ -21,7 +21,8 @@ import {
   workspaceShortcutBindings,
 } from "../../interaction/shortcuts"
 import type { CanvasHandle } from "../../layouts/canvas/Canvas"
-import { activeSession, orderedTerminals } from "../../model/state"
+import { orderedTerminals } from "../../model/roster"
+import { activeSession } from "../../model/state"
 import { viewModes } from "../../preferences/preferences-storage"
 import type { WorkspaceController } from "./useWorkspaceController"
 
@@ -46,9 +47,10 @@ export const useWorkspaceKeyboard = (
     controller
   const { go } = navigation
   const current = activeSession(workspace)!
-  const { view, selected, terminals } = current.state
+  const { view, selected } = current.state
+  const { terminals } = current.state.roster
   const context = `${workspace.activeProjectId}/${current.id}`
-  const ordered = orderedTerminals(current.state)
+  const ordered = orderedTerminals(current.state.roster)
   const sidebarPanel = route.panel
   const {
     sidebarVisible,

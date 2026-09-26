@@ -44,7 +44,7 @@ export const createTerminalRegistry = <Entry>(
     const remaining = new Set<string>()
     for (const project of workspace.projects)
       for (const session of project.history)
-        for (const terminal of session.state.terminals) {
+        for (const terminal of session.state.roster.terminals) {
           const key = {
             projectId: project.id,
             workspaceSessionId: session.id,

@@ -35,7 +35,8 @@ export const WorkspaceApp = ({
 }): React.JSX.Element => {
   const controller = useWorkspaceController(createBackend)
   const { session: current, route, preferences, shell, commands } = controller
-  const { view, terminals } = current.state
+  const { view } = current.state
+  const { terminals } = current.state.roster
   const sidebarPanel = route.panel
   const { sidebar, sidebarCollapsed, sidebarVisible, zen, hideSidebar, toggleSidebar, exitZen } =
     shell

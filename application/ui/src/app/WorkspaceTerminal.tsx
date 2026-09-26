@@ -26,7 +26,8 @@ export const WorkspaceTerminal = ({
     recent,
     commands,
   } = useWorkspace()
-  const { view, selected, sizePresets } = current.state
+  const { view, selected } = current.state
+  const { sizePresets } = current.state.layout
   const { keyboardFocus, setKeyboardFocus, setRevealCanvas, setSidebar } = shell
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
   const { created, windowedDestination, setSelected, openWindowed, close } = commands

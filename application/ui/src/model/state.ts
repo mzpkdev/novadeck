@@ -1,11 +1,27 @@
-import { adjacentCanvasPosition } from "./layout/canvas-placement"
-import { canvasPresetSize } from "./layout/terminal-size"
+import {
+  emptyLayout,
+  placeTerminal,
+  pruneCanvasLayout,
+  pruneGridLayouts,
+  removeFromLayout,
+  resizeGridTerminal,
+} from "./layout/workspace-layout"
+import {
+  addTerminal,
+  createRoster,
+  hasTerminal,
+  orderedTerminals,
+  removeTerminal,
+  renameTerminal,
+  reorderTerminals,
+} from "./roster"
 import type {
   CanvasLayout,
   GridLayouts,
   GridRestoreWidths,
   PreferencesValue,
   Project,
+  TerminalLayout,
   TerminalMetadata,
   SizePreset,
   ViewMode,
@@ -99,18 +115,14 @@ export const createTerminalState = (
   windowedView: WindowedView,
   initial: { canvasLayout?: CanvasLayout; gridLayouts?: GridLayouts } = {},
 ): WorkspaceState => ({
+  roster: createRoster(terminals),
+  layout: emptyLayout({
+    ...(initial.canvasLayout ? { canvas: initial.canvasLayout } : {}),
+    ...(initial.gridLayouts ? { grid: initial.gridLayouts } : {}),
+  }),
   view,
   windowedView,
-  terminals,
-  tabOrder: [],
   selected: terminals[0]?.id ?? "",
-  sizePresets: { grid: {}, canvas: {} },
-  canvasLayout: initial.canvasLayout ?? { geometry: {}, minimized: {} },
-  gridLayouts: initial.gridLayouts ?? {},
-  gridRestoreWidths: {},
-  gridMinimized: {},
-  hidden: {},
-  nextTerminalNumber: terminals.length + 1,
 })
 
 export const createWorkspace = ({
@@ -130,16 +142,6 @@ export const activeProject = (workspace: Workspace): WorkspaceProject | undefine
 export const activeSession = (workspace: Workspace): WorkspaceSession | undefined => {
   const project = activeProject(workspace)
   return project?.history.find((session) => session.id === project.activeSessionId)
-}
-
-export const orderedTerminals = (state: WorkspaceState): TerminalMetadata[] => {
-  const byId = new Map(state.terminals.map((terminal) => [terminal.id, terminal]))
-  const ordered = state.tabOrder.flatMap((id) => {
-    const terminal = byId.get(id)
-    return terminal ? [terminal] : []
-  })
-  const orderedIds = new Set(ordered.map((terminal) => terminal.id))
-  return [...ordered, ...state.terminals.filter((terminal) => !orderedIds.has(terminal.id))]
 }
 
 export const reconcileView = (state: WorkspaceState, enabledViews: ViewMode[]): WorkspaceState => {
@@ -182,60 +184,9 @@ const updateTarget = (
 const apply = <Value>(value: Value, update: ValueUpdate<Value>): Value =>
   typeof update === "function" ? (update as (previous: Value) => Value)(value) : update
 
-const hasTerminal = (state: WorkspaceState, terminalId: string): boolean =>
-  state.terminals.some((terminal) => terminal.id === terminalId)
-
 const allViews: ViewMode[] = ["focus", "grid", "canvas"]
 
 const enabled = (views?: ViewMode[]): ViewMode[] => (views?.length ? views : allViews)
-
-const withoutKey = <Value>(values: Record<string, Value>, key: string): Record<string, Value> => {
-  if (!(key in values)) return values
-  const next = { ...values }
-  delete next[key]
-  return next
-}
-
-const withoutGridItem = (layouts: GridLayouts, terminalId: string): GridLayouts => {
-  let changed = false
-  const next = Object.fromEntries(
-    Object.entries(layouts).map(([breakpoint, layout]) => {
-      const remaining = layout.filter((item) => item.i !== terminalId)
-      changed ||= remaining.length !== layout.length
-      return [breakpoint, remaining]
-    }),
-  ) as GridLayouts
-  return changed ? next : layouts
-}
-
-const pruneCanvasLayout = (layout: CanvasLayout, terminals: TerminalMetadata[]): CanvasLayout => {
-  const ids = new Set(terminals.map((terminal) => terminal.id))
-  const geometry = Object.fromEntries(
-    Object.entries(layout.geometry).filter(([id]) => ids.has(id)),
-  ) as CanvasLayout["geometry"]
-  const minimized = Object.fromEntries(
-    Object.entries(layout.minimized).filter(([id]) => ids.has(id)),
-  ) as CanvasLayout["minimized"]
-  return Object.keys(layout.geometry).every((id) => ids.has(id)) &&
-    Object.keys(layout.minimized).every((id) => ids.has(id))
-    ? layout
-    : { ...layout, geometry, minimized }
-}
-
-const pruneGridLayouts = (layouts: GridLayouts, terminals: TerminalMetadata[]): GridLayouts => {
-  const ids = new Set(terminals.map((terminal) => terminal.id))
-  const next = Object.fromEntries(
-    Object.entries(layouts).map(([breakpoint, layout]) => [
-      breakpoint,
-      layout.filter((item) => ids.has(item.i)),
-    ]),
-  ) as GridLayouts
-  return Object.entries(layouts).every(
-    ([breakpoint, layout]) => next[breakpoint as keyof GridLayouts]?.length === layout.length,
-  )
-    ? layouts
-    : next
-}
 
 const restoreView = (state: WorkspaceState, enabledViews?: ViewMode[]): WorkspaceState => {
   const views = enabled(enabledViews)
@@ -249,34 +200,26 @@ const visit = (project: WorkspaceProject, id: string, now: number): WorkspacePro
   ),
 })
 
+const updateLayout = (
+  state: WorkspaceState,
+  change: (layout: TerminalLayout) => TerminalLayout,
+): WorkspaceState => {
+  const layout = change(state.layout)
+  return layout === state.layout ? state : { ...state, layout }
+}
+
 const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceState => {
-  if (!hasTerminal(state, terminalId)) return state
-  const terminals = orderedTerminals(state)
+  if (!hasTerminal(state.roster, terminalId)) return state
+  const terminals = orderedTerminals(state.roster)
   const index = terminals.findIndex((terminal) => terminal.id === terminalId)
   const remaining = terminals.filter((terminal) => terminal.id !== terminalId)
   const neighbor =
     state.view === "canvas" ? "" : ((remaining[index] ?? remaining[index - 1])?.id ?? "")
-  const selected = state.selected === terminalId ? neighbor : state.selected
-  const geometry = withoutKey(state.canvasLayout.geometry, terminalId)
-  const minimized = withoutKey(state.canvasLayout.minimized, terminalId)
-  const gridMinimized = withoutKey(state.gridMinimized, terminalId)
   return {
     ...state,
-    terminals: state.terminals.filter((terminal) => terminal.id !== terminalId),
-    tabOrder: state.tabOrder.filter((id) => id !== terminalId),
-    selected,
-    canvasLayout:
-      geometry === state.canvasLayout.geometry && minimized === state.canvasLayout.minimized
-        ? state.canvasLayout
-        : { ...state.canvasLayout, geometry, minimized },
-    gridLayouts: withoutGridItem(state.gridLayouts, terminalId),
-    gridRestoreWidths: withoutKey(state.gridRestoreWidths, terminalId),
-    gridMinimized,
-    sizePresets: {
-      grid: withoutKey(state.sizePresets.grid, terminalId),
-      canvas: withoutKey(state.sizePresets.canvas, terminalId),
-    },
-    hidden: withoutKey(state.hidden, terminalId),
+    roster: removeTerminal(state.roster, terminalId),
+    layout: removeFromLayout(state.layout, terminalId),
+    selected: state.selected === terminalId ? neighbor : state.selected,
   }
 }
 
@@ -371,51 +314,28 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       })
     case "terminal/add":
       return updateTarget(workspace, action.target, (state) => {
-        if (!action.terminal.id || hasTerminal(state, action.terminal.id)) return state
+        const { roster } = state
+        if (!action.terminal.id || hasTerminal(roster, action.terminal.id)) return state
         const anchor =
-          state.terminals.find((terminal) => terminal.id === state.selected) ??
-          state.terminals.at(-1)
-        const position = anchor
-          ? adjacentCanvasPosition(
-              anchor,
-              state.terminals,
-              state.canvasLayout,
-              canvasPresetSize("small").height,
-            )
-          : { x: 80, y: 80 }
+          roster.terminals.find((terminal) => terminal.id === state.selected) ??
+          roster.terminals.at(-1)
         return {
           ...state,
-          terminals: [...state.terminals, action.terminal],
-          canvasLayout: {
-            ...state.canvasLayout,
-            geometry: {
-              ...state.canvasLayout.geometry,
-              [action.terminal.id]: action.canvasGeometry ?? {
-                position,
-                ...canvasPresetSize("small"),
-              },
-            },
-          },
-          gridLayouts: action.gridLayouts
-            ? pruneGridLayouts(action.gridLayouts, [...state.terminals, action.terminal])
-            : state.gridLayouts,
-          sizePresets: {
-            canvas: { ...state.sizePresets.canvas, [action.terminal.id]: "small" },
-            grid: { ...state.sizePresets.grid, [action.terminal.id]: "small" },
-          },
+          roster: addTerminal(roster, action.terminal),
+          layout: placeTerminal(state.layout, {
+            terminal: action.terminal,
+            terminals: roster.terminals,
+            anchor,
+            gridLayouts: action.gridLayouts,
+            canvasGeometry: action.canvasGeometry,
+          }),
           selected: action.terminal.id,
-          nextTerminalNumber: state.nextTerminalNumber + 1,
         }
       })
     case "terminal/rename":
       return updateTarget(workspace, action.target, (state) => {
-        if (!hasTerminal(state, action.terminalId)) return state
-        return {
-          ...state,
-          terminals: state.terminals.map((terminal) =>
-            terminal.id === action.terminalId ? { ...terminal, name: action.name } : terminal,
-          ),
-        }
+        const roster = renameTerminal(state.roster, action.terminalId, action.name)
+        return roster === state.roster ? state : { ...state, roster }
       })
     case "terminal/close":
       return updateTarget(workspace, action.target, (state) =>
@@ -423,27 +343,24 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       )
     case "terminal/reorder":
       return updateTarget(workspace, action.target, (state) => {
-        const seen = new Set<string>()
-        const tabOrder = action.tabOrder.filter(
-          (id) => hasTerminal(state, id) && !seen.has(id) && (seen.add(id), true),
-        )
-        return tabOrder.every((id, index) => state.tabOrder[index] === id) &&
-          tabOrder.length === state.tabOrder.length
-          ? state
-          : { ...state, tabOrder }
+        const roster = reorderTerminals(state.roster, action.tabOrder)
+        return roster === state.roster ? state : { ...state, roster }
       })
     case "terminal/select":
       return updateTarget(workspace, action.target, (state) =>
-        (hasTerminal(state, action.terminalId) || action.terminalId === "") &&
+        (hasTerminal(state.roster, action.terminalId) || action.terminalId === "") &&
         state.selected !== action.terminalId
           ? { ...state, selected: action.terminalId }
           : state,
       )
     case "terminal/visibility":
       return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId) &&
-        Boolean(state.hidden[action.terminalId]) !== action.hidden
-          ? { ...state, hidden: { ...state.hidden, [action.terminalId]: action.hidden } }
+        hasTerminal(state.roster, action.terminalId) &&
+        Boolean(state.layout.hidden[action.terminalId]) !== action.hidden
+          ? updateLayout(state, (layout) => ({
+              ...layout,
+              hidden: { ...layout.hidden, [action.terminalId]: action.hidden },
+            }))
           : state,
       )
     case "view/change":
@@ -462,69 +379,55 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         reconcileView(state, action.preferences.enabledViews),
       )
     case "canvas/layout":
-      return updateTarget(workspace, action.target, (state) => {
-        const canvasLayout = pruneCanvasLayout(
-          apply(state.canvasLayout, action.layout),
-          state.terminals,
-        )
-        return canvasLayout === state.canvasLayout ? state : { ...state, canvasLayout }
-      })
+      return updateTarget(workspace, action.target, (state) =>
+        updateLayout(state, (layout) => {
+          const canvas = pruneCanvasLayout(
+            apply(layout.canvas, action.layout),
+            state.roster.terminals,
+          )
+          return canvas === layout.canvas ? layout : { ...layout, canvas }
+        }),
+      )
     case "grid/layouts":
-      return updateTarget(workspace, action.target, (state) => {
-        const gridLayouts = pruneGridLayouts(
-          apply(state.gridLayouts, action.layouts),
-          state.terminals,
-        )
-        return gridLayouts === state.gridLayouts ? state : { ...state, gridLayouts }
-      })
+      return updateTarget(workspace, action.target, (state) =>
+        updateLayout(state, (layout) => {
+          const grid = pruneGridLayouts(apply(layout.grid, action.layouts), state.roster.terminals)
+          return grid === layout.grid ? layout : { ...layout, grid }
+        }),
+      )
     case "grid/size-toggle":
-      return updateTarget(workspace, action.target, (state) => {
-        if (!hasTerminal(state, action.terminalId)) return state
-        const widths = action.change.restoreWidths
-        return {
-          ...state,
-          gridLayouts: pruneGridLayouts(action.change.layouts, state.terminals),
-          gridRestoreWidths:
-            widths === null
-              ? withoutKey(state.gridRestoreWidths, action.terminalId)
-              : { ...state.gridRestoreWidths, [action.terminalId]: widths },
-          gridMinimized: state.gridMinimized[action.terminalId]
-            ? { ...state.gridMinimized, [action.terminalId]: false }
-            : state.gridMinimized,
-          sizePresets: {
-            ...state.sizePresets,
-            grid: {
-              ...state.sizePresets.grid,
-              [action.terminalId]: widths === null ? "small" : "large",
-            },
-          },
-        }
-      })
+      return updateTarget(workspace, action.target, (state) =>
+        hasTerminal(state.roster, action.terminalId)
+          ? updateLayout(state, (layout) =>
+              resizeGridTerminal(layout, action.terminalId, action.change, state.roster.terminals),
+            )
+          : state,
+      )
     case "terminal/size-preset":
       return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId)
-          ? {
-              ...state,
+        hasTerminal(state.roster, action.terminalId)
+          ? updateLayout(state, (layout) => ({
+              ...layout,
               sizePresets: {
-                ...state.sizePresets,
+                ...layout.sizePresets,
                 [action.view]: {
-                  ...state.sizePresets[action.view],
+                  ...layout.sizePresets[action.view],
                   [action.terminalId]: action.preset,
                 },
               },
-            }
+            }))
           : state,
       )
     case "grid/minimize":
       return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId)
-          ? {
-              ...state,
+        hasTerminal(state.roster, action.terminalId)
+          ? updateLayout(state, (layout) => ({
+              ...layout,
               gridMinimized: {
-                ...state.gridMinimized,
-                [action.terminalId]: !state.gridMinimized[action.terminalId],
+                ...layout.gridMinimized,
+                [action.terminalId]: !layout.gridMinimized[action.terminalId],
               },
-            }
+            }))
           : state,
       )
   }

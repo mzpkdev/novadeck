@@ -62,7 +62,7 @@ export const WorkspaceSidebar = ({
       <SessionsPanel
         key={projectId}
         items={workspaceSessions.map((item) => {
-          const itemTerminals = item.state.terminals
+          const itemTerminals = item.state.roster.terminals
           return {
             id: item.id,
             name: item.name,

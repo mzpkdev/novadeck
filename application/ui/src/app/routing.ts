@@ -77,7 +77,7 @@ export const resolveRoute = (
   const requestedTerminal = search.get("terminal")
   const terminal =
     requestedTerminal === "" ||
-    session.state.terminals.some((item) => item.id === requestedTerminal)
+    session.state.roster.terminals.some((item) => item.id === requestedTerminal)
       ? requestedTerminal!
       : session.state.selected
   const target = { projectId: project.id, workspaceSessionId: session.id }

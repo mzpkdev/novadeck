@@ -43,7 +43,7 @@ describe("route reconciliation", () => {
       name: "Changed before commit",
     })
     store.transact((current) => resolveRoute(current, location, preferences, 1).actions)
-    expect(store.getSnapshot().projects[0]!.history[0]!.state.terminals[0]!.name).toBe(
+    expect(store.getSnapshot().projects[0]!.history[0]!.state.roster.terminals[0]!.name).toBe(
       "Changed before commit",
     )
     expect(workspaceRoute(store.getSnapshot())).toMatchObject({ view: "canvas", terminal: "" })
@@ -58,7 +58,7 @@ describe("route reconciliation", () => {
     expect(routeUrl(workspaceRoute(next))).toBe(
       "/projects/project/sessions/initial/grid?terminal=02",
     )
-    expect(next.projects[0]!.history[0]!.state.terminals[0]!.name).toBe("Saved")
+    expect(next.projects[0]!.history[0]!.state.roster.terminals[0]!.name).toBe("Saved")
   })
 
   it("replaces obsolete selections and disabled views with valid URL values", () => {

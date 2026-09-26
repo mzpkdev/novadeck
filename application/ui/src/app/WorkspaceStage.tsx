@@ -20,17 +20,16 @@ export const WorkspaceStage = ({
 }): React.JSX.Element => {
   const { session: current, target, context, navigation, shell, commands, active } = useWorkspace()
   const { dispatch } = navigation
+  const { view, selected } = current.state
+  const { terminals } = current.state.roster
   const {
-    view,
-    terminals,
-    selected,
-    canvasLayout,
-    gridLayouts,
+    canvas: canvasLayout,
+    grid: gridLayouts,
     gridRestoreWidths,
     gridMinimized,
     sizePresets,
     hidden,
-  } = current.state
+  } = current.state.layout
   const {
     zen,
     showSessions,

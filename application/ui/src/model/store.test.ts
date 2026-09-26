@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { terminalFixture } from "../test/fixtures"
-import { createTerminalState, workspaceReducer } from "./state"
+import { createTerminalState, workspaceReducer, type WorkspaceAction } from "./state"
 import { createWorkspaceStore } from "./store"
 import type { Workspace } from "./types"
 
@@ -30,7 +30,7 @@ describe("workspace commands", () => {
     const store = createWorkspaceStore(initial())
     store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Server" })
     store.transact([{ type: "terminal/add", target, terminal: terminalFixture(2, "~/project") }])
-    expect(state(store.getSnapshot()).terminals.map((terminal) => terminal.name)).toEqual([
+    expect(state(store.getSnapshot()).roster.terminals.map((terminal) => terminal.name)).toEqual([
       "Server",
       "Terminal 02",
     ])
@@ -43,17 +43,17 @@ describe("workspace commands", () => {
         {
           type: "terminal/add",
           target,
-          terminal: terminalFixture(state(workspace).nextTerminalNumber, "~/project"),
+          terminal: terminalFixture(state(workspace).roster.nextNumber, "~/project"),
         },
       ])
     add()
     add()
-    expect(state(store.getSnapshot()).terminals.map((terminal) => terminal.id)).toEqual([
+    expect(state(store.getSnapshot()).roster.terminals.map((terminal) => terminal.id)).toEqual([
       "01",
       "02",
       "03",
     ])
-    expect(state(store.getSnapshot()).nextTerminalNumber).toBe(4)
+    expect(state(store.getSnapshot()).roster.nextNumber).toBe(4)
   })
 
   it("publishes a complete transaction once and ignores obsolete targets", () => {
@@ -81,7 +81,7 @@ describe("workspace commands", () => {
     store.dispatch({ type: "terminal/rename", target, terminalId: "gone", name: "Stale" })
     expect(store.getSnapshot()).toBe(previous)
     expect(notifications).toBe(1)
-    expect(previous.projects[0]!.history[1]!.state.terminals[0]!.name).toBe("Terminal 01")
+    expect(previous.projects[0]!.history[1]!.state.roster.terminals[0]!.name).toBe("Terminal 01")
   })
 
   it("keeps layout initialization separate from terminal metadata", () => {
@@ -91,8 +91,13 @@ describe("workspace commands", () => {
       minimized: {},
     }
     const terminalState = createTerminalState([terminal], "canvas", "canvas", { canvasLayout })
-    expect(terminalState.canvasLayout).toBe(canvasLayout)
+    expect(terminalState.layout.canvas).toBe(canvasLayout)
+    expect(terminalState.roster).toEqual({ terminals: [terminal], order: [], nextNumber: 2 })
+  })
+
+  it("adding a terminal selects it and places it in every layout", () => {
     const store = createWorkspaceStore(initial())
+    const before = state(store.getSnapshot())
     store.dispatch({
       type: "terminal/add",
       target,
@@ -105,49 +110,71 @@ describe("workspace commands", () => {
         ],
       },
     })
-    expect(state(store.getSnapshot()).canvasLayout.geometry["02"]!.position).toEqual({
-      x: 900,
-      y: 500,
-    })
-    expect(state(store.getSnapshot()).gridLayouts.desktop!.map((item) => item.i)).toEqual(["02"])
+    const added = state(store.getSnapshot())
+    expect(added.selected).toBe("02")
+    expect(added.roster.nextNumber).toBe(before.roster.nextNumber + 1)
+    expect(added.layout.canvas.geometry["02"]!.position).toEqual({ x: 900, y: 500 })
+    expect(added.layout.grid.desktop!.map((item) => item.i)).toEqual(["02"])
+    expect(added.layout.sizePresets).toEqual({ canvas: { "02": "small" }, grid: { "02": "small" } })
+    expect(added.layout).toMatchObject({ hidden: {}, gridMinimized: {}, gridRestoreWidths: {} })
+  })
+
+  it("places a terminal added without geometry beside the selected one on Canvas", () => {
+    const store = createWorkspaceStore(initial())
+    store.dispatch({ type: "terminal/add", target, terminal: terminalFixture(2, "~/project") })
+    const { layout } = state(store.getSnapshot())
+    expect(layout.canvas.geometry["02"]).toMatchObject({ width: 600, height: 400 })
+    expect(layout.canvas.geometry["02"]!.position.x).toBeGreaterThan(0)
+    expect(layout.grid).toEqual({})
   })
 
   it("closing removes every saved reference and ignores delayed layout items", () => {
     const workspace = initial()
     const seeded = state(workspace)
-    seeded.tabOrder = ["01"]
-    seeded.hidden = { "01": true }
-    seeded.gridMinimized = { "01": true }
-    seeded.gridRestoreWidths = { "01": { desktop: 3 } }
-    seeded.sizePresets = { canvas: { "01": "large" }, grid: { "01": "large" } }
-    seeded.canvasLayout = {
+    const canvas = {
       geometry: { "01": { position: { x: 1, y: 1 } } },
       minimized: { "01": true },
     }
-    seeded.gridLayouts = { desktop: [{ i: "01", x: 0, y: 0, w: 3, h: 4 }] }
+    const grid = { desktop: [{ i: "01", x: 0, y: 0, w: 3, h: 4 }] }
+    workspace.projects[0]!.history[0]!.state = {
+      ...seeded,
+      roster: { ...seeded.roster, order: ["01"] },
+      layout: {
+        canvas,
+        grid,
+        hidden: { "01": true },
+        gridMinimized: { "01": true },
+        gridRestoreWidths: { "01": { desktop: 3 } },
+        sizePresets: { canvas: { "01": "large" }, grid: { "01": "large" } },
+      },
+    }
     const closed = workspaceReducer(workspace, { type: "terminal/close", target, terminalId: "01" })
-    expect(state(closed)).toMatchObject({
-      terminals: [],
+    expect(state(closed)).toEqual({
+      ...seeded,
       selected: "",
-      tabOrder: [],
-      hidden: {},
-      gridMinimized: {},
-      gridRestoreWidths: {},
-      sizePresets: { canvas: {}, grid: {} },
-      canvasLayout: { geometry: {}, minimized: {} },
-      gridLayouts: { desktop: [] },
+      roster: { terminals: [], order: [], nextNumber: 2 },
+      layout: {
+        canvas: { geometry: {}, minimized: {} },
+        grid: { desktop: [] },
+        hidden: {},
+        gridMinimized: {},
+        gridRestoreWidths: {},
+        sizePresets: { canvas: {}, grid: {} },
+      },
     })
-    const delayed = workspaceReducer(closed, {
-      type: "grid/layouts",
-      target,
-      layouts: seeded.gridLayouts,
-    })
-    expect(state(delayed).gridLayouts).toEqual({ desktop: [] })
+    const delayed = workspaceReducer(closed, { type: "grid/layouts", target, layouts: grid })
+    expect(state(delayed).layout.grid).toEqual({ desktop: [] })
     const delayedCanvas = workspaceReducer(delayed, {
       type: "canvas/layout",
       target,
-      layout: seeded.canvasLayout,
+      layout: canvas,
     })
-    expect(state(delayedCanvas).canvasLayout).toEqual({ geometry: {}, minimized: {} })
+    expect(state(delayedCanvas).layout.canvas).toEqual({ geometry: {}, minimized: {} })
+    const late: WorkspaceAction[] = [
+      { type: "terminal/visibility", target, terminalId: "01", hidden: true },
+      { type: "terminal/size-preset", target, terminalId: "01", view: "grid", preset: "large" },
+      { type: "grid/minimize", target, terminalId: "01" },
+    ]
+    for (const action of late) expect(workspaceReducer(delayedCanvas, action)).toBe(delayedCanvas)
   })
 })

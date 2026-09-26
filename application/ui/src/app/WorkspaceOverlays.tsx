@@ -1,6 +1,6 @@
 import { Suspense } from "react"
 
-import { orderedTerminals } from "../model/state"
+import { orderedTerminals } from "../model/roster"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
 import { useWorkspace } from "./controller/context"
 import { useRouteDialog } from "./controller/useRouteDialog"
@@ -20,8 +20,9 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
     commands,
   } = useWorkspace()
   const { go, closeDialog } = navigation
-  const { view, terminals } = current.state
-  const ordered = orderedTerminals(current.state)
+  const { view } = current.state
+  const { terminals } = current.state.roster
+  const ordered = orderedTerminals(current.state.roster)
   const { setKeyboardFocus } = shell
   const { visibleRecentSwitcher, setRecentSwitcher, closeRecentSwitcher } = recent
   const { select, updatePreferences, openSearchResult } = commands

@@ -1,4 +1,4 @@
-import { orderedTerminals } from "../model/state"
+import { orderedTerminals } from "../model/roster"
 import { WorkspaceSidebar } from "../shell/WorkspaceSidebar"
 import { useWorkspace } from "./controller/context"
 
@@ -18,8 +18,10 @@ export const SidebarSection = (): React.JSX.Element => {
   const projectId = project.id
   const workspaceSessionId = current.id
   const workspaceSessions = project.history
-  const { terminals, selected, hidden } = current.state
-  const ordered = orderedTerminals(current.state)
+  const { selected } = current.state
+  const { terminals } = current.state.roster
+  const { hidden } = current.state.layout
+  const ordered = orderedTerminals(current.state.roster)
   const sidebarPanel = route.panel
   const { sidebarVisible, hideSidebar } = shell
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
