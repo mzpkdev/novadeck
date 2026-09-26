@@ -1,7 +1,7 @@
 import type { TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 
-import { context, describe, expect, it as base } from "../test.js"
+import { describe, expect, it as base } from "../test.js"
 import { ptyOptions } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { TerminalManager } from "./manager.js"
@@ -77,70 +77,68 @@ const until = async (
 }
 
 describe.skipIf(process.platform === "win32")("terminal manager", () => {
-  context("a real shell keeps running between attachments", () => {
-    it("restores a parsed screen and replays ordered events after a cursor", async ({
-      terminals,
-    }) => {
-      const runtime = terminals.manager()
-      const terminal = await runtime.create(
-        { sessionId: "session", cwd, cols: 80, rows: 24 },
-        "first",
-      )
-      const first = terminals.attach(runtime, terminal.id, "first")
-      const initial = await first.next()
-      expect(initial.value).toMatchObject({ type: "snapshot", sequence: 0, status: "running" })
-      runtime.ack({ terminalId: terminal.id, sequence: initial.value!.sequence }, "first")
-      runtime.write(
-        { terminalId: terminal.id, data: "printf '\\033[31mCOLOR\\033[0m\\n'\n" },
-        "first",
-      )
-      const events = await until(
-        runtime,
-        first,
-        "first",
-        (event) => event.type === "output" && event.data.includes("\u001b[31mCOLOR"),
-      )
-      const cursor = events.at(-1)!.sequence
-      expect(
-        events.every(
-          (event, index) => index === 0 || event.sequence === events[index - 1]!.sequence + 1,
-        ),
-      ).toBe(true)
+  it("restores a running shell screen and replays ordered events after a cursor", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager()
+    const terminal = await runtime.create(
+      { sessionId: "session", cwd, cols: 80, rows: 24 },
+      "first",
+    )
+    const first = terminals.attach(runtime, terminal.id, "first")
+    const initial = await first.next()
+    expect(initial.value).toMatchObject({ type: "snapshot", sequence: 0, status: "running" })
+    runtime.ack({ terminalId: terminal.id, sequence: initial.value!.sequence }, "first")
+    runtime.write(
+      { terminalId: terminal.id, data: "printf '\\033[31mCOLOR\\033[0m\\n'\n" },
+      "first",
+    )
+    const events = await until(
+      runtime,
+      first,
+      "first",
+      (event) => event.type === "output" && event.data.includes("\u001b[31mCOLOR"),
+    )
+    const cursor = events.at(-1)!.sequence
+    expect(
+      events.every(
+        (event, index) => index === 0 || event.sequence === events[index - 1]!.sequence + 1,
+      ),
+    ).toBe(true)
 
-      const observer = terminals.attach(runtime, terminal.id, "observer", undefined, "observe")
-      const snapshot = (await observer.next()).value!
-      expect(snapshot.type).toBe("snapshot")
-      if (snapshot.type !== "snapshot") throw new Error("Expected snapshot")
-      const restored = new Terminal({
-        cols: snapshot.cols,
-        rows: snapshot.rows,
-        allowProposedApi: true,
-      })
-      try {
-        await new Promise<void>((resolve) => restored.write(snapshot.data, resolve))
-        const content = Array.from({ length: restored.buffer.active.length }, (_, index) =>
-          restored.buffer.active.getLine(index)?.translateToString(),
-        ).join("\n")
-        expect(content).toContain("COLOR")
-      } finally {
-        restored.dispose()
-      }
-      await observer.return(undefined)
-
-      // until() closes its iterator and releases control; reclaim it independently.
-      const continuation = terminals.attach(runtime, terminal.id, "second", cursor)
-      const pending = continuation.next()
-      // Attachment registration occurs asynchronously before accepting writes.
-      await Promise.resolve()
-      runtime.resize({ terminalId: terminal.id, cols: 100, rows: 30 }, "second")
-      const resized = (await pending).value!
-      expect(resized).toMatchObject({ type: "resized", sequence: cursor + 1, cols: 100, rows: 30 })
-      runtime.ack({ terminalId: terminal.id, sequence: resized.sequence }, "second")
-      await continuation.return(undefined)
-      const replay = terminals.attach(runtime, terminal.id, "third", cursor)
-      expect((await replay.next()).value).toEqual(resized)
-      expect(runtime.get(terminal.id).status).toBe("running")
+    const observer = terminals.attach(runtime, terminal.id, "observer", undefined, "observe")
+    const snapshot = (await observer.next()).value!
+    expect(snapshot.type).toBe("snapshot")
+    if (snapshot.type !== "snapshot") throw new Error("Expected snapshot")
+    const restored = new Terminal({
+      cols: snapshot.cols,
+      rows: snapshot.rows,
+      allowProposedApi: true,
     })
+    try {
+      await new Promise<void>((resolve) => restored.write(snapshot.data, resolve))
+      const content = Array.from({ length: restored.buffer.active.length }, (_, index) =>
+        restored.buffer.active.getLine(index)?.translateToString(),
+      ).join("\n")
+      expect(content).toContain("COLOR")
+    } finally {
+      restored.dispose()
+    }
+    await observer.return(undefined)
+
+    // until() closes its iterator and releases control; reclaim it independently.
+    const continuation = terminals.attach(runtime, terminal.id, "second", cursor)
+    const pending = continuation.next()
+    // Attachment registration occurs asynchronously before accepting writes.
+    await Promise.resolve()
+    runtime.resize({ terminalId: terminal.id, cols: 100, rows: 30 }, "second")
+    const resized = (await pending).value!
+    expect(resized).toMatchObject({ type: "resized", sequence: cursor + 1, cols: 100, rows: 30 })
+    runtime.ack({ terminalId: terminal.id, sequence: resized.sequence }, "second")
+    await continuation.return(undefined)
+    const replay = terminals.attach(runtime, terminal.id, "third", cursor)
+    expect((await replay.next()).value).toEqual(resized)
+    expect(runtime.get(terminal.id).status).toBe("running")
   })
 
   it("releases control on cancellation and denies observers input, resize, and close", async ({
