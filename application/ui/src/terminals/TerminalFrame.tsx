@@ -34,7 +34,7 @@ const headerActionClasses =
   "icon-button [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100"
 
 export type TerminalFrameProps = {
-  session: TerminalMetadata
+  terminal: TerminalMetadata
   children: ReactNode
   onFocus?: () => void
   switcher?: { onOpen: (button: HTMLButtonElement) => void }
@@ -56,7 +56,7 @@ export type TerminalFrameProps = {
 }
 
 export const TerminalFrame = ({
-  session,
+  terminal,
   children,
   onFocus,
   switcher,
@@ -95,8 +95,8 @@ export const TerminalFrame = ({
   return (
     <section
       className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
-      aria-label={`${session.name} terminal`}
-      data-terminal={session.id}
+      aria-label={`${terminal.name} terminal`}
+      data-terminal={terminal.id}
       data-new={fresh}
     >
       <div className="terminal-heading relative shrink-0">
@@ -198,12 +198,12 @@ export const TerminalFrame = ({
             )}
             <>
               <Heading hidden={renaming} data-terminal-name="">
-                {session.name}
+                {terminal.name}
               </Heading>
               {rename && (
                 <TerminalRenameInput
-                  id={session.id}
-                  name={session.name}
+                  id={terminal.id}
+                  name={terminal.name}
                   value={rename.value}
                   request={rename.request}
                   autoFocus={rename.origin === "header"}
@@ -220,7 +220,7 @@ export const TerminalFrame = ({
               <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-                  aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${session.name}`}
+                  aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${terminal.name}`}
                   aria-expanded={!minimize.minimized}
                   onClick={(event) => {
                     event.stopPropagation()
@@ -245,7 +245,7 @@ export const TerminalFrame = ({
               >
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-                  aria-label={`${resizeLabel}: ${session.name}`}
+                  aria-label={`${resizeLabel}: ${terminal.name}`}
                   aria-pressed={large}
                   onClick={(event) => {
                     event.stopPropagation()
@@ -260,7 +260,7 @@ export const TerminalFrame = ({
               <Tooltip content={`Focus${focusHint}`}>
                 <button
                   className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-                  aria-label={`Focus ${session.name}`}
+                  aria-label={`Focus ${terminal.name}`}
                   onClick={(event) => {
                     event.stopPropagation()
                     onFocus()
@@ -285,7 +285,7 @@ export const TerminalFrame = ({
               <Tooltip content="Close">
                 <button
                   className={`${headerActionClasses} terminal-close nodrag nopan`}
-                  aria-label={`Close ${session.name}`}
+                  aria-label={`Close ${terminal.name}`}
                   onClick={(event) => {
                     event.stopPropagation()
                     onClose()

@@ -13,7 +13,7 @@ type DemoTerminalSurfaceProps = Omit<TerminalSurfaceProps, "terminalKey"> &
   }
 
 const DemoTerminalSurface = ({
-  terminal: session,
+  terminal,
   projectName,
   entries,
   cleared,
@@ -27,7 +27,7 @@ const DemoTerminalSurface = ({
   minimized,
   clipContent,
 }: DemoTerminalSurfaceProps): React.JSX.Element => {
-  const agent = session.kind === "claude" ? "Claude" : session.kind === "codex" ? "Codex" : null
+  const agent = terminal.kind === "claude" ? "Claude" : terminal.kind === "codex" ? "Codex" : null
   const input = draft
   const setInput = onDraftChange
   const savedScroll = useRef(scrollOffset)
@@ -74,8 +74,8 @@ const DemoTerminalSurface = ({
     >
       {!cleared && (
         <TerminalOutput
-          kind={session.kind}
-          directory={session.directory}
+          kind={terminal.kind}
+          directory={terminal.directory}
           projectName={projectName}
         />
       )}
@@ -109,7 +109,7 @@ const DemoTerminalSurface = ({
           <input
             ref={commandInput}
             data-terminal-input
-            aria-label={`Command for ${session.name}`}
+            aria-label={`Command for ${terminal.name}`}
             autoComplete="off"
             spellCheck={false}
             value={input}

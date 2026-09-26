@@ -7,7 +7,7 @@ import { useWorkspace } from "./controller/context"
 
 // One terminal in the current view: the shared frame around the backend's surface.
 export const WorkspaceTerminal = ({
-  terminal: session,
+  terminal,
   controls: { minimize, onFlyTo, onResizePreset },
 }: {
   readonly terminal: TerminalMetadata
@@ -31,10 +31,10 @@ export const WorkspaceTerminal = ({
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
   const { created, windowedDestination, setSelected, openWindowed, close } = commands
   const compact = view !== "focus"
-  const large = view !== "focus" && sizePresets[view][session.id] === "large"
+  const large = view !== "focus" && sizePresets[view][terminal.id] === "large"
   const windowedLabel = windowedDestination === "canvas" ? "Canvas" : "Grid"
   const { projectId, workspaceSessionId } = target
-  const terminalId = session.id
+  const terminalId = terminal.id
   // Surfaces may depend on these in effects, so keep them stable across renders.
   const terminalKey = useMemo(
     () => ({ projectId, workspaceSessionId, terminalId }),
@@ -43,23 +43,23 @@ export const WorkspaceTerminal = ({
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
   return (
     <TerminalFrame
-      session={session}
-      active={selected === session.id}
-      fresh={created?.context === context && created.id === session.id}
-      rename={renameView?.id === session.id ? renameView : null}
-      onBeginRename={() => startRename(session, "header")}
-      onRenameDraft={(draft) => changeRenameDraft(session.id, draft)}
-      onRenameSave={() => saveRename(session.id)}
-      onRenameCancel={() => cancelRename(session.id)}
+      terminal={terminal}
+      active={selected === terminal.id}
+      fresh={created?.context === context && created.id === terminal.id}
+      rename={renameView?.id === terminal.id ? renameView : null}
+      onBeginRename={() => startRename(terminal, "header")}
+      onRenameDraft={(draft) => changeRenameDraft(terminal.id, draft)}
+      onRenameSave={() => saveRename(terminal.id)}
+      onRenameCancel={() => cancelRename(terminal.id)}
       compact={compact}
-      switcher={{ onOpen: (button) => recent.openRecentSwitcher(session.id, button) }}
-      onClose={() => close(session.id)}
+      switcher={{ onOpen: (button) => recent.openRecentSwitcher(terminal.id, button) }}
+      onClose={() => close(terminal.id)}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
       {...(onResizePreset
         ? {
             onResizePreset: (button: HTMLButtonElement) => {
-              setSelected(session.id)
+              setSelected(terminal.id)
               onResizePreset(button)
             },
             resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const),
@@ -69,8 +69,8 @@ export const WorkspaceTerminal = ({
       {...(compact && preferences.enabledViews.includes("focus")
         ? {
             onFocus: () =>
-              transitionTerminal(session.id, () => {
-                navigation.go({ terminal: session.id, view: "focus" })
+              transitionTerminal(terminal.id, () => {
+                navigation.go({ terminal: terminal.id, view: "focus" })
                 setRevealCanvas(false)
                 setSidebar(false)
               }),
@@ -79,19 +79,21 @@ export const WorkspaceTerminal = ({
           ? {
               windowed: {
                 destination: windowedLabel,
-                onOpen: () => openWindowed(session.id),
+                onOpen: () => openWindowed(terminal.id),
               },
             }
           : {})}
     >
       <backend.TerminalSurface
         terminalKey={terminalKey}
-        terminal={session}
+        terminal={terminal}
         projectName={project.name}
         minimized={minimize?.minimized}
         clipContent={minimize?.clipContent}
         focusInput={
-          keyboardFocus?.id === session.id && keyboardFocus.view === view && selected === session.id
+          keyboardFocus?.id === terminal.id &&
+          keyboardFocus.view === view &&
+          selected === terminal.id
         }
         onInputFocused={onInputFocused}
       />

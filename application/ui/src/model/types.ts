@@ -55,7 +55,7 @@ export type WorkspaceState = {
   sizePresets: Record<WindowedView, Record<string, SizePreset>>
   view: ViewMode
   windowedView: WindowedView
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   tabOrder: string[]
   selected: string
   canvasLayout: CanvasLayout

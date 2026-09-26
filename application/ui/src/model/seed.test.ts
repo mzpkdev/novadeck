@@ -45,7 +45,7 @@ describe("workspace from a backend seed", () => {
       expect(session.state).toMatchObject({
         view: "focus",
         windowedView: "canvas",
-        sessions: terminals,
+        terminals,
         selected: "01",
         nextTerminalNumber: 3,
         canvasLayout,

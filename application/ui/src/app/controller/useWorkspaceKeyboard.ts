@@ -21,7 +21,7 @@ import {
   workspaceShortcutBindings,
 } from "../../interaction/shortcuts"
 import type { CanvasHandle } from "../../layouts/canvas/Canvas"
-import { activeSession, orderedSessions } from "../../model/state"
+import { activeSession, orderedTerminals } from "../../model/state"
 import { viewModes } from "../../preferences/preferences-storage"
 import type { WorkspaceController } from "./useWorkspaceController"
 
@@ -46,9 +46,9 @@ export const useWorkspaceKeyboard = (
     controller
   const { go } = navigation
   const current = activeSession(workspace)!
-  const { view, selected, sessions } = current.state
+  const { view, selected, terminals } = current.state
   const context = `${workspace.activeProjectId}/${current.id}`
-  const ordered = orderedSessions(current.state)
+  const ordered = orderedTerminals(current.state)
   const sidebarPanel = route.panel
   const {
     sidebarVisible,
@@ -142,21 +142,21 @@ export const useWorkspaceKeyboard = (
       return
     }
     if (!ordered.length) return
-    const index = ordered.findIndex((session) => session.id === selected)
+    const index = ordered.findIndex((terminal) => terminal.id === selected)
     const next =
       index < 0
         ? direction > 0
           ? 0
           : ordered.length - 1
         : (index + direction + ordered.length) % ordered.length
-    const session = ordered[next]
-    if (session) {
+    const terminal = ordered[next]
+    if (terminal) {
       const fromCanvasNode = view === "canvas" && insideCanvasNode(event.target)
-      if (fromCanvasNode) requestCanvasFocus(session.id)
-      select(session.id)
+      if (fromCanvasNode) requestCanvasFocus(terminal.id)
+      select(terminal.id)
       const fromTab = insideTerminalTab(event.target)
       if ((fromViewSwitch || fromTab) && sidebarVisible && sidebarPanel === "terminals")
-        focusTerminalTab(session.id)
+        focusTerminalTab(terminal.id)
     }
   })
 
@@ -276,13 +276,13 @@ export const useWorkspaceKeyboard = (
         !event.shiftKey) ||
       matchesShortcut(event, workspaceKeys.rename)
     ) {
-      const session =
-        sessions.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
-      if (!session) return
+      const terminal =
+        terminals.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
+      if (!terminal) return
       event.preventDefault()
-      if (event.key === "Delete") close(session.id)
+      if (event.key === "Delete") close(terminal.id)
       else
-        startRename(session, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
+        startRename(terminal, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
     }
   })
   const keyup = useEffectEvent((event: KeyboardEvent): void => {
@@ -293,7 +293,7 @@ export const useWorkspaceKeyboard = (
     }
     const id = visibleRecentSwitcher.ids[visibleRecentSwitcher.index]
     setRecentSwitcher(null)
-    if (id && sessions.some((session) => session.id === id)) {
+    if (id && terminals.some((terminal) => terminal.id === id)) {
       if (visibleRecentSwitcher.fromInput) setKeyboardFocus({ id, view })
       select(id)
     }

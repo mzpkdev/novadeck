@@ -1,6 +1,6 @@
 import { initialGridLayouts } from "./layout/grid-placement"
 import {
-  createSessionState,
+  createTerminalState,
   createWorkspace,
   createWorkspaceSession,
   workspaceReducer,
@@ -51,7 +51,7 @@ export const workspaceFromSeed = (seed: WorkspaceSeed, defaults: SeedDefaults): 
     (workspace, project) =>
       project.sessions.reduceRight((next, session) => {
         const terminals = [...session.terminals]
-        const state = createSessionState(terminals, defaults.view, defaults.windowedView, {
+        const state = createTerminalState(terminals, defaults.view, defaults.windowedView, {
           ...(session.canvasLayout ? { canvasLayout: session.canvasLayout } : {}),
           gridLayouts: initialGridLayouts(terminals, session.canvasLayout?.geometry),
         })

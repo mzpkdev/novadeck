@@ -11,7 +11,7 @@ const actionClasses =
   "session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
 
 export const TerminalTab = ({
-  session,
+  terminal,
   index,
   selected,
   hidden,
@@ -24,7 +24,7 @@ export const TerminalTab = ({
   onRenameCancel,
   onClose,
 }: {
-  session: TerminalMetadata
+  terminal: TerminalMetadata
   index: number
   selected: boolean
   hidden: boolean
@@ -39,7 +39,7 @@ export const TerminalTab = ({
 }): React.JSX.Element => {
   const editing = Boolean(rename)
   const { ref, handleRef, isDragSource } = useSortable({
-    id: session.id,
+    id: terminal.id,
     index,
     disabled: editing,
     transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
@@ -49,14 +49,14 @@ export const TerminalTab = ({
       <SidebarItem
         ref={ref}
         handleRef={handleRef}
-        name={session.name}
+        name={terminal.name}
         icon={<TerminalIcon size={14} strokeWidth={1.5} />}
-        detail={<span className="session-process truncate font-mono">{session.command}</span>}
+        detail={<span className="session-process truncate font-mono">{terminal.command}</span>}
         selected={selected}
-        selectLabel={`Select ${session.name}${hidden ? " (hidden)" : ""}`}
-        tooltip={`${session.name}\n${session.directory} · ${session.command}`}
+        selectLabel={`Select ${terminal.name}${hidden ? " (hidden)" : ""}`}
+        tooltip={`${terminal.name}\n${terminal.directory} · ${terminal.command}`}
         onSelect={onSelect}
-        data-session-id={session.id}
+        data-session-id={terminal.id}
         data-terminal-hidden={hidden}
 
         className={`session-tab [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
@@ -69,8 +69,8 @@ export const TerminalTab = ({
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <TerminalRenameInput
-                  id={session.id}
-                  name={session.name}
+                  id={terminal.id}
+                  name={terminal.name}
                   value={rename.value}
                   request={rename.request}
                   autoFocus={rename.origin === "sidebar"}
@@ -80,7 +80,7 @@ export const TerminalTab = ({
                   className="w-full border-0 bg-transparent p-0 text-[12px] leading-[18px] font-medium text-ink shadow-none outline-none"
                 />
                 <span className="sidebar-item-detail flex h-6 min-w-0 items-center overflow-hidden pr-(--sidebar-actions-space) whitespace-nowrap text-[10px] leading-[18px] text-muted">
-                  <span className="session-process truncate font-mono">{session.command}</span>
+                  <span className="session-process truncate font-mono">{terminal.command}</span>
                 </span>
               </div>
             </div>
@@ -91,7 +91,7 @@ export const TerminalTab = ({
             <Tooltip content={hidden ? "Show" : "Hide"}>
               <button
                 className={`${actionClasses} disabled:pointer-events-none disabled:opacity-50 ${hidden ? "[&>svg]:opacity-100!" : ""}`}
-                aria-label={`${hidden ? "Show" : "Hide"} ${session.name} in Grid and Canvas`}
+                aria-label={`${hidden ? "Show" : "Hide"} ${terminal.name} in Grid and Canvas`}
                 aria-pressed={hidden}
                 disabled={editing}
                 onClick={() => onVisibilityChange(!hidden)}
@@ -107,8 +107,8 @@ export const TerminalTab = ({
               <Tooltip content="Save">
                 <button
                   className={actionClasses}
-                  data-rename-terminal={session.id}
-                  aria-label={`Save name for ${session.name}`}
+                  data-rename-terminal={terminal.id}
+                  aria-label={`Save name for ${terminal.name}`}
                   onClick={onRenameSave}
                 >
                   <Check size={13} strokeWidth={1.5} />
@@ -124,7 +124,7 @@ export const TerminalTab = ({
               >
                 <button
                   className={actionClasses}
-                  aria-label={`Rename ${session.name}`}
+                  aria-label={`Rename ${terminal.name}`}
                   onClick={onBeginRename}
                 >
                   <Pencil size={13} strokeWidth={1.5} />
@@ -135,8 +135,8 @@ export const TerminalTab = ({
               <Tooltip content="Cancel">
                 <button
                   className={actionClasses}
-                  data-rename-terminal={session.id}
-                  aria-label={`Cancel renaming ${session.name}`}
+                  data-rename-terminal={terminal.id}
+                  aria-label={`Cancel renaming ${terminal.name}`}
                   onClick={onRenameCancel}
                 >
                   <X size={14} strokeWidth={1.5} />
@@ -146,7 +146,7 @@ export const TerminalTab = ({
               <Tooltip content="Close">
                 <button
                   className={actionClasses}
-                  aria-label={`Close ${session.name}`}
+                  aria-label={`Close ${terminal.name}`}
                   onClick={onClose}
                 >
                   <X size={14} strokeWidth={1.5} />

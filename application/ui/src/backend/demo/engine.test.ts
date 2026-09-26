@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createSessionState, workspaceReducer } from "../../model/state"
+import { createTerminalState, workspaceReducer } from "../../model/state"
 import type { Workspace } from "../../model/types"
 import { createDemoEngine } from "./engine"
 import { createMockTerminal } from "./samples"
@@ -20,7 +20,7 @@ const fixture = (): Workspace => ({
         id,
         name: id,
         visitedAt: 0,
-        state: createSessionState(
+        state: createTerminalState(
           [createMockTerminal(1, "~/project"), createMockTerminal(2, "~/project")],
           "grid",
           "grid",
@@ -111,7 +111,7 @@ describe("demo terminal engine", () => {
     const add = {
       type: "terminal/add",
       target,
-      session: createMockTerminal(3, "~/project"),
+      terminal: createMockTerminal(3, "~/project"),
     } as const
     runtime.reconcile(workspaceReducer(workspace, add), [add])
     expect(runtime.getSnapshot(third).cleared).toBe(true)

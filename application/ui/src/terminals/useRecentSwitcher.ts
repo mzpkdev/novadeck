@@ -13,7 +13,7 @@ export type RecentSwitcher = {
 export type RecentSwitcherOptions = {
   context: string
   dialog: string | null
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   ordered: TerminalMetadata[]
   selected: string
 }
@@ -30,7 +30,7 @@ export type RecentSwitcherController = {
 export const useRecentSwitcher = ({
   context,
   dialog,
-  sessions,
+  terminals,
   ordered,
   selected,
 }: RecentSwitcherOptions): RecentSwitcherController => {
@@ -46,7 +46,7 @@ export const useRecentSwitcher = ({
     queueMicrotask(() => trigger?.isConnected && trigger.focus({ preventScroll: true }))
   }
   const openRecentSwitcher = (id: string, trigger: HTMLButtonElement): void => {
-    const ids = recentByContext.current[context] ?? ordered.map((session) => session.id)
+    const ids = recentByContext.current[context] ?? ordered.map((terminal) => terminal.id)
     switcherTrigger.current = trigger
     setRecentSwitcher({
       context,
@@ -60,9 +60,11 @@ export const useRecentSwitcher = ({
     const previous = recentByContext.current[context] ?? []
     recentByContext.current[context] = [
       ...(selected ? [selected] : []),
-      ...previous.filter((id) => id !== selected && sessions.some((session) => session.id === id)),
+      ...previous.filter(
+        (id) => id !== selected && terminals.some((terminal) => terminal.id === id),
+      ),
       ...ordered
-        .map((session) => session.id)
+        .map((terminal) => terminal.id)
         .filter((id) => id !== selected && !previous.includes(id)),
     ]
   })

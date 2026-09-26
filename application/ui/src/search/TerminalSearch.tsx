@@ -9,14 +9,14 @@ import motion from "../ui-toolkit/ModalMotion.module.css"
 
 export const TerminalSearch = ({
   open,
-  sessions,
+  terminals,
   destination,
   onSelect,
   onClose,
   onExitComplete,
 }: {
   open: boolean
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   destination: string
   onSelect: (id: string) => void
   onClose: () => void
@@ -27,8 +27,8 @@ export const TerminalSearch = ({
   useEffect(() => {
     if (open) chosen.current = null
   }, [open])
-  const matches = sessions.filter((session) =>
-    `${session.name} ${session.directory}`.toLowerCase().includes(query.toLowerCase()),
+  const matches = terminals.filter((terminal) =>
+    `${terminal.name} ${terminal.directory}`.toLowerCase().includes(query.toLowerCase()),
   )
   const select = (id: string): void => {
     chosen.current = id
@@ -81,17 +81,17 @@ export const TerminalSearch = ({
             No terminals match “{query}”.
           </p>
         }
-        items={matches.map((session) => ({
-          value: session.id,
-          label: session.name,
+        items={matches.map((terminal) => ({
+          value: terminal.id,
+          label: terminal.name,
           content: (
             <>
               <TerminalIcon size={15} strokeWidth={1.5} />
               <span className="search-result-copy flex min-w-0 flex-1 flex-col gap-1">
-                <strong className="truncate text-xs font-medium">{session.name}</strong>
+                <strong className="truncate text-xs font-medium">{terminal.name}</strong>
                 <small className="flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted">
-                  <span className="shrink-0">{session.command}</span>
-                  <span className="truncate border-l border-line pl-2">{session.directory}</span>
+                  <span className="shrink-0">{terminal.command}</span>
+                  <span className="truncate border-l border-line pl-2">{terminal.directory}</span>
                 </small>
               </span>
               <ArrowUpRight

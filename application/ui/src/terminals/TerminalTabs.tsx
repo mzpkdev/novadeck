@@ -39,7 +39,7 @@ const feedback = Feedback.configure({
 const cursor = Cursor.configure({ cursor: "pointer" })
 
 export const TerminalTabs = ({
-  sessions,
+  terminals,
   selected,
   hidden,
   rename,
@@ -52,7 +52,7 @@ export const TerminalTabs = ({
   onClose,
   onReorder,
 }: {
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   selected: string
   hidden: Record<string, boolean>
   rename: TerminalRename | null
@@ -76,7 +76,7 @@ export const TerminalTabs = ({
         if (event.canceled) return
         const { source } = event.operation
         if (!isSortable(source) || source.initialIndex === source.index) return
-        const order = sessions.map((session) => session.id)
+        const order = terminals.map((terminal) => terminal.id)
         const from = order.indexOf(String(source.id))
         if (from < 0) return
         const [id] = order.splice(from, 1)
@@ -85,24 +85,24 @@ export const TerminalTabs = ({
       }}
     >
       <div className={`session-list ${sidebarListClasses}`} ref={setList}>
-        {sessions.map((session, index) => (
+        {terminals.map((terminal, index) => (
           <TerminalTab
-            key={session.id}
-            session={session}
+            key={terminal.id}
+            terminal={terminal}
             index={index}
-            selected={selected === session.id}
-            hidden={hidden[session.id] ?? false}
-            rename={rename?.id === session.id ? rename : null}
-            onVisibilityChange={(isHidden) => onVisibilityChange(session.id, isHidden)}
-            onSelect={() => onSelect(session.id)}
-            onBeginRename={() => onBeginRename(session.id)}
-            onRenameDraft={(value) => onRenameDraft(session.id, value)}
-            onRenameSave={() => onRenameSave(session.id)}
-            onRenameCancel={() => onRenameCancel(session.id)}
-            onClose={() => onClose(session.id)}
+            selected={selected === terminal.id}
+            hidden={hidden[terminal.id] ?? false}
+            rename={rename?.id === terminal.id ? rename : null}
+            onVisibilityChange={(isHidden) => onVisibilityChange(terminal.id, isHidden)}
+            onSelect={() => onSelect(terminal.id)}
+            onBeginRename={() => onBeginRename(terminal.id)}
+            onRenameDraft={(value) => onRenameDraft(terminal.id, value)}
+            onRenameSave={() => onRenameSave(terminal.id)}
+            onRenameCancel={() => onRenameCancel(terminal.id)}
+            onClose={() => onClose(terminal.id)}
           />
         ))}
-        {!sessions.length && <p className="px-3 py-3 text-[11px] text-muted">No open sessions</p>}
+        {!terminals.length && <p className="px-3 py-3 text-[11px] text-muted">No open sessions</p>}
       </div>
     </DragDropProvider>
   )

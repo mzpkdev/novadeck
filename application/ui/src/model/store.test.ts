@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { terminalFixture } from "../test/fixtures"
-import { createSessionState, workspaceReducer } from "./state"
+import { createTerminalState, workspaceReducer } from "./state"
 import { createWorkspaceStore } from "./store"
 import type { Workspace } from "./types"
 
@@ -18,7 +18,7 @@ const initial = (): Workspace => ({
         id,
         name: id,
         visitedAt: 0,
-        state: createSessionState([terminalFixture(1, "~/project")], "grid", "grid"),
+        state: createTerminalState([terminalFixture(1, "~/project")], "grid", "grid"),
       })),
     },
   ],
@@ -29,8 +29,8 @@ describe("workspace commands", () => {
   it("preserves a rename dispatched before adding a terminal in a transaction", () => {
     const store = createWorkspaceStore(initial())
     store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Server" })
-    store.transact([{ type: "terminal/add", target, session: terminalFixture(2, "~/project") }])
-    expect(state(store.getSnapshot()).sessions.map((terminal) => terminal.name)).toEqual([
+    store.transact([{ type: "terminal/add", target, terminal: terminalFixture(2, "~/project") }])
+    expect(state(store.getSnapshot()).terminals.map((terminal) => terminal.name)).toEqual([
       "Server",
       "Terminal 02",
     ])
@@ -43,12 +43,12 @@ describe("workspace commands", () => {
         {
           type: "terminal/add",
           target,
-          session: terminalFixture(state(workspace).nextTerminalNumber, "~/project"),
+          terminal: terminalFixture(state(workspace).nextTerminalNumber, "~/project"),
         },
       ])
     add()
     add()
-    expect(state(store.getSnapshot()).sessions.map((terminal) => terminal.id)).toEqual([
+    expect(state(store.getSnapshot()).terminals.map((terminal) => terminal.id)).toEqual([
       "01",
       "02",
       "03",
@@ -81,7 +81,7 @@ describe("workspace commands", () => {
     store.dispatch({ type: "terminal/rename", target, terminalId: "gone", name: "Stale" })
     expect(store.getSnapshot()).toBe(previous)
     expect(notifications).toBe(1)
-    expect(previous.projects[0]!.history[1]!.state.sessions[0]!.name).toBe("Terminal 01")
+    expect(previous.projects[0]!.history[1]!.state.terminals[0]!.name).toBe("Terminal 01")
   })
 
   it("keeps layout initialization separate from terminal metadata", () => {
@@ -90,13 +90,13 @@ describe("workspace commands", () => {
       geometry: { "01": { position: { x: 200, y: 300 }, width: 600, height: 400 } },
       minimized: {},
     }
-    const session = createSessionState([terminal], "canvas", "canvas", { canvasLayout })
-    expect(session.canvasLayout).toBe(canvasLayout)
+    const terminalState = createTerminalState([terminal], "canvas", "canvas", { canvasLayout })
+    expect(terminalState.canvasLayout).toBe(canvasLayout)
     const store = createWorkspaceStore(initial())
     store.dispatch({
       type: "terminal/add",
       target,
-      session: terminalFixture(2, "~/project"),
+      terminal: terminalFixture(2, "~/project"),
       canvasGeometry: { position: { x: 900, y: 500 }, width: 600, height: 400 },
       gridLayouts: {
         desktop: [
@@ -127,7 +127,7 @@ describe("workspace commands", () => {
     seeded.gridLayouts = { desktop: [{ i: "01", x: 0, y: 0, w: 3, h: 4 }] }
     const closed = workspaceReducer(workspace, { type: "terminal/close", target, terminalId: "01" })
     expect(state(closed)).toMatchObject({
-      sessions: [],
+      terminals: [],
       selected: "",
       tabOrder: [],
       hidden: {},

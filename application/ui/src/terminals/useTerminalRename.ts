@@ -19,7 +19,7 @@ export type TerminalRenameOptions = {
   context: string
   view: ViewMode
   target: WorkspaceTarget
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   selected: string
   dispatch: (action: WorkspaceAction) => void
 }
@@ -27,7 +27,7 @@ export type TerminalRenameOptions = {
 export type TerminalRenameController = {
   readonly activeRename: RenameSession | null
   readonly renameView: TerminalRename | null
-  readonly startRename: (session: TerminalMetadata, origin: RenameSession["origin"]) => void
+  readonly startRename: (terminal: TerminalMetadata, origin: RenameSession["origin"]) => void
   readonly changeRenameDraft: (id: string, draft: string) => void
   readonly saveRename: (id: string) => void
   readonly cancelRename: (id: string) => void
@@ -38,7 +38,7 @@ export const useTerminalRename = ({
   context,
   view,
   target,
-  sessions,
+  terminals,
   selected,
   dispatch,
 }: TerminalRenameOptions): TerminalRenameController => {
@@ -62,14 +62,14 @@ export const useTerminalRename = ({
     },
     [dispatch, setRenameSession],
   )
-  const startRename = (session: TerminalMetadata, origin: RenameSession["origin"]): void => {
-    if (activeRename?.id === session.id) return
+  const startRename = (terminal: TerminalMetadata, origin: RenameSession["origin"]): void => {
+    if (activeRename?.id === terminal.id) return
     if (activeRename) finishRename(activeRename, true)
     setRenameSession({
       context,
-      id: session.id,
-      original: session.name,
-      draft: session.name,
+      id: terminal.id,
+      original: terminal.name,
+      draft: terminal.name,
       origin,
       view,
       target,
@@ -91,7 +91,7 @@ export const useTerminalRename = ({
     if (
       renameSession.context === context &&
       renameSession.view === view &&
-      sessions.some((session) => session.id === renameSession.id)
+      terminals.some((terminal) => terminal.id === renameSession.id)
     )
       return
     let canceled = false
@@ -101,7 +101,7 @@ export const useTerminalRename = ({
     return () => {
       canceled = true
     }
-  }, [context, finishRename, renameSession, sessions, view])
+  }, [context, finishRename, renameSession, terminals, view])
   const lastSelectedForRename = useRef(selected)
   useEffect(() => {
     const changed = lastSelectedForRename.current !== selected

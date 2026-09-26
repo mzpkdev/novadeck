@@ -29,7 +29,7 @@ const createdKeys = (actions: readonly WorkspaceAction[]): Set<string> =>
   new Set(
     actions.flatMap((action) =>
       action.type === "terminal/add"
-        ? [terminalKeyId({ ...action.target, terminalId: action.session.id })]
+        ? [terminalKeyId({ ...action.target, terminalId: action.terminal.id })]
         : [],
     ),
   )
@@ -44,7 +44,7 @@ export const createTerminalRegistry = <Entry>(
     const remaining = new Set<string>()
     for (const project of workspace.projects)
       for (const session of project.history)
-        for (const terminal of session.state.sessions) {
+        for (const terminal of session.state.terminals) {
           const key = {
             projectId: project.id,
             workspaceSessionId: session.id,

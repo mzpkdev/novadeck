@@ -13,7 +13,7 @@ export { gridColumns } from "../../model/layout/grid-placement"
 const expandedHeight = (): number => Math.ceil((400 + 16) / 24)
 
 export const visibleGridLayouts = (
-  sessions: TerminalMetadata[],
+  terminals: TerminalMetadata[],
   layouts: GridLayouts,
   minimized: Record<string, boolean>,
   hidden: Record<string, boolean> = {},
@@ -23,11 +23,11 @@ export const visibleGridLayouts = (
     const saved = layouts[breakpoint] ?? []
     const bottom = saved.reduce((end, item) => Math.max(end, item.y + item.h), 0)
     result[breakpoint] = verticalCompactor.compact(
-      sessions
-        .map((session, index) => {
-          const previous = saved.find((item) => item.i === session.id)
+      terminals
+        .map((terminal, index) => {
+          const previous = saved.find((item) => item.i === terminal.id)
           const item = previous ?? {
-            i: session.id,
+            i: terminal.id,
             x: (index % (gridColumns[breakpoint] / 4)) * 4,
             y: bottom + Math.floor(index / (gridColumns[breakpoint] / 4)) * 100,
             w: 4,
@@ -36,7 +36,7 @@ export const visibleGridLayouts = (
             minH: 10,
           }
           // Three rows form a 56px header with this grid's 8px rows and 16px gaps.
-          return minimized[session.id]
+          return minimized[terminal.id]
             ? { ...item, h: 3, minH: 3, maxH: 3, isResizable: true }
             : item
         })
@@ -63,13 +63,13 @@ const sameGeometry = (next: GridLayouts, projected: GridLayouts): boolean =>
 export const expandedGridLayouts = (
   next: GridLayouts,
   previous: GridLayouts,
-  sessions: TerminalMetadata[],
+  terminals: TerminalMetadata[],
   minimized: Record<string, boolean>,
   hidden: Record<string, boolean> = {},
 ): GridLayouts => {
   // Hiding or folding changes the projected layout without changing the saved arrangement.
   const projected = Object.values(hidden).some(Boolean)
-    ? visibleGridLayouts(sessions, previous, minimized, hidden)
+    ? visibleGridLayouts(terminals, previous, minimized, hidden)
     : undefined
   if (projected && sameGeometry(next, projected)) return previous
 
@@ -88,11 +88,11 @@ export const expandedGridLayouts = (
     const visible = next[breakpoint]?.map((item) => {
       if (!minimized[item.i]) return item
       const saved = previous[breakpoint]?.find((entry) => entry.i === item.i)
-      const session = sessions.find((entry) => entry.id === item.i)
+      const terminal = terminals.find((entry) => entry.id === item.i)
       // Retain drag/compaction coordinates without replacing the expanded height with the header.
       const restored = {
         ...item,
-        h: saved?.h ?? (session ? expandedHeight() : 10),
+        h: saved?.h ?? (terminal ? expandedHeight() : 10),
         minH: 10,
         isResizable: true,
       }
@@ -115,14 +115,14 @@ export type GridWidthToggle = {
 export const toggleGridWidth = (
   id: string,
   expand: boolean,
-  sessions: TerminalMetadata[],
+  terminals: TerminalMetadata[],
   layouts: GridLayouts,
   minimized: Record<string, boolean>,
   hidden: Record<string, boolean>,
   savedWidths: GridRestoreWidths = {},
 ): GridWidthToggle => {
   const restored = { ...minimized, [id]: false }
-  const visible = visibleGridLayouts(sessions, layouts, restored, hidden)
+  const visible = visibleGridLayouts(terminals, layouts, restored, hidden)
   const next: GridLayouts = {}
   const restoreWidths: GridRestoreWidths = {}
   for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
@@ -149,7 +149,7 @@ export const toggleGridWidth = (
     )
   }
   return {
-    layouts: expandedGridLayouts(next, layouts, sessions, restored, hidden),
+    layouts: expandedGridLayouts(next, layouts, terminals, restored, hidden),
     restoreWidths: expand ? restoreWidths : null,
   }
 }

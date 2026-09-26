@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createSessionState } from "../model/state"
+import { createTerminalState } from "../model/state"
 import { createWorkspaceStore } from "../model/store"
 import type { PreferencesValue, Workspace } from "../model/types"
 import { terminalFixture } from "../test/fixtures"
@@ -21,7 +21,7 @@ const fixture = (): Workspace => ({
           id: "initial",
           name: "Session",
           visitedAt: 0,
-          state: createSessionState([terminalFixture(1, "~/project")], "grid", "grid"),
+          state: createTerminalState([terminalFixture(1, "~/project")], "grid", "grid"),
         },
       ],
     },
@@ -43,7 +43,7 @@ describe("route reconciliation", () => {
       name: "Changed before commit",
     })
     store.transact((current) => resolveRoute(current, location, preferences, 1).actions)
-    expect(store.getSnapshot().projects[0]!.history[0]!.state.sessions[0]!.name).toBe(
+    expect(store.getSnapshot().projects[0]!.history[0]!.state.terminals[0]!.name).toBe(
       "Changed before commit",
     )
     expect(workspaceRoute(store.getSnapshot())).toMatchObject({ view: "canvas", terminal: "" })
@@ -53,12 +53,12 @@ describe("route reconciliation", () => {
     const store = createWorkspaceStore(fixture())
     store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Saved" })
     const next = store.transact([
-      { type: "terminal/add", target, session: terminalFixture(2, "~/project") },
+      { type: "terminal/add", target, terminal: terminalFixture(2, "~/project") },
     ])
     expect(routeUrl(workspaceRoute(next))).toBe(
       "/projects/project/sessions/initial/grid?terminal=02",
     )
-    expect(next.projects[0]!.history[0]!.state.sessions[0]!.name).toBe("Saved")
+    expect(next.projects[0]!.history[0]!.state.terminals[0]!.name).toBe("Saved")
   })
 
   it("replaces obsolete selections and disabled views with valid URL values", () => {

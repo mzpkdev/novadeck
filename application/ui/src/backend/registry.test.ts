@@ -1,4 +1,4 @@
-import { createSessionState, workspaceReducer, type WorkspaceAction } from "../model/state"
+import { createTerminalState, workspaceReducer, type WorkspaceAction } from "../model/state"
 import type { TerminalMetadata, Workspace } from "../model/types"
 import { context, describe, expect, it } from "../test"
 import { terminalFixture } from "../test/fixtures"
@@ -19,7 +19,7 @@ const fixture = (): Workspace => ({
         id,
         name: id,
         visitedAt: 0,
-        state: createSessionState(
+        state: createTerminalState(
           [terminalFixture(1, "~/project"), terminalFixture(2, "~/project")],
           "grid",
           "grid",
@@ -62,7 +62,7 @@ describe("terminal registry", () => {
       const workspace = fixture()
       registry.reconcile(workspace, [])
       const actions: WorkspaceAction[] = [
-        { type: "terminal/add", target, session: terminalFixture(3, "~/project") },
+        { type: "terminal/add", target, terminal: terminalFixture(3, "~/project") },
       ]
       registry.reconcile(apply(workspace, actions), actions)
       expect(opened.slice(4)).toEqual([{ key: { ...target, terminalId: "03" }, created: true }])

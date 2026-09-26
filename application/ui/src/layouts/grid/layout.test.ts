@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { GridLayouts, TerminalMetadata } from "../../model/types"
 import { expandedGridLayouts, gridColumns, toggleGridWidth, visibleGridLayouts } from "./layout"
 
-const sessions: TerminalMetadata[] = ["one", "two"].map((id) => ({
+const terminals: TerminalMetadata[] = ["one", "two"].map((id) => ({
   id,
   name: id,
   directory: "/demo",
@@ -22,22 +22,22 @@ const saved: GridLayouts = {
 
 describe("saved Grid arrangements", () => {
   it("hiding compacts visible cards without replacing saved hidden positions", () => {
-    const projected = visibleGridLayouts(sessions, saved, {}, { one: true })
+    const projected = visibleGridLayouts(terminals, saved, {}, { one: true })
     expect(projected.desktop?.map((item) => item.i)).toEqual(["two"])
     expect(projected.desktop?.[0]?.y).toBe(0)
-    expect(expandedGridLayouts(projected, saved, sessions, {}, { one: true })).toBe(saved)
-    const restored = visibleGridLayouts(sessions, saved, {})
+    expect(expandedGridLayouts(projected, saved, terminals, {}, { one: true })).toBe(saved)
+    const restored = visibleGridLayouts(terminals, saved, {})
     expect(restored.desktop?.find((item) => item.i === "two")?.y).toBe(18)
   })
 
   it("retains expanded height when a minimized terminal is moved", () => {
-    const projected = visibleGridLayouts(sessions, saved, { one: true })
+    const projected = visibleGridLayouts(terminals, saved, { one: true })
     const moved = {
       desktop: (projected.desktop ?? []).map((item) =>
         item.i === "one" ? { ...item, x: 6 } : item,
       ),
     }
-    const result = expandedGridLayouts(moved, saved, sessions, { one: true })
+    const result = expandedGridLayouts(moved, saved, terminals, { one: true })
     const terminal = result.desktop?.find((item) => item.i === "one")
     expect(terminal?.x).toBe(6)
     expect(terminal?.h).toBe(18)
@@ -45,7 +45,7 @@ describe("saved Grid arrangements", () => {
   })
 
   it("restores each breakpoint's original width and height after full width", () => {
-    const expanded = toggleGridWidth("one", true, sessions, saved, { one: true }, {})
+    const expanded = toggleGridWidth("one", true, terminals, saved, { one: true }, {})
     for (const [breakpoint, columns] of Object.entries(gridColumns)) {
       expect(
         expanded.layouts[breakpoint as keyof GridLayouts]?.find((item) => item.i === "one")?.w,
@@ -56,7 +56,7 @@ describe("saved Grid arrangements", () => {
     const restored = toggleGridWidth(
       "one",
       false,
-      sessions,
+      terminals,
       expanded.layouts,
       {},
       {},

@@ -76,7 +76,8 @@ export const resolveRoute = (
   const search = new URLSearchParams(location.search)
   const requestedTerminal = search.get("terminal")
   const terminal =
-    requestedTerminal === "" || session.state.sessions.some((item) => item.id === requestedTerminal)
+    requestedTerminal === "" ||
+    session.state.terminals.some((item) => item.id === requestedTerminal)
       ? requestedTerminal!
       : session.state.selected
   const target = { projectId: project.id, workspaceSessionId: session.id }

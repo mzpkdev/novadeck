@@ -24,11 +24,11 @@ export const initialGridLayouts = (
 }
 
 export const addCompactGridTerminal = (
-  sessions: TerminalMetadata[],
+  terminals: TerminalMetadata[],
   layouts: GridLayouts,
   terminal: TerminalMetadata,
 ): GridLayouts => {
-  const current = initialGridLayouts(sessions)
+  const current = initialGridLayouts(terminals)
   const next: GridLayouts = {}
   for (const breakpoint of Object.keys(gridColumns) as GridBreakpoint[]) {
     const existing = layouts[breakpoint] ?? current[breakpoint] ?? []

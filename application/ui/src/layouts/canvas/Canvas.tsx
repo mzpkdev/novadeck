@@ -43,7 +43,7 @@ const TerminalCanvas = ({
   revealOnMount,
   fitOnNavigate,
   onLayoutChange,
-  sessions,
+  terminals,
   hidden,
   preview,
   selected,
@@ -70,7 +70,7 @@ const TerminalCanvas = ({
   const container = useRef<HTMLDivElement>(null)
   const [initialViewport] = useState(layout.viewport)
   const { visit, animateVisit } = useCanvasVisit(handleRef)
-  const persistence = useCanvasPersistence({ layout, sessions, onLayoutChange })
+  const persistence = useCanvasPersistence({ layout, terminals, onLayoutChange })
   const {
     geometryRef,
     dirtyGeometry,
@@ -81,7 +81,7 @@ const TerminalCanvas = ({
     trackViewport,
     commitViewport,
   } = persistence
-  const knownSessions = useRef(new Set(sessions.map((session) => session.id)))
+  const knownTerminals = useRef(new Set(terminals.map((terminal) => terminal.id)))
   const createdPositions = useRef(new Map<string, XYPosition>())
   const pointerCreated = useRef(new Set<string>())
   const pendingCreatedPositions = useRef(new Map<string, XYPosition>())
@@ -106,11 +106,11 @@ const TerminalCanvas = ({
     visit.clear()
     void fitView({
       ...fitOptions,
-      nodes: sessions
-        .filter((session) => !hidden[session.id])
-        .map((session) => ({ id: session.id })),
+      nodes: terminals
+        .filter((terminal) => !hidden[terminal.id])
+        .map((terminal) => ({ id: terminal.id })),
     })
-  }, [fitView, sessions, hidden, visit])
+  }, [fitView, terminals, hidden, visit])
   const { beginResize, finishResize, onNodesChange } = useCanvasGeometry(persistence, onSelect)
 
   const resizeToViewport = useCallback(
@@ -139,15 +139,15 @@ const TerminalCanvas = ({
   )
 
   const flyTo = useCallback(
-    (session: TerminalMetadata) => {
+    (terminal: TerminalMetadata) => {
       if (visit.flying) return
-      const node = getNode(session.id)
+      const node = getNode(terminal.id)
       if (!node) return
-      onSelect(session.id)
+      onSelect(terminal.id)
       if (node.data.minimized) {
         onLayoutChange((previous) => ({
           ...previous,
-          minimized: { ...previous.minimized, [session.id]: false },
+          minimized: { ...previous.minimized, [terminal.id]: false },
         }))
       }
       if (!viewportWidth || !viewportHeight) return
@@ -156,7 +156,7 @@ const TerminalCanvas = ({
           ...node.position,
           width: node.width ?? 550,
           height: node.data.minimized
-            ? (geometry[session.id]?.height ?? 400)
+            ? (geometry[terminal.id]?.height ?? 400)
             : (node.height ?? 400),
         },
         viewportWidth,
@@ -165,7 +165,7 @@ const TerminalCanvas = ({
         Infinity,
         0,
       )
-      const flight = visit.begin(session.id, getViewport(), viewport)
+      const flight = visit.begin(terminal.id, getViewport(), viewport)
       if (!flight) return
       animateVisit(flight)
     },
@@ -184,34 +184,34 @@ const TerminalCanvas = ({
 
   const nodeFrom = useCallback(
     (
-      session: TerminalMetadata,
+      terminal: TerminalMetadata,
       source: CanvasLayout["geometry"][string] | undefined,
     ): TerminalNode => {
-      const isMinimized = minimized[session.id] ?? false
+      const isMinimized = minimized[terminal.id] ?? false
       const width = source?.width ?? 550
       return {
-        id: session.id,
+        id: terminal.id,
         type: "terminal",
-        hidden: removed[session.id] ?? false,
+        hidden: removed[terminal.id] ?? false,
         position: source?.position ?? { x: 80, y: 80 },
         width,
         height: isMinimized
           ? terminalHeaderHeight * chromeScale + 2
           : Math.max(source?.height ?? 400, (terminalHeaderHeight + 4) * chromeScale),
         dragHandle: ".terminal-header",
-        draggable: selected === session.id && !hidden[session.id],
-        selectable: !hidden[session.id],
-        focusable: !hidden[session.id],
-        selected: selected === session.id,
-        ariaLabel: `${session.name} terminal`,
+        draggable: selected === terminal.id && !hidden[terminal.id],
+        selectable: !hidden[terminal.id],
+        focusable: !hidden[terminal.id],
+        selected: selected === terminal.id,
+        ariaLabel: `${terminal.name} terminal`,
         data: {
-          preview: preview === session.id,
-          focusRequest: selected === session.id ? keyboardFocusRequest : null,
-          hiding: hidden[session.id] ?? false,
+          preview: preview === terminal.id,
+          focusRequest: selected === terminal.id ? keyboardFocusRequest : null,
+          hiding: hidden[terminal.id] ?? false,
           compactHeader: width / chromeScale < 240,
           minimized: isMinimized,
-          onResizeStart: () => beginResize(session.id),
-          onResizeEnd: (nextWidth, nextHeight) => finishResize(session.id, nextWidth, nextHeight),
+          onResizeStart: () => beginResize(terminal.id),
+          onResizeEnd: (nextWidth, nextHeight) => finishResize(terminal.id, nextWidth, nextHeight),
         },
       }
     },
@@ -230,9 +230,9 @@ const TerminalCanvas = ({
 
   const contentOf = useCallback(
     (id: string): ReactNode => {
-      const session = sessions.find((item) => item.id === id)
-      if (!session) return null
-      return render(session, {
+      const terminal = terminals.find((item) => item.id === id)
+      if (!terminal) return null
+      return render(terminal, {
         minimize: {
           minimized: minimized[id] ?? false,
           onToggle: () =>
@@ -241,52 +241,52 @@ const TerminalCanvas = ({
               minimized: { ...previous.minimized, [id]: !previous.minimized[id] },
             })),
         },
-        onFlyTo: () => flyTo(session),
+        onFlyTo: () => flyTo(terminal),
         onResizePreset: () => resizeToViewport(id),
       })
     },
-    [flyTo, minimized, onLayoutChange, render, resizeToViewport, sessions],
+    [flyTo, minimized, onLayoutChange, render, resizeToViewport, terminals],
   )
 
   // XYFlow owns pointer-time geometry so dragging does not rerender the application or terminals.
   // Parent updates refresh terminal content and selection while retaining any in-progress gesture.
   useEffect(() => {
-    const sessionIds = new Set(sessions.map((session) => session.id))
+    const terminalIds = new Set(terminals.map((terminal) => terminal.id))
     for (const id of Object.keys(geometryRef.current)) {
-      if (!sessionIds.has(id)) {
+      if (!terminalIds.has(id)) {
         delete geometryRef.current[id]
         dirtyGeometry.current.delete(id)
         resizing.current.delete(id)
       }
     }
-    for (const session of sessions) {
-      if (!dirtyGeometry.current.has(session.id))
-        geometryRef.current[session.id] = geometry[session.id] ?? {
+    for (const terminal of terminals) {
+      if (!dirtyGeometry.current.has(terminal.id))
+        geometryRef.current[terminal.id] = geometry[terminal.id] ?? {
           position: { x: 80, y: 80 },
         }
     }
-    const created = sessions.filter((session) => !knownSessions.current.has(session.id))
+    const created = terminals.filter((terminal) => !knownTerminals.current.has(terminal.id))
     if (created.length && viewportWidth && viewportHeight) {
       const viewport = getViewport()
-      const occupied = sessions
-        .filter((session) => knownSessions.current.has(session.id))
-        .map((session) => {
-          const saved = geometryRef.current[session.id]
-          const live = getNode(session.id)
+      const occupied = terminals
+        .filter((terminal) => knownTerminals.current.has(terminal.id))
+        .map((terminal) => {
+          const saved = geometryRef.current[terminal.id]
+          const live = getNode(terminal.id)
           return {
             position: live?.position ?? saved?.position ?? { x: 80, y: 80 },
             width: live?.width ?? saved?.width ?? 550,
             height: saved?.height ?? 400,
           }
         })
-      for (const session of created) {
-        const saved = geometryRef.current[session.id]
+      for (const terminal of created) {
+        const saved = geometryRef.current[terminal.id]
         const size = canvasNewTerminalSize(
           { width: viewportWidth, height: viewportHeight },
           matchCreatedTerminalRatio,
           { width: saved?.width ?? 600, height: saved?.height ?? 400 },
         )
-        const requested = pendingCreatedPositions.current.get(session.id)
+        const requested = pendingCreatedPositions.current.get(terminal.id)
         const position = requested
           ? canvasPointPosition(requested)
           : viewportCanvasPosition(
@@ -295,42 +295,42 @@ const TerminalCanvas = ({
               { width: viewportWidth, height: viewportHeight },
               size,
             )
-        geometryRef.current[session.id] = { ...saved, position, ...size }
-        dirtyGeometry.current.add(session.id)
+        geometryRef.current[terminal.id] = { ...saved, position, ...size }
+        dirtyGeometry.current.add(terminal.id)
         if (requested) {
-          pendingCreatedPositions.current.delete(session.id)
-          pointerCreated.current.add(session.id)
-        } else createdPositions.current.set(session.id, position)
-        knownSessions.current.add(session.id)
+          pendingCreatedPositions.current.delete(terminal.id)
+          pointerCreated.current.add(terminal.id)
+        } else createdPositions.current.set(terminal.id, position)
+        knownTerminals.current.add(terminal.id)
         occupied.push({ position, ...size })
       }
-      commitGeometry(created.map((session) => session.id))
+      commitGeometry(created.map((terminal) => terminal.id))
     }
-    for (const id of knownSessions.current) {
-      if (!sessionIds.has(id)) {
-        knownSessions.current.delete(id)
+    for (const id of knownTerminals.current) {
+      if (!terminalIds.has(id)) {
+        knownTerminals.current.delete(id)
         createdPositions.current.delete(id)
       }
     }
     // Keep activation history instead of temporarily elevating only the selected node.
-    const order = stacking.current.filter((id) => sessionIds.has(id))
+    const order = stacking.current.filter((id) => terminalIds.has(id))
     const known = new Set(order)
     const stack = [
       ...order,
-      ...sessions.filter((session) => !known.has(session.id)).map((session) => session.id),
+      ...terminals.filter((terminal) => !known.has(terminal.id)).map((terminal) => terminal.id),
     ].filter((id) => id !== selected)
-    if (sessionIds.has(selected)) stack.push(selected)
+    if (terminalIds.has(selected)) stack.push(selected)
     stacking.current = stack
     const levels = new Map(stack.map((id, index) => [id, index]))
     setNodes((previous) => {
       const existing = new Map(previous.map((node) => [node.id, node]))
-      return sessions.map((session) => {
+      return terminals.map((terminal) => {
         const next = {
-          ...nodeFrom(session, geometryRef.current[session.id]),
-          zIndex: levels.get(session.id) ?? 0,
+          ...nodeFrom(terminal, geometryRef.current[terminal.id]),
+          zIndex: levels.get(terminal.id) ?? 0,
         }
-        const current = existing.get(session.id)
-        if (!current || !dirtyGeometry.current.has(session.id)) return next
+        const current = existing.get(terminal.id)
+        if (!current || !dirtyGeometry.current.has(terminal.id)) return next
         const retained = {
           ...next,
           position: current.position,
@@ -351,7 +351,7 @@ const TerminalCanvas = ({
     matchCreatedTerminalRatio,
     nodeFrom,
     selected,
-    sessions,
+    terminals,
     setNodes,
     viewportHeight,
     viewportWidth,
@@ -405,7 +405,7 @@ const TerminalCanvas = ({
     >
       <TerminalContent.Provider value={contentOf}>
         <ReactFlow<TerminalNode>
-          defaultNodes={sessions.map((session) => nodeFrom(session, geometry[session.id]))}
+          defaultNodes={terminals.map((terminal) => nodeFrom(terminal, geometry[terminal.id]))}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onNodeClick={(_, node) => onSelect(node.id)}

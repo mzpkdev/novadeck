@@ -1,4 +1,4 @@
-import { orderedSessions } from "../model/state"
+import { orderedTerminals } from "../model/state"
 import { Preferences } from "../preferences/Preferences"
 import { TerminalSearch } from "../search/TerminalSearch"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
@@ -19,8 +19,8 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
     commands,
   } = useWorkspace()
   const { go, closeDialog } = navigation
-  const { view, sessions } = current.state
-  const ordered = orderedSessions(current.state)
+  const { view, terminals } = current.state
+  const ordered = orderedTerminals(current.state)
   const { setKeyboardFocus } = shell
   const { visibleRecentSwitcher, setRecentSwitcher, closeRecentSwitcher } = recent
   const { select, updatePreferences, openSearchResult } = commands
@@ -38,9 +38,9 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
             if (visibleRecentSwitcher.mode === "click") setKeyboardFocus({ id, view })
             select(id)
           }}
-          sessions={visibleRecentSwitcher.ids.flatMap((id) => {
-            const session = sessions.find((item) => item.id === id)
-            return session ? [session] : []
+          terminals={visibleRecentSwitcher.ids.flatMap((id) => {
+            const terminal = terminals.find((item) => item.id === id)
+            return terminal ? [terminal] : []
           })}
           selected={visibleRecentSwitcher.ids[visibleRecentSwitcher.index]}
         />
@@ -49,7 +49,7 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
         onExitComplete={onExitComplete}
         open={searching}
         key={context}
-        sessions={ordered}
+        terminals={ordered}
         destination={searchLabel}
         onSelect={openSearchResult}
         onClose={closeDialog}

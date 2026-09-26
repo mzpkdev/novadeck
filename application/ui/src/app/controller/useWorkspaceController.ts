@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { useNavigationType } from "react-router"
 
 import type { Backend, CreateBackend } from "../../backend/port"
-import { activeProject, activeSession, orderedSessions } from "../../model/state"
+import { activeProject, activeSession, orderedTerminals } from "../../model/state"
 import type {
   PreferencesValue,
   TerminalMetadata,
@@ -52,8 +52,8 @@ export const useWorkspaceController = (createBackend: CreateBackend): WorkspaceC
   const projectId = project.id
   const workspaceSessionId = session.id
   const context = `${projectId}/${workspaceSessionId}`
-  const { view, windowedView, sessions, selected } = session.state
-  const ordered = orderedSessions(session.state)
+  const { view, windowedView, terminals, selected } = session.state
+  const ordered = orderedTerminals(session.state)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
   const shell = useWorkspaceShell({
     context,
@@ -65,8 +65,8 @@ export const useWorkspaceController = (createBackend: CreateBackend): WorkspaceC
     setSidebarPanel: (panel) => go({ panel }),
     navigationType,
   })
-  const rename = useTerminalRename({ context, view, target, sessions, selected, dispatch })
-  const recent = useRecentSwitcher({ context, dialog: route.dialog, sessions, ordered, selected })
+  const rename = useTerminalRename({ context, view, target, terminals, selected, dispatch })
+  const recent = useRecentSwitcher({ context, dialog: route.dialog, terminals, ordered, selected })
   const commands = useWorkspaceCommands({
     workspace,
     navigation,
@@ -80,7 +80,7 @@ export const useWorkspaceController = (createBackend: CreateBackend): WorkspaceC
   })
   const { focusPreview } = shell
   const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
-  const active = sessions.find((terminal) => terminal.id === displayed) ?? sessions[0]
+  const active = terminals.find((terminal) => terminal.id === displayed) ?? terminals[0]
   return {
     backend,
     workspace,

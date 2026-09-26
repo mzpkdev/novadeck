@@ -6,19 +6,19 @@ import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
 
 export const Focus = ({
-  sessions,
+  terminals,
   displayed,
   onSelect,
   render,
 }: {
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   displayed: string
   onSelect: (id: string) => void
-  render: (session: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
+  render: (terminal: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
 }): React.JSX.Element => {
   const hidden = useMemo(
-    () => Object.fromEntries(sessions.map((session) => [session.id, session.id !== displayed])),
-    [sessions, displayed],
+    () => Object.fromEntries(terminals.map((terminal) => [terminal.id, terminal.id !== displayed])),
+    [terminals, displayed],
   )
   const removed = useTerminalVisibility(hidden)
   return (
@@ -36,17 +36,17 @@ export const Focus = ({
     >
       <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
       <div className="workspace-dots absolute inset-0 canvas-grid-spotlight" aria-hidden="true" />
-      {sessions
-        .filter((session) => !removed[session.id])
-        .map((session) => (
+      {terminals
+        .filter((terminal) => !removed[terminal.id])
+        .map((terminal) => (
           <div
-            key={session.id}
+            key={terminal.id}
             className="terminal-visibility absolute inset-3 max-[701px]:inset-1.5 data-[hiding=false]:z-1"
-            data-hiding={hidden[session.id]}
-            aria-hidden={hidden[session.id]}
-            inert={hidden[session.id]}
+            data-hiding={hidden[terminal.id]}
+            aria-hidden={hidden[terminal.id]}
+            inert={hidden[terminal.id]}
           >
-            {render(session, {})}
+            {render(terminal, {})}
           </div>
         ))}
     </div>

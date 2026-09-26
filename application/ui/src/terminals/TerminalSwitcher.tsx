@@ -7,14 +7,14 @@ import { searchResultClasses } from "../ui-toolkit/SearchCombobox"
 import motion from "../ui-toolkit/ModalMotion.module.css"
 
 export const TerminalSwitcher = ({
-  sessions,
+  terminals,
   selected,
   project,
   mode,
   onSelect,
   onClose,
 }: {
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   selected: string | undefined
   project: string
   mode: "held" | "click"
@@ -62,7 +62,7 @@ export const TerminalSwitcher = ({
             <p className="m-0 mt-0.5 truncate text-[10px] text-muted">{project}</p>
           </div>
           <span className="shrink-0 font-mono text-[10px] text-muted">
-            {sessions.findIndex((session) => session.id === selected) + 1} / {sessions.length}
+            {terminals.findIndex((terminal) => terminal.id === selected) + 1} / {terminals.length}
           </span>
           <button
             ref={close}
@@ -81,25 +81,25 @@ export const TerminalSwitcher = ({
           tabIndex={mode === "click" ? 0 : -1}
           className="flex min-h-0 max-h-[50vh] flex-col gap-1 overflow-y-auto p-2"
         >
-          {sessions.map((session) => {
-            const current = session.id === selected
+          {terminals.map((terminal) => {
+            const current = terminal.id === selected
             return (
               <div
-                key={session.id}
-                id={`recent-terminal-${session.id}`}
+                key={terminal.id}
+                id={`recent-terminal-${terminal.id}`}
                 ref={current ? active : undefined}
                 role="option"
-                aria-label={session.name}
+                aria-label={terminal.name}
                 aria-selected={current}
                 data-highlighted={current ? "" : undefined}
-                onClick={() => onSelect(session.id)}
+                onClick={() => onSelect(terminal.id)}
                 className={searchResultClasses}
               >
                 <Terminal size={15} strokeWidth={1.5} aria-hidden="true" />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <p className="m-0 truncate text-xs font-medium">{session.name}</p>
+                  <p className="m-0 truncate text-xs font-medium">{terminal.name}</p>
                   <p className="m-0 truncate font-mono text-[10px] text-muted">
-                    {session.process || session.command}
+                    {terminal.process || terminal.command}
                   </p>
                 </div>
                 <ArrowUpRight

@@ -35,7 +35,7 @@ export const WorkspaceApp = ({
 }): React.JSX.Element => {
   const controller = useWorkspaceController(createBackend)
   const { session: current, route, preferences, shell, commands } = controller
-  const { view, sessions } = current.state
+  const { view, terminals } = current.state
   const sidebarPanel = route.panel
   const { sidebar, sidebarCollapsed, sidebarVisible, zen, hideSidebar, toggleSidebar, exitZen } =
     shell
@@ -99,10 +99,10 @@ export const WorkspaceApp = ({
         >
           <span className="flex items-center gap-2">
             <span>
-              {sessions.length} {sessions.length === 1 ? "terminal" : "terminals"}
+              {terminals.length} {terminals.length === 1 ? "terminal" : "terminals"}
             </span>
             <span className="footer-running max-[701px]:hidden ml-2 border-l border-line pl-3">
-              {sessions.filter((session) => session.state === "running").length} running
+              {terminals.filter((terminal) => terminal.state === "running").length} running
             </span>
           </span>
         </footer>

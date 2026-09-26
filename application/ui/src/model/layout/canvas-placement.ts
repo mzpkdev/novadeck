@@ -74,20 +74,20 @@ export const viewportCanvasPosition = (
       }
 }
 
-const bounds = (session: TerminalMetadata, layout: CanvasLayout) => ({
-  position: layout.geometry[session.id]?.position ?? { x: 80, y: 80 },
-  width: layout.geometry[session.id]?.width ?? defaultWidth,
-  height: layout.geometry[session.id]?.height ?? 400,
+const bounds = (terminal: TerminalMetadata, layout: CanvasLayout) => ({
+  position: layout.geometry[terminal.id]?.position ?? { x: 80, y: 80 },
+  width: layout.geometry[terminal.id]?.width ?? defaultWidth,
+  height: layout.geometry[terminal.id]?.height ?? 400,
 })
 
 export const adjacentCanvasPosition = (
   active: TerminalMetadata,
-  sessions: TerminalMetadata[],
+  terminals: TerminalMetadata[],
   layout: CanvasLayout,
   height: number,
 ): { x: number; y: number } => {
   const anchor = bounds(active, layout)
-  const occupied = sessions.map((session) => bounds(session, layout))
+  const occupied = terminals.map((terminal) => bounds(terminal, layout))
   const isFree = (x: number, y: number): boolean =>
     occupied.every(
       ({ position, width, height: occupiedHeight }) =>
@@ -96,7 +96,7 @@ export const adjacentCanvasPosition = (
         y + height + gap <= position.y ||
         position.y + occupiedHeight + gap <= y,
     )
-  for (let step = 0; step <= sessions.length; step++) {
+  for (let step = 0; step <= terminals.length; step++) {
     const offset = step * (height + gap)
     const candidates = [
       { x: anchor.position.x + anchor.width + gap, y: anchor.position.y + offset },

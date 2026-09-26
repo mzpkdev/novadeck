@@ -19,9 +19,9 @@ export type CanvasPersistence = {
 // XYFlow owns live gestures. Persist only completed gestures and the final unmount snapshot.
 export const useCanvasPersistence = ({
   layout,
-  sessions,
+  terminals,
   onLayoutChange,
-}: Pick<CanvasProps, "layout" | "sessions" | "onLayoutChange">): CanvasPersistence => {
+}: Pick<CanvasProps, "layout" | "terminals" | "onLayoutChange">): CanvasPersistence => {
   const { getNode, getViewport } = useReactFlow<TerminalNode>()
   const geometryRef = useRef<CanvasLayout["geometry"]>({ ...layout.geometry })
   const dirtyGeometry = useRef(new Set<string>())
@@ -29,13 +29,13 @@ export const useCanvasPersistence = ({
   const viewportRef = useRef<CanvasViewport>(layout.viewport ?? { x: 0, y: 0, zoom: 1 })
   const dirtyViewport = useRef(false)
   const mounted = useRef(false)
-  const latest = useRef({ sessions, onLayoutChange })
+  const latest = useRef({ terminals, onLayoutChange })
   useEffect(() => {
-    latest.current = { sessions, onLayoutChange }
-  }, [onLayoutChange, sessions])
+    latest.current = { terminals, onLayoutChange }
+  }, [onLayoutChange, terminals])
 
   const commitGeometry = useCallback((ids: Iterable<string>) => {
-    const { onLayoutChange: commitLayout, sessions: liveSessions } = latest.current
+    const { onLayoutChange: commitLayout, terminals: liveTerminals } = latest.current
     const snapshots = [...ids].flatMap((id) => {
       const snapshotGeometry = geometryRef.current[id]
       if (!snapshotGeometry) return []
@@ -53,7 +53,7 @@ export const useCanvasPersistence = ({
     })
     if (!snapshots.length) return
     for (const [id] of snapshots) dirtyGeometry.current.delete(id)
-    const liveIds = new Set(liveSessions.map((session) => session.id))
+    const liveIds = new Set(liveTerminals.map((terminal) => terminal.id))
     commitLayout((previous) => {
       const nextGeometry = { ...previous.geometry }
       for (const [id, next] of snapshots) {

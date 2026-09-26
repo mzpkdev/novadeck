@@ -33,7 +33,7 @@ type Props = {
   presets: Record<string, SizePreset>
   restoreWidths: Record<string, GridRestoreWidths>
   onToggleWidth: (id: string, change: GridWidthToggle) => void
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   navigation: number
   selected: string
   onSelect: (id: string) => void
@@ -44,14 +44,14 @@ type Props = {
   preview: string
   onMinimize: (id: string) => void
   onCreate: () => void
-  render: (session: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
+  render: (terminal: TerminalMetadata, controls: TerminalLayoutControls) => ReactNode
 }
 
 export const Grid = ({
   presets,
   restoreWidths,
   onToggleWidth,
-  sessions,
+  terminals,
   selected,
   navigation,
   onSelect,
@@ -106,8 +106,8 @@ export const Grid = ({
     }
   }, [mounted, navigation, selected, width, containerRef, resized])
   const base = useMemo(
-    () => visibleGridLayouts(sessions, layouts, minimized, removed),
-    [sessions, layouts, minimized, removed],
+    () => visibleGridLayouts(terminals, layouts, minimized, removed),
+    [terminals, layouts, minimized, removed],
   )
   const current = base
 
@@ -129,7 +129,7 @@ export const Grid = ({
       const change = toggleGridWidth(
         id,
         expand,
-        sessions,
+        terminals,
         layouts,
         minimized,
         removed,
@@ -141,7 +141,7 @@ export const Grid = ({
     [
       width,
       minimized,
-      sessions,
+      terminals,
       layouts,
       removed,
       navigation,
@@ -202,34 +202,34 @@ export const Grid = ({
               dragConfig={{ handle: ".terminal-header", cancel: "button, input", threshold: 5 }}
               resizeConfig={{ handles: ["se"] }}
               onLayoutChange={(_, next) => {
-                const saved = expandedGridLayouts(next, layouts, sessions, minimized, removed)
+                const saved = expandedGridLayouts(next, layouts, terminals, minimized, removed)
                 if (saved !== layouts) onLayoutsChange(saved)
               }}
             >
-              {sessions
-                .filter((session) => !removed[session.id])
-                .map((session) => (
+              {terminals
+                .filter((terminal) => !removed[terminal.id])
+                .map((terminal) => (
                   <div
-                    className={`grid-terminal flex min-h-0 flex-col ${selected === session.id ? "selected" : ""} ${minimized[session.id] ? "minimized" : ""}`}
-                    key={session.id}
-                    data-grid-terminal={session.id}
-                    data-preview={preview === session.id}
-                    inert={hidden[session.id] ?? false}
-                    aria-hidden={hidden[session.id] ?? false}
+                    className={`grid-terminal flex min-h-0 flex-col ${selected === terminal.id ? "selected" : ""} ${minimized[terminal.id] ? "minimized" : ""}`}
+                    key={terminal.id}
+                    data-grid-terminal={terminal.id}
+                    data-preview={preview === terminal.id}
+                    inert={hidden[terminal.id] ?? false}
+                    aria-hidden={hidden[terminal.id] ?? false}
                     onContextMenu={(event) => event.stopPropagation()}
                   >
                     <div
                       className="grid-terminal-body terminal-visibility min-h-0 flex-1"
-                      data-hiding={hidden[session.id] ?? false}
+                      data-hiding={hidden[terminal.id] ?? false}
                     >
-                      {render(session, {
+                      {render(terminal, {
                         minimize: {
-                          minimized: minimized[session.id] ?? false,
+                          minimized: minimized[terminal.id] ?? false,
                           // Keep output painted while the grid's height transition clips it away.
                           clipContent: true,
-                          onToggle: () => onMinimize(session.id),
+                          onToggle: () => onMinimize(terminal.id),
                         },
-                        onResizePreset: () => resizeToViewport(session.id),
+                        onResizePreset: () => resizeToViewport(terminal.id),
                       })}
                     </div>
                   </div>

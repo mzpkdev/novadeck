@@ -189,23 +189,23 @@ export const useWorkspaceCommands = ({
     const latestProject = getWorkspace().projects.find((item) => item.id === projectId)
     const latestSession = latestProject?.history.find((item) => item.id === workspaceSessionId)
     if (!latestProject || !latestSession) return ""
-    const session = newTerminal({
+    const terminal = newTerminal({
       number: latestSession.state.nextTerminalNumber,
       directory: latestProject.directory,
     })
     if (!beginRename && activeRename) finishRename(activeRename, true)
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
-    setCreated({ context, id: session.id })
-    if (beginRename) startRename(session, origin)
+    setCreated({ context, id: terminal.id })
+    if (beginRename) startRename(terminal, origin)
     const actions: WorkspaceAction[] = [
       {
         type: "terminal/add",
         target,
-        session,
+        terminal,
         gridLayouts: addCompactGridTerminal(
-          latestSession.state.sessions,
+          latestSession.state.terminals,
           latestSession.state.gridLayouts,
-          session,
+          terminal,
         ),
       },
     ]
@@ -213,7 +213,7 @@ export const useWorkspaceCommands = ({
     setNavigation((value) => ({ count: value.count + 1, fit: false }))
     if (fromKeyboard) setSidebarCollapsed(false)
     setSidebar(false)
-    return session.id
+    return terminal.id
   }
   const close = (terminalId: string): void => {
     if (activeRename?.id === terminalId) finishRename(activeRename, false)

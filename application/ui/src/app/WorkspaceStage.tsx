@@ -22,7 +22,7 @@ export const WorkspaceStage = ({
   const { dispatch } = navigation
   const {
     view,
-    sessions,
+    terminals,
     selected,
     canvasLayout,
     gridLayouts,
@@ -70,7 +70,7 @@ export const WorkspaceStage = ({
       >
         {view === "focus" && active && (
           <Focus
-            sessions={sessions}
+            terminals={terminals}
             displayed={active.id}
             onSelect={setSelected}
             render={renderTerminal}
@@ -78,7 +78,7 @@ export const WorkspaceStage = ({
         )}
         {view === "grid" && (
           <Grid
-            sessions={sessions}
+            terminals={terminals}
             hidden={layoutHidden}
             preview={preview}
             selected={selected}
@@ -124,7 +124,7 @@ export const WorkspaceStage = ({
             revealOnMount={revealCanvas}
             fitOnNavigate={shellNavigation.fit}
             onLayoutChange={setCanvasLayout}
-            sessions={sessions}
+            terminals={terminals}
             selected={selected}
             keyboardFocusRequest={
               canvasKeyboardFocus?.context === context && canvasKeyboardFocus.id === selected
@@ -139,18 +139,18 @@ export const WorkspaceStage = ({
         )}
       </Suspense>
       {view !== "focus" &&
-        sessions.length > 0 &&
-        sessions.every((session) => layoutHidden[session.id]) && (
+        terminals.length > 0 &&
+        terminals.every((terminal) => layoutHidden[terminal.id]) && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-muted">All terminals are hidden</p>
             <button
               className="small-button"
               onClick={() =>
-                sessions.forEach((session) =>
+                terminals.forEach((terminal) =>
                   dispatch({
                     type: "terminal/visibility",
                     target,
-                    terminalId: session.id,
+                    terminalId: terminal.id,
                     hidden: false,
                   }),
                 )
@@ -160,7 +160,7 @@ export const WorkspaceStage = ({
             </button>
           </div>
         )}
-      {!sessions.length && (
+      {!terminals.length && (
         <EmptyWorkspace
           view={view}
           zen={Boolean(zen)}

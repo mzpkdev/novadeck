@@ -49,7 +49,7 @@ export type WorkspaceAction =
   | {
       type: "terminal/add"
       target: WorkspaceTarget
-      session: TerminalMetadata
+      terminal: TerminalMetadata
       gridLayouts?: GridLayouts
       canvasGeometry?: CanvasLayout["geometry"][string]
     }
@@ -93,24 +93,24 @@ export const createWorkspaceSession = (
   state: input.state,
 })
 
-export const createSessionState = (
-  sessions: TerminalMetadata[],
+export const createTerminalState = (
+  terminals: TerminalMetadata[],
   view: ViewMode,
   windowedView: WindowedView,
   initial: { canvasLayout?: CanvasLayout; gridLayouts?: GridLayouts } = {},
 ): WorkspaceState => ({
   view,
   windowedView,
-  sessions,
+  terminals,
   tabOrder: [],
-  selected: sessions[0]?.id ?? "",
+  selected: terminals[0]?.id ?? "",
   sizePresets: { grid: {}, canvas: {} },
   canvasLayout: initial.canvasLayout ?? { geometry: {}, minimized: {} },
   gridLayouts: initial.gridLayouts ?? {},
   gridRestoreWidths: {},
   gridMinimized: {},
   hidden: {},
-  nextTerminalNumber: sessions.length + 1,
+  nextTerminalNumber: terminals.length + 1,
 })
 
 export const createWorkspace = ({
@@ -132,14 +132,14 @@ export const activeSession = (workspace: Workspace): WorkspaceSession | undefine
   return project?.history.find((session) => session.id === project.activeSessionId)
 }
 
-export const orderedSessions = (state: WorkspaceState): TerminalMetadata[] => {
-  const byId = new Map(state.sessions.map((session) => [session.id, session]))
+export const orderedTerminals = (state: WorkspaceState): TerminalMetadata[] => {
+  const byId = new Map(state.terminals.map((terminal) => [terminal.id, terminal]))
   const ordered = state.tabOrder.flatMap((id) => {
-    const session = byId.get(id)
-    return session ? [session] : []
+    const terminal = byId.get(id)
+    return terminal ? [terminal] : []
   })
-  const orderedIds = new Set(ordered.map((session) => session.id))
-  return [...ordered, ...state.sessions.filter((session) => !orderedIds.has(session.id))]
+  const orderedIds = new Set(ordered.map((terminal) => terminal.id))
+  return [...ordered, ...state.terminals.filter((terminal) => !orderedIds.has(terminal.id))]
 }
 
 export const reconcileView = (state: WorkspaceState, enabledViews: ViewMode[]): WorkspaceState => {
@@ -183,7 +183,7 @@ const apply = <Value>(value: Value, update: ValueUpdate<Value>): Value =>
   typeof update === "function" ? (update as (previous: Value) => Value)(value) : update
 
 const hasTerminal = (state: WorkspaceState, terminalId: string): boolean =>
-  state.sessions.some((session) => session.id === terminalId)
+  state.terminals.some((terminal) => terminal.id === terminalId)
 
 const allViews: ViewMode[] = ["focus", "grid", "canvas"]
 
@@ -208,8 +208,8 @@ const withoutGridItem = (layouts: GridLayouts, terminalId: string): GridLayouts 
   return changed ? next : layouts
 }
 
-const pruneCanvasLayout = (layout: CanvasLayout, sessions: TerminalMetadata[]): CanvasLayout => {
-  const ids = new Set(sessions.map((session) => session.id))
+const pruneCanvasLayout = (layout: CanvasLayout, terminals: TerminalMetadata[]): CanvasLayout => {
+  const ids = new Set(terminals.map((terminal) => terminal.id))
   const geometry = Object.fromEntries(
     Object.entries(layout.geometry).filter(([id]) => ids.has(id)),
   ) as CanvasLayout["geometry"]
@@ -222,8 +222,8 @@ const pruneCanvasLayout = (layout: CanvasLayout, sessions: TerminalMetadata[]): 
     : { ...layout, geometry, minimized }
 }
 
-const pruneGridLayouts = (layouts: GridLayouts, sessions: TerminalMetadata[]): GridLayouts => {
-  const ids = new Set(sessions.map((session) => session.id))
+const pruneGridLayouts = (layouts: GridLayouts, terminals: TerminalMetadata[]): GridLayouts => {
+  const ids = new Set(terminals.map((terminal) => terminal.id))
   const next = Object.fromEntries(
     Object.entries(layouts).map(([breakpoint, layout]) => [
       breakpoint,
@@ -251,9 +251,9 @@ const visit = (project: WorkspaceProject, id: string, now: number): WorkspacePro
 
 const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceState => {
   if (!hasTerminal(state, terminalId)) return state
-  const sessions = orderedSessions(state)
-  const index = sessions.findIndex((session) => session.id === terminalId)
-  const remaining = sessions.filter((session) => session.id !== terminalId)
+  const terminals = orderedTerminals(state)
+  const index = terminals.findIndex((terminal) => terminal.id === terminalId)
+  const remaining = terminals.filter((terminal) => terminal.id !== terminalId)
   const neighbor =
     state.view === "canvas" ? "" : ((remaining[index] ?? remaining[index - 1])?.id ?? "")
   const selected = state.selected === terminalId ? neighbor : state.selected
@@ -262,7 +262,7 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
   const gridMinimized = withoutKey(state.gridMinimized, terminalId)
   return {
     ...state,
-    sessions: state.sessions.filter((session) => session.id !== terminalId),
+    terminals: state.terminals.filter((terminal) => terminal.id !== terminalId),
     tabOrder: state.tabOrder.filter((id) => id !== terminalId),
     selected,
     canvasLayout:
@@ -371,38 +371,39 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       })
     case "terminal/add":
       return updateTarget(workspace, action.target, (state) => {
-        if (!action.session.id || hasTerminal(state, action.session.id)) return state
+        if (!action.terminal.id || hasTerminal(state, action.terminal.id)) return state
         const anchor =
-          state.sessions.find((session) => session.id === state.selected) ?? state.sessions.at(-1)
+          state.terminals.find((terminal) => terminal.id === state.selected) ??
+          state.terminals.at(-1)
         const position = anchor
           ? adjacentCanvasPosition(
               anchor,
-              state.sessions,
+              state.terminals,
               state.canvasLayout,
               canvasPresetSize("small").height,
             )
           : { x: 80, y: 80 }
         return {
           ...state,
-          sessions: [...state.sessions, action.session],
+          terminals: [...state.terminals, action.terminal],
           canvasLayout: {
             ...state.canvasLayout,
             geometry: {
               ...state.canvasLayout.geometry,
-              [action.session.id]: action.canvasGeometry ?? {
+              [action.terminal.id]: action.canvasGeometry ?? {
                 position,
                 ...canvasPresetSize("small"),
               },
             },
           },
           gridLayouts: action.gridLayouts
-            ? pruneGridLayouts(action.gridLayouts, [...state.sessions, action.session])
+            ? pruneGridLayouts(action.gridLayouts, [...state.terminals, action.terminal])
             : state.gridLayouts,
           sizePresets: {
-            canvas: { ...state.sizePresets.canvas, [action.session.id]: "small" },
-            grid: { ...state.sizePresets.grid, [action.session.id]: "small" },
+            canvas: { ...state.sizePresets.canvas, [action.terminal.id]: "small" },
+            grid: { ...state.sizePresets.grid, [action.terminal.id]: "small" },
           },
-          selected: action.session.id,
+          selected: action.terminal.id,
           nextTerminalNumber: state.nextTerminalNumber + 1,
         }
       })
@@ -411,8 +412,8 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         if (!hasTerminal(state, action.terminalId)) return state
         return {
           ...state,
-          sessions: state.sessions.map((session) =>
-            session.id === action.terminalId ? { ...session, name: action.name } : session,
+          terminals: state.terminals.map((terminal) =>
+            terminal.id === action.terminalId ? { ...terminal, name: action.name } : terminal,
           ),
         }
       })
@@ -464,7 +465,7 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       return updateTarget(workspace, action.target, (state) => {
         const canvasLayout = pruneCanvasLayout(
           apply(state.canvasLayout, action.layout),
-          state.sessions,
+          state.terminals,
         )
         return canvasLayout === state.canvasLayout ? state : { ...state, canvasLayout }
       })
@@ -472,7 +473,7 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       return updateTarget(workspace, action.target, (state) => {
         const gridLayouts = pruneGridLayouts(
           apply(state.gridLayouts, action.layouts),
-          state.sessions,
+          state.terminals,
         )
         return gridLayouts === state.gridLayouts ? state : { ...state, gridLayouts }
       })
@@ -482,7 +483,7 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         const widths = action.change.restoreWidths
         return {
           ...state,
-          gridLayouts: pruneGridLayouts(action.change.layouts, state.sessions),
+          gridLayouts: pruneGridLayouts(action.change.layouts, state.terminals),
           gridRestoreWidths:
             widths === null
               ? withoutKey(state.gridRestoreWidths, action.terminalId)

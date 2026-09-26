@@ -77,7 +77,7 @@ const samples: (TerminalMetadata & { x: number; y: number; height: number })[] =
   },
 ]
 
-export const sessions: TerminalMetadata[] = samples.map(
+export const terminals: TerminalMetadata[] = samples.map(
   ({ x: _x, y: _y, height: _height, ...terminal }) => terminal,
 )
 
@@ -100,10 +100,10 @@ export const initialProjects: Project[] = [
   { id: "api-service", name: "api-service", directory: "~/projects/api-service" },
 ]
 
-export const projectSessions = (project: Project): TerminalMetadata[] =>
-  sessions.map((session) => ({
-    ...session,
-    directory: session.directory.replace(/^~\/projects\/[^/]+/, project.directory),
+export const projectTerminals = (project: Project): TerminalMetadata[] =>
+  terminals.map((terminal) => ({
+    ...terminal,
+    directory: terminal.directory.replace(/^~\/projects\/[^/]+/, project.directory),
   }))
 
 // Each sample project opens one session with the stable ID "initial".
@@ -114,7 +114,7 @@ export const demoSeed = (now: number): WorkspaceSeed => ({
       {
         id: "initial",
         name: sessionName(now),
-        terminals: projectSessions(project),
+        terminals: projectTerminals(project),
         canvasLayout: demoCanvasLayout(),
       },
     ],
@@ -134,18 +134,18 @@ export const createMockTerminal = (number: number, directory: string): TerminalM
   }
 }
 
-export const mockReply = (command: string, session: TerminalMetadata): string => {
+export const mockReply = (command: string, terminal: TerminalMetadata): string => {
   const input = command.trim()
   if (input === "help")
     return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, clear"
-  if (input === "pwd") return session.directory.replace("~", "/Users/alex")
+  if (input === "pwd") return terminal.directory.replace("~", "/Users/alex")
   if (input === "ls")
     return "application/   node_modules/   package.json   pnpm-lock.yaml   README.md"
   if (input === "whoami") return "alex"
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
-  if (session.kind === "claude" || session.kind === "codex")
+  if (terminal.kind === "claude" || terminal.kind === "codex")
     return "This is a mock AI session. Your message is saved here, but no model is connected."
   return `Preview shell: “${input}” isn't connected to a process. Type help to explore.`
 }

@@ -7,11 +7,11 @@ import { SessionsPanel } from "../sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../sidebar/SidebarPanel"
 import { TerminalTabs } from "../terminals/TerminalTabs"
 
-type Props = Omit<ComponentProps<typeof TerminalTabs>, "sessions" | "rename"> & {
+type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals" | "rename"> & {
   projectId: string
   workspaceSessionId: string
   workspaceSessions: WorkspaceSession[]
-  sessions: TerminalMetadata[]
+  terminals: TerminalMetadata[]
   ordered: TerminalMetadata[]
   sidebarPanel: "terminals" | "sessions"
   sidebarVisible: boolean
@@ -25,7 +25,7 @@ export const WorkspaceSidebar = ({
   projectId,
   workspaceSessionId,
   workspaceSessions,
-  sessions,
+  terminals,
   ordered,
   sidebarPanel,
   sidebarVisible,
@@ -62,13 +62,13 @@ export const WorkspaceSidebar = ({
       <SessionsPanel
         key={projectId}
         items={workspaceSessions.map((item) => {
-          const terminals = item.state.sessions
+          const itemTerminals = item.state.terminals
           return {
             id: item.id,
             name: item.name,
             visitedAt: item.visitedAt,
-            terminalNames: terminals.map((entry) => entry.name),
-            running: terminals.filter((entry) => entry.state === "running").length,
+            terminalNames: itemTerminals.map((entry) => entry.name),
+            running: itemTerminals.filter((entry) => entry.state === "running").length,
           }
         })}
         activeId={workspaceSessionId}
@@ -80,7 +80,7 @@ export const WorkspaceSidebar = ({
       id="terminals-panel"
       title="Terminals"
       titleHint={`Recent · ${shortcutBindings().recent.display.join(" ")}`}
-      count={sessions.length}
+      count={terminals.length}
       active={sidebarPanel === "terminals"}
       onClose={onHide}
     >
@@ -93,7 +93,7 @@ export const WorkspaceSidebar = ({
       </button>
       <TerminalTabs
         key={`${projectId}/${workspaceSessionId}`}
-        sessions={ordered}
+        terminals={ordered}
         selected={selected}
         hidden={hidden}
         rename={renameView}

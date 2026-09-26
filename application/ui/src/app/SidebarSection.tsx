@@ -1,4 +1,4 @@
-import { orderedSessions } from "../model/state"
+import { orderedTerminals } from "../model/state"
 import { WorkspaceSidebar } from "../shell/WorkspaceSidebar"
 import { useWorkspace } from "./controller/context"
 
@@ -18,8 +18,8 @@ export const SidebarSection = (): React.JSX.Element => {
   const projectId = project.id
   const workspaceSessionId = current.id
   const workspaceSessions = project.history
-  const { sessions, selected, hidden } = current.state
-  const ordered = orderedSessions(current.state)
+  const { terminals, selected, hidden } = current.state
+  const ordered = orderedTerminals(current.state)
   const sidebarPanel = route.panel
   const { sidebarVisible, hideSidebar } = shell
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
@@ -33,7 +33,7 @@ export const SidebarSection = (): React.JSX.Element => {
       projectId={projectId}
       workspaceSessionId={workspaceSessionId}
       workspaceSessions={workspaceSessions}
-      sessions={sessions}
+      terminals={terminals}
       ordered={ordered}
       sidebarPanel={sidebarPanel}
       sidebarVisible={sidebarVisible}
@@ -47,8 +47,8 @@ export const SidebarSection = (): React.JSX.Element => {
       onVisibilityChange={setVisibility}
       onSelect={select}
       onBeginRename={(id) => {
-        const session = sessions.find((item) => item.id === id)
-        if (session) startRename(session, "sidebar")
+        const terminal = terminals.find((item) => item.id === id)
+        if (terminal) startRename(terminal, "sidebar")
       }}
       onRenameDraft={changeRenameDraft}
       onRenameSave={saveRename}
