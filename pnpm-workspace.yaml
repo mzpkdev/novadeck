@@ -8,5 +8,9 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   msw: false
+  node-pty: true
 minimumReleaseAgeExclude:
   - "@types/node@26.6.2"
+
+patchedDependencies:
+  node-pty@1.1.0: patches/node-pty@1.1.0.patch

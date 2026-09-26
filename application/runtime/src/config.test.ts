@@ -2,6 +2,23 @@ import { runtimeOptionsFromEnv } from "./config.js"
 import { context, describe, expect, it } from "./test.js"
 
 describe("runtime configuration", () => {
+  context("when enabling the terminal API", () => {
+    it("loads a capability and explicit database location", () => {
+      const token = "configuration-tests-only-not-a-real-credential"
+      expect(
+        runtimeOptionsFromEnv({
+          NOVADECK_TOKEN: token,
+          NOVADECK_DATABASE: "/tmp/novadeck-test.sqlite",
+        }),
+      ).toMatchObject({ apiToken: token, databasePath: "/tmp/novadeck-test.sqlite" })
+    })
+
+    it("rejects empty, short, and oversized credentials", () => {
+      for (const token of ["", " ", "short", "x".repeat(513)]) {
+        expect(() => runtimeOptionsFromEnv({ NOVADECK_TOKEN: token })).toThrow("NOVADECK_TOKEN")
+      }
+    })
+  })
   context("when environment variables are provided", () => {
     it("reads the server and CORS settings", () => {
       expect(
