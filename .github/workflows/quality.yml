@@ -55,9 +55,30 @@ jobs:
           cache: true
           require-lockfile: true
 
-      - name: Install Test Browser
+      - name: Locate Test Browser
         if: matrix.browser
+        id: playwright
+        shell: bash
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright" >> "$GITHUB_ENV"
+          echo "version=$(pnpm --filter @novadeck/ui exec playwright --version | awk '{ print $2 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Test Browser
+        if: matrix.browser
+        id: browser-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Test Browser
+        if: matrix.browser && steps.browser-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @novadeck/ui exec playwright install --with-deps chromium
+
+      # A cached browser still needs its system libraries on Linux.
+      - name: Install Test Browser Dependencies
+        if: matrix.browser && steps.browser-cache.outputs.cache-hit == 'true' && runner.os == 'Linux'
+        run: pnpm --filter @novadeck/ui exec playwright install-deps chromium
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
