@@ -7,7 +7,7 @@ import { DomainError } from "../errors.js"
 type Snapshot = Extract<TerminalEvent, { type: "snapshot" }>
 
 /** Recovery preserves the viewport; older scrollback is intentionally bounded by wire size. */
-export const serializeSnapshot = (
+export const snapshot = (
   screen: Terminal,
   serializer: SerializeAddon,
   summary: TerminalSummary,

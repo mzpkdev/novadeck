@@ -3,7 +3,7 @@ import * as fc from "fast-check"
 
 import { describe, expect, it } from "../test.js"
 import { ptyOptions } from "../testing/pty.js"
-import { TerminalManager } from "./manager.js"
+import { Terminals } from "./manager.js"
 
 type Mode = "control" | "observe"
 type Model = { controller: number | undefined; attached: Map<number, Mode> }
@@ -11,7 +11,7 @@ type Attachment = {
   stream: AsyncGenerator<TerminalAttached | TerminalEvent>
   signal: AbortController
 }
-type Real = { manager: TerminalManager; id: string; attached: Map<number, Attachment> }
+type Real = { manager: Terminals; id: string; attached: Map<number, Attachment> }
 type Action =
   | { type: "attach"; client: number; mode: Mode }
   | { type: "release" | "cancel" | "probe"; client: number }
@@ -121,7 +121,7 @@ describe("generated terminal ownership sequences", () => {
   it("keeps a single controller and revokes capabilities as clients attach, cancel, and disconnect", async ({
     resources,
   }) => {
-    const manager = new TerminalManager(ptyOptions)
+    const manager = new Terminals(ptyOptions)
     resources.defer(() => manager.shutdown())
     const terminal = await manager.create(
       { sessionId: "model", cwd: process.cwd(), cols: 80, rows: 24 },

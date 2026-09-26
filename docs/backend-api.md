@@ -137,7 +137,7 @@ without controlling it; its `write`, `resize`, and `close` reject with
 ```ts
 import { createRunner, servePort, serveWebSocket } from "@novadeck/runner"
 
-const runner = createRunner({ databasePath })
+const runner = createRunner({ database })
 
 // Deployed: token-authenticated WebSockets at /api/rpc on an HTTP server.
 serveWebSocket(runner, { token, origins }).attach(httpServer)

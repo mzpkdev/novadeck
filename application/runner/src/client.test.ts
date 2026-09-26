@@ -10,13 +10,12 @@ import {
   websocket,
   type AttachedTerminal,
   type Channel,
-  type MessagePortLike,
   type Runner,
   type RunnerStatus,
   type Transport,
 } from "@novadeck/protocol/client"
 
-import { createRunner, servePort, type RunnerPort } from "./index.js"
+import { createRunner, servePort } from "./index.js"
 import { startServer, type ServerOptions } from "./server.js"
 import { describe, expect, it } from "./test.js"
 import { command, ptyOptions } from "./testing/pty.js"
@@ -35,10 +34,10 @@ const deployed = async (resources: Resources, options: ServerOptions = {}) => {
   const directory = await temporary(resources)
   const server = await startServer({
     port: 0,
-    apiToken: token,
-    databasePath: join(directory, "workspace.sqlite"),
+    token,
+    database: join(directory, "workspace.sqlite"),
     ...options,
-    terminal: { ...ptyOptions, ...options.terminal },
+    terminals: { ...ptyOptions, ...options.terminals },
   })
   resources.defer(() => server.close())
   const url = `${server.origin.replace(/^http/, "ws")}/api/rpc`
@@ -53,13 +52,13 @@ const deployed = async (resources: Resources, options: ServerOptions = {}) => {
 const bundled = async (resources: Resources) => {
   // Created first so it is removed last, after the runner ends shells running inside it.
   const directory = await temporary(resources)
-  const runner = createRunner({ terminal: ptyOptions })
+  const runner = createRunner({ terminals: ptyOptions })
   resources.defer(() => runner.close())
   const connect = async () => {
     const { port1, port2 } = new MessageChannel()
-    const dispose = servePort(runner, port1 as unknown as RunnerPort)
+    const dispose = servePort(runner, port1)
     resources.defer(dispose)
-    const client = await connectRunner(messagePort(port2 as unknown as MessagePortLike), fast)
+    const client = await connectRunner(messagePort(port2), fast)
     resources.defer(() => client.close())
     return { client, dispose }
   }
@@ -257,7 +256,7 @@ describe("runner client over WebSocket", () => {
     resources,
   }) => {
     const app = await deployed(resources, {
-      terminal: { subscriberBytes: 2 * 1024, ackWindowBytes: 1024 },
+      terminals: { subscriberBytes: 2 * 1024, ackWindowBytes: 1024 },
     })
     const runner = await app.connect()
     const { id: sessionId } = await session(runner, app.directory)
@@ -356,14 +355,14 @@ describe("runner client resilience", () => {
   it("gives up on an unanswered handshake and honours cancellation", async ({ resources }) => {
     const { port1, port2 } = new MessageChannel()
     resources.defer(() => port1.close())
-    const silent = messagePort(port2 as unknown as MessagePortLike)
+    const silent = messagePort(port2)
     await expect(connectRunner(silent, { timeout: 50 })).rejects.toMatchObject({
       code: "DISCONNECTED",
     })
     const cancel = new AbortController()
     const unanswered = new MessageChannel()
     resources.defer(() => unanswered.port1.close())
-    const connecting = connectRunner(messagePort(unanswered.port2 as unknown as MessagePortLike), {
+    const connecting = connectRunner(messagePort(unanswered.port2), {
       signal: cancel.signal,
     })
     cancel.abort(new Error("Unmounted"))

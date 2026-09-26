@@ -4,24 +4,24 @@ import headless from "@xterm/headless"
 import { describe, expect, it as base } from "../test.js"
 import { ptyOptions } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
-import { TerminalManager } from "./manager.js"
+import { Terminals } from "./manager.js"
 
 const cwd = process.cwd()
 const { Terminal } = headless
 
 /** Omits the transport marker that opens each attachment. */
-const withoutMarker = async function* (stream: ReturnType<TerminalManager["attach"]>) {
+const withoutMarker = async function* (stream: ReturnType<Terminals["attach"]>) {
   for await (const event of stream) if (event.type !== "attached") yield event
 }
 
 const fixture = (resources: Resources) => {
-  const manager = (options: ConstructorParameters<typeof TerminalManager>[0] = {}) => {
-    const instance = new TerminalManager({ shell: "/bin/sh", env: { PS1: "" }, ...options })
+  const manager = (options: ConstructorParameters<typeof Terminals>[0] = {}) => {
+    const instance = new Terminals({ shell: "/bin/sh", env: { PS1: "" }, ...options })
     resources.defer(() => instance.shutdown())
     return instance
   }
   const attach = (
-    target: TerminalManager,
+    target: Terminals,
     id: string,
     owner: string,
     afterSequence?: number,
@@ -67,7 +67,7 @@ describe("terminal creation ownership", () => {
 })
 
 const until = async (
-  manager: TerminalManager,
+  manager: Terminals,
   stream: AsyncGenerator<TerminalEvent>,
   owner: string,
   predicate: (event: TerminalEvent) => boolean,

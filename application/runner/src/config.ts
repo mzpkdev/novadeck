@@ -15,7 +15,7 @@ const readPort = (value: string | undefined): number => {
   return port
 }
 
-const readCorsOrigins = (value: string | undefined): readonly string[] => {
+const readOrigins = (value: string | undefined): readonly string[] => {
   if (value === undefined) return defaultCorsOrigins
 
   const origins = value
@@ -28,20 +28,18 @@ const readCorsOrigins = (value: string | undefined): readonly string[] => {
   return origins
 }
 
-export const serverOptionsFromEnv = (
-  environment: NodeJS.ProcessEnv = process.env,
-): ServerOptions => {
-  const apiToken = environment.NOVADECK_TOKEN?.trim()
-  if (apiToken !== undefined && (apiToken.length < 32 || apiToken.length > 512)) {
+export const readConfig = (environment: NodeJS.ProcessEnv = process.env): ServerOptions => {
+  const token = environment.NOVADECK_TOKEN?.trim()
+  if (token !== undefined && (token.length < 32 || token.length > 512)) {
     throw new Error("NOVADECK_TOKEN must contain between 32 and 512 characters")
   }
   return {
     hostname: environment.HOST?.trim() || "127.0.0.1",
     port: readPort(environment.PORT),
-    corsOrigins: readCorsOrigins(environment.CORS_ORIGINS),
-    ...(apiToken !== undefined && {
-      apiToken,
-      databasePath:
+    origins: readOrigins(environment.CORS_ORIGINS),
+    ...(token !== undefined && {
+      token,
+      database:
         environment.NOVADECK_DATABASE?.trim() ||
         join(homedir(), ".local", "share", "novadeck", "workspace.sqlite"),
     }),

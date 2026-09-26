@@ -17,7 +17,7 @@ describe("HTTP application", () => {
 
   it("returns CORS headers for allowed frontend origins", async () => {
     const response = await createApp({
-      corsOrigins: ["https://app.novadeck.test"],
+      origins: ["https://app.novadeck.test"],
     }).request("http://localhost/api/status", {
       headers: { Origin: "https://app.novadeck.test" },
     })
@@ -26,12 +26,9 @@ describe("HTTP application", () => {
   })
 
   it("allows the packaged Electron frontend when explicitly configured", async () => {
-    const response = await createApp({ corsOrigins: ["null"] }).request(
-      "http://localhost/api/status",
-      {
-        headers: { Origin: "null" },
-      },
-    )
+    const response = await createApp({ origins: ["null"] }).request("http://localhost/api/status", {
+      headers: { Origin: "null" },
+    })
 
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("null")
   })

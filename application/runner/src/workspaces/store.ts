@@ -61,9 +61,9 @@ export class WorkspaceStore {
   private readonly database: DatabaseSync
   private readonly queries: SQLTagStore
 
-  constructor(databasePath = ":memory:") {
-    if (databasePath !== ":memory:") prepareFile(databasePath)
-    this.database = new DatabaseSync(databasePath, {
+  constructor(path = ":memory:") {
+    if (path !== ":memory:") prepareFile(path)
+    this.database = new DatabaseSync(path, {
       enableForeignKeyConstraints: true,
       timeout: 5_000,
     })

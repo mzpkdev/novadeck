@@ -2,7 +2,7 @@ import { contract, errors as contractErrors, protocolVersion } from "@novadeck/p
 import { implement, ORPCError } from "@orpc/server"
 
 import { DomainError } from "./errors.js"
-import type { TerminalManager } from "./terminals/index.js"
+import type { Terminals } from "./terminals/index.js"
 import type { WorkspaceStore } from "./workspaces/store.js"
 
 /** One client of a runner. Its transport decides how the handshake token is checked. */
@@ -11,11 +11,11 @@ export type Connection = {
   readonly verify: (token: string | undefined) => boolean
   /** Ends the transport, e.g. when a newer connection of the same client takes over. */
   readonly terminate: () => void
+  readonly onAuthenticated: () => void
   clientId: string | undefined
   authenticated: boolean
   closed: boolean
   calls: number
-  onAuthenticated: () => void
 }
 
 type Context = { connection: Connection }
@@ -32,11 +32,11 @@ export const createRouter = (options: {
   runnerId: string
   claim: (connection: Connection, clientId: string) => void
   store: WorkspaceStore
-  terminals: TerminalManager
+  terminals: Terminals
 }) => {
   const { store, terminals } = options
   const api = implement(contract).$context<Context>()
-  const protectedApi = api.use(async ({ context, next }) => {
+  const authorized = api.use(async ({ context, next }) => {
     const connection = context.connection
     if (!connection.authenticated || connection.closed) throw new ORPCError("UNAUTHORIZED")
     if (connection.calls >= 32) throw new ORPCError("RESOURCE_LIMIT", { status: 429 })
@@ -74,26 +74,26 @@ export const createRouter = (options: {
       }),
     },
     projects: {
-      list: protectedApi.projects.list.handler(() => store.projects()),
-      create: protectedApi.projects.create.handler(({ input }) => store.createProject(input)),
-      rename: protectedApi.projects.rename.handler(({ input }) => store.renameProject(input)),
+      list: authorized.projects.list.handler(() => store.projects()),
+      create: authorized.projects.create.handler(({ input }) => store.createProject(input)),
+      rename: authorized.projects.rename.handler(({ input }) => store.renameProject(input)),
     },
     sessions: {
-      list: protectedApi.sessions.list.handler(({ input }) => store.sessions(input.projectId)),
-      create: protectedApi.sessions.create.handler(({ input }) => store.createSession(input)),
-      rename: protectedApi.sessions.rename.handler(({ input }) => store.renameSession(input)),
+      list: authorized.sessions.list.handler(({ input }) => store.sessions(input.projectId)),
+      create: authorized.sessions.create.handler(({ input }) => store.createSession(input)),
+      rename: authorized.sessions.rename.handler(({ input }) => store.renameSession(input)),
     },
     terminals: {
-      list: protectedApi.terminals.list.handler(({ input }) => {
+      list: authorized.terminals.list.handler(({ input }) => {
         store.session(input.sessionId)
         return terminals.list(input.sessionId)
       }),
-      create: protectedApi.terminals.create.handler(({ input, context }) => {
+      create: authorized.terminals.create.handler(({ input, context }) => {
         const session = store.session(input.sessionId)
         const project = store.project(session.projectId)
         return terminals.create({ ...input, cwd: input.cwd ?? project.cwd }, context.connection.id)
       }),
-      attach: protectedApi.terminals.attach.handler(async function* ({ input, context, signal }) {
+      attach: authorized.terminals.attach.handler(async function* ({ input, context, signal }) {
         try {
           yield* terminals.attach(
             {
@@ -108,16 +108,16 @@ export const createRouter = (options: {
           throw apiError(error)
         }
       }),
-      write: protectedApi.terminals.write.handler(({ input, context }) =>
+      write: authorized.terminals.write.handler(({ input, context }) =>
         terminals.write(input, context.connection.id),
       ),
-      resize: protectedApi.terminals.resize.handler(({ input, context }) =>
+      resize: authorized.terminals.resize.handler(({ input, context }) =>
         terminals.resize(input, context.connection.id),
       ),
-      ack: protectedApi.terminals.ack.handler(({ input, context }) =>
+      ack: authorized.terminals.ack.handler(({ input, context }) =>
         terminals.ack(input, context.connection.id),
       ),
-      close: protectedApi.terminals.close.handler(({ input, context }) =>
+      close: authorized.terminals.close.handler(({ input, context }) =>
         terminals.close(input, context.connection.id),
       ),
     },

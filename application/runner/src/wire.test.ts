@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { protocolVersion, type TerminalEvent, type WireClient } from "@novadeck/protocol"
-import { createWireClient, socketChannel, type WebSocketLike } from "@novadeck/protocol/wire"
+import { createWireClient, socketChannel } from "@novadeck/protocol/wire"
 import headless from "@xterm/headless"
 import { WebSocket as NodeWebSocket } from "ws"
 
@@ -20,12 +20,12 @@ const fixture = async (resources: Resources, options: ServerOptions = {}) => {
   resources.defer(() => rm(directory, { recursive: true, force: true }))
   const server = await startServer({
     port: 0,
-    apiToken: token,
-    databasePath: join(directory, "workspace.sqlite"),
+    token,
+    database: join(directory, "workspace.sqlite"),
     ...options,
-    terminal: {
+    terminals: {
       ...ptyOptions,
-      ...options.terminal,
+      ...options.terminals,
     },
   })
   resources.defer(() => server.close())
@@ -49,7 +49,7 @@ const fixture = async (resources: Resources, options: ServerOptions = {}) => {
     }
     resources.defer(disconnect)
     await once(socket, "open", { signal: AbortSignal.timeout(5_000) })
-    const client = createWireClient(socketChannel(socket as unknown as WebSocketLike))
+    const client = createWireClient(socketChannel(socket))
     if (authenticate) await client.runner.handshake({ protocolVersion, token })
     return { client, socket, disconnect }
   }
@@ -246,7 +246,7 @@ describe("WebSocket authentication and protocol", () => {
   })
 
   it("WebSocket browser origin validation", async ({ resources }) => {
-    const app = await fixture(resources, { corsOrigins: ["https://trusted.novadeck.test"] })
+    const app = await fixture(resources, { origins: ["https://trusted.novadeck.test"] })
     const denied = new NodeWebSocket(app.url, { origin: "https://untrusted.novadeck.test" })
     resources.defer(() => denied.terminate())
     const failure = await new Promise<Error>((resolve) => denied.once("error", resolve))
@@ -269,7 +269,7 @@ describe("WebSocket authentication and protocol", () => {
   })
 
   it("heartbeat disconnection of unresponsive peers", async ({ resources }) => {
-    const app = await fixture(resources, { heartbeatIntervalMs: 50 })
+    const app = await fixture(resources, { heartbeatMs: 50 })
     const silent = new NodeWebSocket(app.url, { autoPong: false })
     resources.defer(() => silent.terminate())
     const closed = once(silent, "close")
@@ -293,7 +293,7 @@ describe("workspace metadata API", () => {
     await disconnect()
     await app.server.close()
     const restarted = await fixture(resources, {
-      databasePath: join(app.directory, "workspace.sqlite"),
+      database: join(app.directory, "workspace.sqlite"),
     })
     const connection = await restarted.connect()
     await expect(connection.client.projects.list()).resolves.toEqual([
@@ -333,7 +333,7 @@ describe("workspace metadata API", () => {
 describe("PTY lifecycle API", () => {
   it("Ctrl-C interruption and subsequent input", async ({ resources }) => {
     const app = await fixture(resources, {
-      terminal: { shell: process.execPath, shellArgs: ["--interactive"] },
+      terminals: { shell: process.execPath, shellArgs: ["--interactive"] },
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
@@ -417,7 +417,7 @@ describe("PTY lifecycle API", () => {
 
   it("shell closure and capacity reuse", async ({ resources }) => {
     const app = await fixture(resources, {
-      terminal: {
+      terminals: {
         maxTerminals: 1,
       },
     })
@@ -435,7 +435,7 @@ describe("PTY lifecycle API", () => {
 
   it("invalid directory and shell spawn failure cleanup", async ({ resources }) => {
     const app = await fixture(resources, {
-      terminal: { shell: join(tmpdir(), `novadeck-missing-${randomUUID()}`) },
+      terminals: { shell: join(tmpdir(), `novadeck-missing-${randomUUID()}`) },
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
@@ -484,7 +484,7 @@ describe("terminal attachment and recovery API", () => {
     socket.binaryType = "arraybuffer"
     resources.defer(() => socket.terminate())
     await once(socket, "open", { signal: AbortSignal.timeout(5_000) })
-    const client = createWireClient(socketChannel(socket as unknown as WebSocketLike))
+    const client = createWireClient(socketChannel(socket))
     await client.runner.handshake({ protocolVersion, token })
     // Flush the request onto TCP, then drop the connection without a close frame.
     // The server may either reject the request or finish creation after release.
@@ -600,7 +600,7 @@ describe("terminal attachment and recovery API", () => {
       resources,
     }) => {
       const app = await fixture(resources, {
-        terminal: { historyBytes: recovery === "snapshot" ? 128 : 1024 * 1024 },
+        terminals: { historyBytes: recovery === "snapshot" ? 128 : 1024 * 1024 },
       })
       const owner = await app.connect()
       const { session } = await app.setup(owner.client)
@@ -725,7 +725,7 @@ describe("terminal attachment and recovery API", () => {
 
   it("unacknowledged event limit and fresh attachment", async ({ resources }) => {
     const app = await fixture(resources, {
-      terminal: { subscriberBytes: 2 * 1024, ackWindowBytes: 1024 },
+      terminals: { subscriberBytes: 2 * 1024, ackWindowBytes: 1024 },
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
@@ -804,7 +804,7 @@ describe("terminal attachment and recovery API", () => {
 
   it("snapshot recovery after replay window expiry", async ({ resources }) => {
     const app = await fixture(resources, {
-      terminal: {
+      terminals: {
         historyBytes: 128,
       },
     })

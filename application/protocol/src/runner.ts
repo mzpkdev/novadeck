@@ -95,7 +95,7 @@ export type Runner = {
 type Link = { readonly wire: WireClient; readonly runnerId: string; readonly channel: Channel }
 
 const fatal = ["UNAUTHORIZED", "INCOMPATIBLE_PROTOCOL", "CLOSED"] as const
-const defaultDelay = (attempt: number) => Math.min(250 * 2 ** attempt, 5_000)
+const backoff = (attempt: number) => Math.min(250 * 2 ** attempt, 5_000)
 
 const asRunnerError = (error: unknown): RunnerError => {
   const failure = normalize(error)
@@ -198,7 +198,7 @@ class Connection {
     private readonly transport: Transport,
     options: ConnectOptions,
   ) {
-    this.retryDelay = options.retryDelay ?? defaultDelay
+    this.retryDelay = options.retryDelay ?? backoff
     this.timeout = options.timeout ?? 10_000
     this.status = new Watched<RunnerStatus>(
       { state: "reconnecting", error: new RunnerError("DISCONNECTED", "Not connected yet.") },
@@ -321,8 +321,8 @@ class Attachment implements AttachedTerminal {
   private cursor: number | undefined
   /** The last event handed out; it counts as consumed once the next one is requested. */
   private delivered: number | undefined
-  private unacknowledged: number | undefined
-  private acknowledging = false
+  private unacked: number | undefined
+  private acking = false
   private attaching: AbortController | undefined
   private ended: "detached" | "exited" | undefined
 
@@ -362,7 +362,7 @@ class Attachment implements AttachedTerminal {
       if (this.ended) return cancel.abort()
       this.stream = { events, link, cancel }
       this.delivered = undefined
-      this.unacknowledged = undefined
+      this.unacked = undefined
     } catch (error) {
       cancel.abort()
       if (this.ended) return
@@ -373,7 +373,7 @@ class Attachment implements AttachedTerminal {
   }
 
   async next(): Promise<IteratorResult<TerminalEvent, undefined>> {
-    this.acknowledge()
+    this.ack()
     while (!this.ended) {
       let link: Link | undefined
       try {
@@ -473,29 +473,29 @@ class Attachment implements AttachedTerminal {
    * sequence. A rejected ACK is retried, since the runner withholds events until it
    * lands; a lost connection instead ends in a fresh attachment with a fresh window.
    */
-  private acknowledge(): void {
+  private ack(): void {
     const stream = this.stream
-    if (this.delivered !== undefined) this.unacknowledged = this.delivered
+    if (this.delivered !== undefined) this.unacked = this.delivered
     this.delivered = undefined
-    if (this.acknowledging || this.unacknowledged === undefined || !stream) return
-    this.acknowledging = true
+    if (this.acking || this.unacked === undefined || !stream) return
+    this.acking = true
     void (async () => {
       try {
-        while (this.stream === stream && this.unacknowledged !== undefined) {
-          const sequence = this.unacknowledged
-          this.unacknowledged = undefined
+        while (this.stream === stream && this.unacked !== undefined) {
+          const sequence = this.unacked
+          this.unacked = undefined
           try {
             // eslint-disable-next-line no-await-in-loop -- One cumulative ACK at a time.
             await stream.link.wire.terminals.ack({ terminalId: this.id, sequence })
           } catch {
             if (!stream.link.channel.open) return
-            this.unacknowledged = Math.max(sequence, this.unacknowledged ?? sequence)
+            this.unacked = Math.max(sequence, this.unacked ?? sequence)
             // eslint-disable-next-line no-await-in-loop -- Back off before retrying.
             await sleep(50, stream.cancel.signal)
           }
         }
       } finally {
-        this.acknowledging = false
+        this.acking = false
       }
     })()
   }
@@ -504,7 +504,7 @@ class Attachment implements AttachedTerminal {
     this.stream?.cancel.abort()
     this.stream = undefined
     this.delivered = undefined
-    this.unacknowledged = undefined
+    this.unacked = undefined
   }
 
   private end(reason: "detached" | "exited"): void {

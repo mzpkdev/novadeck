@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto"
 
 import { createRouter, type Connection } from "./router.js"
-import { TerminalManager, type TerminalManagerOptions } from "./terminals/index.js"
+import { Terminals, type TerminalOptions } from "./terminals/index.js"
 import { WorkspaceStore } from "./workspaces/store.js"
 
 export type RunnerOptions = {
   /** SQLite file for project and session metadata; in memory when omitted. */
-  databasePath?: string
-  terminal?: TerminalManagerOptions
+  database?: string
+  terminals?: TerminalOptions
 }
 
 export type Runner = {
@@ -20,7 +20,7 @@ export type Runner = {
    * Opens a client connection whose handshake accepts the tokens `verify` approves.
    * `terminate` ends its transport when a newer connection of the same client replaces it.
    */
-  connect(verify: (token: string | undefined) => boolean, terminate: () => void): Connection
+  connect(transport: Pick<Connection, "verify" | "terminate" | "onAuthenticated">): Connection
   /** Releases a connection's attachments and terminal control. Its shells keep running. */
   disconnect(connection: Connection): void
   /** Ends every shell and closes the metadata store. */
@@ -30,8 +30,8 @@ export type Runner = {
 /** Owns shells and workspace metadata, independent of how clients reach it. */
 export const createRunner = (options: RunnerOptions = {}): Runner => {
   const id = randomUUID()
-  const terminals = new TerminalManager(options.terminal)
-  const store = new WorkspaceStore(options.databasePath)
+  const terminals = new Terminals(options.terminals)
+  const store = new WorkspaceStore(options.database)
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {
@@ -56,16 +56,14 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
   return {
     id,
     router: createRouter({ runnerId: id, claim, store, terminals }),
-    snapshotBytes: options.terminal?.snapshotBytes ?? 32 * 1024 * 1024,
-    connect: (verify, terminate) => ({
+    snapshotBytes: options.terminals?.snapshotBytes ?? 32 * 1024 * 1024,
+    connect: (transport) => ({
+      ...transport,
       id: randomUUID(),
-      verify,
-      terminate,
       clientId: undefined,
       authenticated: false,
       closed: false,
       calls: 0,
-      onAuthenticated: () => {},
     }),
     disconnect,
     close() {

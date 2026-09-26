@@ -67,7 +67,7 @@ const createWindow = (origin: string): BrowserWindow => {
 const launch = async (): Promise<void> => {
   server = await startHttpServer({
     port: 0,
-    corsOrigins: app.isPackaged ? ["null"] : [developmentOrigin],
+    origins: app.isPackaged ? ["null"] : [developmentOrigin],
   })
 
   if (!app.isPackaged) await waitFor(developmentOrigin)

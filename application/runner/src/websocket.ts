@@ -12,12 +12,12 @@ export type WebSocketOptions = {
   token: string
   origins: readonly string[]
   maxConnections?: number
-  heartbeatIntervalMs?: number
+  heartbeatMs?: number
 }
 
 const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
 
-const rejectUpgrade = (socket: Duplex, status: number, message: string): void => {
+const refuse = (socket: Duplex, status: number, message: string): void => {
   socket.end(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
 }
 
@@ -30,14 +30,14 @@ export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
   if (!Number.isSafeInteger(maxConnections) || maxConnections < 1) {
     throw new Error("maxConnections must be a positive integer")
   }
-  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 30_000
-  if (!Number.isSafeInteger(heartbeatIntervalMs) || heartbeatIntervalMs < 1) {
-    throw new Error("heartbeatIntervalMs must be a positive integer")
+  const heartbeatMs = options.heartbeatMs ?? 30_000
+  if (!Number.isSafeInteger(heartbeatMs) || heartbeatMs < 1) {
+    throw new Error("heartbeatMs must be a positive integer")
   }
   const secret = digest(options.token)
   const verify = (token: string | undefined) =>
     token !== undefined && timingSafeEqual(secret, digest(token))
-  const transportBudget = runner.snapshotBytes + 8 * 1024 * 1024
+  const budget = runner.snapshotBytes + 8 * 1024 * 1024
   const handler = new RPCHandler(runner.router)
   const wss = new WebSocketServer({
     noServer: true,
@@ -52,8 +52,11 @@ export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
     const timer = setTimeout(() => socket.close(1008, "Authentication required"), 10_000)
     timer.unref()
     let heartbeat: ReturnType<typeof setInterval> | undefined
-    const connection = runner.connect(verify, () => socket.terminate())
-    connection.onAuthenticated = () => clearTimeout(timer)
+    const connection = runner.connect({
+      verify,
+      terminate: () => socket.terminate(),
+      onAuthenticated: () => clearTimeout(timer),
+    })
     const cleanup = () => {
       clearTimeout(timer)
       if (heartbeat) clearInterval(heartbeat)
@@ -83,12 +86,12 @@ export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
       }
       alive = false
       if (socket.readyState === WebSocket.OPEN) socket.ping()
-    }, heartbeatIntervalMs)
+    }, heartbeatMs)
     heartbeat.unref()
     // Bound the transport as well as each terminal's acknowledged stream.
     const send = (data: string | ArrayBufferLike | Uint8Array) => {
       const bytes = typeof data === "string" ? Buffer.byteLength(data) : data.byteLength
-      if (socket.bufferedAmount + bytes > transportBudget) {
+      if (socket.bufferedAmount + bytes > budget) {
         cleanup()
         socket.terminate()
         return
@@ -102,13 +105,13 @@ export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
   })
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    if (request.url !== "/api/rpc") return rejectUpgrade(socket, 404, "Not Found")
-    if (stopping) return rejectUpgrade(socket, 503, "Service Unavailable")
+    if (request.url !== "/api/rpc") return refuse(socket, 404, "Not Found")
+    if (stopping) return refuse(socket, 503, "Service Unavailable")
     const origin = request.headers.origin
     if (origin !== undefined && !options.origins.includes(origin)) {
-      return rejectUpgrade(socket, 403, "Forbidden")
+      return refuse(socket, 403, "Forbidden")
     }
-    if (wss.clients.size >= maxConnections) return rejectUpgrade(socket, 429, "Too Many Requests")
+    if (wss.clients.size >= maxConnections) return refuse(socket, 429, "Too Many Requests")
     wss.handleUpgrade(request, socket, head, (client) => wss.emit("connection", client, request))
   }
 

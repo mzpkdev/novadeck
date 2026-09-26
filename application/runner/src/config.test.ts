@@ -1,26 +1,26 @@
-import { serverOptionsFromEnv } from "./config.js"
+import { readConfig } from "./config.js"
 import { describe, expect, it } from "./test.js"
 
 describe("server configuration", () => {
   it("reads the terminal API token and database path", () => {
     const token = "configuration-tests-only-not-a-real-credential"
     expect(
-      serverOptionsFromEnv({
+      readConfig({
         NOVADECK_TOKEN: token,
         NOVADECK_DATABASE: "/tmp/novadeck-test.sqlite",
       }),
-    ).toMatchObject({ apiToken: token, databasePath: "/tmp/novadeck-test.sqlite" })
+    ).toMatchObject({ token, database: "/tmp/novadeck-test.sqlite" })
   })
 
   it("rejects empty, short, and oversized credentials", () => {
     for (const token of ["", " ", "short", "x".repeat(513)]) {
-      expect(() => serverOptionsFromEnv({ NOVADECK_TOKEN: token })).toThrow("NOVADECK_TOKEN")
+      expect(() => readConfig({ NOVADECK_TOKEN: token })).toThrow("NOVADECK_TOKEN")
     }
   })
 
   it("reads server and CORS settings from environment variables", () => {
     expect(
-      serverOptionsFromEnv({
+      readConfig({
         HOST: "0.0.0.0",
         PORT: "4321",
         CORS_ORIGINS: "https://novadeck.example, https://mzpkdev.github.io",
@@ -28,20 +28,20 @@ describe("server configuration", () => {
     ).toEqual({
       hostname: "0.0.0.0",
       port: 4321,
-      corsOrigins: ["https://novadeck.example", "https://mzpkdev.github.io"],
+      origins: ["https://novadeck.example", "https://mzpkdev.github.io"],
     })
   })
 
   it("uses local defaults without environment variables", () => {
-    expect(serverOptionsFromEnv({})).toEqual({
+    expect(readConfig({})).toEqual({
       hostname: "127.0.0.1",
       port: 8787,
-      corsOrigins: ["http://127.0.0.1:5173"],
+      origins: ["http://127.0.0.1:5173"],
     })
   })
 
   it("rejects invalid port values", () => {
-    expect(() => serverOptionsFromEnv({ PORT: "not-a-port" })).toThrow(
+    expect(() => readConfig({ PORT: "not-a-port" })).toThrow(
       "PORT must be an integer between 0 and 65535",
     )
   })

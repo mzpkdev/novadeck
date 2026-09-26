@@ -18,10 +18,11 @@ const onClose = (port: RunnerPort, listener: () => void): void => {
  * closes the port and releases the client's terminals.
  */
 export const servePort = (runner: Runner, port: RunnerPort): (() => void) => {
-  const connection = runner.connect(
-    () => true,
-    () => port.close(),
-  )
+  const connection = runner.connect({
+    verify: () => true,
+    terminate: () => port.close(),
+    onAuthenticated: () => {},
+  })
   const disconnect = () => runner.disconnect(connection)
   new RPCHandler(runner.router).upgrade(port, { context: { connection } })
   onClose(port, disconnect)

@@ -11,13 +11,13 @@ import type { Terminal as Screen } from "@xterm/headless"
 import * as pty from "node-pty"
 
 import { DomainError } from "../errors.js"
-import { serializeSnapshot } from "./snapshot.js"
+import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 
 const { Terminal } = headless
 const OUTPUT_CHARS = 4096
 
-export type TerminalManagerOptions = {
+export type TerminalOptions = {
   shell?: string
   shellArgs?: readonly string[]
   env?: NodeJS.ProcessEnv
@@ -59,17 +59,17 @@ const positive = (value: number | undefined, fallback: number): number => {
 }
 
 /** Owns PTYs for one runner lifetime. Old exited, unattached records are evicted at capacity. */
-export class TerminalManager {
+export class Terminals {
   private readonly records = new Map<string, Record>()
   private readonly pendingOwners = new Map<string, Set<{ released: boolean }>>()
-  private readonly options: Required<Omit<TerminalManagerOptions, "env">> & {
+  private readonly options: Required<Omit<TerminalOptions, "env">> & {
     env: NodeJS.ProcessEnv
   }
   private creating = 0
   private stopping = false
   private shutdownPromise: Promise<void> | undefined
 
-  constructor(options: TerminalManagerOptions = {}) {
+  constructor(options: TerminalOptions = {}) {
     this.options = {
       shell:
         options.shell ??
@@ -90,7 +90,7 @@ export class TerminalManager {
 
   async create(input: Create, ownerId: string): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    this.makeRoom()
+    this.evict()
     if (this.records.size + this.creating >= this.options.maxTerminals)
       throw new DomainError("RESOURCE_LIMIT", "Terminal limit reached.")
     this.creating += 1
@@ -262,7 +262,7 @@ export class TerminalManager {
             if (event.sequence > cursor) subscription.push(event)
         } else {
           subscription.push(
-            serializeSnapshot(
+            snapshot(
               record.screen,
               record.serializer,
               record.summary,
@@ -492,7 +492,7 @@ export class TerminalManager {
     }
   }
 
-  private makeRoom(): void {
+  private evict(): void {
     for (const [id, record] of this.records) {
       if (this.records.size + this.creating < this.options.maxTerminals) return
       if (

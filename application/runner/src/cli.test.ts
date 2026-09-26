@@ -97,17 +97,15 @@ describe("built runner CLI", () => {
     expect(event.exitCode).toBe(7)
     await expect(terminal.next()).resolves.toEqual({ value: undefined, done: true })
     expect(output.output()).not.toContain(token)
-    const { runnerId } = runner.status as { runnerId: string }
+    const first = runner.status
     await runner.close()
     const stopped = await cli.stop()
     if (process.platform !== "win32") expect(stopped).toEqual({ code: 0, signal: null })
 
     const restarted = await launchCli(directory, resources)
     const again = await restarted.connect(token)
-    expect(again.status).toEqual({
-      state: "connected",
-      runnerId: expect.not.stringMatching(runnerId),
-    })
+    expect(again.status).toEqual({ state: "connected", runnerId: expect.any(String) })
+    expect(again.status).not.toEqual(first)
     await expect(again.projects.list()).resolves.toEqual([project])
     await expect(again.sessions.list({ projectId: project.id })).resolves.toEqual([session])
     await expect(again.terminals.list({ sessionId: session.id })).resolves.toEqual([])

@@ -7,7 +7,7 @@ import { createApp } from "./app.js"
 export type HttpOptions = Readonly<{
   hostname?: string
   port?: number
-  corsOrigins?: readonly string[]
+  origins?: readonly string[]
 }>
 
 export type HttpService = {
@@ -38,7 +38,7 @@ export const startHttpServer = async (
 ): Promise<HttpServer> => {
   const hostname = options.hostname ?? "127.0.0.1"
   const port = options.port ?? 8787
-  const app = options.corsOrigins ? createApp({ corsOrigins: options.corsOrigins }) : createApp()
+  const app = options.origins ? createApp({ origins: options.origins }) : createApp()
 
   try {
     return await new Promise((resolve, reject) => {

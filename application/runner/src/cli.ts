@@ -1,6 +1,6 @@
 import { loadEnvFile } from "node:process"
 
-import { serverOptionsFromEnv } from "./config.js"
+import { readConfig } from "./config.js"
 import { startServer } from "./server.js"
 
 try {
@@ -9,7 +9,7 @@ try {
   if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
 }
 
-const server = await startServer(serverOptionsFromEnv())
+const server = await startServer(readConfig())
 
 console.log(`NovaDeck runner listening at ${server.origin}`)
 if (!process.env.NOVADECK_TOKEN) {

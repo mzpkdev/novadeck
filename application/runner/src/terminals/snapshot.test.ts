@@ -3,7 +3,7 @@ import { SerializeAddon } from "@xterm/addon-serialize"
 import headless from "@xterm/headless"
 
 import { describe, expect, it } from "../test.js"
-import { serializeSnapshot } from "./snapshot.js"
+import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 
 const { Terminal } = headless
@@ -41,7 +41,7 @@ describe("bounded terminal snapshots", () => {
       ).join("")
       await new Promise<void>((resolve) => screen.write((line + "\r\n").repeat(1024), resolve))
       const allowance = 32 * 1024 * 1024
-      const event = serializeSnapshot(screen, serializer, ordinary, 10, allowance)
+      const event = snapshot(screen, serializer, ordinary, 10, allowance)
       expect(Buffer.byteLength(JSON.stringify(event))).toBeGreaterThan(4 * 1024 * 1024)
       const subscription = new Subscription(
         "observe",
@@ -78,10 +78,10 @@ describe("bounded terminal snapshots", () => {
         (_, index) => `\u001b[38;2;${index};3;7mLINE_${index}\r\n`,
       ).join("")
       await new Promise<void>((resolve) => screen.write(lines + "\u001b[31mVISIBLE", resolve))
-      const full = serializeSnapshot(screen, serializer, summary, 9, 1024 * 1024)
+      const full = snapshot(screen, serializer, summary, 9, 1024 * 1024)
       const budget = 1024
       expect(Buffer.byteLength(JSON.stringify(full))).toBeGreaterThan(budget)
-      const bounded = serializeSnapshot(screen, serializer, summary, 9, budget)
+      const bounded = snapshot(screen, serializer, summary, 9, budget)
       expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(budget)
       expect(bounded.data).not.toContain("LINE_0")
       expect(bounded).toMatchObject({ terminalId: "terminal", sequence: 9, cols: 20, rows: 4 })
@@ -106,7 +106,7 @@ describe("bounded terminal snapshots", () => {
     screen.loadAddon(serializer)
     try {
       await new Promise<void>((resolve) => screen.write("\u001b[31mVISIBLE", resolve))
-      expect(() => serializeSnapshot(screen, serializer, summary, 1, 1)).toThrow(
+      expect(() => snapshot(screen, serializer, summary, 1, 1)).toThrow(
         expect.objectContaining({ code: "SNAPSHOT_TOO_LARGE" }),
       )
       expect(text(screen)).toContain("VISIBLE")
@@ -137,7 +137,7 @@ describe("bounded terminal snapshots", () => {
       await new Promise<void>((resolve) =>
         screen.write(lines + "\u001b[?1049h\u001b[32mALT_VIEWPORT", resolve),
       )
-      const event = serializeSnapshot(screen, serializer, summary, 12, 1024)
+      const event = snapshot(screen, serializer, summary, 12, 1024)
       expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThanOrEqual(1024)
       await new Promise<void>((resolve) => restored.write(event.data, resolve))
       expect(restored.buffer.active.type).toBe("alternate")
