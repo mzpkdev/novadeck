@@ -45,7 +45,7 @@ network connections.
 
 ```ts
 // Check compatibility before attaching or changing anything.
-const runner = await client.runner.handshake({ protocolVersion: 2, token })
+const runner = await client.runner.handshake({ protocolVersion: 1, token })
 // Returns runner identity, negotiated protocol version, and capabilities.
 
 const projects = await client.projects.list()
