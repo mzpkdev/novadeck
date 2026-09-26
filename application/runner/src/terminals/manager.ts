@@ -26,8 +26,6 @@ export type TerminalOptions = {
   subscriberBytes?: number
   snapshotBytes?: number
   ackWindowBytes?: number
-  /** Windows only: use node-pty's bundled ConPTY instead of the system's. */
-  conptyDll?: boolean
 }
 
 type Create = { sessionId: string; cwd: string; cols: number; rows: number }
@@ -99,7 +97,6 @@ export class Terminals {
       subscriberBytes: positive(options.subscriberBytes, 4 * 1024 * 1024),
       snapshotBytes: positive(options.snapshotBytes, 32 * 1024 * 1024),
       ackWindowBytes: positive(options.ackWindowBytes, 256 * 1024),
-      conptyDll: options.conptyDll ?? process.platform === "win32",
     }
     // Child programs do not need the runner's network capability.
     delete this.options.env.NOVADECK_TOKEN
@@ -133,7 +130,7 @@ export class Terminals {
           cwd,
           env: this.options.env,
           // Windows' built-in console host can lose input; node-pty ships a newer one.
-          useConptyDll: this.options.conptyDll,
+          useConptyDll: process.platform === "win32",
         })
       } catch {
         screen.dispose()
@@ -495,13 +492,7 @@ export class Terminals {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       try {
-        // PROBE (temporary): how long node-pty's kill blocks the event loop.
-        const started = performance.now()
         record.process.kill()
-        const blocked = performance.now() - started
-        if (process.env.NOVADECK_PTY_TIMING && blocked > 50) {
-          console.warn(`PROBE kill blocked ${Math.round(blocked)}ms`)
-        }
       } catch {
         this.exit(record, null)
       }
