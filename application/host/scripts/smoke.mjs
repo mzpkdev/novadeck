@@ -37,9 +37,15 @@ const packaged = () => {
 const { executable, resources } = packaged()
 if (!existsSync(executable)) fail(`The packaged executable is missing: ${executable}`)
 
-// A source build would shadow the prebuilds, which carry the bundled ConPTY files.
+// A compiled build/Release binary would shadow the prebuilds, which carry the bundled
+// ConPTY files. node-pty's Windows install script also copies those files into
+// build/Release/conpty; without a compiled .node beside them, that folder is inert.
 const pty = join(resources, "app.asar.unpacked", "node_modules", "node-pty")
-if (existsSync(join(pty, "build"))) fail("node-pty was rebuilt from source into the package.")
+const build = join(pty, "build")
+const compiled = existsSync(build)
+  ? readdirSync(build, { recursive: true }).filter((file) => String(file).endsWith(".node"))
+  : []
+if (compiled.length > 0) fail(`node-pty was rebuilt from source: ${compiled.join(", ")}`)
 if (process.platform === "win32") {
   for (const file of ["conpty.dll", "OpenConsole.exe"]) {
     const path = join(pty, "prebuilds", `win32-${process.arch}`, "conpty", file)
