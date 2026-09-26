@@ -108,6 +108,7 @@ const DemoTerminalSurface = ({
           <span className="prompt-arrow mr-2 font-semibold">❯</span>
           <input
             ref={commandInput}
+            data-terminal-input
             aria-label={`Command for ${session.name}`}
             autoComplete="off"
             spellCheck={false}

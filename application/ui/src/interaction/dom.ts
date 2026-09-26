@@ -29,9 +29,9 @@ export const insideTerminalRename = (target: EventTarget | null): boolean =>
   within(target, 'input[aria-label^="Rename "]')
 export const insideSwitcherClose = (target: EventTarget | null): boolean =>
   within(target, '[aria-label="Close terminal switcher"]')
+// Terminal surfaces mark the element that receives typed input.
 export const insideTerminalInput = (target: EventTarget | null): boolean =>
-  target instanceof HTMLInputElement &&
-  target.getAttribute("aria-label")?.startsWith("Command for ") === true
+  within(target, "[data-terminal-input]")
 export const terminalTabInteractionActive = (): boolean =>
   Boolean(document.querySelector(".session-tab.editing, .session-tab.dragging"))
 

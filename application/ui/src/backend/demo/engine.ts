@@ -1,8 +1,10 @@
 import type { WorkspaceAction } from "../../model/state"
-import type { Entry, Workspace } from "../../model/types"
+import type { Workspace } from "../../model/types"
 import type { TerminalKey } from "../port"
 import { createTerminalRegistry, terminalKeyId } from "../registry"
 import { mockReply } from "./samples"
+
+export type Entry = { readonly id: string; readonly command: string; readonly reply: string }
 
 export type DemoTerminalSnapshot = {
   readonly draft: string

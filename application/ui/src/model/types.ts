@@ -2,7 +2,6 @@ export type ViewMode = "focus" | "grid" | "canvas"
 export type WindowedView = Exclude<ViewMode, "focus">
 export type PreferencesValue = { fontSize: number; enabledViews: ViewMode[] }
 export type Project = { id: string; name: string; directory: string }
-export type Entry = { id: string; command: string; reply: string }
 
 export type TerminalMetadata = {
   id: string

@@ -15,7 +15,7 @@ import type {
   GridLayouts,
   GridRestoreWidths,
 } from "../../model/types"
-import type { MinimizeControls } from "../../terminals/Terminal"
+import type { MinimizeControls } from "../../terminals/TerminalFrame"
 import { ContextMenu } from "../../ui-toolkit/ContextMenu"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"

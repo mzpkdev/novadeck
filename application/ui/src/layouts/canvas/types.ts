@@ -2,7 +2,7 @@ import type { Node } from "@xyflow/react"
 import type { Dispatch, SetStateAction, Ref, ReactNode } from "react"
 
 import type { SizePreset, TerminalMetadata, CanvasLayout } from "../../model/types"
-import type { MinimizeControls } from "../../terminals/Terminal"
+import type { MinimizeControls } from "../../terminals/TerminalFrame"
 
 export type TerminalNode = Node<
   {

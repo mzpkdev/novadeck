@@ -13,7 +13,7 @@ import {
 import { useRef, type ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
-import type { Entry, TerminalMetadata, WindowedView } from "../model/types"
+import type { TerminalMetadata, WindowedView } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
@@ -26,16 +26,9 @@ export type MinimizeControls = {
 const headerActionClasses =
   "icon-button [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100"
 
-export type TerminalProps = {
+export type TerminalFrameProps = {
   session: TerminalMetadata
-  projectName: string
-  entries: readonly Entry[]
-  cleared: boolean
-  onCommand: (command: string) => void
-  draft: string
-  onDraftChange: (draft: string) => void
-  scrollOffset: number | undefined
-  onScrollChange: (offset: number) => void
+  children: ReactNode
   onFocus?: () => void
   switcher?: { onOpen: (button: HTMLButtonElement) => void }
   onFlyTo?: () => void
@@ -46,8 +39,6 @@ export type TerminalProps = {
   onClose?: () => void
   minimize?: MinimizeControls
   compact?: boolean
-  focusInput?: boolean
-  onInputFocused?: () => void
   active?: boolean
   fresh?: boolean
   rename: TerminalRename | null
@@ -304,17 +295,3 @@ export const TerminalFrame = ({
     </section>
   )
 }
-
-export type TerminalFrameProps = Omit<
-  TerminalProps,
-  | "projectName"
-  | "entries"
-  | "cleared"
-  | "onCommand"
-  | "draft"
-  | "onDraftChange"
-  | "scrollOffset"
-  | "onScrollChange"
-  | "focusInput"
-  | "onInputFocused"
-> & { children: ReactNode }
