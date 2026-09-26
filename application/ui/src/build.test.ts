@@ -27,7 +27,7 @@ describe("compiled frontend", () => {
       const manifest: Manifest = JSON.parse(await read(".vite/manifest.json"))
       const chunks = Object.values(manifest)
       const deferred = chunks.filter((chunk) => chunk.isDynamicEntry)
-      expect(deferred.length).toBeGreaterThanOrEqual(2)
+      expect(deferred.length).toBeGreaterThanOrEqual(4)
 
       const assets = new Set(
         chunks.flatMap((chunk) => [chunk.file, ...(chunk.css ?? []), ...(chunk.assets ?? [])]),

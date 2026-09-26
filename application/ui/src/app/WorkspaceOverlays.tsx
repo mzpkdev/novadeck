@@ -1,9 +1,10 @@
+import { Suspense } from "react"
+
 import { orderedTerminals } from "../model/state"
-import { Preferences } from "../preferences/Preferences"
-import { TerminalSearch } from "../search/TerminalSearch"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
 import { useWorkspace } from "./controller/context"
 import { useRouteDialog } from "./controller/useRouteDialog"
+import { Preferences, TerminalSearch } from "./deferred-views"
 
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = (): React.JSX.Element => {
@@ -45,25 +46,30 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
           selected={visibleRecentSwitcher.ids[visibleRecentSwitcher.index]}
         />
       )}
-      <TerminalSearch
-        onExitComplete={onExitComplete}
-        open={searching}
-        key={context}
-        terminals={ordered}
-        destination={searchLabel}
-        onSelect={openSearchResult}
-        onClose={closeDialog}
-      />
-      <Preferences
-        key={`preferences/${context}`}
-        onExitComplete={onExitComplete}
-        open={settings}
-        value={preferences}
-        tab={route.section}
-        onTabChange={(section) => go({ section })}
-        onChange={updatePreferences}
-        onClose={closeDialog}
-      />
+      {/* Each dialog loads on its own; one opened before its chunk arrives appears once it does. */}
+      <Suspense fallback={null}>
+        <TerminalSearch
+          onExitComplete={onExitComplete}
+          open={searching}
+          key={context}
+          terminals={ordered}
+          destination={searchLabel}
+          onSelect={openSearchResult}
+          onClose={closeDialog}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <Preferences
+          key={`preferences/${context}`}
+          onExitComplete={onExitComplete}
+          open={settings}
+          value={preferences}
+          tab={route.section}
+          onTabChange={(section) => go({ section })}
+          onChange={updatePreferences}
+          onClose={closeDialog}
+        />
+      </Suspense>
     </>
   )
 }
