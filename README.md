@@ -178,21 +178,25 @@ backend-only tests.
 
 Source lives in `application/ui/src/`, grouped in layers:
 
-| Location                                           | What belongs here                                                          |
-| -------------------------------------------------- | -------------------------------------------------------------------------- |
-| `app/`                                             | Composition root: router, backend selection, controllers, page sections.   |
-| `app/controller/`                                  | Route, command, keyboard, and composed workspace controllers.              |
-| `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.      |
-| `backend/demo/`                                    | The demo adapter: sample projects, simulated terminals, and their surface. |
-| `model/`                                           | Pure domain: types, reducer, store, seed, and layout rules in `layout/`.   |
-| `terminals/`                                       | Terminal frame, tabs, rename, and the recent-terminal switcher.            |
-| `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                |
-| `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell presentation state.     |
-| `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                        |
-| `interaction/`                                     | Shortcut bindings and shared DOM focus/overlay contracts.                  |
-| `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                        |
-| `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.              |
-| `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                   |
+| Location                                           | What belongs here                                                           |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `app/`                                             | Composition root: router, backend selection, controllers, page sections.    |
+| `app/controller/`                                  | Route, command, keyboard, and composed workspace controllers.               |
+| `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.       |
+| `backend/demo/`                                    | The demo adapter: sample projects, simulated terminals, and their surface.  |
+| `model/`                                           | Pure domain: types, reducer, store, seed, and layout rules in `layout/`.    |
+| `terminals/`                                       | Terminal frame, tabs, rename, and the recent-terminal switcher.             |
+| `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                 |
+| `layouts/` (top level)                             | Helpers shared by views: view transitions, background gestures, visibility. |
+| `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell presentation state.      |
+| `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                         |
+| `interaction/`                                     | Shortcut bindings and shared DOM focus/overlay contracts.                   |
+| `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                         |
+| `services/`                                        | HTTP clients such as the API status check.                                  |
+| `test/`                                            | Unit-test setup, the MSW server, and shared fixtures.                       |
+| `assets/`                                          | Static files referenced from CSS.                                           |
+| `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.               |
+| `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                    |
 
 Imports point down the layers. `model/` imports nothing else, not even packages.
 `backend/` builds on `model/` and uses React only for the port's types; adapters
@@ -204,7 +208,8 @@ in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout in
 `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
 `layouts/transition.ts` and `main.tsx`. Hooks declare named contracts instead of
-`ReturnType<typeof useHook>`. `src/architecture.test.ts` enforces these rules.
+`ReturnType<typeof useHook>`. `src/architecture.test.ts` enforces these rules and
+fails for a source file that belongs to no layer.
 
 Navigation uses React Router with hash URLs in both the browser and Electron,
 so links work with the packaged `file://` UI and static hosting. For example:
@@ -240,8 +245,13 @@ each terminal frame. A surface marks the element that takes typed input with
 per terminal with one subscription each, so output does not trigger
 workspace-wide renders. A terminal's presentation can unmount during view or
 session changes without losing that state; closing the terminal removes it.
-`backend/registry.ts` provides this lifecycle for any adapter. `App` accepts a
-`backend` factory, and `app/backend.ts` chooses the default.
+`backend/registry.ts` provides this lifecycle for any adapter. `App` reads a
+`createBackend` factory once at mount, and `app/backend.ts` chooses the default.
+
+The port only carries calls from the UI to a backend today. Events from a
+runner (exit status, terminal listings after a reconnect), waiting for an
+asynchronous seed or connection, and disposing a backend arrive with the runner
+adapter. Workspace sessions are still created in the UI, outside the port.
 
 XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
 ends or the view unmounts. Grid and Canvas implementations load on demand. Keep
