@@ -107,7 +107,8 @@ describe("workspace metadata", () => {
       mkdirSync(target)
       symlinkSync(target, link, "junction")
       const project = await store().createProject({ name: "Project", cwd: link })
-      expect(project.cwd).toBe(realpathSync(target))
+      // Match native canonicalization, including expansion of Windows 8.3 paths.
+      expect(project.cwd).toBe(realpathSync.native(target))
     })
 
     it("rejects relative paths, missing paths, and regular files", async ({ directory, store }) => {

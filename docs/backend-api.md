@@ -8,6 +8,9 @@ this terminal API yet.
 
 Use the repository's Node.js 26 and pnpm versions. `node-pty` is a native dependency;
 installation can require Python and a C/C++ toolchain for your platform.
+The pinned `node-pty` 1.1.0 dependency has an installation patch for its published
+macOS spawn-helper permissions ([upstream issue](https://github.com/microsoft/node-pty/issues/850)).
+Keep its pnpm build script enabled; this repair applies to regular installs as well as CI.
 
 From the repository root:
 

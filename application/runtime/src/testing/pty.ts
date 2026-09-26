@@ -12,6 +12,6 @@ export const command = (
     | { type: "burst"; data: string; count: number }
     | { type: "startNoise" }
     | { type: "stopNoise" }
-    | { type: "styled"; cols: number; lines: number }
+    | { type: "styled"; cols: number; lines: number; checkpoint?: string }
     | { type: "exit"; code?: number; data?: string },
 ): string => `${Buffer.from(JSON.stringify(value)).toString("base64")}\n`

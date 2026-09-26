@@ -44,7 +44,10 @@ process.stdin.on("data", (data) => {
         (_, x) =>
           `\u001b[38;2;${x % 256};${(x * 3) % 256};${(x * 7) % 256};48;2;${(x * 11) % 256};${(x * 13) % 256};${(x * 17) % 256}mX`,
       ).join("")
-      process.stdout.write((styledLine + "\r\n").repeat(command.lines) + "COLORED_READY\r\n")
+      process.stdout.write(
+        (styledLine + "\r\n").repeat(command.lines) +
+          `\u001b[0m${command.checkpoint ?? "COLORED_READY"}\r\n`,
+      )
     }
     if (command.type === "exit") {
       process.stdout.write(command.data ?? "", () => process.exit(command.code ?? 0))

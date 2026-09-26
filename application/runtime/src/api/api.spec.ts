@@ -652,11 +652,19 @@ describe("terminal API over WebSockets", () => {
       })
       const output = await reader(resources, owner.client, terminal.id)
       await output.untilText("PTY_READY")
-      await owner.client.terminals.write({
-        terminalId: terminal.id,
-        data: command({ type: "styled", cols: 120, lines: 1024 }),
-      })
-      await output.untilText("COLORED_READY")
+      // Keep each produced batch within the ordinary viewer budget. Waiting for
+      // its checkpoint also acknowledges all preceding events before the next
+      // batch, including platforms that encode PTY rendering more verbosely.
+      for (let batch = 0; batch < 16; batch++) {
+        const checkpoint = `COLORED_BATCH_${batch}_READY`
+        // eslint-disable-next-line no-await-in-loop -- Produce the next batch only after consumption ACKs.
+        await owner.client.terminals.write({
+          terminalId: terminal.id,
+          data: command({ type: "styled", cols: 120, lines: 64, checkpoint }),
+        })
+        // eslint-disable-next-line no-await-in-loop -- Confirm and acknowledge each complete styled batch.
+        await output.untilText(checkpoint)
+      }
       await owner.disconnect()
       const replacement = await app.connect()
       const restored = await reader(resources, replacement.client, terminal.id)
@@ -683,11 +691,11 @@ describe("terminal API over WebSockets", () => {
       await reattached.untilText("CANCEL_RECOVERED")
     })
 
-    it("bounds a viewer that does not acknowledge output and permits fresh attachment", async ({
+    it("bounds a viewer that does not acknowledge events and permits fresh attachment", async ({
       resources,
     }) => {
       const app = await fixture(resources, {
-        terminal: { subscriberBytes: 32 * 1024, ackWindowBytes: 1024 },
+        terminal: { subscriberBytes: 2 * 1024, ackWindowBytes: 1024 },
       })
       const { client } = await app.connect()
       const { session } = await app.setup(client)
@@ -705,10 +713,12 @@ describe("terminal API over WebSockets", () => {
         }
       })()
       const failure = expect(failed).rejects.toMatchObject({ code: "SLOW_CONSUMER" })
-      await client.terminals.write({
-        terminalId: terminal.id,
-        data: command({ type: "burst", data: "x".repeat(79) + "\r", count: 1250 }),
-      })
+      // Resize events enter the same acknowledged queue as terminal output, but
+      // cannot be coalesced by an OS renderer such as Windows ConPTY.
+      for (let index = 0; index < 40; index++) {
+        // eslint-disable-next-line no-await-in-loop -- Exercise real RPC events without acknowledging the observer.
+        await client.terminals.resize({ terminalId: terminal.id, cols: 80 + (index % 2), rows: 24 })
+      }
       await failure
       await print(client, terminal.id, "OVERFLOW_", "RECOVERED")
       const restored = await reader(resources, observer.client, terminal.id, { mode: "observe" })
