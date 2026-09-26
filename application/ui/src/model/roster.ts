@@ -72,6 +72,13 @@ const sameStatus = (terminal: TerminalMetadata, status: TerminalStatus): boolean
   return terminal.state === status.state
 }
 
+// Only the fields a status defines, so nothing else the caller put on it is copied.
+const statusFields = (status: TerminalStatus): TerminalStatus => {
+  if (status.state === "exited") return { state: status.state, exitCode: status.exitCode }
+  if (status.state === "failed") return { state: status.state, message: status.message }
+  return { state: status.state }
+}
+
 // Rebuilds the terminal from its identity so no exit code or message outlives its status.
 const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): TerminalMetadata => ({
   id: terminal.id,
@@ -80,7 +87,7 @@ const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): Termina
   command: terminal.command,
   process: terminal.process,
   kind: terminal.kind,
-  ...status,
+  ...statusFields(status),
 })
 
 export const setTerminalStatus = (

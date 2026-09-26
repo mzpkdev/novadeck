@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { terminalFixture } from "../test/fixtures"
 import { createTerminalState, workspaceReducer, type WorkspaceAction } from "./state"
 import { createStore, createWorkspaceStore } from "./store"
-import type { Workspace } from "./types"
+import type { TerminalStatus, Workspace } from "./types"
 
 const target = { projectId: "project", workspaceSessionId: "initial" }
 const initial = (): Workspace => ({
@@ -239,6 +239,21 @@ describe("terminal status", () => {
     })
     expect(store.getSnapshot()).toBe(previous)
     expect(notifications).toBe(1)
+  })
+
+  it("keeps only the fields the reported status defines", () => {
+    const store = createWorkspaceStore(initial())
+    const reported = { state: "running", exitCode: 1, message: "stale", id: "other" }
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: reported as TerminalStatus,
+    })
+    expect(statusOf(store.getSnapshot())).toEqual({
+      ...terminalFixture(1, "~/project"),
+      state: "running",
+    })
   })
 
   it("treats a new exit code or message as a change", () => {
