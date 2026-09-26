@@ -87,7 +87,8 @@ const launch = async (): Promise<void> => {
   runtime = await startRuntime({
     hostname: "127.0.0.1",
     port: 0,
-    corsOrigins: app.isPackaged ? ["null"] : [developmentOrigin],
+    // Electron sends file:// for its packaged document; browsers can serialize it as null.
+    corsOrigins: app.isPackaged ? ["file://", "null"] : [developmentOrigin],
     apiToken: token,
     databasePath: join(directory, "workspace.sqlite"),
   })
