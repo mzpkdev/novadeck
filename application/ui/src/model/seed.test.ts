@@ -1,7 +1,7 @@
 import { context, describe, expect, it } from "../test"
 import { terminalFixture } from "../test/fixtures"
 import { initialGridLayouts } from "./layout/grid-placement"
-import { workspaceFromSeed, type WorkspaceSeed } from "./seed"
+import { workspaceFromSeed, WorkspaceSeedError, type WorkspaceSeed } from "./seed"
 
 const terminals = [terminalFixture(1, "~/one"), terminalFixture(2, "~/one")]
 const canvasLayout = {
@@ -75,6 +75,17 @@ describe("workspace from a backend seed", () => {
       const project = workspace.projects[0]!
       expect(project.activeSessionId).toBe("latest")
       expect(project.history.map((session) => session.id)).toEqual(["latest", "older"])
+    })
+  })
+
+  context("with nothing to open", () => {
+    it("rejects a seed without projects", () => {
+      expect(() => workspaceFromSeed({ projects: [] }, defaults)).toThrow(WorkspaceSeedError)
+    })
+
+    it("rejects a project without sessions, naming the project", () => {
+      const seed = { projects: [{ id: "one", name: "one", directory: "~/one", sessions: [] }] }
+      expect(() => workspaceFromSeed(seed, defaults)).toThrow(/"one".*no session/)
     })
   })
 })

@@ -21,7 +21,8 @@ export type TerminalSurfaceProps = {
 }
 
 export type Backend = {
-  // The workspace to start from, available before the app first renders.
+  // The workspace to start from, available before the app first renders. It needs at
+  // least one project, each with at least one session; mounting throws otherwise.
   readonly seed: WorkspaceSeed
   // Allocates a terminal synchronously so commands can select and rename it at once.
   readonly newTerminal: (input: { number: number; directory: string }) => TerminalMetadata
