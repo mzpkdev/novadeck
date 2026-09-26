@@ -30,15 +30,15 @@ export const websocket = (url: string | URL, options: { readonly token: string }
 /**
  * Reaches a runner bundled with its host, such as an Electron utility process. Holding
  * the port is the credential. Pass a function to obtain a fresh port on reconnection;
- * a single port cannot reconnect once it closes.
+ * it should give up when `signal` aborts. A single port cannot reconnect once it closes.
  */
 export const messagePort = (
-  port: MessagePortLike | (() => Promise<MessagePortLike>),
+  port: MessagePortLike | ((signal: AbortSignal) => Promise<MessagePortLike>),
 ): Transport => {
   let used = false
   return {
-    async connect() {
-      if (typeof port === "function") return portChannel(await port())
+    async connect(signal) {
+      if (typeof port === "function") return portChannel(await port(signal))
       if (used) throw new RunnerError("CLOSED", "The runner's MessagePort has closed.")
       used = true
       return portChannel(port)

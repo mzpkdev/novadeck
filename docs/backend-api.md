@@ -1,8 +1,8 @@
 # Backend API
 
 This is the first backend-only implementation of the [terminal plan](backend-plan.md).
-The UI and Electron host still use their existing behavior; neither connects to
-this terminal API yet.
+The Electron host runs the runner and hands its window a port to it; the UI itself
+still uses sample data and does not connect yet.
 
 ## Run and test
 
@@ -49,15 +49,15 @@ involved.
 
 Backend CI runs on Linux, macOS, and Windows. POSIX signal and hangup assertions
 are explicitly platform-specific; Windows process termination is not a graceful
-SIGTERM test. Packaged Electron terminal support and remote TLS deployment remain
-verification gates before integration.
+SIGTERM test. Packaged Electron builds and remote TLS deployment remain verification
+gates before integration.
 
 Without a token, the runner exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set.
 Programmatic `startServer` from `@novadeck/runner/server` and `createRunner` use
-an in-memory database when no path is supplied. The original package entry remains HTTP-only
-so existing Electron builds do not pull in native terminal dependencies.
+an in-memory database when no path is supplied. `@novadeck/runner/http` stays free of
+native terminal code, so the Electron main process can serve the status endpoint without it.
 
 For a VPS, terminate TLS at a trusted reverse proxy and forward WebSocket upgrades.
 Set `CORS_ORIGINS` to the exact trusted frontend origins. A static UI can later
@@ -72,12 +72,15 @@ The runner owns shells and workspace metadata. The UI talks to it through one
 separately; only the transport differs.
 
 ```ts
-import { connectRunner, messagePort, websocket } from "@novadeck/protocol/client"
+import { connectRunner, desktop, messagePort, websocket } from "@novadeck/protocol/client"
 
 // Deployed separately: a token-authenticated WebSocket (use wss:// remotely).
 const runner = await connectRunner(websocket("ws://127.0.0.1:8787/api/rpc", { token }))
 
-// Bundled in a host such as Electron: a MessagePort to the runner process.
+// Bundled in the NovaDeck desktop app: a port from the host to its runner process.
+const runner = await connectRunner(desktop())
+
+// Any other host that hands the page a MessagePort to a runner.
 const runner = await connectRunner(messagePort(port))
 ```
 
@@ -149,7 +152,20 @@ const dispose = servePort(runner, port)
 
 The CLI (`pnpm --filter @novadeck/runner start`) and `startServer` from
 `@novadeck/runner/server` compose the WebSocket form with the HTTP status
-endpoint. Electron wiring is not part of this change.
+endpoint.
+
+### Desktop app
+
+The Electron host runs the runner in a utility process, so shells live outside the
+main process, and stores metadata in `workspace.sqlite` under Electron's user-data
+directory. `desktop()` asks the preload bridge for a port with
+`window.novadeck.requestRunner(id)`. The main process accepts that request only from
+the main frame of its own windows, opens a `MessageChannelMain`, and gives one end to
+the runner and the other to the page as a window message carrying the same ID
+(`@novadeck/protocol/bridge` defines the contract). Every connection, including a
+reconnection, asks for a fresh port. If the runner process dies, the host starts a
+new one on the next request; shells end with it, and metadata remains. Quitting the
+app ends the runner's shells before exiting.
 
 ### Wire contract
 

@@ -16,6 +16,10 @@
     "./wire": {
       "types": "./dist/wire.d.ts",
       "default": "./dist/wire.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "default": "./dist/bridge.js"
     }
   },
   "scripts": {

@@ -169,8 +169,8 @@ See the [terminal backend plan](docs/backend-plan.md) for the proposed runner
 architecture and typed API.
 
 The standalone backend now supports authenticated, real terminal processes and
-persistent project/session metadata. It is **not connected to the UI or Electron
-host yet**; the interface above still uses mock data. See the
+persistent project/session metadata. The Electron host runs it in a utility process,
+but the interface above is **not connected yet** and still uses mock data. See the
 [backend API guide](docs/backend-api.md) for configuration, client examples, and
 backend-only tests.
 
@@ -249,8 +249,9 @@ cp application/runner/example.env application/runner/.env
 - Terminal API: `NOVADECK_TOKEN` enables authenticated WebSocket RPC;
   `NOVADECK_DATABASE` optionally selects the SQLite metadata file. Without a token,
   only the existing HTTP status API is available.
-- Electron: the host starts the bundled runner on a local, OS-selected port and
-  supplies its URL through a sandboxed preload bridge. Package `.env` files are not used.
+- Electron: the host runs the runner in a utility process and hands each window a
+  MessagePort through a sandboxed preload bridge. It also serves the status endpoint
+  on a local, OS-selected port. Package `.env` files are not used.
 
 For a separately hosted frontend, set `VITE_API_URL` to the public HTTPS API URL
 before building and add the frontend origin to `CORS_ORIGINS`. The generated

@@ -22,6 +22,18 @@ describe("compiled desktop host", () => {
       expect(preload).toContain("127.0.0.1")
     })
 
+    it("runs the runner in a utility process and relays one port per request", async () => {
+      const main = await read("main/index.js")
+      const preload = await read("preload/index.cjs")
+
+      expect(main).toContain("utilityProcess.fork")
+      expect(main).toContain("runner.js")
+      expect(main).toContain("MessageChannelMain")
+      expect(main).toContain("senderFrame")
+      expect(preload).toContain("novadeck:runner-port")
+      expect(preload).toContain("requestRunner")
+    })
+
     it("blocks renderer navigation and denies permissions by default", async () => {
       const main = await read("main/index.js")
 

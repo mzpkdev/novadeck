@@ -42,6 +42,8 @@ account are not isolated from the runner.
 A runner served over a MessagePort (`servePort`) trusts whoever holds the port and
 skips the token. Hand such a port only to a renderer the host itself loaded, such
 as an Electron window with context isolation, and never forward it to web content.
+The desktop host answers port requests only from the main frame of its own windows,
+which cannot navigate away from the packaged UI.
 
 Bind to loopback by default. Remote access requires a trusted HTTPS/WSS reverse
 proxy (or a private encrypted network), explicit browser origins in

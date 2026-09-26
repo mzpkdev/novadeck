@@ -2,15 +2,17 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
-import { app, BrowserWindow, session, shell } from "electron"
+import { app, BrowserWindow, ipcMain, session, shell } from "electron"
 
-import { apiUrlArgumentPrefix } from "../bridge.js"
+import { apiUrlArgumentPrefix, runnerPortChannel } from "../bridge.js"
+import { startRunner, type RunnerHost } from "./runner.js"
 
 const appId = "dev.mzpk.novadeck"
 const developmentOrigin = "http://127.0.0.1:5173"
 const currentDirectory = dirname(fileURLToPath(import.meta.url))
 
 let server: HttpServer | undefined
+let runner: RunnerHost | undefined
 let stopping = false
 
 const waitFor = async (origin: string, attempts = 100): Promise<void> => {
@@ -65,6 +67,16 @@ const createWindow = (origin: string): BrowserWindow => {
 }
 
 const launch = async (): Promise<void> => {
+  runner = startRunner({
+    entry: join(currentDirectory, "runner.js"),
+    database: join(app.getPath("userData"), "workspace.sqlite"),
+  })
+  // Only the main frame of a window this app created may reach the runner.
+  ipcMain.on(runnerPortChannel, (event, id: unknown) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window || event.senderFrame !== event.sender.mainFrame || typeof id !== "string") return
+    runner?.connect(event.sender, id)
+  })
   server = await startHttpServer({
     port: 0,
     origins: app.isPackaged ? ["null"] : [developmentOrigin],
@@ -96,11 +108,11 @@ app.whenReady().then(() => {
 })
 
 app.on("before-quit", (event) => {
-  if (!server || stopping) return
+  if ((!server && !runner) || stopping) return
 
   event.preventDefault()
   stopping = true
-  void server.close().finally(() => app.quit())
+  void Promise.allSettled([runner?.close(), server?.close()]).finally(() => app.quit())
 })
 
 app.on("window-all-closed", () => {

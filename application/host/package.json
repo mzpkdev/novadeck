@@ -17,7 +17,12 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "dependencies": {
+    "node-pty": "1.2.0-beta.14",
+    "ws": "8.21.3"
+  },
   "devDependencies": {
+    "@novadeck/protocol": "workspace:*",
     "@novadeck/runner": "workspace:*",
     "@novadeck/ui": "workspace:*",
     "@types/node": "^26.6.2",

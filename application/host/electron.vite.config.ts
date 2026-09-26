@@ -4,9 +4,21 @@ import { defineConfig } from "electron-vite"
 
 export default defineConfig({
   main: {
+    ssr: {
+      resolve: {
+        // @xterm/headless's module field points at a browser entry it does not ship.
+        mainFields: ["main", "module"],
+      },
+    },
     build: {
       rollupOptions: {
-        input: resolve("src/main/index.ts"),
+        input: {
+          index: resolve("src/main/index.ts"),
+          // The runner runs in its own utility process.
+          runner: resolve("src/runner/index.ts"),
+        },
+        // Native PTYs and ws's optional helpers load through Node's own resolver.
+        external: ["node-pty", "ws"],
       },
     },
   },
