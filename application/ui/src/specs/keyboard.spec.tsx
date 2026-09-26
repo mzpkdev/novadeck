@@ -436,6 +436,67 @@ describe("preferences shortcut", () => {
   })
 })
 
+describe("workspace keys after choosing a view", () => {
+  context("when pressing T while the view choice has keyboard focus", () => {
+    it("creates a terminal", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+
+      await press("t")
+
+      await expect.element(terminalCount(7)).toBeVisible()
+    })
+  })
+
+  context("when pressing / while the view choice has keyboard focus", () => {
+    it("opens search", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+
+      await press("/")
+
+      await expect.element(findDialog()).toBeVisible()
+    })
+  })
+
+  context("when pressing F while the view choice has keyboard focus", () => {
+    it("toggles Focus", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+
+      await press("f")
+
+      await expect.element(view("Focus")).toBeChecked()
+    })
+  })
+
+  context("when pressing arrows while the view choice has keyboard focus", () => {
+    it("moves one view or terminal at a time", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+
+      await press("{ArrowRight}")
+      await expect.element(view("Canvas")).toBeChecked()
+      await press("{ArrowLeft}")
+      await expect.element(view("Grid")).toBeChecked()
+      await press("{ArrowDown}")
+      await expectSelected("Dev server")
+    })
+  })
+
+  context("when pressing B while the view choice has keyboard focus", () => {
+    it("hides the sidebar", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+      await expect.element(sidebar()).toBeVisible()
+
+      await press("b")
+
+      await expect.element(sidebar()).not.toBeInTheDocument()
+    })
+  })
+})
+
 describe("typing in a terminal", () => {
   context("when typing workspace keys into a command input", () => {
     it("types them instead of running workspace shortcuts", async () => {

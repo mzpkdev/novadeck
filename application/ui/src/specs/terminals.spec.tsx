@@ -160,11 +160,10 @@ describe("renaming terminals", () => {
         await headerName("Dev server").dblClick()
 
         await expect.element(headerRenameField("Dev server")).toHaveFocus()
-        // One input event: typing key by key into the Canvas header drops keystrokes (reported).
-        await headerRenameField("Dev server").fill("My server")
-        await press("{Enter}")
-        await expect.element(headerName("My server")).toBeVisible()
-        await expect.element(terminalTab("My server")).toBeVisible()
+        // Typed key by key: every keystroke must land, including while the view re-renders.
+        await press("My server typed key by key{Enter}")
+        await expect.element(headerName("My server typed key by key")).toBeVisible()
+        await expect.element(terminalTab("My server typed key by key")).toBeVisible()
         await expect.element(view(name)).toBeChecked()
       })
 
@@ -289,8 +288,7 @@ describe("renaming terminals", () => {
       await chooseView("Canvas")
       await headerName("Dev server").dblClick()
       await expect.element(headerRenameField("Dev server")).toHaveFocus()
-      // One input event: typing key by key into the Canvas header drops keystrokes (reported).
-      await headerRenameField("Dev server").fill("Shared shell")
+      await press("Shared shell")
 
       await sidebarRenameField("Dev server").click()
       await press("{Enter}")
@@ -345,6 +343,18 @@ describe("closing terminals", () => {
       await newTerminalButton().click()
       await press("{Enter}")
       await expect.element(terminal("Terminal 07")).toBeVisible()
+    })
+  })
+
+  context("when a single terminal is left", () => {
+    it("counts it in the singular", async () => {
+      await openWorkspace()
+      for (const name of terminalTabNames().slice(1)) {
+        // oxlint-disable-next-line no-await-in-loop -- Each close changes the list.
+        await tabAction(`Close ${name}`).click()
+      }
+
+      await expect.poll(visibleTerminalCounts).toEqual(["1 terminal"])
     })
   })
 
