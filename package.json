@@ -15,7 +15,7 @@
     "package:linux": "pnpm --filter @novadeck/host package:linux",
     "package:mac": "pnpm --filter @novadeck/host package:mac",
     "package:win": "pnpm --filter @novadeck/host package:win",
-    "test": "pnpm run test:repository && turbo run test",
+    "test": "pnpm run test:repository && turbo run test --concurrency=1",
     "test:repository": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && turbo run typecheck",
     "lint": "oxlint --deny-warnings .",

@@ -269,7 +269,9 @@ pnpm build
 ```
 
 Use package filters for focused checks, for example `pnpm exec turbo run test --filter=@novadeck/ui`,
-which builds what the tests need first.
+which builds what the tests need first. `pnpm test` runs one package's tests at a time:
+the UI's browser tests and the runner's real-PTY tests are timing-sensitive, and running
+them together starved the smaller CI runners enough to time out.
 Tests use Vitest: UI behaviour specs run in Vitest Browser Mode on Chromium, and
 MSW covers HTTP behavior. The PR workflows run formatting, lint, typechecking,
 builds, and PR metadata checks on Linux. The Test jobs run all package and repository
