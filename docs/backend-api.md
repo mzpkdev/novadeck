@@ -29,12 +29,12 @@ in the ignored `.env` file. Leave `HOST=127.0.0.1` for local testing. Run:
 
 ```sh
 pnpm --filter @novadeck/runner start
-pnpm --filter @novadeck/runner test
+pnpm exec turbo run test --filter=@novadeck/runner
 ```
 
-Build the protocol package again after changing its schemas or client. The runner
-test command rebuilds its own CLI before running. Tests use ephemeral listeners,
-temporary SQLite files, and real PTYs; the UI is not involved.
+The turbo test command builds the protocol package and the runner CLI before running.
+Tests use ephemeral listeners, temporary SQLite files, and real PTYs; the UI is not
+involved.
 
 - API tests use a small controllable child program inside a real PTY. Separate
   smoke tests exercise the platform shell and launch the built CLI in a fresh

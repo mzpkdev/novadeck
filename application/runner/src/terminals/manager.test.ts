@@ -20,7 +20,8 @@ const fixture = (resources: Resources) => {
     resources.defer(() => instance.shutdown())
     return instance
   }
-  const attach = (
+  /** The raw stream, which opens with the `attached` marker once control is established. */
+  const open = (
     target: Terminals,
     id: string,
     owner: string,
@@ -37,9 +38,10 @@ const fixture = (resources: Resources) => {
       controller.abort()
       await stream.return(undefined)
     })
-    return withoutMarker(stream)
+    return stream
   }
-  return { manager, attach }
+  const attach = (...args: Parameters<typeof open>) => withoutMarker(open(...args))
+  return { manager, open, attach }
 }
 
 const it = base.extend<{ terminals: ReturnType<typeof fixture> }>({
@@ -66,19 +68,27 @@ describe("terminal creation ownership", () => {
   })
 })
 
+/** Reads until `predicate` holds; `text` joins all screen data so far, across chunk splits. */
 const until = async (
   manager: Terminals,
   stream: AsyncGenerator<TerminalEvent>,
   owner: string,
-  predicate: (event: TerminalEvent) => boolean,
+  predicate: (event: TerminalEvent, text: string) => boolean,
 ): Promise<TerminalEvent[]> => {
   const events: TerminalEvent[] = []
+  let text = ""
   for await (const event of stream) {
     events.push(event)
+    if (event.type === "output" || event.type === "snapshot") text += event.data
     manager.ack({ terminalId: event.terminalId, sequence: event.sequence }, owner)
-    if (predicate(event)) return events
+    if (predicate(event, text)) return events
   }
   throw new Error("Terminal ended before the expected event.")
+}
+
+const untilPid = async (manager: Terminals, stream: AsyncGenerator<TerminalEvent>) => {
+  const events = await until(manager, stream, "owner", (_event, text) => /PID=\d+\r?\n/.test(text))
+  return events.map((event) => ("data" in event ? event.data : "")).join("")
 }
 
 describe.skipIf(process.platform === "win32")("terminal manager", () => {
@@ -98,11 +108,8 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       { terminalId: terminal.id, data: "printf '\\033[31mCOLOR\\033[0m\\n'\n" },
       "first",
     )
-    const events = await until(
-      manager,
-      first,
-      "first",
-      (event) => event.type === "output" && event.data.includes("\u001b[31mCOLOR"),
+    const events = await until(manager, first, "first", (_event, text) =>
+      text.includes("\u001b[31mCOLOR"),
     )
     const cursor = events.at(-1)!.sequence
     expect(
@@ -132,12 +139,11 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     await observer.return(undefined)
 
     // until() closes its iterator and releases control; reclaim it independently.
-    const continuation = terminals.attach(manager, terminal.id, "second", cursor)
-    const pending = continuation.next()
-    // Attachment registration occurs asynchronously before accepting writes.
-    await Promise.resolve()
+    const continuation = terminals.open(manager, terminal.id, "second", cursor)
+    // The marker confirms control before any input is accepted.
+    expect((await continuation.next()).value).toMatchObject({ type: "attached", mode: "control" })
     manager.resize({ terminalId: terminal.id, cols: 100, rows: 30 }, "second")
-    const resized = (await pending).value!
+    const resized = (await continuation.next()).value!
     expect(resized).toMatchObject({ type: "resized", sequence: cursor + 1, cols: 100, rows: 30 })
     manager.ack({ terminalId: terminal.id, sequence: resized.sequence }, "second")
     await continuation.return(undefined)
@@ -220,12 +226,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     const first = terminals.attach(manager, terminal.id, "owner")
     await first.next()
     manager.write({ terminalId: terminal.id, data: "printf 'HISTORY\\n'\n" }, "owner")
-    await until(
-      manager,
-      first,
-      "owner",
-      (event) => event.type === "output" && event.data.includes("HISTORY\r\n"),
-    )
+    await until(manager, first, "owner", (_event, text) => text.includes("HISTORY\r\n"))
     const reconnect = terminals.attach(manager, terminal.id, "other", 0)
     expect((await reconnect.next()).value).toMatchObject({
       type: "snapshot",
@@ -359,15 +360,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       "owner",
     )
     const stream = terminals.attach(manager, terminal.id, "owner")
-    const events = await until(
-      manager,
-      stream,
-      "owner",
-      (event) =>
-        (event.type === "output" || event.type === "snapshot") && /PID=\d+/.test(event.data),
-    )
-    const data = events.map((event) => ("data" in event ? event.data : "")).join("")
-    const pid = Number(/PID=(\d+)/.exec(data)![1])
+    const pid = Number(/PID=(\d+)\r?\n/.exec(await untilPid(manager, stream))![1])
     const control = terminals.attach(manager, terminal.id, "control")
     await control.next()
     await manager.close({ terminalId: terminal.id }, "control")
@@ -375,18 +368,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
     const second = await manager.create({ sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
     const secondStream = terminals.attach(manager, second.id, "owner")
-    const secondEvents = await until(
-      manager,
-      secondStream,
-      "owner",
-      (event) =>
-        (event.type === "output" || event.type === "snapshot") && /PID=\d+/.test(event.data),
-    )
-    const secondPid = Number(
-      /PID=(\d+)/.exec(
-        secondEvents.map((event) => ("data" in event ? event.data : "")).join(""),
-      )![1],
-    )
+    const secondPid = Number(/PID=(\d+)\r?\n/.exec(await untilPid(manager, secondStream))![1])
     await manager.shutdown()
     expect(() => process.kill(secondPid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
     await expect(
