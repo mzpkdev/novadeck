@@ -16,6 +16,14 @@ Beta.14 retains the older [delayed-worker startup deadlock risk](https://github.
 particularly under a debugger. Keep its pnpm build script enabled and validate
 dependency upgrades on Linux, macOS, and Windows.
 
+On Windows the runner uses node-pty's bundled ConPTY (`useConptyDll`), a newer console
+host from Windows Terminal, instead of the one built into Windows. The built-in host
+occasionally lost terminal input: a traced test command never reached the program
+although node-pty reported no error. node-pty marks this option experimental, and
+console-host fixes now arrive with node-pty upgrades rather than Windows Update.
+Packaged Windows builds must keep `conpty.dll` and `OpenConsole.exe` unpacked from
+the asar archive; this has not yet been verified in a packaged build.
+
 From the repository root:
 
 ```sh
