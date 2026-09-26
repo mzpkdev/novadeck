@@ -51,7 +51,7 @@ export const TerminalSearch = ({
           (element) => element.dataset.terminal === chosen.current,
         )
         return (
-          terminal?.querySelector<HTMLInputElement>("input") ??
+          terminal?.querySelector<HTMLElement>("[data-terminal-input], input") ??
           terminal?.querySelector<HTMLButtonElement>("button") ??
           null
         )

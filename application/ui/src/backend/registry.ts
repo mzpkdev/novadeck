@@ -2,6 +2,8 @@ import type { WorkspaceAction } from "../model/state"
 import type { TerminalMetadata, Workspace } from "../model/types"
 import type { TerminalKey } from "./port"
 
+// Both hooks run inside Backend.commit, so they follow its rules: synchronous,
+// safe to repeat, and free of I/O. Surfaces start and stop real work in effects.
 export type TerminalLifecycle<Entry> = {
   // `created` is true only for a terminal added by the committed actions,
   // not for one that already existed when the backend first saw the workspace.

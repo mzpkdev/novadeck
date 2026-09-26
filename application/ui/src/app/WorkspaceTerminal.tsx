@@ -1,3 +1,5 @@
+import { useCallback, useMemo } from "react"
+
 import { transitionTerminal } from "../layouts/transition"
 import type { TerminalMetadata } from "../model/types"
 import { TerminalFrame, type TerminalLayoutControls } from "../terminals/TerminalFrame"
@@ -31,6 +33,14 @@ export const WorkspaceTerminal = ({
   const compact = view !== "focus"
   const large = view !== "focus" && sizePresets[view][session.id] === "large"
   const windowedLabel = windowedDestination === "canvas" ? "Canvas" : "Grid"
+  const { projectId, workspaceSessionId } = target
+  const terminalId = session.id
+  // Surfaces may depend on these in effects, so keep them stable across renders.
+  const terminalKey = useMemo(
+    () => ({ projectId, workspaceSessionId, terminalId }),
+    [projectId, workspaceSessionId, terminalId],
+  )
+  const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
   return (
     <TerminalFrame
       session={session}
@@ -75,7 +85,7 @@ export const WorkspaceTerminal = ({
           : {})}
     >
       <backend.TerminalSurface
-        terminalKey={{ ...target, terminalId: session.id }}
+        terminalKey={terminalKey}
         terminal={session}
         projectName={project.name}
         minimized={minimize?.minimized}
@@ -83,7 +93,7 @@ export const WorkspaceTerminal = ({
         focusInput={
           keyboardFocus?.id === session.id && keyboardFocus.view === view && selected === session.id
         }
-        onInputFocused={() => setKeyboardFocus(null)}
+        onInputFocused={onInputFocused}
       />
     </TerminalFrame>
   )

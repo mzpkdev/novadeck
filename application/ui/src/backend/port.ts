@@ -9,14 +9,29 @@ import type { TerminalMetadata, Workspace, WorkspaceTarget } from "../model/type
 export type TerminalKey = WorkspaceTarget & { readonly terminalId: string }
 
 // What a terminal's content area receives; the frame around it stays in terminals/.
+//
+// The rest of the UI relies on this markup from the surface:
+// - Its root carries `data-terminal-content` (view transitions morph it) and the
+//   `terminal-content` class (layout and canvas styles size and fade it).
+// - Its root carries `nodrag nopan`, so Canvas does not drag or pan from the content,
+//   and stops `wheel` propagation without Ctrl/Meta, so scrolling output does not
+//   zoom the canvas while pinch and Ctrl+wheel still do.
+// - It sets `hidden={minimized && !clipContent}`, `aria-hidden` and `inert` from
+//   `minimized`; Grid keeps a minimizing surface painted while its height animates.
+// - The element that takes typed input carries `data-terminal-input`, so shortcuts
+//   treat it as terminal input and search returns focus to it.
+// Start I/O such as attaching to a process in the surface's effects, not in `commit`.
 export type TerminalSurfaceProps = {
+  // Stable for the terminal's lifetime, so it is safe in effect dependencies.
   readonly terminalKey: TerminalKey
   readonly terminal: TerminalMetadata
   readonly projectName: string
   // Undefined when the layout offers no minimize control (Focus).
   readonly minimized?: boolean | undefined
   readonly clipContent?: boolean | undefined
+  // True while keyboard navigation asks the surface to focus its input.
   readonly focusInput: boolean
+  // Stable across renders; call it after focusing the input.
   readonly onInputFocused: () => void
 }
 
@@ -27,7 +42,9 @@ export type Backend = {
   // Allocates a terminal synchronously so commands can select and rename it at once.
   readonly newTerminal: (input: { number: number; directory: string }) => TerminalMetadata
   // Called inside every workspace store commit, before listeners, and once with []
-  // for the initial workspace.
+  // for the initial workspace. It runs during a render (a useState initializer) and,
+  // under StrictMode, possibly on an instance React then discards: keep it
+  // synchronous bookkeeping that is safe to repeat, with no I/O.
   readonly commit: (workspace: Workspace, actions: readonly WorkspaceAction[]) => void
   // Created once per backend instance so its identity is stable across renders.
   readonly TerminalSurface: ComponentType<TerminalSurfaceProps>
