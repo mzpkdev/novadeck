@@ -143,12 +143,25 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     // The marker confirms control before any input is accepted.
     expect((await continuation.next()).value).toMatchObject({ type: "attached", mode: "control" })
     manager.resize({ terminalId: terminal.id, cols: 100, rows: 30 }, "second")
-    const resized = (await continuation.next()).value!
-    expect(resized).toMatchObject({ type: "resized", sequence: cursor + 1, cols: 100, rows: 30 })
-    manager.ack({ terminalId: terminal.id, sequence: resized.sequence }, "second")
+    // Output still in flight when the cursor was taken is replayed first, in order.
+    const resumed = await until(
+      manager,
+      withoutMarker(continuation),
+      "second",
+      (event) => event.type === "resized",
+    )
+    expect(resumed.map((event) => event.sequence)).toEqual(
+      resumed.map((_event, index) => cursor + 1 + index),
+    )
+    expect(resumed.at(-1)).toMatchObject({ type: "resized", cols: 100, rows: 30 })
     await continuation.return(undefined)
     const replay = terminals.attach(manager, terminal.id, "third", cursor)
-    expect((await replay.next()).value).toEqual(resized)
+    const replayed: TerminalEvent[] = []
+    for (const _event of resumed) {
+      // eslint-disable-next-line no-await-in-loop -- Replay is read in order.
+      replayed.push((await replay.next()).value!)
+    }
+    expect(replayed).toEqual(resumed)
     expect(manager.get(terminal.id).status).toBe("running")
   })
 
