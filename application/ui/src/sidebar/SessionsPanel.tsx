@@ -1,6 +1,6 @@
 import { Layers2, Plus } from "lucide-react"
 
-import { shortcutBindings } from "../shortcuts"
+import { shortcutBindings } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { sidebarListClasses, SidebarItem } from "./SidebarItem"
 import { sidebarCreateClasses } from "./SidebarPanel"

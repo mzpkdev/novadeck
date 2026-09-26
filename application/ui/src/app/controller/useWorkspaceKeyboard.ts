@@ -1,13 +1,5 @@
 import { useEffect, useEffectEvent, type RefObject } from "react"
 
-import type { useWorkspaceCommands } from "../app/useWorkspaceCommands"
-import type { useWorkspaceRoute } from "../app/useWorkspaceRoute"
-import type { CanvasHandle } from "../layouts/canvas/Canvas"
-import { activeSession, orderedSessions } from "../model/state"
-import type { TerminalMetadata, PreferencesValue } from "../model/types"
-import { viewModes } from "../preferences/preferences-storage"
-import type { useWorkspaceShell } from "../shell/useWorkspaceShell"
-import { matchesShortcut, shortcutBindings, workspaceShortcutBindings } from "../shortcuts"
 import {
   workspaceShortcutTarget,
   workspaceOverlayOpen,
@@ -22,9 +14,21 @@ import {
   insideTerminalInput,
   insideTerminalRename,
   insideSwitcherClose,
-} from "./dom"
-import type { useRecentSwitcher } from "./useRecentSwitcher"
-import type { useTerminalRename } from "./useTerminalRename"
+} from "../../interaction/dom"
+import {
+  matchesShortcut,
+  shortcutBindings,
+  workspaceShortcutBindings,
+} from "../../interaction/shortcuts"
+import type { CanvasHandle } from "../../layouts/canvas/Canvas"
+import { activeSession, orderedSessions } from "../../model/state"
+import type { TerminalMetadata, PreferencesValue } from "../../model/types"
+import { viewModes } from "../../preferences/preferences-storage"
+import type { useWorkspaceShell } from "../../shell/useWorkspaceShell"
+import type { useRecentSwitcher } from "../../terminals/useRecentSwitcher"
+import type { useTerminalRename } from "../../terminals/useTerminalRename"
+import type { useWorkspaceCommands } from "./useWorkspaceCommands"
+import type { useWorkspaceRoute } from "./useWorkspaceRoute"
 
 export const useWorkspaceKeyboard = ({
   routeState,

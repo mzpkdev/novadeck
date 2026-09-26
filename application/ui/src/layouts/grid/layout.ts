@@ -1,14 +1,14 @@
 import { verticalCompactor } from "react-grid-layout"
 
+import { gridColumns } from "../../model/layout/grid-placement"
+import { gridPresetWidth } from "../../model/layout/terminal-size"
 import type {
   GridBreakpoint,
   GridLayouts,
   GridRestoreWidths,
   TerminalMetadata,
 } from "../../model/types"
-import { gridPresetWidth } from "../terminal-size"
-import { gridColumns } from "./placement"
-export { gridColumns } from "./placement"
+export { gridColumns } from "../../model/layout/grid-placement"
 
 const expandedHeight = (): number => Math.ceil((400 + 16) / 24)
 

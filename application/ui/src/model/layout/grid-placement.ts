@@ -1,5 +1,5 @@
-import type { CanvasLayout, GridBreakpoint, GridLayouts, TerminalMetadata } from "../../model/types"
-import { canvasPresetSize, gridPresetWidth } from "../terminal-size"
+import type { CanvasLayout, GridBreakpoint, GridLayouts, TerminalMetadata } from "../types"
+import { canvasPresetSize, gridPresetWidth } from "./terminal-size"
 
 export const gridColumns = { wide: 16, desktop: 12, tablet: 8, mobile: 4 }
 

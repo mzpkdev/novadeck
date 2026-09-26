@@ -5,7 +5,7 @@ import type { TerminalMetadata } from "../model/types"
 import { Dialog } from "../ui-toolkit/Dialog"
 import { SearchCombobox } from "../ui-toolkit/SearchCombobox"
 
-import motion from "../shell/ModalMotion.module.css"
+import motion from "../ui-toolkit/ModalMotion.module.css"
 
 export const TerminalSearch = ({
   open,

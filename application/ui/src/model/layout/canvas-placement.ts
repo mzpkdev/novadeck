@@ -1,4 +1,4 @@
-import type { CanvasLayout, TerminalMetadata } from "../../model/types"
+import type { CanvasLayout, TerminalMetadata } from "../types"
 
 const gap = 60
 const defaultWidth = 550

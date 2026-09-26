@@ -153,7 +153,7 @@ export const workspaceShortcutBindings = (): Record<
   },
 })
 
-export { workspaceShortcutTarget, workspaceOverlayOpen } from "./interaction/dom"
+export { workspaceShortcutTarget, workspaceOverlayOpen } from "./dom"
 
 export const matchesShortcut = (event: KeyboardEvent, shortcut: Shortcut): boolean =>
   (event.key.toLowerCase() === shortcut.key.toLowerCase() ||

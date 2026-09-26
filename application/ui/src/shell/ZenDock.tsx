@@ -1,8 +1,8 @@
 import { ChevronLeft, LayoutGrid, PanelLeft, Plus, SquareDashedMousePointer, X } from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 
+import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { ViewMode } from "../model/types"
-import { workspaceShortcutBindings } from "../shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 
 const views = [

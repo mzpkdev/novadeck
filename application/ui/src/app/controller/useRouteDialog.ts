@@ -1,6 +1,6 @@
 import { useState } from "react"
 
-import type { WorkspaceRoute } from "./routing"
+import type { WorkspaceRoute } from "../routing"
 
 // Retain only the outgoing dialog for its exit animation. The route determines
 // which dialog opens next, including when Back/Forward interrupts a transition.

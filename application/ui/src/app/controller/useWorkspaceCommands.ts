@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react"
 
-import { createMockTerminal } from "../backend/demo/samples"
-import type { useRecentSwitcher } from "../interaction/useRecentSwitcher"
-import type { useTerminalRename } from "../interaction/useTerminalRename"
-import { addCompactGridTerminal } from "../layouts/grid/placement"
-import { cancelTerminalTransition, transitionTerminal } from "../layouts/transition"
-import { activeProject, activeSession } from "../model/state"
-import type { Project, PreferencesValue, ViewMode, WorkspaceTarget } from "../model/types"
-import type { useWorkspaceShell } from "../shell/useWorkspaceShell"
-import { newWorkspaceSession } from "./demo-workspace"
+import { createMockTerminal } from "../../backend/demo/samples"
+import { cancelTerminalTransition, transitionTerminal } from "../../layouts/transition"
+import { addCompactGridTerminal } from "../../model/layout/grid-placement"
+import { activeProject, activeSession } from "../../model/state"
+import type { Project, PreferencesValue, ViewMode, WorkspaceTarget } from "../../model/types"
+import type { useWorkspaceShell } from "../../shell/useWorkspaceShell"
+import type { useRecentSwitcher } from "../../terminals/useRecentSwitcher"
+import type { useTerminalRename } from "../../terminals/useTerminalRename"
+import { newWorkspaceSession } from "../demo-workspace"
 import type { useWorkspaceRoute } from "./useWorkspaceRoute"
 
 type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { WorkspaceAction } from "../model/state"
 import type { TerminalMetadata, ViewMode, WorkspaceTarget } from "../model/types"
-import type { TerminalRename } from "../terminals/TerminalRenameInput"
+import type { TerminalRename } from "./TerminalRenameInput"
 
 type RenameSession = {
   context: string

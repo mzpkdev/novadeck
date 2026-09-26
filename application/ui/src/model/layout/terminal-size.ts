@@ -1,4 +1,4 @@
-import type { SizePreset } from "../model/types"
+import type { SizePreset } from "../types"
 
 type Dimensions = { width: number; height: number }
 

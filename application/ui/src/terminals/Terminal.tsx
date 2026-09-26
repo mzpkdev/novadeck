@@ -13,8 +13,8 @@ import {
 import { useRef, type ReactNode } from "react"
 
 import { DemoTerminalSurface } from "../backend/demo/DemoTerminalSurface"
+import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { Entry, TerminalMetadata, WindowedView } from "../model/types"
-import { workspaceShortcutBindings } from "../shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 

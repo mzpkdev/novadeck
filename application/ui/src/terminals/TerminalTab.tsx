@@ -1,8 +1,8 @@
 import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Eye, EyeOff, Pencil, Terminal as TerminalIcon, X } from "lucide-react"
 
+import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { TerminalMetadata } from "../model/types"
-import { workspaceShortcutBindings } from "../shortcuts"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"

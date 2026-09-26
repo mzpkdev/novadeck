@@ -1,5 +1,5 @@
-import { adjacentCanvasPosition } from "../layouts/canvas/placement"
-import { canvasPresetSize } from "../layouts/terminal-size"
+import { adjacentCanvasPosition } from "./layout/canvas-placement"
+import { canvasPresetSize } from "./layout/terminal-size"
 import type {
   CanvasLayout,
   GridLayouts,

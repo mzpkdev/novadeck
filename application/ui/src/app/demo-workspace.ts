@@ -1,5 +1,5 @@
 import { demoCanvasLayout, initialProjects, projectSessions } from "../backend/demo/samples"
-import { initialGridLayouts } from "../layouts/grid/placement"
+import { initialGridLayouts } from "../model/layout/grid-placement"
 import {
   createWorkspace,
   createWorkspaceSession,

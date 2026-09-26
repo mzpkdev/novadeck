@@ -1,8 +1,8 @@
 import { Plus } from "lucide-react"
 import type { ComponentProps } from "react"
 
+import { shortcutBindings, workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { TerminalMetadata, WorkspaceSession } from "../model/types"
-import { shortcutBindings, workspaceShortcutBindings } from "../shortcuts"
 import { SessionsPanel } from "../sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../sidebar/SidebarPanel"
 import { TerminalTabs } from "../terminals/TerminalTabs"

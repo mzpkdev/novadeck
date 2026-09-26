@@ -10,9 +10,9 @@ import {
 import { useSyncExternalStore } from "react"
 import { Link } from "react-router"
 
+import { shortcutBindings, workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { Project, ViewMode } from "../model/types"
 import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
-import { shortcutBindings, workspaceShortcutBindings } from "../shortcuts"
 import { SegmentGroup } from "../ui-toolkit/SegmentGroup"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 

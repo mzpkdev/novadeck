@@ -19,14 +19,14 @@ import {
   type ReactNode,
 } from "react"
 
+import { workspaceOverlayOpen, workspaceShortcutTarget } from "../../interaction/shortcuts"
+import { canvasPointPosition, viewportCanvasPosition } from "../../model/layout/canvas-placement"
+import { canvasNewTerminalSize, canvasPresetSize } from "../../model/layout/terminal-size"
 import type { TerminalMetadata, CanvasLayout } from "../../model/types"
-import { workspaceOverlayOpen, workspaceShortcutTarget } from "../../shortcuts"
 import { ContextMenu } from "../../ui-toolkit/ContextMenu"
 import { backgroundPointerHandlers } from "../background"
-import { canvasNewTerminalSize, canvasPresetSize } from "../terminal-size"
 import { useTerminalVisibility } from "../useTerminalVisibility"
 import { fitOptions, canvasStep, terminalHeaderHeight, chromeScaleAt, centerOf } from "./geometry"
-import { canvasPointPosition, viewportCanvasPosition } from "./placement"
 import { TerminalContent, nodeTypes } from "./TerminalNode"
 import type { CanvasProps, CanvasHandle, TerminalCanvasProps, TerminalNode } from "./types"
 import { useCanvasGeometry } from "./useCanvasGeometry"

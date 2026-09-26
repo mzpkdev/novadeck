@@ -1,6 +1,6 @@
 import { History, Terminal as TerminalIcon } from "lucide-react"
 
-import { workspaceShortcutBindings } from "../shortcuts"
+import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
 
 export const SidebarRail = ({

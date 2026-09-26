@@ -3,9 +3,6 @@ import { HashRouter, useNavigationType } from "react-router"
 
 import { RuntimeTerminal } from "../backend/demo/RuntimeTerminal"
 import { sidebarToggle } from "../interaction/dom"
-import { useRecentSwitcher } from "../interaction/useRecentSwitcher"
-import { useTerminalRename } from "../interaction/useTerminalRename"
-import { useWorkspaceKeyboard } from "../interaction/useWorkspaceKeyboard"
 import type { CanvasHandle } from "../layouts/canvas/types"
 import { Focus } from "../layouts/focus/Focus"
 import {
@@ -28,12 +25,15 @@ import { WorkspaceSidebar } from "../shell/WorkspaceSidebar"
 import { ZenDock } from "../shell/ZenDock"
 import type { MinimizeControls } from "../terminals/Terminal"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
+import { useRecentSwitcher } from "../terminals/useRecentSwitcher"
+import { useTerminalRename } from "../terminals/useTerminalRename"
+import { useRouteDialog } from "./controller/useRouteDialog"
+import { useWorkspaceCommands } from "./controller/useWorkspaceCommands"
+import { useWorkspaceKeyboard } from "./controller/useWorkspaceKeyboard"
+import { useWorkspaceRoute } from "./controller/useWorkspaceRoute"
 import { Canvas, Grid } from "./deferred-views"
 import { initializeWorkspace } from "./demo-workspace"
 import { routeUrl } from "./routing"
-import { useRouteDialog } from "./useRouteDialog"
-import { useWorkspaceCommands } from "./useWorkspaceCommands"
-import { useWorkspaceRoute } from "./useWorkspaceRoute"
 
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
   useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])

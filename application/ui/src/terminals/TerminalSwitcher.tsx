@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
 import type { TerminalMetadata } from "../model/types"
 import { searchResultClasses } from "../ui-toolkit/SearchCombobox"
 
-import motion from "../shell/ModalMotion.module.css"
+import motion from "../ui-toolkit/ModalMotion.module.css"
 
 export const TerminalSwitcher = ({
   sessions,

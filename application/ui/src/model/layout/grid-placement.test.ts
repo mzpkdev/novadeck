@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { createMockTerminal } from "../../backend/demo/samples"
-import { addCompactGridTerminal, gridColumns, initialGridLayouts } from "./placement"
+import { addCompactGridTerminal, gridColumns, initialGridLayouts } from "./grid-placement"
 
 describe("initial Grid placement", () => {
   it("stacks terminals in each breakpoint's columns using the saved heights", () => {

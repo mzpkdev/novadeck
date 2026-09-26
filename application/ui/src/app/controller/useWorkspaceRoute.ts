@@ -1,11 +1,11 @@
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useLocation, useNavigate } from "react-router"
 
-import { createTerminalRuntime } from "../backend/demo/engine"
-import type { WorkspaceAction } from "../model/state"
-import { createWorkspaceStore, type WorkspaceTransaction } from "../model/store"
-import type { PreferencesValue, Workspace } from "../model/types"
-import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "./routing"
+import { createTerminalRuntime } from "../../backend/demo/engine"
+import type { WorkspaceAction } from "../../model/state"
+import { createWorkspaceStore, type WorkspaceTransaction } from "../../model/store"
+import type { PreferencesValue, Workspace } from "../../model/types"
+import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "../routing"
 
 const currentTimestamp = (): number => Date.now()
 

@@ -1,14 +1,14 @@
 import { LayoutGrid, Moon, PanelLeft, SquareDashedMousePointer, Sun, X } from "lucide-react"
 import { useRef, useState } from "react"
 
+import { shortcutBindings, workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { PreferencesValue } from "../model/types"
-import { shortcutBindings, workspaceShortcutBindings } from "../shortcuts"
 import { Dialog } from "../ui-toolkit/Dialog"
 import { Select } from "../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
 import { viewModes } from "./preferences-storage"
 
-import motion from "../shell/ModalMotion.module.css"
+import motion from "../ui-toolkit/ModalMotion.module.css"
 
 const themes = [{ label: "Monochrome", value: "monochrome" }]
 const fontSizes = [12, 13, 15].map((size) => ({ label: `${size}px`, value: String(size) }))
