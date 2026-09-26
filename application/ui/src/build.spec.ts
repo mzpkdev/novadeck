@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
+import type { Manifest } from "vite"
+
 import { context, describe, expect, it } from "./test"
 
 const output = join(process.cwd(), "dist")
@@ -14,10 +16,39 @@ describe("compiled frontend", () => {
         match[1] ? [match[1]] : [],
       )
 
-      expect(paths).toHaveLength(2)
+      expect(paths.some((path) => path.endsWith(".js"))).toBe(true)
+      expect(paths.some((path) => path.endsWith(".css"))).toBe(true)
       await expect(
         Promise.all(paths.map((path) => read(path.replace(/^\.\//, "")))),
-      ).resolves.toHaveLength(2)
+      ).resolves.toHaveLength(paths.length)
+    })
+
+    it("ships every deferred view and its assets alongside the entry point", async () => {
+      const manifest: Manifest = JSON.parse(await read(".vite/manifest.json"))
+      const chunks = Object.values(manifest)
+      const deferred = chunks.filter((chunk) => chunk.isDynamicEntry)
+      expect(deferred.length).toBeGreaterThanOrEqual(2)
+
+      const assets = new Set(
+        chunks.flatMap((chunk) => [chunk.file, ...(chunk.css ?? []), ...(chunk.assets ?? [])]),
+      )
+      await Promise.all(
+        [...assets].map(async (path) => {
+          expect(path.startsWith("assets/")).toBe(true)
+          expect(await read(path)).not.toBe("")
+        }),
+      )
+
+      const initial = new Set<string>()
+      const visit = (key: string): void => {
+        if (initial.has(key)) return
+        initial.add(key)
+        for (const imported of manifest[key]?.imports ?? []) visit(imported)
+      }
+      for (const [key, chunk] of Object.entries(manifest)) if (chunk.isEntry) visit(key)
+      for (const [key, chunk] of Object.entries(manifest)) {
+        if (chunk.isDynamicEntry) expect(initial.has(key)).toBe(false)
+      }
     })
 
     it("contains a production Content Security Policy", async () => {

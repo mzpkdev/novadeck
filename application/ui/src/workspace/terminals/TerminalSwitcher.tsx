@@ -2,7 +2,7 @@ import { ArrowUpRight, Layers, Terminal, X } from "lucide-react"
 import { useEffect, useRef } from "react"
 
 import { searchResultClasses } from "../../ui-toolkit/SearchCombobox"
-import type { Session } from "../model/types"
+import type { TerminalMetadata } from "../model/types"
 
 import motion from "../shell/ModalMotion.module.css"
 
@@ -14,7 +14,7 @@ export const TerminalSwitcher = ({
   onSelect,
   onClose,
 }: {
-  sessions: Session[]
+  sessions: TerminalMetadata[]
   selected: string | undefined
   project: string
   mode: "held" | "click"

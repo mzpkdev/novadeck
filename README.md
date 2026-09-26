@@ -170,14 +170,16 @@ Source lives in `application/ui/src/`:
 
 | Location                                                               | What belongs here                                                       |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `app/`                                                                 | App composition and browser effects.                                    |
+| `app/`                                                                 | App composition, navigation, and workspace commands.                    |
 | `ui-toolkit/`                                                          | Reusable styled controls and direct Ark UI imports.                     |
-| `workspace/model/`                                                     | Shared types, the pure workspace reducer, and selectors.                |
-| `workspace/terminals/`                                                 | Terminal cards and sortable tabs.                                       |
-| `workspace/layouts/`                                                   | Grid and Canvas views, layout logic, and view transitions.              |
+| `workspace/model/`                                                     | Application types, the pure reducer, and the workspace command store.   |
+| `workspace/runtime/`                                                   | Per-terminal drafts, output, and scroll state, independent of views.    |
+| `workspace/terminals/`                                                 | Terminal runtime bindings, chrome, output surfaces, and sortable tabs.  |
+| `workspace/layouts/canvas/`, `grid/`, `focus/`                         | View adapters, layout rules, and colocated library styles.              |
+| `workspace/interaction/`                                               | Interaction controllers and shared DOM focus/overlay contracts.         |
 | `workspace/sidebar/`, `projects/`, `preferences/`, `search/`, `shell/` | Feature components, navigation, and app chrome, all under `workspace/`. |
 | `workspace/mock/`                                                      | Sample projects, transcripts, and command replies.                      |
-| `styles.css`                                                           | Theme tokens, global primitives, and specialized library/canvas styles. |
+| `styles.css`                                                           | Theme tokens, global primitives, and shared workspace styles.           |
 | `specs/`                                                               | Behaviour specs for the whole UI, run in a real browser.                |
 
 Navigation uses React Router with hash URLs in both the browser and Electron,
@@ -198,11 +200,25 @@ memory: reloading an expired session link falls back to that project's available
 session. Unknown routes, missing terminals, and disabled views are replaced with
 a valid URL. Routing does not persist terminal data across reloads.
 
-Keep project and session data in the workspace reducer; the URL owns the current
-navigation, while the reducer remembers each session's last selection. Address updates by
-project and session IDs so delayed callbacks affect the session that created
-them. XYFlow owns live Canvas gestures; save geometry and camera state when a
-gesture ends or the view unmounts.
+The URL owns current navigation; the workspace model remembers each session's
+last selection. Commands reduce the latest model synchronously, so several
+actions in one event retain one another's changes. Read command-time state when
+constructing an action that depends on a counter or the current selection.
+Address updates by project and session IDs so delayed callbacks affect their
+original session or become a no-op after it is removed.
+
+Terminal metadata and saved layouts live in the workspace model. Drafts, output,
+and scroll offsets live in a separate app-scoped runtime with one subscription
+per terminal. A terminal's presentation can unmount during view or session
+changes without losing its runtime state; closing the terminal removes that
+state. Keep future terminal transport and buffer ownership behind this boundary,
+so output does not trigger workspace-wide renders.
+
+XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
+ends or the view unmounts. Grid and Canvas implementations load on demand. Keep
+vendor-specific types and CSS inside their adapters, and use application-owned
+types for saved layouts. Rename, keyboard, recent-terminal switching, and shell
+presentation have separate controllers; App composes their public operations.
 
 Keep direct Ark UI imports in `ui-toolkit/`; features own their content and state.
 Use Tailwind utilities for ordinary component styling. See [CODING.md](CODING.md)
@@ -212,7 +228,8 @@ for broader conventions.
 
 `src/specs/` describes the UI the way a person uses it and guards the UX while
 the implementation changes. Each spec renders the whole app in headless Chromium
-with real CSS, layout, pointer, and keyboard input, and reduced motion enabled.
+with real CSS, layout, pointer, and keyboard input. The main behaviour project
+enables reduced motion; the smaller motion project exercises ordinary transitions.
 Specs find elements by accessible role, name, or text, and assert only what a
 person can observe: what is visible, focused, selected, or where it sits on
 screen. They never import components, mock app modules, or select by CSS class,
@@ -223,7 +240,9 @@ through accessible markup, improve the markup rather than adding test IDs.
 
 Install the browser once with `pnpm --filter @novadeck/ui exec playwright install chromium`.
 Run a single spec with `pnpm --filter @novadeck/ui exec vitest run --project behaviour src/specs/canvas.spec.tsx`,
-or `--project unit` for the non-UI unit tests.
+or `--project unit` for reducer invariants, runtime lifecycle, layout rules, and
+build/service checks. Use `--project motion` for transition behavior. The build
+checks validate both entry assets and deferred chunks with relative packaged paths.
 
 ## Configuration
 

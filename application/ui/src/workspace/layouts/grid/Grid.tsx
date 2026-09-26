@@ -1,3 +1,4 @@
+import "./grid.css"
 import { Plus } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from "react"
 import {
@@ -7,24 +8,24 @@ import {
   verticalCompactor,
 } from "react-grid-layout"
 
-import { ContextMenu } from "../../ui-toolkit/ContextMenu"
+import { ContextMenu } from "../../../ui-toolkit/ContextMenu"
 import type {
   SizePreset,
-  Session,
+  TerminalMetadata,
   GridBreakpoint,
   GridLayouts,
   GridRestoreWidths,
-} from "../model/types"
-import type { MinimizeControls } from "../terminals/Terminal"
-import { backgroundPointerHandlers } from "./background"
+} from "../../model/types"
+import type { MinimizeControls } from "../../terminals/Terminal"
+import { backgroundPointerHandlers } from "../background"
+import { useTerminalVisibility } from "../useTerminalVisibility"
 import {
   expandedGridLayouts,
   gridColumns,
   toggleGridWidth,
   type GridWidthToggle,
   visibleGridLayouts,
-} from "./grid-layout"
-import { useTerminalVisibility } from "./useTerminalVisibility"
+} from "./layout"
 
 const breakpoints = { wide: 1586, desktop: 1036, tablet: 636, mobile: 0 }
 
@@ -32,7 +33,7 @@ type Props = {
   presets: Record<string, SizePreset>
   restoreWidths: Record<string, GridRestoreWidths>
   onToggleWidth: (id: string, change: GridWidthToggle) => void
-  sessions: Session[]
+  sessions: TerminalMetadata[]
   navigation: number
   selected: string
   onSelect: (id: string) => void
@@ -44,7 +45,7 @@ type Props = {
   onMinimize: (id: string) => void
   onCreate: () => void
   render: (
-    session: Session,
+    session: TerminalMetadata,
     minimize: MinimizeControls,
     resize: (button: HTMLButtonElement) => void,
   ) => ReactNode
@@ -156,6 +157,7 @@ export const Grid = ({
 
   const grid = (
     <div
+      data-workspace-viewport
       className="grid-viewport relative flex min-h-0 flex-1 overflow-hidden workspace-background"
       aria-label="Terminal grid"
       tabIndex={-1}

@@ -1,14 +1,12 @@
-import { adjacentCanvasPosition } from "../layouts/canvas-placement"
-import { addCompactGridTerminal } from "../layouts/grid-layout"
+import { adjacentCanvasPosition } from "../layouts/canvas/placement"
 import { canvasPresetSize } from "../layouts/terminal-size"
 import type {
   CanvasLayout,
-  Entry,
   GridLayouts,
   GridRestoreWidths,
   PreferencesValue,
   Project,
-  Session,
+  TerminalMetadata,
   SizePreset,
   ViewMode,
   WindowedView,
@@ -48,16 +46,18 @@ export type WorkspaceAction =
       now: number
       enabledViews?: ViewMode[]
     }
-  | { type: "terminal/add"; target: WorkspaceTarget; session: Session }
+  | {
+      type: "terminal/add"
+      target: WorkspaceTarget
+      session: TerminalMetadata
+      gridLayouts?: GridLayouts
+      canvasGeometry?: CanvasLayout["geometry"][string]
+    }
   | { type: "terminal/rename"; target: WorkspaceTarget; terminalId: string; name: string }
   | { type: "terminal/close"; target: WorkspaceTarget; terminalId: string }
   | { type: "terminal/reorder"; target: WorkspaceTarget; tabOrder: string[] }
   | { type: "terminal/select"; target: WorkspaceTarget; terminalId: string }
   | { type: "terminal/visibility"; target: WorkspaceTarget; terminalId: string; hidden: boolean }
-  | { type: "terminal/draft"; target: WorkspaceTarget; terminalId: string; draft: string }
-  | { type: "terminal/scroll"; target: WorkspaceTarget; terminalId: string; offset: number }
-  | { type: "terminal/output-clear"; target: WorkspaceTarget; terminalId: string }
-  | { type: "terminal/output-entry"; target: WorkspaceTarget; terminalId: string; entry: Entry }
   | {
       type: "view/change"
       target: WorkspaceTarget
@@ -94,22 +94,19 @@ export const createWorkspaceSession = (
 })
 
 export const createSessionState = (
-  sessions: Session[],
+  sessions: TerminalMetadata[],
   view: ViewMode,
   windowedView: WindowedView,
+  initial: { canvasLayout?: CanvasLayout; gridLayouts?: GridLayouts } = {},
 ): WorkspaceState => ({
   view,
   windowedView,
-  drafts: {},
-  scrollOffsets: {},
   sessions,
   tabOrder: [],
   selected: sessions[0]?.id ?? "",
-  entries: {},
-  cleared: {},
   sizePresets: { grid: {}, canvas: {} },
-  canvasLayout: { geometry: {}, minimized: {} },
-  gridLayouts: {},
+  canvasLayout: initial.canvasLayout ?? { geometry: {}, minimized: {} },
+  gridLayouts: initial.gridLayouts ?? {},
   gridRestoreWidths: {},
   gridMinimized: {},
   hidden: {},
@@ -135,7 +132,7 @@ export const activeSession = (workspace: Workspace): WorkspaceSession | undefine
   return project?.history.find((session) => session.id === project.activeSessionId)
 }
 
-export const orderedSessions = (state: WorkspaceState): Session[] => {
+export const orderedSessions = (state: WorkspaceState): TerminalMetadata[] => {
   const byId = new Map(state.sessions.map((session) => [session.id, session]))
   const ordered = state.tabOrder.flatMap((id) => {
     const session = byId.get(id)
@@ -211,7 +208,7 @@ const withoutGridItem = (layouts: GridLayouts, terminalId: string): GridLayouts 
   return changed ? next : layouts
 }
 
-const pruneCanvasLayout = (layout: CanvasLayout, sessions: Session[]): CanvasLayout => {
+const pruneCanvasLayout = (layout: CanvasLayout, sessions: TerminalMetadata[]): CanvasLayout => {
   const ids = new Set(sessions.map((session) => session.id))
   const geometry = Object.fromEntries(
     Object.entries(layout.geometry).filter(([id]) => ids.has(id)),
@@ -225,7 +222,7 @@ const pruneCanvasLayout = (layout: CanvasLayout, sessions: Session[]): CanvasLay
     : { ...layout, geometry, minimized }
 }
 
-const pruneGridLayouts = (layouts: GridLayouts, sessions: Session[]): GridLayouts => {
+const pruneGridLayouts = (layouts: GridLayouts, sessions: TerminalMetadata[]): GridLayouts => {
   const ids = new Set(sessions.map((session) => session.id))
   const next = Object.fromEntries(
     Object.entries(layouts).map(([breakpoint, layout]) => [
@@ -268,10 +265,6 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
     sessions: state.sessions.filter((session) => session.id !== terminalId),
     tabOrder: state.tabOrder.filter((id) => id !== terminalId),
     selected,
-    entries: withoutKey(state.entries, terminalId),
-    cleared: withoutKey(state.cleared, terminalId),
-    drafts: withoutKey(state.drafts, terminalId),
-    scrollOffsets: withoutKey(state.scrollOffsets, terminalId),
     canvasLayout:
       geometry === state.canvasLayout.geometry && minimized === state.canvasLayout.minimized
         ? state.canvasLayout
@@ -388,7 +381,7 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
               state.canvasLayout,
               canvasPresetSize("small").height,
             )
-          : { x: action.session.x, y: action.session.y }
+          : { x: 80, y: 80 }
         return {
           ...state,
           sessions: [...state.sessions, action.session],
@@ -396,18 +389,19 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
             ...state.canvasLayout,
             geometry: {
               ...state.canvasLayout.geometry,
-              [action.session.id]: {
+              [action.session.id]: action.canvasGeometry ?? {
                 position,
                 ...canvasPresetSize("small"),
               },
             },
           },
-          gridLayouts: addCompactGridTerminal(state.sessions, state.gridLayouts, action.session),
+          gridLayouts: action.gridLayouts
+            ? pruneGridLayouts(action.gridLayouts, [...state.sessions, action.session])
+            : state.gridLayouts,
           sizePresets: {
             canvas: { ...state.sizePresets.canvas, [action.session.id]: "small" },
             grid: { ...state.sizePresets.grid, [action.session.id]: "small" },
           },
-          cleared: { ...state.cleared, [action.session.id]: true },
           selected: action.session.id,
           nextTerminalNumber: state.nextTerminalNumber + 1,
         }
@@ -449,44 +443,6 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
         hasTerminal(state, action.terminalId) &&
         Boolean(state.hidden[action.terminalId]) !== action.hidden
           ? { ...state, hidden: { ...state.hidden, [action.terminalId]: action.hidden } }
-          : state,
-      )
-    case "terminal/draft":
-      return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId) && state.drafts[action.terminalId] !== action.draft
-          ? { ...state, drafts: { ...state.drafts, [action.terminalId]: action.draft } }
-          : state,
-      )
-    case "terminal/scroll":
-      return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId) &&
-        state.scrollOffsets[action.terminalId] !== action.offset
-          ? {
-              ...state,
-              scrollOffsets: { ...state.scrollOffsets, [action.terminalId]: action.offset },
-            }
-          : state,
-      )
-    case "terminal/output-clear":
-      return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId)
-          ? {
-              ...state,
-              cleared: { ...state.cleared, [action.terminalId]: true },
-              entries: { ...state.entries, [action.terminalId]: [] },
-            }
-          : state,
-      )
-    case "terminal/output-entry":
-      return updateTarget(workspace, action.target, (state) =>
-        hasTerminal(state, action.terminalId)
-          ? {
-              ...state,
-              entries: {
-                ...state.entries,
-                [action.terminalId]: [...(state.entries[action.terminalId] ?? []), action.entry],
-              },
-            }
           : state,
       )
     case "view/change":

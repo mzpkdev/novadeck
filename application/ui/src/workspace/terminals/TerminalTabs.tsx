@@ -11,10 +11,10 @@ import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
 import { useMemo, useState } from "react"
 
-import type { Session } from "../model/types"
+import type { TerminalMetadata } from "../model/types"
 import { sidebarListClasses } from "../sidebar/SidebarItem"
-import { SessionTab } from "./SessionTab"
 import type { TerminalRename } from "./TerminalRenameInput"
+import { TerminalTab } from "./TerminalTab"
 
 const sensors = [
   PointerSensor.configure({
@@ -38,7 +38,7 @@ const feedback = Feedback.configure({
 })
 const cursor = Cursor.configure({ cursor: "pointer" })
 
-export const SessionList = ({
+export const TerminalTabs = ({
   sessions,
   selected,
   hidden,
@@ -52,7 +52,7 @@ export const SessionList = ({
   onClose,
   onReorder,
 }: {
-  sessions: Session[]
+  sessions: TerminalMetadata[]
   selected: string
   hidden: Record<string, boolean>
   rename: TerminalRename | null
@@ -86,7 +86,7 @@ export const SessionList = ({
     >
       <div className={`session-list ${sidebarListClasses}`} ref={setList}>
         {sessions.map((session, index) => (
-          <SessionTab
+          <TerminalTab
             key={session.id}
             session={session}
             index={index}
