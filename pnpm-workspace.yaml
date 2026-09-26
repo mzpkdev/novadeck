@@ -8,5 +8,6 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   msw: false
+  node-pty: true
 minimumReleaseAgeExclude:
   - "@types/node@26.6.2"

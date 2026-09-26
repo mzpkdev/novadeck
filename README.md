@@ -152,17 +152,27 @@ Open <http://127.0.0.1:5173>. For UI-only work, use
 
 This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 
-| Package               | Responsibility                                                   |
-| --------------------- | ---------------------------------------------------------------- |
-| `application/ui`      | React frontend built with Vite, Tailwind CSS, and Lucide icons.  |
-| `application/runtime` | Hono API running on Node.js, independent of frontend delivery.   |
-| `application/host`    | Electron host that starts the runtime and loads the packaged UI. |
-| `scripts`             | Repository checks and automation.                                |
+| Package                | Responsibility                                                   |
+| ---------------------- | ---------------------------------------------------------------- |
+| `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons.  |
+| `application/runtime`  | Hono API running on Node.js, independent of frontend delivery.   |
+| `application/protocol` | Shared Zod contracts and the typed oRPC WebSocket client.        |
+| `application/host`     | Electron host that starts the runtime and loads the packaged UI. |
+| `scripts`              | Repository checks and automation.                                |
 
 The terminal interface currently uses sample output and in-memory commands, not
 real shell processes or model calls. Projects, sessions, and layouts reset on
 reload; preferences and sidebar settings are stored locally. Keep this boundary
 in mind when changing terminal behavior or adding runtime integration.
+
+See the [terminal backend plan](docs/backend-plan.md) for the proposed runtime
+architecture and typed API.
+
+The standalone backend now supports authenticated, real terminal processes and
+persistent project/session metadata. It is **not connected to the UI or Electron
+host yet**; the interface above still uses mock data. See the
+[backend API guide](docs/backend-api.md) for configuration, client examples, and
+backend-only tests.
 
 ### Working on the UI
 
@@ -236,6 +246,9 @@ cp application/runtime/example.env application/runtime/.env
 
 - UI: `VITE_API_URL` sets the API URL at build time; the default is same-origin `/api`.
 - Runtime: `HOST`, `PORT`, and `CORS_ORIGINS` control the listener and allowed frontend origins.
+- Terminal API: `NOVADECK_TOKEN` enables authenticated WebSocket RPC;
+  `NOVADECK_DATABASE` optionally selects the SQLite metadata file. Without a token,
+  only the existing HTTP status API is available.
 - Electron: the host starts the bundled runtime on a local, OS-selected port and
   supplies its URL through a sandboxed preload bridge. Package `.env` files are not used.
 

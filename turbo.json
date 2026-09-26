@@ -11,12 +11,12 @@
       "persistent": true
     },
     "test": {
-      "dependsOn": ["^test"],
+      "dependsOn": ["^build", "^test"],
       "env": ["VITE_API_URL"],
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"],
+      "dependsOn": ["^build", "^typecheck"],
       "outputs": []
     }
   }
