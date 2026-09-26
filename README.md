@@ -192,17 +192,16 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                         |
 | `interaction/`                                     | Shortcut bindings and shared DOM focus/overlay contracts.                   |
 | `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                         |
-| `services/`                                        | HTTP clients such as the API status check.                                  |
-| `test/`                                            | Unit-test setup, the MSW server, and shared fixtures.                       |
+| `test/`                                            | Shared unit-test fixtures.                                                  |
 | `assets/`                                          | Static files referenced from CSS.                                           |
 | `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.               |
 | `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                    |
 
 Imports point down the layers. `model/` imports nothing else, not even packages.
 `backend/` builds on `model/` and uses React only for the port's types; adapters
-may add `ui-toolkit/` and `services/` (runner endpoint configuration). `interaction/` builds on `model/`; features add
+may add `ui-toolkit/`. `interaction/` builds on `model/`; features add
 `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use `terminals/`;
-`shell/` may use `layouts/` and `projects/`. `app/` composes every feature layer, `backend/`, and `services/`, and
+`shell/` may use `layouts/` and `projects/`. `app/` composes every feature layer and `backend/`, and
 within it only `app/backend.ts` imports a backend adapter. Vendor libraries stay
 in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout in
 `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
@@ -284,7 +283,7 @@ through accessible markup, improve the markup rather than adding test IDs.
 Install the browser once with `pnpm --filter @novadeck/ui exec playwright install chromium`.
 Run a single spec with `pnpm --filter @novadeck/ui exec vitest run --project behaviour src/specs/canvas.spec.tsx`,
 or `--project unit` for reducer invariants, terminal lifecycle, layout rules,
-architecture rules, and build/service checks in colocated `*.test.ts` files. Files in `src/specs/` keep
+architecture rules, and build checks in colocated `*.test.ts` files. Files in `src/specs/` keep
 the `*.spec.tsx` suffix. Use `--project motion` for transition behavior. The build
 checks validate both entry assets and deferred chunks with relative packaged paths.
 
@@ -297,7 +296,8 @@ cp application/ui/example.env application/ui/.env
 cp application/runner/example.env application/runner/.env
 ```
 
-- UI: `VITE_API_URL` sets the API URL at build time; the default is same-origin `/api`.
+- UI: `VITE_API_URL` sets, at build time, the API origin that the Content Security
+  Policy permits; by default only the same origin. The UI does not call the API yet.
 - Runner: `HOST`, `PORT`, and `CORS_ORIGINS` control the listener and allowed frontend origins.
 - Terminal API: `NOVADECK_TOKEN` enables authenticated WebSocket RPC;
   `NOVADECK_DATABASE` optionally selects the SQLite metadata file. Without a token,

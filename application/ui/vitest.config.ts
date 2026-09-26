@@ -22,7 +22,6 @@ export default mergeConfig(
             environment: "jsdom",
             include: ["src/**/*.test.ts"],
             exclude: ["src/specs/**"],
-            setupFiles: ["./src/test/setup.ts"],
           },
         },
         {

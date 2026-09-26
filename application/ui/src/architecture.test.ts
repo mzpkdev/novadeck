@@ -17,31 +17,19 @@ const rules: Record<string, readonly string[]> = {
   "terminals/": [...base, "terminals/", "sidebar/"],
   "layouts/": [...base, "layouts/", "sidebar/", "terminals/"],
   "shell/": [...base, "shell/", "sidebar/", "terminals/", "layouts/", "projects/"],
-  "app/": [
-    "app/",
-    "backend/",
-    "services/",
-    ...base,
-    ...features,
-    "terminals/",
-    "layouts/",
-    "shell/",
-  ],
+  "app/": ["app/", "backend/", ...base, ...features, "terminals/", "layouts/", "shell/"],
   "specs/": ["specs/", "app/App.tsx", "styles.css"],
   // Entry point and support modules outside the feature layers.
   "main.tsx": ["app/", "styles.css"],
-  "services/": ["services/"],
   "test/": ["test/", "model/"],
   "test.ts": [],
   "class-name.ts": [],
   "content-security-policy.ts": [],
-  "environment.d.ts": [],
 }
 const adapterRule = (layer: string): readonly string[] => [
   layer,
   "backend/",
   "model/",
-  "services/",
   "ui-toolkit/",
 ]
 // The only file that may import a backend adapter; it exports nothing else.
