@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 
 import type { Backend } from "../../backend/port"
 import { cancelTerminalTransition, transitionTerminal } from "../../layouts/transition"
@@ -11,9 +11,12 @@ import type {
   Workspace,
   WorkspaceTarget,
 } from "../../model/types"
-import type { RecentSwitcherController } from "../../terminals/useRecentSwitcher"
-import type { TerminalRenameController } from "../../terminals/useTerminalRename"
+import type { UiState } from "../ui-store"
+import { useWorkspaceServices } from "./context"
 import { newWorkspaceSession } from "./sessions"
+import type { RecentSwitcherController } from "./useRecentSwitcher"
+import { useStoreSelector } from "./useStoreSelector"
+import type { TerminalRenameController } from "./useTerminalRename"
 import type { WorkspaceNavigation } from "./useWorkspaceController"
 import type { ShellController } from "./useWorkspaceShell"
 
@@ -60,6 +63,8 @@ export type WorkspaceCommands = {
   readonly close: (terminalId: string) => void
 }
 
+const selectCreated = (state: UiState): UiState["created"] => state.created
+
 export const useWorkspaceCommands = ({
   workspace,
   navigation,
@@ -71,6 +76,7 @@ export const useWorkspaceCommands = ({
   recent,
   newTerminal,
 }: WorkspaceCommandsOptions): WorkspaceCommands => {
+  const { ui } = useWorkspaceServices()
   const { dispatch, go, navigateWorkspace, getWorkspace } = navigation
   const project = activeProject(workspace)!
   const current = activeSession(workspace)!
@@ -95,12 +101,17 @@ export const useWorkspaceCommands = ({
   const windowedDestination = preferences.enabledViews.includes(windowedView)
     ? windowedView
     : preferences.enabledViews.find((mode) => mode !== "focus")
-  const [created, setCreated] = useState<{ context: string; id: string } | null>(null)
+  const created = useStoreSelector(ui, selectCreated)
+  const setCreated = (next: UiState["created"]): void =>
+    void ui.update((state) => (state.created === next ? state : { ...state, created: next }))
   useEffect(() => {
     if (!created) return
-    const timeout = window.setTimeout(() => setCreated(null), 900)
+    const timeout = window.setTimeout(
+      () => ui.update((state) => (state.created === created ? { ...state, created: null } : state)),
+      900,
+    )
     return () => window.clearTimeout(timeout)
-  }, [created])
+  }, [created, ui])
   const switchSession = (id: string): void => {
     if (id === workspaceSessionId) return
     const next = workspaceSessions.find((item) => item.id === id)

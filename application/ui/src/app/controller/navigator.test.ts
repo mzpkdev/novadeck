@@ -2,11 +2,10 @@ import type { NavigateFunction, NavigateOptions } from "react-router"
 
 import { createWorkspaceStore } from "../../model/store"
 import type { PreferencesValue, Workspace } from "../../model/types"
-import { initialShell } from "../../shell/shell-state"
 import { context, describe, expect, it } from "../../test"
 import { workspaceFixture } from "../../test/fixtures"
 import { resolveRoute } from "../routing"
-import { createUiStore } from "../ui-store"
+import { createUiStore, initialUi } from "../ui-store"
 import { createNavigator, syncLocation } from "./navigator"
 
 const preferences: PreferencesValue = { fontSize: 13, enabledViews: ["focus", "grid", "canvas"] }
@@ -17,11 +16,12 @@ const open = (search = "?terminal=01", workspace: Workspace = workspaceFixture()
   const location = { pathname: base, search }
   const resolved = resolveRoute(workspace, location, preferences, 0)
   const store = createWorkspaceStore(resolved.workspace)
-  const ui = createUiStore({
-    location: { route: resolved.route, dialogDepth: 0, navigationType: "POP" },
-    preferences,
-    shell: initialShell(false),
-  })
+  const ui = createUiStore(
+    initialUi({
+      location: { route: resolved.route, dialogDepth: 0, navigationType: "POP" },
+      preferences,
+    }),
+  )
   const services = { workspace: store, ui, now: () => 1 }
   const navigator = createNavigator(services)
   const calls: { to: string | number; options: NavigateOptions | undefined; selected: string }[] =

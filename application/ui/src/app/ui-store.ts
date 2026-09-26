@@ -1,9 +1,12 @@
+import { orderedTerminals } from "../model/roster"
 import { activeProject } from "../model/state"
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue, Workspace } from "../model/types"
 import { writePreferences } from "../preferences/preferences-storage"
-import { resetPresentation, type ShellState } from "../shell/shell-state"
+import { initialShell, resetPresentation, type ShellState } from "../shell/shell-state"
 import { writeSidebarCollapsed, writeWindowedView } from "../shell/shell-storage"
+import { nextRecent, visibleSwitcher, type RecentSwitcher } from "../terminals/recent"
+import type { RenameSession } from "../terminals/rename-state"
 import type { WorkspaceRoute } from "./routing"
 import { currentContext, currentState } from "./selectors"
 
@@ -14,6 +17,14 @@ export type UiState = {
   readonly location: UiLocation
   readonly preferences: PreferencesValue
   readonly shell: ShellState
+  readonly rename: RenameSession | null
+  readonly recent: {
+    readonly switcher: RecentSwitcher | null
+    // Each session's terminals, most recently selected first.
+    readonly byContext: Readonly<Record<string, readonly string[]>>
+  }
+  // The terminal created last, highlighted briefly in its session.
+  readonly created: { readonly context: string; readonly id: string } | null
 }
 
 export type UiLocation = {
@@ -26,6 +37,24 @@ export type UiLocation = {
 export type UiStore = MutableStore<UiState>
 
 export const createUiStore = (initial: UiState): UiStore => createStore(initial)
+
+// A fresh App's UI: only preferences and the collapsed sidebar come from storage.
+export const initialUi = ({
+  location,
+  preferences,
+  sidebarCollapsed = false,
+}: {
+  location: UiLocation
+  preferences: PreferencesValue
+  sidebarCollapsed?: boolean
+}): UiState => ({
+  location,
+  preferences,
+  shell: initialShell(sidebarCollapsed),
+  rename: null,
+  recent: { switcher: null, byContext: {} },
+  created: null,
+})
 
 export const updateShell = (ui: UiStore, change: (shell: ShellState) => ShellState): void =>
   void ui.update((state) => {
@@ -71,4 +100,41 @@ export const watchPresentation = (workspace: Store<Workspace>, ui: UiStore): (()
     const workspaceSessionId = activeProject(snapshot)!.activeSessionId
     updateShell(ui, (shell) => resetPresentation(shell, workspaceSessionId))
   })
+}
+
+const sameIds = (a: readonly string[] | undefined, b: readonly string[]): boolean =>
+  a !== undefined && a.length === b.length && a.every((id, index) => id === b[index])
+
+// Keeps the active session's most-recent order current after every workspace commit.
+export const trackRecent = (workspace: Store<Workspace>, ui: UiStore): (() => void) => {
+  const track = (): void => {
+    const snapshot = workspace.getSnapshot()
+    const context = currentContext(snapshot)
+    const { roster, selected } = currentState(snapshot)
+    ui.update((state) => {
+      const previous = state.recent.byContext[context]
+      const ids = nextRecent(previous ?? [], selected, orderedTerminals(roster))
+      return sameIds(previous, ids)
+        ? state
+        : {
+            ...state,
+            recent: { ...state.recent, byContext: { ...state.recent.byContext, [context]: ids } },
+          }
+    })
+  }
+  track()
+  return workspace.subscribe(track)
+}
+
+// Closes the switcher once a dialog opens or the session changes under it.
+export const watchSwitcher = (workspace: Store<Workspace>, ui: UiStore): (() => void) => {
+  const check = (): void => {
+    const { recent, location } = ui.getSnapshot()
+    if (!recent.switcher) return
+    const context = currentContext(workspace.getSnapshot())
+    if (visibleSwitcher(recent.switcher, context, location.route.dialog)) return
+    ui.update((state) => ({ ...state, recent: { ...state.recent, switcher: null } }))
+  }
+  const stops = [workspace.subscribe(check), ui.subscribe(check)]
+  return () => stops.forEach((stop) => stop())
 }

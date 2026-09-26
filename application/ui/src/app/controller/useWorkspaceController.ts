@@ -1,7 +1,6 @@
 import { useMemo } from "react"
 
 import type { Backend } from "../../backend/port"
-import { orderedTerminals } from "../../model/roster"
 import { activeProject, activeSession, type WorkspaceAction } from "../../model/state"
 import type {
   PreferencesValue,
@@ -11,13 +10,13 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
-import { useRecentSwitcher, type RecentSwitcherController } from "../../terminals/useRecentSwitcher"
-import { useTerminalRename, type TerminalRenameController } from "../../terminals/useTerminalRename"
 import type { WorkspaceRoute } from "../routing"
 import type { UiLocation, UiState } from "../ui-store"
 import { useWorkspaceServices } from "./context"
 import type { WorkspaceNavigator } from "./navigator"
+import { useRecentSwitcher, type RecentSwitcherController } from "./useRecentSwitcher"
 import { useStoreSelector } from "./useStoreSelector"
+import { useTerminalRename, type TerminalRenameController } from "./useTerminalRename"
 import { useWorkspaceCommands, type WorkspaceCommands } from "./useWorkspaceCommands"
 import { useWorkspaceShell, type ShellController } from "./useWorkspaceShell"
 
@@ -70,7 +69,6 @@ export const useWorkspaceController = (): WorkspaceController => {
     }),
     [services],
   )
-  const { dispatch } = navigation
   const project = activeProject(workspace)!
   const session = activeSession(workspace)!
   const projectId = project.id
@@ -78,11 +76,10 @@ export const useWorkspaceController = (): WorkspaceController => {
   const context = `${projectId}/${workspaceSessionId}`
   const { view, selected } = session.state
   const { terminals } = session.state.roster
-  const ordered = orderedTerminals(session.state.roster)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
   const shell = useWorkspaceShell({ context, view, selected, navigationType })
-  const rename = useTerminalRename({ context, view, target, terminals, selected, dispatch })
-  const recent = useRecentSwitcher({ context, dialog: route.dialog, terminals, ordered, selected })
+  const rename = useTerminalRename({ context, view, terminals, selected })
+  const recent = useRecentSwitcher({ context, dialog: route.dialog })
   const commands = useWorkspaceCommands({
     workspace,
     navigation,

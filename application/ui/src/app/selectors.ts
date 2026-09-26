@@ -1,5 +1,5 @@
 import { activeProject, activeSession } from "../model/state"
-import type { Workspace, WorkspaceState } from "../model/types"
+import type { Workspace, WorkspaceState, WorkspaceTarget } from "../model/types"
 
 // The active session's state; the workspace always has one once seeded.
 export const currentState = (workspace: Workspace): WorkspaceState =>
@@ -14,3 +14,9 @@ export const currentPresentation = (workspace: Workspace): string => {
   const { view, selected } = currentState(workspace)
   return `${currentContext(workspace)}/${view}/${selected}`
 }
+
+// Where commands for the active session are addressed.
+export const currentTarget = (workspace: Workspace): WorkspaceTarget => ({
+  projectId: workspace.activeProjectId,
+  workspaceSessionId: activeProject(workspace)!.activeSessionId,
+})

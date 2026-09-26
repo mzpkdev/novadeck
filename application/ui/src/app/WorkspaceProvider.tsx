@@ -5,14 +5,21 @@ import type { CreateBackend } from "../backend/port"
 import { workspaceFromSeed } from "../model/seed"
 import { createWorkspaceStore } from "../model/store"
 import { readPreferences } from "../preferences/preferences-storage"
-import { initialShell } from "../shell/shell-state"
 import { readSidebarCollapsed, readWindowedView } from "../shell/shell-storage"
 import { connectBackend } from "./controller/backend-connection"
 import { WorkspaceServicesContext, type WorkspaceServices } from "./controller/context"
 import { createNavigator, type NavigatorServices, type RouterBinding } from "./controller/navigator"
 import { dialogDepthOf, useRouteSync } from "./controller/useRouteSync"
 import { resolveRoute } from "./routing"
-import { createUiStore, persistUi, watchPresentation, type UiLocation } from "./ui-store"
+import {
+  createUiStore,
+  initialUi,
+  persistUi,
+  trackRecent,
+  watchPresentation,
+  watchSwitcher,
+  type UiLocation,
+} from "./ui-store"
 
 const now = (): number => Date.now()
 
@@ -35,11 +42,13 @@ const createServices = (
   const workspace = createWorkspaceStore(initial, backend.commit)
   // The store only reports later commits; give the backend the starting terminals now.
   backend.commit(initial, [])
-  const ui = createUiStore({
-    location: { route, dialogDepth: dialogDepthOf(location.state), navigationType },
-    preferences,
-    shell: initialShell(readSidebarCollapsed()),
-  })
+  const ui = createUiStore(
+    initialUi({
+      location: { route, dialogDepth: dialogDepthOf(location.state), navigationType },
+      preferences,
+      sidebarCollapsed: readSidebarCollapsed(),
+    }),
+  )
   const { bind, settle, ...navigation } = createNavigator({ workspace, ui, now })
   return {
     services: { backend, workspace, ui, navigation },
@@ -66,6 +75,8 @@ export const WorkspaceProvider = ({
   useEffect(() => connectBackend(services.backend, services.workspace), [services])
   useEffect(() => persistUi(services.ui, services.workspace), [services])
   useEffect(() => watchPresentation(services.workspace, services.ui), [services])
+  useEffect(() => trackRecent(services.workspace, services.ui), [services])
+  useEffect(() => watchSwitcher(services.workspace, services.ui), [services])
   useRouteSync(sync, { location, navigationType, navigate })
   return <WorkspaceServicesContext value={services}>{children}</WorkspaceServicesContext>
 }

@@ -1,26 +1,33 @@
 import { createWorkspaceStore } from "../model/store"
-import { initialShell } from "../shell/shell-state"
 import { context, describe, expect, it } from "../test"
 import { workspaceFixture } from "../test/fixtures"
-import { createUiStore, persist, watchPresentation, type UiState } from "./ui-store"
+import {
+  createUiStore,
+  initialUi,
+  persist,
+  trackRecent,
+  watchPresentation,
+  watchSwitcher,
+  type UiState,
+} from "./ui-store"
 
-const initial = (): UiState => ({
-  location: {
-    route: {
-      projectId: "project",
-      sessionId: "initial",
-      view: "focus",
-      terminal: "",
-      panel: "terminals",
-      dialog: null,
-      section: "general",
+const initial = (): UiState =>
+  initialUi({
+    location: {
+      route: {
+        projectId: "project",
+        sessionId: "initial",
+        view: "focus",
+        terminal: "",
+        panel: "terminals",
+        dialog: null,
+        section: "general",
+      },
+      dialogDepth: 0,
+      navigationType: "POP",
     },
-    dialogDepth: 0,
-    navigationType: "POP",
-  },
-  preferences: { fontSize: 13, enabledViews: ["focus", "grid"] },
-  shell: initialShell(false),
-})
+    preferences: { fontSize: 13, enabledViews: ["focus", "grid"] },
+  })
 
 describe("UI store persistence", () => {
   context("when attached", () => {
@@ -92,5 +99,72 @@ describe("presentation watch", () => {
       expect(ui.getSnapshot()).toBe(before)
       stop()
     })
+  })
+})
+
+describe("recent terminal tracking", () => {
+  it("records the active session's most recent order after each commit", () => {
+    const workspace = createWorkspaceStore(workspaceFixture({ terminals: 3 }))
+    const ui = createUiStore(initial())
+    const stop = trackRecent(workspace, ui)
+    const recent = () => ui.getSnapshot().recent.byContext["project/initial"]
+    expect(recent()).toEqual(["01", "02", "03"])
+    workspace.dispatch({
+      type: "terminal/select",
+      target: { projectId: "project", workspaceSessionId: "initial" },
+      terminalId: "03",
+    })
+    expect(recent()).toEqual(["03", "01", "02"])
+    const before = ui.getSnapshot()
+    workspace.dispatch({
+      type: "terminal/rename",
+      target: { projectId: "project", workspaceSessionId: "initial" },
+      terminalId: "01",
+      name: "Server",
+    })
+    expect(ui.getSnapshot()).toBe(before)
+    stop()
+  })
+})
+
+describe("switcher watch", () => {
+  it("closes the switcher when a dialog opens or the session changes", () => {
+    const workspace = createWorkspaceStore(workspaceFixture({ sessions: ["initial", "other"] }))
+    const ui = createUiStore(initial())
+    const stop = watchSwitcher(workspace, ui)
+    const open = () =>
+      ui.update((state) => ({
+        ...state,
+        recent: {
+          ...state.recent,
+          switcher: {
+            context: "project/initial",
+            ids: ["01", "02"],
+            index: 1,
+            fromInput: false,
+            mode: "click",
+          },
+        },
+      }))
+    open()
+    expect(ui.getSnapshot().recent.switcher).not.toBeNull()
+    ui.update((state) => ({
+      ...state,
+      location: { ...state.location, route: { ...state.location.route, dialog: "search" } },
+    }))
+    expect(ui.getSnapshot().recent.switcher).toBeNull()
+    ui.update((state) => ({
+      ...state,
+      location: { ...state.location, route: { ...state.location.route, dialog: null } },
+    }))
+    open()
+    workspace.dispatch({
+      type: "session/select",
+      projectId: "project",
+      workspaceSessionId: "other",
+      now: 1,
+    })
+    expect(ui.getSnapshot().recent.switcher).toBeNull()
+    stop()
   })
 })
