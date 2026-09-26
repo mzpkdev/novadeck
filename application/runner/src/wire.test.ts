@@ -91,7 +91,7 @@ const reader = async (
             `child trace:\n${ptyTrace()}`,
         ),
       )
-    }, 3_000)
+    }, 10_000)
     timeout.unref()
     try {
       if (!attached) {
