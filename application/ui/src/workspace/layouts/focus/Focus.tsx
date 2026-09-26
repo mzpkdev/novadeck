@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from "react"
 
-import type { Session } from "../model/types"
-import { backgroundPointerHandlers } from "./background"
-import { useTerminalVisibility } from "./useTerminalVisibility"
+import type { TerminalMetadata } from "../../model/types"
+import { backgroundPointerHandlers } from "../background"
+import { useTerminalVisibility } from "../useTerminalVisibility"
 
 export const Focus = ({
   sessions,
@@ -10,10 +10,10 @@ export const Focus = ({
   onSelect,
   render,
 }: {
-  sessions: Session[]
+  sessions: TerminalMetadata[]
   displayed: string
   onSelect: (id: string) => void
-  render: (session: Session) => ReactNode
+  render: (session: TerminalMetadata) => ReactNode
 }): React.JSX.Element => {
   const hidden = useMemo(
     () => Object.fromEntries(sessions.map((session) => [session.id, session.id !== displayed])),
@@ -22,6 +22,7 @@ export const Focus = ({
   const removed = useTerminalVisibility(hidden)
   return (
     <div
+      data-workspace-viewport
       className="focus-stage relative min-h-0 flex-1 overflow-hidden workspace-background"
       {...backgroundPointerHandlers}
       tabIndex={-1}

@@ -1,4 +1,4 @@
-import type { CanvasLayout, Session } from "../model/types"
+import type { CanvasLayout, TerminalMetadata } from "../../model/types"
 
 const gap = 60
 const defaultWidth = 550
@@ -74,15 +74,15 @@ export const viewportCanvasPosition = (
       }
 }
 
-const bounds = (session: Session, layout: CanvasLayout) => ({
-  position: layout.geometry[session.id]?.position ?? { x: session.x, y: session.y },
+const bounds = (session: TerminalMetadata, layout: CanvasLayout) => ({
+  position: layout.geometry[session.id]?.position ?? { x: 80, y: 80 },
   width: layout.geometry[session.id]?.width ?? defaultWidth,
-  height: layout.geometry[session.id]?.height ?? session.height,
+  height: layout.geometry[session.id]?.height ?? 400,
 })
 
 export const adjacentCanvasPosition = (
-  active: Session,
-  sessions: Session[],
+  active: TerminalMetadata,
+  sessions: TerminalMetadata[],
   layout: CanvasLayout,
   height: number,
 ): { x: number; y: number } => {

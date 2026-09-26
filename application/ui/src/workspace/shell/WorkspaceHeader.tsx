@@ -79,7 +79,10 @@ export const WorkspaceHeader = ({
         </Link>
         <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
       </div>
-      <div className="header-view-controls relative flex shrink-0 items-center">
+      <div
+        data-workspace-view-switch
+        className="header-view-controls relative flex shrink-0 items-center"
+      >
         <SegmentGroup
           label="Workspace layout"
           tooltips={iconOnly}
@@ -101,7 +104,12 @@ export const WorkspaceHeader = ({
         <div className="absolute left-[calc(100%+0.5rem)] flex items-center gap-2 max-[701px]:left-[calc(100%+0.25rem)] max-[701px]:gap-1">
           <div className="h-4 w-px bg-line" aria-hidden="true" />
           <Tooltip content={`Zen · ${workspaceShortcutBindings().zen.display.join(" ")}`}>
-            <button className="icon-button zen-enter" aria-label="Enter Zen mode" onClick={onZen}>
+            <button
+              data-workspace-zen-enter
+              className="icon-button zen-enter"
+              aria-label="Enter Zen mode"
+              onClick={onZen}
+            >
               <Scan size={16} />
             </button>
           </Tooltip>

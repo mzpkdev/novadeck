@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { Dialog } from "../../ui-toolkit/Dialog"
 import { SearchCombobox } from "../../ui-toolkit/SearchCombobox"
-import type { Session } from "../model/types"
+import type { TerminalMetadata } from "../model/types"
 
 import motion from "../shell/ModalMotion.module.css"
 
@@ -16,7 +16,7 @@ export const TerminalSearch = ({
   onExitComplete,
 }: {
   open: boolean
-  sessions: Session[]
+  sessions: TerminalMetadata[]
   destination: string
   onSelect: (id: string) => void
   onClose: () => void

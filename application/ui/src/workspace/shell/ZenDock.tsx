@@ -41,6 +41,7 @@ export const ZenDock = ({
       className="zen-dock absolute right-5 bottom-5 z-40 flex flex-row-reverse items-center gap-0.5 rounded-popover border border-line bg-paper/95 p-1 shadow-control backdrop-blur-sm max-[701px]:right-3 max-[701px]:bottom-3"
       ref={dock}
       data-open={open}
+      data-workspace-zen-dock
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
       }}
@@ -59,6 +60,7 @@ export const ZenDock = ({
       >
         <button
           ref={create}
+          data-workspace-zen-create
           className="zen-create icon-button"
           aria-label="New terminal"
           onClick={onCreate}
@@ -77,7 +79,12 @@ export const ZenDock = ({
       </button>
       <div className="zen-dock-reveal" inert={!open} aria-hidden={!open} id={controls}>
         <div className="zen-dock-actions flex items-center gap-0.5">
-          <div className="view-switch flex gap-0.5" role="group" aria-label="Workspace layout">
+          <div
+            data-workspace-view-switch
+            className="view-switch flex gap-0.5"
+            role="group"
+            aria-label="Workspace layout"
+          >
             {views
               .filter(({ id }) => enabledViews.includes(id))
               .map(({ id, label, icon: Icon }) => (

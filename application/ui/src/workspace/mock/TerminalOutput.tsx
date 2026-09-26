@@ -1,4 +1,4 @@
-import type { Session } from "../model/types"
+import type { TerminalMetadata } from "../model/types"
 import { AgentOutput } from "./AgentOutput"
 
 export const TerminalOutput = ({
@@ -6,7 +6,7 @@ export const TerminalOutput = ({
   directory,
   projectName,
 }: {
-  kind: Session["kind"]
+  kind: TerminalMetadata["kind"]
   directory: string
   projectName: string
 }): React.JSX.Element => {

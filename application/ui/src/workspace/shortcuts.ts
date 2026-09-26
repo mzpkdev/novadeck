@@ -153,19 +153,7 @@ export const workspaceShortcutBindings = (): Record<
   },
 })
 
-// Choice inputs such as the view switcher's radios are navigation, not text entry.
-const editingOrOverlay =
-  'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"]), textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="textbox"], [role="searchbox"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="slider"], [role="spinbutton"], [role="tablist"], [data-scope="popover"][data-state="open"]'
-
-export const workspaceShortcutTarget = (target: EventTarget | null): boolean =>
-  !(target instanceof Element && target.closest(editingOrOverlay))
-
-export const workspaceOverlayOpen = (): boolean =>
-  Boolean(
-    document.querySelector(
-      '[role="dialog"]:not([aria-hidden="true"]), [role="menu"]:not([hidden]), [role="listbox"][data-state="open"], [data-scope="popover"][data-state="open"]',
-    ),
-  )
+export { workspaceShortcutTarget, workspaceOverlayOpen } from "./interaction/dom"
 
 export const matchesShortcut = (event: KeyboardEvent, shortcut: Shortcut): boolean =>
   (event.key.toLowerCase() === shortcut.key.toLowerCase() ||

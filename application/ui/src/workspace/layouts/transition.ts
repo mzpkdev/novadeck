@@ -1,5 +1,12 @@
 import { flushSync } from "react-dom"
 
+import {
+  terminalElement,
+  terminalSurface,
+  workspaceArea,
+  workspaceContent,
+} from "../interaction/dom"
+
 let active: ViewTransition | undefined
 let revision = 0
 
@@ -7,9 +14,6 @@ export const cancelTerminalTransition = (): void => {
   revision += 1
   active?.skipTransition()
 }
-
-const terminal = (id: string): HTMLElement | null =>
-  document.querySelector(`[data-terminal="${CSS.escape(id)}"]`)
 
 // Grid measures its container and Canvas restores its camera after mounting.
 // View transitions suspend animation frames while waiting for this update.
@@ -19,9 +23,7 @@ const waitForLayout = (id?: string): Promise<void> =>
     let stable = 0
     let frames = 0
     const measure = (): void => {
-      const element = id
-        ? terminal(id)
-        : document.querySelector(".main-area [data-terminal], .empty-workspace")
+      const element = id ? terminalElement(id) : workspaceContent()
       const rect = element?.getBoundingClientRect()
       const current = rect ? `${rect.x},${rect.y},${rect.width},${rect.height}` : ""
       stable = current && current === previous ? stable + 1 : 0
@@ -58,8 +60,8 @@ const transitionView = (update: () => void, id?: string, direction: 1 | -1 = 1):
   }
   const markTerminal = (): void => {
     if (!id) return
-    const element = terminal(id)
-    const area = document.querySelector(".main-area")?.getBoundingClientRect()
+    const element = terminalElement(id)
+    const area = workspaceArea()?.getBoundingClientRect()
     const rect = element?.getBoundingClientRect()
     if (
       !element ||
@@ -72,11 +74,11 @@ const transitionView = (update: () => void, id?: string, direction: 1 | -1 = 1):
     )
       return
     mark(element, "terminal-focus")
-    const content = element.querySelector<HTMLElement>(".terminal-content")
+    const content = terminalSurface(element)
     if (content && !content.hidden) mark(content, "terminal-content")
   }
 
-  mark(document.querySelector(".main-area"), id ? "terminal-workspace" : "workspace-mode")
+  mark(workspaceArea(), id ? "terminal-workspace" : "workspace-mode")
   markTerminal()
   const transition = document.startViewTransition(async () => {
     if (version !== revision) return
