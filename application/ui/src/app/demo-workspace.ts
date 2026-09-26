@@ -1,19 +1,19 @@
-import { initialGridLayouts } from "../workspace/layouts/grid/placement"
-import { demoCanvasLayout, initialProjects, projectSessions } from "../workspace/mock/sessions"
+import { demoCanvasLayout, initialProjects, projectSessions } from "../backend/demo/samples"
+import { initialGridLayouts } from "../layouts/grid/placement"
 import {
   createWorkspace,
   createWorkspaceSession,
   createSessionState,
   workspaceReducer,
-} from "../workspace/model/state"
+} from "../model/state"
 import type {
   TerminalMetadata,
   PreferencesValue,
   ViewMode,
   WindowedView,
   WorkspaceSession,
-} from "../workspace/model/types"
-import { readWindowedView } from "../workspace/shell/shell-storage"
+} from "../model/types"
+import { readWindowedView } from "../shell/shell-storage"
 
 export const newWorkspaceSession = (
   terminals: TerminalMetadata[],

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { createMockTerminal } from "../workspace/mock/sessions"
-import { createSessionState } from "../workspace/model/state"
-import { createWorkspaceStore } from "../workspace/model/store"
-import type { PreferencesValue, Workspace } from "../workspace/model/types"
+import { createMockTerminal } from "../backend/demo/samples"
+import { createSessionState } from "../model/state"
+import { createWorkspaceStore } from "../model/store"
+import type { PreferencesValue, Workspace } from "../model/types"
 import { resolveRoute, routeUrl, workspaceRoute } from "./routing"
 
 const preferences: PreferencesValue = { fontSize: 13, enabledViews: ["focus", "grid", "canvas"] }

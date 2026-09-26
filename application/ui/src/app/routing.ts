@@ -5,8 +5,8 @@ import {
   activeSession,
   workspaceReducer,
   type WorkspaceAction,
-} from "../workspace/model/state"
-import type { PreferencesValue, ViewMode, Workspace } from "../workspace/model/types"
+} from "../model/state"
+import type { PreferencesValue, ViewMode, Workspace } from "../model/types"
 
 export type WorkspaceRoute = {
   projectId: string
