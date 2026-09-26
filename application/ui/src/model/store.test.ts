@@ -294,6 +294,22 @@ describe("workspace store commits", () => {
   })
 })
 
+describe("workspace store commit failures", () => {
+  it("still notifies subscribers when the commit hook throws, then reports the error", () => {
+    const store = createWorkspaceStore(initial(), () => {
+      // An uncaught refusal of a nested transaction escapes the hook.
+      store.dispatch({ type: "terminal/select", target, terminalId: "" })
+    })
+    const seen: string[] = []
+    store.subscribe(() => seen.push(state(store.getSnapshot()).roster.terminals[0]!.name))
+    expect(() =>
+      store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Server" }),
+    ).toThrow("cannot start inside a commit")
+    expect(seen).toEqual(["Server"])
+    expect(state(store.getSnapshot()).roster.terminals[0]!.name).toBe("Server")
+  })
+})
+
 describe("store", () => {
   it("notifies subscribers after a change and not after one that keeps the value", () => {
     const store = createStore({ count: 0 })

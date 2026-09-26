@@ -66,9 +66,10 @@ export const createWorkspaceStore = (
     try {
       onCommit?.(snapshot, actions)
     } finally {
+      // The snapshot has advanced either way, so subscribers must hear about it.
       committing = false
+      notify()
     }
-    notify()
     return snapshot
   }
   return {
