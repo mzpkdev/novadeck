@@ -1,8 +1,11 @@
 import type { NavigateFunction } from "react-router"
 
+import { activeProject } from "../../model/state"
 import type { WorkspaceStore, WorkspaceTransaction } from "../../model/store"
+import { resetPresentation } from "../../shell/shell-state"
 import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "../routing"
-import type { UiLocation, UiStore } from "../ui-store"
+import { currentContext, currentPresentation } from "../selectors"
+import { updateShell, type UiLocation, type UiStore } from "../ui-store"
 
 // URL-driven navigation over the workspace and UI stores. Each call commits the
 // destination's workspace actions and route before it navigates, so a command's
@@ -144,16 +147,20 @@ export const syncLocation = (
     readonly dialogDepth: number
   },
 ): void => {
-  const resolved = resolveRoute(
-    workspace.getSnapshot(),
-    input.location,
-    ui.getSnapshot().preferences,
-    now(),
-  )
-  workspace.transact(resolved.actions)
+  const before = workspace.getSnapshot()
+  const resolved = resolveRoute(before, input.location, ui.getSnapshot().preferences, now())
+  const after = workspace.transact(resolved.actions)
   writeLocation(ui, {
     route: resolved.route,
     dialogDepth: input.dialogDepth,
     navigationType: input.navigationType,
   })
+  // Back/Forward to another view or selection starts the presentation over, like a
+  // session change does (that one is handled where the session changes).
+  if (
+    input.navigationType === "POP" &&
+    currentContext(after) === currentContext(before) &&
+    currentPresentation(after) !== currentPresentation(before)
+  )
+    updateShell(ui, (shell) => resetPresentation(shell, activeProject(after)!.activeSessionId))
 }

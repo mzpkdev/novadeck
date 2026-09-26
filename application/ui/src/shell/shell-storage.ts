@@ -16,3 +16,19 @@ export const readWindowedView = (): WindowedView => {
     return "grid"
   }
 }
+
+export const writeSidebarCollapsed = (collapsed: boolean): void => {
+  try {
+    localStorage.setItem(collapsedStorageKey, String(collapsed))
+  } catch {
+    /* Collapsing still works when storage is unavailable. */
+  }
+}
+
+export const writeWindowedView = (view: WindowedView): void => {
+  try {
+    localStorage.setItem(windowedStorageKey, view)
+  } catch {
+    /* Remains available for this session when storage is unavailable. */
+  }
+}

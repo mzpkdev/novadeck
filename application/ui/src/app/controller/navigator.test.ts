@@ -2,6 +2,7 @@ import type { NavigateFunction, NavigateOptions } from "react-router"
 
 import { createWorkspaceStore } from "../../model/store"
 import type { PreferencesValue, Workspace } from "../../model/types"
+import { initialShell } from "../../shell/shell-state"
 import { context, describe, expect, it } from "../../test"
 import { workspaceFixture } from "../../test/fixtures"
 import { resolveRoute } from "../routing"
@@ -19,6 +20,7 @@ const open = (search = "?terminal=01", workspace: Workspace = workspaceFixture()
   const ui = createUiStore({
     location: { route: resolved.route, dialogDepth: 0, navigationType: "POP" },
     preferences,
+    shell: initialShell(false),
   })
   const services = { workspace: store, ui, now: () => 1 }
   const navigator = createNavigator(services)
@@ -135,6 +137,31 @@ describe("workspace navigator", () => {
         navigationType: "POP",
         route: { terminal: "02", panel: "sessions" },
       })
+    })
+
+    it("starts the presentation over after Back or Forward to another selection", () => {
+      const { services, ui } = open()
+      const pulse = (): number => ui.getSnapshot().shell.navigation.count
+      ui.update((state) => ({ ...state, shell: { ...state.shell, sidebar: true } }))
+      syncLocation(services, {
+        location: { pathname: base, search: "?terminal=02" },
+        navigationType: "POP",
+        dialogDepth: 0,
+      })
+      expect(pulse()).toBe(2)
+      expect(ui.getSnapshot().shell.sidebar).toBe(false)
+      syncLocation(services, {
+        location: { pathname: base, search: "?terminal=01" },
+        navigationType: "PUSH",
+        dialogDepth: 0,
+      })
+      expect(pulse()).toBe(2)
+      syncLocation(services, {
+        location: { pathname: base, search: "?terminal=01&dialog=search" },
+        navigationType: "POP",
+        dialogDepth: 0,
+      })
+      expect(pulse()).toBe(2)
     })
 
     it("falls back to the remembered selection for a terminal that no longer exists", () => {

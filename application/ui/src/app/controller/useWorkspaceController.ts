@@ -11,7 +11,6 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
-import { useWorkspaceShell, type ShellController } from "../../shell/useWorkspaceShell"
 import { useRecentSwitcher, type RecentSwitcherController } from "../../terminals/useRecentSwitcher"
 import { useTerminalRename, type TerminalRenameController } from "../../terminals/useTerminalRename"
 import type { WorkspaceRoute } from "../routing"
@@ -20,6 +19,7 @@ import { useWorkspaceServices } from "./context"
 import type { WorkspaceNavigator } from "./navigator"
 import { useStoreSelector } from "./useStoreSelector"
 import { useWorkspaceCommands, type WorkspaceCommands } from "./useWorkspaceCommands"
+import { useWorkspaceShell, type ShellController } from "./useWorkspaceShell"
 
 // Navigation plus direct workspace commits for commands and sections.
 export type WorkspaceNavigation = WorkspaceNavigator & {
@@ -70,26 +70,17 @@ export const useWorkspaceController = (): WorkspaceController => {
     }),
     [services],
   )
-  const { go, dispatch } = navigation
+  const { dispatch } = navigation
   const project = activeProject(workspace)!
   const session = activeSession(workspace)!
   const projectId = project.id
   const workspaceSessionId = session.id
   const context = `${projectId}/${workspaceSessionId}`
-  const { view, windowedView, selected } = session.state
+  const { view, selected } = session.state
   const { terminals } = session.state.roster
   const ordered = orderedTerminals(session.state.roster)
   const target = useWorkspaceTarget(projectId, workspaceSessionId)
-  const shell = useWorkspaceShell({
-    context,
-    workspaceSessionId,
-    view,
-    selected,
-    windowedView,
-    sidebarPanel: route.panel,
-    setSidebarPanel: (panel) => go({ panel }),
-    navigationType,
-  })
+  const shell = useWorkspaceShell({ context, view, selected, navigationType })
   const rename = useTerminalRename({ context, view, target, terminals, selected, dispatch })
   const recent = useRecentSwitcher({ context, dialog: route.dialog, terminals, ordered, selected })
   const commands = useWorkspaceCommands({

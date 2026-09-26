@@ -1,20 +1,13 @@
 import { Allotment, LayoutPriority, type AllotmentHandle } from "allotment"
-import {
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type CSSProperties,
-  type ReactNode,
-} from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 
 import { Dialog } from "../ui-toolkit/Dialog"
+import { useDesktop } from "./desktop"
 
 const storageKey = "novadeck.sidebar-width"
 const defaultWidth = 228
 const minWidth = 180
 const maxWidth = 400
-const desktopQuery = "(min-width: 701px)"
 
 const readWidth = (): number => {
   try {
@@ -26,14 +19,6 @@ const readWidth = (): number => {
     return defaultWidth
   }
 }
-
-const subscribe = (notify: () => void): (() => void) => {
-  const media = window.matchMedia(desktopQuery)
-  media.addEventListener("change", notify)
-  return () => media.removeEventListener("change", notify)
-}
-const isDesktop = (): boolean => window.matchMedia(desktopQuery).matches
-export const useDesktop = (): boolean => useSyncExternalStore(subscribe, isDesktop)
 
 export const WorkspacePanels = ({
   sidebar,

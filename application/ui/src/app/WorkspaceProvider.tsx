@@ -5,13 +5,14 @@ import type { CreateBackend } from "../backend/port"
 import { workspaceFromSeed } from "../model/seed"
 import { createWorkspaceStore } from "../model/store"
 import { readPreferences } from "../preferences/preferences-storage"
-import { readWindowedView } from "../shell/shell-storage"
+import { initialShell } from "../shell/shell-state"
+import { readSidebarCollapsed, readWindowedView } from "../shell/shell-storage"
 import { connectBackend } from "./controller/backend-connection"
 import { WorkspaceServicesContext, type WorkspaceServices } from "./controller/context"
 import { createNavigator, type NavigatorServices, type RouterBinding } from "./controller/navigator"
 import { dialogDepthOf, useRouteSync } from "./controller/useRouteSync"
 import { resolveRoute } from "./routing"
-import { createUiStore, persistUi, type UiLocation } from "./ui-store"
+import { createUiStore, persistUi, watchPresentation, type UiLocation } from "./ui-store"
 
 const now = (): number => Date.now()
 
@@ -37,6 +38,7 @@ const createServices = (
   const ui = createUiStore({
     location: { route, dialogDepth: dialogDepthOf(location.state), navigationType },
     preferences,
+    shell: initialShell(readSidebarCollapsed()),
   })
   const { bind, settle, ...navigation } = createNavigator({ workspace, ui, now })
   return {
@@ -62,7 +64,8 @@ export const WorkspaceProvider = ({
     createServices(createBackend, location, navigationType),
   )
   useEffect(() => connectBackend(services.backend, services.workspace), [services])
-  useEffect(() => persistUi(services.ui), [services])
+  useEffect(() => persistUi(services.ui, services.workspace), [services])
+  useEffect(() => watchPresentation(services.workspace, services.ui), [services])
   useRouteSync(sync, { location, navigationType, navigate })
   return <WorkspaceServicesContext value={services}>{children}</WorkspaceServicesContext>
 }
