@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react"
-import { useNavigationType } from "react-router"
+import { useMemo } from "react"
 
-import type { Backend, CreateBackend } from "../../backend/port"
+import type { Backend } from "../../backend/port"
 import { orderedTerminals } from "../../model/roster"
-import { activeProject, activeSession } from "../../model/state"
+import { activeProject, activeSession, type WorkspaceAction } from "../../model/state"
 import type {
   PreferencesValue,
   TerminalMetadata,
@@ -12,15 +11,21 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
-import { readPreferences } from "../../preferences/preferences-storage"
 import { useWorkspaceShell, type ShellController } from "../../shell/useWorkspaceShell"
 import { useRecentSwitcher, type RecentSwitcherController } from "../../terminals/useRecentSwitcher"
 import { useTerminalRename, type TerminalRenameController } from "../../terminals/useTerminalRename"
 import type { WorkspaceRoute } from "../routing"
-import { createUiStore, persistUi, type UiState } from "../ui-store"
+import type { UiLocation, UiState } from "../ui-store"
+import { useWorkspaceServices } from "./context"
+import type { WorkspaceNavigator } from "./navigator"
 import { useStoreSelector } from "./useStoreSelector"
 import { useWorkspaceCommands, type WorkspaceCommands } from "./useWorkspaceCommands"
-import { useWorkspaceRoute, type WorkspaceNavigation } from "./useWorkspaceRoute"
+
+// Navigation plus direct workspace commits for commands and sections.
+export type WorkspaceNavigation = WorkspaceNavigator & {
+  readonly dispatch: (action: WorkspaceAction) => void
+  readonly getWorkspace: () => Workspace
+}
 
 // Everything the workspace page renders from, composed once per render.
 export type WorkspaceController = {
@@ -43,18 +48,28 @@ export type WorkspaceController = {
 }
 
 const selectPreferences = (state: UiState): PreferencesValue => state.preferences
+const selectLocation = (state: UiState): UiLocation => state.location
+const whole = (workspace: Workspace): Workspace => workspace
 
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string): WorkspaceTarget =>
   useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
 
-export const useWorkspaceController = (createBackend: CreateBackend): WorkspaceController => {
-  const navigationType = useNavigationType()
-  const [ui] = useState(() => createUiStore({ preferences: readPreferences() }))
-  useEffect(() => persistUi(ui), [ui])
+export const useWorkspaceController = (): WorkspaceController => {
+  const services = useWorkspaceServices()
+  const { backend, ui } = services
+  const workspace = useStoreSelector(services.workspace, whole)
+  const { route, navigationType } = useStoreSelector(ui, selectLocation)
   const preferences = useStoreSelector(ui, selectPreferences)
   const setPreferences = (next: PreferencesValue): void =>
     void ui.update((state) => ({ ...state, preferences: next }))
-  const { backend, workspace, route, navigation } = useWorkspaceRoute(preferences, createBackend)
+  const navigation = useMemo<WorkspaceNavigation>(
+    () => ({
+      ...services.navigation,
+      dispatch: (action) => void services.workspace.dispatch(action),
+      getWorkspace: services.workspace.getSnapshot,
+    }),
+    [services],
+  )
   const { go, dispatch } = navigation
   const project = activeProject(workspace)!
   const session = activeSession(workspace)!

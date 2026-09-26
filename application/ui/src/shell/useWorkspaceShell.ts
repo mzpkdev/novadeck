@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
-import type { NavigationType } from "react-router"
 
 import { focusSidebarToggle, focusZenCreate, focusZenEnter } from "../interaction/dom"
 import { cancelTerminalTransition } from "../layouts/transition"
@@ -22,7 +21,7 @@ export type WorkspaceShellOptions = {
   windowedView: WindowedView
   sidebarPanel: SidebarPanel
   setSidebarPanel: (panel: SidebarPanel) => void
-  navigationType: NavigationType
+  navigationType: "POP" | "PUSH" | "REPLACE"
 }
 
 // Presentation state around the workspace: sidebar, zen, navigation pulses and focus requests.

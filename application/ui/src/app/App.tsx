@@ -15,6 +15,7 @@ import { useWorkspaceKeyboard } from "./controller/useWorkspaceKeyboard"
 import { HeaderSection } from "./HeaderSection"
 import { SidebarSection } from "./SidebarSection"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
+import { WorkspaceProvider } from "./WorkspaceProvider"
 import { WorkspaceStage } from "./WorkspaceStage"
 
 export type AppProps = {
@@ -24,16 +25,14 @@ export type AppProps = {
 
 export const App = ({ createBackend = selectBackend }: AppProps): React.JSX.Element => (
   <HashRouter useTransitions={false}>
-    <WorkspaceApp createBackend={createBackend} />
+    <WorkspaceProvider createBackend={createBackend}>
+      <WorkspaceApp />
+    </WorkspaceProvider>
   </HashRouter>
 )
 
-export const WorkspaceApp = ({
-  createBackend,
-}: {
-  readonly createBackend: CreateBackend
-}): React.JSX.Element => {
-  const controller = useWorkspaceController(createBackend)
+export const WorkspaceApp = (): React.JSX.Element => {
+  const controller = useWorkspaceController()
   const { session: current, route, preferences, shell, commands } = controller
   const { view } = current.state
   const { terminals } = current.state.roster

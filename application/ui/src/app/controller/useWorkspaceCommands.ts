@@ -15,7 +15,7 @@ import type { ShellController } from "../../shell/useWorkspaceShell"
 import type { RecentSwitcherController } from "../../terminals/useRecentSwitcher"
 import type { TerminalRenameController } from "../../terminals/useTerminalRename"
 import { newWorkspaceSession } from "./sessions"
-import type { WorkspaceNavigation } from "./useWorkspaceRoute"
+import type { WorkspaceNavigation } from "./useWorkspaceController"
 
 export type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
 

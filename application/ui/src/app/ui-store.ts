@@ -1,11 +1,21 @@
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue } from "../model/types"
 import { writePreferences } from "../preferences/preferences-storage"
+import type { WorkspaceRoute } from "./routing"
 
 // Presentation state the workspace model does not own. One store per App; it
 // starts over on reload apart from the slices persisted below.
 export type UiState = {
+  // The route the app renders, mirrored from the URL, which stays authoritative.
+  readonly location: UiLocation
   readonly preferences: PreferencesValue
+}
+
+export type UiLocation = {
+  readonly route: WorkspaceRoute
+  // History entries the open dialog added above its background entry.
+  readonly dialogDepth: number
+  readonly navigationType: "POP" | "PUSH" | "REPLACE"
 }
 
 export type UiStore = MutableStore<UiState>
