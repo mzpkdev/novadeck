@@ -5,8 +5,9 @@ asar: true
 # PTY libraries and their spawn helpers must run from the real filesystem.
 asarUnpack:
   - node_modules/node-pty/**
-# Rebuild production native dependencies for the target Electron version.
-npmRebuild: true
+# node-pty ships N-API prebuilds for every target, which Electron loads unchanged.
+# Rebuilding from source would shadow them without the bundled ConPTY files.
+npmRebuild: false
 directories:
   output: release
 files:
