@@ -1,6 +1,10 @@
-import { contextBridge } from "electron"
+import { contextBridge, ipcRenderer } from "electron"
 
-import { apiUrlArgumentPrefix } from "../bridge.js"
+import {
+  apiUrlArgumentPrefix,
+  runtimeConnectionChannel,
+  type RuntimeConnection,
+} from "../bridge.js"
 
 const argument = process.argv.find((value) => value.startsWith(apiUrlArgumentPrefix))
 
@@ -12,4 +16,8 @@ if (apiUrl.protocol !== "http:" || apiUrl.hostname !== "127.0.0.1" || !apiUrl.po
   throw new Error("NovaDeck API URL must be an HTTP loopback URL with an explicit port")
 }
 
-contextBridge.exposeInMainWorld("novadeck", { apiUrl: apiUrl.href })
+contextBridge.exposeInMainWorld("novadeck", {
+  apiUrl: apiUrl.href,
+  getRuntimeConnection: (): Promise<RuntimeConnection> =>
+    ipcRenderer.invoke(runtimeConnectionChannel),
+})

@@ -23,7 +23,7 @@ export const openWorkspace = async (route?: string): Promise<void> => {
   window.history.pushState(null, "", route === undefined ? "/" : `/#${route}`)
   await render(
     <StrictMode>
-      <App />
+      <App mode="demo" />
     </StrictMode>,
   )
   // A link may open with a modal dialog, which hides the rest of the app.

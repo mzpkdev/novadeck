@@ -1,157 +1,20 @@
-export type Shortcut = {
-  label: string
-  key: string
-  code?: string
-  ctrl: boolean
-  meta: boolean
-  shift: boolean
-  display: string[]
-}
+import { loadCommandBindings } from "./commands/bindings-storage"
+import { commandBindings } from "./commands/definitions"
+import type { Shortcut } from "./commands/definitions"
 
-export const shortcutBindings = (): Record<
-  | "find"
-  | "recent"
-  | "previous"
-  | "focus"
-  | "newTerminal"
-  | "newSession"
-  | "terminals"
-  | "sessions"
-  | "preferences",
-  Shortcut
-> => {
-  const mac = /Mac|iPhone|iPad/.test(navigator.platform)
-  return {
-    find: {
-      label: "Find a terminal",
-      key: "k",
-      ctrl: !mac,
-      meta: mac,
-      shift: !mac,
-      display: mac ? ["⌘", "K"] : ["Ctrl", "Shift", "K"],
-    },
-    recent: {
-      label: "Recent terminals",
-      key: "Tab",
-      ctrl: true,
-      meta: false,
-      shift: false,
-      display: ["Ctrl", "Tab"],
-    },
-    previous: {
-      label: "Previous recent terminal",
-      key: "Tab",
-      ctrl: true,
-      meta: false,
-      shift: true,
-      display: ["Ctrl", "Shift", "Tab"],
-    },
-    focus: {
-      label: "Toggle Focus view",
-      key: "Enter",
-      ctrl: !mac,
-      meta: mac,
-      shift: !mac,
-      display: mac ? ["⌘", "Enter"] : ["Ctrl", "Shift", "Enter"],
-    },
-    newTerminal: {
-      label: "New terminal",
-      key: "t",
-      ctrl: !mac,
-      meta: mac,
-      shift: !mac,
-      display: mac ? ["⌘", "T"] : ["Ctrl", "Shift", "T"],
-    },
-    newSession: {
-      label: "New session",
-      key: "n",
-      ctrl: !mac,
-      meta: mac,
-      shift: true,
-      display: [mac ? "⌘" : "Ctrl", "Shift", "N"],
-    },
-    terminals: {
-      label: "Toggle terminal sidebar",
-      key: "1",
-      code: "Digit1",
-      ctrl: !mac,
-      meta: mac,
-      shift: true,
-      display: [mac ? "⌘" : "Ctrl", "Shift", "1"],
-    },
-    sessions: {
-      label: "Toggle session sidebar",
-      key: "2",
-      code: "Digit2",
-      ctrl: !mac,
-      meta: mac,
-      shift: true,
-      display: [mac ? "⌘" : "Ctrl", "Shift", "2"],
-    },
-    preferences: {
-      label: "Open preferences",
-      key: ",",
-      ctrl: !mac,
-      meta: mac,
-      shift: false,
-      display: [mac ? "⌘" : "Ctrl", ","],
-    },
-  }
-}
+export type { Shortcut } from "./commands/definitions"
 
-export const workspaceShortcutBindings = (): Record<
-  "find" | "focus" | "newTerminal" | "zen" | "terminals" | "rename",
-  Shortcut
-> => ({
-  find: {
-    label: "Find a terminal",
-    key: "/",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["/"],
-  },
-  focus: {
-    label: "Toggle Focus view",
-    key: "f",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["F"],
-  },
-  newTerminal: {
-    label: "New terminal",
-    key: "t",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["T"],
-  },
-  zen: {
-    label: "Toggle Zen mode",
-    key: "z",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["Z"],
-  },
-  terminals: {
-    label: "Toggle terminal sidebar",
-    key: "b",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["B"],
-  },
-  rename: {
-    label: "Rename active terminal",
-    key: "F2",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["F2"],
-  },
-})
+const bindingsFor = <T extends Record<string, Shortcut>>(defaults: T): T => {
+  const overrides = loadCommandBindings()
+  return Object.fromEntries(
+    Object.entries(defaults).map(([id, binding]) => [
+      id,
+      overrides[id as keyof typeof overrides]?.[0] ?? binding,
+    ]),
+  ) as T
+}
+export const shortcutBindings = () => bindingsFor(commandBindings().global)
+export const workspaceShortcutBindings = () => bindingsFor(commandBindings().workspace)
 
 export { workspaceShortcutTarget, workspaceOverlayOpen } from "./interaction/dom"
 

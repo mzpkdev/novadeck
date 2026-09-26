@@ -207,6 +207,26 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     )
   })
 
+  it("allows repeated close after natural exit releases the controller", async ({ terminals }) => {
+    const runtime = terminals.manager({ shellArgs: ["-c", "printf 'COMPLETED\\n'; exit 7"] })
+    const terminal = await runtime.create(
+      { sessionId: "session", cwd, cols: 80, rows: 24 },
+      "owner",
+    )
+    const stream = terminals.attach(runtime, terminal.id, "owner")
+    await until(
+      runtime,
+      stream,
+      "owner",
+      (event) =>
+        event.type === "exited" || (event.type === "snapshot" && event.status === "exited"),
+    )
+    expect((await stream.next()).done).toBe(true)
+    await expect(runtime.close({ terminalId: terminal.id }, "owner")).resolves.toBeUndefined()
+    await expect(runtime.close({ terminalId: terminal.id }, "owner")).resolves.toBeUndefined()
+    expect(runtime.get(terminal.id)).toMatchObject({ status: "exited", exitCode: 7 })
+  })
+
   it("uses a snapshot when retained history no longer covers the cursor", async ({ terminals }) => {
     const runtime = terminals.manager({ historyBytes: 1 })
     const terminal = await runtime.create(

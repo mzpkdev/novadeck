@@ -1,17 +1,21 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import type { useRecentSwitcher } from "../workspace/interaction/useRecentSwitcher"
 import type { useTerminalRename } from "../workspace/interaction/useTerminalRename"
 import { addCompactGridTerminal } from "../workspace/layouts/grid/placement"
 import { cancelTerminalTransition, transitionTerminal } from "../workspace/layouts/transition"
-import { createMockTerminal } from "../workspace/mock/sessions"
 import { activeProject, activeSession } from "../workspace/model/state"
 import type { Project, PreferencesValue, ViewMode, WorkspaceTarget } from "../workspace/model/types"
 import type { useWorkspaceShell } from "../workspace/shell/useWorkspaceShell"
 import { newWorkspaceSession } from "./demo-workspace"
 import type { useWorkspaceRoute } from "./useWorkspaceRoute"
+import { useWorkspaceServices } from "./workspace-services"
 
-type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
+type AddTerminalOptions = {
+  fromKeyboard?: boolean
+  beginRename?: boolean
+  beforePublish?: (id: string) => void
+}
 
 export const useWorkspaceCommands = ({
   routeState,
@@ -30,6 +34,7 @@ export const useWorkspaceCommands = ({
   rename: ReturnType<typeof useTerminalRename>
   recent: ReturnType<typeof useRecentSwitcher>
 }) => {
+  const services = useWorkspaceServices()
   const { workspace, dispatch, go, navigateWorkspace, getWorkspace } = routeState
   const project = activeProject(workspace)!
   const current = activeSession(workspace)!
@@ -38,6 +43,12 @@ export const useWorkspaceCommands = ({
   const workspaceSessions = project.history
   const { view, windowedView, selected } = current.state
   const context = `${projectId}/${workspaceSessionId}`
+  const navigationRequest = useRef(0)
+  const isCurrent = (): boolean => {
+    const latest = getWorkspace()
+    const currentProject = activeProject(latest)
+    return currentProject?.id === projectId && currentProject.activeSessionId === workspaceSessionId
+  }
   const {
     zen,
     desktop,
@@ -60,10 +71,17 @@ export const useWorkspaceCommands = ({
     const timeout = window.setTimeout(() => setCreated(null), 900)
     return () => window.clearTimeout(timeout)
   }, [created])
-  const switchSession = (id: string): void => {
+  const switchSession = async (id: string): Promise<void> => {
     if (id === workspaceSessionId) return
+    const request = ++navigationRequest.current
     const next = workspaceSessions.find((item) => item.id === id)
     if (!next) return
+    if (
+      services.mode === "live" &&
+      !(await services.selectSession({ projectId, workspaceSessionId: id }))
+    )
+      return
+    if (request !== navigationRequest.current) return
     const now = Date.now()
     navigateWorkspace([
       {
@@ -75,18 +93,41 @@ export const useWorkspaceCommands = ({
       },
     ])
   }
-  const startFresh = (): void => {
+  const startFresh = async (): Promise<void> => {
     const next = newWorkspaceSession([], view, windowedView)
     const name = next.name
     let suffix = 2
     const history = getWorkspace().projects.find((item) => item.id === projectId)?.history ?? []
     while (history.some((item) => item.name === next.name)) next.name = `${name} (${suffix++})`
+    const confirmed = await services.createSession(projectId, next.name)
+    if (!isCurrent()) return
+    next.id = confirmed.id
     setFreshSession(next.id)
     setSidebarCollapsed(false)
-    navigateWorkspace([{ type: "session/add", projectId, session: next }], { panel: "sessions" })
+    navigateWorkspace(
+      [
+        {
+          type: "view/change",
+          target: { projectId, workspaceSessionId: next.id },
+          view,
+          enabledViews: preferences.enabledViews,
+        },
+        {
+          type: "session/select",
+          projectId,
+          workspaceSessionId: next.id,
+          now: Date.now(),
+          enabledViews: preferences.enabledViews,
+        },
+      ],
+      { panel: "sessions" },
+    )
   }
-  const switchProject = (next: Project): void => {
+  const switchProject = async (next: Project): Promise<void> => {
     if (next.id === projectId) return
+    const request = ++navigationRequest.current
+    if (services.mode === "live" && !(await services.selectProject(next.id))) return
+    if (request !== navigationRequest.current) return
     const now = Date.now()
     navigateWorkspace([
       {
@@ -143,15 +184,19 @@ export const useWorkspaceCommands = ({
     setNavigation((value) => ({ count: value.count + 1, fit: view === "canvas" }))
     setSidebar(false)
   }
-  const add = ({ fromKeyboard = false, beginRename = true }: AddTerminalOptions = {}): string => {
+  const add = async ({
+    fromKeyboard = false,
+    beginRename = true,
+    beforePublish,
+  }: AddTerminalOptions = {}): Promise<string> => {
     setRecentSwitcher(null)
     const latestProject = getWorkspace().projects.find((item) => item.id === projectId)
     const latestSession = latestProject?.history.find((item) => item.id === workspaceSessionId)
     if (!latestProject || !latestSession) return ""
-    const session = createMockTerminal(
-      latestSession.state.nextTerminalNumber,
-      latestProject.directory,
+    const session = await services.createTerminal(target, (terminal) =>
+      beforePublish?.(terminal.id),
     )
+    if (!isCurrent()) return session.id
     if (!beginRename && activeRename) finishRename(activeRename, true)
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
     setCreated({ context, id: session.id })
@@ -174,7 +219,9 @@ export const useWorkspaceCommands = ({
     setSidebar(false)
     return session.id
   }
-  const close = (terminalId: string): void => {
+  const close = async (terminalId: string): Promise<void> => {
+    await services.closeTerminal(target, terminalId)
+    if (!isCurrent()) return
     if (activeRename?.id === terminalId) finishRename(activeRename, false)
     navigateWorkspace([{ type: "terminal/close", target, terminalId }], {}, true)
     if (selected === terminalId && view !== "canvas")

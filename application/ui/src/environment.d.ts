@@ -5,5 +5,6 @@ interface ImportMetaEnv {
 interface Window {
   readonly novadeck?: Readonly<{
     apiUrl: string
+    getRuntimeConnection?: () => Promise<{ url: string; token: string }>
   }>
 }

@@ -1,8 +1,8 @@
 # Backend API
 
-This is the first backend-only implementation of the [terminal plan](backend-plan.md).
-The UI and Electron host still use their existing behavior; neither connects to
-this terminal API yet.
+The UI and Electron host use this authenticated terminal API by default. The
+[terminal plan](backend-plan.md) describes the runtime design; `?demo=1` selects
+the independent UI preview.
 
 ## Run and test
 
@@ -45,18 +45,19 @@ temporary SQLite files, and real PTYs; the UI is not involved.
 
 Backend CI runs on Linux, macOS, and Windows. POSIX signal and hangup assertions
 are explicitly platform-specific; Windows process termination is not a graceful
-SIGTERM test. Packaged Electron terminal support and remote TLS deployment remain
-verification gates before integration.
+SIGTERM test. Release workflows additionally exercise packaged Electron; remote TLS deployments
+need their own reverse-proxy and origin checks.
 
 Without a token, the runtime exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set.
 Programmatic `startRuntime` from `@novadeck/runtime/terminal` uses an in-memory
 database when no path is supplied. The original package entry remains HTTP-only
-so existing Electron builds do not pull in native terminal dependencies.
+for callers that only need HTTP status. Electron uses the terminal entry and bundles
+its native PTY dependency.
 
 For a VPS, terminate TLS at a trusted reverse proxy and forward WebSocket upgrades.
-Set `CORS_ORIGINS` to the exact trusted frontend origins. A static UI can later
+Set `CORS_ORIGINS` to the exact trusted frontend origins. A static UI can
 connect directly over WSS; it does not need a terminal backend on Cloudflare.
 Follow the [runtime trust boundary](../SECURITY.md#terminal-runtime) before exposing
 the service. There is no TLS, login page, or public multi-user hosting layer here.

@@ -1,17 +1,26 @@
+import { randomBytes } from "node:crypto"
+import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
-import { startRuntime, type Runtime } from "@novadeck/runtime"
-import { app, BrowserWindow, session, shell } from "electron"
+import { startRuntime, type Runtime } from "@novadeck/runtime/terminal"
+import { app, BrowserWindow, ipcMain, session, shell } from "electron"
 
-import { apiUrlArgumentPrefix } from "../bridge.js"
+import {
+  apiUrlArgumentPrefix,
+  runtimeConnectionChannel,
+  type RuntimeConnection,
+} from "../bridge.js"
+import { isTrustedFrame } from "./renderer.js"
 
 const appId = "dev.mzpk.novadeck"
 const developmentOrigin = "http://127.0.0.1:5173"
 const currentDirectory = dirname(fileURLToPath(import.meta.url))
 
 let runtime: Runtime | undefined
+let connection: RuntimeConnection | undefined
 let stopping = false
+const trustedWindows = new Map<number, string>()
 
 const waitFor = async (origin: string, attempts = 100): Promise<void> => {
   try {
@@ -46,6 +55,13 @@ const createWindow = (runtimeOrigin: string): BrowserWindow => {
     },
   })
 
+  const document = app.isPackaged
+    ? pathToFileURL(join(process.resourcesPath, "ui", "index.html")).href
+    : developmentOrigin
+  const id = window.webContents.id
+  trustedWindows.set(id, document)
+  window.once("closed", () => trustedWindows.delete(id))
+
   window.once("ready-to-show", () => window.show())
 
   window.webContents.on("will-navigate", (event) => event.preventDefault())
@@ -65,10 +81,19 @@ const createWindow = (runtimeOrigin: string): BrowserWindow => {
 }
 
 const launch = async (): Promise<void> => {
+  const directory = app.getPath("userData")
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const token = randomBytes(32).toString("hex")
   runtime = await startRuntime({
+    hostname: "127.0.0.1",
     port: 0,
     corsOrigins: app.isPackaged ? ["null"] : [developmentOrigin],
+    apiToken: token,
+    databasePath: join(directory, "workspace.sqlite"),
   })
+  const url = new URL("/api/rpc", runtime.origin)
+  url.protocol = "ws:"
+  connection = { url: url.href, token }
 
   if (!app.isPackaged) await waitFor(developmentOrigin)
 
@@ -78,14 +103,33 @@ const launch = async (): Promise<void> => {
 app.setAppUserModelId(appId)
 
 app.whenReady().then(() => {
+  ipcMain.handle(runtimeConnectionChannel, (event): RuntimeConnection => {
+    const document = trustedWindows.get(event.sender.id)
+    if (
+      !connection ||
+      stopping ||
+      !document ||
+      !isTrustedFrame(event.senderFrame, event.sender.mainFrame, document)
+    ) {
+      throw new Error("Runtime connection is available only to the application document")
+    }
+    return connection
+  })
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, respond) =>
     respond(false),
   )
 
-  void launch().catch((error: unknown) => {
-    console.error(error)
-    app.exit(1)
+  void launch().catch(async () => {
+    // Startup errors can include transport details; credentials never go to logs.
+    console.error("NovaDeck could not start its local runtime or load the interface")
+    stopping = true
+    connection = undefined
+    try {
+      await runtime?.close()
+    } finally {
+      app.exit(1)
+    }
   })
 
   app.on("activate", () => {
@@ -100,7 +144,11 @@ app.on("before-quit", (event) => {
 
   event.preventDefault()
   stopping = true
-  void runtime.close().finally(() => app.quit())
+  connection = undefined
+  void runtime
+    .close()
+    .catch(() => console.error("NovaDeck could not cleanly stop its local runtime"))
+    .finally(() => app.quit())
 })
 
 app.on("window-all-closed", () => {

@@ -56,3 +56,16 @@ daemonized or hangup-ignoring descendants may survive. Use service-level process
 isolation and cleanup if that guarantee is required.
 Screen state and replay stay in memory and may contain secrets; neither is logged
 or stored in SQLite. Metadata files use owner-only permissions where supported.
+
+## Renderer connection
+
+The browser UI sends a user-entered token only in the WebSocket handshake and
+keeps it in connection memory. It does not persist credentials in URLs or browser
+storage. Remote browser connections require HTTPS/WSS; plaintext is limited to
+loopback. The CSP allows the configured API origin and loopback runtime endpoints.
+
+Electron creates a fresh random token on each launch. Only the registered main
+window's exact top-level document can request connection details through the
+sandboxed preload. Tokens never enter process arguments or renderer build variables.
+The bundled native PTY and its spawn helpers are unpacked from ASAR. Electron's
+runtime persists metadata under `userData` and closes when the app exits.

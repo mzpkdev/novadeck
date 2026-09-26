@@ -56,7 +56,8 @@ describe("compiled frontend", () => {
 
       expect(html).toContain("connect-src 'self' http://127.0.0.1:*")
       expect(html).not.toContain("__NOVADECK_CONNECT_SOURCES__")
-      expect(html).not.toContain("ws:")
+      expect(html).toContain("ws://127.0.0.1:*")
+      expect(html).not.toContain("connect-src *")
     })
   })
 })

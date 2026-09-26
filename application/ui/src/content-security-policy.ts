@@ -2,7 +2,7 @@ export const contentSecurityPolicyConnectSources = (
   apiUrl: string | undefined,
   development: boolean,
 ): readonly string[] => {
-  const sources = new Set(["'self'", "http://127.0.0.1:*"])
+  const sources = new Set(["'self'", "http://127.0.0.1:*", "ws://127.0.0.1:*"])
 
   if (development) sources.add("ws://127.0.0.1:*")
 
@@ -16,7 +16,11 @@ export const contentSecurityPolicyConnectSources = (
       throw new Error("unsupported protocol")
     }
 
-    if (!(url.protocol === "http:" && url.hostname === "127.0.0.1")) sources.add(url.origin)
+    if (!(url.protocol === "http:" && url.hostname === "127.0.0.1")) {
+      sources.add(url.origin)
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+      sources.add(url.origin)
+    }
   } catch {
     const base = new URL("https://novadeck.invalid")
     const hasRelativePrefix = configuredUrl.startsWith("/") || configuredUrl.startsWith("./")

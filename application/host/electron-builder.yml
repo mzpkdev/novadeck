@@ -2,6 +2,11 @@ appId: dev.mzpk.novadeck
 productName: novadeck.
 executableName: novadeck
 asar: true
+# PTY libraries and their spawn helpers must run from the real filesystem.
+asarUnpack:
+  - node_modules/node-pty/**
+# Rebuild production native dependencies for the target Electron version.
+npmRebuild: true
 directories:
   output: release
 files:

@@ -1,13 +1,16 @@
-import { useEffect, useEffectEvent, type RefObject } from "react"
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react"
+import { useHotkeys } from "react-hotkeys-hook"
 
 import type { useWorkspaceCommands } from "../../app/useWorkspaceCommands"
 import type { useWorkspaceRoute } from "../../app/useWorkspaceRoute"
+import { loadCommandBindings } from "../commands/bindings-storage"
+import { commandDefinitions, type CommandId } from "../commands/definitions"
+import { createCommandRegistry, type CommandArgs } from "../commands/registry"
 import type { CanvasHandle } from "../layouts/canvas/Canvas"
 import { activeSession, orderedSessions } from "../model/state"
 import type { TerminalMetadata, PreferencesValue } from "../model/types"
 import { viewModes } from "../preferences/preferences-storage"
 import type { useWorkspaceShell } from "../shell/useWorkspaceShell"
-import { matchesShortcut, shortcutBindings, workspaceShortcutBindings } from "../shortcuts"
 import {
   workspaceShortcutTarget,
   workspaceOverlayOpen,
@@ -35,6 +38,7 @@ export const useWorkspaceKeyboard = ({
   commands,
   canvas,
   active,
+  onError = () => console.error("Workspace command failed"),
 }: {
   routeState: ReturnType<typeof useWorkspaceRoute>
   preferences: PreferencesValue
@@ -44,7 +48,8 @@ export const useWorkspaceKeyboard = ({
   commands: ReturnType<typeof useWorkspaceCommands>
   canvas: RefObject<CanvasHandle | null>
   active: TerminalMetadata | undefined
-}): void => {
+  onError?: (error: unknown) => void
+}) => {
   const { workspace, route, go } = routeState
   const current = activeSession(workspace)!
   const { view, selected, sessions } = current.state
@@ -71,6 +76,125 @@ export const useWorkspaceKeyboard = ({
     recentIds,
   } = recent
   const { setSelected, select, windowedDestination, changeView, add, close, startFresh } = commands
+  const [bindingOverrides] = useState(loadCommandBindings)
+  const nextFocus = view === "focus" ? windowedDestination : "focus"
+  const terminalFor = ({ terminalId }: CommandArgs) =>
+    sessions.find((item) => item.id === (terminalId ?? selected)) ??
+    (!terminalId && view === "focus" ? active : undefined)
+  const cycleRecent = (direction: number): void => {
+    const ids = visibleRecentSwitcher?.ids ?? recentIds()
+    const index =
+      ((visibleRecentSwitcher?.index ?? (selected ? 0 : -1)) + direction + ids.length) % ids.length
+    setRecentSwitcher({
+      context,
+      ids,
+      index,
+      fromInput: visibleRecentSwitcher?.fromInput ?? insideTerminalInput(document.activeElement),
+      mode: visibleRecentSwitcher?.mode ?? "held",
+    })
+  }
+  const moveView = (direction: number): void => {
+    const modes = viewModes.filter((mode) => preferences.enabledViews.includes(mode))
+    const next = modes[(modes.indexOf(view) + direction + modes.length) % modes.length]
+    if (next && next !== view) changeView(next)
+  }
+  const moveTerminal = (direction: number, args: CommandArgs): void => {
+    if (!ordered.length) return
+    const index = ordered.findIndex((terminal) => terminal.id === selected)
+    const next =
+      index < 0
+        ? direction > 0
+          ? 0
+          : ordered.length - 1
+        : (index + direction + ordered.length) % ordered.length
+    const terminal = ordered[next]
+    if (!terminal) return
+    const target = args.sourceEvent?.target ?? null
+    if (view === "canvas" && insideCanvasNode(target)) requestCanvasFocus(terminal.id)
+    select(terminal.id)
+    if (
+      (insideViewSwitch(target) || insideTerminalTab(target)) &&
+      sidebarVisible &&
+      sidebarPanel === "terminals"
+    )
+      focusTerminalTab(terminal.id)
+  }
+  const registry = createCommandRegistry({
+    definitions: commandDefinitions(),
+    overrides: bindingOverrides,
+    available: (id, args) => {
+      if (id === "escape") return Boolean(selected || sidebarVisible || view === "canvas")
+      if (id === "focus") return Boolean(nextFocus && preferences.enabledViews.includes(nextFocus))
+      if (id === "rename" || id === "closeTerminal") return Boolean(terminalFor(args))
+      if (id === "recent" || id === "previous")
+        return (visibleRecentSwitcher?.ids ?? recentIds()).length > 1
+      return true
+    },
+    context: (event) => ({
+      dialog: Boolean(route.dialog),
+      editor: insideTerminalRename(event.target),
+      workspace: !visibleRecentSwitcher && workspaceShortcutTarget(event.target),
+      overlay: workspaceOverlayOpen(),
+    }),
+    onError,
+    handlers: {
+      find: () => {
+        setRecentSwitcher(null)
+        go({ dialog: "search" })
+      },
+      preferences: () => {
+        setRecentSwitcher(null)
+        go({ dialog: "preferences", section: "general" })
+      },
+      newSession: () => {
+        setRecentSwitcher(null)
+        return startFresh()
+      },
+      newTerminal: (args) => add({ fromKeyboard: args.fromKeyboard ?? false }),
+      terminals: () => {
+        setRecentSwitcher(null)
+        toggleSidebar("terminals")
+      },
+      sessions: () => {
+        setRecentSwitcher(null)
+        toggleSidebar("sessions")
+      },
+      focus: (args) => {
+        if (!nextFocus) return
+        if (args.fromKeyboard && insideTerminalInput(document.activeElement) && selected)
+          setKeyboardFocus({ id: selected, view: nextFocus })
+        return changeView(nextFocus)
+      },
+      zen: () => (zen ? exitZen() : enterZen()),
+      rename: (args) => {
+        const terminal = terminalFor(args)
+        if (terminal)
+          startRename(
+            terminal,
+            sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header",
+          )
+      },
+      closeTerminal: (args) => {
+        const terminal = terminalFor(args)
+        if (terminal) return close(terminal.id)
+      },
+      escape: () => {
+        if (view === "canvas" && canvas.current?.returnToOrigin()) return
+        if (selected) {
+          if (view === "focus") setFocusPreview({ context, id: selected })
+          setKeyboardFocus(null)
+          setSelected("")
+          focusWorkspaceViewport()
+        } else hideSidebar()
+      },
+      previousView: () => moveView(-1),
+      nextView: () => moveView(1),
+      previousTerminal: (args) => moveTerminal(-1, args),
+      nextTerminal: (args) => moveTerminal(1, args),
+      recent: () => cycleRecent(1),
+      previous: () => cycleRecent(-1),
+    },
+  })
   const workspaceEscape = useEffectEvent((event: KeyboardEvent): void => {
     if (
       event.key !== "Escape" ||
@@ -88,21 +212,10 @@ export const useWorkspaceKeyboard = ({
     )
       return
     if (workspaceOverlayOpen() || terminalTabInteractionActive()) return
-    if (!event.repeat && view === "canvas" && canvas.current?.returnToOrigin()) {
-      event.preventDefault()
-      event.stopPropagation()
-      return
-    }
-    if (!selected && !sidebarVisible) return
+    if (!registry.available("escape")) return
     event.preventDefault()
     event.stopPropagation()
-    if (event.repeat) return
-    if (selected) {
-      if (view === "focus") setFocusPreview({ context, id: selected })
-      setKeyboardFocus(null)
-      setSelected("")
-      focusWorkspaceViewport()
-    } else hideSidebar()
+    if (!event.repeat) registry.execute("escape")
   })
   const workspaceArrows = useEffectEvent((event: KeyboardEvent): void => {
     if (
@@ -136,44 +249,38 @@ export const useWorkspaceKeyboard = ({
       return
     event.preventDefault()
     event.stopPropagation()
-    if (horizontal) {
-      const modes = viewModes.filter((mode) => preferences.enabledViews.includes(mode))
-      const next = modes[(modes.indexOf(view) + direction + modes.length) % modes.length]
-      if (next && next !== view) changeView(next)
-      return
-    }
-    if (!ordered.length) return
-    const index = ordered.findIndex((session) => session.id === selected)
-    const next =
-      index < 0
-        ? direction > 0
-          ? 0
-          : ordered.length - 1
-        : (index + direction + ordered.length) % ordered.length
-    const session = ordered[next]
-    if (session) {
-      const fromCanvasNode = view === "canvas" && insideCanvasNode(event.target)
-      if (fromCanvasNode) requestCanvasFocus(session.id)
-      select(session.id)
-      const fromTab = insideTerminalTab(event.target)
-      if ((fromViewSwitch || fromTab) && sidebarVisible && sidebarPanel === "terminals")
-        focusTerminalTab(session.id)
-    }
+    registry.execute(
+      horizontal
+        ? direction < 0
+          ? "previousView"
+          : "nextView"
+        : direction < 0
+          ? "previousTerminal"
+          : "nextTerminal",
+      { fromKeyboard: true, sourceEvent: event },
+    )
   })
 
-  const keydown = useEffectEvent((event: KeyboardEvent): void => {
-    if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
-    const shortcuts = shortcutBindings()
-    const fromInput = insideTerminalInput(event.target)
-    const renamed = insideTerminalRename(event.target)
-    if (renamed) return
+  // Keep event identity across xterm's handler and the document listener, even
+  // when the first command schedules a new render.
+  const accepted = useRef(new WeakSet<KeyboardEvent>())
+  const keydown = useEffectEvent((event: KeyboardEvent): boolean => {
+    if (accepted.current.has(event)) return true
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.keyCode === 229 ||
+      insideTerminalRename(event.target)
+    )
+      return false
     if (visibleRecentSwitcher && event.key === "Escape") {
       event.preventDefault()
       closeRecentSwitcher()
-      return
+      accepted.current.add(event)
+      return true
     }
     if (visibleRecentSwitcher?.mode === "click" && event.key === "Enter") {
-      if (insideSwitcherClose(event.target)) return
+      if (insideSwitcherClose(event.target)) return false
       event.preventDefault()
       const id = visibleRecentSwitcher.ids[visibleRecentSwitcher.index]
       setRecentSwitcher(null)
@@ -181,110 +288,19 @@ export const useWorkspaceKeyboard = ({
         setKeyboardFocus({ id, view })
         select(id)
       }
-      return
+      accepted.current.add(event)
+      return true
     }
-    if (matchesShortcut(event, shortcuts.find)) {
-      event.preventDefault()
-      setRecentSwitcher(null)
-      go({ dialog: "search" })
-      return
-    }
-    if (matchesShortcut(event, shortcuts.preferences)) {
-      event.preventDefault()
-      setRecentSwitcher(null)
-      go({ dialog: "preferences", section: "general" })
-      return
-    }
-    if (route.dialog) return
-    if (matchesShortcut(event, shortcuts.newSession)) {
-      event.preventDefault()
-      if (event.repeat) return
-      setRecentSwitcher(null)
-      startFresh()
-      return
-    }
-    if (matchesShortcut(event, shortcuts.terminals) || matchesShortcut(event, shortcuts.sessions)) {
-      event.preventDefault()
-      if (event.repeat) return
-      setRecentSwitcher(null)
-      toggleSidebar(matchesShortcut(event, shortcuts.terminals) ? "terminals" : "sessions")
-      return
-    }
-    if (matchesShortcut(event, shortcuts.recent) || matchesShortcut(event, shortcuts.previous)) {
-      const ids = visibleRecentSwitcher?.ids ?? recentIds()
-      if (ids.length < 2) return
-      event.preventDefault()
-      const direction = matchesShortcut(event, shortcuts.previous) ? -1 : 1
-      const index =
-        ((visibleRecentSwitcher?.index ?? (selected ? 0 : -1)) + direction + ids.length) %
-        ids.length
-      setRecentSwitcher({
-        context,
-        ids,
-        index,
-        fromInput: visibleRecentSwitcher?.fromInput ?? fromInput,
-        mode: visibleRecentSwitcher?.mode ?? "held",
-      })
-      return
-    }
-    if (matchesShortcut(event, shortcuts.focus)) {
-      const next = view === "focus" ? windowedDestination : "focus"
-      if (!next || !preferences.enabledViews.includes(next)) return
-      event.preventDefault()
-      if (event.repeat) return
-      if (fromInput && selected) setKeyboardFocus({ id: selected, view: next })
-      changeView(next)
-      return
-    }
-    if (matchesShortcut(event, shortcuts.newTerminal)) {
-      event.preventDefault()
-      if (event.repeat) return
-      add({ fromKeyboard: true })
-      return
-    }
-    const workspaceKeys = workspaceShortcutBindings()
-    if (
-      event.repeat ||
-      route.dialog ||
-      visibleRecentSwitcher ||
-      !workspaceShortcutTarget(event.target) ||
-      workspaceOverlayOpen()
+    workspaceEscape(event)
+    workspaceArrows(event)
+    const priorityKey = ["Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+      event.key,
     )
-      return
-    if (matchesShortcut(event, workspaceKeys.find)) {
-      event.preventDefault()
-      go({ dialog: "search" })
-    } else if (matchesShortcut(event, workspaceKeys.focus)) {
-      const next = view === "focus" ? windowedDestination : "focus"
-      if (!next || !preferences.enabledViews.includes(next)) return
-      event.preventDefault()
-      changeView(next)
-    } else if (matchesShortcut(event, workspaceKeys.newTerminal)) {
-      event.preventDefault()
-      add({ fromKeyboard: true })
-    } else if (matchesShortcut(event, workspaceKeys.zen)) {
-      event.preventDefault()
-      if (zen) exitZen()
-      else enterZen()
-    } else if (matchesShortcut(event, workspaceKeys.terminals)) {
-      event.preventDefault()
-      toggleSidebar("terminals")
-    } else if (
-      (event.key === "Delete" &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        !event.shiftKey) ||
-      matchesShortcut(event, workspaceKeys.rename)
-    ) {
-      const session =
-        sessions.find((item) => item.id === selected) ?? (view === "focus" ? active : undefined)
-      if (!session) return
-      event.preventDefault()
-      if (event.key === "Delete") close(session.id)
-      else
-        startRename(session, sidebarVisible && sidebarPanel === "terminals" ? "sidebar" : "header")
+    if (event.defaultPrevented || (!priorityKey && registry.handleKey(event))) {
+      accepted.current.add(event)
+      return true
     }
+    return false
   })
   const keyup = useEffectEvent((event: KeyboardEvent): void => {
     if (event.key !== "Control" || !recentSwitcher || recentSwitcher.mode !== "held") return
@@ -302,18 +318,39 @@ export const useWorkspaceKeyboard = ({
   const blur = useEffectEvent((): void => {
     if (recentSwitcher?.mode === "held") setRecentSwitcher(null)
   })
+  useHotkeys(
+    "*",
+    (event) => {
+      keydown(event)
+    },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      ignoreModifiers: true,
+      eventListenerOptions: { capture: true },
+    },
+  )
+  useHotkeys(
+    "*",
+    (event) => {
+      keyup(event)
+    },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      ignoreModifiers: true,
+      keyup: true,
+      keydown: false,
+    },
+  )
   useEffect(() => {
-    window.addEventListener("keydown", workspaceEscape, true)
-    window.addEventListener("keydown", workspaceArrows, true)
-    window.addEventListener("keydown", keydown)
-    window.addEventListener("keyup", keyup)
     window.addEventListener("blur", blur)
-    return () => {
-      window.removeEventListener("keydown", workspaceEscape, true)
-      window.removeEventListener("keydown", workspaceArrows, true)
-      window.removeEventListener("keydown", keydown)
-      window.removeEventListener("keyup", keyup)
-      window.removeEventListener("blur", blur)
-    }
+    return () => window.removeEventListener("blur", blur)
   }, [])
+  return {
+    execute: (id: CommandId, args?: CommandArgs) => registry.execute(id, args),
+    available: registry.available,
+    handleTerminalKey: (event: KeyboardEvent): boolean =>
+      event.type === "keydown" ? keydown(event) : false,
+  }
 }

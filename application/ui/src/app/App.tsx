@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useMemo, useRef } from "react"
-import { HashRouter, useNavigationType } from "react-router"
+import { useNavigationType } from "react-router"
 
 import { sidebarToggle } from "../workspace/interaction/dom"
 import { useRecentSwitcher } from "../workspace/interaction/useRecentSwitcher"
@@ -30,15 +30,17 @@ import { WorkspaceHeader } from "../workspace/shell/WorkspaceHeader"
 import { WorkspacePanels } from "../workspace/shell/WorkspacePanels"
 import { WorkspaceSidebar } from "../workspace/shell/WorkspaceSidebar"
 import { ZenDock } from "../workspace/shell/ZenDock"
-import { RuntimeTerminal } from "../workspace/terminals/RuntimeTerminal"
+import { LiveTerminal } from "../workspace/terminals/LiveTerminal"
+import { RuntimeTerminal, type RuntimeTerminalProps } from "../workspace/terminals/RuntimeTerminal"
 import type { MinimizeControls } from "../workspace/terminals/Terminal"
 import { TerminalSwitcher } from "../workspace/terminals/TerminalSwitcher"
 import { Canvas, Grid } from "./deferred-views"
-import { initializeWorkspace } from "./demo-workspace"
 import { routeUrl } from "./routing"
 import { useRouteDialog } from "./useRouteDialog"
 import { useWorkspaceCommands } from "./useWorkspaceCommands"
 import { useWorkspaceRoute } from "./useWorkspaceRoute"
+import { useWorkspaceServices } from "./workspace-services"
+import { WorkspaceRoot, useWorkspaceEnvironment, type WorkspaceMode } from "./WorkspaceRoot"
 
 const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
   useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
@@ -46,16 +48,39 @@ const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
 const useLayoutHidden = (hidden: Record<string, boolean>, preview: string) =>
   useMemo(() => (preview ? { ...hidden, [preview]: false } : hidden), [hidden, preview])
 
-export const App = (): React.JSX.Element => (
-  <HashRouter useTransitions={false}>
+const WorkspaceTerminal = ({
+  runtime,
+  fontSize,
+  keyHandler,
+  ...props
+}: RuntimeTerminalProps & {
+  fontSize: number
+  keyHandler: (event: KeyboardEvent) => boolean
+}): React.JSX.Element => {
+  const { terminals } = useWorkspaceEnvironment()
+  return terminals ? (
+    <LiveTerminal {...props} runtime={terminals} fontSize={fontSize} keyHandler={keyHandler} />
+  ) : (
+    <RuntimeTerminal {...props} runtime={runtime} />
+  )
+}
+
+export const App = ({
+  mode = new URLSearchParams(window.location.search).get("demo") === "1" ? "demo" : "live",
+}: {
+  mode?: WorkspaceMode
+}): React.JSX.Element => (
+  <WorkspaceRoot mode={mode}>
     <WorkspaceApp />
-  </HashRouter>
+  </WorkspaceRoot>
 )
 
 export const WorkspaceApp = (): React.JSX.Element => {
+  const services = useWorkspaceServices()
+  const environment = useWorkspaceEnvironment()
   const navigationType = useNavigationType()
   const { preferences, setPreferences } = useWorkspacePreferences()
-  const routeState = useWorkspaceRoute(preferences, initializeWorkspace)
+  const routeState = useWorkspaceRoute(preferences)
   const { workspace, dispatch, route, go, closeDialog, runtime } = routeState
   const project = activeProject(workspace)!
   const current = activeSession(workspace)!
@@ -97,8 +122,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
     sidebarVisible,
     zen,
     hideSidebar,
-    toggleSidebar,
-    enterZen,
     exitZen,
     showSessions,
     revealCanvas,
@@ -115,7 +138,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const recent = useRecentSwitcher({ context, dialog: route.dialog, sessions, ordered, selected })
   const { visibleRecentSwitcher, setRecentSwitcher, closeRecentSwitcher, openRecentSwitcher } =
     recent
-  const commands = useWorkspaceCommands({
+  const workspaceCommands = useWorkspaceCommands({
     routeState,
     preferences,
     setPreferences,
@@ -124,11 +147,17 @@ export const WorkspaceApp = (): React.JSX.Element => {
     rename,
     recent,
   })
+  const commands = {
+    ...workspaceCommands,
+    close: async (terminalId: string): Promise<void> => {
+      await workspaceCommands.close(terminalId)
+      environment.terminals?.disposeTerminal(terminalId)
+    },
+  }
   const {
     created,
     windowedDestination,
     switchSession,
-    startFresh,
     switchProject,
     select,
     setSelected,
@@ -137,7 +166,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
     openWindowed,
     openSearchResult,
     add,
-    close,
   } = commands
   const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
   const active = sessions.find((session) => session.id === displayed) ?? sessions[0]
@@ -157,7 +185,17 @@ export const WorkspaceApp = (): React.JSX.Element => {
   )
   const setTabOrder = (tabOrder: string[]): void =>
     dispatch({ type: "terminal/reorder", target, tabOrder })
-  useWorkspaceKeyboard({ routeState, preferences, shell, rename, recent, commands, canvas, active })
+  const { execute, handleTerminalKey } = useWorkspaceKeyboard({
+    routeState,
+    preferences,
+    shell,
+    rename,
+    recent,
+    commands,
+    canvas,
+    active,
+    onError: services.reportError,
+  })
   const terminal = (
     session: TerminalMetadata,
     compact: boolean,
@@ -166,7 +204,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     onResizePreset?: (button: HTMLButtonElement) => void,
     large = false,
   ): React.JSX.Element => (
-    <RuntimeTerminal
+    <WorkspaceTerminal
       key={session.id}
       session={session}
       active={selected === session.id}
@@ -178,6 +216,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
       onRenameCancel={() => cancelRename(session.id)}
       projectName={project.name}
       runtime={runtime}
+      fontSize={preferences.fontSize}
+      keyHandler={handleTerminalKey}
       target={target}
       focusInput={
         keyboardFocus?.id === session.id && keyboardFocus.view === view && selected === session.id
@@ -185,7 +225,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       onInputFocused={() => setKeyboardFocus(null)}
       compact={compact}
       switcher={{ onOpen: (button) => openRecentSwitcher(session.id, button) }}
-      onClose={() => close(session.id)}
+      onClose={() => execute("closeTerminal", { terminalId: session.id })}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
       {...(onResizePreset
@@ -224,7 +264,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       sidebarVisible={sidebarVisible}
       sidebarPanel={sidebarPanel}
       zen={Boolean(zen)}
-      toggleSidebar={toggleSidebar}
+      toggleSidebar={(panel) => execute(panel === "sessions" ? "sessions" : "terminals")}
       hideSidebar={hideSidebar}
     />
   )
@@ -242,14 +282,15 @@ export const WorkspaceApp = (): React.JSX.Element => {
     >
       <WorkspaceHeader
         hidden={Boolean(zen)}
-        onZen={enterZen}
+        onZen={() => execute("zen")}
+        {...(environment.mode === "live" ? { onOpenProject: environment.openProject } : {})}
         view={view}
         enabledViews={preferences.enabledViews}
         projects={projects}
         project={project}
         onProjectSelect={(id) => {
           const next = projects.find((item) => item.id === id)
-          if (next) switchProject(next)
+          if (next) void switchProject(next).catch(services.reportError)
         }}
         onViewChange={(id) => {
           if (view === id) return
@@ -257,14 +298,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
           transitionWorkspace(() => changeView(id), direction)
         }}
         homeTo={routeUrl({ ...route, view: preferences.enabledViews[0]!, dialog: null })}
-        onSearch={() => {
-          setRecentSwitcher(null)
-          go({ dialog: "search" })
-        }}
-        onPreferences={() => {
-          setRecentSwitcher(null)
-          go({ dialog: "preferences", section: "general" })
-        }}
+        onSearch={() => execute("find")}
+        onPreferences={() => execute("preferences")}
       />
       <div className="workspace-body relative flex min-h-0 flex-1">
         {sidebarRail()}
@@ -289,10 +324,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
               renameView={renameView}
               selected={selected}
               hidden={hidden}
-              onSessionSelect={switchSession}
-              onFresh={startFresh}
+              onSessionSelect={(id) => {
+                void switchSession(id).catch(services.reportError)
+              }}
+              onFresh={() => execute("newSession")}
               onHide={hideSidebar}
-              onCreate={() => add()}
+              onCreate={() => execute("newTerminal")}
               onVisibilityChange={setVisibility}
               onSelect={select}
               onBeginRename={(id) => {
@@ -302,7 +339,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
               onRenameDraft={changeRenameDraft}
               onRenameSave={saveRename}
               onRenameCancel={cancelRename}
-              onClose={close}
+              onClose={(terminalId) => execute("closeTerminal", { terminalId })}
               onReorder={setTabOrder}
             />
           }
@@ -358,7 +395,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
                     dispatch({ type: "grid/minimize", target, terminalId })
                   }
                   onCreate={() => {
-                    add({ beginRename: false })
+                    void add({ beginRename: false }).catch(services.reportError)
                   }}
                   render={(session, minimize, resize) =>
                     terminal(
@@ -401,7 +438,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
                   }
                   navigation={navigation.count}
                   onSelect={setSelected}
-                  onCreate={() => add({ beginRename: false })}
+                  onCreate={(beforePublish) => {
+                    void add({ beginRename: false, beforePublish }).catch(services.reportError)
+                  }}
                   render={(session, minimize, onFlyTo, resize) =>
                     terminal(
                       session,
@@ -432,7 +471,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
               <EmptyWorkspace
                 view={view}
                 zen={Boolean(zen)}
-                onCreate={() => add()}
+                onCreate={() => execute("newTerminal")}
                 onShowSessions={showSessions}
               />
             )}
@@ -442,7 +481,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
           <ZenDock
             view={view}
             enabledViews={preferences.enabledViews}
-            onCreate={() => add()}
+            onCreate={() => execute("newTerminal")}
             onViewChange={(next) => {
               if (next !== view) changeView(next)
             }}

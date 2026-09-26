@@ -7,7 +7,9 @@ describe("frontend Content Security Policy", () => {
       expect(contentSecurityPolicyConnectSources("https://api.example.com/v1", false)).toEqual([
         "'self'",
         "http://127.0.0.1:*",
+        "ws://127.0.0.1:*",
         "https://api.example.com",
+        "wss://api.example.com",
       ])
     })
   })

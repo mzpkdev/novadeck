@@ -21,8 +21,17 @@ export default mergeConfig(
             name: "unit",
             environment: "jsdom",
             include: ["src/**/*.test.ts"],
-            exclude: ["src/specs/**"],
+            exclude: ["src/specs/**", "src/integration/**"],
             setupFiles: ["./src/test/setup.ts"],
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: "live",
+            environment: "node",
+            include: ["src/integration/**/*.test.ts"],
+            testTimeout: 90_000,
           },
         },
         {

@@ -1,44 +1,25 @@
-import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useLayoutEffect, useRef, useSyncExternalStore } from "react"
 import { useLocation, useNavigate } from "react-router"
 
 import type { WorkspaceAction } from "../workspace/model/state"
-import { createWorkspaceStore, type WorkspaceTransaction } from "../workspace/model/store"
+import { type WorkspaceTransaction } from "../workspace/model/store"
 import type { PreferencesValue, Workspace } from "../workspace/model/types"
-import { createTerminalRuntime } from "../workspace/runtime/store"
 import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "./routing"
+import { useWorkspaceServices } from "./workspace-services"
 
 const currentTimestamp = (): number => Date.now()
 
 export const useWorkspaceRoute = (
   preferences: PreferencesValue,
-  initialize: (preferences: PreferencesValue) => Workspace,
+  _initialize?: (preferences: PreferencesValue) => Workspace,
 ) => {
   const location = useLocation()
   const navigate = useNavigate()
-  const [{ store, runtime }] = useState(() => {
-    const initial = resolveRoute(
-      initialize(preferences),
-      location,
-      preferences,
-      currentTimestamp(),
-    ).workspace
-    const terminalRuntime = createTerminalRuntime(initial)
-    const workspaceStore = createWorkspaceStore(initial, (next, actions) => {
-      terminalRuntime.reconcile(
-        next,
-        actions.flatMap((action) =>
-          action.type === "terminal/add"
-            ? [{ ...action.target, terminalId: action.session.id }]
-            : [],
-        ),
-      )
-    })
-    return { store: workspaceStore, runtime: terminalRuntime }
-  })
+  const { workspaceStore: store, runtime } = useWorkspaceServices()
   const saved = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { workspace, route } = resolveRoute(saved, location, preferences, currentTimestamp())
   const input = `${location.key}:${location.pathname}${location.search}:${preferences.enabledViews.join(",")}`
-  const committed = useRef(input)
+  const committed = useRef("")
   useLayoutEffect(() => {
     if (committed.current === input) return
     committed.current = input

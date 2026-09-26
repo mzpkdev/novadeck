@@ -1,15 +1,13 @@
-import { useEffect, useState } from "react"
+import { useStore } from "zustand"
 
-import { preferencesStorageKey, readPreferences } from "./preferences-storage"
+import { useWorkspaceServices } from "../../app/workspace-services"
+import type { PreferencesValue } from "../model/types"
 
 export const useWorkspacePreferences = () => {
-  const [preferences, setPreferences] = useState(readPreferences)
-  useEffect(() => {
-    try {
-      localStorage.setItem(preferencesStorageKey, JSON.stringify(preferences))
-    } catch {
-      /* Preferences still apply when storage is unavailable. */
-    }
-  }, [preferences])
-  return { preferences, setPreferences }
+  const { preferencesStore } = useWorkspaceServices()
+  const preferences = useStore(preferencesStore)
+  return {
+    preferences,
+    setPreferences: (next: PreferencesValue): void => preferencesStore.setState(next, true),
+  }
 }

@@ -487,8 +487,10 @@ const TerminalCanvas = ({
           icon: <Plus size={13} aria-hidden="true" />,
           onSelect: () => {
             if (!contextPosition.current) return
-            const id = onCreate()
-            pendingCreatedPositions.current.set(id, contextPosition.current)
+            const position = contextPosition.current
+            onCreate((id) => {
+              if (mounted.current) pendingCreatedPositions.current.set(id, position)
+            })
           },
         },
       ]}

@@ -37,6 +37,7 @@ export const WorkspaceHeader = ({
   projects,
   project,
   onProjectSelect,
+  onOpenProject,
   onViewChange,
   homeTo,
   onSearch,
@@ -49,6 +50,7 @@ export const WorkspaceHeader = ({
   projects: Project[]
   project: Project
   onProjectSelect: (id: string) => void
+  onOpenProject?: () => void
   onViewChange: (mode: ViewMode) => void
   homeTo: string
   onSearch: () => void
@@ -77,7 +79,12 @@ export const WorkspaceHeader = ({
             novadeck<span className="text-muted">.</span>
           </span>
         </Link>
-        <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
+        <WorkspaceSwitcher
+          projects={projects}
+          current={project}
+          onSelect={onProjectSelect}
+          {...(onOpenProject ? { onOpenFolder: onOpenProject } : {})}
+        />
       </div>
       <div
         data-workspace-view-switch

@@ -31,7 +31,7 @@ export type CanvasProps = {
   keyboardFocusRequest: number | null
   navigation: number
   onSelect: (id: string) => void
-  onCreate: () => string
+  onCreate: (beforePublish: (id: string) => void) => void
   render: (
     session: TerminalMetadata,
     minimize: MinimizeControls,

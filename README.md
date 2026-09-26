@@ -145,8 +145,14 @@ in a browser instead:
 pnpm dev:web
 ```
 
-Open <http://127.0.0.1:5173>. For UI-only work, use
-`pnpm --filter @novadeck/ui dev`.
+Set a random `NOVADECK_TOKEN` in `application/runtime/.env` first (see
+[Configuration](#configuration)). Open <http://127.0.0.1:5173>, enter that token,
+and choose a project directory and session. The UI dev server proxies `/api` to
+the runtime on port 8787. Electron starts its own runtime and connects automatically.
+
+For UI-only work, use `pnpm --filter @novadeck/ui dev` and open
+<http://127.0.0.1:5173/?demo=1>. This explicit preview uses sample projects and
+in-memory terminal replies. Connection failures never switch the app to demo data.
 
 ## Repository map
 
@@ -160,37 +166,34 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 | `application/host`     | Electron host that starts the runtime and loads the packaged UI. |
 | `scripts`              | Repository checks and automation.                                |
 
-The terminal interface currently uses sample output and in-memory commands, not
-real shell processes or model calls. Projects, sessions, and layouts reset on
-reload; preferences and sidebar settings are stored locally. Keep this boundary
-in mind when changing terminal behavior or adding runtime integration.
+The UI connects to authenticated terminal processes by default. Projects and
+sessions persist in SQLite. Shells and their output survive view changes and UI
+reconnections while the runtime stays running; restarting the runtime ends its
+shells. Layouts, terminal aliases, and dismissals belong to the current UI session.
+Preferences and sidebar settings are stored locally.
 
-See the [terminal backend plan](docs/backend-plan.md) for the proposed runtime
-architecture and typed API.
-
-The standalone backend now supports authenticated, real terminal processes and
-persistent project/session metadata. It is **not connected to the UI or Electron
-host yet**; the interface above still uses mock data. See the
-[backend API guide](docs/backend-api.md) for configuration, client examples, and
-backend-only tests.
+See the [backend API guide](docs/backend-api.md) for configuration and the typed
+terminal API, and the [terminal backend plan](docs/backend-plan.md) for its design.
 
 ### Working on the UI
 
 Source lives in `application/ui/src/`:
 
-| Location                                                               | What belongs here                                                       |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `app/`                                                                 | App composition, navigation, and workspace commands.                    |
-| `ui-toolkit/`                                                          | Reusable styled controls and direct Ark UI imports.                     |
-| `workspace/model/`                                                     | Application types, the pure reducer, and the workspace command store.   |
-| `workspace/runtime/`                                                   | Per-terminal drafts, output, and scroll state, independent of views.    |
-| `workspace/terminals/`                                                 | Terminal runtime bindings, chrome, output surfaces, and sortable tabs.  |
-| `workspace/layouts/canvas/`, `grid/`, `focus/`                         | View adapters, layout rules, and colocated library styles.              |
-| `workspace/interaction/`                                               | Interaction controllers and shared DOM focus/overlay contracts.         |
-| `workspace/sidebar/`, `projects/`, `preferences/`, `search/`, `shell/` | Feature components, navigation, and app chrome, all under `workspace/`. |
-| `workspace/mock/`                                                      | Sample projects, transcripts, and command replies.                      |
-| `styles.css`                                                           | Theme tokens, global primitives, and shared workspace styles.           |
-| `specs/`                                                               | Behaviour specs for the whole UI, run in a real browser.                |
+| Location                                                               | What belongs here                                                                        |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `app/`                                                                 | App composition, navigation, and workspace commands.                                     |
+| `ui-toolkit/`                                                          | Reusable styled controls and direct Ark UI imports.                                      |
+| `services/`                                                            | Authenticated transport, typed query/mutation services, and metadata adapters.           |
+| `workspace/commands/`                                                  | Command definitions, execution policy, platform bindings, and validated overrides.       |
+| `workspace/model/`                                                     | Application types, pure reducer, and Zustand client state projected with Query metadata. |
+| `workspace/runtime/`                                                   | Live xterm instances, streams, and per-terminal status; isolated demo runtime.           |
+| `workspace/terminals/`                                                 | Terminal runtime bindings, chrome, output surfaces, and sortable tabs.                   |
+| `workspace/layouts/canvas/`, `grid/`, `focus/`                         | View adapters, layout rules, and colocated library styles.                               |
+| `workspace/interaction/`                                               | Interaction controllers and shared DOM focus/overlay contracts.                          |
+| `workspace/sidebar/`, `projects/`, `preferences/`, `search/`, `shell/` | Feature components, navigation, and app chrome, all under `workspace/`.                  |
+| `workspace/mock/`                                                      | Sample projects, transcripts, and command replies.                                       |
+| `styles.css`                                                           | Theme tokens, global primitives, and shared workspace styles.                            |
+| `specs/`                                                               | Behaviour specs for the whole UI, run in a real browser.                                 |
 
 Navigation uses React Router with hash URLs in both the browser and Electron,
 so links work with the packaged `file://` UI and static hosting. For example:
@@ -205,24 +208,31 @@ Preferences also accepts `section=shortcuts`. Back and Forward restore navigatio
 without discarding terminal drafts or output. Sidebar visibility, search text,
 canvas gestures, and other temporary controls stay local.
 
-Sample sessions use the stable ID `initial`. New sessions still live only in
-memory: reloading an expired session link falls back to that project's available
-session. Unknown routes, missing terminals, and disabled views are replaced with
-a valid URL. Routing does not persist terminal data across reloads.
+Live project, session, and terminal IDs come from the backend. The router waits
+for metadata before resolving a deep link; unknown IDs and disabled views fall
+back to an available route. Preview sessions use the stable ID `initial`.
 
-The URL owns current navigation; the workspace model remembers each session's
-last selection. Commands reduce the latest model synchronously, so several
-actions in one event retain one another's changes. Read command-time state when
-constructing an action that depends on a counter or the current selection.
-Address updates by project and session IDs so delayed callbacks affect their
-original session or become a no-op after it is removed.
+TanStack Query owns server metadata through the typed oRPC client. Zustand owns
+client presentation state: layout, selection history, hidden/minimized terminals,
+local aliases, preferences, and dismissals. The workspace is a derived view of
+those sources. React Router owns the current URL, while transient controls stay
+local to their feature. Creation and close wait for server confirmation; uncertain
+mutations and terminal input are never retried automatically.
 
-Terminal metadata and saved layouts live in the workspace model. Drafts, output,
-and scroll offsets live in a separate app-scoped runtime with one subscription
-per terminal. A terminal's presentation can unmount during view or session
-changes without losing its runtime state; closing the terminal removes that
-state. Keep future terminal transport and buffer ownership behind this boundary,
-so output does not trigger workspace-wide renders.
+The live runtime owns one xterm instance and attachment per terminal. Output goes
+directly to xterm, with acknowledgements after parsing; it does not pass through
+React or the query cache. Low-frequency connection/control/exit status uses
+per-terminal Zustand stores. Switching views moves the existing terminal surface;
+unmounting a view does not stop its shell. Explicit close terminates the process
+and dismisses its tab after confirmation. Reconnection resumes by runtime ID and
+sequence, or replaces the screen from a snapshot. A second connection can observe
+a terminal controlled elsewhere.
+
+The command registry shares action IDs, availability, bindings, and error handling
+between shortcuts and UI controls. `react-hotkeys-hook` registers keyboard events;
+the registry preserves dialog, editor, and terminal-input priority. It also handles
+xterm keys without dispatching the same command twice. Binding storage validates
+overrides; a shortcut customization UI is not included yet.
 
 XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
 ends or the view unmounts. Grid and Canvas implementations load on demand. Keep
@@ -237,7 +247,7 @@ for broader conventions.
 ### UI behaviour specs
 
 `src/specs/` describes the UI the way a person uses it and guards the UX while
-the implementation changes. Each spec renders the whole app in headless Chromium
+the implementation changes. Each spec renders the whole app in explicit demo mode in headless Chromium
 with real CSS, layout, pointer, and keyboard input. The main behaviour project
 enables reduced motion; the smaller motion project exercises ordinary transitions.
 Specs find elements by accessible role, name, or text, and assert only what a
@@ -252,7 +262,8 @@ Install the browser once with `pnpm --filter @novadeck/ui exec playwright instal
 Run a single spec with `pnpm --filter @novadeck/ui exec vitest run --project behaviour src/specs/canvas.spec.tsx`,
 or `--project unit` for reducer invariants, runtime lifecycle, layout rules, and
 build/service checks in colocated `*.test.ts` files. Files in `src/specs/` keep
-the `*.spec.tsx` suffix. Use `--project motion` for transition behavior. The build
+the `*.spec.tsx` suffix. Use `--project motion` for transition behavior and `--project live` for real-runtime
+browser integration, including shell input/output and reconnection. The build
 checks validate both entry assets and deferred chunks with relative packaged paths.
 
 ## Configuration
@@ -270,11 +281,15 @@ cp application/runtime/example.env application/runtime/.env
   `NOVADECK_DATABASE` optionally selects the SQLite metadata file. Without a token,
   only the existing HTTP status API is available.
 - Electron: the host starts the bundled runtime on a local, OS-selected port and
-  supplies its URL through a sandboxed preload bridge. Package `.env` files are not used.
+  generates an in-memory token for that launch, and supplies connection details through
+  restricted IPC in a sandboxed preload bridge. Its SQLite file lives in Electron's
+  `userData` directory. Package `.env` files are not used.
 
 For a separately hosted frontend, set `VITE_API_URL` to the public HTTPS API URL
 before building and add the frontend origin to `CORS_ORIGINS`. The generated
-Content Security Policy permits the configured API origin. Local `.env` files
+Content Security Policy permits the configured HTTP and WebSocket origins. Browser
+tokens are entered at connection time and kept in memory; never put them in `VITE_`
+variables, URLs, or browser storage. Local `.env` files
 are ignored; never commit credentials.
 
 ## Validation

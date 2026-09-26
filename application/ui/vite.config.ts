@@ -33,6 +33,23 @@ const contentSecurityPolicy = (): Plugin => {
 export default defineConfig({
   base: "./",
   build: { manifest: true },
+  optimizeDeps: {
+    // Keep browser tests from discovering these dependencies after the runner starts.
+    include: [
+      "@tanstack/react-query",
+      "zustand",
+      "zustand/vanilla",
+      "react-hotkeys-hook",
+      "@orpc/client",
+      "@orpc/client/standard",
+      "@novadeck/protocol > @orpc/standard-server-peer",
+      "@orpc/tanstack-query",
+      "@novadeck/protocol > @orpc/contract",
+      "@novadeck/protocol > zod",
+      "@xterm/xterm",
+      "@xterm/addon-fit",
+    ],
+  },
   plugins: [tailwindcss(), react(), contentSecurityPolicy()],
   resolve: {
     alias: [{ find: /^react$/, replacement: resolve("node_modules/react/index.js") }],
@@ -41,5 +58,6 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    proxy: { "/api": { target: "http://127.0.0.1:8787", ws: true } },
   },
 })

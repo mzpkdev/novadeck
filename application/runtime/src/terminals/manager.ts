@@ -198,9 +198,11 @@ export class TerminalManager {
   }
 
   async close(input: { terminalId: string }, ownerId: string): Promise<void> {
-    const record = this.control(input.terminalId, ownerId)
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    const record = this.record(input.terminalId)
+    // Completion releases the controller; an already stopped process needs no control claim.
     if (record.summary.status === "exited") return
-    await this.terminate(record)
+    await this.terminate(this.control(input.terminalId, ownerId))
   }
 
   async *attach(

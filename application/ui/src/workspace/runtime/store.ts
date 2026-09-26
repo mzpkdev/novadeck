@@ -1,3 +1,5 @@
+import { createStore, type StoreApi } from "zustand/vanilla"
+
 import { mockReply } from "../mock/sessions"
 import type { Entry, TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
 
@@ -19,22 +21,19 @@ const empty: TerminalRuntimeSnapshot = {
 }
 
 export const createTerminalRuntime = (workspace: Workspace) => {
-  const snapshots = new Map<string, TerminalRuntimeSnapshot>()
+  const snapshots = new Map<string, StoreApi<TerminalRuntimeSnapshot>>()
   const terminals = new Map<string, TerminalMetadata>()
-  const listeners = new Map<string, Set<() => void>>()
-  const publish = (id: string): void => listeners.get(id)?.forEach((listener) => listener())
   const update = (
     key: TerminalKey,
     change: (previous: TerminalRuntimeSnapshot) => TerminalRuntimeSnapshot,
   ): void => {
     const id = keyId(key)
-    const previous = snapshots.get(id)
+    const store = snapshots.get(id)
     // A callback retained by a closed presentation must not recreate a process.
-    if (!previous) return
+    if (!store) return
+    const previous = store.getState()
     const next = change(previous)
-    if (next === previous) return
-    snapshots.set(id, next)
-    publish(id)
+    if (next !== previous) store.setState(next, true)
   }
   const reconcile = (next: Workspace, created: readonly TerminalKey[] = []): void => {
     const added = new Set(created.map(keyId))
@@ -49,28 +48,33 @@ export const createTerminalRuntime = (workspace: Workspace) => {
           })
           remaining.add(id)
           terminals.set(id, terminal)
-          if (!snapshots.has(id)) snapshots.set(id, { ...empty, cleared: added.has(id) })
+          if (!snapshots.has(id))
+            snapshots.set(
+              id,
+              createStore<TerminalRuntimeSnapshot>(() => ({ ...empty, cleared: added.has(id) })),
+            )
+          else if (added.has(id)) {
+            const store = snapshots.get(id)!
+            const current = store.getState()
+            if (!current.cleared && !current.entries.length && !current.draft) {
+              store.setState({ ...current, cleared: true }, true)
+            }
+          }
         }
     for (const id of snapshots.keys()) {
       if (remaining.has(id)) continue
+      const store = snapshots.get(id)!
       snapshots.delete(id)
       terminals.delete(id)
-      publish(id)
+      store.setState(empty, true)
     }
   }
   reconcile(workspace)
   return {
-    getSnapshot: (key: TerminalKey): TerminalRuntimeSnapshot => snapshots.get(keyId(key)) ?? empty,
-    subscribe: (key: TerminalKey, listener: () => void): (() => void) => {
-      const id = keyId(key)
-      const subscribers = listeners.get(id) ?? new Set<() => void>()
-      subscribers.add(listener)
-      listeners.set(id, subscribers)
-      return () => {
-        subscribers.delete(listener)
-        if (!subscribers.size) listeners.delete(id)
-      }
-    },
+    getSnapshot: (key: TerminalKey): TerminalRuntimeSnapshot =>
+      snapshots.get(keyId(key))?.getState() ?? empty,
+    subscribe: (key: TerminalKey, listener: () => void): (() => void) =>
+      snapshots.get(keyId(key))?.subscribe(listener) ?? (() => {}),
     setDraft: (key: TerminalKey, draft: string): void =>
       update(key, (previous) => (previous.draft === draft ? previous : { ...previous, draft })),
     setScrollOffset: (key: TerminalKey, scrollOffset: number): void =>
