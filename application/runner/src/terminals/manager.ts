@@ -129,6 +129,8 @@ export class Terminals {
           rows: input.rows,
           cwd,
           env: this.options.env,
+          // Windows' built-in console host can lose input; node-pty ships a newer one.
+          useConptyDll: process.platform === "win32",
         })
       } catch {
         screen.dispose()
