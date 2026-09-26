@@ -13,6 +13,8 @@ export const ptyOptions = {
   shell: process.execPath,
   shellArgs: [fileURLToPath(new URL("./pty-child.mjs", import.meta.url))],
   env: { NOVADECK_PTY_TRACE: tracePath },
+  // PROBE (temporary): compare the bundled and system ConPTY on Windows.
+  ...(process.env.NOVADECK_CONPTY_DLL === "0" && { conptyDll: false }),
 }
 
 /** The last fixture child trace lines, for diagnosing a stalled terminal. */
