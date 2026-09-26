@@ -8,9 +8,13 @@ this terminal API yet.
 
 Use the repository's Node.js 26 and pnpm versions. `node-pty` is a native dependency;
 installation can require Python and a C/C++ toolchain for your platform.
-The pinned `node-pty` 1.1.0 dependency has an installation patch for its published
-macOS spawn-helper permissions ([upstream issue](https://github.com/microsoft/node-pty/issues/850)).
-Keep its pnpm build script enabled; this repair applies to regular installs as well as CI.
+`node-pty` is pinned exactly to `1.2.0-beta.14` for its native cleanup fixes and
+correct macOS spawn-helper permissions; no local dependency patch is needed.
+Do not advance the pin without checking the reported
+[Windows startup regression in beta.15](https://github.com/microsoft/node-pty/issues/955).
+Beta.14 retains the older [delayed-worker startup deadlock risk](https://github.com/microsoft/node-pty/pull/943),
+particularly under a debugger. Keep its pnpm build script enabled and validate
+dependency upgrades on Linux, macOS, and Windows.
 
 From the repository root:
 
