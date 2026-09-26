@@ -8,7 +8,7 @@ import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 const actionClasses =
-  "session-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
+  "terminal-tab-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
 
 export const TerminalTab = ({
   terminal,
@@ -51,19 +51,19 @@ export const TerminalTab = ({
         handleRef={handleRef}
         name={terminal.name}
         icon={<TerminalIcon size={14} strokeWidth={1.5} />}
-        detail={<span className="session-process truncate font-mono">{terminal.command}</span>}
+        detail={<span className="terminal-tab-command truncate font-mono">{terminal.command}</span>}
         selected={selected}
         selectLabel={`Select ${terminal.name}${hidden ? " (hidden)" : ""}`}
         tooltip={`${terminal.name}\n${terminal.directory} · ${terminal.command}`}
         onSelect={onSelect}
-        data-session-id={terminal.id}
+        data-terminal-tab-id={terminal.id}
         data-terminal-hidden={hidden}
 
-        className={`session-tab [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
+        className={`terminal-tab [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
         editing={editing}
         editor={
           rename ? (
-            <div className="session-rename flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px]">
+            <div className="terminal-tab-rename flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px]">
               <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
                 <TerminalIcon size={14} strokeWidth={1.5} />
               </span>
@@ -80,14 +80,16 @@ export const TerminalTab = ({
                   className="w-full border-0 bg-transparent p-0 text-[12px] leading-[18px] font-medium text-ink shadow-none outline-none"
                 />
                 <span className="sidebar-item-detail flex h-6 min-w-0 items-center overflow-hidden pr-(--sidebar-actions-space) whitespace-nowrap text-[10px] leading-[18px] text-muted">
-                  <span className="session-process truncate font-mono">{terminal.command}</span>
+                  <span className="terminal-tab-command truncate font-mono">
+                    {terminal.command}
+                  </span>
                 </span>
               </div>
             </div>
           ) : undefined
         }
         actions={
-          <div className="session-actions flex items-center">
+          <div className="terminal-tab-actions flex items-center">
             <Tooltip content={hidden ? "Show" : "Hide"}>
               <button
                 className={`${actionClasses} disabled:pointer-events-none disabled:opacity-50 ${hidden ? "[&>svg]:opacity-100!" : ""}`}

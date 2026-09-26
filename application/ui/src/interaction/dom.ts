@@ -24,7 +24,7 @@ export const insideNavigationControl = (target: EventTarget | null): boolean =>
 export const insideCanvasNode = (target: EventTarget | null): boolean =>
   within(target, "[data-workspace-canvas-node], .react-flow__node")
 export const insideTerminalTab = (target: EventTarget | null): boolean =>
-  within(target, "[data-session-id]")
+  within(target, "[data-terminal-tab-id]")
 export const insideTerminalRename = (target: EventTarget | null): boolean =>
   within(target, 'input[aria-label^="Rename "]')
 export const insideSwitcherClose = (target: EventTarget | null): boolean =>
@@ -33,7 +33,7 @@ export const insideSwitcherClose = (target: EventTarget | null): boolean =>
 export const insideTerminalInput = (target: EventTarget | null): boolean =>
   within(target, "[data-terminal-input]")
 export const terminalTabInteractionActive = (): boolean =>
-  Boolean(document.querySelector(".session-tab.editing, .session-tab.dragging"))
+  Boolean(document.querySelector(".terminal-tab.editing, .terminal-tab.dragging"))
 
 export const sidebarToggle = (panel: "terminals" | "sessions"): HTMLElement | null =>
   document.getElementById(`${panel}-toggle`)
@@ -41,7 +41,7 @@ export const focusSidebarToggle = (panel: "terminals" | "sessions"): void =>
   sidebarToggle(panel)?.focus()
 export const focusTerminalTab = (id: string): void =>
   document
-    .querySelector<HTMLElement>(`[data-session-id="${CSS.escape(id)}"] .sidebar-item-select`)
+    .querySelector<HTMLElement>(`[data-terminal-tab-id="${CSS.escape(id)}"] .sidebar-item-select`)
     ?.focus({ preventScroll: true })
 export const focusWorkspaceViewport = (): void =>
   document.querySelector<HTMLElement>("[data-workspace-viewport]")?.focus({ preventScroll: true })

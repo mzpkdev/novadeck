@@ -84,7 +84,7 @@ export const TerminalTabs = ({
         onReorder(order)
       }}
     >
-      <div className={`session-list ${sidebarListClasses}`} ref={setList}>
+      <div className={`terminal-tab-list ${sidebarListClasses}`} ref={setList}>
         {terminals.map((terminal, index) => (
           <TerminalTab
             key={terminal.id}

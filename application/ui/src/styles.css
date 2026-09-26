@@ -126,7 +126,7 @@
   outline: none;
   background: linear-gradient(var(--color-muted), var(--color-muted)) center / 2px 100% no-repeat;
 }
-.session-action:focus-visible {
+.terminal-tab-action:focus-visible {
   outline-offset: -2px;
 }
 .focus-stage .workspace-dots {
@@ -416,7 +416,7 @@
     opacity: 0.25;
   }
   .icon-button > svg,
-  .session-action > svg {
+  .terminal-tab-action > svg {
     @apply shrink-0;
   }
   kbd {
