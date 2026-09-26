@@ -49,7 +49,7 @@ const vendors: Record<string, readonly string[]> = {
   allotment: ["shell/"],
   "@dnd-kit": ["terminals/"],
   "react-router": ["app/", "shell/"],
-  "react-dom": ["layouts/transition.ts", "main.tsx"],
+  "react-dom": ["layouts/transition.ts", "main.tsx", "test/"],
 }
 
 const src = join(process.cwd(), "src")

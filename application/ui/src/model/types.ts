@@ -3,15 +3,20 @@ export type WindowedView = Exclude<ViewMode, "focus">
 export type PreferencesValue = { fontSize: number; enabledViews: ViewMode[] }
 export type Project = { id: string; name: string; directory: string }
 
+// What a terminal's process is doing. Exit and failure details replace each other.
+export type TerminalStatus =
+  | { readonly state: "starting" | "running" | "idle" | "finished" }
+  | { readonly state: "exited"; readonly exitCode: number | null }
+  | { readonly state: "failed"; readonly message: string }
+
 export type TerminalMetadata = {
   id: string
   name: string
   directory: string
   command: string
   process: string
-  state: "running" | "idle" | "finished"
   kind: "shell" | "server" | "tests" | "git" | "logs" | "build" | "claude" | "codex"
-}
+} & TerminalStatus
 
 export type CanvasLayout = {
   viewport?: { x: number; y: number; zoom: number }

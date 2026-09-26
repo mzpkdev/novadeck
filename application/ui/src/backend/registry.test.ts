@@ -69,7 +69,7 @@ describe("terminal registry", () => {
     })
   })
 
-  context("when views, visibility, sessions or names change", () => {
+  context("when views, visibility, sessions, names or status change", () => {
     it("keeps the same entry and follows the latest metadata", () => {
       const { registry, opened, closed } = recording()
       const workspace = fixture()
@@ -80,10 +80,11 @@ describe("terminal registry", () => {
         { type: "view/change", target, view: "canvas", enabledViews: ["grid", "canvas"] },
         { type: "session/select", projectId: "project", workspaceSessionId: "other", now: 1 },
         { type: "terminal/rename", target, terminalId: "01", name: "Server" },
+        { type: "terminal/status", target, terminalId: "01", status: { state: "finished" } },
       ]
       registry.reconcile(apply(workspace, actions), actions)
       expect(registry.get(first)?.entry).toBe(entry)
-      expect(registry.get(first)?.terminal.name).toBe("Server")
+      expect(registry.get(first)?.terminal).toMatchObject({ name: "Server", state: "finished" })
       expect(opened).toHaveLength(4)
       expect(closed).toEqual([])
     })

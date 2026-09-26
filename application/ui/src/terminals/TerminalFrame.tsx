@@ -15,6 +15,7 @@ import { useRef, type ReactNode } from "react"
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { TerminalMetadata, WindowedView } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
+import { terminalStatusLabel } from "./terminal-status"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 export type MinimizeControls = {
@@ -91,6 +92,7 @@ export const TerminalFrame = ({
   const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
+  const status = terminalStatusLabel(terminal)
   const headerDoubleAction = onFlyTo
   return (
     <section
@@ -214,6 +216,15 @@ export const TerminalFrame = ({
                 />
               )}
             </>
+            {status && (
+              <span
+                className="shrink-0 text-muted"
+                title={terminal.state === "failed" ? terminal.message : undefined}
+                data-terminal-status=""
+              >
+                {status}
+              </span>
+            )}
           </div>
           <span className="terminal-actions flex shrink-0 items-center gap-1">
             {minimize && (

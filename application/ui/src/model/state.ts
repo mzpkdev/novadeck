@@ -14,6 +14,7 @@ import {
   removeTerminal,
   renameTerminal,
   reorderTerminals,
+  setTerminalStatus,
 } from "./roster"
 import type {
   CanvasLayout,
@@ -23,6 +24,7 @@ import type {
   Project,
   TerminalLayout,
   TerminalMetadata,
+  TerminalStatus,
   SizePreset,
   ViewMode,
   WindowedView,
@@ -72,6 +74,7 @@ export type WorkspaceAction =
   | { type: "terminal/rename"; target: WorkspaceTarget; terminalId: string; name: string }
   | { type: "terminal/close"; target: WorkspaceTarget; terminalId: string }
   | { type: "terminal/reorder"; target: WorkspaceTarget; tabOrder: string[] }
+  | { type: "terminal/status"; target: WorkspaceTarget; terminalId: string; status: TerminalStatus }
   | { type: "terminal/select"; target: WorkspaceTarget; terminalId: string }
   | { type: "terminal/visibility"; target: WorkspaceTarget; terminalId: string; hidden: boolean }
   | {
@@ -344,6 +347,11 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
     case "terminal/reorder":
       return updateTarget(workspace, action.target, (state) => {
         const roster = reorderTerminals(state.roster, action.tabOrder)
+        return roster === state.roster ? state : { ...state, roster }
+      })
+    case "terminal/status":
+      return updateTarget(workspace, action.target, (state) => {
+        const roster = setTerminalStatus(state.roster, action.terminalId, action.status)
         return roster === state.roster ? state : { ...state, roster }
       })
     case "terminal/select":

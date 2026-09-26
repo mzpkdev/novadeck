@@ -1,4 +1,4 @@
-import type { TerminalMetadata, TerminalRoster } from "./types"
+import type { TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
 
 export const createRoster = (terminals: TerminalMetadata[]): TerminalRoster => ({
   terminals,
@@ -62,4 +62,38 @@ export const reorderTerminals = (roster: TerminalRoster, requested: string[]): T
     order.every((id, index) => roster.order[index] === id)
     ? roster
     : { ...roster, order }
+}
+
+const sameStatus = (terminal: TerminalMetadata, status: TerminalStatus): boolean => {
+  if (status.state === "exited")
+    return terminal.state === "exited" && terminal.exitCode === status.exitCode
+  if (status.state === "failed")
+    return terminal.state === "failed" && terminal.message === status.message
+  return terminal.state === status.state
+}
+
+// Rebuilds the terminal from its identity so no exit code or message outlives its status.
+const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): TerminalMetadata => ({
+  id: terminal.id,
+  name: terminal.name,
+  directory: terminal.directory,
+  command: terminal.command,
+  process: terminal.process,
+  kind: terminal.kind,
+  ...status,
+})
+
+export const setTerminalStatus = (
+  roster: TerminalRoster,
+  terminalId: string,
+  status: TerminalStatus,
+): TerminalRoster => {
+  const current = roster.terminals.find((terminal) => terminal.id === terminalId)
+  if (!current || sameStatus(current, status)) return roster
+  return {
+    ...roster,
+    terminals: roster.terminals.map((terminal) =>
+      terminal === current ? withStatus(terminal, status) : terminal,
+    ),
+  }
 }

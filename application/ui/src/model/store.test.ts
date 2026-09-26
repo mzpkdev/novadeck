@@ -178,3 +178,85 @@ describe("workspace commands", () => {
     for (const action of late) expect(workspaceReducer(delayedCanvas, action)).toBe(delayedCanvas)
   })
 })
+
+describe("terminal status", () => {
+  const statusOf = (workspace: Workspace) => state(workspace).roster.terminals[0]!
+
+  it("replaces the terminal's status and drops details from the previous one", () => {
+    const store = createWorkspaceStore(initial())
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: { state: "failed", message: "zsh not found" },
+    })
+    expect(statusOf(store.getSnapshot())).toMatchObject({
+      state: "failed",
+      message: "zsh not found",
+    })
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: { state: "exited", exitCode: 2 },
+    })
+    expect(statusOf(store.getSnapshot())).toEqual({
+      ...terminalFixture(1, "~/project"),
+      state: "exited",
+      exitCode: 2,
+    })
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: { state: "running" },
+    })
+    expect(statusOf(store.getSnapshot())).toEqual({
+      ...terminalFixture(1, "~/project"),
+      state: "running",
+    })
+  })
+
+  it("ignores a status that is already current or names a missing terminal", () => {
+    const store = createWorkspaceStore(initial())
+    let notifications = 0
+    store.subscribe(() => notifications++)
+    const exited = { state: "exited", exitCode: null } as const
+    store.dispatch({ type: "terminal/status", target, terminalId: "01", status: exited })
+    const previous = store.getSnapshot()
+    store.dispatch({ type: "terminal/status", target, terminalId: "01", status: { ...exited } })
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "gone",
+      status: { state: "idle" },
+    })
+    store.dispatch({
+      type: "terminal/status",
+      target: { ...target, workspaceSessionId: "gone" },
+      terminalId: "01",
+      status: { state: "idle" },
+    })
+    expect(store.getSnapshot()).toBe(previous)
+    expect(notifications).toBe(1)
+  })
+
+  it("treats a new exit code or message as a change", () => {
+    const store = createWorkspaceStore(initial())
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: { state: "exited", exitCode: 1 },
+    })
+    const previous = store.getSnapshot()
+    store.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: { state: "exited", exitCode: 0 },
+    })
+    expect(store.getSnapshot()).not.toBe(previous)
+    expect(statusOf(store.getSnapshot())).toMatchObject({ exitCode: 0 })
+  })
+})
