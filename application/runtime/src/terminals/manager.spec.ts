@@ -1,37 +1,65 @@
 import type { TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
-import { afterEach } from "vitest"
 
-import { context, describe, expect, it } from "../test.js"
+import { context, describe, expect, it as base } from "../test.js"
+import { ptyOptions } from "../testing/pty.js"
+import type { Resources } from "../testing/resources.js"
 import { TerminalManager } from "./manager.js"
 
-const managers: TerminalManager[] = []
-const streams: AsyncGenerator<TerminalEvent>[] = []
 const cwd = process.cwd()
 const { Terminal } = headless
 
-const manager = (
-  options: ConstructorParameters<typeof TerminalManager>[0] = {},
-): TerminalManager => {
-  const result = new TerminalManager({ shell: "/bin/sh", env: { PS1: "" }, ...options })
-  managers.push(result)
-  return result
+const fixture = (resources: Resources) => {
+  const manager = (options: ConstructorParameters<typeof TerminalManager>[0] = {}) => {
+    const runtime = new TerminalManager({ shell: "/bin/sh", env: { PS1: "" }, ...options })
+    resources.defer(() => runtime.shutdown())
+    return runtime
+  }
+  const attach = (
+    runtime: TerminalManager,
+    id: string,
+    owner: string,
+    afterSequence?: number,
+    mode: "control" | "observe" = "control",
+  ) => {
+    const controller = new AbortController()
+    const stream = runtime.attach(
+      { terminalId: id, mode, ...(afterSequence === undefined ? {} : { afterSequence }) },
+      owner,
+      controller.signal,
+    )
+    resources.defer(async () => {
+      controller.abort()
+      await stream.return(undefined)
+    })
+    return stream
+  }
+  return { manager, attach }
 }
 
-const attach = (
-  runtime: TerminalManager,
-  id: string,
-  owner: string,
-  afterSequence?: number,
-  mode: "control" | "observe" = "control",
-) => {
-  const stream = runtime.attach(
-    { terminalId: id, mode, ...(afterSequence === undefined ? {} : { afterSequence }) },
-    owner,
-  )
-  streams.push(stream)
-  return stream
-}
+const it = base.extend<{ terminals: ReturnType<typeof fixture> }>({
+  terminals: async ({ resources }, use) => {
+    await use(fixture(resources))
+  },
+})
+
+describe("terminal creation ownership", () => {
+  it("does not grant control back to a client released while its creation is pending", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager(ptyOptions)
+    const creation = runtime.create({ sessionId: "session", cwd, cols: 80, rows: 24 }, "creator")
+    // create has registered its owner, but is still awaiting directory validation.
+    runtime.release("creator")
+    const terminal = await creation
+    expect(() => runtime.write({ terminalId: terminal.id, data: "" }, "creator")).toThrow(
+      expect.objectContaining({ code: "CONTROL_REQUIRED" }),
+    )
+    const replacement = terminals.attach(runtime, terminal.id, "replacement")
+    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", status: "running" })
+    expect(() => runtime.write({ terminalId: terminal.id, data: "" }, "replacement")).not.toThrow()
+  })
+})
 
 const until = async (
   runtime: TerminalManager,
@@ -48,20 +76,17 @@ const until = async (
   throw new Error("Terminal ended before the expected event.")
 }
 
-afterEach(async () => {
-  await Promise.all(managers.splice(0).map((runtime) => runtime.shutdown()))
-  await Promise.all(streams.splice(0).map((stream) => stream.return(undefined)))
-})
-
 describe.skipIf(process.platform === "win32")("terminal manager", () => {
   context("a real shell keeps running between attachments", () => {
-    it("restores a parsed screen and replays ordered events after a cursor", async () => {
-      const runtime = manager()
+    it("restores a parsed screen and replays ordered events after a cursor", async ({
+      terminals,
+    }) => {
+      const runtime = terminals.manager()
       const terminal = await runtime.create(
         { sessionId: "session", cwd, cols: 80, rows: 24 },
         "first",
       )
-      const first = attach(runtime, terminal.id, "first")
+      const first = terminals.attach(runtime, terminal.id, "first")
       const initial = await first.next()
       expect(initial.value).toMatchObject({ type: "snapshot", sequence: 0, status: "running" })
       runtime.ack({ terminalId: terminal.id, sequence: initial.value!.sequence }, "first")
@@ -82,7 +107,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
         ),
       ).toBe(true)
 
-      const observer = attach(runtime, terminal.id, "observer", undefined, "observe")
+      const observer = terminals.attach(runtime, terminal.id, "observer", undefined, "observe")
       const snapshot = (await observer.next()).value!
       expect(snapshot.type).toBe("snapshot")
       if (snapshot.type !== "snapshot") throw new Error("Expected snapshot")
@@ -103,7 +128,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       await observer.return(undefined)
 
       // until() closes its iterator and releases control; reclaim it independently.
-      const continuation = attach(runtime, terminal.id, "second", cursor)
+      const continuation = terminals.attach(runtime, terminal.id, "second", cursor)
       const pending = continuation.next()
       // Attachment registration occurs asynchronously before accepting writes.
       await Promise.resolve()
@@ -112,23 +137,29 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       expect(resized).toMatchObject({ type: "resized", sequence: cursor + 1, cols: 100, rows: 30 })
       runtime.ack({ terminalId: terminal.id, sequence: resized.sequence }, "second")
       await continuation.return(undefined)
-      const replay = attach(runtime, terminal.id, "third", cursor)
+      const replay = terminals.attach(runtime, terminal.id, "third", cursor)
       expect((await replay.next()).value).toEqual(resized)
       expect(runtime.get(terminal.id).status).toBe("running")
     })
   })
 
-  it("releases control on cancellation and denies observers input, resize, and close", async () => {
-    const runtime = manager()
+  it("releases control on cancellation and denies observers input, resize, and close", async ({
+    terminals,
+    resources,
+  }) => {
+    const runtime = terminals.manager()
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "controller",
     )
     const signal = new AbortController()
     const controller = runtime.attach({ terminalId: terminal.id }, "controller", signal.signal)
-    streams.push(controller)
+    resources.defer(async () => {
+      signal.abort()
+      await controller.return(undefined)
+    })
     await controller.next()
-    const observer = attach(runtime, terminal.id, "observer", undefined, "observe")
+    const observer = terminals.attach(runtime, terminal.id, "observer", undefined, "observe")
     await observer.next()
     expect(() => runtime.write({ terminalId: terminal.id, data: "input" }, "observer")).toThrow(
       expect.objectContaining({ code: "CONTROL_REQUIRED" }),
@@ -142,18 +173,23 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     const pending = controller.next()
     signal.abort()
     expect((await pending).done).toBe(true)
-    const replacement = attach(runtime, terminal.id, "replacement")
+    const replacement = terminals.attach(runtime, terminal.id, "replacement")
     expect((await replacement.next()).value).toMatchObject({ type: "snapshot", status: "running" })
     expect(runtime.get(terminal.id).status).toBe("running")
   })
 
-  it("emits natural exit after parsed output and evicts exited records at capacity", async () => {
-    const runtime = manager({ shellArgs: ["-c", "printf 'FINAL\\n'; exit 7"], maxTerminals: 1 })
+  it("emits natural exit after parsed output and evicts exited records at capacity", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager({
+      shellArgs: ["-c", "printf 'FINAL\\n'; exit 7"],
+      maxTerminals: 1,
+    })
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const stream = attach(runtime, terminal.id, "owner")
+    const stream = terminals.attach(runtime, terminal.id, "owner")
     const events = await until(runtime, stream, "owner", (event) => event.type === "exited")
     expect(events.at(-1)).toMatchObject({ type: "exited", exitCode: 7 })
     expect(
@@ -171,13 +207,13 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     )
   })
 
-  it("uses a snapshot when retained history no longer covers the cursor", async () => {
-    const runtime = manager({ historyBytes: 1 })
+  it("uses a snapshot when retained history no longer covers the cursor", async ({ terminals }) => {
+    const runtime = terminals.manager({ historyBytes: 1 })
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const first = attach(runtime, terminal.id, "owner")
+    const first = terminals.attach(runtime, terminal.id, "owner")
     await first.next()
     runtime.write({ terminalId: terminal.id, data: "printf 'HISTORY\\n'\n" }, "owner")
     await until(
@@ -186,41 +222,43 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       "owner",
       (event) => event.type === "output" && event.data.includes("HISTORY\r\n"),
     )
-    const reconnect = attach(runtime, terminal.id, "other", 0)
+    const reconnect = terminals.attach(runtime, terminal.id, "other", 0)
     expect((await reconnect.next()).value).toMatchObject({
       type: "snapshot",
       data: expect.stringContaining("HISTORY"),
     })
   })
 
-  it("fails a slow subscription while preserving its shell", async () => {
-    const runtime = manager({ subscriberBytes: 1024, ackWindowBytes: 256 })
+  it("fails a slow subscription while preserving its shell", async ({ terminals }) => {
+    const runtime = terminals.manager({ subscriberBytes: 1024, ackWindowBytes: 256 })
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const stream = attach(runtime, terminal.id, "owner")
+    const stream = terminals.attach(runtime, terminal.id, "owner")
     const snapshot = (await stream.next()).value!
     runtime.ack({ terminalId: terminal.id, sequence: snapshot.sequence }, "owner")
     // Resize events pass through the same queue and force the bounded queue to overflow.
     for (let index = 0; index < 20; index += 1)
       runtime.resize({ terminalId: terminal.id, cols: 80 + index, rows: 24 }, "owner")
-    const barrier = attach(runtime, terminal.id, "barrier", undefined, "observe")
+    const barrier = terminals.attach(runtime, terminal.id, "barrier", undefined, "observe")
     await barrier.next()
     await barrier.return(undefined)
     await expect(stream.next()).rejects.toMatchObject({ code: "SLOW_CONSUMER" })
     expect(runtime.get(terminal.id).status).toBe("running")
-    const replacement = attach(runtime, terminal.id, "replacement")
+    const replacement = terminals.attach(runtime, terminal.id, "replacement")
     expect((await replacement.next()).value).toMatchObject({ type: "snapshot", status: "running" })
   })
 
-  it("reports an undersized snapshot allowance without retaining control or killing the shell", async () => {
-    const runtime = manager({ snapshotBytes: 1 })
+  it("reports an undersized snapshot allowance without retaining control or killing the shell", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager({ snapshotBytes: 1 })
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const stream = attach(runtime, terminal.id, "owner")
+    const stream = terminals.attach(runtime, terminal.id, "owner")
     await expect(stream.next()).rejects.toMatchObject({ code: "SNAPSHOT_TOO_LARGE" })
     expect(() => runtime.write({ terminalId: terminal.id, data: "" }, "owner")).toThrow(
       expect.objectContaining({ code: "CONTROL_REQUIRED" }),
@@ -228,8 +266,8 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     expect(runtime.get(terminal.id).status).toBe("running")
   })
 
-  it("returns clean creation errors without consuming terminal capacity", async () => {
-    const runtime = manager({ maxTerminals: 1 })
+  it("returns clean creation errors without consuming terminal capacity", async ({ terminals }) => {
+    const runtime = terminals.manager({ maxTerminals: 1 })
     await expect(
       runtime.create(
         { sessionId: "session", cwd: "/novadeck/missing/directory", cols: 80, rows: 24 },
@@ -241,55 +279,61 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     await expect(
       runtime.create({ sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
     ).rejects.toMatchObject({ code: "RESOURCE_LIMIT" })
-    const invalid = manager({ shell: "/novadeck/missing/shell" })
+    const invalid = terminals.manager({ shell: "/novadeck/missing/shell" })
     await expect(
       invalid.create({ sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
     ).rejects.toMatchObject({ code: "SPAWN_FAILED" })
     expect(invalid.list()).toEqual([])
   })
 
-  it("rejects duplicate attachments without releasing the current controller", async () => {
-    const runtime = manager()
+  it("rejects duplicate attachments without releasing the current controller", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager()
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const current = attach(runtime, terminal.id, "owner")
+    const current = terminals.attach(runtime, terminal.id, "owner")
     await current.next()
-    const duplicate = attach(runtime, terminal.id, "owner")
+    const duplicate = terminals.attach(runtime, terminal.id, "owner")
     await expect(duplicate.next()).rejects.toMatchObject({ code: "ALREADY_ATTACHED" })
     expect(() => runtime.write({ terminalId: terminal.id, data: "" }, "owner")).not.toThrow()
-    const competing = attach(runtime, terminal.id, "other")
+    const competing = terminals.attach(runtime, terminal.id, "other")
     await expect(competing.next()).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
   })
 
-  it("never reacquires control after a disconnected or pre-cancelled attachment", async () => {
-    const runtime = manager()
+  it("never reacquires control after a disconnected or pre-cancelled attachment", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager()
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const pending = attach(runtime, terminal.id, "owner").next()
+    const pending = terminals.attach(runtime, terminal.id, "owner").next()
     runtime.release("owner")
     expect((await pending).done).toBe(true)
-    const replacement = attach(runtime, terminal.id, "replacement")
+    const replacement = terminals.attach(runtime, terminal.id, "replacement")
     await replacement.next()
     await replacement.return(undefined)
     const signal = new AbortController()
     signal.abort()
     const cancelled = runtime.attach({ terminalId: terminal.id }, "cancelled", signal.signal)
     expect((await cancelled.next()).done).toBe(true)
-    const control = attach(runtime, terminal.id, "final")
+    const control = terminals.attach(runtime, terminal.id, "final")
     expect((await control.next()).value).toMatchObject({ type: "snapshot", status: "running" })
   })
 
-  it("drains a large final output before reporting exit", async () => {
-    const runtime = manager({ shellArgs: ["-c", "printf '%1048576s' X; printf END; exit 4"] })
+  it("drains a large final output before reporting exit", async ({ terminals }) => {
+    const runtime = terminals.manager({
+      shellArgs: ["-c", "printf '%1048576s' X; printf END; exit 4"],
+    })
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const stream = attach(runtime, terminal.id, "owner")
+    const stream = terminals.attach(runtime, terminal.id, "owner")
     const events = await until(runtime, stream, "owner", (event) => event.type === "exited")
     const output = events
       .filter((event) => event.type === "output")
@@ -300,13 +344,17 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     expect(events.at(-1)).toMatchObject({ type: "exited", exitCode: 4 })
   })
 
-  it("closes shells that ignore SIGHUP and kills live PTYs during shutdown", async () => {
-    const runtime = manager({ shellArgs: ["-c", "trap '' HUP; printf 'PID=%s\\n' $$; exec cat"] })
+  it("closes shells that ignore SIGHUP and kills live PTYs during shutdown", async ({
+    terminals,
+  }) => {
+    const runtime = terminals.manager({
+      shellArgs: ["-c", "trap '' HUP; printf 'PID=%s\\n' $$; exec cat"],
+    })
     const terminal = await runtime.create(
       { sessionId: "session", cwd, cols: 80, rows: 24 },
       "owner",
     )
-    const stream = attach(runtime, terminal.id, "owner")
+    const stream = terminals.attach(runtime, terminal.id, "owner")
     const events = await until(
       runtime,
       stream,
@@ -316,13 +364,13 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     )
     const data = events.map((event) => ("data" in event ? event.data : "")).join("")
     const pid = Number(/PID=(\d+)/.exec(data)![1])
-    const control = attach(runtime, terminal.id, "control")
+    const control = terminals.attach(runtime, terminal.id, "control")
     await control.next()
     await runtime.close({ terminalId: terminal.id }, "control")
     expect(runtime.get(terminal.id)).toMatchObject({ status: "exited", exitCode: null })
     expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
     const second = await runtime.create({ sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
-    const secondStream = attach(runtime, second.id, "owner")
+    const secondStream = terminals.attach(runtime, second.id, "owner")
     const secondEvents = await until(
       runtime,
       secondStream,

@@ -12,35 +12,36 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
-import { afterEach } from "vitest"
-
 import { DomainError } from "../errors.js"
-import { context, describe, expect, it } from "../test.js"
+import { context, describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "./store.js"
 
-const directories: string[] = []
-const stores: WorkspaceStore[] = []
-
-const directory = (): string => {
-  const path = mkdtempSync(join(tmpdir(), "novadeck-workspaces-"))
-  directories.push(path)
-  return path
-}
-
-const store = (path?: string): WorkspaceStore => {
-  const workspace = new WorkspaceStore(path)
-  stores.push(workspace)
-  return workspace
-}
-
-afterEach(() => {
-  for (const workspace of stores.splice(0)) workspace.close()
-  for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true })
+const it = base.extend<{
+  directory: () => string
+  store: (path?: string) => WorkspaceStore
+}>({
+  directory: async ({ resources }, use) => {
+    await use(() => {
+      const path = mkdtempSync(join(tmpdir(), "novadeck-workspaces-"))
+      resources.defer(() => rmSync(path, { recursive: true, force: true }))
+      return path
+    })
+  },
+  store: async ({ resources }, use) => {
+    await use((path) => {
+      const workspace = new WorkspaceStore(path)
+      resources.defer(() => workspace.close())
+      return workspace
+    })
+  },
 })
 
 describe("workspace metadata", () => {
   context("when the runtime reopens its database", () => {
-    it("retains project and session identities, renames, and insertion order", async () => {
+    it("retains project and session identities, renames, and insertion order", async ({
+      directory,
+      store,
+    }) => {
       const cwd = directory()
       const path = join(cwd, "metadata", "workspace.sqlite")
       const original = store(path)
@@ -77,7 +78,7 @@ describe("workspace metadata", () => {
   })
 
   context("when a project or session does not exist", () => {
-    it("rejects lookups and changes without creating orphan sessions", () => {
+    it("rejects lookups and changes without creating orphan sessions", ({ store }) => {
       const workspace = store()
       const operations = [
         () => workspace.project("missing"),
@@ -96,7 +97,10 @@ describe("workspace metadata", () => {
   })
 
   context("when a project directory is supplied", () => {
-    it("stores the canonical directory rather than a symbolic link", async () => {
+    it("stores the canonical directory rather than a symbolic link", async ({
+      directory,
+      store,
+    }) => {
       const cwd = directory()
       const target = join(cwd, "project")
       const link = join(cwd, "link")
@@ -106,7 +110,7 @@ describe("workspace metadata", () => {
       expect(project.cwd).toBe(realpathSync(target))
     })
 
-    it("rejects relative paths, missing paths, and regular files", async () => {
+    it("rejects relative paths, missing paths, and regular files", async ({ directory, store }) => {
       const cwd = directory()
       const file = join(cwd, "file.txt")
       writeFileSync(file, "not a directory")
@@ -123,7 +127,10 @@ describe("workspace metadata", () => {
   })
 
   context("when names bypass the protocol boundary", () => {
-    it("keeps empty and excessively long names out of persisted metadata", async () => {
+    it("keeps empty and excessively long names out of persisted metadata", async ({
+      directory,
+      store,
+    }) => {
       const cwd = directory()
       const workspace = store()
       const project = await workspace.createProject({ name: "Project", cwd })
@@ -145,7 +152,7 @@ describe("workspace metadata", () => {
   })
 
   context("when a future runtime created the database", () => {
-    it("rejects the newer schema without changing its version or contents", () => {
+    it("rejects the newer schema without changing its version or contents", ({ directory }) => {
       const path = join(directory(), "workspace.sqlite")
       const future = new DatabaseSync(path)
       future.exec(
@@ -166,7 +173,7 @@ describe("workspace metadata", () => {
   context("when file-backed storage is initialized", () => {
     it.skipIf(process.platform === "win32")(
       "creates private storage without changing existing parent permissions",
-      () => {
+      ({ directory, store }) => {
         const existing = directory()
         chmodSync(existing, 0o755)
         const path = join(existing, "private", "metadata", "workspace.sqlite")

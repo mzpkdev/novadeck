@@ -5,58 +5,51 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { protocolVersion, type RuntimeClient, type TerminalEvent } from "@novadeck/protocol"
-import { createRuntimeClient } from "@novadeck/protocol/client"
-import { afterEach } from "vitest"
+import { createRuntimeClient, type RuntimeSocket } from "@novadeck/protocol/client"
+import headless from "@xterm/headless"
 import { WebSocket as NodeWebSocket } from "ws"
 
 import { startRuntime, type RuntimeOptions } from "../terminal-server.js"
 import { context, describe, expect, it } from "../test.js"
+import { command, ptyOptions } from "../testing/pty.js"
+import type { Resources } from "../testing/resources.js"
 
 const token = "novadeck-api-tests-only-not-a-production-credential"
-const cleanups: (() => Promise<void>)[] = []
-
-afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).toReversed()) {
-    // eslint-disable-next-line no-await-in-loop -- Close clients before runtimes and their database directories.
-    await cleanup()
-  }
-})
-
-const fixture = async (options: RuntimeOptions = {}) => {
+const fixture = async (resources: Resources, options: RuntimeOptions = {}) => {
   const directory = await mkdtemp(join(tmpdir(), "novadeck-api-"))
-  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  resources.defer(() => rm(directory, { recursive: true, force: true }))
   const runtime = await startRuntime({
     port: 0,
     apiToken: token,
     databasePath: join(directory, "workspace.sqlite"),
     ...options,
     terminal: {
-      shell: process.execPath,
-      shellArgs: ["--interactive"],
-      env: { NODE_REPL_HISTORY: "", NODE_DISABLE_COLORS: "1" },
+      ...ptyOptions,
       ...options.terminal,
     },
   })
-  cleanups.push(() => runtime.close())
+  resources.defer(() => runtime.close())
   const url = `${runtime.origin.replace(/^http/, "ws")}/api/rpc`
 
   const connect = async (authenticate = true) => {
-    const socket = new WebSocket(url)
+    const socket = new NodeWebSocket(url)
     socket.binaryType = "arraybuffer"
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true })
-      socket.addEventListener("error", () => reject(new Error("Connection failed")), { once: true })
-    })
-    const client = createRuntimeClient(socket)
     const disconnect = async () => {
-      if (socket.readyState === WebSocket.CLOSED) return
-      const closed = new Promise<void>((resolve) =>
-        socket.addEventListener("close", () => resolve(), { once: true }),
-      )
-      socket.close()
-      await closed
+      if (socket.readyState === NodeWebSocket.CLOSED) return
+      const timeout = setTimeout(() => socket.terminate(), 2_000)
+      timeout.unref()
+      const closed = once(socket, "close")
+      if (socket.readyState === NodeWebSocket.CONNECTING) socket.terminate()
+      else socket.close()
+      try {
+        await closed
+      } finally {
+        clearTimeout(timeout)
+      }
     }
-    cleanups.push(disconnect)
+    resources.defer(disconnect)
+    await once(socket, "open", { signal: AbortSignal.timeout(5_000) })
+    const client = createRuntimeClient(socket as unknown as RuntimeSocket)
     if (authenticate) await client.runtime.handshake({ protocolVersion, token })
     return { client, socket, disconnect }
   }
@@ -71,6 +64,7 @@ const fixture = async (options: RuntimeOptions = {}) => {
 }
 
 const reader = async (
+  resources: Resources,
   client: RuntimeClient,
   terminalId: string,
   options: { afterSequence?: number; mode?: "control" | "observe" } = {},
@@ -78,7 +72,7 @@ const reader = async (
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error("Terminal event timed out")), 8_000)
   timeout.unref()
-  cleanups.push(async () => {
+  resources.defer(async () => {
     clearTimeout(timeout)
     controller.abort()
   })
@@ -110,7 +104,8 @@ const reader = async (
     until,
     events,
     text: () => text,
-    untilText: (value: string) => until(() => text.includes(value)),
+    untilText: (value: string) =>
+      text.includes(value) ? Promise.resolve(events.at(-1)!) : until(() => text.includes(value)),
     detach: () => controller.abort(),
     stream,
   }
@@ -119,21 +114,72 @@ const reader = async (
 const print = (client: RuntimeClient, terminalId: string, first: string, second: string) =>
   client.terminals.write({
     terminalId,
-    data: `console.log(${JSON.stringify(first)} + ${JSON.stringify(second)})\r`,
+    data: command({ type: "write", data: `${first}${second}\r\n` }),
   })
+
+const screen = (resources: Resources, cols: number, rows: number) => {
+  const terminal = new headless.Terminal({ cols, rows, allowProposedApi: true })
+  resources.defer(() => terminal.dispose())
+  const apply = async (event: TerminalEvent) => {
+    if (event.type === "resized" || event.type === "snapshot") {
+      terminal.resize(event.cols, event.rows)
+    }
+    if (event.type === "snapshot") terminal.reset()
+    if (event.type === "output" || event.type === "snapshot") {
+      await new Promise<void>((resolve) => terminal.write(event.data, resolve))
+    }
+  }
+  const state = () => {
+    const buffer = terminal.buffer.active
+    return {
+      type: buffer.type,
+      cols: terminal.cols,
+      rows: terminal.rows,
+      cursor: [buffer.cursorX, buffer.cursorY],
+      cells: Array.from({ length: terminal.rows }, (_, y) => {
+        const line = buffer.getLine(buffer.baseY + y)
+        return Array.from({ length: terminal.cols }, (_cell, x) => {
+          const cell = line?.getCell(x)
+          return (
+            cell && [
+              cell.getChars(),
+              cell.getWidth(),
+              cell.getFgColorMode(),
+              cell.getFgColor(),
+              cell.getBgColorMode(),
+              cell.getBgColor(),
+              cell.isBold(),
+              cell.isItalic(),
+              cell.isUnderline(),
+              cell.isInverse(),
+            ]
+          )
+        })
+      }),
+    }
+  }
+  return { apply, state }
+}
+
+const applyEvents = async (target: ReturnType<typeof screen>, events: TerminalEvent[]) => {
+  for (const event of events) {
+    // eslint-disable-next-line no-await-in-loop -- xterm must parse events in transport order.
+    await target.apply(event)
+  }
+}
 
 describe("terminal API over WebSockets", () => {
   context("before authentication and protocol negotiation", () => {
-    it("keeps terminal access disabled when no credential is configured", async () => {
+    it("keeps terminal access disabled when no credential is configured", async ({ resources }) => {
       const runtime = await startRuntime({ port: 0 })
-      cleanups.push(() => runtime.close())
+      resources.defer(() => runtime.close())
       const response = await fetch(`${runtime.origin}/api/rpc`)
       expect(response.status).toBe(404)
       await expect(fetch(`${runtime.origin}/api/status`)).resolves.toMatchObject({ ok: true })
     })
 
-    it("rejects unauthenticated operations and wrong credentials", async () => {
-      const app = await fixture()
+    it("rejects unauthenticated operations and wrong credentials", async ({ resources }) => {
+      const app = await fixture(resources)
       const { client } = await app.connect(false)
       await expect(client.projects.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" })
       await expect(
@@ -151,8 +197,10 @@ describe("terminal API over WebSockets", () => {
       await expect(client.projects.list()).resolves.toEqual([])
     })
 
-    it("requires compatible clients and does not authenticate a failed handshake", async () => {
-      const app = await fixture()
+    it("requires compatible clients and does not authenticate a failed handshake", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client } = await app.connect(false)
       await expect(client.runtime.handshake({ protocolVersion: 99, token })).rejects.toMatchObject({
         code: "INCOMPATIBLE_PROTOCOL",
@@ -160,31 +208,37 @@ describe("terminal API over WebSockets", () => {
       await expect(client.projects.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" })
     })
 
-    it("checks browser origins before accepting a WebSocket", async () => {
-      const app = await fixture({ corsOrigins: ["https://trusted.novadeck.test"] })
+    it("checks browser origins before accepting a WebSocket", async ({ resources }) => {
+      const app = await fixture(resources, { corsOrigins: ["https://trusted.novadeck.test"] })
       const denied = new NodeWebSocket(app.url, { origin: "https://untrusted.novadeck.test" })
+      resources.defer(() => denied.terminate())
       const failure = await new Promise<Error>((resolve) => denied.once("error", resolve))
       expect(failure.message).toContain("403")
       const accepted = new NodeWebSocket(app.url, { origin: "https://trusted.novadeck.test" })
-      await once(accepted, "open")
+      resources.defer(() => accepted.terminate())
+      await once(accepted, "open", { signal: AbortSignal.timeout(5_000) })
       const closed = once(accepted, "close")
       accepted.close()
       await closed
     })
 
-    it("bounds the number of connections, including unauthenticated clients", async () => {
-      const app = await fixture({ maxConnections: 1 })
+    it("bounds the number of connections, including unauthenticated clients", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources, { maxConnections: 1 })
       await app.connect(false)
       const denied = new NodeWebSocket(app.url)
+      resources.defer(() => denied.terminate())
       const failure = await new Promise<Error>((resolve) => denied.once("error", resolve))
       expect(failure.message).toContain("429")
     })
 
-    it("disconnects unresponsive peers using heartbeat pings", async () => {
-      const app = await fixture({ heartbeatIntervalMs: 50 })
+    it("disconnects unresponsive peers using heartbeat pings", async ({ resources }) => {
+      const app = await fixture(resources, { heartbeatIntervalMs: 50 })
       const silent = new NodeWebSocket(app.url, { autoPong: false })
+      resources.defer(() => silent.terminate())
       const closed = once(silent, "close")
-      await once(silent, "open")
+      await once(silent, "open", { signal: AbortSignal.timeout(5_000) })
       await closed
       expect(silent.readyState).toBe(NodeWebSocket.CLOSED)
       const { client } = await app.connect()
@@ -193,15 +247,19 @@ describe("terminal API over WebSockets", () => {
   })
 
   context("when managing workspace metadata", () => {
-    it("creates, lists, renames, and persists projects and sessions across a restart", async () => {
-      const app = await fixture()
+    it("creates, lists, renames, and persists projects and sessions across a restart", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client, disconnect } = await app.connect()
       const { project, session } = await app.setup(client)
       await client.projects.rename({ projectId: project.id, name: "Renamed project" })
       await client.sessions.rename({ sessionId: session.id, name: "Renamed session" })
       await disconnect()
       await app.runtime.close()
-      const restarted = await fixture({ databasePath: join(app.directory, "workspace.sqlite") })
+      const restarted = await fixture(resources, {
+        databasePath: join(app.directory, "workspace.sqlite"),
+      })
       const connection = await restarted.connect()
       await expect(connection.client.projects.list()).resolves.toEqual([
         { ...project, name: "Renamed project" },
@@ -212,8 +270,10 @@ describe("terminal API over WebSockets", () => {
       await expect(connection.client.terminals.list({ sessionId: session.id })).resolves.toEqual([])
     })
 
-    it("validates payloads, existing directories, and workspace relationships", async () => {
-      const app = await fixture()
+    it("validates payloads, existing directories, and workspace relationships", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client } = await app.connect()
       await expect(client.projects.create({ name: " ", cwd: app.directory })).rejects.toMatchObject(
         { code: "BAD_REQUEST" },
@@ -238,12 +298,16 @@ describe("terminal API over WebSockets", () => {
   })
 
   context("when running a real terminal process", () => {
-    it("interrupts a busy process with Ctrl-C and continues accepting input", async () => {
-      const app = await fixture()
+    it("interrupts a busy process with Ctrl-C and continues accepting input", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources, {
+        terminal: { shell: process.execPath, shellArgs: ["--interactive"] },
+      })
       const { client } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-      const output = await reader(client, terminal.id)
+      const output = await reader(resources, client, terminal.id)
       await output.next()
       await client.terminals.write({
         terminalId: terminal.id,
@@ -251,20 +315,25 @@ describe("terminal API over WebSockets", () => {
       })
       await output.untilText("BUSY_STARTED")
       await client.terminals.write({ terminalId: terminal.id, data: "\u0003" })
-      await print(client, terminal.id, "INTERRUPT_", "RECOVERED")
+      await client.terminals.write({
+        terminalId: terminal.id,
+        data: 'console.log("INTERRUPT_" + "RECOVERED")\r',
+      })
       await output.untilText("INTERRUPT_RECOVERED")
     })
 
-    it("stops attached shells and closes connections during runtime shutdown", async () => {
-      const app = await fixture()
+    it("stops attached shells and closes connections during runtime shutdown", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client, socket } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-      const output = await reader(client, terminal.id)
-      await output.next()
+      const output = await reader(resources, client, terminal.id)
+      await output.untilText("PTY_READY")
       await client.terminals.write({
         terminalId: terminal.id,
-        data: 'console.log("CHILD_" + "PID=" + process.pid + ";")\r',
+        data: command({ type: "info" }),
       })
       await output.untilText("CHILD_PID=")
       const pid = Number(/CHILD_PID=(\d+);/.exec(output.text())?.[1])
@@ -278,18 +347,21 @@ describe("terminal API over WebSockets", () => {
       expect(() => process.kill(pid, 0)).toThrow()
     })
 
-    it("streams output, accepts input, applies PTY dimensions, and reports process exit", async () => {
-      const app = await fixture()
+    it("streams output, accepts input, applies PTY dimensions, and reports process exit", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-      const output = await reader(client, terminal.id)
+      const output = await reader(resources, client, terminal.id)
       expect(await output.next()).toMatchObject({
         type: "snapshot",
         status: "running",
         cols: 80,
         rows: 24,
       })
+      await output.untilText("PTY_READY")
       await print(client, terminal.id, "PTY_", "CONNECTED")
       await output.untilText("PTY_CONNECTED")
       await client.terminals.resize({ terminalId: terminal.id, cols: 132, rows: 43 })
@@ -298,13 +370,16 @@ describe("terminal API over WebSockets", () => {
       )
       await client.terminals.write({
         terminalId: terminal.id,
-        data: 'console.log("SIZE_" + process.stdout.columns + "x" + process.stdout.rows + "_TTY_" + process.stdin.isTTY)\r',
+        data: command({ type: "info" }),
       })
       await output.untilText("SIZE_132x43_TTY_true")
       await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
         expect.objectContaining({ id: terminal.id, status: "running", cols: 132, rows: 43 }),
       ])
-      await client.terminals.write({ terminalId: terminal.id, data: "process.exit(7)\r" })
+      await client.terminals.write({
+        terminalId: terminal.id,
+        data: command({ type: "exit", code: 7 }),
+      })
       expect(await output.until((event) => event.type === "exited")).toMatchObject({ exitCode: 7 })
       await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
         expect.objectContaining({ status: "exited", exitCode: 7 }),
@@ -313,13 +388,12 @@ describe("terminal API over WebSockets", () => {
       expect(sequences).toEqual([...new Set(sequences)].toSorted((a, b) => a - b))
     })
 
-    it("explicitly closes the shell and reuses capacity after closed records are evicted", async () => {
-      const app = await fixture({
+    it("explicitly closes the shell and reuses capacity after closed records are evicted", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources, {
         terminal: {
           maxTerminals: 1,
-          shell: process.execPath,
-          shellArgs: ["--interactive"],
-          env: { NODE_REPL_HISTORY: "" },
         },
       })
       const { client } = await app.connect()
@@ -334,8 +408,10 @@ describe("terminal API over WebSockets", () => {
       await client.terminals.close({ terminalId: second.id })
     })
 
-    it("rejects invalid directories and reports an unavailable shell without leaving a record", async () => {
-      const app = await fixture({
+    it("rejects invalid directories and reports an unavailable shell without leaving a record", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources, {
         terminal: { shell: join(tmpdir(), `novadeck-missing-${randomUUID()}`) },
       })
       const { client } = await app.connect()
@@ -356,8 +432,217 @@ describe("terminal API over WebSockets", () => {
   })
 
   context("when clients detach or reconnect", () => {
-    it("restores a heavily styled screen larger than the ordinary output budget", async () => {
-      const app = await fixture()
+    it("remains usable when a create request loses its connection before a response", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
+      const replacement = await app.connect()
+      const { session } = await app.setup(replacement.client)
+      const socket = new NodeWebSocket(app.url)
+      socket.binaryType = "arraybuffer"
+      resources.defer(() => socket.terminate())
+      await once(socket, "open", { signal: AbortSignal.timeout(5_000) })
+      const client = createRuntimeClient(socket as unknown as RuntimeSocket)
+      await client.runtime.handshake({ protocolVersion, token })
+      // Flush the request onto TCP, then drop the connection without a close frame.
+      // The server may either reject the request or finish creation after release.
+      const originalSend = socket.send.bind(socket)
+      socket.send = ((data: Parameters<NodeWebSocket["send"]>[0]) => {
+        originalSend(data, () => socket.terminate())
+      }) as NodeWebSocket["send"]
+      const created = client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+      await expect(created).rejects.toThrow("Runtime connection is closed")
+      // Delivery is ambiguous: the connection may close before creation starts.
+      // Any already-visible record must be controllable by the replacement.
+      // The manager suite covers release during an in-flight create directly.
+      const terminals = await replacement.client.terminals.list({ sessionId: session.id })
+      expect(terminals.length).toBeLessThanOrEqual(1)
+      for (const terminal of terminals) {
+        // eslint-disable-next-line no-await-in-loop -- Every orphaned create must permit acquisition.
+        const attached = await reader(resources, replacement.client, terminal.id)
+        // eslint-disable-next-line no-await-in-loop -- Wait for server-side ownership registration.
+        await attached.next()
+        // eslint-disable-next-line no-await-in-loop -- Verify the surviving process accepts input.
+        await print(replacement.client, terminal.id, "ABRUPT_", "RECOVERED")
+        // eslint-disable-next-line no-await-in-loop -- Consume the recovery checkpoint.
+        await attached.untilText("ABRUPT_RECOVERED")
+      }
+    })
+
+    it("grants exactly one controller when two connections race to acquire control", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
+      const creator = await app.connect()
+      const { session } = await app.setup(creator.client)
+      const terminal = await creator.client.terminals.create({
+        sessionId: session.id,
+        cols: 80,
+        rows: 24,
+      })
+      await creator.disconnect()
+      const competitors = await Promise.all([app.connect(), app.connect()])
+      const readers = await Promise.all(
+        competitors.map(({ client }) => reader(resources, client, terminal.id)),
+      )
+      const results = await Promise.allSettled(readers.map((output) => output.next()))
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+      const winner = results.findIndex((result) => result.status === "fulfilled")
+      const loser = 1 - winner
+      expect(results[loser]).toMatchObject({
+        status: "rejected",
+        reason: { code: "CONTROL_IN_USE" },
+      })
+      await expect(
+        competitors[loser]!.client.terminals.write({ terminalId: terminal.id, data: "denied" }),
+      ).rejects.toMatchObject({ code: "CONTROL_REQUIRED" })
+      await readers[winner]!.untilText("PTY_READY")
+      await print(competitors[winner]!.client, terminal.id, "RACE_", "WINNER")
+      await readers[winner]!.untilText("RACE_WINNER")
+    })
+
+    it("cancels queued output and exit delivery without losing the final screen", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
+      const owner = await app.connect()
+      const { session } = await app.setup(owner.client)
+      const terminal = await owner.client.terminals.create({
+        sessionId: session.id,
+        cols: 80,
+        rows: 24,
+      })
+      const continuous = await reader(resources, owner.client, terminal.id)
+      await continuous.untilText("PTY_READY")
+      const observer = await app.connect()
+      const queued = await reader(resources, observer.client, terminal.id, { mode: "observe" })
+      await queued.next()
+      await owner.client.terminals.write({
+        terminalId: terminal.id,
+        data: command({ type: "exit", code: 9, data: "FINAL_QUEUED_OUTPUT\r\n" }),
+      })
+      await continuous.until((event) => event.type === "exited")
+      await queued.stream.return()
+      const restored = await reader(resources, observer.client, terminal.id, { mode: "observe" })
+      const snapshot = await restored.next()
+      expect(snapshot).toMatchObject({ type: "snapshot", status: "exited", exitCode: 9 })
+      expect(restored.text()).toContain("FINAL_QUEUED_OUTPUT")
+      await expect(observer.client.projects.list()).resolves.toHaveLength(1)
+    })
+
+    it("keeps a quiet terminal responsive while an unattached terminal produces noisy output", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
+      const { client } = await app.connect()
+      const { session } = await app.setup(client)
+      const noisy = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+      const quiet = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+      const quietOutput = await reader(resources, client, quiet.id)
+      await quietOutput.untilText("PTY_READY")
+      const observer = await app.connect()
+      const noisyOutput = await reader(resources, observer.client, noisy.id, { mode: "observe" })
+      await noisyOutput.untilText("PTY_READY")
+      await client.terminals.write({
+        terminalId: noisy.id,
+        data: command({ type: "startNoise" }),
+      })
+      await noisyOutput.untilText("NOISE_STARTED")
+      await noisyOutput.stream.return()
+      // The child continues producing output until the explicit stop command.
+      // This reply must therefore arrive while the other PTY is still noisy.
+      await print(client, quiet.id, "QUIET_", "RESPONSIVE")
+      await quietOutput.untilText("QUIET_RESPONSIVE")
+      await client.terminals.write({ terminalId: noisy.id, data: command({ type: "stopNoise" }) })
+      const stopped = await reader(resources, observer.client, noisy.id, { mode: "observe" })
+      await stopped.untilText("NOISE_STOPPED")
+      await expect(client.terminals.list({ sessionId: session.id })).resolves.toHaveLength(2)
+    })
+
+    for (const recovery of ["replay", "snapshot"] as const) {
+      it(`reconstructs the same styled screen, cursor and alternate buffer through ${recovery} recovery`, async ({
+        resources,
+      }) => {
+        const app = await fixture(resources, {
+          terminal: { historyBytes: recovery === "snapshot" ? 128 : 1024 * 1024 },
+        })
+        const owner = await app.connect()
+        const { session } = await app.setup(owner.client)
+        const terminal = await owner.client.terminals.create({
+          sessionId: session.id,
+          cols: 40,
+          rows: 12,
+        })
+        const continuous = await reader(resources, owner.client, terminal.id)
+        await continuous.untilText("PTY_READY")
+        const observer = await app.connect()
+        const watched = await reader(resources, observer.client, terminal.id, { mode: "observe" })
+        await watched.untilText("PTY_READY")
+        await owner.client.terminals.write({
+          terminalId: terminal.id,
+          data: command({
+            type: "write",
+            data: "\u001b[2J\u001b[H\u001b[1;38;2;20;80;140m雪🙂 styled\u001b[0m\r\nBEFORE_CHECKPOINT",
+          }),
+        })
+        const checkpoint = await watched.untilText("BEFORE_CHECKPOINT")
+        await continuous.until((event) => event.sequence === checkpoint.sequence)
+        const expected = screen(resources, 40, 12)
+        const restored = screen(resources, 40, 12)
+        await applyEvents(expected, continuous.events)
+        await applyEvents(restored, watched.events)
+        await observer.disconnect()
+        await owner.client.terminals.resize({ terminalId: terminal.id, cols: 52, rows: 15 })
+        await owner.client.terminals.write({
+          terminalId: terminal.id,
+          data: command({
+            type: "write",
+            data:
+              "normal continuation".repeat(20) +
+              "\u001b[?1049h\u001b[2J\u001b[H\u001b[3;4;38;2;90;60;30;48;2;12;34;56m界🙂 alternate\u001b[0m\u001b[5;7HAFTER_CHECKPOINT",
+          }),
+        })
+        const after = await continuous.untilText("AFTER_CHECKPOINT")
+        await applyEvents(
+          expected,
+          continuous.events.filter((event) => event.sequence > checkpoint.sequence),
+        )
+        const replacement = await app.connect()
+        const resumed = await reader(resources, replacement.client, terminal.id, {
+          mode: "observe",
+          afterSequence: checkpoint.sequence,
+        })
+        await resumed.until((event) => event.sequence === after.sequence)
+        expect(resumed.events[0]?.type === "snapshot").toBe(recovery === "snapshot")
+        await applyEvents(restored, resumed.events)
+        expect(restored.state()).toEqual(expected.state())
+        expect(restored.state().type).toBe("alternate")
+        await owner.client.terminals.write({
+          terminalId: terminal.id,
+          data: command({
+            type: "write",
+            data: "\u001b[?1049l\u001b[8;3H\u001b[32mCONTINUED_界🙂\u001b[0m",
+          }),
+        })
+        const final = await continuous.untilText("CONTINUED_界🙂")
+        await resumed.until((event) => event.sequence === final.sequence)
+        await applyEvents(
+          expected,
+          continuous.events.filter((event) => event.sequence > after.sequence),
+        )
+        await applyEvents(
+          restored,
+          resumed.events.filter((event) => event.sequence > after.sequence),
+        )
+        expect(restored.state()).toEqual(expected.state())
+        expect(restored.state().type).toBe("normal")
+      })
+    }
+
+    it("restores a heavily styled screen larger than the ordinary output budget", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const owner = await app.connect()
       const { session } = await app.setup(owner.client)
       const terminal = await owner.client.terminals.create({
@@ -365,16 +650,16 @@ describe("terminal API over WebSockets", () => {
         cols: 120,
         rows: 24,
       })
-      const output = await reader(owner.client, terminal.id)
-      await output.next()
+      const output = await reader(resources, owner.client, terminal.id)
+      await output.untilText("PTY_READY")
       await owner.client.terminals.write({
         terminalId: terminal.id,
-        data: 'var line = Array.from({length:120}, (_,x) => "\\x1b[38;2;"+(x%256)+";"+((x*3)%256)+";"+((x*7)%256)+";48;2;"+((x*11)%256)+";"+((x*13)%256)+";"+((x*17)%256)+"mX").join(""); process.stdout.write((line+"\\r\\n").repeat(1024)); console.log("COLORED_"+"READY")\r',
+        data: command({ type: "styled", cols: 120, lines: 1024 }),
       })
       await output.untilText("COLORED_READY")
       await owner.disconnect()
       const replacement = await app.connect()
-      const restored = await reader(replacement.client, terminal.id)
+      const restored = await reader(resources, replacement.client, terminal.id)
       const snapshot = await restored.next()
       expect(snapshot.type).toBe("snapshot")
       expect(Buffer.byteLength(JSON.stringify(snapshot))).toBeGreaterThan(4 * 1024 * 1024)
@@ -382,22 +667,28 @@ describe("terminal API over WebSockets", () => {
       await restored.untilText("LARGE_SCREEN_RECOVERED")
     })
 
-    it("cancels an attachment without killing its shell or poisoning subsequent requests", async () => {
-      const app = await fixture()
+    it("cancels an attachment without killing its shell or poisoning subsequent requests", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-      const output = await reader(client, terminal.id)
-      await output.next()
+      const output = await reader(resources, client, terminal.id)
+      await output.untilText("PTY_READY")
       await output.stream.return()
-      const reattached = await reader(client, terminal.id)
+      const reattached = await reader(resources, client, terminal.id)
       await reattached.next()
       await print(client, terminal.id, "CANCEL_", "RECOVERED")
       await reattached.untilText("CANCEL_RECOVERED")
     })
 
-    it("bounds a viewer that does not acknowledge output and permits fresh attachment", async () => {
-      const app = await fixture({ terminal: { subscriberBytes: 32 * 1024, ackWindowBytes: 1024 } })
+    it("bounds a viewer that does not acknowledge output and permits fresh attachment", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources, {
+        terminal: { subscriberBytes: 32 * 1024, ackWindowBytes: 1024 },
+      })
       const { client } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
@@ -416,30 +707,35 @@ describe("terminal API over WebSockets", () => {
       const failure = expect(failed).rejects.toMatchObject({ code: "SLOW_CONSUMER" })
       await client.terminals.write({
         terminalId: terminal.id,
-        data: 'console.log(("x".repeat(79) + "\\r").repeat(1250)); console.log("OVERFLOW_" + "RECOVERED")\r',
+        data: command({ type: "burst", data: "x".repeat(79) + "\r", count: 1250 }),
       })
       await failure
-      const restored = await reader(observer.client, terminal.id, { mode: "observe" })
+      await print(client, terminal.id, "OVERFLOW_", "RECOVERED")
+      const restored = await reader(resources, observer.client, terminal.id, { mode: "observe" })
       await restored.untilText("OVERFLOW_RECOVERED")
       await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
         expect.objectContaining({ status: "running" }),
       ])
     })
 
-    it("rejects requests and cancels streams cleanly after a socket closes", async () => {
-      const app = await fixture()
+    it("rejects requests and cancels streams cleanly after a socket closes", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const { client, disconnect } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-      const output = await reader(client, terminal.id)
-      await output.next()
+      const output = await reader(resources, client, terminal.id)
+      await output.untilText("PTY_READY")
       await disconnect()
       output.detach()
       await expect(client.projects.list()).rejects.toThrow("Runtime connection is closed")
     })
 
-    it("keeps the same process alive and replays only events after the saved cursor", async () => {
-      const app = await fixture()
+    it("keeps the same process alive and replays only events after the saved cursor", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const owner = await app.connect()
       const { session } = await app.setup(owner.client)
       const terminal = await owner.client.terminals.create({
@@ -448,14 +744,14 @@ describe("terminal API over WebSockets", () => {
         rows: 24,
       })
       const observer = await app.connect()
-      const watched = await reader(observer.client, terminal.id, { mode: "observe" })
-      await watched.next()
+      const watched = await reader(resources, observer.client, terminal.id, { mode: "observe" })
+      await watched.untilText("PTY_READY")
       await print(owner.client, terminal.id, "BEFORE_", "DISCONNECT")
       const checkpoint = await watched.untilText("BEFORE_DISCONNECT")
       await observer.disconnect()
       await print(owner.client, terminal.id, "AFTER_", "DISCONNECT")
       const reconnected = await app.connect()
-      const resumed = await reader(reconnected.client, terminal.id, {
+      const resumed = await reader(resources, reconnected.client, terminal.id, {
         mode: "observe",
         afterSequence: checkpoint.sequence,
       })
@@ -470,27 +766,24 @@ describe("terminal API over WebSockets", () => {
       ])
     })
 
-    it("restores a screen snapshot when the replay window has expired", async () => {
-      const app = await fixture({
+    it("restores a screen snapshot when the replay window has expired", async ({ resources }) => {
+      const app = await fixture(resources, {
         terminal: {
-          shell: process.execPath,
-          shellArgs: ["--interactive"],
-          env: { NODE_REPL_HISTORY: "" },
           historyBytes: 128,
         },
       })
       const { client } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 100, rows: 30 })
-      const output = await reader(client, terminal.id)
-      await output.next()
+      const output = await reader(resources, client, terminal.id)
+      await output.untilText("PTY_READY")
       await client.terminals.write({
         terminalId: terminal.id,
-        data: 'console.log("x".repeat(5000)); console.log("SNAPSHOT_" + "READY")\r',
+        data: command({ type: "write", data: "x".repeat(5000) + "\r\nSNAPSHOT_READY\r\n" }),
       })
       await output.untilText("SNAPSHOT_READY")
       const observer = await app.connect()
-      const restored = await reader(observer.client, terminal.id, {
+      const restored = await reader(resources, observer.client, terminal.id, {
         mode: "observe",
         afterSequence: 0,
       })
@@ -501,8 +794,10 @@ describe("terminal API over WebSockets", () => {
       expect(snapshot.sequence).toBeGreaterThan(0)
     })
 
-    it("enforces one controlling connection and releases control on disconnect", async () => {
-      const app = await fixture()
+    it("enforces one controlling connection and releases control on disconnect", async ({
+      resources,
+    }) => {
+      const app = await fixture(resources)
       const owner = await app.connect()
       const observer = await app.connect()
       const { session } = await app.setup(owner.client)
@@ -520,27 +815,31 @@ describe("terminal API over WebSockets", () => {
       await expect(
         observer.client.terminals.close({ terminalId: terminal.id }),
       ).rejects.toMatchObject({ code: "CONTROL_REQUIRED" })
-      const blocked = await reader(observer.client, terminal.id)
+      const blocked = await reader(resources, observer.client, terminal.id)
       await expect(blocked.next()).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
       await owner.disconnect()
-      const acquired = await reader(observer.client, terminal.id)
+      const acquired = await reader(resources, observer.client, terminal.id)
       await acquired.next()
       await print(observer.client, terminal.id, "CONTROL_", "TRANSFERRED")
       await acquired.untilText("CONTROL_TRANSFERRED")
     })
 
-    it("rejects invalid acknowledgements and leaves the shell usable", async () => {
-      const app = await fixture()
+    it("rejects invalid acknowledgements and leaves the shell usable", async ({ resources }) => {
+      const app = await fixture(resources)
       const { client } = await app.connect()
       const { session } = await app.setup(client)
       const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-      const output = await reader(client, terminal.id)
-      await output.next()
+      const output = await reader(resources, client, terminal.id)
+      await output.untilText("PTY_READY")
       await expect(
         client.terminals.ack({ terminalId: terminal.id, sequence: Number.MAX_SAFE_INTEGER }),
       ).rejects.toMatchObject({ code: "INVALID_CURSOR" })
       await print(client, terminal.id, "ACK_", "VALIDATION")
       await output.untilText("ACK_VALIDATION")
+      await client.terminals.ack({ terminalId: terminal.id, sequence: 0 })
+      await client.terminals.ack({ terminalId: terminal.id, sequence: 0 })
+      await print(client, terminal.id, "STALE_ACK_", "RECOVERED")
+      await output.untilText("STALE_ACK_RECOVERED")
     })
   })
 })

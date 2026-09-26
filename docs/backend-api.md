@@ -25,12 +25,25 @@ pnpm --filter @novadeck/runtime start
 pnpm --filter @novadeck/runtime test
 ```
 
-Build the protocol package again after changing its schemas or client. Runtime
-tests use ephemeral listeners, temporary SQLite files, and real PTYs. They cover
-RPC validation/authentication, metadata persistence, input/output, resizing,
-Ctrl-C, exit/shutdown, replay/snapshots, control ownership, cancellation, and slow
-viewers. Linux is the locally verified platform; native macOS/Windows and
-Electron packaging remain verification gates before desktop integration.
+Build the protocol package again after changing its schemas or client. The runtime
+test command rebuilds its own CLI before running. Tests use ephemeral listeners,
+temporary SQLite files, and real PTYs; the UI is not involved.
+
+- API tests use a small controllable child program inside a real PTY. Separate
+  smoke tests exercise the platform shell and launch the built CLI in a fresh
+  process, including configuration, authentication, and metadata across restarts.
+- Recovery tests feed terminal events into headless xterm instances and compare
+  screen state before and after reconnection, including cursor position, styling,
+  alternate buffers, Unicode, and resize events.
+- Generated fast-check command sequences exercise ownership and output-budget
+  accounting. Failures report a seed and shrink path for reproduction.
+- Each test owns its resources. Cleanup attempts every registered release, even
+  if another cleanup fails.
+
+Backend CI runs on Linux, macOS, and Windows. POSIX signal and hangup assertions
+are explicitly platform-specific; Windows process termination is not a graceful
+SIGTERM test. Packaged Electron terminal support and remote TLS deployment remain
+verification gates before integration.
 
 Without a token, the runtime exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
