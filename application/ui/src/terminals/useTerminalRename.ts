@@ -4,7 +4,7 @@ import type { WorkspaceAction } from "../model/state"
 import type { TerminalMetadata, ViewMode, WorkspaceTarget } from "../model/types"
 import type { TerminalRename } from "./TerminalRenameInput"
 
-type RenameSession = {
+export type RenameSession = {
   context: string
   id: string
   original: string
@@ -15,6 +15,25 @@ type RenameSession = {
   request: number
 }
 
+export type TerminalRenameOptions = {
+  context: string
+  view: ViewMode
+  target: WorkspaceTarget
+  sessions: TerminalMetadata[]
+  selected: string
+  dispatch: (action: WorkspaceAction) => void
+}
+
+export type TerminalRenameController = {
+  readonly activeRename: RenameSession | null
+  readonly renameView: TerminalRename | null
+  readonly startRename: (session: TerminalMetadata, origin: RenameSession["origin"]) => void
+  readonly changeRenameDraft: (id: string, draft: string) => void
+  readonly saveRename: (id: string) => void
+  readonly cancelRename: (id: string) => void
+  readonly finishRename: (rename: RenameSession, save: boolean) => void
+}
+
 export const useTerminalRename = ({
   context,
   view,
@@ -22,14 +41,7 @@ export const useTerminalRename = ({
   sessions,
   selected,
   dispatch,
-}: {
-  context: string
-  view: ViewMode
-  target: WorkspaceTarget
-  sessions: TerminalMetadata[]
-  selected: string
-  dispatch: (action: WorkspaceAction) => void
-}) => {
+}: TerminalRenameOptions): TerminalRenameController => {
   const [renameSession, setRenameSession] = useState<RenameSession | null>(null)
   const renameRequest = useRef(0)
   const activeRename = renameSession?.context === context ? renameSession : null

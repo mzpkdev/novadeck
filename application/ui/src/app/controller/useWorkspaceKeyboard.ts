@@ -22,34 +22,29 @@ import {
 } from "../../interaction/shortcuts"
 import type { CanvasHandle } from "../../layouts/canvas/Canvas"
 import { activeSession, orderedSessions } from "../../model/state"
-import type { TerminalMetadata, PreferencesValue } from "../../model/types"
 import { viewModes } from "../../preferences/preferences-storage"
-import type { useWorkspaceShell } from "../../shell/useWorkspaceShell"
-import type { useRecentSwitcher } from "../../terminals/useRecentSwitcher"
-import type { useTerminalRename } from "../../terminals/useTerminalRename"
-import type { useWorkspaceCommands } from "./useWorkspaceCommands"
-import type { useWorkspaceRoute } from "./useWorkspaceRoute"
+import type { WorkspaceController } from "./useWorkspaceController"
 
-export const useWorkspaceKeyboard = ({
-  routeState,
-  preferences,
-  shell,
-  rename,
-  recent,
-  commands,
-  canvas,
-  active,
-}: {
-  routeState: ReturnType<typeof useWorkspaceRoute>
-  preferences: PreferencesValue
-  shell: ReturnType<typeof useWorkspaceShell>
-  rename: ReturnType<typeof useTerminalRename>
-  recent: ReturnType<typeof useRecentSwitcher>
-  commands: ReturnType<typeof useWorkspaceCommands>
-  canvas: RefObject<CanvasHandle | null>
-  active: TerminalMetadata | undefined
-}): void => {
-  const { workspace, route, go } = routeState
+export type WorkspaceKeyboardController = Pick<
+  WorkspaceController,
+  | "workspace"
+  | "route"
+  | "navigation"
+  | "preferences"
+  | "shell"
+  | "rename"
+  | "recent"
+  | "commands"
+  | "active"
+>
+
+export const useWorkspaceKeyboard = (
+  controller: WorkspaceKeyboardController,
+  canvas: RefObject<CanvasHandle | null>,
+): void => {
+  const { workspace, route, navigation, preferences, shell, rename, recent, commands, active } =
+    controller
+  const { go } = navigation
   const current = activeSession(workspace)!
   const { view, selected, sessions } = current.state
   const context = `${workspace.activeProjectId}/${current.id}`

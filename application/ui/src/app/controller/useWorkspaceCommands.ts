@@ -3,18 +3,66 @@ import { useEffect, useState } from "react"
 import type { Backend } from "../../backend/port"
 import { cancelTerminalTransition, transitionTerminal } from "../../layouts/transition"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
-import { activeProject, activeSession } from "../../model/state"
-import type { Project, PreferencesValue, ViewMode, WorkspaceTarget } from "../../model/types"
-import type { useWorkspaceShell } from "../../shell/useWorkspaceShell"
-import type { useRecentSwitcher } from "../../terminals/useRecentSwitcher"
-import type { useTerminalRename } from "../../terminals/useTerminalRename"
+import { activeProject, activeSession, type WorkspaceAction } from "../../model/state"
+import type {
+  Project,
+  PreferencesValue,
+  ViewMode,
+  Workspace,
+  WorkspaceTarget,
+} from "../../model/types"
+import type { ShellController } from "../../shell/useWorkspaceShell"
+import type { RecentSwitcherController } from "../../terminals/useRecentSwitcher"
+import type { TerminalRenameController } from "../../terminals/useTerminalRename"
 import { newWorkspaceSession } from "./sessions"
-import type { useWorkspaceRoute } from "./useWorkspaceRoute"
+import type { WorkspaceNavigation } from "./useWorkspaceRoute"
 
-type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
+export type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
+
+export type WorkspaceCommandsOptions = {
+  workspace: Workspace
+  navigation: Pick<WorkspaceNavigation, "dispatch" | "go" | "navigateWorkspace" | "getWorkspace">
+  newTerminal: Backend["newTerminal"]
+  preferences: PreferencesValue
+  setPreferences: (preferences: PreferencesValue) => void
+  target: WorkspaceTarget
+  shell: Pick<
+    ShellController,
+    | "zen"
+    | "desktop"
+    | "sidebarCollapsed"
+    | "setFreshSession"
+    | "setSidebarCollapsed"
+    | "setSidebar"
+    | "setNavigation"
+    | "setRevealCanvas"
+  >
+  rename: Pick<TerminalRenameController, "activeRename" | "finishRename" | "startRename">
+  recent: Pick<RecentSwitcherController, "setRecentSwitcher">
+}
+
+// Workspace operations shared by the pointer UI and keyboard shortcuts.
+export type WorkspaceCommands = {
+  // The terminal created last in this session, highlighted briefly.
+  readonly created: { context: string; id: string } | null
+  readonly windowedDestination: ViewMode | undefined
+  readonly switchSession: (id: string) => void
+  readonly startFresh: () => void
+  readonly switchProject: (next: Project) => void
+  readonly select: (id: string, fit?: boolean) => void
+  readonly setSelected: (terminal: string) => void
+  readonly updatePreferences: (next: PreferencesValue) => void
+  readonly changeView: (next: ViewMode) => void
+  readonly openWindowed: (id: string) => void
+  readonly openSearchResult: (id: string) => void
+  // Returns the new terminal's ID, or "" when its session is gone.
+  readonly add: (options?: AddTerminalOptions) => string
+  readonly close: (terminalId: string) => void
+}
 
 export const useWorkspaceCommands = ({
-  routeState,
+  workspace,
+  navigation,
   preferences,
   setPreferences,
   target,
@@ -22,17 +70,8 @@ export const useWorkspaceCommands = ({
   rename,
   recent,
   newTerminal,
-}: {
-  newTerminal: Backend["newTerminal"]
-  routeState: ReturnType<typeof useWorkspaceRoute>
-  preferences: PreferencesValue
-  setPreferences: (preferences: PreferencesValue) => void
-  target: WorkspaceTarget
-  shell: ReturnType<typeof useWorkspaceShell>
-  rename: ReturnType<typeof useTerminalRename>
-  recent: ReturnType<typeof useRecentSwitcher>
-}) => {
-  const { workspace, dispatch, go, navigateWorkspace, getWorkspace } = routeState
+}: WorkspaceCommandsOptions): WorkspaceCommands => {
+  const { dispatch, go, navigateWorkspace, getWorkspace } = navigation
   const project = activeProject(workspace)!
   const current = activeSession(workspace)!
   const projectId = project.id
@@ -158,7 +197,7 @@ export const useWorkspaceCommands = ({
     const origin = !zen && desktop && (fromKeyboard || !sidebarCollapsed) ? "sidebar" : "header"
     setCreated({ context, id: session.id })
     if (beginRename) startRename(session, origin)
-    const actions: Parameters<typeof navigateWorkspace>[0] = [
+    const actions: WorkspaceAction[] = [
       {
         type: "terminal/add",
         target,

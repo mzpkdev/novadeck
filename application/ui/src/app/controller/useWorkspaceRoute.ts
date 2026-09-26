@@ -1,17 +1,41 @@
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useLocation, useNavigate } from "react-router"
 
-import type { CreateBackend } from "../../backend/port"
+import type { Backend, CreateBackend } from "../../backend/port"
 import { workspaceFromSeed } from "../../model/seed"
 import type { WorkspaceAction } from "../../model/state"
 import { createWorkspaceStore, type WorkspaceTransaction } from "../../model/store"
-import type { PreferencesValue } from "../../model/types"
+import type { PreferencesValue, Workspace } from "../../model/types"
 import { readWindowedView } from "../../shell/shell-storage"
 import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "../routing"
 
 const currentTimestamp = (): number => Date.now()
 
-export const useWorkspaceRoute = (preferences: PreferencesValue, createBackend: CreateBackend) => {
+// URL-driven navigation over the workspace store.
+export type WorkspaceNavigation = {
+  readonly dispatch: (action: WorkspaceAction) => void
+  readonly go: (changes: Partial<WorkspaceRoute>, replace?: boolean) => void
+  // Commits actions first, then navigates to the route they produce.
+  readonly navigateWorkspace: (
+    actions: WorkspaceTransaction,
+    changes?: Partial<WorkspaceRoute>,
+    replace?: boolean,
+  ) => void
+  readonly closeDialog: () => void
+  readonly getWorkspace: () => Workspace
+}
+
+export type WorkspaceRouteState = {
+  readonly backend: Backend
+  readonly workspace: Workspace
+  readonly route: WorkspaceRoute
+  readonly navigation: WorkspaceNavigation
+}
+
+export const useWorkspaceRoute = (
+  preferences: PreferencesValue,
+  createBackend: CreateBackend,
+): WorkspaceRouteState => {
   const location = useLocation()
   const navigate = useNavigate()
   const [{ backend, store }] = useState(() => {
@@ -111,13 +135,9 @@ export const useWorkspaceRoute = (preferences: PreferencesValue, createBackend: 
     }
   }
   return {
-    workspace,
-    dispatch,
-    route,
-    go,
-    navigateWorkspace,
-    closeDialog,
-    getWorkspace: store.getSnapshot,
     backend,
+    workspace,
+    route,
+    navigation: { dispatch, go, navigateWorkspace, closeDialog, getWorkspace: store.getSnapshot },
   }
 }

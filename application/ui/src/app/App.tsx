@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useMemo, useRef } from "react"
-import { HashRouter, useNavigationType } from "react-router"
+import { HashRouter } from "react-router"
 
 import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
@@ -10,33 +10,25 @@ import {
   transitionTerminal,
   transitionWorkspace,
 } from "../layouts/transition"
-import { activeProject, activeSession, orderedSessions, type ValueUpdate } from "../model/state"
+import { orderedSessions, type ValueUpdate } from "../model/state"
 import type { TerminalMetadata, CanvasLayout, GridLayouts } from "../model/types"
 import { Preferences } from "../preferences/Preferences"
 import { viewModes } from "../preferences/preferences-storage"
-import { useWorkspacePreferences } from "../preferences/useWorkspacePreferences"
 import { TerminalSearch } from "../search/TerminalSearch"
 import { EmptyWorkspace } from "../shell/EmptyWorkspace"
 import { SidebarRail } from "../shell/SidebarRail"
-import { useWorkspaceShell } from "../shell/useWorkspaceShell"
 import { WorkspaceHeader } from "../shell/WorkspaceHeader"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { WorkspaceSidebar } from "../shell/WorkspaceSidebar"
 import { ZenDock } from "../shell/ZenDock"
 import { TerminalFrame, type MinimizeControls } from "../terminals/TerminalFrame"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
-import { useRecentSwitcher } from "../terminals/useRecentSwitcher"
-import { useTerminalRename } from "../terminals/useTerminalRename"
 import { selectBackend } from "./backend"
 import { useRouteDialog } from "./controller/useRouteDialog"
-import { useWorkspaceCommands } from "./controller/useWorkspaceCommands"
+import { useWorkspaceController } from "./controller/useWorkspaceController"
 import { useWorkspaceKeyboard } from "./controller/useWorkspaceKeyboard"
-import { useWorkspaceRoute } from "./controller/useWorkspaceRoute"
 import { Canvas, Grid } from "./deferred-views"
 import { routeUrl } from "./routing"
-
-const useWorkspaceTarget = (projectId: string, workspaceSessionId: string) =>
-  useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
 
 const useLayoutHidden = (hidden: Record<string, boolean>, preview: string) =>
   useMemo(() => (preview ? { ...hidden, [preview]: false } : hidden), [hidden, preview])
@@ -54,20 +46,30 @@ export const WorkspaceApp = ({
 }: {
   readonly createBackend: CreateBackend
 }): React.JSX.Element => {
-  const navigationType = useNavigationType()
-  const { preferences, setPreferences } = useWorkspacePreferences()
-  const routeState = useWorkspaceRoute(preferences, createBackend)
-  const { workspace, dispatch, route, go, closeDialog, backend } = routeState
-  const project = activeProject(workspace)!
-  const current = activeSession(workspace)!
+  const controller = useWorkspaceController(createBackend)
+  const {
+    backend,
+    workspace,
+    project,
+    session: current,
+    target,
+    context,
+    route,
+    navigation,
+    preferences,
+    shell,
+    rename,
+    recent,
+    commands,
+    active,
+  } = controller
+  const { dispatch, go, closeDialog } = navigation
   const projectId = project.id
   const workspaceSessionId = current.id
-  const context = `${projectId}/${workspaceSessionId}`
   const projects = workspace.projects
   const workspaceSessions = project.history
   const {
     view,
-    windowedView,
     sessions,
     selected,
     canvasLayout,
@@ -80,18 +82,7 @@ export const WorkspaceApp = ({
   const ordered = orderedSessions(current.state)
   const preview = hidden[selected] ? selected : ""
   const layoutHidden = useLayoutHidden(hidden, preview)
-  const target = useWorkspaceTarget(projectId, workspaceSessionId)
   const sidebarPanel = route.panel
-  const shell = useWorkspaceShell({
-    context,
-    workspaceSessionId,
-    view,
-    selected,
-    windowedView,
-    sidebarPanel,
-    setSidebarPanel: (panel) => go({ panel }),
-    navigationType,
-  })
   const {
     sidebar,
     sidebarCollapsed,
@@ -108,24 +99,11 @@ export const WorkspaceApp = ({
     keyboardFocus,
     setKeyboardFocus,
     canvasKeyboardFocus,
-    navigation,
-    focusPreview,
+    navigation: shellNavigation,
   } = shell
-  const rename = useTerminalRename({ context, view, target, sessions, selected, dispatch })
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
-  const recent = useRecentSwitcher({ context, dialog: route.dialog, sessions, ordered, selected })
   const { visibleRecentSwitcher, setRecentSwitcher, closeRecentSwitcher, openRecentSwitcher } =
     recent
-  const commands = useWorkspaceCommands({
-    routeState,
-    preferences,
-    setPreferences,
-    target,
-    shell,
-    rename,
-    recent,
-    newTerminal: backend.newTerminal,
-  })
   const {
     created,
     windowedDestination,
@@ -141,8 +119,6 @@ export const WorkspaceApp = ({
     add,
     close,
   } = commands
-  const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
-  const active = sessions.find((session) => session.id === displayed) ?? sessions[0]
   const windowedLabel = windowedDestination === "canvas" ? "Canvas" : "Grid"
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const canvas = useRef<CanvasHandle>(null)
@@ -159,7 +135,7 @@ export const WorkspaceApp = ({
   )
   const setTabOrder = (tabOrder: string[]): void =>
     dispatch({ type: "terminal/reorder", target, tabOrder })
-  useWorkspaceKeyboard({ routeState, preferences, shell, rename, recent, commands, canvas, active })
+  useWorkspaceKeyboard(controller, canvas)
   const terminal = (
     session: TerminalMetadata,
     compact: boolean,
@@ -347,7 +323,7 @@ export const WorkspaceApp = ({
                   preview={preview}
                   selected={selected}
                   onSelect={setSelected}
-                  navigation={navigation.count}
+                  navigation={shellNavigation.count}
                   presets={sizePresets.grid}
                   restoreWidths={gridRestoreWidths}
                   onToggleWidth={(terminalId, change) =>
@@ -397,7 +373,7 @@ export const WorkspaceApp = ({
                   layout={canvasLayout}
                   matchCreatedTerminalRatio={Boolean(zen)}
                   revealOnMount={revealCanvas}
-                  fitOnNavigate={navigation.fit}
+                  fitOnNavigate={shellNavigation.fit}
                   onLayoutChange={setCanvasLayout}
                   sessions={sessions}
                   selected={selected}
@@ -406,7 +382,7 @@ export const WorkspaceApp = ({
                       ? canvasKeyboardFocus.request
                       : null
                   }
-                  navigation={navigation.count}
+                  navigation={shellNavigation.count}
                   onSelect={setSelected}
                   onCreate={() => add({ beginRename: false })}
                   render={(session, minimize, onFlyTo, resize) =>

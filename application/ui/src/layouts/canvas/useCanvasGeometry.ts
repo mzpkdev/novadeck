@@ -3,10 +3,10 @@ import { useCallback } from "react"
 
 import { snap } from "./geometry"
 import type { CanvasProps, TerminalNode } from "./types"
-import type { useCanvasPersistence } from "./useCanvasPersistence"
+import type { CanvasPersistence } from "./useCanvasPersistence"
 
 export const useCanvasGeometry = (
-  { geometryRef, dirtyGeometry, resizing, commitGeometry }: ReturnType<typeof useCanvasPersistence>,
+  { geometryRef, dirtyGeometry, resizing, commitGeometry }: CanvasPersistence,
   onSelect: CanvasProps["onSelect"],
 ) => {
   const { getNode, setNodes } = useReactFlow<TerminalNode>()

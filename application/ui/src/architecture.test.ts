@@ -108,4 +108,11 @@ describe("UI architecture", () => {
     )
     expect(found).toEqual([])
   })
+
+  it("names hook contracts instead of inferring them from the hook", () => {
+    const found = files.filter((file) =>
+      /ReturnType<typeof use[A-Z]/.test(readFileSync(join(src, file), "utf8")),
+    )
+    expect(found).toEqual([])
+  })
 })

@@ -1,6 +1,31 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
 
 import type { TerminalMetadata } from "../model/types"
+
+export type RecentSwitcher = {
+  context: string
+  ids: string[]
+  index: number
+  fromInput: boolean
+  mode: "held" | "click"
+}
+
+export type RecentSwitcherOptions = {
+  context: string
+  dialog: string | null
+  sessions: TerminalMetadata[]
+  ordered: TerminalMetadata[]
+  selected: string
+}
+
+export type RecentSwitcherController = {
+  readonly recentSwitcher: RecentSwitcher | null
+  readonly visibleRecentSwitcher: RecentSwitcher | null
+  readonly setRecentSwitcher: Dispatch<SetStateAction<RecentSwitcher | null>>
+  readonly closeRecentSwitcher: () => void
+  readonly openRecentSwitcher: (id: string, trigger: HTMLButtonElement) => void
+  readonly recentIds: () => string[]
+}
 
 export const useRecentSwitcher = ({
   context,
@@ -8,20 +33,8 @@ export const useRecentSwitcher = ({
   sessions,
   ordered,
   selected,
-}: {
-  context: string
-  dialog: string | null
-  sessions: TerminalMetadata[]
-  ordered: TerminalMetadata[]
-  selected: string
-}) => {
-  const [recentSwitcher, setRecentSwitcher] = useState<{
-    context: string
-    ids: string[]
-    index: number
-    fromInput: boolean
-    mode: "held" | "click"
-  } | null>(null)
+}: RecentSwitcherOptions): RecentSwitcherController => {
+  const [recentSwitcher, setRecentSwitcher] = useState<RecentSwitcher | null>(null)
   const switcherTrigger = useRef<HTMLButtonElement | null>(null)
   const recentByContext = useRef<Record<string, string[]>>({})
   const visibleRecentSwitcher =

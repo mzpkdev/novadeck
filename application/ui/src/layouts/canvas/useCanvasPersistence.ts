@@ -1,16 +1,27 @@
 import { useReactFlow } from "@xyflow/react"
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, type RefObject } from "react"
 
 import type { CanvasLayout } from "../../model/types"
 import { snap } from "./geometry"
 import type { CanvasProps, CanvasViewport, TerminalNode } from "./types"
+
+export type CanvasPersistence = {
+  readonly geometryRef: RefObject<CanvasLayout["geometry"]>
+  readonly dirtyGeometry: RefObject<Set<string>>
+  readonly resizing: RefObject<Set<string>>
+  readonly viewportRef: RefObject<CanvasViewport>
+  readonly mounted: RefObject<boolean>
+  readonly commitGeometry: (ids: Iterable<string>) => void
+  readonly trackViewport: (viewport: CanvasViewport) => void
+  readonly commitViewport: () => void
+}
 
 // XYFlow owns live gestures. Persist only completed gestures and the final unmount snapshot.
 export const useCanvasPersistence = ({
   layout,
   sessions,
   onLayoutChange,
-}: Pick<CanvasProps, "layout" | "sessions" | "onLayoutChange">) => {
+}: Pick<CanvasProps, "layout" | "sessions" | "onLayoutChange">): CanvasPersistence => {
   const { getNode, getViewport } = useReactFlow<TerminalNode>()
   const geometryRef = useRef<CanvasLayout["geometry"]>({ ...layout.geometry })
   const dirtyGeometry = useRef(new Set<string>())
