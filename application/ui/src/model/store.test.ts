@@ -260,3 +260,21 @@ describe("terminal status", () => {
     expect(statusOf(store.getSnapshot())).toMatchObject({ exitCode: 0 })
   })
 })
+
+describe("workspace store commits", () => {
+  it("refuses a transaction started from inside the commit hook", () => {
+    const attempts: unknown[] = []
+    const store = createWorkspaceStore(initial(), () => {
+      try {
+        store.dispatch({ type: "terminal/select", target, terminalId: "" })
+      } catch (error) {
+        attempts.push(error)
+      }
+    })
+    store.dispatch({ type: "terminal/rename", target, terminalId: "01", name: "Server" })
+    expect(attempts).toHaveLength(1)
+    expect(state(store.getSnapshot()).selected).toBe("01")
+    store.dispatch({ type: "terminal/select", target, terminalId: "" })
+    expect(state(store.getSnapshot()).selected).toBe("")
+  })
+})

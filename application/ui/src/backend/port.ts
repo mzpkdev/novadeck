@@ -37,6 +37,16 @@ export type TerminalSurfaceProps = {
   readonly onInputFocused: () => void
 }
 
+// Workspace changes a backend reports on its own, such as a process exiting.
+export type BackendAction = Extract<WorkspaceAction, { type: "terminal/status" }>
+
+export type BackendSink = {
+  // Commits the actions as one store transaction, like a UI command. Actions for a
+  // project, session or terminal that no longer exists are no-ops, and calls after
+  // stop are ignored. Never call it from inside `commit`; the store throws.
+  readonly dispatch: (actions: readonly BackendAction[]) => void
+}
+
 export type Backend = {
   // The workspace to start from, available before the app first renders. It needs at
   // least one project, each with at least one session; mounting throws otherwise.
@@ -53,6 +63,11 @@ export type Backend = {
   readonly commit: (workspace: Workspace, actions: readonly WorkspaceAction[]) => void
   // Created once per backend instance so its identity is stable across renders.
   readonly TerminalSurface: ComponentType<TerminalSurfaceProps>
+  // Optional. Called from an effect after the app mounts, never on an instance
+  // StrictMode discarded, with the sink for events the backend reports; returns stop.
+  // StrictMode may start, stop and start the same instance again, so stop must undo
+  // everything start began.
+  readonly start?: (sink: BackendSink) => () => void
 }
 
 // Must be free of side effects: StrictMode may call it twice.

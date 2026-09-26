@@ -249,10 +249,13 @@ session changes without losing that state; closing the terminal removes it.
 `backend/registry.ts` provides this lifecycle for any adapter. `App` reads a
 `createBackend` factory once at mount, and `app/backend.ts` chooses the default.
 
-The port only carries calls from the UI to a backend today. Events from a
-runner (exit status, terminal listings after a reconnect), waiting for an
-asynchronous seed or connection, and disposing a backend arrive with the runner
-adapter. Workspace sessions are still created in the UI, outside the port.
+A backend reports changes of its own, such as a process exiting or failing to
+start, through the optional `start`. It runs from an effect after mount and
+receives a sink that commits each call as one store transaction, like a UI
+command; the sink ignores stale targets and anything sent after stop. The frame
+labels an exited or failed terminal. Terminal listings after a reconnect,
+waiting for an asynchronous seed or connection, and disposing a backend arrive
+with the runner adapter. Workspace sessions are still created in the UI, outside the port.
 
 XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
 ends or the view unmounts. Grid and Canvas implementations load on demand. Keep

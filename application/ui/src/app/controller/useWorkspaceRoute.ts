@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import { useLocation, useNavigate } from "react-router"
 
 import type { Backend, CreateBackend } from "../../backend/port"
@@ -8,6 +15,7 @@ import { createWorkspaceStore, type WorkspaceTransaction } from "../../model/sto
 import type { PreferencesValue, Workspace } from "../../model/types"
 import { readWindowedView } from "../../shell/shell-storage"
 import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "../routing"
+import { connectBackend } from "./backend-connection"
 
 const currentTimestamp = (): number => Date.now()
 
@@ -52,6 +60,7 @@ export const useWorkspaceRoute = (
     created.commit(initial, [])
     return { backend: created, store: workspaceStore }
   })
+  useEffect(() => connectBackend(backend, store), [backend, store])
   const saved = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { workspace, route } = resolveRoute(saved, location, preferences, currentTimestamp())
   const input = `${location.key}:${location.pathname}${location.search}:${preferences.enabledViews.join(",")}`
