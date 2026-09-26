@@ -1,7 +1,7 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-import type { RuntimeOptions } from "./terminal-server.js"
+import type { ServerOptions } from "./server.js"
 
 const defaultCorsOrigins = ["http://127.0.0.1:5173"]
 
@@ -28,9 +28,9 @@ const readCorsOrigins = (value: string | undefined): readonly string[] => {
   return origins
 }
 
-export const runtimeOptionsFromEnv = (
+export const serverOptionsFromEnv = (
   environment: NodeJS.ProcessEnv = process.env,
-): RuntimeOptions => {
+): ServerOptions => {
   const apiToken = environment.NOVADECK_TOKEN?.trim()
   if (apiToken !== undefined && (apiToken.length < 32 || apiToken.length > 512)) {
     throw new Error("NOVADECK_TOKEN must contain between 32 and 512 characters")

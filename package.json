@@ -8,9 +8,9 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @novadeck/host dev",
-    "dev:web": "concurrently --kill-others-on-fail --names runtime,ui \"pnpm --filter @novadeck/runtime dev\" \"pnpm --filter @novadeck/ui dev\"",
+    "dev:web": "concurrently --kill-others-on-fail --names runner,ui \"pnpm --filter @novadeck/runner dev\" \"pnpm --filter @novadeck/ui dev\"",
     "build": "turbo run build",
-    "preview": "pnpm --filter @novadeck/runtime start",
+    "preview": "pnpm --filter @novadeck/runner start",
     "package": "pnpm --filter @novadeck/host package",
     "package:linux": "pnpm --filter @novadeck/host package:linux",
     "package:mac": "pnpm --filter @novadeck/host package:mac",

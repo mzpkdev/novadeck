@@ -58,7 +58,7 @@ const positive = (value: number | undefined, fallback: number): number => {
   return result
 }
 
-/** Owns PTYs for one runtime lifetime. Old exited, unattached records are evicted at capacity. */
+/** Owns PTYs for one runner lifetime. Old exited, unattached records are evicted at capacity. */
 export class TerminalManager {
   private readonly records = new Map<string, Record>()
   private readonly pendingOwners = new Map<string, Set<{ released: boolean }>>()
@@ -84,7 +84,7 @@ export class TerminalManager {
       snapshotBytes: positive(options.snapshotBytes, 32 * 1024 * 1024),
       ackWindowBytes: positive(options.ackWindowBytes, 256 * 1024),
     }
-    // Child programs do not need the runtime's network capability.
+    // Child programs do not need the runner's network capability.
     delete this.options.env.NOVADECK_TOKEN
   }
 
@@ -156,7 +156,7 @@ export class TerminalManager {
       record.listeners.push(
         child.onExit(({ exitCode, signal }) => this.exit(record, signal ? null : exitCode)),
       )
-      // Device-status queries are answered by the runtime's screen, even with no viewer.
+      // Device-status queries are answered by the runner's screen, even with no viewer.
       record.listeners.push(
         screen.onData((data) => {
           if (!record.exitQueued) child.write(data)

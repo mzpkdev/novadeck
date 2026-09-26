@@ -1,9 +1,9 @@
 import { contract, errors as contractErrors, protocolVersion } from "@novadeck/protocol"
 import { implement, ORPCError } from "@orpc/server"
 
-import { DomainError } from "../errors.js"
-import type { TerminalManager } from "../terminals/index.js"
-import type { WorkspaceStore } from "../workspaces/store.js"
+import { DomainError } from "./errors.js"
+import type { TerminalManager } from "./terminals/index.js"
+import type { WorkspaceStore } from "./workspaces/store.js"
 
 /** One client of a runner. Its transport decides how the handshake token is checked. */
 export type Connection = {

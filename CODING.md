@@ -17,7 +17,7 @@ changing one that other code may hold. Use short, single-word names such as
 doesn't. Precise TypeScript types should make inputs, outputs, and errors easy
 to follow without a trail of casts.
 
-Tests should read like accounts of behavior. In `application/runtime`, use
+Tests should read like accounts of behavior. In `application/runner`, use
 `*.test.ts` with top-level `describe` groups and direct `it` cases. Name groups
 after what they test and cases after the behavior being checked; avoid nested
 `describe` or `context` layers. Elsewhere, keep `*.spec.ts` with `describe`,

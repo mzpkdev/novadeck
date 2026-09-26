@@ -6,7 +6,7 @@ import { connectRunner, websocket } from "@novadeck/protocol/client"
 
 import type { Resources } from "./resources.js"
 
-const executable = fileURLToPath(new URL("../../dist/index.js", import.meta.url))
+const executable = fileURLToPath(new URL("../../dist/cli.js", import.meta.url))
 const execute = promisify(execFile)
 
 const bounded = async <T>(operation: Promise<T>, description: string): Promise<T> => {
@@ -55,21 +55,21 @@ export const launchCli = async (directory: string, resources: Resources) => {
   const stop = async () => {
     if (child.exitCode !== null || child.signalCode !== null) return exited
     if (process.platform === "win32") {
-      if (child.pid === undefined) throw new Error("Runtime did not acquire a process ID")
+      if (child.pid === undefined) throw new Error("Runner did not acquire a process ID")
       // Node cannot handle SIGTERM on Windows. Kill only this test's owned tree,
       // including any PTY still alive when an assertion failed.
       await bounded(
         execute("taskkill", ["/PID", String(child.pid), "/T", "/F"]),
-        "Runtime process tree did not stop",
+        "Runner process tree did not stop",
       )
-      return bounded(exited, "Runtime did not exit after taskkill")
+      return bounded(exited, "Runner did not exit after taskkill")
     }
     child.kill("SIGTERM")
     try {
-      return await bounded(exited, `Runtime did not stop: ${diagnostics}`)
+      return await bounded(exited, `Runner did not stop: ${diagnostics}`)
     } catch (error) {
       child.kill("SIGKILL")
-      await bounded(exited, "Runtime did not exit after SIGKILL")
+      await bounded(exited, "Runner did not exit after SIGKILL")
       throw error
     }
   }
@@ -78,20 +78,20 @@ export const launchCli = async (directory: string, resources: Resources) => {
   })
   const ready = new Promise<string>((resolve, reject) => {
     child.once("error", reject)
-    child.once("exit", () => reject(new Error(`Runtime exited before listening: ${diagnostics}`)))
+    child.once("exit", () => reject(new Error(`Runner exited before listening: ${diagnostics}`)))
     child.stdout.on("data", (data: Buffer) => {
       output += data.toString()
-      const origin = /NovaDeck runtime listening at (http:\/\/[^\s]+)/.exec(output)?.[1]
+      const origin = /NovaDeck runner listening at (http:\/\/[^\s]+)/.exec(output)?.[1]
       if (origin !== undefined) resolve(origin)
     })
   })
-  const origin = await bounded(ready, "Built runtime did not announce its listener")
+  const origin = await bounded(ready, "Built runner did not announce its listener")
 
   /** Connects through the public runner client, closed with the test's resources. */
   const connect = async (token: string) => {
     const runner = await bounded(
       connectRunner(websocket(`${origin.replace(/^http/, "ws")}/api/rpc`, { token })),
-      "Built runtime client did not connect",
+      "Built runner client did not connect",
     )
     resources.defer(() => runner.close())
     return runner

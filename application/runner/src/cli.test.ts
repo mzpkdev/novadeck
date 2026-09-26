@@ -52,7 +52,7 @@ const reader = (terminal: AttachedTerminal, resources: Resources) => {
   return { next, untilOutput, output: () => output }
 }
 
-describe("built runtime CLI", () => {
+describe("built runner CLI", () => {
   it("environment, authentication, shell I/O and metadata persistence after restart", async ({
     resources,
   }) => {
@@ -68,14 +68,14 @@ describe("built runtime CLI", () => {
         'console.log("CLI_" + "SHELL_OK")',
       ].join("\n"),
     )
-    const runtime = await launchCli(directory, resources)
+    const cli = await launchCli(directory, resources)
     expect(
-      (await fetch(`${runtime.origin}/api/status`, { signal: AbortSignal.timeout(10_000) })).status,
+      (await fetch(`${cli.origin}/api/status`, { signal: AbortSignal.timeout(10_000) })).status,
     ).toBe(200)
     expect((await stat(join(directory, "workspace.sqlite"))).isFile()).toBe(true)
-    expect(runtime.output()).not.toContain(token)
-    await expect(runtime.connect("wrong")).rejects.toMatchObject({ code: "UNAUTHORIZED" })
-    const runner = await runtime.connect(token)
+    expect(cli.output()).not.toContain(token)
+    await expect(cli.connect("wrong")).rejects.toMatchObject({ code: "UNAUTHORIZED" })
+    const runner = await cli.connect(token)
     expect(runner.status).toEqual({ state: "connected", runnerId: expect.any(String) })
     const project = await runner.projects.create({ name: "CLI workspace", cwd: directory })
     const session = await runner.sessions.create({ projectId: project.id, name: "CLI session" })
@@ -99,7 +99,7 @@ describe("built runtime CLI", () => {
     expect(output.output()).not.toContain(token)
     const { runnerId } = runner.status as { runnerId: string }
     await runner.close()
-    const stopped = await runtime.stop()
+    const stopped = await cli.stop()
     if (process.platform !== "win32") expect(stopped).toEqual({ code: 0, signal: null })
 
     const restarted = await launchCli(directory, resources)
@@ -117,8 +117,8 @@ describe("built runtime CLI", () => {
     "POSIX SIGTERM shutdown exits cleanly and terminates the owned shell",
     async ({ resources }) => {
       const directory = await directoryFixture(resources)
-      const runtime = await launchCli(directory, resources)
-      const runner = await runtime.connect(token)
+      const cli = await launchCli(directory, resources)
+      const runner = await cli.connect(token)
       const project = await runner.projects.create({ name: "Shutdown", cwd: directory })
       const session = await runner.sessions.create({ projectId: project.id, name: "Live shell" })
       const created = await runner.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
@@ -129,7 +129,7 @@ describe("built runtime CLI", () => {
       const pid = Number(/OWNED_SHELL_PID=(\d+)/.exec(text)?.[1])
       expect(pid).toBeGreaterThan(0)
       expect(() => process.kill(pid, 0)).not.toThrow()
-      expect(await runtime.stop()).toEqual({ code: 0, signal: null })
+      expect(await cli.stop()).toEqual({ code: 0, signal: null })
       expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
     },
     20_000,

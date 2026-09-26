@@ -1,7 +1,7 @@
 # Terminal backend plan
 
-Build a personal, self-hosted terminal runtime shared by Electron and the web UI.
-The runtime owns shell processes; clients connect, send input, and render output.
+Build a personal, self-hosted terminal runner shared by Electron and the web UI.
+The runner owns shell processes; clients connect, send input, and render output.
 This is a proposed direction. The API examples describe the intended shape, with
 exact schemas and implementation choices left for the first working slice.
 
@@ -19,12 +19,12 @@ Keep TypeScript, Node.js, and Hono. Add oRPC with Zod contracts over WebSockets,
 terminal rendering. Use headless xterm and serialization to restore screen state
 after reconnecting.
 
-| Part                                  | Responsibility                                                                                |
-| ------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `application/ui`                      | Workspace views, xterm rendering, and a typed runtime client.                                 |
-| `application/runtime`                 | Authentication, oRPC procedures, PTY ownership, output retention, and persistence.            |
-| `application/host`                    | Electron windows, desktop integration, and starting or connecting to a local runtime process. |
-| Proposed `@novadeck/protocol` package | Shared Zod schemas, procedure contracts, stream events, and typed errors.                     |
+| Part                                  | Responsibility                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `application/ui`                      | Workspace views, xterm rendering, and a typed runner client.                                 |
+| `application/runner`                  | Authentication, oRPC procedures, PTY ownership, output retention, and persistence.           |
+| `application/host`                    | Electron windows, desktop integration, and starting or connecting to a local runner process. |
+| Proposed `@novadeck/protocol` package | Shared Zod schemas, procedure contracts, stream events, and typed errors.                    |
 
 Keep the protocol package independent of Electron, React, and server implementation
 code. Define input and output schemas explicitly, including streamed events.
@@ -34,7 +34,7 @@ streams. Hono remains the HTTP host for authentication and health endpoints.
 
 Run one backend process per machine under its owner's OS account. Electron uses
 loopback HTTP/WebSockets; a separately hosted browser UI uses HTTPS/WSS to reach
-the VPS runtime. Both use the same contracts. A VPS runtime controls shells on
+the VPS runner. Both use the same contracts. A VPS runner controls shells on
 that VPS; managing another machine later requires a connection to that machine.
 
 ## Proposed API
@@ -103,7 +103,7 @@ type TerminalEvent = {
 )
 ```
 
-Derive this union from runtime schemas. A snapshot contains serialized terminal
+Derive this union from the shared Zod schemas. A snapshot contains serialized terminal
 screen state; output contains subsequent terminal data. Batch output into chunks
 instead of sending a procedure call per character. Procedures return typed errors
 such as `TERMINAL_NOT_FOUND`, `TERMINAL_EXITED`, and `INCOMPATIBLE_PROTOCOL`.
@@ -121,7 +121,7 @@ the client so one UI build can select "This computer" or "My VPS".
   resumes after the last applied sequence when history is available; otherwise it
   returns a new snapshot. Establish the snapshot/replay checkpoint and live stream
   without gaps or duplicate application. Never reuse a cursor for a different
-  runtime or terminal execution.
+  runner or terminal execution.
 - Keep draining PTY output when no client is attached. Bound retained history and
   each client's pending output. Add consumption acknowledgements and flow control;
   a slow or disconnected viewer must not cause unbounded memory growth.
@@ -135,7 +135,7 @@ the client so one UI build can select "This computer" or "My VPS".
   an older Electron build can communicate with a newer backend.
 
 oRPC supplies validated streams and cancellation hooks. Replay storage, terminal
-ownership, flow control, and retry policy remain runtime responsibilities.
+ownership, flow control, and retry policy remain runner responsibilities.
 [oRPC streaming](https://orpc.dev/docs/async-iterator-object) and
 [xterm flow control](https://xtermjs.org/docs/guides/flowcontrol/) are the relevant
 implementation references.
@@ -145,20 +145,20 @@ implementation references.
 SQLite stores projects, workspace sessions, terminal configuration, and saved
 layouts. Live PTY handles and connections belong to the running backend. Retain
 screen state and bounded output history in memory initially; saved metadata does
-not imply that a shell survived a runtime restart.
+not imply that a shell survived a runner restart.
 
-Run the local runtime outside Electron's main process. Start with an
+Run the local runner outside Electron's main process. Start with an
 Electron-managed child process and a standalone VPS service. Guarantee recovery
-from UI reloads and network interruptions while the runtime remains alive.
+from UI reloads and network interruptions while the runner remains alive.
 Keeping local terminals alive after quitting Electron requires an independently
-managed background runtime. Surviving runtime upgrades or crashes requires a
+managed background runner. Surviving runner upgrades or crashes requires a
 separate persistent PTY supervisor; leave that as a later capability.
 
 Local access uses loopback binding and a capability supplied through the preload
 bridge. Remote access requires authentication, HTTPS/WSS, and origin checks.
 Authorize each terminal operation, bound message sizes and terminal counts, and
 keep terminal contents out of ordinary request logs. CORS is configuration, not
-authentication. Shells run with the runtime owner's permissions.
+authentication. Shells run with the runner owner's permissions.
 
 ## Implementation order
 
@@ -166,7 +166,7 @@ Current gate: implement and test the backend API without connecting either UI.
 The following sequence remains the broader integration roadmap.
 
 1. Establish the shared contracts and client, compatibility handshake, authenticated
-   access, and runtime process boundary. Prove packaged `node-pty` operation on
+   access, and runner process boundary. Prove packaged `node-pty` operation on
    Linux, macOS, and Windows early.
 2. Implement one real terminal through `create`, `attach`, `write`, `resize`, and
    `close`. Render it with xterm in both Electron and a browser. Preserve the
@@ -176,7 +176,7 @@ The following sequence remains the broader integration roadmap.
    and responsive Ctrl-C under heavy output.
 4. Persist workspace metadata, add connection profiles, and finish deployment setup.
    Verify a static frontend against a separately deployed VPS
-   runtime, including rejection of unauthorized operations and incompatible clients.
+   runner, including rejection of unauthorized operations and incompatible clients.
 
 The first milestone is one terminal that works through both clients, survives UI
 disconnects, restores its screen, resizes correctly, and remains responsive under

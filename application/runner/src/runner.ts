@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 
-import { TerminalManager, type TerminalManagerOptions } from "../terminals/index.js"
-import { WorkspaceStore } from "../workspaces/store.js"
 import { createRouter, type Connection } from "./router.js"
+import { TerminalManager, type TerminalManagerOptions } from "./terminals/index.js"
+import { WorkspaceStore } from "./workspaces/store.js"
 
 export type RunnerOptions = {
   /** SQLite file for project and session metadata; in memory when omitted. */

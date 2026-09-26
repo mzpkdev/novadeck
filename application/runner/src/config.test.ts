@@ -1,11 +1,11 @@
-import { runtimeOptionsFromEnv } from "./config.js"
+import { serverOptionsFromEnv } from "./config.js"
 import { describe, expect, it } from "./test.js"
 
-describe("runtime configuration", () => {
+describe("server configuration", () => {
   it("reads the terminal API token and database path", () => {
     const token = "configuration-tests-only-not-a-real-credential"
     expect(
-      runtimeOptionsFromEnv({
+      serverOptionsFromEnv({
         NOVADECK_TOKEN: token,
         NOVADECK_DATABASE: "/tmp/novadeck-test.sqlite",
       }),
@@ -14,13 +14,13 @@ describe("runtime configuration", () => {
 
   it("rejects empty, short, and oversized credentials", () => {
     for (const token of ["", " ", "short", "x".repeat(513)]) {
-      expect(() => runtimeOptionsFromEnv({ NOVADECK_TOKEN: token })).toThrow("NOVADECK_TOKEN")
+      expect(() => serverOptionsFromEnv({ NOVADECK_TOKEN: token })).toThrow("NOVADECK_TOKEN")
     }
   })
 
   it("reads server and CORS settings from environment variables", () => {
     expect(
-      runtimeOptionsFromEnv({
+      serverOptionsFromEnv({
         HOST: "0.0.0.0",
         PORT: "4321",
         CORS_ORIGINS: "https://novadeck.example, https://mzpkdev.github.io",
@@ -33,7 +33,7 @@ describe("runtime configuration", () => {
   })
 
   it("uses local defaults without environment variables", () => {
-    expect(runtimeOptionsFromEnv({})).toEqual({
+    expect(serverOptionsFromEnv({})).toEqual({
       hostname: "127.0.0.1",
       port: 8787,
       corsOrigins: ["http://127.0.0.1:5173"],
@@ -41,7 +41,7 @@ describe("runtime configuration", () => {
   })
 
   it("rejects invalid port values", () => {
-    expect(() => runtimeOptionsFromEnv({ PORT: "not-a-port" })).toThrow(
+    expect(() => serverOptionsFromEnv({ PORT: "not-a-port" })).toThrow(
       "PORT must be an integer between 0 and 65535",
     )
   })

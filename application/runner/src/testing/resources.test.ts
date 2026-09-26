@@ -11,7 +11,7 @@ describe("resource cleanup", () => {
       closed.push("directory")
     })
     resources.defer(() => {
-      closed.push("runtime")
+      closed.push("server")
       throw first
     })
     resources.defer(async () => {
@@ -19,7 +19,7 @@ describe("resource cleanup", () => {
       throw second
     })
     await expect(resources.dispose()).rejects.toMatchObject({ errors: [second, first] })
-    expect(closed).toEqual(["socket", "runtime", "directory"])
+    expect(closed).toEqual(["socket", "server", "directory"])
     await expect(resources.dispose()).resolves.toBeUndefined()
     expect(closed).toHaveLength(3)
   })

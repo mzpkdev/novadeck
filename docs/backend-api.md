@@ -20,19 +20,19 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm exec turbo run build --filter=@novadeck/runtime
-cp application/runtime/example.env application/runtime/.env
+pnpm exec turbo run build --filter=@novadeck/runner
+cp application/runner/example.env application/runner/.env
 ```
 
 Generate a credential with the command in `example.env`, then set `NOVADECK_TOKEN`
 in the ignored `.env` file. Leave `HOST=127.0.0.1` for local testing. Run:
 
 ```sh
-pnpm --filter @novadeck/runtime start
-pnpm --filter @novadeck/runtime test
+pnpm --filter @novadeck/runner start
+pnpm --filter @novadeck/runner test
 ```
 
-Build the protocol package again after changing its schemas or client. The runtime
+Build the protocol package again after changing its schemas or client. The runner
 test command rebuilds its own CLI before running. Tests use ephemeral listeners,
 temporary SQLite files, and real PTYs; the UI is not involved.
 
@@ -52,17 +52,17 @@ are explicitly platform-specific; Windows process termination is not a graceful
 SIGTERM test. Packaged Electron terminal support and remote TLS deployment remain
 verification gates before integration.
 
-Without a token, the runtime exposes only the existing HTTP status behavior.
+Without a token, the runner exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set.
-Programmatic `startRuntime` from `@novadeck/runtime/terminal` and `createRunner` use
+Programmatic `startServer` from `@novadeck/runner/server` and `createRunner` use
 an in-memory database when no path is supplied. The original package entry remains HTTP-only
 so existing Electron builds do not pull in native terminal dependencies.
 
 For a VPS, terminate TLS at a trusted reverse proxy and forward WebSocket upgrades.
 Set `CORS_ORIGINS` to the exact trusted frontend origins. A static UI can later
 connect directly over WSS; it does not need a terminal backend on Cloudflare.
-Follow the [runtime trust boundary](../SECURITY.md#terminal-runtime) before exposing
+Follow the [runner trust boundary](../SECURITY.md#terminal-runner) before exposing
 the service. There is no TLS, login page, or public multi-user hosting layer here.
 
 ## Runner API
@@ -132,10 +132,10 @@ without controlling it; its `write`, `resize`, and `close` reject with
 
 ### Serving a runner
 
-`@novadeck/runtime/runner` separates the runner from how clients reach it:
+`@novadeck/runner` separates the runner from how clients reach it:
 
 ```ts
-import { createRunner, servePort, serveWebSocket } from "@novadeck/runtime/runner"
+import { createRunner, servePort, serveWebSocket } from "@novadeck/runner"
 
 const runner = createRunner({ databasePath })
 
@@ -147,14 +147,14 @@ serveWebSocket(runner, { token, origins }).attach(httpServer)
 const dispose = servePort(runner, port)
 ```
 
-The CLI (`pnpm --filter @novadeck/runtime start`) and `startRuntime` from
-`@novadeck/runtime/terminal` compose the WebSocket form with the HTTP status
+The CLI (`pnpm --filter @novadeck/runner start`) and `startServer` from
+`@novadeck/runner/server` compose the WebSocket form with the HTTP status
 endpoint. Electron wiring is not part of this change.
 
 ### Wire contract
 
 `@novadeck/protocol` contains runtime-validated Zod schemas, the oRPC contract, and
-inferred TypeScript types. The runtime implements that contract; it does not expose
+inferred TypeScript types. The runner implements that contract; it does not expose
 arbitrary event-name handlers. oRPC is pinned to 1.15.4: its installed API uses
 `eventIterator` and the server's `ws` and `message-port` adapters. The client keeps
 oRPC's standard wire protocol over a small channel adapter that settles pending
@@ -203,9 +203,9 @@ Ctrl-C (`\u0003`). A successful write means accepted input, not command completi
   terminal. Snapshot chunking is not implemented in this version.
 - A viewer exceeding its budget receives `SLOW_CONSUMER` and must attach again.
   The process keeps running. Dead connections are detected by 30-second ping/pong
-  heartbeats, normally within two intervals. Slow viewers do not block the runtime
+  heartbeats, normally within two intervals. Slow viewers do not block the runner
   from draining output or accepting another connection's input.
-- Runtime shutdown ends owned PTYs. Backend restarts preserve only project/session
+- Runner shutdown ends owned PTYs. Backend restarts preserve only project/session
   metadata, not processes, terminal records, screens, or replay cursors. There is
   no persistent process supervisor, layout storage, or terminal configuration
   persistence in this slice.

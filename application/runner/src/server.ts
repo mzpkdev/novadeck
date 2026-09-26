@@ -1,11 +1,7 @@
-import {
-  startRuntime as startHttpRuntime,
-  type Runtime,
-  type RuntimeOptions as HttpOptions,
-} from "./server.js"
+import { startHttpServer, type HttpOptions, type HttpServer } from "./http.js"
 import type { TerminalManagerOptions } from "./terminals/index.js"
 
-export type RuntimeOptions = HttpOptions &
+export type ServerOptions = HttpOptions &
   Readonly<{
     apiToken?: string
     databasePath?: string
@@ -14,12 +10,12 @@ export type RuntimeOptions = HttpOptions &
     heartbeatIntervalMs?: number
   }>
 
-export type { Runtime } from "./server.js"
+export type { HttpServer as Server } from "./http.js"
 
 /** Standalone runner: HTTP status plus a token-authenticated WebSocket runner API. */
-export const startRuntime = async (options: RuntimeOptions = {}): Promise<Runtime> => {
-  if (options.apiToken === undefined) return startHttpRuntime(options)
-  const { createRunner, serveWebSocket } = await import("./runner/index.js")
+export const startServer = async (options: ServerOptions = {}): Promise<HttpServer> => {
+  if (options.apiToken === undefined) return startHttpServer(options)
+  const { createRunner, serveWebSocket } = await import("./index.js")
   const runner = createRunner({
     ...(options.databasePath !== undefined && { databasePath: options.databasePath }),
     ...(options.terminal !== undefined && { terminal: options.terminal }),
@@ -38,7 +34,7 @@ export const startRuntime = async (options: RuntimeOptions = {}): Promise<Runtim
     await runner.close()
     throw error
   }
-  return startHttpRuntime(options, {
+  return startHttpServer(options, {
     attach: (server) => sockets.attach(server),
     async close() {
       try {

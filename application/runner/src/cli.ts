@@ -1,7 +1,7 @@
 import { loadEnvFile } from "node:process"
 
-import { runtimeOptionsFromEnv } from "./config.js"
-import { startRuntime } from "./terminal-server.js"
+import { serverOptionsFromEnv } from "./config.js"
+import { startServer } from "./server.js"
 
 try {
   loadEnvFile()
@@ -9,15 +9,15 @@ try {
   if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
 }
 
-const runtime = await startRuntime(runtimeOptionsFromEnv())
+const server = await startServer(serverOptionsFromEnv())
 
-console.log(`NovaDeck runtime listening at ${runtime.origin}`)
+console.log(`NovaDeck runner listening at ${server.origin}`)
 if (!process.env.NOVADECK_TOKEN) {
   console.log("Terminal API disabled. Set NOVADECK_TOKEN to enable authenticated access.")
 }
 
 const stop = (): void => {
-  void runtime.close().then(() => process.exit(0))
+  void server.close().then(() => process.exit(0))
 }
 
 process.once("SIGINT", stop)

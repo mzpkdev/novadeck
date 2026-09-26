@@ -30,7 +30,7 @@ const migrate = (database: DatabaseSync): void => {
   try {
     const version = database.prepare("PRAGMA user_version").get()?.user_version
     if (typeof version !== "number" || version > schemaVersion) {
-      throw new Error("The workspace database schema is newer than this runtime supports")
+      throw new Error("The workspace database schema is newer than this runner supports")
     }
     if (version === 0) {
       database.exec(`

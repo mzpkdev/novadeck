@@ -44,9 +44,9 @@ importers:
 
   application/host:
     devDependencies:
-      '@novadeck/runtime':
+      '@novadeck/runner':
         specifier: workspace:*
-        version: link:../runtime
+        version: link:../runner
       '@novadeck/ui':
         specifier: workspace:*
         version: link:../ui
@@ -94,7 +94,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  application/runtime:
+  application/runner:
     dependencies:
       '@hono/node-server':
         specifier: ^2.1.1

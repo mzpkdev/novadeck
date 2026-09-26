@@ -1,21 +1,21 @@
 {
-  "name": "@novadeck/runtime",
+  "name": "@novadeck/runner",
   "version": "0.0.0",
   "private": true,
-  "description": "The NovaDeck Hono backend.",
+  "description": "The NovaDeck runner: shells and workspace metadata, served over WebSocket or MessagePort.",
   "author": "mzpkdev",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/cli.js",
   "exports": {
-    ".": "./src/server.ts",
-    "./terminal": "./src/terminal-server.ts",
-    "./runner": "./src/runner/index.ts",
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts",
+    "./http": "./src/http.ts",
     "./app": "./src/app.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/cli.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "node dist/cli.js",
     "test": "pnpm run build && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json"

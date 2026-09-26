@@ -4,18 +4,18 @@ import { serve, type ServerType } from "@hono/node-server"
 
 import { createApp } from "./app.js"
 
-export type RuntimeOptions = Readonly<{
+export type HttpOptions = Readonly<{
   hostname?: string
   port?: number
   corsOrigins?: readonly string[]
 }>
 
-export type RuntimeService = {
+export type HttpService = {
   attach(server: ServerType): void
   close(): Promise<void>
 }
 
-export type Runtime = Readonly<{
+export type HttpServer = Readonly<{
   origin: string
   close: () => Promise<void>
 }>
@@ -28,11 +28,14 @@ const close = (server: ServerType): Promise<void> =>
     })
   })
 
-// This entry stays HTTP-only so existing Electron builds do not bundle native terminal code.
-export const startRuntime = async (
-  options: RuntimeOptions = {},
-  service?: RuntimeService,
-): Promise<Runtime> => {
+/**
+ * Serves the HTTP status endpoint, plus an optional service on the same listener.
+ * This entry stays free of native terminal code, so hosts can bundle it on its own.
+ */
+export const startHttpServer = async (
+  options: HttpOptions = {},
+  service?: HttpService,
+): Promise<HttpServer> => {
   const hostname = options.hostname ?? "127.0.0.1"
   const port = options.port ?? 8787
   const app = options.corsOrigins ? createApp({ corsOrigins: options.corsOrigins }) : createApp()

@@ -9,16 +9,16 @@ import { createWireClient, socketChannel, type WebSocketLike } from "@novadeck/p
 import headless from "@xterm/headless"
 import { WebSocket as NodeWebSocket } from "ws"
 
-import { startRuntime, type RuntimeOptions } from "../terminal-server.js"
-import { describe, expect, it } from "../test.js"
-import { command, ptyOptions } from "../testing/pty.js"
-import type { Resources } from "../testing/resources.js"
+import { startServer, type ServerOptions } from "./server.js"
+import { describe, expect, it } from "./test.js"
+import { command, ptyOptions } from "./testing/pty.js"
+import type { Resources } from "./testing/resources.js"
 
 const token = "novadeck-api-tests-only-not-a-production-credential"
-const fixture = async (resources: Resources, options: RuntimeOptions = {}) => {
+const fixture = async (resources: Resources, options: ServerOptions = {}) => {
   const directory = await mkdtemp(join(tmpdir(), "novadeck-api-"))
   resources.defer(() => rm(directory, { recursive: true, force: true }))
-  const runtime = await startRuntime({
+  const server = await startServer({
     port: 0,
     apiToken: token,
     databasePath: join(directory, "workspace.sqlite"),
@@ -28,8 +28,8 @@ const fixture = async (resources: Resources, options: RuntimeOptions = {}) => {
       ...options.terminal,
     },
   })
-  resources.defer(() => runtime.close())
-  const url = `${runtime.origin.replace(/^http/, "ws")}/api/rpc`
+  resources.defer(() => server.close())
+  const url = `${server.origin.replace(/^http/, "ws")}/api/rpc`
 
   const connect = async (authenticate = true) => {
     const socket = new NodeWebSocket(url)
@@ -60,7 +60,7 @@ const fixture = async (resources: Resources, options: RuntimeOptions = {}) => {
     return { project, session }
   }
 
-  return { runtime, url, directory, connect, setup }
+  return { server, url, directory, connect, setup }
 }
 
 const reader = async (
@@ -210,11 +210,11 @@ const applyEvents = async (target: ReturnType<typeof screen>, events: TerminalEv
 
 describe("WebSocket authentication and protocol", () => {
   it("disabled terminal API without a configured credential", async ({ resources }) => {
-    const runtime = await startRuntime({ port: 0 })
-    resources.defer(() => runtime.close())
-    const response = await fetch(`${runtime.origin}/api/rpc`)
+    const server = await startServer({ port: 0 })
+    resources.defer(() => server.close())
+    const response = await fetch(`${server.origin}/api/rpc`)
     expect(response.status).toBe(404)
-    await expect(fetch(`${runtime.origin}/api/status`)).resolves.toMatchObject({ ok: true })
+    await expect(fetch(`${server.origin}/api/status`)).resolves.toMatchObject({ ok: true })
   })
 
   it("unauthenticated operations and invalid credentials", async ({ resources }) => {
@@ -291,7 +291,7 @@ describe("workspace metadata API", () => {
     await client.projects.rename({ projectId: project.id, name: "Renamed project" })
     await client.sessions.rename({ sessionId: session.id, name: "Renamed session" })
     await disconnect()
-    await app.runtime.close()
+    await app.server.close()
     const restarted = await fixture(resources, {
       databasePath: join(app.directory, "workspace.sqlite"),
     })
@@ -353,7 +353,7 @@ describe("PTY lifecycle API", () => {
     await output.untilText("INTERRUPT_RECOVERED")
   })
 
-  it("runtime shutdown closes attached shells and connections", async ({ resources }) => {
+  it("server shutdown closes attached shells and connections", async ({ resources }) => {
     const app = await fixture(resources)
     const { client, socket } = await app.connect()
     const { session } = await app.setup(client)
@@ -370,9 +370,9 @@ describe("PTY lifecycle API", () => {
     const closed = new Promise<void>((resolve) =>
       socket.addEventListener("close", () => resolve(), { once: true }),
     )
-    await app.runtime.close()
+    await app.server.close()
     await closed
-    await app.runtime.close()
+    await app.server.close()
     expect(() => process.kill(pid, 0)).toThrow()
   })
 

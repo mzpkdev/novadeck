@@ -16,11 +16,11 @@ import {
   type Transport,
 } from "@novadeck/protocol/client"
 
-import { startRuntime, type RuntimeOptions } from "../terminal-server.js"
-import { describe, expect, it } from "../test.js"
-import { command, ptyOptions } from "../testing/pty.js"
-import type { Resources } from "../testing/resources.js"
 import { createRunner, servePort, type RunnerPort } from "./index.js"
+import { startServer, type ServerOptions } from "./server.js"
+import { describe, expect, it } from "./test.js"
+import { command, ptyOptions } from "./testing/pty.js"
+import type { Resources } from "./testing/resources.js"
 
 const token = "novadeck-client-tests-only-not-a-production-credential"
 const fast = { retryDelay: () => 10 }
@@ -31,17 +31,17 @@ const temporary = async (resources: Resources) => {
   return directory
 }
 
-const deployed = async (resources: Resources, options: RuntimeOptions = {}) => {
+const deployed = async (resources: Resources, options: ServerOptions = {}) => {
   const directory = await temporary(resources)
-  const runtime = await startRuntime({
+  const server = await startServer({
     port: 0,
     apiToken: token,
     databasePath: join(directory, "workspace.sqlite"),
     ...options,
     terminal: { ...ptyOptions, ...options.terminal },
   })
-  resources.defer(() => runtime.close())
-  const url = `${runtime.origin.replace(/^http/, "ws")}/api/rpc`
+  resources.defer(() => server.close())
+  const url = `${server.origin.replace(/^http/, "ws")}/api/rpc`
   const connect = async (transport: Transport = websocket(url, { token })) => {
     const runner = await connectRunner(transport, fast)
     resources.defer(() => runner.close())

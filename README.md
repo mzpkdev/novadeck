@@ -138,7 +138,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` launches the Electron desktop application. To run the UI and runtime
+`pnpm dev` launches the Electron desktop application. To run the UI and runner
 in a browser instead:
 
 ```sh
@@ -152,20 +152,20 @@ Open <http://127.0.0.1:5173>. For UI-only work, use
 
 This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 
-| Package                | Responsibility                                                   |
-| ---------------------- | ---------------------------------------------------------------- |
-| `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons.  |
-| `application/runtime`  | The runner: shells and metadata, served over WebSocket or port.  |
-| `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.     |
-| `application/host`     | Electron host that starts the runtime and loads the packaged UI. |
-| `scripts`              | Repository checks and automation.                                |
+| Package                | Responsibility                                                  |
+| ---------------------- | --------------------------------------------------------------- |
+| `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons. |
+| `application/runner`   | The runner: shells and metadata, served over WebSocket or port. |
+| `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.    |
+| `application/host`     | Electron host that starts the runner and loads the packaged UI. |
+| `scripts`              | Repository checks and automation.                               |
 
 The terminal interface currently uses sample output and in-memory commands, not
 real shell processes or model calls. Projects, sessions, and layouts reset on
 reload; preferences and sidebar settings are stored locally. Keep this boundary
-in mind when changing terminal behavior or adding runtime integration.
+in mind when changing terminal behavior or adding runner integration.
 
-See the [terminal backend plan](docs/backend-plan.md) for the proposed runtime
+See the [terminal backend plan](docs/backend-plan.md) for the proposed runner
 architecture and typed API.
 
 The standalone backend now supports authenticated, real terminal processes and
@@ -237,19 +237,19 @@ or `--project unit` for the non-UI unit tests.
 
 ## Configuration
 
-For standalone UI/runtime configuration, copy the environment templates:
+For standalone UI/runner configuration, copy the environment templates:
 
 ```sh
 cp application/ui/example.env application/ui/.env
-cp application/runtime/example.env application/runtime/.env
+cp application/runner/example.env application/runner/.env
 ```
 
 - UI: `VITE_API_URL` sets the API URL at build time; the default is same-origin `/api`.
-- Runtime: `HOST`, `PORT`, and `CORS_ORIGINS` control the listener and allowed frontend origins.
+- Runner: `HOST`, `PORT`, and `CORS_ORIGINS` control the listener and allowed frontend origins.
 - Terminal API: `NOVADECK_TOKEN` enables authenticated WebSocket RPC;
   `NOVADECK_DATABASE` optionally selects the SQLite metadata file. Without a token,
   only the existing HTTP status API is available.
-- Electron: the host starts the bundled runtime on a local, OS-selected port and
+- Electron: the host starts the bundled runner on a local, OS-selected port and
   supplies its URL through a sandboxed preload bridge. Package `.env` files are not used.
 
 For a separately hosted frontend, set `VITE_API_URL` to the public HTTPS API URL

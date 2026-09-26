@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@novadeck/runtime": "workspace:*",
+    "@novadeck/runner": "workspace:*",
     "@novadeck/ui": "workspace:*",
     "@types/node": "^26.6.2",
     "concurrently": "^10.0.5",
