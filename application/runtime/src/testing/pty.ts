@@ -8,7 +8,7 @@ export const ptyOptions = {
 export const command = (
   value:
     | { type: "write"; data: string }
-    | { type: "info" }
+    | { type: "info"; cols?: number; rows?: number }
     | { type: "burst"; data: string; count: number }
     | { type: "startNoise" }
     | { type: "stopNoise" }

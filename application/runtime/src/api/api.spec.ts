@@ -70,10 +70,7 @@ const reader = async (
   options: { afterSequence?: number; mode?: "control" | "observe" } = {},
 ) => {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error("Terminal event timed out")), 8_000)
-  timeout.unref()
   resources.defer(async () => {
-    clearTimeout(timeout)
     controller.abort()
   })
   const stream = await client.terminals.attach(
@@ -82,20 +79,42 @@ const reader = async (
   )
   const events: TerminalEvent[] = []
   let text = ""
-  const next = async () => {
-    const result = await stream.next()
-    if (result.done) throw new Error("Terminal stream ended before the expected event")
-    const event = result.value
-    events.push(event)
-    if (event.type === "snapshot") text = event.data
-    if (event.type === "output") text += event.data
-    await client.terminals.ack({ terminalId, sequence: event.sequence })
-    return event
+  const next = async (checkpoint = "next terminal event") => {
+    const timeout = setTimeout(() => {
+      const last = events.at(-1)
+      controller.abort(
+        new Error(
+          `Terminal ${terminalId} timed out waiting for ${checkpoint}; ` +
+            `last event=${last?.type ?? "none"}, sequence=${last?.sequence ?? "none"}; ` +
+            `text tail=${JSON.stringify(text.slice(-512))}`,
+        ),
+      )
+    }, 3_000)
+    timeout.unref()
+    try {
+      const result = await stream.next()
+      controller.signal.throwIfAborted()
+      if (result.done) throw new Error("Terminal stream ended before the expected event")
+      const event = result.value
+      events.push(event)
+      if (event.type === "snapshot") text = event.data
+      if (event.type === "output") text += event.data
+      await client.terminals.ack({ terminalId, sequence: event.sequence })
+      return event
+    } catch (error) {
+      controller.signal.throwIfAborted()
+      throw error
+    } finally {
+      clearTimeout(timeout)
+    }
   }
-  const until = async (predicate: (event: TerminalEvent) => boolean) => {
+  const until = async (
+    predicate: (event: TerminalEvent) => boolean,
+    checkpoint = predicate.toString(),
+  ) => {
     while (true) {
       // eslint-disable-next-line no-await-in-loop -- Consume ordered terminal events until the assertion checkpoint.
-      const event = await next()
+      const event = await next(checkpoint)
       if (predicate(event)) return event
     }
   }
@@ -105,7 +124,9 @@ const reader = async (
     events,
     text: () => text,
     untilText: (value: string) =>
-      text.includes(value) ? Promise.resolve(events.at(-1)!) : until(() => text.includes(value)),
+      text.includes(value)
+        ? Promise.resolve(events.at(-1)!)
+        : until(() => text.includes(value), JSON.stringify(value)),
     detach: () => controller.abort(),
     stream,
   }
@@ -370,7 +391,7 @@ describe("terminal API over WebSockets", () => {
       )
       await client.terminals.write({
         terminalId: terminal.id,
-        data: command({ type: "info" }),
+        data: command({ type: "info", cols: 132, rows: 43 }),
       })
       await output.untilText("SIZE_132x43_TTY_true")
       await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
@@ -673,7 +694,7 @@ describe("terminal API over WebSockets", () => {
       expect(Buffer.byteLength(JSON.stringify(snapshot))).toBeGreaterThan(4 * 1024 * 1024)
       await print(replacement.client, terminal.id, "LARGE_SCREEN_", "RECOVERED")
       await restored.untilText("LARGE_SCREEN_RECOVERED")
-    })
+    }, 15_000)
 
     it("cancels an attachment without killing its shell or poisoning subsequent requests", async ({
       resources,

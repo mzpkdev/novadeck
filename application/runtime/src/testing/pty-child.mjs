@@ -3,6 +3,27 @@
 // Raw input keeps the protocol independent of shell syntax and line discipline.
 process.stdin.setRawMode(true)
 process.stdin.setEncoding("utf8")
+const reportInfo = () => {
+  process.stdout.write(
+    `CHILD_PID=${process.pid};SIZE_${process.stdout.columns}x${process.stdout.rows}_TTY_${process.stdin.isTTY}\r\n`,
+  )
+}
+const reportWhenSized = (command) => {
+  if (command.cols === undefined) {
+    reportInfo()
+    return
+  }
+  // Node refreshes cached TTY dimensions asynchronously on SIGWINCH. An API
+  // resize response does not mean the child has received that notification.
+  const check = () => {
+    if (process.stdout.columns === command.cols && process.stdout.rows === command.rows) {
+      process.stdout.removeListener("resize", check)
+      reportInfo()
+    }
+  }
+  process.stdout.on("resize", check)
+  check()
+}
 let input = ""
 let noise
 const produceNoise = () => {
@@ -27,11 +48,7 @@ process.stdin.on("data", (data) => {
     input = input.slice(newline + 1)
     const command = JSON.parse(Buffer.from(line, "base64").toString("utf8"))
     if (command.type === "write") process.stdout.write(command.data)
-    if (command.type === "info") {
-      process.stdout.write(
-        `CHILD_PID=${process.pid};SIZE_${process.stdout.columns}x${process.stdout.rows}_TTY_${process.stdin.isTTY}\r\n`,
-      )
-    }
+    if (command.type === "info") reportWhenSized(command)
     if (command.type === "burst") process.stdout.write(command.data.repeat(command.count))
     if (command.type === "startNoise" && !noise) {
       noise = { stopping: false, started: false }
