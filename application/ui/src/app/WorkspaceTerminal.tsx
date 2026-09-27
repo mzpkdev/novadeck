@@ -1,8 +1,18 @@
 import { useCallback, useMemo } from "react"
 
+import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
+import { renameView } from "../terminals/rename-state"
 import { TerminalFrame, type TerminalLayoutControls } from "../terminals/TerminalFrame"
-import { useWorkspace } from "./controller/context"
+import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
+import {
+  currentContext,
+  currentState,
+  currentTarget,
+  sameTarget,
+  shallowEqual,
+  windowedDestination,
+} from "./selectors"
 
 // One terminal in the current view: the shared frame around the backend's surface.
 export const WorkspaceTerminal = ({
@@ -12,30 +22,42 @@ export const WorkspaceTerminal = ({
   readonly terminal: TerminalMetadata
   readonly controls: TerminalLayoutControls
 }): React.JSX.Element => {
-  const {
-    backend,
-    project,
-    session: current,
-    target,
-    context,
-    preferences,
-    shell,
-    rename,
-    recent,
-    commands,
-    created,
-    windowedDestination,
-  } = useWorkspace()
-  const { view, selected } = current.state
-  const { sizePresets } = current.state.layout
-  const { keyboardFocus, setKeyboardFocus } = shell
-  const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
-  const { setSelected, openWindowed, openFocus, close } = commands
-  const compact = view !== "focus"
-  const large = view !== "focus" && sizePresets[view][terminal.id] === "large"
-  const windowedLabel = windowedDestination === "canvas" ? "Canvas" : "Grid"
-  const { projectId, workspaceSessionId } = target
+  const { backend, commands } = useWorkspaceServices()
+  const { setSelected, openWindowed, openFocus, close, startRename, openSwitcher } = commands
+  const { changeRenameDraft, saveRename, cancelRename, setKeyboardFocus } = commands
   const terminalId = terminal.id
+  // Each terminal selects only what concerns it, so a rename keystroke or a keyboard
+  // focus change re-renders just the terminals involved.
+  const { projectName, context, view, windowedView, active, large } = useWorkspaceState(
+    (workspace) => {
+      const state = currentState(workspace)
+      return {
+        projectName: activeProject(workspace)!.name,
+        context: currentContext(workspace),
+        view: state.view,
+        windowedView: state.windowedView,
+        active: state.selected === terminalId,
+        large:
+          state.view !== "focus" && state.layout.sizePresets[state.view][terminalId] === "large",
+      }
+    },
+    shallowEqual,
+  )
+  const { projectId, workspaceSessionId } = useWorkspaceState(currentTarget, sameTarget)
+  const { fresh, rename, keyboardFocus, enabledViews } = useUiState(
+    (state) => ({
+      fresh: state.created?.context === context && state.created.id === terminalId,
+      rename:
+        state.rename?.context === context && state.rename.id === terminalId ? state.rename : null,
+      keyboardFocus:
+        state.shell.keyboardFocus?.id === terminalId ? state.shell.keyboardFocus : null,
+      enabledViews: state.preferences.enabledViews,
+    }),
+    shallowEqual,
+  )
+  const compact = view !== "focus"
+  const destination = windowedDestination(windowedView, enabledViews)
+  const windowedLabel = destination === "canvas" ? "Canvas" : "Grid"
   // Surfaces may depend on these in effects, so keep them stable across renders.
   const terminalKey = useMemo(
     () => ({ projectId, workspaceSessionId, terminalId }),
@@ -45,15 +67,15 @@ export const WorkspaceTerminal = ({
   return (
     <TerminalFrame
       terminal={terminal}
-      active={selected === terminal.id}
-      fresh={created?.context === context && created.id === terminal.id}
-      rename={renameView?.id === terminal.id ? renameView : null}
+      active={active}
+      fresh={fresh}
+      rename={renameView(rename)}
       onBeginRename={() => startRename(terminal, "header")}
       onRenameDraft={(draft) => changeRenameDraft(terminal.id, draft)}
       onRenameSave={() => saveRename(terminal.id)}
       onRenameCancel={() => cancelRename(terminal.id)}
       compact={compact}
-      switcher={{ onOpen: (button) => recent.openRecentSwitcher(terminal.id, button) }}
+      switcher={{ onOpen: (button) => openSwitcher(terminal.id, button) }}
       onClose={() => close(terminal.id)}
       {...(minimize ? { minimize } : {})}
       {...(onFlyTo ? { onFlyTo } : {})}
@@ -67,11 +89,11 @@ export const WorkspaceTerminal = ({
           }
         : {})}
       large={large}
-      {...(compact && preferences.enabledViews.includes("focus")
+      {...(compact && enabledViews.includes("focus")
         ? {
             onFocus: () => openFocus(terminal.id),
           }
-        : !compact && windowedDestination
+        : !compact && destination
           ? {
               windowed: {
                 destination: windowedLabel,
@@ -83,14 +105,10 @@ export const WorkspaceTerminal = ({
       <backend.TerminalSurface
         terminalKey={terminalKey}
         terminal={terminal}
-        projectName={project.name}
+        projectName={projectName}
         minimized={minimize?.minimized}
         clipContent={minimize?.clipContent}
-        focusInput={
-          keyboardFocus?.id === terminal.id &&
-          keyboardFocus.view === view &&
-          selected === terminal.id
-        }
+        focusInput={keyboardFocus?.view === view && active}
         onInputFocused={onInputFocused}
       />
     </TerminalFrame>

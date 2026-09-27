@@ -9,12 +9,10 @@ import {
 import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 
 import type { TerminalMetadata } from "../model/types"
 import { sidebarListClasses } from "../sidebar/SidebarItem"
-import type { TerminalRename } from "./TerminalRenameInput"
-import { TerminalTab } from "./TerminalTab"
 
 const sensors = [
   PointerSensor.configure({
@@ -40,29 +38,12 @@ const cursor = Cursor.configure({ cursor: "pointer" })
 
 export const TerminalTabs = ({
   terminals,
-  selected,
-  hidden,
-  rename,
-  onVisibilityChange,
-  onSelect,
-  onBeginRename,
-  onRenameDraft,
-  onRenameSave,
-  onRenameCancel,
-  onClose,
+  renderTab,
   onReorder,
 }: {
   terminals: TerminalMetadata[]
-  selected: string
-  hidden: Record<string, boolean>
-  rename: TerminalRename | null
-  onVisibilityChange: (id: string, hidden: boolean) => void
-  onSelect: (id: string) => void
-  onBeginRename: (id: string) => void
-  onRenameDraft: (id: string, value: string) => void
-  onRenameSave: (id: string) => void
-  onRenameCancel: (id: string) => void
-  onClose: (id: string) => void
+  // Renders one sortable tab, usually a TerminalTab, at its position in the list.
+  renderTab: (terminal: TerminalMetadata, index: number) => ReactNode
   onReorder: (ids: string[]) => void
 }): React.JSX.Element => {
   const [list, setList] = useState<HTMLDivElement | null>(null)
@@ -85,23 +66,7 @@ export const TerminalTabs = ({
       }}
     >
       <div className={`terminal-tab-list ${sidebarListClasses}`} ref={setList}>
-        {terminals.map((terminal, index) => (
-          <TerminalTab
-            key={terminal.id}
-            terminal={terminal}
-            index={index}
-            selected={selected === terminal.id}
-            hidden={hidden[terminal.id] ?? false}
-            rename={rename?.id === terminal.id ? rename : null}
-            onVisibilityChange={(isHidden) => onVisibilityChange(terminal.id, isHidden)}
-            onSelect={() => onSelect(terminal.id)}
-            onBeginRename={() => onBeginRename(terminal.id)}
-            onRenameDraft={(value) => onRenameDraft(terminal.id, value)}
-            onRenameSave={() => onRenameSave(terminal.id)}
-            onRenameCancel={() => onRenameCancel(terminal.id)}
-            onClose={() => onClose(terminal.id)}
-          />
-        ))}
+        {terminals.map((terminal, index) => renderTab(terminal, index))}
         {!terminals.length && <p className="px-3 py-3 text-[11px] text-muted">No open sessions</p>}
       </div>
     </DragDropProvider>

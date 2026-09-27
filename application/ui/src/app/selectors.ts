@@ -1,11 +1,13 @@
 import { activeProject, activeSession } from "../model/state"
 import type {
-  PreferencesValue,
+  TerminalMetadata,
   ViewMode,
+  WindowedView,
   Workspace,
   WorkspaceState,
   WorkspaceTarget,
 } from "../model/types"
+import type { FocusPreview } from "../shell/shell-state"
 
 // The active session's state; the workspace always has one once seeded.
 export const currentState = (workspace: Workspace): WorkspaceState =>
@@ -30,11 +32,36 @@ export const currentTarget = (workspace: Workspace): WorkspaceTarget => ({
 // Where Focus hands a terminal back to: the session's windowed view if enabled,
 // otherwise the first enabled view that is not Focus.
 export const windowedDestination = (
-  workspace: Workspace,
-  preferences: PreferencesValue,
-): ViewMode | undefined => {
-  const { windowedView } = currentState(workspace)
-  return preferences.enabledViews.includes(windowedView)
-    ? windowedView
-    : preferences.enabledViews.find((mode) => mode !== "focus")
+  windowedView: WindowedView,
+  enabledViews: readonly ViewMode[],
+): ViewMode | undefined =>
+  enabledViews.includes(windowedView) ? windowedView : enabledViews.find((mode) => mode !== "focus")
+
+export const sameTarget = (a: WorkspaceTarget, b: WorkspaceTarget): boolean =>
+  a.projectId === b.projectId && a.workspaceSessionId === b.workspaceSessionId
+
+// Equal when both hold the identical items in the same order.
+export const sameItems = <T>(a: readonly T[], b: readonly T[]): boolean =>
+  a.length === b.length && a.every((item, index) => Object.is(item, b[index]))
+
+// Equal when both have the same keys holding identical values.
+export const shallowEqual = <T>(a: T, b: T): boolean => {
+  if (Object.is(a, b)) return true
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) return false
+  const keys = Object.keys(a)
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => Object.is(a[key as keyof T], b[key as keyof T]))
+  )
+}
+
+// The terminal Focus shows: the selection, a kept preview, or the first terminal.
+export const activeTerminal = (
+  terminals: readonly TerminalMetadata[],
+  selected: string,
+  context: string,
+  focusPreview: FocusPreview | null,
+): TerminalMetadata | undefined => {
+  const displayed = selected || (focusPreview?.context === context ? focusPreview.id : "")
+  return terminals.find((terminal) => terminal.id === displayed) ?? terminals[0]
 }

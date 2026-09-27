@@ -3,7 +3,7 @@ import { orderedTerminals } from "../../model/roster"
 import { viewModes } from "../../model/state"
 import { sidebarVisible } from "../../shell/shell-state"
 import { cycleRecent, moveRecent } from "../../terminals/recent"
-import { currentContext, currentState, windowedDestination } from "../selectors"
+import { activeTerminal, currentContext, currentState, windowedDestination } from "../selectors"
 import type { CommandContext } from "./context"
 import type { WorkspaceCommands } from "./workspace"
 
@@ -34,19 +34,18 @@ export const createKeyCommands = (
     const { view } = state()
     const next =
       view === "focus"
-        ? windowedDestination(workspace.getSnapshot(), ui.getSnapshot().preferences)
+        ? windowedDestination(state().windowedView, ui.getSnapshot().preferences.enabledViews)
         : "focus"
     return next && ui.getSnapshot().preferences.enabledViews.includes(next) ? next : undefined
   }
   // Delete and F2 act on the selection, or in Focus on the terminal it shows.
   const targeted = () => {
-    const { roster, selected, view } = state()
+    const snapshot = workspace.getSnapshot()
+    const { roster, selected, view } = currentState(snapshot)
     const terminal = roster.terminals.find((item) => item.id === selected)
     if (terminal || view !== "focus") return terminal
     const { focusPreview } = ui.getSnapshot().shell
-    const context = currentContext(workspace.getSnapshot())
-    const displayed = focusPreview?.context === context ? focusPreview.id : ""
-    return roster.terminals.find((item) => item.id === displayed) ?? roster.terminals[0]
+    return activeTerminal(roster.terminals, selected, currentContext(snapshot), focusPreview)
   }
   const recent = (direction: 1 | -1): KeyCommand => ({
     available: () => (commands.visibleSwitcher()?.ids ?? commands.recentIds()).length >= 2,

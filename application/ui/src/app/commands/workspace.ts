@@ -160,7 +160,10 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     openWindowed: (id) => {
       // A view transition may run the change later; it still belongs to this session.
       const snapshot = workspace.getSnapshot()
-      const destination = windowedDestination(snapshot, preferences())
+      const destination = windowedDestination(
+        currentState(snapshot).windowedView,
+        preferences().enabledViews,
+      )
       if (!destination) return
       const target = currentTarget(snapshot)
       effects.transitionTerminal(id, () => showWindowed(id, target, destination))

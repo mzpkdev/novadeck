@@ -7,15 +7,14 @@ import { SessionsPanel } from "../sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../sidebar/SidebarPanel"
 import { TerminalTabs } from "../terminals/TerminalTabs"
 
-type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals" | "rename"> & {
+type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals"> & {
   projectId: string
   workspaceSessionId: string
   workspaceSessions: WorkspaceSession[]
-  terminals: TerminalMetadata[]
+  terminalCount: number
   ordered: TerminalMetadata[]
   sidebarPanel: "terminals" | "sessions"
   sidebarVisible: boolean
-  renameView: ComponentProps<typeof TerminalTabs>["rename"]
   onSessionSelect: (id: string) => void
   onFresh: () => void
   onHide: () => void
@@ -25,24 +24,15 @@ export const WorkspaceSidebar = ({
   projectId,
   workspaceSessionId,
   workspaceSessions,
-  terminals,
+  terminalCount,
   ordered,
   sidebarPanel,
   sidebarVisible,
-  renameView,
-  selected,
-  hidden,
   onSessionSelect,
   onFresh,
   onHide,
   onCreate,
-  onVisibilityChange,
-  onSelect,
-  onBeginRename,
-  onRenameDraft,
-  onRenameSave,
-  onRenameCancel,
-  onClose,
+  renderTab,
   onReorder,
 }: Props): React.JSX.Element => (
   <aside
@@ -80,7 +70,7 @@ export const WorkspaceSidebar = ({
       id="terminals-panel"
       title="Terminals"
       titleHint={`Recent · ${shortcutBindings().recent.display.join(" ")}`}
-      count={terminals.length}
+      count={terminalCount}
       active={sidebarPanel === "terminals"}
       onClose={onHide}
     >
@@ -94,16 +84,7 @@ export const WorkspaceSidebar = ({
       <TerminalTabs
         key={`${projectId}/${workspaceSessionId}`}
         terminals={ordered}
-        selected={selected}
-        hidden={hidden}
-        rename={renameView}
-        onVisibilityChange={onVisibilityChange}
-        onSelect={onSelect}
-        onBeginRename={onBeginRename}
-        onRenameDraft={onRenameDraft}
-        onRenameSave={onRenameSave}
-        onRenameCancel={onRenameCancel}
-        onClose={onClose}
+        renderTab={renderTab}
         onReorder={onReorder}
       />
     </SidebarPanel>
