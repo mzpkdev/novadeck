@@ -208,9 +208,11 @@ may add `ui-toolkit/`. `interaction/` builds on `model/` and imports no packages
 features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use
 `terminals/`; `shell/` may use `layouts/` and `projects/`. `app/` composes every
 feature layer and `backend/`, and within it only `app/backend.ts` imports a
-backend adapter. `app/commands/` imports no packages at all, not even React: it
-builds on `model/`, `interaction/`, `backend/port.ts`, the UI store, routing,
-selectors, and the pure state modules of `shell/` and `terminals/`. Vendor
+backend adapter. `app/commands/` has no direct React or package imports, though
+routing still loads React Router at runtime: it builds on `model/`,
+`interaction/keymap.ts`, `backend/port.ts`, the UI store, routing, selectors,
+the Canvas handle type in `layouts/canvas/types.ts`, and the pure state modules
+of `shell/` and `terminals/`. Vendor
 libraries stay in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout
 in `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
@@ -246,8 +248,9 @@ memory, changed through one pure reducer. The UI store in `app/ui-store.ts`
 holds what the model does not own: the current route, preferences, the shell
 state from `shell/shell-state.ts`, the rename in progress, the recent-terminal
 switcher and each session's most-recent order, and the new-terminal highlight.
-It starts over on reload apart from preferences, the collapsed sidebar, and the
-windowed view, which store subscriptions persist. `WorkspaceProvider` creates
+It starts over on reload apart from preferences and the collapsed sidebar, which
+store subscriptions persist. Another subscription saves the active session's
+windowed view from the workspace store, and a new App seeds sessions with it. `WorkspaceProvider` creates
 the backend, both stores, the navigator, and the commands once per App, in a
 pure initializer, and shares them through context; it receives the page as
 children, so a URL change re-renders only the provider.
@@ -267,7 +270,7 @@ Commands in `app/commands/` are the operations the pointer UI and the keyboard
 share. They are plain functions that read the latest stores when they run, so
 several in one event retain one another's changes; construct an action from
 command-time state when it depends on a counter or the current selection. They
-reach the page (focus, view transitions, timers, the clock) only through the
+reach the page (focus, view transitions, timers, the clock, ids) only through the
 `CommandEffects` that `app/controller/effects.ts` supplies, and tests pass their
 own. Address updates by project and session IDs so delayed callbacks affect
 their original session or become a no-op after it is removed: layout callbacks
@@ -285,8 +288,9 @@ own zoom keys.
 Sections in `app/` subscribe to just what they render with `useWorkspaceState`
 and `useUiState`, built on `useStoreSelector`, and share selectors from
 `app/selectors.ts`. Each terminal frame and sidebar tab selects by its own
-terminal, so a rename keystroke re-renders only that tab and frame, and a Canvas
-layout save re-renders only Canvas and the terminals on it. Effects that must follow a commit, such as
+terminal, so a rename keystroke re-renders only that tab and frame. A Canvas
+layout save re-renders the stage section, Canvas, and the terminals on it, but not
+the header, sidebar, tabs, or overlays. Effects that must follow a commit, such as
 saving a rename left behind, live in `app/controller/useWorkspaceEffects.ts`.
 Feature components outside `app/` take props.
 

@@ -150,8 +150,9 @@ describe("workspace render scope", () => {
     })
   })
 
+  // "stage" counts Canvas, which renders exactly when WorkspaceStage does.
   context("when Canvas saves its layout", () => {
-    it("re-renders only Canvas and the terminals on it", async () => {
+    it("re-renders only the stage, Canvas and the terminals on it", async () => {
       const { page, services } = await open()
       const seen = rendersDuring(() =>
         services.commands.setCanvasLayout(firstTarget(services), (layout) => ({
