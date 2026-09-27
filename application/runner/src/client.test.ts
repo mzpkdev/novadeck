@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { MessageChannel } from "node:worker_threads"
 
-import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
+import type { TerminalEvent } from "@novadeck/protocol"
 import {
   connectRunner,
   messagePort,
@@ -12,6 +12,7 @@ import {
   type Channel,
   type Runner,
   type RunnerStatus,
+  type TerminalWatchItem,
   type Transport,
 } from "@novadeck/protocol/client"
 
@@ -159,8 +160,8 @@ const changes = (runner: Runner, resources: Resources) => {
   resources.defer(async () => {
     await stream.return?.()
   })
-  const seen: TerminalChange[] = []
-  const until = async (predicate: (change: TerminalChange) => boolean) => {
+  const seen: TerminalWatchItem[] = []
+  const until = async (predicate: (change: TerminalWatchItem) => boolean) => {
     while (true) {
       // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
       const result = await stream.next()
@@ -453,7 +454,7 @@ describe("runner client terminal watch", () => {
     const { id: sessionId } = await session(runner, app.directory)
     const watch = changes(runner, resources)
     await watch.synced()
-    expect(watch.seen).toEqual([{ type: "synced" }])
+    expect(watch.seen).toEqual([{ type: "reset" }, { type: "synced" }])
     const first = await runner.terminals.create(shell(sessionId))
     await watch.until((change) => change.type === "changed" && change.terminal.id === first.id)
 
@@ -465,7 +466,9 @@ describe("runner client terminal watch", () => {
     link.resume()
     watch.seen.length = 0
     await watch.synced()
+    // `reset` opens the fresh sequence, so a consumer knows to start its set over.
     expect(watch.seen).toEqual([
+      { type: "reset" },
       { type: "changed", terminal: expect.objectContaining({ id: first.id }) },
       { type: "changed", terminal: expect.objectContaining({ id: second.id }) },
       { type: "synced" },
@@ -475,6 +478,34 @@ describe("runner client terminal watch", () => {
     await watch.stream.return?.()
     await expect(pending).resolves.toEqual({ value: undefined, done: true })
   })
+
+  it.skipIf(process.platform === "win32")(
+    "keeps retrying on a live link while the runner refuses for too many calls",
+    async ({ resources }) => {
+      // Shells that ignore a hangup hold each close in flight for about a second.
+      const app = await deployed(resources, {
+        terminals: { shell: "/bin/sh", shellArgs: ["-c", "trap '' HUP; exec cat"] },
+      })
+      const runner = await app.connect()
+      const { id: sessionId } = await session(runner, app.directory)
+      const busy = []
+      for (let index = 0; index < 32; index += 1) {
+        // eslint-disable-next-line no-await-in-loop -- Creation stays under the call limit.
+        busy.push(await runner.terminals.create(shell(sessionId)))
+      }
+      const closing = Promise.all(busy.map((terminal) => runner.terminals.close(terminal.id)))
+      await expect(runner.projects.list()).rejects.toMatchObject({ code: "RESOURCE_LIMIT" })
+
+      const watch = changes(runner, resources)
+      await watch.synced()
+      // The refused attempts yield nothing; the one subscription that lands opens with `reset`.
+      expect(watch.seen[0]).toEqual({ type: "reset" })
+      expect(watch.seen.filter((change) => change.type === "reset")).toHaveLength(1)
+      await closing
+      const later = await runner.terminals.create(shell(sessionId))
+      await watch.until((change) => change.type === "changed" && change.terminal.id === later.id)
+    },
+  )
 
   it("starts over after a runner restart and ends when the client closes", async ({
     resources,
@@ -497,7 +528,11 @@ describe("runner client terminal watch", () => {
     await runner.terminals.create(shell(sessionId))
     const watch = changes(runner, resources)
     await watch.synced()
-    expect(watch.seen).toHaveLength(2)
+    expect(watch.seen).toEqual([
+      { type: "reset" },
+      { type: "changed", terminal: expect.anything() },
+      { type: "synced" },
+    ])
 
     await current.server.close()
     await status.until("reconnecting")
@@ -505,7 +540,7 @@ describe("runner client terminal watch", () => {
     watch.seen.length = 0
     // The terminal ended with the old runner; the fresh sync omits it.
     await watch.synced()
-    expect(watch.seen).toEqual([{ type: "synced" }])
+    expect(watch.seen).toEqual([{ type: "reset" }, { type: "synced" }])
 
     const pending = watch.stream.next()
     await runner.close()

@@ -6,6 +6,7 @@ export {
   type Runner,
   type RunnerStatus,
   type TerminalMode,
+  type TerminalWatchItem,
   type Transport,
 } from "./runner.js"
 export { runnerPortMessage, type DesktopBridge } from "./bridge.js"

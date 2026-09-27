@@ -36,6 +36,12 @@ export type ConnectOptions = {
 export type TerminalMode = "control" | "observe"
 
 /**
+ * An item of `runner.terminals.watch()`: a runner change, or `reset`, which the client
+ * yields before each fresh `changed`…`synced` sequence.
+ */
+export type TerminalWatchItem = TerminalChange | { readonly type: "reset" }
+
+/**
  * One attachment to a running terminal. Iterate it for screen events; each event is
  * acknowledged when the next one is requested. The attachment follows the runner
  * through reconnections, resuming after the last event it produced, so a consumer
@@ -104,15 +110,17 @@ export type Runner = {
       readonly rows: number
     }): Promise<TerminalSummary>
     /**
-     * Follows every terminal on the runner, across sessions. After each connection,
-     * including every reconnection, it yields `changed` for each terminal and then
-     * `synced`: a terminal not reported since the last `synced` no longer exists, for
-     * example after the runner restarted. Later events report creation, foreground
-     * process, size and exit changes, and `removed` for evicted records. Quick
-     * successive changes of one terminal may be coalesced. Iteration ends when the
-     * runner closes or on `return()`.
+     * Follows every terminal on the runner, across sessions. Each subscription, the
+     * first and every one after a reconnection or a retried refusal, yields `reset`,
+     * then `changed` for each terminal, then `synced`. On `reset`, clear the set of
+     * reported terminals; at `synced`, forget any terminal not reported since, for
+     * example one that ended with a restarted runner. Later events report creation,
+     * foreground process, size and exit changes, and `removed` for closed or evicted
+     * records. Quick successive changes of one terminal may be coalesced. Refusals such
+     * as `RESOURCE_LIMIT` are retried with a growing delay; iteration ends only when
+     * the runner closes or on `return()`.
      */
-    watch(): AsyncIterableIterator<TerminalChange, undefined>
+    watch(): AsyncIterableIterator<TerminalWatchItem, undefined>
     /**
      * Ends the shell and, once it has exited, removes the terminal: `list` omits it and
      * watchers see `removed`. Needs no attachment, but rejects with `CONTROL_IN_USE`
@@ -562,7 +570,7 @@ class Attachment implements AttachedTerminal {
 }
 
 /** `terminals.watch()`: one subscription per connection, renewed after each reconnection. */
-class TerminalWatch implements AsyncIterableIterator<TerminalChange, undefined> {
+class TerminalWatch implements AsyncIterableIterator<TerminalWatchItem, undefined> {
   private stream:
     | {
         readonly changes: AsyncIterator<TerminalChange>
@@ -572,6 +580,10 @@ class TerminalWatch implements AsyncIterableIterator<TerminalChange, undefined> 
     | undefined
   /** The link whose subscription ended; the next one waits for a different link. */
   private spent: Link | undefined
+  /** Set by each new subscription, whose sequence opens with `reset`. */
+  private fresh = false
+  /** Consecutive refusals on a live link, which set the next retry's delay. */
+  private refusals = 0
   private ended = false
   private stop = () => {}
   private readonly stopped = new Promise<undefined>((resolve) => {
@@ -584,83 +596,95 @@ class TerminalWatch implements AsyncIterableIterator<TerminalChange, undefined> 
     return this
   }
 
-  async next(): Promise<IteratorResult<TerminalChange, undefined>> {
+  /** Never throws: failures resubscribe, and iteration ends only on close or `return()`. */
+  async next(): Promise<IteratorResult<TerminalWatchItem, undefined>> {
     while (!this.ended) {
-      let link: Link | undefined
-      try {
+      const stream = this.stream
+      if (!stream) {
         // eslint-disable-next-line no-await-in-loop -- Subscribe before reading further.
-        const stream = this.stream ?? (await this.subscribe())
-        if (!stream) break
-        link = stream.link
+        if (!(await this.subscribe())) break
+        continue
+      }
+      if (this.fresh) {
+        this.fresh = false
+        return { value: { type: "reset" }, done: false }
+      }
+      try {
         // eslint-disable-next-line no-await-in-loop -- Changes are delivered in order.
         const result = await Promise.race([stream.changes.next(), this.stopped])
         if (this.ended || !result) break
-        if (!result.done) return { value: result.value, done: false }
+        if (!result.done) {
+          this.refusals = 0
+          return { value: result.value, done: false }
+        }
         // The runner ended the stream, as when it shuts down; follow its next connection.
-        this.drop()
+        this.drop(true)
       } catch (error) {
         if (this.ended) break
-        const cause = link ? failure(error, link) : normalize(error)
-        if (hasCode(cause, "DISCONNECTED", "RUNTIME_CLOSING")) {
-          this.drop()
-          continue
-        }
-        this.end()
-        throw cause
+        // eslint-disable-next-line no-await-in-loop -- Back off before resubscribing.
+        await this.recover(failure(error, stream.link), stream.link)
       }
     }
     return done
   }
 
-  return(): Promise<IteratorResult<TerminalChange, undefined>> {
+  return(): Promise<IteratorResult<TerminalWatchItem, undefined>> {
     this.end()
     return Promise.resolve(done)
   }
 
-  /** Subscribes on the next live link; resolves `undefined` once the runner has closed. */
-  private async subscribe(): Promise<TerminalWatch["stream"]> {
-    while (!this.ended) {
-      // eslint-disable-next-line no-await-in-loop -- Wait for a live link.
-      const link = await Promise.race([
-        this.connection.ready().catch(() => undefined),
-        this.stopped,
-      ])
-      if (!link || this.ended) break
-      if (link === this.spent) {
-        // eslint-disable-next-line no-await-in-loop -- Wait for this link to be replaced.
-        await Promise.race([link.channel.closed, this.stopped])
-        continue
-      }
-      const cancel = new AbortController()
-      try {
-        // eslint-disable-next-line no-await-in-loop -- One subscription at a time.
-        const changes = await link.wire.terminals.watch(undefined, { signal: cancel.signal })
-        if (this.ended) {
-          cancel.abort()
-          break
-        }
-        this.stream = { changes, link, cancel }
-        return this.stream
-      } catch (error) {
-        cancel.abort()
-        // A runner that refused while shutting down is left until it reconnects.
-        this.spent = link
-        throw failure(error, link)
-      }
+  /** Subscribes on the next live link; resolves false once the runner has closed. */
+  private async subscribe(): Promise<boolean> {
+    const link = await Promise.race([this.connection.ready().catch(() => undefined), this.stopped])
+    if (!link || this.ended) {
+      this.end()
+      return false
     }
-    this.end()
-    return undefined
+    if (link === this.spent) {
+      await Promise.race([link.channel.closed, this.stopped])
+      return true
+    }
+    const cancel = new AbortController()
+    try {
+      const changes = await link.wire.terminals.watch(undefined, { signal: cancel.signal })
+      if (this.ended) cancel.abort()
+      else {
+        this.stream = { changes, link, cancel }
+        this.fresh = true
+      }
+    } catch (error) {
+      cancel.abort()
+      await this.recover(failure(error, link), link)
+    }
+    return !this.ended
   }
 
-  private drop(): void {
-    this.spent = this.stream?.link ?? this.spent
+  /**
+   * A lost or closing connection is followed to the next one. Any other failure on a
+   * live link, such as `RESOURCE_LIMIT`, is retried there after a growing delay.
+   */
+  private async recover(cause: unknown, link: Link): Promise<void> {
+    const lost = hasCode(cause, "DISCONNECTED", "RUNTIME_CLOSING") || !link.channel.open
+    if (lost) {
+      this.spent = link
+      this.drop(true)
+      return
+    }
+    this.drop(false)
+    const delay = Math.min(200 * 2 ** this.refusals, 3_000)
+    this.refusals += 1
+    await Promise.race([new Promise((resolve) => setTimeout(resolve, delay)), this.stopped])
+  }
+
+  private drop(spent: boolean): void {
+    if (spent) this.spent = this.stream?.link ?? this.spent
     this.stream?.cancel.abort()
     this.stream = undefined
   }
 
   private end(): void {
     this.ended = true
-    this.drop()
+    this.drop(true)
     this.stop()
   }
 }

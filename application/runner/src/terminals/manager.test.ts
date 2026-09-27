@@ -735,4 +735,25 @@ describe.skipIf(process.platform === "win32")("terminal limits", () => {
       ids.slice(0, 2).map((terminalId) => ({ type: "removed", terminalId, sessionId: "session" })),
     )
   })
+
+  it("evicts the terminals that exited first, whatever their creation order", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager({ maxRetained: 1 })
+    const watch = terminals.watch(manager, "watcher")
+    await watch.until((change) => change.type === "synced")
+    const ids = Array.from({ length: 3 }, () => randomUUID())
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop -- Creation order is part of the scenario.
+      await manager.create({ id, sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
+    }
+    // The newest terminal exits first and the oldest last.
+    for (const id of ids.toReversed()) {
+      manager.write({ terminalId: id, data: "exit 0\n" }, "owner")
+      // eslint-disable-next-line no-await-in-loop -- Each exit completes before the next.
+      await watch.until((change) => changed(id)(change) && change.terminal.status === "exited")
+    }
+    await watch.until((change) => change.type === "removed" && change.terminalId === ids[1])
+    expect(manager.list().map((terminal) => terminal.id)).toEqual([ids[0]])
+  })
 })

@@ -64,6 +64,8 @@ type Record = {
   /** `performance.now()` at spawn, for the exit's `ranMs`. */
   startedAt: number
   restarting: boolean
+  /** When the shell last exited, in exit order across terminals; eviction goes oldest first. */
+  exitOrder: number
 }
 
 /** A spawned shell with its own headless screen, before it belongs to a record. */
@@ -116,6 +118,7 @@ export class Terminals {
     env: NodeJS.ProcessEnv
   }
   private creating = 0
+  private exits = 0
   private stopping = false
   private shutdownPromise: Promise<void> | undefined
 
@@ -186,6 +189,7 @@ export class Terminals {
         listeners: [],
         closing: undefined,
         restarting: false,
+        exitOrder: 0,
       }
       this.records.set(record.summary.id, record)
       this.listen(record)
@@ -666,6 +670,8 @@ export class Terminals {
     const exit = { ...ended, ranMs: Math.max(0, Math.round(performance.now() - record.startedAt)) }
     void this.enqueue(record, () => {
       record.summary = { ...record.summary, status: "exited", exit, process: null }
+      this.exits += 1
+      record.exitOrder = this.exits
       this.announce(record)
       this.emit(record, { type: "exited", exit })
       for (const subscription of record.subscribers.values()) subscription.finish()
@@ -708,13 +714,15 @@ export class Terminals {
    * new terminal needs `room` under `maxTerminals`.
    */
   private evict(room = false): void {
-    const idle = [...this.records.values()].filter(
-      (record) =>
-        record.summary.status === "exited" &&
-        record.subscribers.size === 0 &&
-        record.pendingAttachments === 0 &&
-        !record.restarting,
-    )
+    const idle = [...this.records.values()]
+      .filter(
+        (record) =>
+          record.summary.status === "exited" &&
+          record.subscribers.size === 0 &&
+          record.pendingAttachments === 0 &&
+          !record.restarting,
+      )
+      .toSorted((a, b) => a.exitOrder - b.exitOrder)
     let excess = idle.length - this.options.maxRetained
     for (const record of idle) {
       const full = room && this.records.size + this.creating >= this.options.maxTerminals

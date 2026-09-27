@@ -157,24 +157,32 @@ for terminals that includes exited records the runner still retains. A project
 created without `cwd` opens in the home directory of the user running the runner.
 `sessions.save({ sessionId, state })` replaces a session's `state`, a string the
 runner stores with the session without reading it, such as a UI layout. Sessions
-report `null` until the first save. A state holds at most 192 KiB.
+report `null` until the first save. A state holds at most 196,608 characters.
 
 `runner.terminals.watch()` follows every terminal on the runner, across sessions:
 
 ```ts
 for await (const change of runner.terminals.watch()) {
+  if (change.type === "reset") startOver() // a fresh sequence follows
   if (change.type === "changed") show(change.terminal) // includes status and process
   if (change.type === "removed") forget(change.terminalId)
-  if (change.type === "synced") pruneUnreported() // anything not reported is gone
+  if (change.type === "synced") pruneUnreported() // gone unless reported since `reset`
 }
 ```
 
-After every connection, including each reconnection, it yields `changed` for each
-terminal, then `synced`, then changes as they happen: creation, size, exit, and the
-foreground process, sampled about once a second. `removed` reports a closed terminal
-or an evicted exited record. The runner keeps at most the latest unread summary per terminal for each
-watcher, so a slow consumer skips intermediate states instead of growing a backlog.
-Iteration ends when the client closes or on `return()`. A terminal summary's `process`
+Each subscription, the first and every one after a reconnection or a retried
+refusal, yields `reset`, then `changed` for each terminal, then `synced`, then
+changes as they happen: creation, size, exit, and the foreground process, sampled
+about once a second. `removed` reports a closed terminal or an evicted exited
+record. A consumer clears its set of reported terminals on `reset` and, at `synced`,
+forgets every terminal outside it, such as one that ended with a restarted runner.
+`reset` comes from the client; the runner's own stream starts at the first `changed`.
+The
+runner keeps at most the latest unread summary per terminal for each watcher, so a
+slow consumer skips intermediate states instead of growing a backlog. A refused
+subscription, such as `RESOURCE_LIMIT` while the connection has too many calls in
+flight, is retried after a delay growing from 200 ms to 3 s. Iteration ends only
+when the client closes or on `return()`. A terminal summary's `process`
 is its foreground process name, such as the shell or a program running in it; it is
 `null` once the terminal exits and on Windows, where no foreground process is known.
 
