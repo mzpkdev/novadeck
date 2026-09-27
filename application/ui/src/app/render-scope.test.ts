@@ -7,7 +7,7 @@ import {
   type ComponentType,
 } from "react"
 import { HashRouter } from "react-router"
-import { vi } from "vitest"
+import { afterEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../test"
 import { render } from "../test/render"
@@ -88,6 +88,16 @@ vi.mock("../search/TerminalSearch", async (original) => {
   return { ...actual, TerminalSearch: await counted("overlays", actual.TerminalSearch) }
 })
 
+// Rendering the whole page in jsdom is slow on small CI runners, Windows in particular.
+vi.setConfig({ testTimeout: 30_000 })
+
+const mounted = new Set<{ unmount: () => void }>()
+afterEach(() => {
+  // Unmount even when a test fails, so no page outlives its test.
+  mounted.forEach((page) => page.unmount())
+  mounted.clear()
+})
+
 // Hands the test the services the provider created.
 const Grab = ({ found }: { readonly found: (services: WorkspaceServices) => void }): null => {
   const services = useWorkspaceServices()
@@ -98,10 +108,10 @@ const Grab = ({ found }: { readonly found: (services: WorkspaceServices) => void
 // The whole workspace page over the default backend, with its services in reach.
 const open = async () => {
   window.location.hash = "#/projects/storefront/sessions/initial/canvas?terminal=01"
-  let services: WorkspaceServices | undefined
-  const found = (next: WorkspaceServices): void => {
-    services = next
-  }
+  let found!: (services: WorkspaceServices) => void
+  const handedOver = new Promise<WorkspaceServices>((resolve) => {
+    found = resolve
+  })
   // StrictMode, as main.tsx renders it: each render counts twice.
   const page = render(
     createElement(
@@ -120,13 +130,14 @@ const open = async () => {
       ),
     ),
   )
-  // Canvas and search load on demand.
-  await act(async () => {
+  mounted.add(page)
+  // Canvas and search load on demand; wait until they have and the provider handed over.
+  const services = await act(async () => {
     await import("../layouts/canvas/Canvas")
     await import("../search/TerminalSearch")
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    return handedOver
   })
-  return { page, services: services! }
+  return { page, services }
 }
 
 // What rendered while `change` ran, by component.
@@ -146,7 +157,7 @@ describe("workspace render scope", () => {
   context("when the page first renders", () => {
     it("renders every section", async () => {
       renders.clear()
-      const { page } = await open()
+      await open()
       expect([...renders.keys()]).toEqual(
         expect.arrayContaining([
           "app",
@@ -158,14 +169,13 @@ describe("workspace render scope", () => {
           "frame 02",
         ]),
       )
-      page.unmount()
     })
   })
 
   // "stage" counts Canvas, which renders exactly when WorkspaceStage does.
   context("when Canvas saves its layout", () => {
     it("re-renders only the stage, Canvas and the terminals on it", async () => {
-      const { page, services } = await open()
+      const { services } = await open()
       const seen = rendersDuring(() =>
         services.commands.setCanvasLayout(firstTarget(services), (layout) => ({
           ...layout,
@@ -175,13 +185,12 @@ describe("workspace render scope", () => {
       const frames = Object.keys(seen).filter((name) => name.startsWith("frame "))
       expect(frames.length).toBeGreaterThan(0)
       expect(new Set(Object.keys(seen))).toEqual(new Set(["stage", ...frames]))
-      page.unmount()
     })
   })
 
   context("when a rename keystroke changes the draft", () => {
     it("re-renders only the tab and the frame of the terminal being renamed", async () => {
-      const { page, services } = await open()
+      const { services } = await open()
       const terminal = services.workspace
         .getSnapshot()
         .projects.flatMap((project) => project.history)
@@ -190,7 +199,6 @@ describe("workspace render scope", () => {
       act(() => services.commands.startRename(terminal, "sidebar"))
       const seen = rendersDuring(() => services.commands.changeRenameDraft("02", "Server"))
       expect(seen).toEqual({ "tab 02": 2, "frame 02": 2 })
-      page.unmount()
     })
   })
 })
