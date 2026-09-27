@@ -87,6 +87,40 @@ describe("workspace commands", () => {
     })
   })
 
+  context("when opening a folder", () => {
+    it("adds a project named after it with a fresh session and switches to it", async () => {
+      const app = openCommands({ pickDirectory: () => Promise.resolve("/work/storefront/") })
+      await app.commands.openFolder()
+      const snapshot = app.workspace.getSnapshot()
+      const opened = snapshot.projects.at(-1)!
+      expect(opened).toMatchObject({ name: "storefront", directory: "/work/storefront/" })
+      expect(opened.history).toHaveLength(1)
+      expect(snapshot.activeProjectId).toBe(opened.id)
+      expect(app.ui.getSnapshot().location.route).toMatchObject({
+        projectId: opened.id,
+        sessionId: opened.history[0]!.id,
+      })
+    })
+
+    it("switches to the project a folder is already open as", async () => {
+      const app = openCommands({ pickDirectory: () => Promise.resolve("/work/api") })
+      await app.commands.openFolder()
+      const first = app.workspace.getSnapshot()
+      app.commands.switchProject(first.projects[0]!)
+      await app.commands.openFolder()
+      const snapshot = app.workspace.getSnapshot()
+      expect(snapshot.projects).toHaveLength(first.projects.length)
+      expect(snapshot.activeProjectId).toBe(first.activeProjectId)
+    })
+
+    it("changes nothing when the person cancels", async () => {
+      const app = openCommands({ pickDirectory: () => Promise.resolve(null) })
+      const before = app.workspace.getSnapshot()
+      await app.commands.openFolder()
+      expect(app.workspace.getSnapshot()).toBe(before)
+    })
+  })
+
   context("when closing a terminal", () => {
     it("brings the next selection into view only when the selected one closes outside Canvas", () => {
       const app = openCommands({ workspace: workspaceFixture({ terminals: 3 }) })

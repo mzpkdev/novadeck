@@ -37,6 +37,7 @@ export const WorkspaceHeader = ({
   projects,
   project,
   onProjectSelect,
+  onOpenFolder,
   onViewChange,
   homeTo,
   onSearch,
@@ -49,6 +50,8 @@ export const WorkspaceHeader = ({
   projects: Project[]
   project: Project
   onProjectSelect: (id: string) => void
+  // Absent where no folder can be opened; the switcher then shows it disabled.
+  onOpenFolder?: (() => void) | undefined
   onViewChange: (mode: ViewMode) => void
   homeTo: string
   onSearch: () => void
@@ -77,7 +80,12 @@ export const WorkspaceHeader = ({
             novadeck<span className="text-muted">.</span>
           </span>
         </Link>
-        <WorkspaceSwitcher projects={projects} current={project} onSelect={onProjectSelect} />
+        <WorkspaceSwitcher
+          projects={projects}
+          current={project}
+          onSelect={onProjectSelect}
+          onOpenFolder={onOpenFolder}
+        />
       </div>
       <div
         data-workspace-view-switch

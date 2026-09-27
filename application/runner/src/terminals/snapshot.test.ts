@@ -15,6 +15,7 @@ const summary: TerminalSummary = {
   rows: 4,
   status: "running",
   exitCode: null,
+  process: null,
 }
 
 const text = (terminal: InstanceType<typeof Terminal>) =>

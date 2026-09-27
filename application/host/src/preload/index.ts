@@ -1,7 +1,7 @@
 import { runnerPortMessage, type DesktopBridge } from "@novadeck/protocol/bridge"
 import { contextBridge, ipcRenderer } from "electron"
 
-import { apiUrlArgumentPrefix, runnerPortChannel } from "../bridge.js"
+import { apiUrlArgumentPrefix, directoryPickerChannel, runnerPortChannel } from "../bridge.js"
 
 const argument = process.argv.find((value) => value.startsWith(apiUrlArgumentPrefix))
 
@@ -16,6 +16,10 @@ if (apiUrl.protocol !== "http:" || apiUrl.hostname !== "127.0.0.1" || !apiUrl.po
 const bridge: DesktopBridge = {
   requestRunner: (id) => {
     if (typeof id === "string") ipcRenderer.send(runnerPortChannel, id)
+  },
+  pickDirectory: async () => {
+    const path: unknown = await ipcRenderer.invoke(directoryPickerChannel)
+    return typeof path === "string" ? path : null
   },
 }
 

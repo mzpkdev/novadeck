@@ -2,6 +2,7 @@ import { eventIterator, oc, type ContractRouterClient } from "@orpc/contract"
 import { z } from "zod"
 
 import {
+  clientState,
   columns,
   directory,
   id,
@@ -11,6 +12,7 @@ import {
   rows,
   sequence,
   terminalAttached,
+  terminalChange,
   terminalEvent,
   terminalSummary,
   workspaceSession,
@@ -62,19 +64,36 @@ export const contract = {
   },
   projects: {
     list: procedure.input(z.void()).output(z.array(project)),
-    create: procedure.input(z.strictObject({ name, cwd: directory })).output(project),
+    // The client names the project before the runner answers; a taken id is a
+    // CONFLICT. Without `cwd`, the project opens in the runner owner's home directory.
+    create: procedure
+      .input(z.strictObject({ id, name, cwd: directory.optional() }))
+      .output(project),
     rename: procedure.input(z.strictObject({ projectId: id, name })).output(project),
   },
   sessions: {
     list: procedure.input(z.strictObject({ projectId: id })).output(z.array(workspaceSession)),
-    create: procedure.input(z.strictObject({ projectId: id, name })).output(workspaceSession),
+    create: procedure.input(z.strictObject({ id, projectId: id, name })).output(workspaceSession),
     rename: procedure.input(z.strictObject({ sessionId: id, name })).output(workspaceSession),
+    // Replaces the session's client state; the runner stores it without reading it.
+    save: procedure.input(z.strictObject({ sessionId: id, state: clientState })).output(z.void()),
   },
   terminals: {
     list: procedure.input(z.strictObject({ sessionId: id })).output(z.array(terminalSummary)),
     create: procedure
-      .input(z.strictObject({ sessionId: id, cwd: directory.optional(), cols: columns, rows }))
+      .input(
+        z.strictObject({
+          id,
+          sessionId: id,
+          cwd: directory.optional(),
+          cols: columns,
+          rows,
+        }),
+      )
       .output(terminalSummary),
+    // Every terminal across sessions: `changed` for each, `synced`, then later changes
+    // (creation, foreground process, exit) and `removed` when a record is evicted.
+    watch: procedure.input(z.void()).output(eventIterator(terminalChange)),
     attach: procedure
       .input(
         z.strictObject({

@@ -4,6 +4,7 @@ import {
   protocolVersion,
   type Project,
   type TerminalAttached,
+  type TerminalChange,
   type TerminalEvent,
   type TerminalSummary,
   type WorkspaceSession,
@@ -50,7 +51,7 @@ export type AttachedTerminal = AsyncIterableIterator<TerminalEvent> & {
   /** Sends input, including control characters. Never retried; success means accepted. */
   write(data: string): Promise<void>
   resize(size: { readonly cols: number; readonly rows: number }): Promise<void>
-  /** Ends the shell. The stream then delivers `exited` and finishes. */
+  /** Ends the shell and removes the terminal. The stream then delivers `exited` and finishes. */
   close(): Promise<void>
   /** Releases this attachment and ends iteration. The shell keeps running. */
   detach(): Promise<void>
@@ -65,23 +66,59 @@ export type Runner = {
   watch(): AsyncIterableIterator<RunnerStatus>
   readonly projects: {
     list(): Promise<Project[]>
-    create(input: { readonly name: string; readonly cwd: string }): Promise<Project>
+    /**
+     * The client names the project with a fresh UUID; a taken one rejects with
+     * `CONFLICT`. Without `cwd`, the project opens in the runner owner's home directory.
+     */
+    create(input: {
+      readonly id: string
+      readonly name: string
+      readonly cwd?: string
+    }): Promise<Project>
     rename(input: { readonly projectId: string; readonly name: string }): Promise<Project>
   }
   readonly sessions: {
     list(input: { readonly projectId: string }): Promise<WorkspaceSession[]>
-    create(input: { readonly projectId: string; readonly name: string }): Promise<WorkspaceSession>
+    /** The client names the session with a fresh UUID; a taken one rejects with `CONFLICT`. */
+    create(input: {
+      readonly id: string
+      readonly projectId: string
+      readonly name: string
+    }): Promise<WorkspaceSession>
     rename(input: { readonly sessionId: string; readonly name: string }): Promise<WorkspaceSession>
+    /** Replaces the session's `state`, which the runner stores without reading. */
+    save(input: { readonly sessionId: string; readonly state: string }): Promise<void>
   }
   readonly terminals: {
     list(input: { readonly sessionId: string }): Promise<TerminalSummary[]>
-    /** Starts a shell in the session's project directory unless `cwd` is given. */
+    /**
+     * Starts a shell in the session's project directory unless `cwd` is given. The
+     * client names the terminal with a fresh UUID; a taken one, even by an exited
+     * terminal the runner still retains, rejects with `CONFLICT`.
+     */
     create(input: {
+      readonly id: string
       readonly sessionId: string
       readonly cwd?: string
       readonly cols: number
       readonly rows: number
     }): Promise<TerminalSummary>
+    /**
+     * Follows every terminal on the runner, across sessions. After each connection,
+     * including every reconnection, it yields `changed` for each terminal and then
+     * `synced`: a terminal not reported since the last `synced` no longer exists, for
+     * example after the runner restarted. Later events report creation, foreground
+     * process, size and exit changes, and `removed` for evicted records. Quick
+     * successive changes of one terminal may be coalesced. Iteration ends when the
+     * runner closes or on `return()`.
+     */
+    watch(): AsyncIterableIterator<TerminalChange, undefined>
+    /**
+     * Ends the shell and, once it has exited, removes the terminal: `list` omits it and
+     * watchers see `removed`. Needs no attachment, but rejects with `CONTROL_IN_USE`
+     * while another connection controls the terminal.
+     */
+    close(terminalId: string): Promise<void>
     /** Resolves once the runner has granted the attachment; `control` is the default mode. */
     attach(
       terminalId: string,
@@ -514,6 +551,110 @@ class Attachment implements AttachedTerminal {
   }
 }
 
+/** `terminals.watch()`: one subscription per connection, renewed after each reconnection. */
+class TerminalWatch implements AsyncIterableIterator<TerminalChange, undefined> {
+  private stream:
+    | {
+        readonly changes: AsyncIterator<TerminalChange>
+        readonly link: Link
+        readonly cancel: AbortController
+      }
+    | undefined
+  /** The link whose subscription ended; the next one waits for a different link. */
+  private spent: Link | undefined
+  private ended = false
+  private stop = () => {}
+  private readonly stopped = new Promise<undefined>((resolve) => {
+    this.stop = () => resolve(undefined)
+  })
+
+  constructor(private readonly connection: Connection) {}
+
+  [Symbol.asyncIterator](): this {
+    return this
+  }
+
+  async next(): Promise<IteratorResult<TerminalChange, undefined>> {
+    while (!this.ended) {
+      let link: Link | undefined
+      try {
+        // eslint-disable-next-line no-await-in-loop -- Subscribe before reading further.
+        const stream = this.stream ?? (await this.subscribe())
+        if (!stream) break
+        link = stream.link
+        // eslint-disable-next-line no-await-in-loop -- Changes are delivered in order.
+        const result = await Promise.race([stream.changes.next(), this.stopped])
+        if (this.ended || !result) break
+        if (!result.done) return { value: result.value, done: false }
+        // The runner ended the stream, as when it shuts down; follow its next connection.
+        this.drop()
+      } catch (error) {
+        if (this.ended) break
+        const cause = link ? failure(error, link) : normalize(error)
+        if (hasCode(cause, "DISCONNECTED", "RUNTIME_CLOSING")) {
+          this.drop()
+          continue
+        }
+        this.end()
+        throw cause
+      }
+    }
+    return done
+  }
+
+  return(): Promise<IteratorResult<TerminalChange, undefined>> {
+    this.end()
+    return Promise.resolve(done)
+  }
+
+  /** Subscribes on the next live link; resolves `undefined` once the runner has closed. */
+  private async subscribe(): Promise<TerminalWatch["stream"]> {
+    while (!this.ended) {
+      // eslint-disable-next-line no-await-in-loop -- Wait for a live link.
+      const link = await Promise.race([
+        this.connection.ready().catch(() => undefined),
+        this.stopped,
+      ])
+      if (!link || this.ended) break
+      if (link === this.spent) {
+        // eslint-disable-next-line no-await-in-loop -- Wait for this link to be replaced.
+        await Promise.race([link.channel.closed, this.stopped])
+        continue
+      }
+      const cancel = new AbortController()
+      try {
+        // eslint-disable-next-line no-await-in-loop -- One subscription at a time.
+        const changes = await link.wire.terminals.watch(undefined, { signal: cancel.signal })
+        if (this.ended) {
+          cancel.abort()
+          break
+        }
+        this.stream = { changes, link, cancel }
+        return this.stream
+      } catch (error) {
+        cancel.abort()
+        // A runner that refused while shutting down is left until it reconnects.
+        this.spent = link
+        throw failure(error, link)
+      }
+    }
+    this.end()
+    return undefined
+  }
+
+  private drop(): void {
+    this.spent = this.stream?.link ?? this.spent
+    this.stream?.cancel.abort()
+    this.stream = undefined
+  }
+
+  private end(): void {
+    this.ended = true
+    this.drop()
+    this.stop()
+  }
+}
+
 /**
  * Connects to a runner and resolves after the first successful handshake. Later
  * disconnections reconnect automatically; `status` and `watch()` report them.
@@ -547,10 +688,13 @@ export const connectRunner = async (
       list: (input) => call((wire) => wire.sessions.list(input)),
       create: (input) => call((wire) => wire.sessions.create(input)),
       rename: (input) => call((wire) => wire.sessions.rename(input)),
+      save: (input) => call((wire) => wire.sessions.save(input)),
     },
     terminals: {
       list: (input) => call((wire) => wire.terminals.list(input)),
       create: (input) => call((wire) => wire.terminals.create(input)),
+      watch: () => new TerminalWatch(connection),
+      close: (terminalId) => call((wire) => wire.terminals.close({ terminalId })),
       async attach(terminalId, { mode = "control" } = {}) {
         const terminal = new Attachment(connection, terminalId, mode)
         await terminal.attach(connection.current())

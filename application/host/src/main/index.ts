@@ -1,10 +1,20 @@
+import { realpath } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
-import { app, BrowserWindow, ipcMain, session, shell } from "electron"
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  session,
+  shell,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+} from "electron"
 
-import { apiUrlArgumentPrefix, runnerPortChannel } from "../bridge.js"
+import { apiUrlArgumentPrefix, directoryPickerChannel, runnerPortChannel } from "../bridge.js"
 import { startRunner, type RunnerHost } from "./runner.js"
 
 const appId = "dev.mzpk.novadeck"
@@ -35,6 +45,17 @@ const isAppPage = (url: string): boolean => {
   if (!app.isPackaged) return page.origin === developmentOrigin
   const packaged = pathToFileURL(join(process.resourcesPath, "ui", "index.html"))
   return page.protocol === "file:" && page.pathname === packaged.pathname
+}
+
+/**
+ * The window of a request from the main frame of this app's own window showing its own
+ * UI, or undefined for any other sender.
+ */
+const appWindow = (event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  const frame = event.senderFrame
+  if (!window || !frame || frame !== event.sender.mainFrame || !isAppPage(frame.url)) return
+  return window
 }
 
 const createWindow = (origin: string): BrowserWindow => {
@@ -82,10 +103,18 @@ const launch = async (): Promise<void> => {
   // A port is shell access: only the main frame of this app's own window showing its
   // own UI may ask for one.
   ipcMain.on(runnerPortChannel, (event, id: unknown) => {
-    const frame = event.senderFrame
-    if (!BrowserWindow.fromWebContents(event.sender) || frame !== event.sender.mainFrame) return
-    if (!frame || !isAppPage(frame.url) || typeof id !== "string") return
+    if (!appWindow(event) || typeof id !== "string") return
     runner?.connect(event.sender, id)
+  })
+  ipcMain.handle(directoryPickerChannel, async (event) => {
+    const window = appWindow(event)
+    if (!window) return null
+    const result = await dialog.showOpenDialog(window, {
+      properties: ["openDirectory", "createDirectory"],
+    })
+    const picked = result.canceled ? undefined : result.filePaths[0]
+    // The runner stores real paths, so a folder opened through a symlink still matches.
+    return picked === undefined ? null : realpath(picked).catch(() => picked)
   })
   server = await startHttpServer({
     port: 0,

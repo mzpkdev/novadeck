@@ -5,4 +5,8 @@
  */
 export const runnerPortMessage = "novadeck:runner-port"
 
-export type DesktopBridge = { requestRunner(id: string): void }
+export type DesktopBridge = {
+  requestRunner(id: string): void
+  /** Asks the user to choose a folder; resolves its absolute path, or null when cancelled. */
+  pickDirectory(): Promise<string | null>
+}

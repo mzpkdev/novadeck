@@ -55,13 +55,24 @@ const fixture = async (resources: Resources, options: ServerOptions = {}) => {
   }
 
   const setup = async (client: WireClient) => {
-    const project = await client.projects.create({ name: "API workspace", cwd: directory })
-    const session = await client.sessions.create({ projectId: project.id, name: "Session" })
+    const project = await client.projects.create({
+      id: randomUUID(),
+      name: "API workspace",
+      cwd: directory,
+    })
+    const session = await client.sessions.create({
+      id: randomUUID(),
+      projectId: project.id,
+      name: "Session",
+    })
     return { project, session }
   }
 
   return { server, url, directory, connect, setup }
 }
+
+/** Input for an 80x24 terminal with a fresh id. */
+const shell = (sessionId: string) => ({ id: randomUUID(), sessionId, cols: 80, rows: 24 })
 
 const reader = async (
   resources: Resources,
@@ -226,7 +237,7 @@ describe("WebSocket authentication and protocol", () => {
       client.runner.handshake({ protocolVersion, token: "wrong" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" })
     await expect(
-      client.sessions.create({ projectId: randomUUID(), name: "denied" }),
+      client.sessions.create({ id: randomUUID(), projectId: randomUUID(), name: "denied" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" })
     const info = await client.runner.handshake({ protocolVersion, token })
     expect(info).toMatchObject({
@@ -291,6 +302,7 @@ describe("workspace metadata API", () => {
     const { project, session } = await app.setup(client)
     await client.projects.rename({ projectId: project.id, name: "Renamed project" })
     await client.sessions.rename({ sessionId: session.id, name: "Renamed session" })
+    await client.sessions.save({ sessionId: session.id, state: '{"panes":[]}' })
     await disconnect()
     await app.server.close()
     const restarted = await fixture(resources, {
@@ -301,7 +313,7 @@ describe("workspace metadata API", () => {
       { ...project, name: "Renamed project" },
     ])
     await expect(connection.client.sessions.list({ projectId: project.id })).resolves.toEqual([
-      { ...session, name: "Renamed session" },
+      { ...session, name: "Renamed session", state: '{"panes":[]}' },
     ])
     await expect(connection.client.terminals.list({ sessionId: session.id })).resolves.toEqual([])
   })
@@ -309,25 +321,49 @@ describe("workspace metadata API", () => {
   it("payload, directory and workspace relationship validation", async ({ resources }) => {
     const app = await fixture(resources)
     const { client } = await app.connect()
-    await expect(client.projects.create({ name: " ", cwd: app.directory })).rejects.toMatchObject({
+    await expect(
+      client.projects.create({ id: randomUUID(), name: " ", cwd: app.directory }),
+    ).rejects.toMatchObject({
       code: "BAD_REQUEST",
     })
     await expect(
-      client.projects.create({ name: "Missing", cwd: join(app.directory, "missing") }),
+      client.projects.create({
+        id: randomUUID(),
+        name: "Missing",
+        cwd: join(app.directory, "missing"),
+      }),
     ).rejects.toMatchObject({ code: "INVALID_DIRECTORY" })
     await expect(
-      client.sessions.create({ projectId: randomUUID(), name: "Missing" }),
+      client.sessions.create({ id: randomUUID(), projectId: randomUUID(), name: "Missing" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" })
     const { session } = await app.setup(client)
     await expect(
-      client.terminals.create({ sessionId: session.id, cols: 0, rows: 24 }),
+      client.terminals.create({ id: randomUUID(), sessionId: session.id, cols: 0, rows: 24 }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" })
     await expect(
-      client.terminals.create({ sessionId: randomUUID(), cols: 80, rows: 24 }),
+      client.terminals.create({ id: randomUUID(), sessionId: randomUUID(), cols: 80, rows: 24 }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" })
     await expect(
       client.terminals.resize({ terminalId: randomUUID(), cols: 80, rows: 24 }),
     ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+  })
+})
+
+describe("terminal watch API", () => {
+  it("reports terminals created on other connections until it disconnects", async ({
+    resources,
+  }) => {
+    const app = await fixture(resources)
+    const watcher = await app.connect()
+    const { client } = await app.connect()
+    const { session } = await app.setup(client)
+    const stream = await watcher.client.terminals.watch()
+    expect((await stream.next()).value).toEqual({ type: "synced" })
+    const terminal = await client.terminals.create(shell(session.id))
+    expect((await stream.next()).value).toEqual({ type: "changed", terminal })
+    const pending = stream.next()
+    await watcher.disconnect()
+    await expect(pending).rejects.toThrow()
   })
 })
 
@@ -338,7 +374,7 @@ describe("PTY lifecycle API", () => {
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     await output.next()
     await client.terminals.write({
@@ -358,7 +394,7 @@ describe("PTY lifecycle API", () => {
     const app = await fixture(resources)
     const { client, socket } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     await output.untilText("PTY_READY")
     await client.terminals.write({
@@ -381,7 +417,7 @@ describe("PTY lifecycle API", () => {
     const app = await fixture(resources)
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     expect(await output.next()).toMatchObject({
       type: "snapshot",
@@ -424,12 +460,12 @@ describe("PTY lifecycle API", () => {
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const first = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-    await expect(
-      client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 }),
-    ).rejects.toMatchObject({ code: "RESOURCE_LIMIT" })
+    const first = await client.terminals.create(shell(session.id))
+    await expect(client.terminals.create(shell(session.id))).rejects.toMatchObject({
+      code: "RESOURCE_LIMIT",
+    })
     await client.terminals.close({ terminalId: first.id })
-    const second = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const second = await client.terminals.create(shell(session.id))
     expect(second.id).not.toBe(first.id)
     await client.terminals.close({ terminalId: second.id })
   })
@@ -442,15 +478,16 @@ describe("PTY lifecycle API", () => {
     const { session } = await app.setup(client)
     await expect(
       client.terminals.create({
+        id: randomUUID(),
         sessionId: session.id,
         cwd: "relative/path",
         cols: 80,
         rows: 24,
       }),
     ).rejects.toMatchObject({ code: "INVALID_DIRECTORY" })
-    await expect(
-      client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 }),
-    ).rejects.toMatchObject({ code: "SPAWN_FAILED" })
+    await expect(client.terminals.create(shell(session.id))).rejects.toMatchObject({
+      code: "SPAWN_FAILED",
+    })
     await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([])
   })
 })
@@ -460,7 +497,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     await output.untilText("PTY_READY")
     await client.terminals.write({
@@ -493,7 +530,7 @@ describe("terminal attachment and recovery API", () => {
     socket.send = ((data: Parameters<NodeWebSocket["send"]>[0]) => {
       originalSend(data, () => socket.terminate())
     }) as NodeWebSocket["send"]
-    const created = client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const created = client.terminals.create(shell(session.id))
     await expect(created).rejects.toThrow("Runner connection is closed")
     // Delivery is ambiguous: the connection may close before creation starts.
     // Any already-visible record must be controllable by the replacement.
@@ -516,11 +553,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const creator = await app.connect()
     const { session } = await app.setup(creator.client)
-    const terminal = await creator.client.terminals.create({
-      sessionId: session.id,
-      cols: 80,
-      rows: 24,
-    })
+    const terminal = await creator.client.terminals.create(shell(session.id))
     await creator.disconnect()
     const competitors = await Promise.all([app.connect(), app.connect()])
     const readers = await Promise.all(
@@ -546,11 +579,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const owner = await app.connect()
     const { session } = await app.setup(owner.client)
-    const terminal = await owner.client.terminals.create({
-      sessionId: session.id,
-      cols: 80,
-      rows: 24,
-    })
+    const terminal = await owner.client.terminals.create(shell(session.id))
     const continuous = await reader(resources, owner.client, terminal.id)
     await continuous.untilText("PTY_READY")
     const observer = await app.connect()
@@ -573,8 +602,8 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const noisy = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
-    const quiet = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const noisy = await client.terminals.create(shell(session.id))
+    const quiet = await client.terminals.create(shell(session.id))
     const quietOutput = await reader(resources, client, quiet.id)
     await quietOutput.untilText("PTY_READY")
     const observer = await app.connect()
@@ -606,6 +635,7 @@ describe("terminal attachment and recovery API", () => {
       const owner = await app.connect()
       const { session } = await app.setup(owner.client)
       const terminal = await owner.client.terminals.create({
+        id: randomUUID(),
         sessionId: session.id,
         cols: 40,
         rows: 12,
@@ -681,6 +711,7 @@ describe("terminal attachment and recovery API", () => {
     const owner = await app.connect()
     const { session } = await app.setup(owner.client)
     const terminal = await owner.client.terminals.create({
+      id: randomUUID(),
       sessionId: session.id,
       cols: 120,
       rows: 24,
@@ -714,7 +745,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     await output.untilText("PTY_READY")
     await output.stream.return()
@@ -730,7 +761,7 @@ describe("terminal attachment and recovery API", () => {
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const observer = await app.connect()
     const slow = await observer.client.terminals.attach({
       terminalId: terminal.id,
@@ -763,7 +794,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const { client, disconnect } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     await output.untilText("PTY_READY")
     await disconnect()
@@ -775,11 +806,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const owner = await app.connect()
     const { session } = await app.setup(owner.client)
-    const terminal = await owner.client.terminals.create({
-      sessionId: session.id,
-      cols: 80,
-      rows: 24,
-    })
+    const terminal = await owner.client.terminals.create(shell(session.id))
     const observer = await app.connect()
     const watched = await reader(resources, observer.client, terminal.id, { mode: "observe" })
     await watched.untilText("PTY_READY")
@@ -811,7 +838,12 @@ describe("terminal attachment and recovery API", () => {
     })
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 100, rows: 30 })
+    const terminal = await client.terminals.create({
+      id: randomUUID(),
+      sessionId: session.id,
+      cols: 100,
+      rows: 30,
+    })
     const output = await reader(resources, client, terminal.id)
     await output.untilText("PTY_READY")
     await client.terminals.write({
@@ -836,11 +868,7 @@ describe("terminal attachment and recovery API", () => {
     const owner = await app.connect()
     const observer = await app.connect()
     const { session } = await app.setup(owner.client)
-    const terminal = await owner.client.terminals.create({
-      sessionId: session.id,
-      cols: 80,
-      rows: 24,
-    })
+    const terminal = await owner.client.terminals.create(shell(session.id))
     await expect(
       observer.client.terminals.write({ terminalId: terminal.id, data: "bad" }),
     ).rejects.toMatchObject({ code: "CONTROL_REQUIRED" })
@@ -849,7 +877,7 @@ describe("terminal attachment and recovery API", () => {
     ).rejects.toMatchObject({ code: "CONTROL_REQUIRED" })
     await expect(
       observer.client.terminals.close({ terminalId: terminal.id }),
-    ).rejects.toMatchObject({ code: "CONTROL_REQUIRED" })
+    ).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
     const blocked = await reader(resources, observer.client, terminal.id)
     await expect(blocked.next()).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
     await owner.disconnect()
@@ -863,7 +891,7 @@ describe("terminal attachment and recovery API", () => {
     const app = await fixture(resources)
     const { client } = await app.connect()
     const { session } = await app.setup(client)
-    const terminal = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+    const terminal = await client.terminals.create(shell(session.id))
     const output = await reader(resources, client, terminal.id)
     await output.untilText("PTY_READY")
     await expect(

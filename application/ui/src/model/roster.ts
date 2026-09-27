@@ -1,4 +1,4 @@
-import type { TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
+import type { TerminalKind, TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
 
 export const createRoster = (terminals: TerminalMetadata[]): TerminalRoster => ({
   terminals,
@@ -101,6 +101,24 @@ export const setTerminalStatus = (
     ...roster,
     terminals: roster.terminals.map((terminal) =>
       terminal === current ? withStatus(terminal, status) : terminal,
+    ),
+  }
+}
+
+// What runs in the foreground, which picks the terminal's icon.
+export type TerminalProcess = { readonly process: string; readonly kind: TerminalKind }
+
+export const setTerminalProcess = (
+  roster: TerminalRoster,
+  terminalId: string,
+  { process, kind }: TerminalProcess,
+): TerminalRoster => {
+  const current = roster.terminals.find((terminal) => terminal.id === terminalId)
+  if (!current || (current.process === process && current.kind === kind)) return roster
+  return {
+    ...roster,
+    terminals: roster.terminals.map((terminal) =>
+      terminal === current ? { ...terminal, process, kind } : terminal,
     ),
   }
 }

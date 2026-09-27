@@ -2,6 +2,7 @@ import type { ComponentType } from "react"
 
 import type { WorkspaceSeed } from "../model/seed"
 import type { WorkspaceAction } from "../model/state"
+import type { Store } from "../model/store"
 import type { TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
 
 // The UI-owned contract every terminal backend implements. Only app/ talks to it.
@@ -28,6 +29,8 @@ export type TerminalSurfaceProps = {
   readonly terminalKey: TerminalKey
   readonly terminal: TerminalMetadata
   readonly projectName: string
+  // The terminal font size from Preferences, in CSS pixels.
+  readonly fontSize: number
   // Undefined when the layout offers no minimize control (Focus).
   readonly minimized?: boolean | undefined
   readonly clipContent?: boolean | undefined
@@ -37,8 +40,12 @@ export type TerminalSurfaceProps = {
   readonly onInputFocused: () => void
 }
 
-// Workspace changes a backend reports on its own, such as a process exiting.
-export type BackendAction = Extract<WorkspaceAction, { type: "terminal/status" }>
+// Workspace changes a backend reports on its own, such as a process exiting or a
+// program taking over the foreground.
+export type BackendAction = Extract<
+  WorkspaceAction,
+  { type: "terminal/status" | "terminal/process" }
+>
 
 export type BackendSink = {
   // Commits the actions as one store transaction, like a UI command. Actions for a
@@ -68,7 +75,34 @@ export type Backend = {
   // StrictMode may start, stop and start the same instance again, so stop must undo
   // everything start began.
   readonly start?: (sink: BackendSink) => () => void
+  // Optional. How the link to the far side is doing, for the footer. Updates may begin
+  // only once `start` runs.
+  readonly connection?: Store<BackendConnectionState>
+  // Optional. Asks the person for a folder to open as a project; null when cancelled.
+  // Absent where the backend cannot offer one.
+  readonly pickDirectory?: () => Promise<string | null>
 }
+
+// "unavailable" means the backend gave up reconnecting.
+export type BackendConnectionState = "connected" | "reconnecting" | "unavailable"
 
 // Must be free of side effects: StrictMode may call it twice.
 export type CreateBackend = () => Backend
+
+// A backend reached asynchronously, such as a runner the app must connect to first.
+export type BackendConnection = {
+  // Pure, like any CreateBackend: the seed is already loaded.
+  readonly createBackend: CreateBackend
+  // Ends the link once the app unmounts. Safe to call more than once.
+  readonly close: () => void
+}
+
+// Connects before the app first renders. Rejects with an Error whose message the app
+// shows as it is, such as "Runner unavailable: UNAUTHORIZED". Aborting the signal
+// abandons the attempt; a connection resolved after that is closed by the caller.
+export type ConnectBackend = (signal: AbortSignal) => Promise<BackendConnection>
+
+// What app/backend.ts chooses: a backend ready at once, or one to connect to.
+export type BackendSelection =
+  | { readonly createBackend: CreateBackend }
+  | { readonly connect: ConnectBackend }

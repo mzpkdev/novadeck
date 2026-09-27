@@ -145,8 +145,10 @@ in a browser instead:
 pnpm dev:web
 ```
 
-Open <http://127.0.0.1:5173>. For UI-only work, use
-`pnpm --filter @novadeck/ui dev`.
+Open <http://127.0.0.1:5173>. `dev:web` starts a runner with a fresh random token
+and hands the same token to the UI dev server. For UI-only work, use
+`pnpm --filter @novadeck/ui dev` with `VITE_NOVADECK_RUNNER_URL` and
+`VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
 ## Repository map
 
@@ -160,10 +162,10 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 | `application/host`     | Electron host that starts the runner and loads the packaged UI. |
 | `scripts`              | Repository checks and automation.                               |
 
-The terminal interface currently uses sample output and in-memory commands, not
-real shell processes or model calls. Projects, sessions, and layouts reset on
-reload; preferences and sidebar settings are stored locally. Keep this boundary
-in mind when changing terminal behavior or adding runner integration.
+The UI runs real shells through the runner. Projects and sessions live in the
+runner's SQLite metadata, and each session saves its terminal names, order, and
+layouts there too; preferences and sidebar settings are stored locally. Unit tests
+and behaviour specs run on the demo adapter's sample data instead.
 
 See the [terminal backend plan](docs/backend-plan.md) for the proposed runner
 architecture and typed API.
@@ -186,7 +188,8 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `app/commands/`                                    | Commands, key commands, and the navigator: plain functions over both stores.            |
 | `app/controller/`                                  | React glue: context, selector hook, route sync, keyboard dispatcher, effects.           |
 | `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.                   |
-| `backend/demo/`                                    | The demo adapter: sample projects, simulated terminals, and their surface.              |
+| `backend/demo/`                                    | The demo adapter for tests and specs: sample projects and simulated terminals.          |
+| `backend/runner/`                                  | The runner adapter: connection, seed from the runner, saves, and the xterm surface.     |
 | `model/`                                           | Pure domain: types, reducer, workspace store, seed, and layout rules in `layout/`.      |
 | `model/roster.ts`                                  | A session's terminals, their sidebar order, and their status.                           |
 | `model/layout/workspace-layout.ts`                 | Where each terminal sits and how big it is in each view.                                |
@@ -216,7 +219,8 @@ of `shell/` and `terminals/`. Vendor
 libraries stay in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout
 in `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
-`layouts/transition.ts`, `main.tsx`, and `test/`. Other packages are denied
+`layouts/transition.ts`, `main.tsx`, and `test/`, and the runner client and
+xterm in `backend/runner/`. Other packages are denied
 unless the test lists them: React and Lucide are allowed everywhere, while
 backend adapters and test code may use any package. `test/` may import
 `model/`, `backend/`, and what the command harness runs: `app/commands/`, the UI
@@ -237,10 +241,10 @@ Preferences also accepts `section=shortcuts`. Back and Forward restore navigatio
 without discarding terminal drafts or output. Sidebar visibility, search text,
 canvas gestures, and other temporary controls stay out of the URL.
 
-Sample sessions use the stable ID `initial`. New sessions still live only in
-memory: reloading an expired session link falls back to that project's available
-session. Unknown routes, missing terminals, and disabled views are replaced with
-a valid URL. Routing does not persist terminal data across reloads.
+Demo sessions use the stable ID `initial`; with the runner, projects, sessions,
+and terminals use UUIDs the UI generates, so links survive a reload. A link to a
+session that no longer exists falls back to that project's available session.
+Unknown routes, missing terminals, and disabled views are replaced with a valid URL.
 
 The page renders from two synchronous stores only. The workspace store in
 `model/store.ts` holds the model: every session's roster, layout, and navigation
@@ -308,15 +312,26 @@ lifecycle for any adapter. An adapter opts into the port contract suite by
 calling `describeBackendContract` from `test/backend-contract.tsx` in a
 colocated `contract.test.ts`, with a probe of what it holds and the I/O it
 started, and a driver when it has `start`. `App` reads a `createBackend` factory
-once at mount, and `app/backend.ts` chooses the default.
+once at mount, and `app/backend.ts` chooses the default: the demo under tests, and
+a runner connection in every build. A backend that must connect first supplies a
+`ConnectBackend`; `app/BackendGate.tsx` shows "Connecting…" until it resolves with
+the seed loaded, or its error if the first attempt fails, and closes it on unmount.
 
 A backend reports changes of its own, such as a process exiting or failing to
 start, through the optional `start`. It runs from an effect after mount and
 receives a sink that commits each call as one store transaction, like a UI
-command; the sink ignores stale targets and anything sent after stop. The frame
-labels an exited or failed terminal. Terminal listings after a reconnect,
-waiting for an asynchronous seed or connection, and disposing a backend arrive
-with the runner adapter. Workspace sessions are still created in the UI, outside the port.
+command; the sink ignores stale targets and anything sent after stop. It reports
+status and the foreground process, which picks the terminal's icon and counts it as
+running. The frame labels an exited, failed, or ended terminal. A backend may also
+expose its connection state, which the footer shows, and a folder picker, which
+enables "Open folder…".
+
+The runner adapter creates projects, sessions, and terminals on the runner as their
+commits arrive, and saves each changed session after a short pause and on
+`pagehide`. On load it restores saved sessions, most recently visited first, adds
+live terminals the save did not know, and keeps saved terminals the runner no
+longer has as "Ended" tiles. The same happens to a terminal a reconnection no
+longer lists.
 
 XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
 ends or the view unmounts. Grid, Canvas, Preferences, and search load on demand.
@@ -360,6 +375,14 @@ cp application/runner/example.env application/runner/.env
 
 - UI: `VITE_API_URL` sets, at build time, the API origin that the Content Security
   Policy permits; by default only the same origin. The UI does not call the API yet.
+- Browser UI: `VITE_NOVADECK_RUNNER_URL` (a `ws:` or `wss:` URL ending in `/api/rpc`)
+  and `VITE_NOVADECK_RUNNER_TOKEN` name the runner a browser build connects to; the
+  CSP permits that origin. The desktop app ignores them and uses its own runner.
+
+  > **Warning:** a browser build made with `VITE_NOVADECK_RUNNER_TOKEN` embeds the
+  > token in its JavaScript. Anyone who can load that bundle can run shells on the
+  > runner as its user. Keep such builds private: never deploy or share them.
+
 - Runner: `HOST`, `PORT`, and `CORS_ORIGINS` control the listener and allowed frontend origins.
 - Terminal API: `NOVADECK_TOKEN` enables authenticated WebSocket RPC;
   `NOVADECK_DATABASE` optionally selects the SQLite metadata file. Without a token,

@@ -6,7 +6,7 @@ import type { CommandContext } from "./context"
 import { createLayoutCommands, type LayoutCommands } from "./layout"
 import { createRecentCommands, type RecentCommands } from "./recent"
 import { createRenameCommands, type RenameCommands } from "./rename"
-import { newWorkspaceSession } from "./sessions"
+import { folderProject, newWorkspaceSession } from "./sessions"
 import { createShellCommands, shellEdits, type ShellCommands } from "./shell"
 
 export type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean }
@@ -20,6 +20,8 @@ export type WorkspaceCommands = ShellCommands &
     readonly switchSession: (id: string) => void
     readonly startFresh: () => void
     readonly switchProject: (next: Project) => void
+    // Asks the backend for a folder and opens it as a new project; no-op without one.
+    readonly openFolder: () => Promise<void>
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -41,7 +43,7 @@ export type WorkspaceCommands = ShellCommands &
 const createdHighlight = 900
 
 export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands => {
-  const { workspace, ui, navigation, newTerminal, effects } = ctx
+  const { workspace, ui, navigation, newTerminal, pickDirectory, effects } = ctx
   const { go, navigateWorkspace } = navigation
   const { set, pulse } = shellEdits(ctx)
   const shell = createShellCommands(ctx)
@@ -77,6 +79,18 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     effects.after(createdHighlight, () =>
       ui.update((state) => (state.created === created ? { ...state, created: null } : state)),
     )
+  }
+
+  const switchProject = (next: Project): void => {
+    if (next.id === workspace.getSnapshot().activeProjectId) return
+    navigateWorkspace([
+      {
+        type: "project/select",
+        projectId: next.id,
+        now: effects.now(),
+        enabledViews: preferences().enabledViews,
+      },
+    ])
   }
 
   return {
@@ -117,13 +131,26 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
         panel: "sessions",
       })
     },
-    switchProject: (next) => {
-      if (next.id === workspace.getSnapshot().activeProjectId) return
+    switchProject,
+    openFolder: async () => {
+      const directory = await pickDirectory?.()
+      if (!directory) return
+      // A folder already open as a project opens that project again.
+      const existing = workspace
+        .getSnapshot()
+        .projects.find((project) => project.directory === directory)
+      if (existing) return switchProject(existing)
+      const project = folderProject(directory, effects.newId())
+      const initialSession = newWorkspaceSession(currentState(workspace.getSnapshot()), {
+        id: effects.newId(),
+        now: effects.now(),
+      })
       navigateWorkspace([
         {
-          type: "project/select",
-          projectId: next.id,
-          now: effects.now(),
+          type: "project/add",
+          project,
+          activate: true,
+          initialSession,
           enabledViews: preferences().enabledViews,
         },
       ])

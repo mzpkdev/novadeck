@@ -50,9 +50,22 @@ describe("compiled desktop runner", () => {
       const runner = start(database)
       try {
         const client = await runner.connect()
-        const project = await client.projects.create({ name: "Desktop", cwd: directory })
-        const session = await client.sessions.create({ projectId: project.id, name: "Shell" })
-        const created = await client.terminals.create({ sessionId: session.id, cols: 80, rows: 24 })
+        const project = await client.projects.create({
+          id: crypto.randomUUID(),
+          name: "Desktop",
+          cwd: directory,
+        })
+        const session = await client.sessions.create({
+          id: crypto.randomUUID(),
+          projectId: project.id,
+          name: "Shell",
+        })
+        const created = await client.terminals.create({
+          id: crypto.randomUUID(),
+          sessionId: session.id,
+          cols: 80,
+          rows: 24,
+        })
         const terminal = await client.terminals.attach(created.id)
         let text = ""
         const reading = (async () => {
@@ -81,7 +94,7 @@ describe("compiled desktop runner", () => {
       try {
         const first = start(database)
         const client = await first.connect()
-        await client.projects.create({ name: "Persisted", cwd: directory })
+        await client.projects.create({ id: crypto.randomUUID(), name: "Persisted", cwd: directory })
         await client.close()
         await first.close()
 

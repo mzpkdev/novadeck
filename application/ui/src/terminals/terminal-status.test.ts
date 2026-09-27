@@ -24,6 +24,10 @@ describe("terminal status label", () => {
     )
   })
 
+  it("says a process the backend no longer has has ended", () => {
+    expect(terminalStatusLabel({ ...terminal, state: "ended" })).toBe("Ended")
+  })
+
   it("shows nothing while the process is starting, running, idle or finished", () => {
     const states = ["starting", "running", "idle", "finished"] as const
     expect(states.map((state) => terminalStatusLabel({ ...terminal, state }))).toEqual([

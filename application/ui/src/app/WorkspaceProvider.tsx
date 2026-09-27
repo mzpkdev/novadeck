@@ -59,6 +59,7 @@ const createServices = (
     ui,
     navigation,
     newTerminal: backend.newTerminal,
+    pickDirectory: backend.pickDirectory,
     canvas,
     effects: domEffects,
   })

@@ -1,8 +1,9 @@
 # Backend API
 
 This is the first backend-only implementation of the [terminal plan](backend-plan.md).
-The Electron host runs the runner and hands its window a port to it; the UI itself
-still uses sample data and does not connect yet.
+The Electron host runs the runner and hands its window a port to it; the UI connects
+through that port, or in a browser over a WebSocket, with the runner adapter in
+`application/ui/src/backend/runner/`.
 
 ## Run and test
 
@@ -110,17 +111,27 @@ it reconnects on its own. `runner.status` holds the current state, and
 `for await` instead of registering callbacks.
 
 ```ts
-const project = await runner.projects.create({ name: "My project", cwd: "/work/project" })
-const session = await runner.sessions.create({ projectId: project.id, name: "Development" })
-const { id } = await runner.terminals.create({ sessionId: session.id, cols: 120, rows: 30 })
+const id = () => crypto.randomUUID()
+const project = await runner.projects.create({ id: id(), name: "My project", cwd: "/work/project" })
+const session = await runner.sessions.create({
+  id: id(),
+  projectId: project.id,
+  name: "Development",
+})
+const created = await runner.terminals.create({
+  id: id(),
+  sessionId: session.id,
+  cols: 120,
+  rows: 30,
+})
 
-const terminal = await runner.terminals.attach(id)
+const terminal = await runner.terminals.attach(created.id)
 for await (const event of terminal) render(event) // snapshot, output, resized, exited
 
 // Independent of reading, typically from keyboard and layout handlers:
 await terminal.write("pwd\r")
 await terminal.resize({ cols: 100, rows: 32 })
-await terminal.close() // ends the shell; iteration then finishes after `exited`
+await terminal.close() // ends and removes it; iteration then finishes after `exited`
 await terminal.detach() // or `break` out of the loop; the shell keeps running
 ```
 
@@ -139,6 +150,33 @@ everything else:
   detached, or the client closes. It throws a `RunnerError` only when the attachment
   cannot continue, such as `CONTROL_IN_USE` after another client took control
   during a disconnection or `TERMINAL_NOT_FOUND` after the runner restarted.
+
+The client names every project, session, and terminal it creates with a fresh UUID,
+so it can refer to one before the runner answers. A taken ID rejects with `CONFLICT`;
+for terminals that includes exited records the runner still retains. A project
+created without `cwd` opens in the home directory of the user running the runner.
+`sessions.save({ sessionId, state })` replaces a session's `state`, a string the
+runner stores with the session without reading it, such as a UI layout. Sessions
+report `null` until the first save. A state holds at most 192 KiB.
+
+`runner.terminals.watch()` follows every terminal on the runner, across sessions:
+
+```ts
+for await (const change of runner.terminals.watch()) {
+  if (change.type === "changed") show(change.terminal) // includes status and process
+  if (change.type === "removed") forget(change.terminalId)
+  if (change.type === "synced") pruneUnreported() // anything not reported is gone
+}
+```
+
+After every connection, including each reconnection, it yields `changed` for each
+terminal, then `synced`, then changes as they happen: creation, size, exit, and the
+foreground process, sampled about once a second. `removed` reports a closed terminal
+or an evicted exited record. The runner keeps at most the latest unread summary per terminal for each
+watcher, so a slow consumer skips intermediate states instead of growing a backlog.
+Iteration ends when the client closes or on `return()`. A terminal summary's `process`
+is its foreground process name, such as the shell or a program running in it; it is
+`null` once the terminal exits and on Windows, where no foreground process is known.
 
 Calls made while reconnecting reject with `DISCONNECTED`; input and creation are
 never retried automatically. Each client sends a random client ID in its handshake,
@@ -182,7 +220,9 @@ directory. `desktop()` asks the preload bridge for a port with
 the main frame of its own windows, opens a `MessageChannelMain`, and gives one end to
 the runner and the other to the page as a window message carrying the same ID
 (`@novadeck/protocol/bridge` defines the contract). Every connection, including a
-reconnection, asks for a fresh port. If the runner process dies, the host starts a
+reconnection, asks for a fresh port. `window.novadeck.pickDirectory()` opens a folder
+picker attached to the page's window, with the same sender checks, and resolves the
+chosen path or `null` when cancelled. If the runner process dies, the host starts a
 new one on the next request; shells end with it, and metadata remains. Quitting the
 app ends the runner's shells before exiting.
 
@@ -203,16 +243,18 @@ without it. MessagePort connections omit it. Each `terminals.attach` stream begi
 with an unsequenced `attached` marker confirming the granted mode, followed by
 sequenced terminal events.
 
-`terminals.list({ sessionId })` discovers live and retained exited terminals.
-Creation uses the project's directory unless `cwd` is supplied. Directories must
-exist and be absolute. The server chooses the shell; clients send terminal input,
-not executable configuration. `write` accepts control characters, including
-Ctrl-C (`\u0003`). A successful write means accepted input, not command completion.
+`terminals.list({ sessionId })` discovers live and retained exited terminals, and
+`terminals.watch()` streams them all as they change. Each watch belongs to its
+connection and ends with it. Creation uses the project's directory unless `cwd` is
+supplied. Directories must exist and be absolute. The server chooses the shell;
+clients send terminal input, not executable configuration. `write` accepts control
+characters, including Ctrl-C (`\u0003`). A successful write means accepted input,
+not command completion.
 
 ## Stream and lifetime rules
 
 - Creation grants the creating connection control. Only that connection can
-  write, resize, or close. Another connection can attach with `mode: "observe"`.
+  write or resize. Another connection can attach with `mode: "observe"`.
   There is one attachment per terminal per connection. Cancelling a controlling
   attachment or disconnecting releases control, but leaves the shell running.
 - Events carry `terminalId` and an increasing `sequence`. Initial attachment emits
@@ -224,7 +266,7 @@ Ctrl-C (`\u0003`). A successful write means accepted input, not command completi
   cursor falls back to a fresh snapshot. A future cursor is rejected. Scope saved
   cursors to both runner identity and terminal ID. `connectRunner` does this for
   its attachments; raw wire clients must do it themselves.
-- Default limits are 32 connections and 32 retained terminals, 64 KiB incoming
+- Default limits are 32 connections and 32 retained terminals, 256 KiB incoming
   WebSocket messages, 16,384 characters per input call, 1 MiB replay per terminal,
   4 MiB queued/unacknowledged events per attachment, and a 256 KiB ACK window.
   Old exited, unattached records are evicted when capacity is needed. Headless
@@ -240,16 +282,22 @@ Ctrl-C (`\u0003`). A successful write means accepted input, not command completi
   The process keeps running. Dead connections are detected by 30-second ping/pong
   heartbeats, normally within two intervals. Slow viewers do not block the runner
   from draining output or accepting another connection's input.
-- Runner shutdown ends owned PTYs. Backend restarts preserve only project/session
-  metadata, not processes, terminal records, screens, or replay cursors. There is
-  no persistent process supervisor, layout storage, or terminal configuration
-  persistence in this slice.
+- Runner shutdown ends owned PTYs. Backend restarts preserve only project and
+  session metadata, including saved session state, not processes, terminal records,
+  screens, or replay cursors. There is no persistent process supervisor or terminal
+  configuration persistence in this slice.
+- `terminals.close({ terminalId })`, or `runner.terminals.close(id)` without an
+  attachment, succeeds for the controlling connection or when no connection holds
+  control, and rejects with `CONTROL_IN_USE` otherwise. Once the shell has exited, the
+  runner forgets the terminal: `list` omits it, watchers receive `removed`, and later
+  calls report `TERMINAL_NOT_FOUND`. Attached viewers still receive `exited` first. A
+  shell that exits on its own keeps its record until eviction.
 - Closing sends a hangup to the owned shell, escalating if the shell ignores it.
   It is not a process-tree kill guarantee: daemonized jobs and descendants that
   ignore hangup may continue, as with an ordinary terminal emulator. Use an OS
   service/cgroup or a future supervisor if all descendant cleanup is required.
 
-Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `INVALID_DIRECTORY`,
-`TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`, `INVALID_CURSOR`,
-`RESOURCE_LIMIT`, and `SLOW_CONSUMER`. The schemas and contract in
+Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
+`INVALID_DIRECTORY`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,
+`INVALID_CURSOR`, `RESOURCE_LIMIT`, and `SLOW_CONSUMER`. The schemas and contract in
 `application/protocol/src/` are the authoritative API definition.

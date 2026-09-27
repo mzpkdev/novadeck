@@ -41,7 +41,7 @@ export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
   const handler = new RPCHandler(runner.router)
   const wss = new WebSocketServer({
     noServer: true,
-    maxPayload: 64 * 1024,
+    maxPayload: 256 * 1024,
     perMessageDeflate: false,
   })
   let stopping = false

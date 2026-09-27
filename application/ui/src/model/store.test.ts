@@ -276,6 +276,44 @@ describe("terminal status", () => {
   })
 })
 
+describe("terminal process", () => {
+  const terminalOf = (workspace: Workspace) => state(workspace).roster.terminals[0]!
+
+  it("updates what runs in the foreground and keeps the status", () => {
+    const store = createWorkspaceStore(initial())
+    store.dispatch({
+      type: "terminal/process",
+      target,
+      terminalId: "01",
+      process: { process: "claude", kind: "claude" },
+    })
+    expect(terminalOf(store.getSnapshot())).toEqual({
+      ...terminalFixture(1, "~/project"),
+      process: "claude",
+      kind: "claude",
+    })
+  })
+
+  it("ignores an unchanged process or a missing terminal", () => {
+    const store = createWorkspaceStore(initial())
+    const before = store.getSnapshot()
+    const { process, kind } = terminalOf(before)
+    store.dispatch({
+      type: "terminal/process",
+      target,
+      terminalId: "01",
+      process: { process, kind },
+    })
+    store.dispatch({
+      type: "terminal/process",
+      target,
+      terminalId: "gone",
+      process: { process: "git", kind: "git" },
+    })
+    expect(store.getSnapshot()).toBe(before)
+  })
+})
+
 describe("workspace store commits", () => {
   it("refuses a transaction started from inside the commit hook", () => {
     const attempts: unknown[] = []

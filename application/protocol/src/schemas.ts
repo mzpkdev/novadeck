@@ -7,9 +7,17 @@ export const directory = z.string().min(1).max(4096)
 export const columns = z.number().int().min(2).max(500)
 export const rows = z.number().int().min(1).max(200)
 export const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+// Opaque client-owned state the runner stores without reading, such as a UI layout.
+export const clientState = z.string().max(196_608)
 
 export const project = z.strictObject({ id, name, cwd: directory })
-export const workspaceSession = z.strictObject({ id, projectId: id, name })
+export const workspaceSession = z.strictObject({
+  id,
+  projectId: id,
+  name,
+  // Last value saved with `sessions.save`, or null before the first save.
+  state: clientState.nullable(),
+})
 export const terminalSummary = z.strictObject({
   id,
   sessionId: id,
@@ -18,7 +26,18 @@ export const terminalSummary = z.strictObject({
   rows,
   status: z.enum(["running", "exited"]),
   exitCode: z.number().int().nullable(),
+  // The terminal's foreground process name, such as the shell or a program it runs.
+  // Null once exited or when the platform cannot tell.
+  process: z.string().max(256).nullable(),
 })
+
+// `terminals.watch` events: every terminal's summary, then each later change.
+export const terminalChange = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("changed"), terminal: terminalSummary }),
+  z.strictObject({ type: z.literal("removed"), terminalId: id, sessionId: id }),
+  // Follows the initial `changed` events: terminals not reported by now do not exist.
+  z.strictObject({ type: z.literal("synced") }),
+])
 
 const envelope = { terminalId: id, sequence }
 export const terminalEvent = z.discriminatedUnion("type", [
@@ -50,5 +69,6 @@ export const terminalAttached = z.strictObject({
 export type Project = z.infer<typeof project>
 export type WorkspaceSession = z.infer<typeof workspaceSession>
 export type TerminalSummary = z.infer<typeof terminalSummary>
+export type TerminalChange = z.infer<typeof terminalChange>
 export type TerminalEvent = z.infer<typeof terminalEvent>
 export type TerminalAttached = z.infer<typeof terminalAttached>

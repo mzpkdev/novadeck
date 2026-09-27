@@ -1,7 +1,7 @@
-import { memo } from "react"
+import { memo, useSyncExternalStore } from "react"
 import { HashRouter } from "react-router"
 
-import type { CreateBackend } from "../backend/port"
+import type { Backend, BackendConnectionState, CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
 import { cancelTerminalTransition } from "../layouts/transition"
 import { useDesktop } from "../shell/desktop"
@@ -10,6 +10,7 @@ import { SidebarRail } from "../shell/SidebarRail"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { ZenDock } from "../shell/ZenDock"
 import { selectBackend } from "./backend"
+import { BackendGate } from "./BackendGate"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
@@ -25,16 +26,35 @@ export type AppProps = {
   readonly createBackend?: CreateBackend
 }
 
-export const App = ({ createBackend = selectBackend }: AppProps): React.JSX.Element => (
-  <HashRouter useTransitions={false}>
-    <WorkspaceProvider createBackend={createBackend}>
-      <WorkspaceApp />
-    </WorkspaceProvider>
-  </HashRouter>
+export const App = ({ createBackend }: AppProps): React.JSX.Element => (
+  <BackendGate
+    selection={createBackend ? { createBackend } : selectBackend}
+    render={(create) => (
+      <HashRouter useTransitions={false}>
+        <WorkspaceProvider createBackend={create}>
+          <WorkspaceApp />
+        </WorkspaceProvider>
+      </HashRouter>
+    )}
+  />
 )
 
-// The terminal counts under the workspace.
+const connectionLabels: Record<BackendConnectionState, string | null> = {
+  connected: null,
+  reconnecting: "Reconnecting…",
+  unavailable: "Runner unavailable",
+}
+const always = (): (() => void) => () => {}
+const useConnection = ({ connection }: Backend): BackendConnectionState =>
+  useSyncExternalStore(
+    connection?.subscribe ?? always,
+    () => connection?.getSnapshot() ?? "connected",
+  )
+
+// The terminal counts under the workspace, and how the backend link is doing.
 const WorkspaceFooter = memo((): React.JSX.Element => {
+  const { backend } = useWorkspaceServices()
+  const connection = connectionLabels[useConnection(backend)]
   const zen = useUiState((state) => Boolean(state.shell.zen))
   const { count, running } = useWorkspaceState((workspace) => {
     const { terminals } = currentState(workspace).roster
@@ -56,6 +76,7 @@ const WorkspaceFooter = memo((): React.JSX.Element => {
           {running} running
         </span>
       </span>
+      <span role="status">{connection}</span>
     </footer>
   )
 })

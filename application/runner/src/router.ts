@@ -1,3 +1,5 @@
+import { homedir } from "node:os"
+
 import { contract, errors as contractErrors, protocolVersion } from "@novadeck/protocol"
 import { implement, ORPCError } from "@orpc/server"
 
@@ -75,13 +77,16 @@ export const createRouter = (options: {
     },
     projects: {
       list: authorized.projects.list.handler(() => store.projects()),
-      create: authorized.projects.create.handler(({ input }) => store.createProject(input)),
+      create: authorized.projects.create.handler(({ input }) =>
+        store.createProject({ ...input, cwd: input.cwd ?? homedir() }),
+      ),
       rename: authorized.projects.rename.handler(({ input }) => store.renameProject(input)),
     },
     sessions: {
       list: authorized.sessions.list.handler(({ input }) => store.sessions(input.projectId)),
       create: authorized.sessions.create.handler(({ input }) => store.createSession(input)),
       rename: authorized.sessions.rename.handler(({ input }) => store.renameSession(input)),
+      save: authorized.sessions.save.handler(({ input }) => store.saveSession(input)),
     },
     terminals: {
       list: authorized.terminals.list.handler(({ input }) => {
@@ -92,6 +97,15 @@ export const createRouter = (options: {
         const session = store.session(input.sessionId)
         const project = store.project(session.projectId)
         return terminals.create({ ...input, cwd: input.cwd ?? project.cwd }, context.connection.id)
+      }),
+      watch: authorized.terminals.watch.handler(async function* ({ context, signal }) {
+        // A connection that closed before this stream began has already been released.
+        if (context.connection.closed) return
+        try {
+          yield* terminals.watch(context.connection.id, signal)
+        } catch (error) {
+          throw apiError(error)
+        }
       }),
       attach: authorized.terminals.attach.handler(async function* ({ input, context, signal }) {
         try {

@@ -30,11 +30,13 @@ const permissions = async (model: Model, real: Real): Promise<void> => {
       expect(() =>
         real.manager.resize({ terminalId: real.id, cols: 80, rows: 24 }, owner(client)),
       ).toThrow(expect.objectContaining({ code: "CONTROL_REQUIRED" }))
+      // Closing needs control only while another client holds it.
+      if (model.controller === undefined) continue
       // eslint-disable-next-line no-await-in-loop -- Each client's denied capability is checked independently.
       await expect(
         real.manager.close({ terminalId: real.id }, owner(client)),
       ).rejects.toMatchObject({
-        code: "CONTROL_REQUIRED",
+        code: "CONTROL_IN_USE",
       })
     }
   }
@@ -124,7 +126,7 @@ describe("generated terminal ownership sequences", () => {
     const manager = new Terminals(ptyOptions)
     resources.defer(() => manager.shutdown())
     const terminal = await manager.create(
-      { sessionId: "model", cwd: process.cwd(), cols: 80, rows: 24 },
+      { id: crypto.randomUUID(), sessionId: "model", cwd: process.cwd(), cols: 80, rows: 24 },
       "creator",
     )
     manager.release("creator")

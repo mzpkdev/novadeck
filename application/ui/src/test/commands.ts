@@ -22,6 +22,8 @@ export type CommandsOptions = {
   readonly preferences?: PreferencesValue
   readonly desktop?: boolean
   readonly canvas?: CanvasHandle
+  // The backend's folder picker, when it offers one.
+  readonly pickDirectory?: () => Promise<string | null>
 }
 
 // Real stores, navigator, commands and store subscriptions over a fixture workspace, with effects that
@@ -33,6 +35,7 @@ export const openCommands = ({
   preferences = { fontSize: 13, enabledViews: ["focus", "grid", "canvas"] },
   desktop = true,
   canvas,
+  pickDirectory,
 }: CommandsOptions = {}) => {
   const [pathname = "", query = ""] = url.split("?")
   const resolved = resolveRoute(workspace, { pathname, search: `?${query}` }, preferences, 0)
@@ -98,6 +101,7 @@ export const openCommands = ({
     }),
     canvas: { current: canvas ?? null },
     effects: record,
+    pickDirectory,
   }
   const commands = createWorkspaceCommands(context)
   // The subscriptions the provider attaches; nothing persists to storage here.

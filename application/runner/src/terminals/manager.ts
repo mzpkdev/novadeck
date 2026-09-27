@@ -1,9 +1,13 @@
-import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
-import { delimiter, isAbsolute, resolve as resolvePath } from "node:path"
+import { basename, delimiter, isAbsolute, resolve as resolvePath } from "node:path"
 
-import type { TerminalAttached, TerminalEvent, TerminalSummary } from "@novadeck/protocol"
+import type {
+  TerminalAttached,
+  TerminalChange,
+  TerminalEvent,
+  TerminalSummary,
+} from "@novadeck/protocol"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import type { SerializeAddon as Serializer } from "@xterm/addon-serialize"
 import headless from "@xterm/headless"
@@ -13,6 +17,7 @@ import * as pty from "node-pty"
 import { DomainError } from "../errors.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
+import { Watcher } from "./watcher.js"
 
 const { Terminal } = headless
 const OUTPUT_CHARS = 4096
@@ -26,9 +31,11 @@ export type TerminalOptions = {
   subscriberBytes?: number
   snapshotBytes?: number
   ackWindowBytes?: number
+  /** How often running terminals' foreground processes are sampled, in milliseconds. */
+  processPollMs?: number
 }
 
-type Create = { sessionId: string; cwd: string; cols: number; rows: number }
+type Create = { id: string; sessionId: string; cwd: string; cols: number; rows: number }
 type Attach = { terminalId: string; afterSequence?: number; mode?: "control" | "observe" }
 type Retained = { event: TerminalEvent; bytes: number }
 type Record = {
@@ -51,6 +58,19 @@ type Record = {
   closing: Promise<void> | undefined
 }
 
+/**
+ * The name of the terminal's foreground process. Windows reports no such process, and
+ * node-pty's answer there is the terminal type, so it counts as unknown.
+ */
+const foreground = (child: pty.IPty): string | null => {
+  if (process.platform === "win32") return null
+  try {
+    return basename(child.process).slice(0, 256) || null
+  } catch {
+    return null
+  }
+}
+
 const positive = (value: number | undefined, fallback: number): number => {
   const result = value ?? fallback
   if (!Number.isSafeInteger(result) || result < 1)
@@ -61,7 +81,12 @@ const positive = (value: number | undefined, fallback: number): number => {
 /** Owns PTYs for one runner lifetime. Old exited, unattached records are evicted at capacity. */
 export class Terminals {
   private readonly records = new Map<string, Record>()
+  /** Closed records already gone from `records` whose viewers still read their last events. */
+  private readonly draining = new Map<string, Record>()
   private readonly pendingOwners = new Map<string, Set<{ released: boolean }>>()
+  /** Each `watch` stream and the owner whose release ends it. */
+  private readonly watchers = new Map<Watcher, string>()
+  private sampler: ReturnType<typeof setInterval> | undefined
   private readonly options: Required<Omit<TerminalOptions, "env">> & {
     env: NodeJS.ProcessEnv
   }
@@ -83,6 +108,7 @@ export class Terminals {
       subscriberBytes: positive(options.subscriberBytes, 4 * 1024 * 1024),
       snapshotBytes: positive(options.snapshotBytes, 32 * 1024 * 1024),
       ackWindowBytes: positive(options.ackWindowBytes, 256 * 1024),
+      processPollMs: positive(options.processPollMs, 1000),
     }
     // Child programs do not need the runner's network capability.
     delete this.options.env.NOVADECK_TOKEN
@@ -90,6 +116,8 @@ export class Terminals {
 
   async create(input: Create, ownerId: string): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    // Checked before eviction, so a retained exited record keeps its id taken.
+    this.available(input.id)
     this.evict()
     if (this.records.size + this.creating >= this.options.maxTerminals)
       throw new DomainError("RESOURCE_LIMIT", "Terminal limit reached.")
@@ -99,6 +127,8 @@ export class Terminals {
       const cwd = await this.directory(input.cwd)
       const shell = await this.executable(cwd)
       if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+      // A concurrent creation may have taken the id meanwhile.
+      this.available(input.id)
       const screen = new Terminal({
         cols: input.cols,
         rows: input.rows,
@@ -128,13 +158,15 @@ export class Terminals {
       })
       const record: Record = {
         summary: {
-          id: randomUUID(),
+          id: input.id,
           sessionId: input.sessionId,
           cwd,
           cols: input.cols,
           rows: input.rows,
           status: "running",
           exitCode: null,
+          // The shell until the first sample: before its exec, the child is still this process.
+          process: process.platform === "win32" ? null : basename(shell).slice(0, 256) || null,
         },
         process: child,
         screen,
@@ -168,6 +200,8 @@ export class Terminals {
           if (!record.exitQueued) child.write(data)
         }),
       )
+      this.announce(record)
+      this.sampleProcesses()
       return { ...record.summary }
     } finally {
       this.creating -= 1
@@ -199,14 +233,22 @@ export class Terminals {
     void this.enqueue(record, () => {
       record.screen.resize(input.cols, input.rows)
       record.summary = { ...record.summary, cols: input.cols, rows: input.rows }
+      this.announce(record)
       this.emit(record, { type: "resized", cols: input.cols, rows: input.rows })
     })
   }
 
+  /**
+   * Ends the shell and, once it has exited, forgets the terminal. The caller needs
+   * control, unless no connection holds it.
+   */
   async close(input: { terminalId: string }, ownerId: string): Promise<void> {
-    const record = this.control(input.terminalId, ownerId)
-    if (record.summary.status === "exited") return
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    const record = this.record(input.terminalId)
+    if (record.controller !== undefined && record.controller !== ownerId)
+      throw new DomainError("CONTROL_IN_USE")
     await this.terminate(record)
+    this.remove(record)
   }
 
   /** Streams an `attached` marker once established, then snapshot or replay and live events. */
@@ -242,6 +284,9 @@ export class Terminals {
       await this.enqueue(record, () => {
         if (signal?.aborted || pending.released) return
         if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+        // Closed while this attachment waited its turn.
+        if (this.records.get(input.terminalId) !== record)
+          throw new DomainError("TERMINAL_NOT_FOUND")
         if (record.subscribers.has(ownerId)) throw new DomainError("ALREADY_ATTACHED")
         const mode = input.mode ?? "control"
         if (mode === "control" && record.controller !== undefined && record.controller !== ownerId)
@@ -295,11 +340,38 @@ export class Terminals {
       subscription?.cancel()
       detach()
       this.complete(ownerId, pending)
+      this.settle(record)
+    }
+  }
+
+  /**
+   * Streams a `changed` for every terminal, `synced`, then later changes, until the
+   * signal aborts, the owner is released, or the runner shuts down.
+   */
+  async *watch(ownerId: string, signal?: AbortSignal): AsyncGenerator<TerminalChange> {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    const watcher = new Watcher(this.list())
+    this.watchers.set(watcher, ownerId)
+    const abort = () => watcher.finish()
+    signal?.addEventListener("abort", abort, { once: true })
+    if (signal?.aborted) watcher.finish()
+    try {
+      while (true) {
+        // eslint-disable-next-line no-await-in-loop -- Changes are delivered in order.
+        const change = await watcher.next()
+        if (change === undefined) return
+        yield change
+      }
+    } finally {
+      signal?.removeEventListener("abort", abort)
+      watcher.finish()
+      this.watchers.delete(watcher)
     }
   }
 
   ack(input: { terminalId: string; sequence: number }, ownerId: string): void {
-    const record = this.record(input.terminalId)
+    // A closed terminal's viewers still acknowledge the events they drain.
+    const record = this.draining.get(input.terminalId) ?? this.record(input.terminalId)
     if (!Number.isSafeInteger(input.sequence) || input.sequence < 0)
       throw new DomainError("INVALID_CURSOR")
     // A final ACK can arrive after natural stream completion or cancellation.
@@ -308,29 +380,35 @@ export class Terminals {
 
   release(ownerId: string): void {
     for (const pending of this.pendingOwners.get(ownerId) ?? []) pending.released = true
-    for (const record of this.records.values()) {
+    for (const record of [...this.records.values(), ...this.draining.values()]) {
       record.subscribers.get(ownerId)?.cancel()
       record.subscribers.delete(ownerId)
       if (record.controller === ownerId) record.controller = undefined
+      this.settle(record)
     }
+    for (const [watcher, owner] of this.watchers) if (owner === ownerId) watcher.finish()
   }
 
   shutdown(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise
     this.stopping = true
+    clearInterval(this.sampler)
+    this.sampler = undefined
+    for (const watcher of this.watchers.keys()) watcher.finish()
     this.shutdownPromise = this.stop()
     return this.shutdownPromise
   }
 
   private async stop(): Promise<void> {
     await Promise.all([...this.records.values()].map((record) => this.terminate(record)))
-    for (const record of this.records.values()) {
+    for (const record of [...this.records.values(), ...this.draining.values()]) {
       for (const subscription of record.subscribers.values()) subscription.cancel()
       record.subscribers.clear()
       record.controller = undefined
       this.dispose(record)
     }
     this.records.clear()
+    this.draining.clear()
     this.pendingOwners.clear()
   }
 
@@ -338,6 +416,41 @@ export class Terminals {
     const record = this.records.get(id)
     if (!record) throw new DomainError("TERMINAL_NOT_FOUND")
     return record
+  }
+
+  private available(id: string): void {
+    // A closed terminal's id stays taken while its record drains to attached viewers.
+    if (this.records.has(id) || this.draining.has(id)) {
+      throw new DomainError("CONFLICT", "Terminal id is already taken.")
+    }
+  }
+
+  /** Reports the record's current summary to every watcher. */
+  private announce(record: Record): void {
+    for (const watcher of this.watchers.keys()) watcher.changed({ ...record.summary })
+  }
+
+  /** Starts sampling foreground processes, which continues while some terminal runs. */
+  private sampleProcesses(): void {
+    if (this.sampler || this.stopping || process.platform === "win32") return
+    this.sampler = setInterval(() => this.sample(), this.options.processPollMs)
+    this.sampler.unref()
+  }
+
+  /** Each sample costs one system call and a small read per running terminal. */
+  private sample(): void {
+    let running = false
+    for (const record of this.records.values()) {
+      if (record.summary.status !== "running" || record.exitQueued) continue
+      running = true
+      const name = foreground(record.process)
+      if (name === record.summary.process) continue
+      record.summary = { ...record.summary, process: name }
+      this.announce(record)
+    }
+    if (running) return
+    clearInterval(this.sampler)
+    this.sampler = undefined
   }
 
   private pending(ownerId: string): { released: boolean } {
@@ -462,7 +575,8 @@ export class Terminals {
     if (record.exitQueued) return
     record.exitQueued = true
     void this.enqueue(record, () => {
-      record.summary = { ...record.summary, status: "exited", exitCode }
+      record.summary = { ...record.summary, status: "exited", exitCode, process: null }
+      this.announce(record)
       this.emit(record, { type: "exited", exitCode })
       for (const subscription of record.subscribers.values()) subscription.finish()
       record.resolveExit()
@@ -509,7 +623,26 @@ export class Terminals {
         continue
       this.dispose(record)
       this.records.delete(id)
+      for (const watcher of this.watchers.keys()) watcher.removed(record.summary)
     }
+  }
+
+  /** Forgets an exited terminal; its screen lasts until its viewers finish reading. */
+  private remove(record: Record): void {
+    const id = record.summary.id
+    if (this.records.get(id) !== record) return
+    this.records.delete(id)
+    for (const watcher of this.watchers.keys()) watcher.removed(record.summary)
+    this.draining.set(id, record)
+    this.settle(record)
+  }
+
+  private settle(record: Record): void {
+    const id = record.summary.id
+    if (this.draining.get(id) !== record) return
+    if (record.subscribers.size > 0 || record.pendingAttachments > 0) return
+    this.draining.delete(id)
+    this.dispose(record)
   }
 
   private dispose(record: Record): void {
