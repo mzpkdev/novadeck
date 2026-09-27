@@ -85,7 +85,7 @@ describe("runner terminal surface", () => {
       const page = show(runtime)
       expect(input(page).getAttribute("aria-disabled")).toBe("true")
       expect(page.container.querySelector("[role=status]")?.textContent).toBe(
-        "Starting · input paused",
+        "Starting shell…Typing opens in a moment",
       )
     })
   })
@@ -96,7 +96,7 @@ describe("runner terminal surface", () => {
       const page = show(runtime)
       act(() => void connection.update(() => "reconnecting"))
       expect(page.container.querySelector("[role=status]")?.textContent).toBe(
-        "Reconnecting · input paused",
+        "Reconnecting…Typing resumes when the runner is back",
       )
     })
   })

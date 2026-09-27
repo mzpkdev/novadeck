@@ -43,13 +43,44 @@ const monospace = (element: Element): string =>
 
 const darkScheme = "(prefers-color-scheme: dark)"
 const restartHint = "\r\n\u001b[2mPress Enter to restart\u001b[0m"
-const lockedLabels = {
-  connected: "Starting · input paused",
-  reconnecting: "Reconnecting · input paused",
-  unavailable: "Runner unavailable · input paused",
+// Why typing is paused. The dot takes the footer's status tone: the brand's cyan for a
+// shell still starting, honey for a restarting runner, rose for a runner that is down.
+const lockNotices = {
+  connected: {
+    title: "Starting shell…",
+    note: "Typing opens in a moment",
+    dot: "bg-accent",
+  },
+  reconnecting: {
+    title: "Reconnecting…",
+    note: "Typing resumes when the runner is back",
+    dot: "bg-warning-fg",
+  },
+  unavailable: {
+    title: "Runner offline",
+    note: "Typing is paused",
+    dot: "bg-danger-fg",
+  },
 } as const
 // A lock this short, such as while a screen arrives, stays out of sight: the dimming
 // and the label fade in only after a moment.
+
+const LockNotice = ({
+  notice,
+}: {
+  readonly notice: (typeof lockNotices)[keyof typeof lockNotices]
+}): React.JSX.Element => (
+  <span className="flex items-center gap-2.5 rounded-control border border-line bg-paper px-3.5 py-2.5 text-ink shadow-floating">
+    <span
+      aria-hidden
+      className={`size-1.5 shrink-0 rounded-full motion-safe:animate-pulse ${notice.dot}`}
+    />
+    <span className="flex flex-col gap-0.5">
+      <span className="text-[12px] font-semibold leading-4">{notice.title}</span>
+      <span className="text-[11px] leading-4 text-muted">{notice.note}</span>
+    </span>
+  </span>
+)
 
 // One component per backend, so its identity stays stable while the backend lives.
 export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
@@ -237,16 +268,18 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
       >
         <div
           ref={host}
-          className={`min-h-0 flex-1 transition-opacity duration-(--motion-state) ease-interface ${locked ? "opacity-40 delay-200" : ""}`}
+          className={`min-h-0 flex-1 transition-[filter] duration-(--motion-state) ease-interface ${locked ? "grayscale delay-200" : ""}`}
         />
         {locked && (
           <div
             role="status"
-            className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center transition-opacity delay-200 duration-(--motion-state) ease-interface starting:opacity-0"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/80 transition-opacity delay-200 duration-(--motion-state) ease-interface starting:opacity-0"
           >
-            <span className="rounded-control border border-line bg-paper px-3 py-1.5 text-[11px] text-muted shadow-control">
-              {lockedLabels[connection === "connected" && resuming ? "reconnecting" : connection]}
-            </span>
+            <LockNotice
+              notice={
+                lockNotices[connection === "connected" && resuming ? "reconnecting" : connection]
+              }
+            />
           </div>
         )}
       </div>
