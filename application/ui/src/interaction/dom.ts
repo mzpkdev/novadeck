@@ -32,6 +32,33 @@ export const insideSwitcherClose = (target: EventTarget | null): boolean =>
 // Terminal surfaces mark the element that receives typed input.
 export const insideTerminalInput = (target: EventTarget | null): boolean =>
   within(target, "[data-terminal-input]")
+// Where a key was pressed, as far as keyboard routing cares.
+export type KeyTarget = {
+  // Text fields, editors, and open menus or dialogs keep their own keys.
+  readonly editing: boolean
+  readonly terminalInput: boolean
+  readonly rename: boolean
+  readonly viewSwitch: boolean
+  // The sidebar resizer and radio groups use arrows themselves.
+  readonly navigationControl: boolean
+  readonly canvasNode: boolean
+  readonly terminalTab: boolean
+  readonly switcherClose: boolean
+  readonly zenDock: boolean
+}
+
+export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
+  editing: !workspaceShortcutTarget(target),
+  terminalInput: insideTerminalInput(target),
+  rename: insideTerminalRename(target),
+  viewSwitch: insideViewSwitch(target),
+  navigationControl: insideNavigationControl(target),
+  canvasNode: insideCanvasNode(target),
+  terminalTab: insideTerminalTab(target),
+  switcherClose: insideSwitcherClose(target),
+  zenDock: insideOpenZenDock(target),
+})
+
 export const terminalTabInteractionActive = (): boolean =>
   Boolean(document.querySelector(".terminal-tab.editing, .terminal-tab.dragging"))
 

@@ -8,7 +8,13 @@ export type Shortcut = {
   display: string[]
 }
 
-export const shortcutBindings = (): Record<
+export type Platform = "mac" | "other"
+
+// Apple platforms use ⌘ where others use Ctrl+Shift.
+export const currentPlatform = (): Platform =>
+  /Mac|iPhone|iPad/.test(navigator.platform) ? "mac" : "other"
+
+export type ShortcutName =
   | "find"
   | "recent"
   | "previous"
@@ -17,10 +23,13 @@ export const shortcutBindings = (): Record<
   | "newSession"
   | "terminals"
   | "sessions"
-  | "preferences",
-  Shortcut
-> => {
-  const mac = /Mac|iPhone|iPad/.test(navigator.platform)
+  | "preferences"
+
+// Modifier shortcuts, which also work from terminal input.
+export const shortcutBindings = (
+  platform: Platform = currentPlatform(),
+): Record<ShortcutName, Shortcut> => {
+  const mac = platform === "mac"
   return {
     find: {
       label: "Find a terminal",
@@ -99,10 +108,16 @@ export const shortcutBindings = (): Record<
   }
 }
 
-export const workspaceShortcutBindings = (): Record<
-  "find" | "focus" | "newTerminal" | "zen" | "terminals" | "rename",
-  Shortcut
-> => ({
+export type WorkspaceShortcutName =
+  | "find"
+  | "focus"
+  | "newTerminal"
+  | "zen"
+  | "terminals"
+  | "rename"
+
+// Single keys, which work only while navigating the workspace itself.
+export const workspaceShortcutBindings = (): Record<WorkspaceShortcutName, Shortcut> => ({
   find: {
     label: "Find a terminal",
     key: "/",
@@ -155,7 +170,13 @@ export const workspaceShortcutBindings = (): Record<
 
 export { workspaceShortcutTarget, workspaceOverlayOpen } from "./dom"
 
-export const matchesShortcut = (event: KeyboardEvent, shortcut: Shortcut): boolean =>
+export type ShortcutInput = Pick<
+  KeyboardEvent,
+  "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"
+>
+
+// Exact modifiers; Alt never matches.
+export const matchesShortcut = (event: ShortcutInput, shortcut: Shortcut): boolean =>
   (event.key.toLowerCase() === shortcut.key.toLowerCase() ||
     (shortcut.code !== undefined && event.code === shortcut.code)) &&
   event.ctrlKey === shortcut.ctrl &&

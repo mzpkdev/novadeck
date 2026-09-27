@@ -187,9 +187,10 @@ const updateTarget = (
 const apply = <Value>(value: Value, update: ValueUpdate<Value>): Value =>
   typeof update === "function" ? (update as (previous: Value) => Value)(value) : update
 
-const allViews: ViewMode[] = ["focus", "grid", "canvas"]
+// Every view, in the order the header and arrow keys step through them.
+export const viewModes: readonly ViewMode[] = ["focus", "grid", "canvas"]
 
-const enabled = (views?: ViewMode[]): ViewMode[] => (views?.length ? views : allViews)
+const enabled = (views?: ViewMode[]): readonly ViewMode[] => (views?.length ? views : viewModes)
 
 const restoreView = (state: WorkspaceState, enabledViews?: ViewMode[]): WorkspaceState => {
   const views = enabled(enabledViews)

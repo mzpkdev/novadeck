@@ -1,12 +1,13 @@
 import { LayoutGrid, Moon, PanelLeft, SquareDashedMousePointer, Sun, X } from "lucide-react"
 import { useRef, useState } from "react"
 
-import { shortcutBindings, workspaceShortcutBindings } from "../interaction/shortcuts"
+import { shortcutGroups } from "../interaction/keymap"
+import { currentPlatform } from "../interaction/shortcuts"
+import { viewModes } from "../model/state"
 import type { PreferencesValue } from "../model/types"
 import { Dialog } from "../ui-toolkit/Dialog"
 import { Select } from "../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
-import { viewModes } from "./preferences-storage"
 
 import motion from "../ui-toolkit/ModalMotion.module.css"
 
@@ -39,27 +40,6 @@ export const Preferences = ({
     setOpenSelect(null)
     if (panels.current) panels.current.scrollTop = 0
   }
-  const shortcutGroups = [
-    {
-      title: "Workspace",
-      description:
-        "When navigating the workspace, outside text inputs, editors, and dialogs. Works with Zen on or off.",
-      items: [
-        ...Object.values(workspaceShortcutBindings()),
-        { label: "Previous / next terminal", display: ["↑", "↓"] },
-        { label: "Previous / next view", display: ["←", "→"] },
-        { label: "Deselect, then hide sidebar", display: ["Esc"] },
-        { label: "Zoom in / out · Canvas background", display: ["+", "−"] },
-        { label: "Fit all · Canvas background", display: ["0"] },
-      ],
-    },
-    {
-      title: "Anywhere",
-      description:
-        "Modifier shortcuts also work from terminal input. Editors and dialogs keep their own controls.",
-      items: Object.values(shortcutBindings()),
-    },
-  ]
   return (
     <Dialog
       open={open}
@@ -204,7 +184,7 @@ export const Preferences = ({
             value="shortcuts"
             className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
-            {shortcutGroups.map(({ title, description, items }) => (
+            {shortcutGroups(currentPlatform()).map(({ title, description, items }) => (
               <section key={title} className="mt-5" aria-label={`${title} shortcuts`}>
                 <h3 className="m-0 text-xs font-medium">{title}</h3>
                 <p className="mt-1 mb-2 text-[10px] leading-relaxed text-muted">{description}</p>

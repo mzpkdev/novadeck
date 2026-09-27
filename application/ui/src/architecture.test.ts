@@ -60,13 +60,14 @@ const adapterRule = (layer: string): readonly string[] => [
 const adapterSelection = "app/backend.ts"
 const adapterSelectionExports = ["selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
-// adapter or test code. model/ and app/commands/ use none; core backend/ uses React
-// types only.
+// adapter or test code. model/, interaction/ and app/commands/ use none; core
+// backend/ uses React types only.
 const everywherePackages = new Set(["react", "lucide-react"])
 const typeOnlyPackages: Record<string, readonly string[]> = {
   "model/": [],
   "backend/": ["react"],
   "app/commands/": [],
+  "interaction/": [],
 }
 const testLayers = new Set(["specs/", "test/", "test.ts"])
 const vendors: Record<string, readonly string[]> = {

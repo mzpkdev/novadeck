@@ -78,7 +78,12 @@ describe("workspace commands", () => {
         sessionId: second!.id,
         panel: "sessions",
       })
-      expect(app.shell()).toMatchObject({ freshSession: second!.id, sidebarCollapsed: false })
+      // The phone drawer opens on the session just created.
+      expect(app.shell()).toMatchObject({
+        freshSession: null,
+        sidebar: true,
+        sidebarCollapsed: false,
+      })
     })
   })
 

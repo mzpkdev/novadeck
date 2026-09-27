@@ -1,5 +1,5 @@
 import { transitionWorkspace } from "../layouts/transition"
-import { viewModes } from "../preferences/preferences-storage"
+import { viewModes } from "../model/state"
 import { WorkspaceHeader } from "../shell/WorkspaceHeader"
 import { useWorkspace } from "./controller/context"
 import { routeUrl } from "./routing"

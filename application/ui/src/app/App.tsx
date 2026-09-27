@@ -8,8 +8,8 @@ import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { ZenDock } from "../shell/ZenDock"
 import { selectBackend } from "./backend"
 import { useWorkspaceServices, WorkspaceContext } from "./controller/context"
+import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceController } from "./controller/useWorkspaceController"
-import { useWorkspaceKeyboard } from "./controller/useWorkspaceKeyboard"
 import { HeaderSection } from "./HeaderSection"
 import { SidebarSection } from "./SidebarSection"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
@@ -39,7 +39,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
     shell
   const { changeView, add } = commands
   const { canvas } = useWorkspaceServices()
-  useWorkspaceKeyboard(controller, canvas)
+  useKeyboard()
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <SidebarRail
       mobile={mobile}

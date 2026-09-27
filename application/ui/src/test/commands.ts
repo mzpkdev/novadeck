@@ -1,8 +1,14 @@
-import type { CommandEffects } from "../app/commands/context"
+import type { CommandContext, CommandEffects } from "../app/commands/context"
 import { createNavigator, type RouterNavigate } from "../app/commands/navigator"
 import { createWorkspaceCommands } from "../app/commands/workspace"
 import { resolveRoute } from "../app/routing"
-import { createUiStore, initialUi } from "../app/ui-store"
+import {
+  createUiStore,
+  initialUi,
+  trackRecent,
+  watchPresentation,
+  watchSwitcher,
+} from "../app/ui-store"
 import type { CanvasHandle } from "../layouts/canvas/types"
 import { activeSession } from "../model/state"
 import { createWorkspaceStore } from "../model/store"
@@ -18,7 +24,7 @@ export type CommandsOptions = {
   readonly canvas?: CanvasHandle
 }
 
-// Real stores, navigator and commands over a fixture workspace, with effects that
+// Real stores, navigator, commands and store subscriptions over a fixture workspace, with effects that
 // record what they would do to the page. Frames and microtasks wait for `flush`;
 // `after` uses the timer functions, so fake timers control it.
 export const openCommands = ({
@@ -73,7 +79,7 @@ export const openCommands = ({
   })
   const urls: (string | number)[] = []
   bind(((to: string | number) => urls.push(to)) as RouterNavigate)
-  const commands = createWorkspaceCommands({
+  const context: CommandContext = {
     workspace: store,
     ui,
     navigation,
@@ -88,8 +94,12 @@ export const openCommands = ({
     }),
     canvas: { current: canvas ?? null },
     effects: record,
-  })
+  }
+  const commands = createWorkspaceCommands(context)
+  // The subscriptions the provider attaches; nothing persists to storage here.
+  for (const watch of [trackRecent, watchPresentation, watchSwitcher]) watch(store, ui)
   return {
+    context,
     workspace: store,
     ui,
     commands,
