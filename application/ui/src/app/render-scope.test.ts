@@ -1,4 +1,11 @@
-import { act, createElement, useEffect, type ComponentProps, type ComponentType } from "react"
+import {
+  act,
+  createElement,
+  StrictMode,
+  useEffect,
+  type ComponentProps,
+  type ComponentType,
+} from "react"
 import { HashRouter } from "react-router"
 import { vi } from "vitest"
 
@@ -95,16 +102,21 @@ const open = async () => {
   const found = (next: WorkspaceServices): void => {
     services = next
   }
+  // StrictMode, as main.tsx renders it: each render counts twice.
   const page = render(
     createElement(
-      HashRouter,
+      StrictMode,
       null,
       createElement(
-        WorkspaceProvider,
-        // The children follow as arguments.
-        { createBackend: selectBackend } as ComponentProps<typeof WorkspaceProvider>,
-        createElement(Grab, { found }),
-        createElement(WorkspaceApp),
+        HashRouter,
+        null,
+        createElement(
+          WorkspaceProvider,
+          // The children follow as arguments.
+          { createBackend: selectBackend } as ComponentProps<typeof WorkspaceProvider>,
+          createElement(Grab, { found }),
+          createElement(WorkspaceApp),
+        ),
       ),
     ),
   )
@@ -177,7 +189,7 @@ describe("workspace render scope", () => {
         .find((item) => item.id === "02")!
       act(() => services.commands.startRename(terminal, "sidebar"))
       const seen = rendersDuring(() => services.commands.changeRenameDraft("02", "Server"))
-      expect(seen).toEqual({ "tab 02": 1, "frame 02": 1 })
+      expect(seen).toEqual({ "tab 02": 2, "frame 02": 2 })
       page.unmount()
     })
   })
