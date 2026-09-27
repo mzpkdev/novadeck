@@ -11,7 +11,7 @@ import {
 import { sessionName } from "../../model/session-name"
 import type { BootRehearsals } from "../boot-rehearsal"
 import type { BackendConnection, ConnectFailure } from "../port"
-import { runnerBackend } from "./backend"
+import { runnerBackend, type RunnerBackend } from "./backend"
 import { createRunnerDebug } from "./debug"
 import type { RunnerListing } from "./seed"
 
@@ -69,6 +69,10 @@ export const loadListing = async (
 }
 
 const newId = (): string => crypto.randomUUID()
+
+// How long closing waits for the last saves before disconnecting anyway.
+const closeGraceMs = 2_000
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 // What went wrong, sorted by what the person can do about it, in words for them and
 // with the code and the runner's own message for anyone reporting it.
@@ -133,14 +137,23 @@ export const connectRunnerBackend = async (
     const debug = rehearsals
       ? createRunnerDebug({ rehearsals, killRunner: kill && (() => kill()) })
       : undefined
+    let latest: RunnerBackend | undefined
     return {
-      createBackend: () =>
-        runnerBackend(runner, listing, {
+      createBackend: () => {
+        latest = runnerBackend(runner, listing, {
           newId,
           ...(pick ? { pickDirectory: () => pick() } : {}),
           debug,
-        }).backend,
-      close: () => void runner.close(),
+        })
+        return latest.backend
+      },
+      // The app closes the connection before its workspace stops, and stopping sends
+      // the last saves: let that happen, and let them land, before disconnecting.
+      close: () => {
+        setTimeout(() => {
+          void Promise.race([latest?.idle(), pause(closeGraceMs)]).finally(() => runner.close())
+        }, 0)
+      },
     }
   } catch (error) {
     void runner.close()

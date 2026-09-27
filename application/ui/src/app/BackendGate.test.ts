@@ -265,6 +265,26 @@ describe("backend gate", () => {
     })
   })
 
+  context("when a rehearsal boots again after a failure", () => {
+    it("replays the start like a launch: lockup animating, attempts from one", async () => {
+      vi.useFakeTimers()
+      const reboots = createStore(0)
+      const { selection, attempts } = pending()
+      const page = show({ ...selection, reboots } as BackendSelection)
+      await act(async () => attempts.at(-1)!.reject(failing("unauthorized", "UNAUTHORIZED")))
+      act(() => void reboots.update((count) => count + 1))
+      expect(page.container.querySelector("[data-state]")?.getAttribute("data-state")).toBe(
+        "booting",
+      )
+      await act(async () => attempts.at(-1)!.reject(failing("unauthorized", "UNAUTHORIZED")))
+      const details = [...page.container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Details",
+      )!
+      act(() => details.click())
+      expect(page.container.querySelector("[role=alert]")?.textContent).toContain("Attempts1")
+    })
+  })
+
   context("with a backend that needs no connection", () => {
     it("renders the workspace at once, without a splash", () => {
       const { container, phase } = show({ createBackend })

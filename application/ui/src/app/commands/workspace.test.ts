@@ -3,6 +3,7 @@ import { afterEach, vi } from "vitest"
 import { context, describe, expect, it } from "../../test"
 import { openCommands } from "../../test/commands"
 import { workspaceFixture } from "../../test/fixtures"
+import { keyState } from "./keys"
 
 const terminal = (app: ReturnType<typeof openCommands>, id: string) =>
   app.state().roster.terminals.find((item) => item.id === id)!
@@ -125,6 +126,15 @@ describe("workspace commands", () => {
       expect(snapshot.activeProjectId).toBe(first.activeProjectId)
     })
 
+    it("changes nothing when the picker fails", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {})
+      const app = openCommands({ pickDirectory: () => Promise.reject(new Error("no dialog")) })
+      const before = app.workspace.getSnapshot()
+      await expect(app.commands.openFolder()).resolves.toBeUndefined()
+      expect(app.workspace.getSnapshot()).toBe(before)
+      expect(error).toHaveBeenCalled()
+    })
+
     it("changes nothing when the person cancels", async () => {
       const app = openCommands({ pickDirectory: () => Promise.resolve(null) })
       const before = app.workspace.getSnapshot()
@@ -169,6 +179,19 @@ describe("workspace commands", () => {
             session.state.roster.terminals.some((item) => item.id === "01"),
           ),
       ).toBe(true)
+    })
+
+    it("drops the question when the person leaves the session", () => {
+      const app = openCommands({ workspace: running() })
+      app.commands.close("01")
+      app.commands.startFresh()
+      expect(app.ui.getSnapshot().closing).toBeNull()
+    })
+
+    it("counts as an alert that holds every shortcut back", () => {
+      const app = openCommands({ workspace: running() })
+      app.commands.close("01")
+      expect(keyState(app.context, app.commands)).toMatchObject({ dialog: true, alert: true })
     })
 
     it("closes an idle terminal without asking", () => {

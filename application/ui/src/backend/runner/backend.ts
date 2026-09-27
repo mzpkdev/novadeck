@@ -1,10 +1,11 @@
-import type { TerminalChange, TerminalExit, TerminalSummary } from "@novadeck/protocol"
+import type { TerminalExit, TerminalSummary } from "@novadeck/protocol"
 import {
   hasCode,
   RunnerError,
   type AttachedTerminal,
   type Runner,
   type RunnerStatus,
+  type TerminalWatchItem,
 } from "@novadeck/protocol/client"
 
 import { createStore } from "../../model/store"
@@ -77,6 +78,9 @@ export type RunnerEntry = {
   // The watch round in which it was confirmed; a round only speaks for terminals
   // confirmed before it began. Seeded terminals count from before the first.
   confirmedIn: number
+  // A create or restart was sent, so the runner may hold a shell even if its answer
+  // never came; closing must then still end it.
+  requested: boolean
   // Exited or failed, which later activity reports must not undo until it restarts.
   settled: boolean
   closed: boolean
@@ -266,8 +270,13 @@ export const runnerBackend = (
   let round = 0
   let latest: Workspace | undefined
 
+  // Inside a store commit the sink cannot start a transaction, so what a commit
+  // reports waits for the commit to finish.
+  let committing = false
   const dispatch = (actions: readonly BackendAction[]): void => {
-    if (actions.length) sink?.dispatch(actions)
+    if (!actions.length) return
+    if (committing) queueMicrotask(() => sink?.dispatch(actions))
+    else sink?.dispatch(actions)
   }
   const statusAction = (entry: RunnerEntry, status: TerminalStatus): BackendAction[] => {
     const next = statusKey(status)
@@ -349,8 +358,17 @@ export const runnerBackend = (
   const retryAfterCrashLoop = (): void => {
     restarts.length = 0
     noteCrashLoop()
-    for (const entry of entries.values())
-      if (onScreen(entry) && (entry.lost || entry.status.startsWith("failed"))) freshShell(entry)
+    for (const entry of entries.values()) {
+      if (!onScreen(entry)) {
+        // Off screen, a tile the crash loop stopped waits again for its session.
+        if (entry.lost && entry.status === statusKey(crashLoop)) {
+          entry.settled = false
+          dispatch(statusAction(entry, { state: "starting" }))
+        }
+        continue
+      }
+      if (entry.lost || entry.status.startsWith("failed")) freshShell(entry)
+    }
   }
 
   // Resolves once the runner is reachable again, or closed for good.
@@ -446,7 +464,7 @@ export const runnerBackend = (
   // Ends the shell, retrying while the runner is unreachable. A terminal already gone,
   // or one another window controls, is left as it is.
   const endShell = async (entry: RunnerEntry): Promise<void> => {
-    if (!(await entry.ready)) return
+    if (!(await entry.ready) && !entry.requested) return
     await persist(() => runner.terminals.close(entry.key.terminalId), {
       done: ["TERMINAL_NOT_FOUND", "TERMINAL_EXITED", "NOT_FOUND"],
     }).catch(() => {})
@@ -462,15 +480,24 @@ export const runnerBackend = (
         const { cwd, fail } = options.debug?.takeCreate() ?? {}
         if (fail) throw new RunnerError(fail, "Simulated by the debug panel.")
         const summary = await persist(
-          () =>
-            runner.terminals.create({
+          () => {
+            entry.requested = true
+            return runner.terminals.create({
               id: terminalId,
               sessionId: workspaceSessionId,
               ...(cwd ? { cwd } : {}),
               cols: 80,
               rows: 24,
-            }),
-          { done: ["CONFLICT"], cancelled: () => entry.closed },
+            })
+          },
+          {
+            done: ["CONFLICT"],
+            // A runner that keeps dying is a crash loop; stop creating into it.
+            stillWanted: () => {
+              if (restartingOften()) throw new CrashLoop()
+            },
+            cancelled: () => entry.closed,
+          },
         )
         entry.run = summary?.run
         entry.confirmed = true
@@ -478,7 +505,8 @@ export const runnerBackend = (
         return true
       }),
     ).catch((error: unknown) => {
-      if (!(error instanceof Cancelled)) settle(entry, lostStatus(error) ?? failedToCreate)
+      if (error instanceof Cancelled) return false
+      settle(entry, error instanceof CrashLoop ? crashLoop : (lostStatus(error) ?? failedToCreate))
       return false
     })
   }
@@ -498,11 +526,15 @@ export const runnerBackend = (
       // A new record counts runs afresh.
       entry.floor = 0
       entry.run = undefined
-      return persist(
-        () =>
-          runner.terminals.create({ id: terminalId, sessionId: workspaceSessionId, cols, rows }),
-        retry,
-      )
+      return persist(() => {
+        entry.requested = true
+        return runner.terminals.create({
+          id: terminalId,
+          sessionId: workspaceSessionId,
+          cols,
+          rows,
+        })
+      }, retry)
     }
     entry.starting = true
     entry.settled = false
@@ -514,13 +546,14 @@ export const runnerBackend = (
       throttled(async () => {
         const summary = wasLost
           ? await create()
-          : await persist(() => runner.terminals.restart(terminalId, { cols, rows }), retry).catch(
-              (error: unknown) => {
-                // Never created, or evicted since it exited: start it anew.
-                if (hasCode(error, "TERMINAL_NOT_FOUND", "NOT_FOUND")) return create()
-                throw error
-              },
-            )
+          : await persist(() => {
+              entry.requested = true
+              return runner.terminals.restart(terminalId, { cols, rows })
+            }, retry).catch((error: unknown) => {
+              // Never created, or evicted since it exited: start it anew.
+              if (hasCode(error, "TERMINAL_NOT_FOUND", "NOT_FOUND")) return create()
+              throw error
+            })
         // Unknown when the create or restart had already landed; the floor still holds.
         entry.run = summary?.run
         entry.lost = false
@@ -594,6 +627,7 @@ export const runnerBackend = (
         ...revival(),
         confirmed: !isNew && !lost,
         confirmedIn: -1,
+        requested: false,
         settled: restartable(terminal),
         closed: false,
         attachment: undefined,
@@ -662,6 +696,14 @@ export const runnerBackend = (
   }
 
   const commit: Backend["commit"] = (workspace, actions) => {
+    committing = true
+    try {
+      commitWorkspace(workspace, actions)
+    } finally {
+      committing = false
+    }
+  }
+  const commitWorkspace: Backend["commit"] = (workspace, actions) => {
     const initial = !baseline
     latest = workspace
     for (const project of workspace.projects) {
@@ -790,8 +832,14 @@ export const runnerBackend = (
     let live = true
     // Terminals the runner reported since its last `synced`, which lists them all.
     const reported = new Set<string>()
-    const onChange = (change: TerminalChange): void => {
+    const onChange = (change: TerminalWatchItem): void => {
       if (!live) return
+      // A fresh sequence lists every terminal again before its `synced`: start a round.
+      if (change.type === "reset") {
+        reported.clear()
+        round += 1
+        return
+      }
       if (change.type === "removed") {
         // Evicted after exiting, or closed by another client: a restart must create it.
         const entry = entries.get(change.terminalId)
@@ -822,11 +870,6 @@ export const runnerBackend = (
       lastStatus = status
       showConnection()
       noteRunner(status)
-      // A new connection lists every terminal again before its `synced`.
-      if (status.state === "reconnecting") {
-        reported.clear()
-        round += 1
-      }
       if (status.state === "connected") schedule()
     }
     const changes = runner.terminals.watch()

@@ -220,11 +220,16 @@ const direction = (args: number | undefined): 1 | -1 => (args !== undefined && a
 export const keyState = (
   { ui }: Pick<CommandContext, "ui">,
   commands: Pick<WorkspaceCommands, "visibleSwitcher">,
-): KeyState => ({
-  dialog: ui.getSnapshot().location.route.dialog !== null,
-  switcher: commands.visibleSwitcher()?.mode ?? null,
-  held: ui.getSnapshot().recent.switcher?.mode === "held",
-})
+): KeyState => {
+  const { location, closing, crashLoopActive, crashLoopDismissed } = ui.getSnapshot()
+  const alert = closing !== null || (crashLoopActive && !crashLoopDismissed)
+  return {
+    dialog: location.route.dialog !== null || alert,
+    alert,
+    switcher: commands.visibleSwitcher()?.mode ?? null,
+    held: ui.getSnapshot().recent.switcher?.mode === "held",
+  }
+}
 
 // Runs routed bindings in order until one handles the key. An unavailable command
 // ends routing and lets the key through; a repeat of a `swallow` binding is handled

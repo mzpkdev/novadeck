@@ -1,6 +1,7 @@
 import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
+import { currentRoute, pressNewSession } from "./support/sessions"
 import {
   anyRenameField,
   closeConfirmation,
@@ -337,6 +338,18 @@ describe("closing terminals", () => {
       await expect.element(terminalTab("Checkout implementation")).toBeInTheDocument()
       await expect.poll(visibleTerminalCounts).toEqual(["6 terminals"])
       await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+    })
+
+    it("holds app shortcuts back while it asks", async () => {
+      await openWorkspace()
+      await headerAction("Checkout implementation", "Close Checkout implementation").click()
+      await expect.element(closeConfirmation()).toBeVisible()
+      const before = currentRoute()
+
+      await pressNewSession()
+
+      await expect.element(closeConfirmation()).toBeVisible()
+      expect(currentRoute()).toBe(before)
     })
 
     it("keeps it when the person presses Escape", async () => {

@@ -6,6 +6,7 @@ import {
   createUiStore,
   initialUi,
   trackRecent,
+  watchClosing,
   watchPresentation,
   watchSwitcher,
 } from "../app/ui-store"
@@ -109,7 +110,8 @@ export const openCommands = ({
   }
   const commands = createWorkspaceCommands(context)
   // The subscriptions the provider attaches; nothing persists to storage here.
-  for (const watch of [trackRecent, watchPresentation, watchSwitcher]) watch(store, ui)
+  for (const watch of [trackRecent, watchPresentation, watchSwitcher, watchClosing])
+    watch(store, ui)
   return {
     context,
     workspace: store,

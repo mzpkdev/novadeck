@@ -99,7 +99,11 @@ export const BackendGate = ({ selection, render }: GateProps): ReactNode => {
   // A backend ready at once, as in tests, needs no splash.
   const splashed = "connect" in initial
   // Each retry is a fresh attempt; on desktop it also asks the host for a new runner.
+  // `attempt` keys the attempts over the gate's life; `attempts` counts this boot's.
   const [attempt, setAttempt] = useState(1)
+  const [attempts, setAttempts] = useState(1)
+  // A failure was shown during this boot, which keeps the lockup finished.
+  const [failedThisBoot, setFailedThisBoot] = useState(false)
   const [phase, setPhase] = useState<Phase>(splashed ? "connecting" : "ready")
   const [failure, setFailure] = useState<ConnectFailure | null>(null)
   // Failures in a row since the last success or "Retry now", which pace auto-retry.
@@ -116,8 +120,10 @@ export const BackendGate = ({ selection, render }: GateProps): ReactNode => {
     setRetryAt(undefined)
     setPhase("connecting")
     setAttempt((count) => count + 1)
+    setAttempts((count) => count + 1)
   }
   const fail = (next: ConnectFailure): void => {
+    setFailedThisBoot(true)
     const count = failures + 1
     const delay = autoRetryDelay(next, count)
     setFailures(count)
@@ -136,7 +142,9 @@ export const BackendGate = ({ selection, render }: GateProps): ReactNode => {
     setBoot(null)
     setLift("up")
     setPhase("connecting")
+    setFailedThisBoot(false)
     setAttempt((count) => count + 1)
+    setAttempts(1)
   })
   useEffect(() => reboots?.subscribe(reboot), [reboots])
 
@@ -183,12 +191,12 @@ export const BackendGate = ({ selection, render }: GateProps): ReactNode => {
           line={bootLine(stage)}
           fill={bootFill(stage)}
           leaving={lift === "leaving"}
-          settled={attempt > 1}
+          settled={failedThisBoot}
           failure={
             failure && (
               <BootFailure
                 failure={failure}
-                attempts={attempt}
+                attempts={attempts}
                 retryIn={retryAt === undefined ? undefined : retryAt - now}
                 onRetry={() => retry(true)}
                 onQuit={() => {

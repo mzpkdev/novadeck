@@ -29,6 +29,8 @@ export type UiState = {
   readonly closing: { readonly context: string; readonly id: string } | null
   // The person chose "Not now" for this crash loop; it asks again only after the next one.
   readonly crashLoopDismissed: boolean
+  // The backend reports that its far side keeps crashing.
+  readonly crashLoopActive: boolean
 }
 
 export type UiLocation = {
@@ -60,6 +62,7 @@ export const initialUi = ({
   created: null,
   closing: null,
   crashLoopDismissed: false,
+  crashLoopActive: false,
 })
 
 export const updateShell = (ui: UiStore, change: (shell: ShellState) => ShellState): void =>
@@ -145,13 +148,29 @@ export const watchSwitcher = (workspace: Store<Workspace>, ui: UiStore): (() => 
   return () => stops.forEach((stop) => stop())
 }
 
-// A crash loop that ends forgets "Not now", so the next one asks again.
+// Mirrors whether the backend reports a crash loop, which the crash-loop dialog and
+// keyboard routing read; a crash loop that ends forgets "Not now", so the next one
+// asks again.
 export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore): (() => void) => {
   if (!crashes) return () => {}
-  return crashes.subscribe(() => {
-    if (crashes.getSnapshot() === 0)
-      ui.update((state) =>
-        state.crashLoopDismissed ? { ...state, crashLoopDismissed: false } : state,
-      )
-  })
+  const check = (): void => {
+    const active = crashes.getSnapshot() > 0
+    ui.update((state) => {
+      const crashLoopDismissed = active && state.crashLoopDismissed
+      return state.crashLoopActive === active && state.crashLoopDismissed === crashLoopDismissed
+        ? state
+        : { ...state, crashLoopActive: active, crashLoopDismissed }
+    })
+  }
+  check()
+  return crashes.subscribe(check)
 }
+
+// A close confirmation belongs to the session it was asked in: leaving that session
+// drops it, so it never comes back unasked.
+export const watchClosing = (workspace: Store<Workspace>, ui: UiStore): (() => void) =>
+  workspace.subscribe(() => {
+    const { closing } = ui.getSnapshot()
+    if (closing && closing.context !== currentContext(workspace.getSnapshot()))
+      ui.update((state) => ({ ...state, closing: null }))
+  })

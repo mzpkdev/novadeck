@@ -1,5 +1,5 @@
-import type { TerminalChange, TerminalSummary } from "@novadeck/protocol"
-import { RunnerError, type RunnerStatus } from "@novadeck/protocol/client"
+import type { TerminalSummary } from "@novadeck/protocol"
+import { RunnerError, type RunnerStatus, type TerminalWatchItem } from "@novadeck/protocol/client"
 import { afterAll, vi } from "vitest"
 
 import { workspaceFromSeed } from "../../model/seed"
@@ -55,7 +55,7 @@ const summary = (change: Partial<TerminalSummary>): TerminalSummary => ({
 // A runner the test drives step by step: what its watches report, and when a restart
 // answers. Timing like this cannot be arranged with a real runner.
 const scripted = (listed: TerminalSummary) => {
-  const changes = channel<TerminalChange>()
+  const changes = channel<TerminalWatchItem>()
   const statuses = channel<RunnerStatus>()
   const restarts: ((summary: TerminalSummary) => void)[] = []
   const api = {
@@ -65,7 +65,8 @@ const scripted = (listed: TerminalSummary) => {
     terminals: {
       list: unused,
       watch: () => changes.iterator,
-      create: unused,
+      // Never answers: a fresh shell stays starting.
+      create: () => new Promise(() => {}),
       close: async () => {},
       restart: () => new Promise<TerminalSummary>((resolve) => restarts.push(resolve)),
       attach: () => new Promise(() => {}),
@@ -121,6 +122,24 @@ describe("runs of a terminal", () => {
       app.restarts[0]!(summary({ run: 2 }))
       await flush()
       expect(app.statusesOf()).toEqual([{ state: "starting" }, { state: "running" }])
+      app.stop()
+    })
+  })
+
+  context("when the watch starts a fresh sequence", () => {
+    it("counts a terminal the new sequence leaves out as lost, without a reconnecting status", async () => {
+      const app = scripted(summary({ run: 1 }))
+      await flush()
+      app.changes.push({ type: "changed", terminal: summary({ run: 1 }) })
+      app.changes.push({ type: "synced" })
+      // Reported during the old sequence, after its `synced`.
+      app.changes.push({ type: "changed", terminal: summary({ run: 1, process: "vim" }) })
+      await flush()
+      // The link came back at once: no reconnecting status, only a new sequence.
+      app.changes.push({ type: "reset" })
+      app.changes.push({ type: "synced" })
+      await flush()
+      expect(app.statusesOf()).toEqual([{ state: "running" }, { state: "starting" }])
       app.stop()
     })
   })

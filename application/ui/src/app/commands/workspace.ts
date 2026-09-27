@@ -155,7 +155,11 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     },
     switchProject,
     openFolder: async () => {
-      const directory = await pickDirectory?.()
+      // A picker that fails leaves the workspace as it was; it has nothing to show.
+      const directory = await pickDirectory?.().catch((error: unknown) => {
+        console.error("Could not open the folder picker", error)
+        return null
+      })
       if (!directory) return
       // A folder already open as a project opens that project again.
       const existing = workspace
