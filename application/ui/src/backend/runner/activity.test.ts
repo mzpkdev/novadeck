@@ -78,7 +78,7 @@ describe("terminal activity", () => {
 
     it("counts a quick non-zero exit as failing to start", () => {
       expect(exited(1, null, 300)).toEqual({
-        status: { state: "failed", message: "The shell exited right after it started." },
+        status: { state: "failed", message: "Exited right after starting" },
       })
     })
 

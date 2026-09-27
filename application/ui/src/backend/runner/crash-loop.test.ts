@@ -116,7 +116,7 @@ const openCrashing = () => {
       () =>
         expect(received.at(-1)).toMatchObject({
           type: "terminal/status",
-          status: { state: "failed", message: "The runner keeps restarting." },
+          status: { state: "failed", message: "Runner keeps crashing" },
         }),
       { timeout: 5_000 },
     )
@@ -219,7 +219,7 @@ describe("a crash loop behind the workspace store", () => {
     await vi.waitFor(() =>
       expect(app.statusIn("s2")).toMatchObject({
         state: "failed",
-        message: "The runner keeps restarting.",
+        message: "Runner keeps crashing",
       }),
     )
     // Try again from the first session: the second one's terminal waits for its
@@ -250,7 +250,7 @@ describe("a crash loop behind the workspace store", () => {
             .getSnapshot()
             .projects[0]!.history.find((session) => session.id === target.workspaceSessionId)!
             .state.roster.terminals.find((item) => item.id === terminal.id),
-        ).toMatchObject({ state: "failed", message: "The runner keeps restarting." }),
+        ).toMatchObject({ state: "failed", message: "Runner keeps crashing" }),
       { timeout: 5_000 },
     )
     expect(app.creates() - before).toBeLessThanOrEqual(2)

@@ -2,6 +2,7 @@ import { act, createElement } from "react"
 import { afterEach, vi } from "vitest"
 
 import { createStore } from "../../model/store"
+import type { TerminalMetadata } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { terminalFixture } from "../../test/fixtures"
 import { render, type Rendered } from "../../test/render"
@@ -60,12 +61,15 @@ const starting = () => {
   return { runtime, connection }
 }
 
-const show = (runtime: SurfaceRuntime) => {
+const show = (
+  runtime: SurfaceRuntime,
+  terminal: TerminalMetadata = { ...terminalFixture(1, "~"), state: "starting" },
+) => {
   const Surface = createRunnerTerminal(runtime)
   const page = render(
     createElement(Surface, {
       terminalKey: key,
-      terminal: { ...terminalFixture(1, "~"), state: "starting" },
+      terminal,
       projectName: "P",
       fontSize: 13,
       focusInput: false,
@@ -84,9 +88,7 @@ describe("runner terminal surface", () => {
       const { runtime } = starting()
       const page = show(runtime)
       expect(input(page).getAttribute("aria-disabled")).toBe("true")
-      expect(page.container.querySelector("[role=status]")?.textContent).toBe(
-        "Starting shell…Typing opens in a moment",
-      )
+      expect(page.container.querySelector("[role=status]")?.textContent).toBe("Starting shell…")
     })
   })
 
@@ -95,9 +97,49 @@ describe("runner terminal surface", () => {
       const { runtime, connection } = starting()
       const page = show(runtime)
       act(() => void connection.update(() => "reconnecting"))
-      expect(page.container.querySelector("[role=status]")?.textContent).toBe(
-        "Reconnecting…Typing resumes when the runner is back",
+      expect(page.container.querySelector("[role=status]")?.textContent).toBe("Reconnecting…")
+    })
+  })
+
+  context("once its shell ended", () => {
+    const ended = (terminal: Partial<TerminalMetadata>) => {
+      const { runtime } = starting()
+      const restarts: string[] = []
+      const page = show({ ...runtime, restart: ({ terminalId }) => restarts.push(terminalId) }, {
+        ...terminalFixture(1, "~"),
+        ...terminal,
+      } as TerminalMetadata)
+      const bar = page.container.querySelector<HTMLElement>("[data-terminal-ending]")
+      return { page, bar, restarts }
+    }
+
+    it("says how under its output, in honey for an exit code", () => {
+      const { bar } = ended({ state: "exited", exitCode: 3, signal: null })
+      expect(bar?.dataset.terminalEnding).toBe("warning")
+      expect(bar?.querySelector("[title]")?.textContent).toBe("Exited · code 3")
+    })
+
+    it("names why it could not start, in rose", () => {
+      const { bar } = ended({ state: "failed", message: "Folder not found" })
+      expect(bar?.dataset.terminalEnding).toBe("danger")
+      expect(bar?.querySelector("[title]")?.getAttribute("title")).toBe(
+        "Failed to start · Folder not found",
       )
+    })
+
+    it("starts a fresh shell from its Restart button", () => {
+      const { page, bar, restarts } = ended({ state: "exited", exitCode: null, signal: "SIGKILL" })
+      act(() => bar!.querySelector("button")!.click())
+      expect(restarts).toEqual(["01"])
+      expect(input(page).getAttribute("aria-disabled")).toBe("false")
+    })
+  })
+
+  context("while its shell runs", () => {
+    it("shows no ending", () => {
+      const { runtime } = starting()
+      const page = show(runtime)
+      expect(page.container.querySelector("[data-terminal-ending]")).toBeNull()
     })
   })
 })

@@ -44,8 +44,7 @@ export const quickExitMs = 2000
 export const exitStatus = (exit: TerminalExit): TerminalStatus | "clean" => {
   if (exit.code === 0 && !exit.signal) return "clean"
   if (exit.signal) return { state: "exited", exitCode: exit.code, signal: exit.signal }
-  if (exit.ranMs < quickExitMs)
-    return { state: "failed", message: "The shell exited right after it started." }
+  if (exit.ranMs < quickExitMs) return { state: "failed", message: "Exited right after starting" }
   return { state: "exited", exitCode: exit.code, signal: null }
 }
 

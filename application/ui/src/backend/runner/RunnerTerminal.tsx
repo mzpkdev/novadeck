@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Terminal, type ITheme } from "@xterm/xterm"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
+import { endingText, terminalEnding, type TerminalEnding } from "../../model/terminal-ending"
 import type { TerminalSurfaceProps } from "../port"
 import { restartable } from "./activity"
 import type { SurfaceRuntime } from "./backend"
@@ -42,45 +43,69 @@ const monospace = (element: Element): string =>
   token(getComputedStyle(element), "--font-mono") ?? "monospace"
 
 const darkScheme = "(prefers-color-scheme: dark)"
-const restartHint = "\r\n\u001b[2mPress Enter to restart\u001b[0m"
-// Why typing is paused. The dot takes the footer's status tone: the brand's cyan for a
-// shell still starting, honey for a restarting runner, rose for a runner that is down.
+// Why typing is paused, set in capitals by CSS so assistive technology reads words.
 const lockNotices = {
-  connected: {
-    title: "Starting shell…",
-    note: "Typing opens in a moment",
-    dot: "bg-accent",
-  },
-  reconnecting: {
-    title: "Reconnecting…",
-    note: "Typing resumes when the runner is back",
-    dot: "bg-warning-fg",
-  },
-  unavailable: {
-    title: "Runner offline",
-    note: "Typing is paused",
-    dot: "bg-danger-fg",
-  },
+  connected: "Starting shell…",
+  reconnecting: "Reconnecting…",
+  unavailable: "Runner offline",
 } as const
 // A lock this short, such as while a screen arrives, stays out of sight: the dimming
 // and the label fade in only after a moment.
 
-const LockNotice = ({
-  notice,
-}: {
-  readonly notice: (typeof lockNotices)[keyof typeof lockNotices]
-}): React.JSX.Element => (
-  <span className="flex items-center gap-2.5 rounded-control border border-line bg-paper px-3.5 py-2.5 text-ink shadow-floating">
-    <span
-      aria-hidden
-      className={`size-1.5 shrink-0 rounded-full motion-safe:animate-pulse ${notice.dot}`}
-    />
-    <span className="flex flex-col gap-0.5">
-      <span className="text-[12px] font-semibold leading-4">{notice.title}</span>
-      <span className="text-[11px] leading-4 text-muted">{notice.note}</span>
-    </span>
+const LockNotice = ({ notice }: { readonly notice: string }): React.JSX.Element => (
+  <span className="rounded-control border border-line bg-paper px-3.5 py-2 text-[11px] font-bold tracking-wider text-ink uppercase shadow-floating">
+    {notice}
   </span>
 )
+
+// Whole class strings, so Tailwind finds them: the footer's tints, a top border of the
+// same hue, and a focus ring in it.
+const endingTones: Record<TerminalEnding["tone"], string> = {
+  danger: "border-danger-fg/20 bg-danger text-danger-fg [--ending-ring:var(--color-danger-fg)]",
+  warning:
+    "border-warning-fg/20 bg-warning text-warning-fg [--ending-ring:var(--color-warning-fg)]",
+}
+
+// How the shell ended, along the surface's bottom edge, with the restart Enter also
+// asks for; its right end stays clear of Canvas's resize grip. It keeps the last
+// ending on screen while it slides away.
+const EndingBar = ({
+  ending,
+  onRestart,
+}: {
+  readonly ending: TerminalEnding | null
+  readonly onRestart: () => void
+}): React.JSX.Element => {
+  const [shown, setShown] = useState(ending)
+  const text = shown ? endingText(shown) : ""
+  // Each render derives a fresh ending; only a different one replaces the shown one.
+  if (ending && (ending.tone !== shown?.tone || endingText(ending) !== text)) setShown(ending)
+  return (
+    <div
+      className={`absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+      inert={!ending}
+      data-terminal-ending={ending?.tone}
+    >
+      {shown && (
+        <>
+          <span className="min-w-0 truncate font-bold tracking-wider uppercase" title={text}>
+            {text}
+          </span>
+          <button
+            type="button"
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring)"
+            onClick={onRestart}
+          >
+            Restart
+            <span aria-hidden className="font-normal opacity-60">
+              ↵
+            </span>
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
 
 // One component per backend, so its identity stays stable while the backend lives.
 export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
@@ -99,11 +124,12 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
     const initialFont = useRef(fontSize)
     const name = terminal.name
     const initialName = useRef(name)
-    // An exited or failed terminal waits for Enter; the hint says so under its output.
-    // The stream reports an exit in order with the output, so it writes the hint when
-    // attached; the status covers a shell that never started, with no stream to tell.
+    // An exited or failed terminal waits for Enter, or its bar's Restart. The stream
+    // reports an exit in order with the output, sometimes before the status does; the
+    // status covers a shell that never started, with no stream to tell.
     const waiting = restartable(terminal)
-    const restart = useRef({ status: waiting, stream: false, shown: false, show: () => {} })
+    const ending = terminalEnding(terminal)
+    const restart = useRef({ status: waiting, stream: false, run: () => {} })
     const connection = useSyncExternalStore(
       runtime.connection.subscribe,
       runtime.connection.getSnapshot,
@@ -148,18 +174,10 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
         },
       }
       const hint = restart.current
-      // Each xterm starts blank, so a hint written to an earlier one does not count.
-      hint.shown = false
       hint.stream = false
-      hint.show = () => {
-        if (hint.shown) return
-        hint.shown = true
-        xterm.write(restartHint)
-      }
       const followed = followTerminal(runtime, terminalKey, {
         ...screen,
         reset: () => {
-          hint.shown = false
           hint.stream = false
           setStreamWaits(false)
           screen.reset()
@@ -167,23 +185,22 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
         exited: (waits) => {
           hint.stream = waits
           setStreamWaits(waits)
-          if (waits) hint.show()
         },
         live: (next, resumingNow = false) => {
           setLive(next)
           setResuming(resumingNow)
-          // A stream that broke before reporting the exit leaves the hint to the status.
-          if (!next && hint.status) hint.show()
         },
       })
-      const send = (data: string): void => {
-        // A shell that exited or failed to start only listens for Enter, to start again.
-        if (!hint.status && !hint.stream) return followed.input(data)
-        if (!data.includes("\r")) return
+      hint.run = () => {
         // Locked until the fresh shell's screen arrives.
         hint.stream = false
         setStreamWaits(false)
         runtime.restart(terminalKey)
+      }
+      const send = (data: string): void => {
+        // A shell that exited or failed to start only listens for Enter, to start again.
+        if (!hint.status && !hint.stream) return followed.input(data)
+        if (data.includes("\r")) hint.run()
       }
       const input = xterm.onData(send)
       // Some mouse reports arrive as binary; they go to the shell the same way.
@@ -210,14 +227,10 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
       }
     }, [terminalKey])
 
-    // Show the hint once the terminal starts waiting; a fresh shell's snapshot clears it.
     useEffect(() => {
       const hint = restart.current
       hint.status = waiting
-      if (!waiting) {
-        hint.stream = false
-        hint.shown = false
-      } else if (!view.current?.followed?.attached()) hint.show()
+      if (!waiting) hint.stream = false
     }, [waiting])
 
     // While the runner is away, keys are refused where the person can see it.
@@ -268,7 +281,17 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
       >
         <div
           ref={host}
-          className={`min-h-0 flex-1 transition-[filter] duration-(--motion-state) ease-interface ${locked ? "grayscale delay-200" : ""}`}
+          className={`min-h-0 flex-1 transition-[filter,margin-bottom] duration-(--motion-state) ease-interface ${locked ? "grayscale delay-200" : ""} ${ending ? "mb-7" : ""}`}
+        />
+        {/* Room for the bar keeps the output clear of it, as far above it as the
+            surface's own padding. */}
+        <EndingBar
+          ending={ending}
+          onRestart={() => {
+            restart.current.run()
+            // The button leaves with the bar; typing goes on in the fresh shell.
+            view.current?.xterm.focus()
+          }}
         />
         {locked && (
           <div

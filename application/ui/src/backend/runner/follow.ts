@@ -29,8 +29,6 @@ export type FollowedTerminal = {
   readonly input: (data: string) => void
   // Tells the runner the size that fits now, if it changed.
   readonly refit: () => void
-  // Whether a stream is attached, which then reports the exit itself.
-  readonly attached: () => boolean
   readonly stop: () => void
 }
 
@@ -186,7 +184,6 @@ export const followTerminal = (
       void attachment.write(data).catch(() => {})
     },
     refit,
-    attached: () => attachment !== undefined,
     stop: () => {
       unsubscribe()
       stopped = true

@@ -133,12 +133,12 @@ export const createDebugPanel = (debug: RunnerDebug, inspect: DebugInspector) =>
           { label: "exit", hint: "Clean exit: the tile closes.", run: typeInSelected("exit\r") },
           {
             label: "exit 3",
-            hint: "Exited · code 3 + Press Enter to restart (after 2 s of running).",
+            hint: "Honey bar Exited · code 3 with Restart (after 2 s of running).",
             run: typeInSelected("exit 3\r"),
           },
           {
             label: "kill -9 $$",
-            hint: "Killed · SIGKILL + Press Enter to restart.",
+            hint: "Rose bar Killed · SIGKILL with Restart.",
             run: typeInSelected("kill -9 $$\r"),
           },
           {
@@ -158,12 +158,12 @@ export const createDebugPanel = (debug: RunnerDebug, inspect: DebugInspector) =>
         [
           {
             label: "Quick failure",
-            hint: "New terminal exits 2 at once: Failed to start.",
+            hint: "New terminal exits 2 at once: Failed to start · Exited right after starting.",
             run: () => type(addTerminal(), "exit 2\r"),
           },
           {
             label: "Spawn failure",
-            hint: "New terminal in a missing folder: Failed to start; Enter restarts.",
+            hint: "New terminal in a missing folder: Failed to start · Folder not found.",
             run: () => {
               debug.armCreate({ cwd: `/tmp/novadeck-debug-missing-${crypto.randomUUID()}` })
               addTerminal()
@@ -171,7 +171,7 @@ export const createDebugPanel = (debug: RunnerDebug, inspect: DebugInspector) =>
           },
           {
             label: "Terminal limit (sim)",
-            hint: "Next new terminal fails: Failed to start (Terminal limit reached.).",
+            hint: "Next new terminal fails: Failed to start · Terminal limit reached.",
             run: () => {
               debug.armCreate({ fail: "TERMINAL_LIMIT" })
               addTerminal()

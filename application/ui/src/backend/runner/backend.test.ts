@@ -378,7 +378,7 @@ describe("runner backend", () => {
       await vi.waitFor(
         () =>
           expect(statusOf(app, terminal.id).at(-1)).toMatchObject({
-            status: { state: "failed", message: "The shell exited right after it started." },
+            status: { state: "failed", message: "Exited right after starting" },
           }),
         eventually,
       )

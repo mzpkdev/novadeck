@@ -143,12 +143,19 @@ const connectionState = (status: RunnerStatus): BackendConnectionState => {
 // Failures of the whole link, which the footer reports; they say nothing about a terminal.
 const linkFailures = ["DISCONNECTED", "CLOSED", "UNAUTHORIZED", "INCOMPATIBLE_PROTOCOL"] as const
 
+// Why a terminal could not start, short enough for its end-of-session bar; an error
+// the adapter does not know keeps the runner's own words.
+const reasons = {
+  TERMINAL_LIMIT: "Terminal limit reached",
+  CONTROL_IN_USE: "Another window controls it",
+  INVALID_DIRECTORY: "Folder not found",
+  SPAWN_FAILED: "Shell could not start",
+} as const
+
 const lostStatus = (error: unknown): TerminalStatus | undefined => {
   if (hasCode(error, ...linkFailures)) return undefined
-  if (hasCode(error, "TERMINAL_LIMIT"))
-    return { state: "failed", message: "Terminal limit reached." }
-  if (hasCode(error, "CONTROL_IN_USE"))
-    return { state: "failed", message: "Another window controls this terminal." }
+  for (const [code, message] of Object.entries(reasons))
+    if (hasCode(error, code as keyof typeof reasons)) return { state: "failed", message }
   return { state: "failed", message: error instanceof Error ? error.message : String(error) }
 }
 
@@ -169,7 +176,7 @@ const target = ({ projectId, workspaceSessionId }: TerminalKey) => ({
 })
 
 const defaultSaveDelay = 800
-const failedToCreate: TerminalStatus = { state: "failed", message: "Could not start the terminal." }
+const failedToCreate: TerminalStatus = { state: "failed", message: "Could not create the terminal" }
 const defaultSize: TerminalSize = { cols: 80, rows: 24 }
 // More runner restarts than this within the window stop fresh shells from starting on
 // their own; each terminal then waits for Enter.
@@ -180,7 +187,7 @@ export const restartingTooOften = (restarts: readonly number[], now: number): bo
   restarts.filter((time) => now - time < restartWindowMs).length > restartLimit
 const crashLoop: TerminalStatus = {
   state: "failed",
-  message: "The runner keeps restarting.",
+  message: "Runner keeps crashing",
 }
 
 class CrashLoop extends Error {}

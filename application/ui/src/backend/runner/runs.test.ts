@@ -187,7 +187,7 @@ describe("terminal limits and retries", () => {
     expect(received).toContainEqual(
       expect.objectContaining({
         type: "terminal/status",
-        status: { state: "failed", message: "Terminal limit reached." },
+        status: { state: "failed", message: "Terminal limit reached" },
       }),
     )
     stop()
