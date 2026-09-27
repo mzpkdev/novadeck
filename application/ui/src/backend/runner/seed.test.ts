@@ -4,7 +4,7 @@ import { workspaceFromSeed } from "../../model/seed"
 import { createTerminalState } from "../../model/state"
 import type { WorkspaceState } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
-import { runnerSeed, type RunnerListing } from "./seed"
+import { cleanlyExited, lostTerminals, runnerSeed, type RunnerListing } from "./seed"
 import { encodeSession } from "./session-state"
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
@@ -16,7 +16,8 @@ const summary = (n: number, session: number, change: Partial<TerminalSummary> = 
   cols: 80,
   rows: 24,
   status: "running" as const,
-  exitCode: null,
+  exit: null,
+  run: 1,
   process: "zsh",
   ...change,
 })
@@ -97,7 +98,11 @@ describe("runner seed", () => {
             terminals: [
               summary(20, 10, { process: "node" }),
               summary(22, 10, { process: "vim" }),
-              summary(23, 10, { status: "exited", exitCode: 1, process: null }),
+              summary(23, 10, {
+                status: "exited",
+                exit: { code: 1, signal: null, ranMs: 9_000 },
+                process: null,
+              }),
             ],
           },
         ],
@@ -116,12 +121,13 @@ describe("runner seed", () => {
       })
     })
 
-    it("keeps a saved terminal the runner lost as an ended tile", () => {
+    it("keeps a saved terminal the runner lost in place, waiting for a fresh shell", () => {
       expect(state.roster.terminals[1]).toMatchObject({
         id: uuid(21),
         name: "gone",
-        state: "ended",
+        state: "starting",
       })
+      expect([...lostTerminals(listing)]).toEqual([uuid(21)])
     })
 
     it("appends running terminals the save did not know, named from the saved counter", () => {
@@ -144,12 +150,72 @@ describe("runner seed", () => {
           sessions: [
             {
               session: saved(10, 1, []),
-              terminals: [summary(20, 10, { status: "exited", exitCode: 0, process: null })],
+              terminals: [
+                summary(20, 10, {
+                  status: "exited",
+                  exit: { code: 3, signal: null, ranMs: 9_000 },
+                  process: null,
+                }),
+              ],
             },
           ],
         },
       ]
       expect(runnerSeed(listing).projects[0]!.sessions[0]!.terminals).toEqual([])
+    })
+  })
+
+  context("with a saved terminal whose shell exited cleanly", () => {
+    it("closes it, as it would have closed on screen", () => {
+      const listing: RunnerListing = [
+        {
+          project: project(1),
+          sessions: [
+            {
+              session: saved(10, 1, [{ id: uuid(20), name: "done" }]),
+              terminals: [
+                summary(20, 10, {
+                  status: "exited",
+                  exit: { code: 0, signal: null, ranMs: 9_000 },
+                  process: null,
+                }),
+              ],
+            },
+          ],
+        },
+      ]
+      expect(runnerSeed(listing).projects[0]!.sessions[0]!.terminals).toEqual([])
+      expect(cleanlyExited(listing)).toEqual([uuid(20)])
+    })
+
+    it("hands its selection to a terminal that remains", () => {
+      const listing: RunnerListing = [
+        {
+          project: project(1),
+          sessions: [
+            {
+              session: saved(
+                10,
+                1,
+                [
+                  { id: uuid(20), name: "done" },
+                  { id: uuid(21), name: "kept" },
+                ],
+                { selected: uuid(20) },
+              ),
+              terminals: [
+                summary(20, 10, {
+                  status: "exited",
+                  exit: { code: 0, signal: null, ranMs: 9_000 },
+                  process: null,
+                }),
+                summary(21, 10),
+              ],
+            },
+          ],
+        },
+      ]
+      expect(runnerSeed(listing).projects[0]!.sessions[0]!.restored?.selected).toBe(uuid(21))
     })
   })
 

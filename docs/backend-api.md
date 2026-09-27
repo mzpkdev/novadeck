@@ -261,15 +261,24 @@ not command completion.
   a serialized screen snapshot with dimensions and running/exited state. Output,
   resize, and exit events follow in order. A snapshot replaces the old screen; it
   is not appended. ACK snapshots too, including sequence zero.
+- An `exited` event, like an exited terminal's summary and snapshot, carries `exit`:
+  the shell's exit `code`, the `signal` name that ended it (such as `SIGKILL`; null
+  for a normal exit and on Windows), and `ranMs`, how long it ran, so a client can
+  tell a shell that failed at startup from one that ended later. It is null while
+  the terminal runs.
 - Reconnect with a new socket/client and handshake. Attach using `afterSequence`
   from the last fully applied event. Available history is replayed; an expired
   cursor falls back to a fresh snapshot. A future cursor is rejected. Scope saved
   cursors to both runner identity and terminal ID. `connectRunner` does this for
   its attachments; raw wire clients must do it themselves.
-- Default limits are 32 connections and 32 retained terminals, 256 KiB incoming
-  WebSocket messages, 16,384 characters per input call, 1 MiB replay per terminal,
-  4 MiB queued/unacknowledged events per attachment, and a 256 KiB ACK window.
-  Old exited, unattached records are evicted when capacity is needed. Headless
+- Default limits are 32 connections, 32 calls in flight per WebSocket connection
+  (1,024 for the trusted MessagePort connection, so the desktop app can, for
+  example, restart every terminal at once), 256 KiB incoming WebSocket messages,
+  16,384 characters per input call, 1 MiB replay per terminal, 4 MiB
+  queued/unacknowledged events per attachment, and a 256 KiB ACK window. The desktop
+  runner starts any number of terminals; a standalone runner (`startServer` and the
+  CLI) allows 32 at once. Either keeps at most 32 exited, unattached records and
+  evicts the oldest beyond that, or sooner when a capped runner needs room. Headless
   screens keep 1,000 scrollback lines. These are bounded recent history, not a
   durable transcript.
 - Initial snapshots have a separate 32 MiB allowance. Older scrollback is omitted
@@ -292,6 +301,14 @@ not command completion.
   runner forgets the terminal: `list` omits it, watchers receive `removed`, and later
   calls report `TERMINAL_NOT_FOUND`. Attached viewers still receive `exited` first. A
   shell that exits on its own keeps its record until eviction.
+- `terminals.restart({ terminalId, cols, rows })`, or
+  `runner.terminals.restart(id, { cols, rows })`, starts a fresh shell in a retained
+  exited terminal: the same ID, session, and directory, with a new screen. The
+  same control rule as closing applies, and the caller then holds control. The
+  summary's `run` counts shells, 1 at creation and one more per restart, so a client
+  can discard a late report about an earlier run. Watchers receive `changed`; viewers attach again and get the new screen as a snapshot,
+  even with a cursor from the previous run. A running terminal rejects with `CONFLICT`, and a shell that cannot
+  start rejects with `SPAWN_FAILED`, leaving the terminal exited.
 - Closing sends a hangup to the owned shell, escalating if the shell ignores it.
   It is not a process-tree kill guarantee: daemonized jobs and descendants that
   ignore hangup may continue, as with an ordinary terminal emulator. Use an OS
@@ -299,5 +316,7 @@ not command completion.
 
 Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
 `INVALID_DIRECTORY`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,
-`INVALID_CURSOR`, `RESOURCE_LIMIT`, and `SLOW_CONSUMER`. The schemas and contract in
+`INVALID_CURSOR`, `RESOURCE_LIMIT` (too many calls in flight; retry later),
+`TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. The
+schemas and contract in
 `application/protocol/src/` are the authoritative API definition.

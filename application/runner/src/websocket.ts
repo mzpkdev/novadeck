@@ -56,6 +56,8 @@ export const serveWebSocket = (runner: Runner, options: WebSocketOptions) => {
       verify,
       terminate: () => socket.terminate(),
       onAuthenticated: () => clearTimeout(timer),
+      // An untrusted peer may not queue unbounded work.
+      maxCalls: 32,
     })
     const cleanup = () => {
       clearTimeout(timer)

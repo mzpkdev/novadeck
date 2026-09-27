@@ -40,11 +40,11 @@ export type TerminalSurfaceProps = {
   readonly onInputFocused: () => void
 }
 
-// Workspace changes a backend reports on its own, such as a process exiting or a
-// program taking over the foreground.
+// Workspace changes a backend reports on its own, such as a process exiting, a program
+// taking over the foreground, or a shell that ended cleanly closing its terminal.
 export type BackendAction = Extract<
   WorkspaceAction,
-  { type: "terminal/status" | "terminal/process" }
+  { type: "terminal/status" | "terminal/process" | "terminal/close" }
 >
 
 export type BackendSink = {

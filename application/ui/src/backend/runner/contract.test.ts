@@ -25,6 +25,8 @@ vi.hoisted(() => {
   })
 })
 
+vi.setConfig({ testTimeout: 10_000 })
+
 // Started before the suite is collected: the contract creates a backend to see what it
 // offers, and a backend needs the runner's listing.
 const runner = await startTestRunner()
@@ -52,8 +54,11 @@ describeBackendContract("runner", {
             .attach(key.terminalId)
             .catch(() => undefined)
           if (!attached) return
-          if (status.state === "exited") await attached.write(`exit ${status.exitCode}\r`)
-          else await attached.close().catch(() => {})
+          if (status.state === "exited") {
+            // A shell that exits sooner counts as failing to start.
+            await pause(2_100)
+            await attached.write(`exit ${status.exitCode}\r`)
+          } else await attached.close().catch(() => {})
           for await (const event of attached) if (event.type === "exited") break
           // The adapter hears of the exit on its own subscription.
           await pause(100)

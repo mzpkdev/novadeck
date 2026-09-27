@@ -9,6 +9,18 @@ const terminal = (app: ReturnType<typeof openCommands>, id: string) =>
 
 afterEach(() => void vi.useRealTimers())
 
+// A workspace whose first terminal runs a program.
+const running = () => {
+  const workspace = workspaceFixture()
+  const state = workspace.projects[0]!.history[0]!.state
+  state.roster.terminals[0] = {
+    ...state.roster.terminals[0]!,
+    state: "running",
+    process: "vim",
+  }
+  return workspace
+}
+
 describe("workspace commands", () => {
   context("when adding a terminal while another is being renamed", () => {
     it("saves the rename in progress and starts renaming the new terminal", () => {
@@ -118,6 +130,28 @@ describe("workspace commands", () => {
       const before = app.workspace.getSnapshot()
       await app.commands.openFolder()
       expect(app.workspace.getSnapshot()).toBe(before)
+    })
+  })
+
+  context("when closing a terminal a program runs in", () => {
+    it("asks first and keeps the terminal when the person declines", () => {
+      const app = openCommands({ workspace: running(), confirm: false })
+      app.commands.close("01")
+      expect(app.effects).toContain('confirm Close "Terminal 01"? vim is still running in it.')
+      expect(terminal(app, "01")).toBeDefined()
+    })
+
+    it("closes it once the person agrees", () => {
+      const app = openCommands({ workspace: running() })
+      app.commands.close("01")
+      expect(app.state().roster.terminals.map((item) => item.id)).not.toContain("01")
+    })
+
+    it("closes an idle terminal without asking", () => {
+      const app = openCommands({ confirm: false })
+      app.commands.close("01")
+      expect(app.effects.some((effect) => effect.startsWith("confirm"))).toBe(false)
+      expect(app.state().roster.terminals.map((item) => item.id)).not.toContain("01")
     })
   })
 

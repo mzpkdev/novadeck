@@ -22,6 +22,8 @@ export const servePort = (runner: Runner, port: RunnerPort): (() => void) => {
     verify: () => true,
     terminate: () => port.close(),
     onAuthenticated: () => {},
+    // The trusted desktop client may, for example, restart every terminal at once.
+    maxCalls: 1024,
   })
   const disconnect = () => runner.disconnect(connection)
   new RPCHandler(runner.router).upgrade(port, { context: { connection } })

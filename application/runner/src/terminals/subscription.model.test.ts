@@ -73,7 +73,7 @@ const push = (model: Model, action: Extract<Action, { length: number }>): Termin
           cols: 80,
           rows: 24,
           status: "running",
-          exitCode: null,
+          exit: null,
         }
       : { terminalId: "terminal", sequence, type: "output", data: "界".repeat(action.length) }
   if (model.ended || model.error) return event

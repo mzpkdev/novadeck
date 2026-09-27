@@ -107,7 +107,7 @@ describe("built runner CLI", () => {
       // eslint-disable-next-line no-await-in-loop -- The exit follows the shell's remaining output.
       event = await output.next()
     }
-    expect(event.exitCode).toBe(7)
+    expect(event.exit.code).toBe(7)
     await expect(terminal.next()).resolves.toEqual({ value: undefined, done: true })
     expect(output.output()).not.toContain(token)
     const first = runner.status

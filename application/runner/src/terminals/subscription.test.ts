@@ -15,7 +15,7 @@ const snapshot = (): TerminalEvent => ({
   cols: 80,
   rows: 24,
   status: "running",
-  exitCode: null,
+  exit: null,
 })
 
 describe("terminal subscription", () => {

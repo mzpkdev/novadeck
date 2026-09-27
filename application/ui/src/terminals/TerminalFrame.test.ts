@@ -33,7 +33,12 @@ const statusOf = (container: HTMLElement) =>
 describe("terminal frame status", () => {
   context("when the process exited", () => {
     it("shows the exit code after the terminal name", () => {
-      const frame = renderFrame({ ...terminalFixture(1, "~/p"), state: "exited", exitCode: 1 })
+      const frame = renderFrame({
+        ...terminalFixture(1, "~/p"),
+        state: "exited",
+        exitCode: 1,
+        signal: null,
+      })
       const status = statusOf(frame)
       expect(status?.textContent).toBe("Exited · code 1")
       expect(status?.previousElementSibling?.textContent).toBe("Terminal 01")

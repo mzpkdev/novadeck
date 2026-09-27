@@ -314,6 +314,23 @@ describe("closing terminals", () => {
     })
   })
 
+  context("when a program still runs in the terminal", () => {
+    it("asks first, and keeps it when the person declines", async () => {
+      const asked: string[] = []
+      window.confirm = (message) => {
+        asked.push(message ?? "")
+        return false
+      }
+      await openWorkspace()
+
+      await headerAction("Checkout implementation", "Close Checkout implementation").click()
+
+      expect(asked).toEqual(['Close "Checkout implementation"? claude is still running in it.'])
+      await expect.element(terminalTab("Checkout implementation")).toBeInTheDocument()
+      await expect.poll(visibleTerminalCounts).toEqual(["6 terminals"])
+    })
+  })
+
   context("when clicking Close on a sidebar tab", () => {
     it("removes that terminal from the list and the view", async () => {
       await openWorkspace()

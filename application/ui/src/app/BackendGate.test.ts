@@ -41,18 +41,34 @@ const show = (selection: BackendSelection): Rendered => {
 
 describe("backend gate", () => {
   context("while the backend connects", () => {
-    it("says so and nothing else", () => {
+    it("shows the splash", () => {
       const { container } = show(pending().selection)
-      expect(container.textContent).toBe("Connecting…")
+      expect(container.querySelector("[role=status]")?.textContent).toBe("Starting your terminals…")
     })
   })
 
   context("when the first connection fails", () => {
-    it("shows the error in its place", async () => {
+    it("says what failed", async () => {
       const { selection, attempts } = pending()
       const { container } = show(selection)
-      await act(async () => attempts.at(-1)!.reject(new Error("Runner unavailable: UNAUTHORIZED")))
-      expect(container.textContent).toBe("Runner unavailable: UNAUTHORIZED")
+      await act(async () => attempts.at(-1)!.reject(new Error("The runner did not answer.")))
+      expect(container.querySelector("[role=alert]")?.textContent).toContain(
+        "The runner did not answer.",
+      )
+    })
+
+    it("connects again on Retry", async () => {
+      const { selection, attempts } = pending()
+      const { container } = show(selection)
+      await act(async () => attempts.at(-1)!.reject(new Error("The runner did not answer.")))
+      const before = attempts.length
+      const retry = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Retry",
+      )!
+      act(() => retry.click())
+      expect(attempts.length).toBeGreaterThan(before)
+      await act(async () => attempts.at(-1)!.resolve({ createBackend, close: () => {} }))
+      expect(container.textContent).toBe("workspace")
     })
   })
 

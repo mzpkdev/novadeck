@@ -24,6 +24,8 @@ export type CommandsOptions = {
   readonly canvas?: CanvasHandle
   // The backend's folder picker, when it offers one.
   readonly pickDirectory?: () => Promise<string | null>
+  // How the person answers a confirmation; yes unless given.
+  readonly confirm?: boolean
 }
 
 // Real stores, navigator, commands and store subscriptions over a fixture workspace, with effects that
@@ -36,6 +38,7 @@ export const openCommands = ({
   desktop = true,
   canvas,
   pickDirectory,
+  confirm = true,
 }: CommandsOptions = {}) => {
   const [pathname = "", query = ""] = url.split("?")
   const resolved = resolveRoute(workspace, { pathname, search: `?${query}` }, preferences, 0)
@@ -74,6 +77,10 @@ export const openCommands = ({
     desktop: () => screen.desktop,
     now: () => Date.UTC(2026, 8, 26, 14, 5),
     newId: () => `session-${++ids}`,
+    confirm: (message) => {
+      effects.push(`confirm ${message}`)
+      return confirm
+    },
   }
   const {
     bind,

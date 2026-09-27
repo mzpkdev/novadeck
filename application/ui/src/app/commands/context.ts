@@ -33,6 +33,8 @@ export type CommandEffects = {
   readonly desktop: () => boolean
   readonly now: () => number
   readonly newId: () => string
+  // Asks the person a yes-or-no question and returns the answer.
+  readonly confirm: (message: string) => boolean
 }
 
 export type CommandContext = {

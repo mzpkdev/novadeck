@@ -268,7 +268,7 @@ export const describeBackendContract = (name: string, options: BackendContractOp
           expect(backend.start).toBeTypeOf("function")
           backend.start!(sink(1))()
           const stop = backend.start!(sink(2))
-          const exited: TerminalStatus = { state: "exited", exitCode: 3 }
+          const exited: TerminalStatus = { state: "exited", exitCode: 3, signal: null }
           await driver!.status(key, exited)
           await settle()
           const { terminalId, ...target } = key

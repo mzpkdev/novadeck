@@ -271,6 +271,21 @@ describe("WebSocket authentication and protocol", () => {
     await closed
   })
 
+  it("limits the calls one connection may have in flight", async ({ resources }) => {
+    const app = await fixture(resources)
+    const { client } = await app.connect()
+    // Project creation checks its directory asynchronously, so these overlap.
+    const results = await Promise.allSettled(
+      Array.from({ length: 64 }, () =>
+        client.projects.create({ id: randomUUID(), name: "Burst", cwd: app.directory }),
+      ),
+    )
+    const rejected = results.filter((result) => result.status === "rejected")
+    expect(rejected.length).toBeGreaterThan(0)
+    expect(rejected.every((result) => result.reason.code === "RESOURCE_LIMIT")).toBe(true)
+    await expect(client.projects.list()).resolves.toHaveLength(64 - rejected.length)
+  })
+
   it("connection limits include unauthenticated clients", async ({ resources }) => {
     const app = await fixture(resources, { maxConnections: 1 })
     await app.connect(false)
@@ -444,9 +459,11 @@ describe("PTY lifecycle API", () => {
       terminalId: terminal.id,
       data: command({ type: "exit", code: 7 }),
     })
-    expect(await output.until((event) => event.type === "exited")).toMatchObject({ exitCode: 7 })
+    expect(await output.until((event) => event.type === "exited")).toMatchObject({
+      exit: { code: 7 },
+    })
     await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
-      expect.objectContaining({ status: "exited", exitCode: 7 }),
+      expect.objectContaining({ status: "exited", exit: expect.objectContaining({ code: 7 }) }),
     ])
     const sequences = output.events.map((event) => event.sequence)
     expect(sequences).toEqual([...new Set(sequences)].toSorted((a, b) => a - b))
@@ -462,7 +479,7 @@ describe("PTY lifecycle API", () => {
     const { session } = await app.setup(client)
     const first = await client.terminals.create(shell(session.id))
     await expect(client.terminals.create(shell(session.id))).rejects.toMatchObject({
-      code: "RESOURCE_LIMIT",
+      code: "TERMINAL_LIMIT",
     })
     await client.terminals.close({ terminalId: first.id })
     const second = await client.terminals.create(shell(session.id))
@@ -593,7 +610,7 @@ describe("terminal attachment and recovery API", () => {
     await queued.stream.return()
     const restored = await reader(resources, observer.client, terminal.id, { mode: "observe" })
     const snapshot = await restored.next()
-    expect(snapshot).toMatchObject({ type: "snapshot", status: "exited", exitCode: 9 })
+    expect(snapshot).toMatchObject({ type: "snapshot", status: "exited", exit: { code: 9 } })
     expect(restored.text()).toContain("FINAL_QUEUED_OUTPUT")
     await expect(observer.client.projects.list()).resolves.toHaveLength(1)
   })

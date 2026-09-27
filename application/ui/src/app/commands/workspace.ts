@@ -1,6 +1,12 @@
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
 import { activeProject, type WorkspaceAction } from "../../model/state"
-import type { PreferencesValue, Project, ViewMode, WorkspaceTarget } from "../../model/types"
+import type {
+  PreferencesValue,
+  Project,
+  TerminalMetadata,
+  ViewMode,
+  WorkspaceTarget,
+} from "../../model/types"
 import { currentContext, currentState, currentTarget, windowedDestination } from "../selectors"
 import type { CommandContext } from "./context"
 import { createLayoutCommands, type LayoutCommands } from "./layout"
@@ -38,6 +44,9 @@ export type WorkspaceCommands = ShellCommands &
     readonly add: (options?: AddTerminalOptions) => string
     readonly close: (terminalId: string) => void
   }
+
+const closeQuestion = ({ name, process }: TerminalMetadata): string =>
+  `Close "${name}"? ${process ? `${process} is` : "A program is"} still running in it.`
 
 // The terminal created last stays highlighted this long.
 const createdHighlight = 900
@@ -244,6 +253,11 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     },
     close: (terminalId) => {
       const snapshot = workspace.getSnapshot()
+      const closing = currentState(snapshot).roster.terminals.find(
+        (terminal) => terminal.id === terminalId,
+      )
+      // Closing ends the shell, so ask first while a program still runs in it.
+      if (closing?.state === "running" && !effects.confirm(closeQuestion(closing))) return
       const { view, selected } = currentState(snapshot)
       const active = rename.activeRename()
       if (active?.id === terminalId) rename.finishRename(active, false)

@@ -210,7 +210,7 @@ describe("runner client over WebSocket", () => {
     const rest: TerminalEvent[] = []
     for await (const event of terminal) rest.push(event)
     expect(rest).toContainEqual(expect.objectContaining({ type: "resized", cols: 100, rows: 30 }))
-    expect(rest.at(-1)).toMatchObject({ type: "exited", exitCode: 3 })
+    expect(rest.at(-1)).toMatchObject({ type: "exited", exit: { code: 3 } })
     await expect(terminal.write("ignored")).rejects.toMatchObject({ code: "TERMINAL_EXITED" })
     await expect(terminal.close()).resolves.toBeUndefined()
   })
@@ -404,6 +404,44 @@ describe("runner client terminal closing", () => {
   })
 })
 
+describe("runner client terminal restart", () => {
+  it("restarts an exited terminal in place and attaches to its new screen", async ({
+    resources,
+  }) => {
+    const app = await deployed(resources)
+    const runner = await app.connect()
+    const { id: sessionId } = await session(runner, app.directory)
+    const created = await runner.terminals.create(shell(sessionId))
+    const size = { cols: 90, rows: 20 }
+    await expect(runner.terminals.restart(created.id, size)).rejects.toMatchObject({
+      code: "CONFLICT",
+    })
+    const first = await runner.terminals.attach(created.id)
+    const screen = view(first, resources)
+    await screen.until("PTY_READY")
+    await first.write(command({ type: "exit", code: 4 }))
+    for await (const event of first) {
+      if (event.type === "exited") expect(event.exit).toMatchObject({ code: 4, signal: null })
+    }
+
+    await expect(runner.terminals.restart(created.id, size)).resolves.toMatchObject({
+      id: created.id,
+      status: "running",
+      exit: null,
+      ...size,
+    })
+    const again = await runner.terminals.attach(created.id)
+    const next = view(again, resources)
+    expect(await next.next()).toMatchObject({ type: "snapshot", status: "running", ...size })
+    await next.until("PTY_READY")
+    await print(again, "SECOND_RUN")
+    await next.until("SECOND_RUN")
+    await expect(runner.terminals.restart(crypto.randomUUID(), size)).rejects.toMatchObject({
+      code: "TERMINAL_NOT_FOUND",
+    })
+  })
+})
+
 describe("runner client terminal watch", () => {
   it("resynchronizes after a reconnection with every terminal, then synced", async ({
     resources,
@@ -575,6 +613,19 @@ describe("runner client over MessagePort", () => {
     expect(restored.text()).toContain("OVER_PORT")
     await print(replacement, "NEW_OWNER")
     await restored.until("NEW_OWNER")
+  })
+
+  it("lets the trusted desktop client burst beyond a WebSocket client's call limit", async ({
+    resources,
+  }) => {
+    const app = await bundled(resources)
+    const { client } = await app.connect()
+    const created = await Promise.all(
+      Array.from({ length: 64 }, () =>
+        client.projects.create({ id: crypto.randomUUID(), name: "Burst", cwd: app.directory }),
+      ),
+    )
+    expect(created).toHaveLength(64)
   })
 
   it("closes with CLOSED when a single port ends, since it cannot reconnect", async ({

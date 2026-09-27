@@ -15,7 +15,8 @@ import type { RunnerListing } from "./seed"
 
 // Test support: a real runner in this process, reached over a MessageChannel like the
 // desktop app's, whose shells are a small program in a real PTY. Typing
-// "exit <code>" ends it with that code; "title <name>" renames it, which Linux then
+// "exit <code>" ends it with that code; "kill <signal>" kills it with that signal;
+// "title <name>" renames it, which Linux then
 // reports as the terminal's foreground process.
 const shell = [
   "process.stdin.setRawMode?.(true)",
@@ -26,6 +27,8 @@ const shell = [
   "  if (title) { process.title = title[1]; input = '' }",
   "  const exit = /exit (\\d+)[\\r\\n]/.exec(input)",
   "  if (exit) process.exit(Number(exit[1]))",
+  "  const kill = /kill (SIG[A-Z]+)[\\r\\n]/.exec(input)",
+  "  if (kill) process.kill(process.pid, kill[1])",
   "})",
 ].join("\n")
 
@@ -43,7 +46,12 @@ export type TestRunner = {
 export const startTestRunner = async (options: RunnerOptions = {}): Promise<TestRunner> => {
   const service = createRunner({
     ...options,
-    terminals: { shell: process.execPath, shellArgs: ["-e", shell], maxTerminals: 256 },
+    terminals: {
+      maxTerminals: 256,
+      ...options.terminals,
+      shell: process.execPath,
+      shellArgs: ["-e", shell],
+    },
   })
   const links = new Set<() => void>()
   let current: (() => void) | undefined
@@ -114,6 +122,7 @@ export const recordingRunner = (runner: Runner, io: string[]): RunnerApi => {
       watch: () => runner.terminals.watch(),
       create: (input) => note(`create terminal ${input.id}`, () => runner.terminals.create(input)),
       close: (id) => note(`close ${id}`, () => runner.terminals.close(id)),
+      restart: (id, size) => note(`restart ${id}`, () => runner.terminals.restart(id, size)),
       attach: async (id, options) =>
         attachment(await note(`attach ${id}`, () => runner.terminals.attach(id, options))),
     },

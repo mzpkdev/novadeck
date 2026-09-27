@@ -24,7 +24,7 @@ export const snapshot = (
       cols: summary.cols,
       rows: summary.rows,
       status: summary.status,
-      exitCode: summary.exitCode,
+      exit: summary.exit,
     }
     if (Buffer.byteLength(JSON.stringify(event)) <= budget) return event
     if (scrollback === 0)

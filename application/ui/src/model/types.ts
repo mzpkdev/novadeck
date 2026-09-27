@@ -4,10 +4,10 @@ export type PreferencesValue = { fontSize: number; enabledViews: ViewMode[] }
 export type Project = { id: string; name: string; directory: string }
 
 // What a terminal's process is doing. Exit and failure details replace each other.
-// "ended" means the backend no longer has the process at all, such as after a restart.
+// An exited process reports its code, or the signal that killed it.
 export type TerminalStatus =
-  | { readonly state: "starting" | "running" | "idle" | "finished" | "ended" }
-  | { readonly state: "exited"; readonly exitCode: number | null }
+  | { readonly state: "starting" | "running" | "idle" | "finished" }
+  | { readonly state: "exited"; readonly exitCode: number | null; readonly signal: string | null }
   | { readonly state: "failed"; readonly message: string }
 
 export type TerminalKind =

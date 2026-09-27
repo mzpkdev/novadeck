@@ -6,16 +6,18 @@ const terminal = terminalFixture(1, "~/project")
 
 describe("terminal status label", () => {
   it("names the exit code of an exited process", () => {
-    expect(terminalStatusLabel({ ...terminal, state: "exited", exitCode: 130 })).toBe(
+    expect(terminalStatusLabel({ ...terminal, state: "exited", exitCode: 130, signal: null })).toBe(
       "Exited · code 130",
     )
-    expect(terminalStatusLabel({ ...terminal, state: "exited", exitCode: 0 })).toBe(
+    expect(terminalStatusLabel({ ...terminal, state: "exited", exitCode: 0, signal: null })).toBe(
       "Exited · code 0",
     )
   })
 
   it("says only that the process exited when the code is unknown", () => {
-    expect(terminalStatusLabel({ ...terminal, state: "exited", exitCode: null })).toBe("Exited")
+    expect(
+      terminalStatusLabel({ ...terminal, state: "exited", exitCode: null, signal: null }),
+    ).toBe("Exited")
   })
 
   it("reports a failed start without its message", () => {
@@ -24,8 +26,10 @@ describe("terminal status label", () => {
     )
   })
 
-  it("says a process the backend no longer has has ended", () => {
-    expect(terminalStatusLabel({ ...terminal, state: "ended" })).toBe("Ended")
+  it("names the signal that killed a process", () => {
+    expect(
+      terminalStatusLabel({ ...terminal, state: "exited", exitCode: null, signal: "SIGKILL" }),
+    ).toBe("Killed · SIGKILL")
   })
 
   it("shows nothing while the process is starting, running, idle or finished", () => {

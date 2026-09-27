@@ -314,24 +314,29 @@ colocated `contract.test.ts`, with a probe of what it holds and the I/O it
 started, and a driver when it has `start`. `App` reads a `createBackend` factory
 once at mount, and `app/backend.ts` chooses the default: the demo under tests, and
 a runner connection in every build. A backend that must connect first supplies a
-`ConnectBackend`; `app/BackendGate.tsx` shows "Connecting…" until it resolves with
-the seed loaded, or its error if the first attempt fails, and closes it on unmount.
+`ConnectBackend`; `app/BackendGate.tsx` shows a splash until it resolves with the
+seed loaded, or a card saying what failed with a Retry button, and closes it on unmount.
 
 A backend reports changes of its own, such as a process exiting or failing to
 start, through the optional `start`. It runs from an effect after mount and
 receives a sink that commits each call as one store transaction, like a UI
 command; the sink ignores stale targets and anything sent after stop. It reports
 status and the foreground process, which picks the terminal's icon and counts it as
-running. The frame labels an exited, failed, or ended terminal. A backend may also
+running, and closes a terminal whose shell exited cleanly. The frame labels an
+exited, killed, or failed terminal. Closing a terminal a program runs in asks first,
+through the `confirm` command effect. A backend may also
 expose its connection state, which the footer shows, and a folder picker, which
 enables "Open folder…".
 
 The runner adapter creates projects, sessions, and terminals on the runner as their
 commits arrive, and saves each changed session after a short pause and on
-`pagehide`. On load it restores saved sessions, most recently visited first, adds
-live terminals the save did not know, and keeps saved terminals the runner no
-longer has as "Ended" tiles. The same happens to a terminal a reconnection no
-longer lists.
+`pagehide`. On load it restores saved sessions, most recently visited first, and adds
+running terminals the save did not know. A terminal the runner no longer has, after
+a runner restart or a relaunch, gets a fresh shell in place with the same id, name
+and layout once its session is on screen; more than three runner restarts in a
+minute stop that, and each terminal then waits for Enter. An exited, killed, or
+failed terminal shows "Press Enter to restart", which starts a fresh shell in the
+same tile. While the runner is away, surfaces dim and refuse input.
 
 XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
 ends or the view unmounts. Grid, Canvas, Preferences, and search load on demand.

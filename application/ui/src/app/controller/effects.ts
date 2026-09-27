@@ -30,4 +30,5 @@ export const domEffects: CommandEffects = {
   desktop: isDesktop,
   now: () => Date.now(),
   newId: () => crypto.randomUUID(),
+  confirm: (message) => window.confirm(message),
 }

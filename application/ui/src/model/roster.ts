@@ -66,7 +66,11 @@ export const reorderTerminals = (roster: TerminalRoster, requested: string[]): T
 
 const sameStatus = (terminal: TerminalMetadata, status: TerminalStatus): boolean => {
   if (status.state === "exited")
-    return terminal.state === "exited" && terminal.exitCode === status.exitCode
+    return (
+      terminal.state === "exited" &&
+      terminal.exitCode === status.exitCode &&
+      terminal.signal === status.signal
+    )
   if (status.state === "failed")
     return terminal.state === "failed" && terminal.message === status.message
   return terminal.state === status.state
@@ -74,7 +78,8 @@ const sameStatus = (terminal: TerminalMetadata, status: TerminalStatus): boolean
 
 // Only the fields a status defines, so nothing else the caller put on it is copied.
 const statusFields = (status: TerminalStatus): TerminalStatus => {
-  if (status.state === "exited") return { state: status.state, exitCode: status.exitCode }
+  if (status.state === "exited")
+    return { state: status.state, exitCode: status.exitCode, signal: status.signal }
   if (status.state === "failed") return { state: status.state, message: status.message }
   return { state: status.state }
 }

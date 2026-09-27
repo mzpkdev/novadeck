@@ -3,6 +3,7 @@ export type DomainErrorCode =
   | "INVALID_DIRECTORY"
   | "CONFLICT"
   | "RESOURCE_LIMIT"
+  | "TERMINAL_LIMIT"
   | "TERMINAL_NOT_FOUND"
   | "TERMINAL_EXITED"
   | "CONTROL_IN_USE"

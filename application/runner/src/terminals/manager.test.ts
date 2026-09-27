@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
-import { basename } from "node:path"
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { basename, join } from "node:path"
 
 import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
@@ -110,6 +112,27 @@ const until = async (
     if (predicate(event, text)) return events
   }
   throw new Error("Terminal ended before the expected event.")
+}
+
+/** Like `until`, but leaves the stream and its control open for later reads. */
+const read = async (
+  manager: Terminals,
+  stream: AsyncGenerator<TerminalEvent>,
+  owner: string,
+  predicate: (event: TerminalEvent, text: string) => boolean,
+): Promise<TerminalEvent[]> => {
+  const events: TerminalEvent[] = []
+  let text = ""
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop -- Events are read in order.
+    const result = await stream.next()
+    if (result.done) throw new Error("Terminal ended before the expected event.")
+    const event = result.value
+    events.push(event)
+    if (event.type === "output" || event.type === "snapshot") text += event.data
+    manager.ack({ terminalId: event.terminalId, sequence: event.sequence }, owner)
+    if (predicate(event, text)) return events
+  }
 }
 
 const untilPid = async (manager: Terminals, stream: AsyncGenerator<TerminalEvent>) => {
@@ -240,7 +263,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     )
     const stream = terminals.attach(manager, terminal.id, "owner")
     const events = await until(manager, stream, "owner", (event) => event.type === "exited")
-    expect(events.at(-1)).toMatchObject({ type: "exited", exitCode: 7 })
+    expect(events.at(-1)).toMatchObject({ type: "exited", exit: { code: 7 } })
     expect(
       events
         .slice(0, -1)
@@ -334,7 +357,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     )
     await expect(
       manager.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
-    ).rejects.toMatchObject({ code: "RESOURCE_LIMIT" })
+    ).rejects.toMatchObject({ code: "TERMINAL_LIMIT" })
     const invalid = terminals.manager({ shell: "/novadeck/missing/shell" })
     await expect(
       invalid.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
@@ -397,7 +420,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       .join("")
     expect(output).toHaveLength(1048579)
     expect(output.endsWith("XEND")).toBe(true)
-    expect(events.at(-1)).toMatchObject({ type: "exited", exitCode: 4 })
+    expect(events.at(-1)).toMatchObject({ type: "exited", exit: { code: 4 } })
   })
 
   it("closes shells that ignore SIGHUP and kills live PTYs during shutdown", async ({
@@ -461,7 +484,12 @@ describe("terminal watching", () => {
       await watch.until((change) => changed(id)(change) && change.terminal.status === "exited"),
     ).toEqual({
       type: "changed",
-      terminal: { ...manager.get(id), status: "exited", exitCode: 5, process: null },
+      terminal: {
+        ...manager.get(id),
+        status: "exited",
+        exit: { code: 5, signal: null, ranMs: expect.any(Number) },
+        process: null,
+      },
     })
 
     // A retained exited record keeps its id taken, even when eviction could free it.
@@ -563,7 +591,7 @@ describe("terminal closing", () => {
 
     manager.write({ terminalId: ended.id, data: command({ type: "exit", code: 2 }) }, "owner")
     await watch.until((change) => changed(ended.id)(change) && change.terminal.status === "exited")
-    expect(manager.get(ended.id)).toMatchObject({ status: "exited", exitCode: 2 })
+    expect(manager.get(ended.id)).toMatchObject({ status: "exited", exit: { code: 2 } })
   })
 
   it("lets any connection close a terminal nobody controls, but not another's", async ({
@@ -587,5 +615,124 @@ describe("terminal closing", () => {
     await expect(manager.close({ terminalId: randomUUID() }, "other")).rejects.toMatchObject({
       code: "TERMINAL_NOT_FOUND",
     })
+  })
+})
+
+describe("terminal restart", () => {
+  it("starts a fresh shell in the same exited terminal and grants the caller control", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const id = randomUUID()
+    await expect(
+      manager.create({ id, sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
+    ).resolves.toMatchObject({ run: 1 })
+    const watch = terminals.watch(manager, "watcher")
+    await expect(
+      manager.restart({ terminalId: id, cols: 80, rows: 24 }, "owner"),
+    ).rejects.toMatchObject({ code: "CONFLICT" })
+    const first = terminals.attach(manager, id, "owner")
+    await read(manager, first, "owner", (_event, text) => text.includes("PTY_READY"))
+    manager.write(
+      { terminalId: id, data: command({ type: "write", data: "FIRST_RUN\r\n" }) },
+      "owner",
+    )
+    manager.write({ terminalId: id, data: command({ type: "exit", code: 3 }) }, "owner")
+    const exited = await read(manager, first, "owner", (event) => event.type === "exited")
+    const exit = exited.at(-1)!
+    const cursor = exit.sequence
+    expect(exit).toMatchObject({
+      type: "exited",
+      exit: { code: 3, signal: null, ranMs: expect.any(Number) },
+    })
+    expect(manager.get(id)).toMatchObject({ status: "exited", exit: { code: 3 }, process: null })
+    await expect(
+      manager.restart({ terminalId: id, cols: 100, rows: 30 }, "restarter"),
+    ).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
+    // Ending the finished attachment releases control, so anyone may restart it.
+    await first.return(undefined)
+
+    await expect(
+      manager.restart({ terminalId: id, cols: 100, rows: 30 }, "restarter"),
+    ).resolves.toMatchObject({ id, status: "running", cols: 100, rows: 30, exit: null, run: 2 })
+    // Reports about the first run carry `run: 1`, so a client can tell them apart.
+    expect(
+      await watch.until((change) => changed(id)(change) && change.terminal.status === "running"),
+    ).toMatchObject({ terminal: { run: 2 } })
+    expect(manager.list()).toEqual([expect.objectContaining({ id, run: 2 })])
+    expect(() => manager.write({ terminalId: id, data: "" }, "restarter")).not.toThrow()
+    // A cursor from the previous run gets the new screen, not a replay onto the old one.
+    const second = terminals.attach(manager, id, "restarter", cursor)
+    const snapshot = (await second.next()).value!
+    expect(snapshot).toMatchObject({ type: "snapshot", status: "running", exit: null })
+    expect(snapshot.sequence).toBeGreaterThan(cursor)
+    const text = await until(manager, second, "restarter", (_event, all) =>
+      all.includes("PTY_READY"),
+    )
+    expect(text.map((event) => ("data" in event ? event.data : "")).join("")).not.toContain(
+      "FIRST_RUN",
+    )
+    await expect(
+      manager.restart({ terminalId: randomUUID(), cols: 80, rows: 24 }, "restarter"),
+    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "reports the ending signal, and stays exited when its shell cannot start again",
+    async ({ terminals, resources }) => {
+      const directory = mkdtempSync(join(tmpdir(), "novadeck-restart-"))
+      resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+      // Removing this link later makes the shell impossible to start again.
+      const shell = join(directory, "shell")
+      symlinkSync("/bin/sh", shell)
+      const manager = terminals.manager({
+        shell,
+        shellArgs: ["-c", "printf 'PID=%s\\n' $$; exec cat"],
+      })
+      const id = randomUUID()
+      await manager.create({ id, sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
+      const stream = terminals.attach(manager, id, "owner")
+      let pid = 0
+      await read(manager, stream, "owner", (_event, text) => {
+        pid = Number(/PID=(\d+)\r?\n/.exec(text)?.[1] ?? 0)
+        return pid > 0
+      })
+      process.kill(pid, "SIGKILL")
+      const events = await read(manager, stream, "owner", (event) => event.type === "exited")
+      expect(events.at(-1)).toMatchObject({ exit: { code: null, signal: "SIGKILL" } })
+      rmSync(shell)
+      await expect(
+        manager.restart({ terminalId: id, cols: 80, rows: 24 }, "owner"),
+      ).rejects.toMatchObject({ code: "SPAWN_FAILED" })
+      expect(manager.get(id)).toMatchObject({ status: "exited", exit: { signal: "SIGKILL" } })
+    },
+  )
+})
+
+describe.skipIf(process.platform === "win32")("terminal limits", () => {
+  it("runs any number of terminals but retains only the newest exited records", async ({
+    terminals,
+  }) => {
+    const running = terminals.manager()
+    const many = Array.from({ length: 33 }, () =>
+      running.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
+    )
+    await expect(Promise.all(many)).resolves.toHaveLength(33)
+
+    const retaining = terminals.manager({ shellArgs: ["-c", "exit 0"], maxRetained: 2 })
+    const watch = terminals.watch(retaining, "watcher")
+    await watch.until((change) => change.type === "synced")
+    const ids = Array.from({ length: 4 }, () => randomUUID())
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop -- Creation order decides which records are oldest.
+      await retaining.create({ id, sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
+      // eslint-disable-next-line no-await-in-loop -- Each shell exits before the next starts.
+      await watch.until((change) => changed(id)(change) && change.terminal.status === "exited")
+    }
+    await watch.until((change) => change.type === "removed" && change.terminalId === ids[1])
+    expect(retaining.list().map((terminal) => terminal.id)).toEqual(ids.slice(2))
+    expect(watch.seen.filter((change) => change.type === "removed")).toEqual(
+      ids.slice(0, 2).map((terminalId) => ({ type: "removed", terminalId, sessionId: "session" })),
+    )
   })
 })

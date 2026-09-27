@@ -119,6 +119,16 @@ export type Runner = {
      * while another connection controls the terminal.
      */
     close(terminalId: string): Promise<void>
+    /**
+     * Starts a fresh shell in an exited terminal the runner still holds, keeping its id,
+     * session and directory, and gives this client control. Attach again for the new
+     * screen. Rejects with `CONFLICT` while it runs and `SPAWN_FAILED` when the shell
+     * cannot start, which leaves it exited.
+     */
+    restart(
+      terminalId: string,
+      size: { readonly cols: number; readonly rows: number },
+    ): Promise<TerminalSummary>
     /** Resolves once the runner has granted the attachment; `control` is the default mode. */
     attach(
       terminalId: string,
@@ -695,6 +705,8 @@ export const connectRunner = async (
       create: (input) => call((wire) => wire.terminals.create(input)),
       watch: () => new TerminalWatch(connection),
       close: (terminalId) => call((wire) => wire.terminals.close({ terminalId })),
+      restart: (terminalId, { cols, rows }) =>
+        call((wire) => wire.terminals.restart({ terminalId, cols, rows })),
       async attach(terminalId, { mode = "control" } = {}) {
         const terminal = new Attachment(connection, terminalId, mode)
         await terminal.attach(connection.current())

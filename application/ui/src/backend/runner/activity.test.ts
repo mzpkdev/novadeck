@@ -10,7 +10,8 @@ const summary = (change: Partial<TerminalSummary>): TerminalSummary => ({
   cols: 80,
   rows: 24,
   status: "running",
-  exitCode: null,
+  exit: null,
+  run: 1,
   process: "zsh",
   ...change,
 })
@@ -26,9 +27,9 @@ describe("terminal activity", () => {
 
     it("recognises login shells, paths and Windows executables", () => {
       const states = ["-bash", "/usr/bin/fish", "pwsh.exe", "C:\\Windows\\cmd.exe", "nu"].map(
-        (process) => terminalActivity(summary({ process })).status.state,
+        (process) => terminalActivity(summary({ process })).status,
       )
-      expect(states).toEqual(["idle", "idle", "idle", "idle", "idle"])
+      expect(states).toEqual(Array.from({ length: 5 }, () => ({ state: "idle" })))
     })
   })
 
@@ -59,10 +60,33 @@ describe("terminal activity", () => {
   })
 
   context("once the process exited", () => {
-    it("reports the exit code and leaves the process as it was", () => {
-      expect(terminalActivity(summary({ status: "exited", exitCode: 130, process: null }))).toEqual(
-        { status: { state: "exited", exitCode: 130 } },
-      )
+    const exited = (code: number | null, signal: string | null, ranMs: number) =>
+      terminalActivity(summary({ status: "exited", exit: { code, signal, ranMs }, process: null }))
+
+    it("closes the terminal after a clean exit, however soon", () => {
+      expect([exited(0, null, 60_000), exited(0, null, 10)]).toEqual([
+        { status: "clean" },
+        { status: "clean" },
+      ])
+    })
+
+    it("reports a non-zero code or the killing signal and leaves the process as it was", () => {
+      expect([exited(130, null, 60_000), exited(null, "SIGKILL", 60_000)]).toEqual([
+        { status: { state: "exited", exitCode: 130, signal: null } },
+        { status: { state: "exited", exitCode: null, signal: "SIGKILL" } },
+      ])
+    })
+
+    it("counts a quick non-zero exit as failing to start", () => {
+      expect(exited(1, null, 300)).toEqual({
+        status: { state: "failed", message: "The shell exited right after it started." },
+      })
+    })
+
+    it("names the signal however soon it came", () => {
+      expect(exited(null, "SIGKILL", 100)).toEqual({
+        status: { state: "exited", exitCode: null, signal: "SIGKILL" },
+      })
     })
   })
 })
