@@ -82,6 +82,18 @@ const show = (
 
 const input = (page: Rendered) => page.container.querySelector("[data-terminal-input]")!
 
+// A surface whose shell ended as `terminal` says, recording the restarts it asks for.
+const ended = (terminal: Partial<TerminalMetadata>) => {
+  const { runtime, connection } = starting()
+  const restarts: string[] = []
+  const page = show({ ...runtime, restart: ({ terminalId }) => restarts.push(terminalId) }, {
+    ...terminalFixture(1, "~"),
+    ...terminal,
+  } as TerminalMetadata)
+  const bar = page.container.querySelector<HTMLElement>("[data-terminal-ending]")
+  return { page, bar, restarts, connection }
+}
+
 describe("runner terminal surface", () => {
   context("while its shell has no stream yet", () => {
     it("refuses input where the person can see it", () => {
@@ -102,20 +114,10 @@ describe("runner terminal surface", () => {
   })
 
   context("once its shell ended", () => {
-    const ended = (terminal: Partial<TerminalMetadata>) => {
-      const { runtime } = starting()
-      const restarts: string[] = []
-      const page = show({ ...runtime, restart: ({ terminalId }) => restarts.push(terminalId) }, {
-        ...terminalFixture(1, "~"),
-        ...terminal,
-      } as TerminalMetadata)
-      const bar = page.container.querySelector<HTMLElement>("[data-terminal-ending]")
-      return { page, bar, restarts }
-    }
-
-    it("says how under its output, in honey for an exit code", () => {
+    it("says how under its output, in honey for an exit code, and announces it", () => {
       const { bar } = ended({ state: "exited", exitCode: 3, signal: null })
       expect(bar?.dataset.terminalEnding).toBe("warning")
+      expect(bar?.querySelector("[aria-live=polite]")?.textContent).toBe("Exited · code 3")
       expect(bar?.querySelector("[title]")?.textContent).toBe("Exited · code 3")
     })
 
@@ -132,6 +134,21 @@ describe("runner terminal surface", () => {
       act(() => bar!.querySelector("button")!.click())
       expect(restarts).toEqual(["01"])
       expect(input(page).getAttribute("aria-disabled")).toBe("false")
+    })
+  })
+
+  context("once its shell ended while the runner is away", () => {
+    it("holds Restart back until the runner is back", () => {
+      const { bar, restarts, connection } = ended({ state: "exited", exitCode: 1, signal: null })
+      act(() => void connection.update(() => "unavailable"))
+      const button = bar!.querySelector("button")!
+      expect(button.getAttribute("aria-disabled")).toBe("true")
+      act(() => button.click())
+      expect(restarts).toEqual([])
+      act(() => void connection.update(() => "connected"))
+      expect(button.hasAttribute("aria-disabled")).toBe(false)
+      act(() => button.click())
+      expect(restarts).toEqual(["01"])
     })
   })
 

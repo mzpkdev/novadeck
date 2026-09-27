@@ -67,13 +67,17 @@ const endingTones: Record<TerminalEnding["tone"], string> = {
 }
 
 // How the shell ended, along the surface's bottom edge, with the restart Enter also
-// asks for; its right end stays clear of Canvas's resize grip. It keeps the last
-// ending on screen while it slides away.
+// asks for. In Canvas its right end follows the resize grip's scale so the button stays
+// clear of it (runner.css). Restart waits while typing is paused, as a restart then
+// could not reach the runner. It keeps the last ending on screen while it slides away,
+// and announces a new one politely.
 const EndingBar = ({
   ending,
+  paused,
   onRestart,
 }: {
   readonly ending: TerminalEnding | null
+  readonly paused: boolean
   readonly onRestart: () => void
 }): React.JSX.Element => {
   const [shown, setShown] = useState(ending)
@@ -82,26 +86,33 @@ const EndingBar = ({
   if (ending && (ending.tone !== shown?.tone || endingText(ending) !== text)) setShown(ending)
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+      className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
       inert={!ending}
       data-terminal-ending={ending?.tone}
     >
+      {/* Rendered from the start, so the text arriving in it is announced. */}
+      <span
+        aria-live="polite"
+        aria-atomic
+        className="min-w-0 truncate font-bold tracking-wider uppercase"
+        title={text || undefined}
+      >
+        {text}
+      </span>
       {shown && (
-        <>
-          <span className="min-w-0 truncate font-bold tracking-wider uppercase" title={text}>
-            {text}
+        <button
+          type="button"
+          aria-disabled={paused || undefined}
+          className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring) aria-disabled:cursor-default aria-disabled:no-underline aria-disabled:opacity-50"
+          onClick={() => {
+            if (!paused) onRestart()
+          }}
+        >
+          Restart
+          <span aria-hidden className="font-normal opacity-60">
+            ↵
           </span>
-          <button
-            type="button"
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring)"
-            onClick={onRestart}
-          >
-            Restart
-            <span aria-hidden className="font-normal opacity-60">
-              ↵
-            </span>
-          </button>
-        </>
+        </button>
       )}
     </div>
   )
@@ -287,6 +298,7 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
             surface's own padding. */}
         <EndingBar
           ending={ending}
+          paused={locked}
           onRestart={() => {
             restart.current.run()
             // The button leaves with the bar; typing goes on in the fresh shell.
