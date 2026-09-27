@@ -7,6 +7,8 @@ import {
   type Shortcut,
 } from "./shortcuts"
 
+export type { KeyTarget }
+
 // Everything routing reads from a key event, so it can run without a DOM.
 export type KeyInput = Pick<
   KeyboardEvent,

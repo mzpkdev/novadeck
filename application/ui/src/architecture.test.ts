@@ -26,7 +26,8 @@ const rules: Record<string, readonly string[]> = {
     "app/selectors.ts",
     "backend/port.ts",
     "model/",
-    "interaction/",
+    // The keymap's types only: commands never touch the DOM contracts in interaction/dom.ts.
+    "interaction/keymap.ts",
     "shell/shell-state.ts",
     "terminals/rename-state.ts",
     "terminals/recent.ts",

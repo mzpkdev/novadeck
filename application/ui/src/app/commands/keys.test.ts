@@ -1,7 +1,12 @@
 import { afterEach, vi } from "vitest"
 
-import type { KeyTarget } from "../../interaction/dom"
-import { keymapFor, routeKey, type KeyInput, type KeyPhase } from "../../interaction/keymap"
+import {
+  keymapFor,
+  routeKey,
+  type KeyInput,
+  type KeyPhase,
+  type KeyTarget,
+} from "../../interaction/keymap"
 import type { CanvasHandle } from "../../layouts/canvas/types"
 import { context, describe, expect, it } from "../../test"
 import { openCommands, type CommandsOptions } from "../../test/commands"
