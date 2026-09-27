@@ -5,6 +5,13 @@ import type { SidebarPanel } from "../../shell/shell-state"
 import type { WorkspaceNavigator } from "../routing"
 import type { UiStore } from "../ui-store"
 
+// Enough of an element, such as the button that opened the switcher, to give it
+// focus back later.
+export type FocusTarget = {
+  readonly isConnected: boolean
+  readonly focus: (options?: FocusOptions) => void
+}
+
 // Everything a command does outside the stores. app/controller/effects.ts supplies
 // the DOM versions; tests pass their own.
 export type CommandEffects = {
@@ -16,6 +23,8 @@ export type CommandEffects = {
   readonly focusZenEnter: () => void
   readonly focusWorkspaceViewport: () => void
   readonly focusTerminalTab: (id: string) => void
+  // Focuses the element again if it is still on the page.
+  readonly refocus: (element: FocusTarget) => void
   readonly afterFrame: (run: () => void) => void
   readonly afterMicrotask: (run: () => void) => void
   // Runs `run` after `ms` milliseconds; returns the cancel.

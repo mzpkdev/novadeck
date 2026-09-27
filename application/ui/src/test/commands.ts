@@ -58,6 +58,10 @@ export const openCommands = ({
     focusZenEnter: () => effects.push("focus zen enter"),
     focusWorkspaceViewport: () => effects.push("focus viewport"),
     focusTerminalTab: (id) => effects.push(`focus tab ${id}`),
+    refocus: (element) => {
+      effects.push("refocus")
+      if (element.isConnected) element.focus({ preventScroll: true })
+    },
     afterFrame: (run) => queued.push(run),
     afterMicrotask: (run) => queued.push(run),
     after: (ms, run) => {

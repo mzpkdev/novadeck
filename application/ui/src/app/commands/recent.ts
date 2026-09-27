@@ -1,13 +1,10 @@
 import { orderedTerminals } from "../../model/roster"
 import { openRecent, visibleSwitcher, type RecentSwitcher } from "../../terminals/recent"
 import { currentContext, currentState } from "../selectors"
-import type { CommandContext } from "./context"
+import type { CommandContext, FocusTarget } from "./context"
 
-// Enough of the button that opened the switcher to hand focus back to it.
-export type SwitcherTrigger = {
-  readonly isConnected: boolean
-  readonly focus: (options?: FocusOptions) => void
-}
+// The button that opened the switcher, which gets focus back when it closes.
+export type SwitcherTrigger = FocusTarget
 
 export type RecentCommands = {
   // The current session's terminals, most recently selected first.
@@ -57,9 +54,7 @@ export const createRecentCommands = ({
     closeSwitcher: () => {
       const focus = visible()?.mode === "click" ? trigger : null
       setSwitcher(null)
-      effects.afterMicrotask(() => {
-        if (focus?.isConnected) focus.focus({ preventScroll: true })
-      })
+      if (focus) effects.afterMicrotask(() => effects.refocus(focus))
     },
   }
 }

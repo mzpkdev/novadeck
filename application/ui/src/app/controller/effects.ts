@@ -18,6 +18,9 @@ export const domEffects: CommandEffects = {
   focusZenEnter,
   focusWorkspaceViewport,
   focusTerminalTab,
+  refocus: (element) => {
+    if (element.isConnected) element.focus({ preventScroll: true })
+  },
   afterFrame: (run) => void requestAnimationFrame(() => run()),
   afterMicrotask: (run) => queueMicrotask(run),
   after: (ms, run) => {
