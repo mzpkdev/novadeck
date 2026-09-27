@@ -171,8 +171,7 @@ Local access uses a MessagePort handed to the page through the preload bridge;
 holding the port is the credential. Remote access requires authentication,
 HTTPS/WSS, and origin checks. Authorize each terminal operation, bound message
 sizes, calls in flight, and retained terminal records, cap terminal counts on a
-shared runner, and
-keep terminal contents out of ordinary request logs. CORS is configuration, not
+shared runner, and keep terminal contents out of ordinary request logs. CORS is configuration, not
 authentication. Shells run with the runner owner's permissions.
 
 ## Implementation order

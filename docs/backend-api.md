@@ -186,8 +186,7 @@ about once a second. `removed` reports a closed terminal or an evicted exited
 record. A consumer clears its set of reported terminals on `reset` and, at `synced`,
 forgets every terminal outside it, such as one that ended with a restarted runner.
 `reset` comes from the client; the runner's own stream starts at the first `changed`.
-The
-runner keeps at most the latest unread summary per terminal for each watcher, so a
+The runner keeps at most the latest unread summary per terminal for each watcher, so a
 slow consumer skips intermediate states instead of growing a backlog. A refused
 subscription, such as `RESOURCE_LIMIT` while the connection has too many calls in
 flight, is retried after a delay growing from 200 ms to 3 s. Iteration ends only

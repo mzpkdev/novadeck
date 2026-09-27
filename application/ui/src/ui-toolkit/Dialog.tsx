@@ -15,16 +15,15 @@ export type DialogProps = {
   finalFocusEl?: () => HTMLElement | null
   contentRef?: RefObject<HTMLDivElement | null>
   modal?: boolean
-  // "alertdialog" for a confirmation: Ark then focuses the close trigger (the safe
-  // choice) first and keeps outside clicks from dismissing it unless allowed here.
+  // "alertdialog" for a confirmation: outside clicks do not dismiss it unless
+  // allowed here. Set the first focus with initialFocusEl.
   role?: "dialog" | "alertdialog"
   closeOnInteractOutside?: boolean
 }
 
-// Parts that name, describe and dismiss a dialog; Ark wires their ids and focus.
+// Parts that name and describe a dialog; Ark wires their ids.
 export const DialogTitle = ArkDialog.Title
 export const DialogDescription = ArkDialog.Description
-export const DialogCloseTrigger = ArkDialog.CloseTrigger
 
 export const Dialog = ({
   open,

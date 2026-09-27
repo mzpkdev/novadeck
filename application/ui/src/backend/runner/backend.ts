@@ -213,6 +213,9 @@ export const runnerBackend = (
   const saveDelay = options.saveDelay ?? defaultSaveDelay
   const seed = runnerSeed(listing)
   const connection = createStore<BackendConnectionState>("connected")
+  // Created before anything can settle a terminal, since settling checks it.
+  const boot = createBootProgress({ entry: (id) => entries.get(id), now })
+  const checkBoot = boot.check
   const pending = new Set<Promise<unknown>>()
   const track = <T>(work: Promise<T>): Promise<T> => {
     pending.add(work)
@@ -658,9 +661,6 @@ export const runnerBackend = (
     // commit, so it runs once the commit is done.
     if (!initial) queueMicrotask(reviveOnScreen)
   }
-
-  const boot = createBootProgress({ entry: (id) => entries.get(id), now })
-  const checkBoot = boot.check
 
   const runtime: SurfaceRuntime = {
     entry: (key) => registry.get(key)?.entry,
