@@ -1,4 +1,5 @@
 import "@xterm/xterm/css/xterm.css"
+import "./runner.css"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal, type ITheme } from "@xterm/xterm"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"

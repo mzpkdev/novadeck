@@ -1,0 +1,6 @@
+/* xterm.css paints its scroll viewport black under the themed screen. At fractional
+   display scales the screen's edges land between pixels and that black shows through
+   as thin lines, so the viewport takes the surface's own background. */
+.runner-terminal .xterm .xterm-viewport {
+  background-color: transparent;
+}
