@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef } from "react"
 import type { Location, NavigateFunction, NavigationType } from "react-router"
 
+import { syncLocation, type NavigatorServices, type RouterBinding } from "../commands/navigator"
 import { routeUrl } from "../routing"
 import type { UiState } from "../ui-store"
-import { syncLocation, type NavigatorServices, type RouterBinding } from "./navigator"
 import { useStoreSelector } from "./useStoreSelector"
 
 export type RouterState = {

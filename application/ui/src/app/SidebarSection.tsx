@@ -4,17 +4,7 @@ import { useWorkspace } from "./controller/context"
 
 // The sidebar wired to the workspace: terminal tabs and workspace sessions.
 export const SidebarSection = (): React.JSX.Element => {
-  const {
-    project,
-    session: current,
-    target,
-    route,
-    navigation,
-    shell,
-    rename,
-    commands,
-  } = useWorkspace()
-  const { dispatch } = navigation
+  const { project, session: current, target, route, shell, rename, commands } = useWorkspace()
   const projectId = project.id
   const workspaceSessionId = current.id
   const workspaceSessions = project.history
@@ -25,11 +15,7 @@ export const SidebarSection = (): React.JSX.Element => {
   const sidebarPanel = route.panel
   const { sidebarVisible, hideSidebar } = shell
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
-  const { switchSession, startFresh, select, add, close } = commands
-  const setVisibility = (terminalId: string, isHidden: boolean): void =>
-    dispatch({ type: "terminal/visibility", target, terminalId, hidden: isHidden })
-  const setTabOrder = (tabOrder: string[]): void =>
-    dispatch({ type: "terminal/reorder", target, tabOrder })
+  const { switchSession, startFresh, select, add, close, setVisibility, reorder } = commands
   return (
     <WorkspaceSidebar
       projectId={projectId}
@@ -46,7 +32,7 @@ export const SidebarSection = (): React.JSX.Element => {
       onFresh={startFresh}
       onHide={hideSidebar}
       onCreate={() => add()}
-      onVisibilityChange={setVisibility}
+      onVisibilityChange={(terminalId, isHidden) => setVisibility(target, terminalId, isHidden)}
       onSelect={select}
       onBeginRename={(id) => {
         const terminal = terminals.find((item) => item.id === id)
@@ -56,7 +42,7 @@ export const SidebarSection = (): React.JSX.Element => {
       onRenameSave={saveRename}
       onRenameCancel={cancelRename}
       onClose={close}
-      onReorder={setTabOrder}
+      onReorder={(tabOrder) => reorder(target, tabOrder)}
     />
   )
 }

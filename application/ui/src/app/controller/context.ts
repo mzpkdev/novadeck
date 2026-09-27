@@ -1,17 +1,23 @@
-import { createContext, useContext } from "react"
+import { createContext, useContext, type RefObject } from "react"
 
 import type { Backend } from "../../backend/port"
+import type { CanvasHandle } from "../../layouts/canvas/types"
 import type { WorkspaceStore } from "../../model/store"
+import type { WorkspaceCommands } from "../commands/workspace"
+import type { WorkspaceNavigator } from "../routing"
 import type { UiStore } from "../ui-store"
-import type { WorkspaceNavigator } from "./navigator"
 import type { WorkspaceController } from "./useWorkspaceController"
 
-// What the provider creates once per App: the backend, both stores, and navigation.
+// What the provider creates once per App: the backend, both stores, navigation and
+// the commands over them.
 export type WorkspaceServices = {
   readonly backend: Backend
   readonly workspace: WorkspaceStore
   readonly ui: UiStore
   readonly navigation: WorkspaceNavigator
+  readonly commands: WorkspaceCommands
+  // The mounted Canvas, for commands that move its camera.
+  readonly canvas: RefObject<CanvasHandle | null>
 }
 
 export const WorkspaceServicesContext = createContext<WorkspaceServices | null>(null)

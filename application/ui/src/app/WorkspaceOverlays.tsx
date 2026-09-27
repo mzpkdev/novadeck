@@ -27,7 +27,6 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
     route,
     navigation,
     preferences,
-    shell,
     recent,
     commands,
   } = useWorkspace()
@@ -35,9 +34,8 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
   const { view } = current.state
   const { terminals } = current.state.roster
   const ordered = orderedTerminals(current.state.roster)
-  const { setKeyboardFocus } = shell
-  const { visibleRecentSwitcher, setRecentSwitcher, closeRecentSwitcher } = recent
-  const { select, updatePreferences, openSearchResult } = commands
+  const { visibleRecentSwitcher, closeRecentSwitcher } = recent
+  const { chooseRecent, updatePreferences, openSearchResult } = commands
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(route.dialog, context)
   return (
@@ -47,11 +45,7 @@ export const WorkspaceOverlays = (): React.JSX.Element => {
           mode={visibleRecentSwitcher.mode}
           project={project.name}
           onClose={closeRecentSwitcher}
-          onSelect={(id) => {
-            setRecentSwitcher(null)
-            if (visibleRecentSwitcher.mode === "click") setKeyboardFocus({ id, view })
-            select(id)
-          }}
+          onSelect={chooseRecent}
           terminals={visibleRecentSwitcher.ids.flatMap((id) => {
             const terminal = terminals.find((item) => item.id === id)
             return terminal ? [terminal] : []

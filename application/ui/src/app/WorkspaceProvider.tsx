@@ -1,14 +1,17 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { createRef, useEffect, useState, type ReactNode } from "react"
 import { useLocation, useNavigate, useNavigationType, type Location } from "react-router"
 
 import type { CreateBackend } from "../backend/port"
+import type { CanvasHandle } from "../layouts/canvas/types"
 import { workspaceFromSeed } from "../model/seed"
 import { createWorkspaceStore } from "../model/store"
 import { readPreferences } from "../preferences/preferences-storage"
 import { readSidebarCollapsed, readWindowedView } from "../shell/shell-storage"
+import { createNavigator, type NavigatorServices, type RouterBinding } from "./commands/navigator"
+import { createWorkspaceCommands } from "./commands/workspace"
 import { connectBackend } from "./controller/backend-connection"
 import { WorkspaceServicesContext, type WorkspaceServices } from "./controller/context"
-import { createNavigator, type NavigatorServices, type RouterBinding } from "./controller/navigator"
+import { domEffects } from "./controller/effects"
 import { dialogDepthOf, useRouteSync } from "./controller/useRouteSync"
 import { resolveRoute } from "./routing"
 import {
@@ -50,8 +53,17 @@ const createServices = (
     }),
   )
   const { bind, settle, ...navigation } = createNavigator({ workspace, ui, now })
+  const canvas = createRef<CanvasHandle>()
+  const commands = createWorkspaceCommands({
+    workspace,
+    ui,
+    navigation,
+    newTerminal: backend.newTerminal,
+    canvas,
+    effects: domEffects,
+  })
   return {
-    services: { backend, workspace, ui, navigation },
+    services: { backend, workspace, ui, navigation, commands, canvas },
     sync: { workspace, ui, now, bind, settle },
   }
 }

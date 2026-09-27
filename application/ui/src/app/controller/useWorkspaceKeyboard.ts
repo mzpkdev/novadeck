@@ -37,14 +37,25 @@ export type WorkspaceKeyboardController = Pick<
   | "recent"
   | "commands"
   | "active"
+  | "windowedDestination"
 >
 
 export const useWorkspaceKeyboard = (
   controller: WorkspaceKeyboardController,
   canvas: RefObject<CanvasHandle | null>,
 ): void => {
-  const { workspace, route, navigation, preferences, shell, rename, recent, commands, active } =
-    controller
+  const {
+    workspace,
+    route,
+    navigation,
+    preferences,
+    shell,
+    rename,
+    recent,
+    commands,
+    active,
+    windowedDestination,
+  } = controller
   const { go } = navigation
   const current = activeSession(workspace)!
   const { view, selected } = current.state
@@ -71,7 +82,7 @@ export const useWorkspaceKeyboard = (
     closeRecentSwitcher,
     recentIds,
   } = recent
-  const { setSelected, select, windowedDestination, changeView, add, close, startFresh } = commands
+  const { setSelected, select, changeView, add, close, startFresh } = commands
   const workspaceEscape = useEffectEvent((event: KeyboardEvent): void => {
     if (
       event.key !== "Escape" ||

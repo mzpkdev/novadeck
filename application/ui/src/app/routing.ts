@@ -6,6 +6,7 @@ import {
   workspaceReducer,
   type WorkspaceAction,
 } from "../model/state"
+import type { WorkspaceTransaction } from "../model/store"
 import type { PreferencesValue, ViewMode, Workspace } from "../model/types"
 
 export type WorkspaceRoute = {
@@ -16,6 +17,22 @@ export type WorkspaceRoute = {
   panel: "terminals" | "sessions"
   dialog: "search" | "preferences" | null
   section: "general" | "shortcuts"
+}
+
+// URL-driven navigation over the workspace and UI stores. Each call commits the
+// destination's workspace actions and route before it navigates, so a command's
+// store changes and its URL change render together.
+export type WorkspaceNavigator = {
+  readonly go: (changes: Partial<WorkspaceRoute>, replace?: boolean) => void
+  // Commits actions first, then navigates to the route they produce.
+  readonly navigateWorkspace: (
+    actions: WorkspaceTransaction,
+    changes?: Partial<WorkspaceRoute>,
+    replace?: boolean,
+  ) => void
+  // Returns through history to the dialog's background entry when there is one.
+  readonly closeDialog: () => void
+  readonly href: (changes: Partial<WorkspaceRoute>) => string
 }
 
 export const workspaceRoute = (workspace: Workspace): WorkspaceRoute => ({

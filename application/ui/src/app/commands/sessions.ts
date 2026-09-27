@@ -4,12 +4,10 @@ import type { ViewMode, WindowedView, WorkspaceSession } from "../../model/types
 
 // A fresh, empty workspace session named after the minute it started.
 export const newWorkspaceSession = (
-  view: ViewMode,
-  windowedView: WindowedView,
-): WorkspaceSession => {
-  const now = Date.now()
-  return createWorkspaceSession(
+  { view, windowedView }: { view: ViewMode; windowedView: WindowedView },
+  { id, now }: { id: string; now: number },
+): WorkspaceSession =>
+  createWorkspaceSession(
     { name: sessionName(now), state: createTerminalState([], view, windowedView) },
-    { id: crypto.randomUUID(), now },
+    { id, now },
   )
-}

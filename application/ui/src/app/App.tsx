@@ -1,15 +1,13 @@
-import { useRef } from "react"
 import { HashRouter } from "react-router"
 
 import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
-import type { CanvasHandle } from "../layouts/canvas/types"
 import { cancelTerminalTransition } from "../layouts/transition"
 import { SidebarRail } from "../shell/SidebarRail"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { ZenDock } from "../shell/ZenDock"
 import { selectBackend } from "./backend"
-import { WorkspaceContext } from "./controller/context"
+import { useWorkspaceServices, WorkspaceContext } from "./controller/context"
 import { useWorkspaceController } from "./controller/useWorkspaceController"
 import { useWorkspaceKeyboard } from "./controller/useWorkspaceKeyboard"
 import { HeaderSection } from "./HeaderSection"
@@ -40,7 +38,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const { sidebar, sidebarCollapsed, sidebarVisible, zen, hideSidebar, toggleSidebar, exitZen } =
     shell
   const { changeView, add } = commands
-  const canvas = useRef<CanvasHandle>(null)
+  const { canvas } = useWorkspaceServices()
   useWorkspaceKeyboard(controller, canvas)
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <SidebarRail

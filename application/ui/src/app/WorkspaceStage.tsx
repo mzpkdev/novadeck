@@ -18,8 +18,7 @@ export const WorkspaceStage = ({
 }: {
   readonly canvas: RefObject<CanvasHandle | null>
 }): React.JSX.Element => {
-  const { session: current, target, context, navigation, shell, commands, active } = useWorkspace()
-  const { dispatch } = navigation
+  const { session: current, target, context, shell, commands, active } = useWorkspace()
   const { view, selected } = current.state
   const { terminals } = current.state.roster
   const {
@@ -37,16 +36,26 @@ export const WorkspaceStage = ({
     canvasKeyboardFocus,
     navigation: shellNavigation,
   } = shell
-  const { setSelected, add } = commands
+  const {
+    setSelected,
+    add,
+    setCanvasLayout: saveCanvasLayout,
+    setGridLayouts: saveGridLayouts,
+    toggleGridWidth,
+    toggleGridMinimized,
+    setSizePreset,
+    showAll,
+  } = commands
   const preview = hidden[selected] ? selected : ""
   const layoutHidden = useLayoutHidden(hidden, preview)
+  // Views save layouts for the session they rendered, even after it is left.
   const setCanvasLayout = useCallback(
-    (layout: ValueUpdate<CanvasLayout>) => dispatch({ type: "canvas/layout", target, layout }),
-    [dispatch, target],
+    (layout: ValueUpdate<CanvasLayout>) => saveCanvasLayout(target, layout),
+    [saveCanvasLayout, target],
   )
   const setGridLayouts = useCallback(
-    (layouts: ValueUpdate<GridLayouts>) => dispatch({ type: "grid/layouts", target, layouts }),
-    [dispatch, target],
+    (layouts: ValueUpdate<GridLayouts>) => saveGridLayouts(target, layouts),
+    [saveGridLayouts, target],
   )
   return (
     <section
@@ -85,18 +94,11 @@ export const WorkspaceStage = ({
             navigation={shellNavigation.count}
             presets={sizePresets.grid}
             restoreWidths={gridRestoreWidths}
-            onToggleWidth={(terminalId, change) =>
-              dispatch({
-                type: "grid/size-toggle",
-                target,
-                terminalId,
-                change,
-              })
-            }
+            onToggleWidth={(terminalId, change) => toggleGridWidth(target, terminalId, change)}
             layouts={gridLayouts}
             onLayoutsChange={setGridLayouts}
             minimized={gridMinimized}
-            onMinimize={(terminalId) => dispatch({ type: "grid/minimize", target, terminalId })}
+            onMinimize={(terminalId) => toggleGridMinimized(target, terminalId)}
             onCreate={() => {
               add({ beginRename: false })
             }}
@@ -110,13 +112,7 @@ export const WorkspaceStage = ({
             preview={preview}
             presets={sizePresets.canvas}
             onPresetChange={(terminalId, preset) =>
-              dispatch({
-                type: "terminal/size-preset",
-                target,
-                terminalId,
-                view: "canvas",
-                preset,
-              })
+              setSizePreset(target, terminalId, "canvas", preset)
             }
             layout={canvasLayout}
             matchCreatedTerminalRatio={Boolean(zen)}
@@ -145,13 +141,9 @@ export const WorkspaceStage = ({
             <button
               className="small-button"
               onClick={() =>
-                terminals.forEach((terminal) =>
-                  dispatch({
-                    type: "terminal/visibility",
-                    target,
-                    terminalId: terminal.id,
-                    hidden: false,
-                  }),
+                showAll(
+                  target,
+                  terminals.map((terminal) => terminal.id),
                 )
               }
             >

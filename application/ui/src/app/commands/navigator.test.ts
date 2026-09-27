@@ -1,12 +1,10 @@
-import type { NavigateFunction, NavigateOptions } from "react-router"
-
 import { createWorkspaceStore } from "../../model/store"
 import type { PreferencesValue, Workspace } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { workspaceFixture } from "../../test/fixtures"
 import { resolveRoute } from "../routing"
 import { createUiStore, initialUi } from "../ui-store"
-import { createNavigator, syncLocation } from "./navigator"
+import { createNavigator, syncLocation, type RouterNavigate } from "./navigator"
 
 const preferences: PreferencesValue = { fontSize: 13, enabledViews: ["focus", "grid", "canvas"] }
 const base = "/projects/project/sessions/initial/grid"
@@ -24,12 +22,12 @@ const open = (search = "?terminal=01", workspace: Workspace = workspaceFixture()
   )
   const services = { workspace: store, ui, now: () => 1 }
   const navigator = createNavigator(services)
-  const calls: { to: string | number; options: NavigateOptions | undefined; selected: string }[] =
-    []
+  type Options = { readonly replace: boolean; readonly state: unknown } | undefined
+  const calls: { to: string | number; options: Options; selected: string }[] = []
   const selected = (): string => store.getSnapshot().projects[0]!.history[0]!.state.selected
-  navigator.bind(((to: string | number, options?: NavigateOptions) => {
+  navigator.bind(((to: string | number, options?: Options) => {
     calls.push({ to, options, selected: selected() })
-  }) as NavigateFunction)
+  }) as RouterNavigate)
   return {
     store,
     ui,

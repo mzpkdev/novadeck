@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from "react"
 
-import { transitionTerminal } from "../layouts/transition"
 import type { TerminalMetadata } from "../model/types"
 import { TerminalFrame, type TerminalLayoutControls } from "../terminals/TerminalFrame"
 import { useWorkspace } from "./controller/context"
@@ -19,18 +18,19 @@ export const WorkspaceTerminal = ({
     session: current,
     target,
     context,
-    navigation,
     preferences,
     shell,
     rename,
     recent,
     commands,
+    created,
+    windowedDestination,
   } = useWorkspace()
   const { view, selected } = current.state
   const { sizePresets } = current.state.layout
-  const { keyboardFocus, setKeyboardFocus, setRevealCanvas, setSidebar } = shell
+  const { keyboardFocus, setKeyboardFocus } = shell
   const { renameView, startRename, changeRenameDraft, saveRename, cancelRename } = rename
-  const { created, windowedDestination, setSelected, openWindowed, close } = commands
+  const { setSelected, openWindowed, openFocus, close } = commands
   const compact = view !== "focus"
   const large = view !== "focus" && sizePresets[view][terminal.id] === "large"
   const windowedLabel = windowedDestination === "canvas" ? "Canvas" : "Grid"
@@ -69,12 +69,7 @@ export const WorkspaceTerminal = ({
       large={large}
       {...(compact && preferences.enabledViews.includes("focus")
         ? {
-            onFocus: () =>
-              transitionTerminal(terminal.id, () => {
-                navigation.go({ terminal: terminal.id, view: "focus" })
-                setRevealCanvas(false)
-                setSidebar(false)
-              }),
+            onFocus: () => openFocus(terminal.id),
           }
         : !compact && windowedDestination
           ? {

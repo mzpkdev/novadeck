@@ -18,10 +18,34 @@ const rules: Record<string, readonly string[]> = {
   "layouts/": [...base, "layouts/", "sidebar/", "terminals/"],
   "shell/": [...base, "shell/", "sidebar/", "terminals/", "layouts/", "projects/"],
   "app/": ["app/", "backend/", ...base, ...features, "terminals/", "layouts/", "shell/"],
+  // Commands are plain functions over the stores: no React, no DOM libraries.
+  "app/commands/": [
+    "app/commands/",
+    "app/routing.ts",
+    "app/ui-store.ts",
+    "app/selectors.ts",
+    "backend/port.ts",
+    "model/",
+    "interaction/",
+    "shell/shell-state.ts",
+    "terminals/rename-state.ts",
+    "terminals/recent.ts",
+    "layouts/canvas/types.ts",
+  ],
   "specs/": ["specs/", "app/App.tsx", "styles.css"],
   // Entry point and support modules outside the feature layers.
   "main.tsx": ["app/", "styles.css"],
-  "test/": ["test/", "test.ts", "model/", "backend/"],
+  "test/": [
+    "test/",
+    "test.ts",
+    "model/",
+    "backend/",
+    // Command tests run the real stores, navigator and commands.
+    "app/commands/",
+    "app/routing.ts",
+    "app/ui-store.ts",
+    "layouts/canvas/types.ts",
+  ],
   "test.ts": [],
   "class-name.ts": [],
   "content-security-policy.ts": [],
@@ -36,9 +60,14 @@ const adapterRule = (layer: string): readonly string[] => [
 const adapterSelection = "app/backend.ts"
 const adapterSelectionExports = ["selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
-// adapter or test code. model/ uses none; core backend/ uses React types only.
+// adapter or test code. model/ and app/commands/ use none; core backend/ uses React
+// types only.
 const everywherePackages = new Set(["react", "lucide-react"])
-const typeOnlyPackages: Record<string, readonly string[]> = { "model/": [], "backend/": ["react"] }
+const typeOnlyPackages: Record<string, readonly string[]> = {
+  "model/": [],
+  "backend/": ["react"],
+  "app/commands/": [],
+}
 const testLayers = new Set(["specs/", "test/", "test.ts"])
 const vendors: Record<string, readonly string[]> = {
   clsx: ["class-name.ts"],

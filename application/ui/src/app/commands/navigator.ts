@@ -1,27 +1,15 @@
-import type { NavigateFunction } from "react-router"
-
 import { activeProject } from "../../model/state"
 import type { WorkspaceStore, WorkspaceTransaction } from "../../model/store"
 import { resetPresentation } from "../../shell/shell-state"
-import { resolveRoute, routeUrl, workspaceRoute, type WorkspaceRoute } from "../routing"
+import {
+  resolveRoute,
+  routeUrl,
+  workspaceRoute,
+  type WorkspaceNavigator,
+  type WorkspaceRoute,
+} from "../routing"
 import { currentContext, currentPresentation } from "../selectors"
 import { updateShell, type UiLocation, type UiStore } from "../ui-store"
-
-// URL-driven navigation over the workspace and UI stores. Each call commits the
-// destination's workspace actions and route before it navigates, so a command's
-// store changes and its URL change render together.
-export type WorkspaceNavigator = {
-  readonly go: (changes: Partial<WorkspaceRoute>, replace?: boolean) => void
-  // Commits actions first, then navigates to the route they produce.
-  readonly navigateWorkspace: (
-    actions: WorkspaceTransaction,
-    changes?: Partial<WorkspaceRoute>,
-    replace?: boolean,
-  ) => void
-  // Returns through history to the dialog's background entry when there is one.
-  readonly closeDialog: () => void
-  readonly href: (changes: Partial<WorkspaceRoute>) => string
-}
 
 export type NavigatorServices = {
   readonly workspace: WorkspaceStore
@@ -29,10 +17,16 @@ export type NavigatorServices = {
   readonly now: () => number
 }
 
+// The router's navigate, reduced to what the navigator asks of it.
+export type RouterNavigate = {
+  (to: string, options: { readonly replace: boolean; readonly state: unknown }): void
+  (delta: number): void
+}
+
 // What the route-sync layer needs besides the public navigator.
 export type RouterBinding = {
   // Hands the navigator the router's navigate function.
-  readonly bind: (navigate: NavigateFunction) => void
+  readonly bind: (navigate: RouterNavigate) => void
   // Records the URL the router settled on, so a repeated request for it is ignored.
   readonly settle: (url: string) => void
 }
@@ -59,7 +53,7 @@ export const createNavigator = ({
   ui,
   now,
 }: NavigatorServices): WorkspaceNavigator & RouterBinding => {
-  let navigate: NavigateFunction | undefined
+  let navigate: RouterNavigate | undefined
   let requested = routeUrl(ui.getSnapshot().location.route)
   const current = () => ui.getSnapshot().location
 
