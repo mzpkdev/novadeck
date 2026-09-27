@@ -188,6 +188,18 @@ describe("workspace commands", () => {
       expect(app.ui.getSnapshot().closing).toBeNull()
     })
 
+    it("drops the question when the terminal goes away on its own", () => {
+      const app = openCommands({ workspace: running() })
+      app.commands.close("01")
+      app.workspace.dispatch({
+        type: "terminal/close",
+        target: { projectId: "project", workspaceSessionId: "initial" },
+        terminalId: "01",
+      })
+      expect(app.ui.getSnapshot().closing).toBeNull()
+      expect(keyState(app.context, app.commands)).toMatchObject({ dialog: false, alert: false })
+    })
+
     it("counts as an alert that holds every shortcut back", () => {
       const app = openCommands({ workspace: running() })
       app.commands.close("01")

@@ -137,21 +137,25 @@ export const connectRunnerBackend = async (
     const debug = rehearsals
       ? createRunnerDebug({ rehearsals, killRunner: kill && (() => kill()) })
       : undefined
-    let latest: RunnerBackend | undefined
+    // StrictMode creates a backend twice and keeps the first, so the last one created is
+    // not necessarily the one running: close waits on them all (an unstarted one is idle).
+    const created: RunnerBackend[] = []
     return {
       createBackend: () => {
-        latest = runnerBackend(runner, listing, {
+        const next = runnerBackend(runner, listing, {
           newId,
           ...(pick ? { pickDirectory: () => pick() } : {}),
           debug,
         })
-        return latest.backend
+        created.push(next)
+        return next.backend
       },
       // The app closes the connection before its workspace stops, and stopping sends
       // the last saves: let that happen, and let them land, before disconnecting.
       close: () => {
         setTimeout(() => {
-          void Promise.race([latest?.idle(), pause(closeGraceMs)]).finally(() => runner.close())
+          const idle = Promise.all(created.map((backend) => backend.idle()))
+          void Promise.race([idle, pause(closeGraceMs)]).finally(() => runner.close())
         }, 0)
       },
     }

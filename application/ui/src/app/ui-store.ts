@@ -167,10 +167,17 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 }
 
 // A close confirmation belongs to the session it was asked in: leaving that session
-// drops it, so it never comes back unasked.
+// drops it, so it never comes back unasked. So does the terminal going away on its own
+// (its shell exits): the dialog stops showing, and a question left behind would still
+// hold every shortcut back.
 export const watchClosing = (workspace: Store<Workspace>, ui: UiStore): (() => void) =>
   workspace.subscribe(() => {
     const { closing } = ui.getSnapshot()
-    if (closing && closing.context !== currentContext(workspace.getSnapshot()))
+    if (!closing) return
+    const snapshot = workspace.getSnapshot()
+    if (
+      closing.context !== currentContext(snapshot) ||
+      !currentState(snapshot).roster.terminals.some((terminal) => terminal.id === closing.id)
+    )
       ui.update((state) => ({ ...state, closing: null }))
   })
