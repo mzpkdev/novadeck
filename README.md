@@ -178,37 +178,47 @@ backend-only tests.
 
 Source lives in `application/ui/src/`, grouped in layers:
 
-| Location                                           | What belongs here                                                           |
-| -------------------------------------------------- | --------------------------------------------------------------------------- |
-| `app/`                                             | Composition root: router, backend selection, controllers, page sections.    |
-| `app/controller/`                                  | Route, command, keyboard, and composed workspace controllers.               |
-| `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.       |
-| `backend/demo/`                                    | The demo adapter: sample projects, simulated terminals, and their surface.  |
-| `model/`                                           | Pure domain: types, reducer, store, seed, and layout rules in `layout/`.    |
-| `terminals/`                                       | Terminal frame, tabs, rename, and the recent-terminal switcher.             |
-| `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                 |
-| `layouts/` (top level)                             | Helpers shared by views: view transitions, background gestures, visibility. |
-| `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell presentation state.      |
-| `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                         |
-| `interaction/`                                     | Shortcut bindings and shared DOM focus/overlay contracts.                   |
-| `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                         |
-| `test/`                                            | Shared unit-test fixtures, a render helper, and the backend contract suite. |
-| `assets/`                                          | Static files referenced from CSS.                                           |
-| `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.               |
-| `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                    |
+| Location                                           | What belongs here                                                                       |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `app/`                                             | Composition root: router, provider, backend selection, and the page sections.           |
+| `app/ui-store.ts`                                  | The UI store: route, preferences, shell, rename, switcher, and its store subscriptions. |
+| `app/selectors.ts`                                 | Pure reads over the stores that sections, commands, and keys share.                     |
+| `app/commands/`                                    | Commands, key commands, and the navigator: plain functions over both stores.            |
+| `app/controller/`                                  | React glue: context, selector hook, route sync, keyboard dispatcher, effects.           |
+| `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.                   |
+| `backend/demo/`                                    | The demo adapter: sample projects, simulated terminals, and their surface.              |
+| `model/`                                           | Pure domain: types, reducer, workspace store, seed, and layout rules in `layout/`.      |
+| `model/roster.ts`                                  | A session's terminals, their sidebar order, and their status.                           |
+| `model/layout/workspace-layout.ts`                 | Where each terminal sits and how big it is in each view.                                |
+| `terminals/`                                       | Terminal frame, tabs, rename state, and the recent-terminal switcher.                   |
+| `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                             |
+| `layouts/` (top level)                             | Helpers shared by views: view transitions, background gestures, visibility.             |
+| `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell state transitions.                   |
+| `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                                     |
+| `interaction/`                                     | Shortcut records, the keymap, and shared DOM focus/overlay contracts.                   |
+| `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                                     |
+| `test/`                                            | Unit-test fixtures, a jsdom render helper, a command harness, and the port contract.    |
+| `assets/`                                          | Static files referenced from CSS.                                                       |
+| `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.                           |
+| `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                                |
 
 Imports point down the layers. `model/` imports nothing else, not even packages.
 `backend/` builds on `model/` and uses React only for the port's types; adapters
-may add `ui-toolkit/`. `interaction/` builds on `model/`; features add
-`ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use `terminals/`;
-`shell/` may use `layouts/` and `projects/`. `app/` composes every feature layer and `backend/`, and
-within it only `app/backend.ts` imports a backend adapter. Vendor libraries stay
-in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout in
-`layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
+may add `ui-toolkit/`. `interaction/` builds on `model/` and imports no packages;
+features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use
+`terminals/`; `shell/` may use `layouts/` and `projects/`. `app/` composes every
+feature layer and `backend/`, and within it only `app/backend.ts` imports a
+backend adapter. `app/commands/` imports no packages at all, not even React: it
+builds on `model/`, `interaction/`, `backend/port.ts`, the UI store, routing,
+selectors, and the pure state modules of `shell/` and `terminals/`. Vendor
+libraries stay in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout
+in `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
-`layouts/transition.ts`, `main.tsx`, and `test/`. Other packages are denied unless the
-test lists them: React and Lucide are allowed everywhere, while backend adapters
-and test code may use any package. Hooks declare named contracts instead of
+`layouts/transition.ts`, `main.tsx`, and `test/`. Other packages are denied
+unless the test lists them: React and Lucide are allowed everywhere, while
+backend adapters and test code may use any package. `test/` may import
+`model/`, `backend/`, and what the command harness runs: `app/commands/`, the UI
+store, routing, and the Canvas handle type. Hooks declare named contracts instead of
 `ReturnType<typeof useHook>`. `src/architecture.test.ts` enforces these rules and
 fails for a source file that belongs to no layer.
 
@@ -223,33 +233,78 @@ The path selects a project, workspace session, and view. Query parameters select
 the terminal, sidebar panel, and dialog (`dialog=search` or `dialog=preferences`);
 Preferences also accepts `section=shortcuts`. Back and Forward restore navigation
 without discarding terminal drafts or output. Sidebar visibility, search text,
-canvas gestures, and other temporary controls stay local.
+canvas gestures, and other temporary controls stay out of the URL.
 
 Sample sessions use the stable ID `initial`. New sessions still live only in
 memory: reloading an expired session link falls back to that project's available
 session. Unknown routes, missing terminals, and disabled views are replaced with
 a valid URL. Routing does not persist terminal data across reloads.
 
+The page renders from two synchronous stores only. The workspace store in
+`model/store.ts` holds the model: every session's roster, layout, and navigation
+memory, changed through one pure reducer. The UI store in `app/ui-store.ts`
+holds what the model does not own: the current route, preferences, the shell
+state from `shell/shell-state.ts`, the rename in progress, the recent-terminal
+switcher and each session's most-recent order, and the new-terminal highlight.
+It starts over on reload apart from preferences, the collapsed sidebar, and the
+windowed view, which store subscriptions persist. `WorkspaceProvider` creates
+the backend, both stores, the navigator, and the commands once per App, in a
+pure initializer, and shares them through context; it receives the page as
+children, so a URL change re-renders only the provider.
+
 The URL owns current navigation; the workspace model remembers each session's
-last selection. Commands reduce the latest model synchronously, so several
-actions in one event retain one another's changes. Read command-time state when
-constructing an action that depends on a counter or the current selection.
-Address updates by project and session IDs so delayed callbacks affect their
-original session or become a no-op after it is removed.
+last selection. The navigator in `app/commands/navigator.ts` commits a
+destination's workspace actions and route to the stores before it asks the
+router to navigate, so a command's changes and its URL render together. The
+route sync in `app/controller/useRouteSync.ts` is the one place the URL enters
+the stores: in a layout effect it reconciles Back, Forward, typed URLs, and
+preference changes against the latest model and replaces a URL that names
+something unavailable. A session change starts the shell's presentation over in
+the same commit, through a store subscription, and Back or Forward does the same
+from route sync, so a view that mounts next already sees it.
+
+Commands in `app/commands/` are the operations the pointer UI and the keyboard
+share. They are plain functions that read the latest stores when they run, so
+several in one event retain one another's changes; construct an action from
+command-time state when it depends on a counter or the current selection. They
+reach the page (focus, view transitions, timers, the clock) only through the
+`CommandEffects` that `app/controller/effects.ts` supplies, and tests pass their
+own. Address updates by project and session IDs so delayed callbacks affect
+their original session or become a no-op after it is removed: layout callbacks
+take the target their view rendered with, because Canvas saves its geometry when
+it unmounts after a session switch.
+
+Keyboard shortcuts are data. `interaction/keymap.ts` lists every binding by
+layer and routes a key from its input, the kind of element it was pressed on,
+and the store state, without touching the DOM; `app/commands/keys.ts` maps each
+command id onto the commands, and `app/controller/useKeyboard.ts` listens on
+window in the capture and bubble phases of keydown, and for keyup and blur.
+Preferences renders its shortcut table from `shortcutGroups`. Canvas keeps its
+own zoom keys.
+
+Sections in `app/` subscribe to just what they render with `useWorkspaceState`
+and `useUiState`, built on `useStoreSelector`, and share selectors from
+`app/selectors.ts`. Each terminal frame and sidebar tab selects by its own
+terminal, so a rename keystroke re-renders only that tab and frame, and a Canvas
+layout save re-renders only Canvas and the terminals on it. Effects that must follow a commit, such as
+saving a rename left behind, live in `app/controller/useWorkspaceEffects.ts`.
+Feature components outside `app/` take props.
 
 Terminal metadata and saved layouts live in the workspace model. Everything
 else about a terminal belongs to a backend behind the port in `backend/port.ts`:
 it supplies the starting workspace seed, allocates new terminals synchronously,
 sees every store commit before listeners run, and renders the content inside
 each terminal frame. A surface marks the element that takes typed input with
-`data-terminal-input`, so shortcuts treat it as terminal input. The demo adapter keeps drafts, output, and scroll offsets
-per terminal with one subscription each, so output does not trigger
-workspace-wide renders. A terminal's presentation can unmount during view or
-session changes without losing that state; closing the terminal removes it.
-`backend/registry.ts` provides this lifecycle for any adapter. An adapter
-checks itself against the port by calling `describeBackendContract` from
-`test/backend-contract.tsx` in a colocated `contract.test.ts`. `App` reads a
-`createBackend` factory once at mount, and `app/backend.ts` chooses the default.
+`data-terminal-input`, so shortcuts treat it as terminal input. The demo adapter
+keeps drafts, output, and scroll offsets per terminal with one subscription
+each, so output does not trigger workspace-wide renders. A terminal's
+presentation can unmount during view or session changes without losing that
+state; closing the terminal removes it. `backend/registry.ts` provides this
+lifecycle for any adapter. An adapter opts into the port contract suite by
+calling `describeBackendContract` from `test/backend-contract.tsx` in a
+colocated `contract.test.ts`, with a probe of what it holds and the I/O it
+started, and a driver when it has `start`. `App` reads a `createBackend` factory
+once at mount, and `app/backend.ts` chooses the default.
 
 A backend reports changes of its own, such as a process exiting or failing to
 start, through the optional `start`. It runs from an effect after mount and
@@ -260,12 +315,9 @@ waiting for an asynchronous seed or connection, and disposing a backend arrive
 with the runner adapter. Workspace sessions are still created in the UI, outside the port.
 
 XYFlow owns live Canvas gestures; save geometry and camera state when a gesture
-ends or the view unmounts. Grid and Canvas implementations load on demand. Keep
-vendor-specific types and CSS inside their adapters, and use application-owned
-types for saved layouts. Rename, keyboard, recent-terminal switching, and shell
-presentation have separate controllers. `useWorkspaceController` composes them,
-and the page sections in `app/` read the result from `WorkspaceContext`; feature
-components still take props.
+ends or the view unmounts. Grid, Canvas, Preferences, and search load on demand.
+Keep vendor-specific types and CSS inside their adapters, and use
+application-owned types for saved layouts.
 
 Keep direct Ark UI imports in `ui-toolkit/`; features own their content and state.
 Use Tailwind utilities for ordinary component styling. See [CODING.md](CODING.md)
@@ -288,7 +340,8 @@ through accessible markup, improve the markup rather than adding test IDs.
 Install the browser once with `pnpm --filter @novadeck/ui exec playwright install chromium`.
 Run a single spec with `pnpm --filter @novadeck/ui exec vitest run --project behaviour src/specs/canvas.spec.tsx`,
 or `--project unit` for reducer invariants, terminal lifecycle, layout rules,
-architecture rules, and build checks in colocated `*.test.ts` files. Files in `src/specs/` keep
+stores, commands, keymap routing, render scope, architecture rules, and build
+checks in colocated `*.test.ts` files. Files in `src/specs/` keep
 the `*.spec.tsx` suffix. Use `--project motion` for transition behavior. The build
 checks validate both entry assets and deferred chunks with relative packaged paths.
 
