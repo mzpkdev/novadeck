@@ -78,12 +78,16 @@ export type Backend = {
   // Optional. How the link to the far side is doing, for the footer. Updates may begin
   // only once `start` runs.
   readonly connection?: Store<BackendConnectionState>
-  // Optional. While the far side keeps crashing and the backend stopped restarting
-  // terminals, how many crashes it counted in the last minute; 0 otherwise.
-  readonly runnerCrashes?: Store<number>
-  // Optional. Starts over after such crashes: the count clears and the terminals on
-  // screen that were lost or failed start fresh shells.
-  readonly retryAfterCrashLoop?: () => void
+  // Optional. Where the far side can keep crashing: the backend then stops restarting
+  // terminals until the person asks it to try again.
+  readonly crashLoop?: {
+    // While the backend holds back, how many crashes it counted in the last minute;
+    // 0 otherwise.
+    readonly crashes: Store<number>
+    // Starts over: the count clears and the terminals on screen that were lost or
+    // failed start fresh shells.
+    readonly retry: () => void
+  }
   // Optional. How far the restored session is from ready, so the boot splash can stay
   // up until its terminals are attached. Absent means ready at once.
   readonly boot?: Store<BootProgress>

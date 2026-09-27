@@ -3,8 +3,8 @@ import type { AttachedTerminal } from "@novadeck/protocol/client"
 import { vi } from "vitest"
 
 import { describe, expect, it } from "../../test"
-import type { RunnerEntry, SurfaceRuntime } from "./backend"
-import { followTerminal } from "./RunnerTerminal"
+import type { SurfaceRuntime } from "./backend"
+import { followTerminal } from "./follow"
 
 const key = { projectId: "p", workspaceSessionId: "s", terminalId: "t" }
 const envelope = { terminalId: "t" }
@@ -21,7 +21,6 @@ const replaying = (events: readonly TerminalEvent[]): AttachedTerminal => {
     return: async () => ({ value: undefined, done: true }),
     write: async () => {},
     resize: async () => {},
-    close: async () => {},
     detach: async () => {},
   }
   return attached
@@ -35,7 +34,8 @@ describe("following a runner terminal", () => {
       ready: Promise.resolve(true),
       revived: new Promise<void>(() => {}),
       closed: false,
-    } as unknown as RunnerEntry
+      size: { cols: 80, rows: 24 },
+    }
     const runtime = {
       entry: () => entry,
       attach: async () =>
@@ -44,6 +44,8 @@ describe("following a runner terminal", () => {
           { ...envelope, sequence: 2, type: "output", data: " $$\r\n" },
           { ...envelope, sequence: 3, type: "exited", exit },
         ]),
+      resized: () => {},
+      attached: () => () => {},
       connected: async () => {},
       lost: () => {},
       restart: () => {},

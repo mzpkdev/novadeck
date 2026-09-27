@@ -78,7 +78,7 @@ describe("saved session state", () => {
           "",
           "not json",
           "[]",
-          JSON.stringify({ ...broken, version: 1 }),
+          JSON.stringify({ ...broken, version: 99 }),
           JSON.stringify({ ...broken, rank: 3 }),
           JSON.stringify({ ...broken, state: { ...(broken.state as object), view: "list" } }),
           JSON.stringify({ ...broken, state: { ...(broken.state as object), layout: {} } }),

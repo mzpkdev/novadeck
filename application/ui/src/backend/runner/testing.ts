@@ -99,7 +99,6 @@ export const recordingRunner = (runner: Runner, io: string[]): RunnerApi => {
       },
       write: (data) => note(`write ${attached.id}`, () => attached.write(data)),
       resize: (size) => note(`resize ${attached.id}`, () => attached.resize(size)),
-      close: () => note(`close ${attached.id}`, () => attached.close()),
       detach: () => attached.detach(),
     }
     return wrapped

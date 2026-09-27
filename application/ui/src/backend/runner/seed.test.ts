@@ -15,7 +15,6 @@ const summary = (n: number, session: number, change: Partial<TerminalSummary> = 
   cwd: "/work/1",
   cols: 80,
   rows: 24,
-  status: "running" as const,
   exit: null,
   run: 1,
   process: "zsh",
@@ -99,7 +98,6 @@ describe("runner seed", () => {
               summary(20, 10, { process: "node" }),
               summary(22, 10, { process: "vim" }),
               summary(23, 10, {
-                status: "exited",
                 exit: { code: 1, signal: null, ranMs: 9_000 },
                 process: null,
               }),
@@ -152,7 +150,6 @@ describe("runner seed", () => {
               session: saved(10, 1, []),
               terminals: [
                 summary(20, 10, {
-                  status: "exited",
                   exit: { code: 3, signal: null, ranMs: 9_000 },
                   process: null,
                 }),
@@ -175,7 +172,6 @@ describe("runner seed", () => {
               session: saved(10, 1, [{ id: uuid(20), name: "done" }]),
               terminals: [
                 summary(20, 10, {
-                  status: "exited",
                   exit: { code: 0, signal: null, ranMs: 9_000 },
                   process: null,
                 }),
@@ -205,7 +201,6 @@ describe("runner seed", () => {
               ),
               terminals: [
                 summary(20, 10, {
-                  status: "exited",
                   exit: { code: 0, signal: null, ranMs: 9_000 },
                   process: null,
                 }),

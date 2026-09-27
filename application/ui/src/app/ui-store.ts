@@ -29,8 +29,8 @@ export type UiState = {
   readonly closing: { readonly context: string; readonly id: string } | null
   // The person chose "Not now" for this crash loop; it asks again only after the next one.
   readonly crashLoopDismissed: boolean
-  // The backend reports that its far side keeps crashing.
-  readonly crashLoopActive: boolean
+  // How many crashes the backend reports while its far side keeps crashing; 0 otherwise.
+  readonly crashLoop: number
 }
 
 export type UiLocation = {
@@ -62,7 +62,7 @@ export const initialUi = ({
   created: null,
   closing: null,
   crashLoopDismissed: false,
-  crashLoopActive: false,
+  crashLoop: 0,
 })
 
 export const updateShell = (ui: UiStore, change: (shell: ShellState) => ShellState): void =>
@@ -148,18 +148,18 @@ export const watchSwitcher = (workspace: Store<Workspace>, ui: UiStore): (() => 
   return () => stops.forEach((stop) => stop())
 }
 
-// Mirrors whether the backend reports a crash loop, which the crash-loop dialog and
+// Mirrors the backend's crash count, which the crash-loop dialog, the footer and
 // keyboard routing read; a crash loop that ends forgets "Not now", so the next one
 // asks again.
 export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore): (() => void) => {
   if (!crashes) return () => {}
   const check = (): void => {
-    const active = crashes.getSnapshot() > 0
+    const crashLoop = crashes.getSnapshot()
     ui.update((state) => {
-      const crashLoopDismissed = active && state.crashLoopDismissed
-      return state.crashLoopActive === active && state.crashLoopDismissed === crashLoopDismissed
+      const crashLoopDismissed = crashLoop > 0 && state.crashLoopDismissed
+      return state.crashLoop === crashLoop && state.crashLoopDismissed === crashLoopDismissed
         ? state
-        : { ...state, crashLoopActive: active, crashLoopDismissed }
+        : { ...state, crashLoop, crashLoopDismissed }
     })
   }
   check()

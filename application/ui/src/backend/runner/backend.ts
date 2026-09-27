@@ -9,25 +9,22 @@ import {
 } from "@novadeck/protocol/client"
 
 import { createStore } from "../../model/store"
-import type {
-  TerminalMetadata,
-  TerminalStatus,
-  Workspace,
-  WorkspaceSession,
-} from "../../model/types"
+import type { TerminalMetadata, TerminalStatus, Workspace } from "../../model/types"
 import type {
   Backend,
   BackendAction,
-  BootProgress,
   BackendConnectionState,
   BackendSink,
   TerminalKey,
 } from "../port"
 import { createTerminalRegistry } from "../registry"
 import { exitStatus, restartable, terminalActivity } from "./activity"
+import { createBootProgress } from "./boot-progress"
 import type { RunnerDebug } from "./debug"
 import { createDebugPanel } from "./DebugPanel"
+import { pause } from "./pause"
 import { createRunnerTerminal } from "./RunnerTerminal"
+import { createSessionSaves } from "./saves"
 import {
   cleanlyExited,
   lostTerminals,
@@ -36,7 +33,6 @@ import {
   terminalRuns,
   type RunnerListing,
 } from "./seed"
-import { encodeSession } from "./session-state"
 
 // The part of the runner client the adapter uses.
 export type RunnerApi = Pick<Runner, "watch" | "projects" | "sessions" | "terminals">
@@ -87,13 +83,21 @@ export type RunnerEntry = {
   // The surface's attachment while one is mounted.
   attachment: AttachedTerminal | undefined
   // What the adapter last reported, so each change reaches the store once.
-  status: string
+  status: TerminalStatus
   process: string
 }
 
-// What a mounted surface needs from the adapter.
+// What a mounted surface needs from the adapter. The surface only reads the entry;
+// what it learns goes back through `resized` and `attached`.
 export type SurfaceRuntime = {
-  readonly entry: (key: TerminalKey) => RunnerEntry | undefined
+  readonly entry: (
+    key: TerminalKey,
+  ) => Readonly<Pick<RunnerEntry, "ready" | "revived" | "closed" | "size">> | undefined
+  // The size the surface fitted, which a fresh shell starts with.
+  readonly resized: (key: TerminalKey, size: TerminalSize) => void
+  // The surface's attachment, until the returned release; releasing leaves one that
+  // took its place, as another surface's, alone.
+  readonly attached: (key: TerminalKey, attachment: AttachedTerminal) => () => void
   readonly attach: (terminalId: string) => Promise<AttachedTerminal>
   // Resolves once the runner is reachable again, or closed for good.
   readonly connected: () => Promise<void>
@@ -102,7 +106,7 @@ export type SurfaceRuntime = {
   // Starts a fresh shell in an exited or failed terminal, as Enter asks for.
   readonly restart: (key: TerminalKey) => void
   // The attached stream saw the shell exit, in order with its output.
-  readonly exited: (key: TerminalKey, exit: TerminalExit | null) => void
+  readonly exited: (key: TerminalKey, exit: TerminalExit) => void
   // How the link is doing; surfaces lock their input while it is down.
   readonly connection: Backend["connection"] & {}
   // Counts the promise as outstanding I/O until it settles.
@@ -121,6 +125,8 @@ export type RunnerBackend = {
   readonly restart: (key: TerminalKey) => void
 }
 
+// Statuses that read the same; a terminal's metadata carries its status among its fields.
+const sameStatus = (a: TerminalStatus, b: TerminalStatus): boolean => statusKey(a) === statusKey(b)
 const statusKey = (status: TerminalStatus): string => {
   if (status.state === "exited") return `exited:${status.exitCode}:${status.signal}`
   if (status.state === "failed") return `failed:${status.message}`
@@ -146,31 +152,6 @@ const lostStatus = (error: unknown): TerminalStatus | undefined => {
   return { state: "failed", message: error instanceof Error ? error.message : String(error) }
 }
 
-// Where the session stands in the workspace, so a reload can tell apart sessions
-// visited at the same moment: 2 for the open one, 1 for its project's last one.
-const findSession = (
-  workspace: Workspace | undefined,
-  id: string,
-): { readonly session: WorkspaceSession; readonly rank: number } | undefined => {
-  for (const project of workspace?.projects ?? []) {
-    const session = project.history.find((item) => item.id === id)
-    if (!session) continue
-    const current = project.activeSessionId === id
-    return { session, rank: current ? (workspace!.activeProjectId === project.id ? 2 : 1) : 0 }
-  }
-  return undefined
-}
-
-// The runner accepts at most 196,608 characters of state, and a WebSocket message of
-// 256 KiB carries it JSON-escaped inside the request; leave room for the envelope.
-const maxStateLength = 196_608
-const maxMessageBytes = 256 * 1024 - 8 * 1024
-const fitsRunner = (state: string): boolean =>
-  state.length <= maxStateLength &&
-  new TextEncoder().encode(JSON.stringify(state)).length <= maxMessageBytes
-
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
 const consume = async <T>(
   changes: AsyncIterable<T>,
   handle: (change: T) => void,
@@ -188,7 +169,6 @@ const target = ({ projectId, workspaceSessionId }: TerminalKey) => ({
 })
 
 const defaultSaveDelay = 800
-const saveBackoffMs = 500
 const failedToCreate: TerminalStatus = { state: "failed", message: "Could not start the terminal." }
 const defaultSize: TerminalSize = { cols: 80, rows: 24 }
 // More runner restarts than this within the window stop fresh shells from starting on
@@ -241,14 +221,6 @@ export const runnerBackend = (
     return work
   }
   const created = Promise.resolve(true)
-  // What the runner holds for each session, so an unchanged state is not sent again.
-  const saved = new Map(
-    listing.flatMap(({ sessions: listed }) =>
-      listed.flatMap(({ session }) =>
-        session.state === null ? [] : [[session.id, session.state]],
-      ),
-    ),
-  )
   // Whether each project and session exists on the runner yet; seeded ones already do.
   const projects = new Map(seed.projects.map((project) => [project.id, created]))
   const sessions = new Map(
@@ -270,18 +242,12 @@ export const runnerBackend = (
   let round = 0
   let latest: Workspace | undefined
 
-  // Inside a store commit the sink cannot start a transaction, so what a commit
-  // reports waits for the commit to finish.
-  let committing = false
   const dispatch = (actions: readonly BackendAction[]): void => {
-    if (!actions.length) return
-    if (committing) queueMicrotask(() => sink?.dispatch(actions))
-    else sink?.dispatch(actions)
+    if (actions.length) sink?.dispatch(actions)
   }
   const statusAction = (entry: RunnerEntry, status: TerminalStatus): BackendAction[] => {
-    const next = statusKey(status)
-    if (entry.status === next) return []
-    entry.status = next
+    if (sameStatus(entry.status, status)) return []
+    entry.status = status
     const { terminalId } = entry.key
     return [{ type: "terminal/status", target: target(entry.key), terminalId, status }]
   }
@@ -361,13 +327,13 @@ export const runnerBackend = (
     for (const entry of entries.values()) {
       if (!onScreen(entry)) {
         // Off screen, a tile the crash loop stopped waits again for its session.
-        if (entry.lost && entry.status === statusKey(crashLoop)) {
+        if (entry.lost && sameStatus(entry.status, crashLoop)) {
           entry.settled = false
           dispatch(statusAction(entry, { state: "starting" }))
         }
         continue
       }
-      if (entry.lost || entry.status.startsWith("failed")) freshShell(entry)
+      if (entry.lost || entry.status.state === "failed") freshShell(entry)
     }
   }
 
@@ -404,7 +370,7 @@ export const runnerBackend = (
   // growing pause while too many calls are in flight. It stops, rejecting with
   // Cancelled, once the work is no longer wanted or the backend stopped. Any other
   // error rejects.
-  const persist = async <T>(
+  const untilAnswered = async <T>(
     operation: () => Promise<T>,
     { done = [], stillWanted = () => {}, cancelled = () => false }: Retry = {},
   ): Promise<T | undefined> => {
@@ -453,7 +419,7 @@ export const runnerBackend = (
     track(
       ready.then((ok) =>
         ok
-          ? persist(operation, { done: ["CONFLICT"] }).then(
+          ? untilAnswered(operation, { done: ["CONFLICT"] }).then(
               () => true,
               () => false,
             )
@@ -465,7 +431,7 @@ export const runnerBackend = (
   // or one another window controls, is left as it is.
   const endShell = async (entry: RunnerEntry): Promise<void> => {
     if (!(await entry.ready) && !entry.requested) return
-    await persist(() => runner.terminals.close(entry.key.terminalId), {
+    await untilAnswered(() => runner.terminals.close(entry.key.terminalId), {
       done: ["TERMINAL_NOT_FOUND", "TERMINAL_EXITED", "NOT_FOUND"],
     }).catch(() => {})
   }
@@ -479,7 +445,7 @@ export const runnerBackend = (
         if (!ok) throw new Error("The runner could not create this session.")
         const { cwd, fail } = options.debug?.takeCreate() ?? {}
         if (fail) throw new RunnerError(fail, "Simulated by the debug panel.")
-        const summary = await persist(
+        const summary = await untilAnswered(
           () => {
             entry.requested = true
             return runner.terminals.create({
@@ -526,7 +492,7 @@ export const runnerBackend = (
       // A new record counts runs afresh.
       entry.floor = 0
       entry.run = undefined
-      return persist(() => {
+      return untilAnswered(() => {
         entry.requested = true
         return runner.terminals.create({
           id: terminalId,
@@ -546,7 +512,7 @@ export const runnerBackend = (
       throttled(async () => {
         const summary = wasLost
           ? await create()
-          : await persist(() => {
+          : await untilAnswered(() => {
               entry.requested = true
               return runner.terminals.restart(terminalId, { cols, rows })
             }, retry).catch((error: unknown) => {
@@ -631,7 +597,7 @@ export const runnerBackend = (
         settled: restartable(terminal),
         closed: false,
         attachment: undefined,
-        status: statusKey(terminal),
+        status: terminal,
         process: processKey(terminal),
       }
       if (isNew) entry.ready = createTerminal(entry)
@@ -646,65 +612,27 @@ export const runnerBackend = (
     },
   })
 
-  // Saving: every changed session is sent after a quiet spell, or at once on pagehide.
-  const seen = new Map<string, WorkspaceSession>()
-  const dirty = new Set<string>()
-  let baseline = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const flush = (): void => {
-    clearTimeout(timer)
-    timer = undefined
-    for (const id of dirty) {
-      dirty.delete(id)
-      const found = findSession(latest, id)
-      const ready = sessions.get(id)
-      if (!found || !ready) continue
-      const state = encodeSession(found.session, found.rank)
-      // Unchanged, or more than the runner accepts: a state it would reject is dropped.
-      if (saved.get(id) === state || !fitsRunner(state)) continue
-      void track(
-        ready.then(async (ok) => {
-          if (!ok) return
-          try {
-            await runner.sessions.save({ sessionId: id, state })
-            saved.set(id, state)
-          } catch (error) {
-            if (halted) return
-            // Unreachable: try again after the next change or reconnection.
-            if (hasCode(error, "DISCONNECTED")) dirty.add(id)
-            // Too many calls in flight: try again shortly.
-            if (hasCode(error, "RESOURCE_LIMIT")) {
-              dirty.add(id)
-              if (!timer) timer = setTimeout(flush, saveBackoffMs)
-            }
-          }
-        }),
-      )
-    }
-  }
-  const schedule = (): void => {
-    if (dirty.size && !timer) timer = setTimeout(flush, saveDelay)
-  }
-  const noteChanges = (workspace: Workspace): void => {
-    for (const session of workspace.projects.flatMap((project) => project.history)) {
-      if (seen.get(session.id) === session) continue
-      seen.set(session.id, session)
-      if (baseline) dirty.add(session.id)
-    }
-    baseline = true
-    schedule()
-  }
+  // Every changed session is sent after a quiet spell, or at once on pagehide.
+  const saves = createSessionSaves({
+    save: (sessionId, state) => runner.sessions.save({ sessionId, state }),
+    ready: (id) => sessions.get(id),
+    latest: () => latest,
+    track,
+    halted: () => halted,
+    delay: saveDelay,
+    saved: listing.flatMap(({ sessions: listed }) =>
+      listed.flatMap(({ session }) =>
+        session.state === null ? [] : [[session.id, session.state] as const],
+      ),
+    ),
+  })
+  const { flush } = saves
+  // Whether the first commit, which renders the page, has happened.
+  let initialized = false
 
   const commit: Backend["commit"] = (workspace, actions) => {
-    committing = true
-    try {
-      commitWorkspace(workspace, actions)
-    } finally {
-      committing = false
-    }
-  }
-  const commitWorkspace: Backend["commit"] = (workspace, actions) => {
-    const initial = !baseline
+    const initial = !initialized
+    initialized = true
     latest = workspace
     for (const project of workspace.projects) {
       if (!projects.has(project.id))
@@ -724,80 +652,29 @@ export const runnerBackend = (
           )
     }
     registry.reconcile(workspace, actions)
-    noteChanges(workspace)
+    saves.note(workspace)
     // The first commit renders the page and must start nothing; `start` covers it.
-    if (!initial) reviveOnScreen()
+    // Reviving reports to the store, which cannot take a transaction inside its
+    // commit, so it runs once the commit is done.
+    if (!initial) queueMicrotask(reviveOnScreen)
   }
 
-  // Boot progress for the splash: the terminals of the session on screen when `start`
-  // first runs, each attached once the runner has its shell and, where a surface shows
-  // it, that surface drew its first screen. Failed, closed or waiting terminals count
-  // as done too, and the splash never waits longer than the cap.
-  const bootGraceMs = 400
-  const bootCapMs = 15_000
-  const bootProgress = createStore<BootProgress>({ attached: 0, total: 0, done: false })
-  let booting: { readonly ids: readonly string[]; readonly since: number } | undefined
-  const bootReady = new Set<string>()
-  // Surfaces mounted during boot, and whether they drew a screen yet.
-  const screens = new Map<string, boolean>()
-  // Counted once the runner has its shell; a surface showing it must also have drawn
-  // its first screen before boot is done, but the count never goes back while a view
-  // that loads late mounts its surfaces.
-  const readyAtBoot = (id: string): boolean => {
-    const entry = entries.get(id)
-    return !entry || entry.closed || entry.settled || bootReady.has(id)
-  }
-  const shownAtBoot = (id: string): boolean => {
-    const entry = entries.get(id)
-    return !entry || entry.closed || entry.settled || screens.get(id) !== false
-  }
-  const checkBoot = (): void => {
-    if (!booting || bootProgress.getSnapshot().done) return
-    const attached = booting.ids.filter(readyAtBoot).length
-    const total = booting.ids.length
-    const waited = now() - booting.since
-    const done =
-      (attached === total && booting.ids.every(shownAtBoot) && waited >= bootGraceMs) ||
-      waited >= bootCapMs
-    bootProgress.update((current) =>
-      current.attached === attached && current.total === total && current.done === done
-        ? current
-        : { attached, total, done },
-    )
-  }
-  const beginBoot = (): void => {
-    if (booting) return
-    const ids = [...entries.values()].filter(onScreen).map((entry) => entry.key.terminalId)
-    booting = { ids, since: now() }
-    for (const id of ids) {
-      // A fresh shell replaces `ready`; follow the latest one.
-      const follow = (): void => {
-        const entry = entries.get(id)
-        if (!entry) return checkBoot()
-        const ready = entry.ready
-        void ready.then(() => {
-          if (entries.get(id)?.ready !== ready) return follow()
-          bootReady.add(id)
-          checkBoot()
-        })
-      }
-      follow()
-    }
-    // A little late, since timers may fire a millisecond before the clock agrees.
-    setTimeout(checkBoot, bootGraceMs + 20)
-    setTimeout(checkBoot, bootCapMs + 20)
-    checkBoot()
-  }
-  const noteScreen: SurfaceRuntime["screen"] = ({ terminalId }, state) => {
-    if (bootProgress.getSnapshot().done) return
-    if (state === "gone") screens.delete(terminalId)
-    else if (state === "mounted") screens.set(terminalId, screens.get(terminalId) ?? false)
-    else screens.set(terminalId, true)
-    checkBoot()
-  }
+  const boot = createBootProgress({ entry: (id) => entries.get(id), now })
+  const checkBoot = boot.check
 
   const runtime: SurfaceRuntime = {
     entry: (key) => registry.get(key)?.entry,
+    resized: (key, size) => {
+      const entry = registry.get(key)?.entry
+      if (entry) entry.size = size
+    },
+    attached: (key, attachment) => {
+      const entry = registry.get(key)?.entry
+      if (entry) entry.attachment = attachment
+      return () => {
+        if (entry?.attachment === attachment) entry.attachment = undefined
+      }
+    },
     attach: (terminalId) => runner.terminals.attach(terminalId),
     connected,
     lost: (key, error) => {
@@ -823,7 +700,7 @@ export const runnerBackend = (
     },
     connection,
     track,
-    screen: noteScreen,
+    screen: boot.screen,
   }
 
   const start: NonNullable<Backend["start"]> = (next) => {
@@ -870,16 +747,16 @@ export const runnerBackend = (
       lastStatus = status
       showConnection()
       noteRunner(status)
-      if (status.state === "connected") schedule()
+      if (status.state === "connected") saves.schedule()
     }
     const changes = runner.terminals.watch()
     const statuses = runner.watch()
     reviveOnScreen()
-    beginBoot()
+    boot.begin([...entries.values()].filter(onScreen).map((entry) => entry.key.terminalId))
     // What the runner keeps of shells that exited cleanly while the app was away.
     for (const terminalId of leftovers.splice(0))
       void track(
-        persist(() => runner.terminals.close(terminalId), {
+        untilAnswered(() => runner.terminals.close(terminalId), {
           done: ["TERMINAL_NOT_FOUND", "NOT_FOUND"],
         }).catch(() => {}),
       )
@@ -907,9 +784,8 @@ export const runnerBackend = (
     TerminalSurface: createRunnerTerminal(runtime),
     start,
     connection,
-    runnerCrashes: crashLooping,
-    boot: bootProgress,
-    retryAfterCrashLoop,
+    crashLoop: { crashes: crashLooping, retry: retryAfterCrashLoop },
+    boot: boot.store,
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
     ...(options.debug
       ? {
@@ -935,7 +811,7 @@ export const runnerBackend = (
     holds: (key) => registry.get(key) !== undefined,
     restart: runtime.restart,
     idle: async () => {
-      const busy = (): boolean => timer !== undefined || pending.size > 0
+      const busy = (): boolean => saves.busy() || pending.size > 0
       while (busy()) {
         flush()
         // eslint-disable-next-line no-await-in-loop -- Settled work may start more.

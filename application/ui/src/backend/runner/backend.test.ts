@@ -103,7 +103,7 @@ describe("runner backend", () => {
         cwd: process.cwd(),
       })
       const [listed] = await runner.client.terminals.list({ sessionId: session.id })
-      expect(listed).toMatchObject({ id: terminal.id, status: "running" })
+      expect(listed).toMatchObject({ id: terminal.id, exit: null })
     })
   })
 
@@ -280,7 +280,7 @@ describe("runner backend", () => {
       const listed = await runner.client.terminals.list({
         sessionId: app.target().workspaceSessionId,
       })
-      expect(listed.find((item) => item.id === terminal.id)?.status).toBe("running")
+      expect(listed.find((item) => item.id === terminal.id)?.exit).toBeNull()
       expect(app.received.filter((action) => action.terminalId === terminal.id)).not.toContainEqual(
         expect.objectContaining({ status: expect.objectContaining({ state: "failed" }) }),
       )
@@ -415,7 +415,7 @@ describe("runner backend", () => {
       app.restart(key)
       await app.idle()
       const listed = await runner.client.terminals.list({ sessionId: key.workspaceSessionId })
-      expect(listed.find((item) => item.id === terminal.id)?.status).toBe("running")
+      expect(listed.find((item) => item.id === terminal.id)?.exit).toBeNull()
       // Alive again: "running" where the runner can name the foreground program, and
       // "idle" on Windows, where it cannot.
       await vi.waitFor(
@@ -452,7 +452,7 @@ describe("runner backend", () => {
       expect(activeSession(app.workspace())!.id).toBe(id)
       await app.idle()
       const listed = await runner.client.terminals.list({ sessionId: id })
-      expect(listed.filter((terminal) => terminal.status === "running")).toHaveLength(40)
+      expect(listed.filter((terminal) => terminal.exit === null)).toHaveLength(40)
       expect(
         app.received.filter((action) => "status" in action && action.status.state === "failed"),
       ).toEqual([])
@@ -483,7 +483,7 @@ describe("runner backend", () => {
       await typeInto(runner.client, done.id, "exit 0\r")
       await vi.waitFor(async () => {
         const [listed] = await runner.client.terminals.list({ sessionId: id })
-        expect(listed?.status).toBe("exited")
+        expect(listed?.exit).toBeTruthy()
       }, eventually)
       const app = open(await runner.reload())
       const session = app
@@ -591,7 +591,7 @@ describe("runner backend", () => {
       expect(await listed(key.workspaceSessionId, terminal.id)).toBeUndefined()
       app.restart(key)
       await app.idle()
-      expect((await listed(key.workspaceSessionId, terminal.id))?.status).toBe("running")
+      expect((await listed(key.workspaceSessionId, terminal.id))?.exit).toBeNull()
       app.stop()
     })
 
@@ -612,7 +612,6 @@ describe("runner backend", () => {
                   cwd: home!.project.cwd,
                   cols: 80,
                   rows: 24,
-                  status: "running",
                   exit: null,
                   run: 1,
                   process: "zsh",
@@ -625,7 +624,7 @@ describe("runner backend", () => {
       const app = open(listing)
       await vi.waitFor(async () => {
         await app.idle()
-        expect((await listed(session.id, lost))?.status).toBe("running")
+        expect((await listed(session.id, lost))?.exit).toBeNull()
       }, eventually)
       app.stop()
     })
@@ -667,7 +666,7 @@ describe("runner backend", () => {
       expect(activeSession(app.workspace())!.id).toBe(shown)
       await vi.waitFor(async () => {
         await app.idle()
-        expect((await listed(shown, first))?.status).toBe("running")
+        expect((await listed(shown, first))?.exit).toBeNull()
       }, eventually)
       expect(await listed(later, second)).toBeUndefined()
       app.commit([
@@ -679,7 +678,7 @@ describe("runner backend", () => {
         },
       ])
       await app.idle()
-      expect((await listed(later, second))?.status).toBe("running")
+      expect((await listed(later, second))?.exit).toBeNull()
       const name = activeSession(app.workspace())!.state.roster.terminals[0]!.name
       expect(name).toBe("kept")
       app.stop()

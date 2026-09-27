@@ -62,7 +62,7 @@ const createServices = (
     navigation,
     newTerminal: backend.newTerminal,
     pickDirectory: backend.pickDirectory,
-    retryAfterCrashLoop: backend.retryAfterCrashLoop,
+    crashLoop: backend.crashLoop,
     canvas,
     effects: domEffects,
   })
@@ -93,7 +93,7 @@ export const WorkspaceProvider = ({
   useEffect(() => watchPresentation(services.workspace, services.ui), [services])
   useEffect(() => trackRecent(services.workspace, services.ui), [services])
   useEffect(() => watchSwitcher(services.workspace, services.ui), [services])
-  useEffect(() => watchCrashLoop(services.backend.runnerCrashes, services.ui), [services])
+  useEffect(() => watchCrashLoop(services.backend.crashLoop?.crashes, services.ui), [services])
   useEffect(() => watchClosing(services.workspace, services.ui), [services])
   useRouteSync(sync, { location, navigationType, navigate })
   return <WorkspaceServicesContext value={services}>{children}</WorkspaceServicesContext>

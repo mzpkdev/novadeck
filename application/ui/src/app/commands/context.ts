@@ -41,7 +41,7 @@ export type CommandContext = {
   readonly navigation: WorkspaceNavigator
   readonly newTerminal: Backend["newTerminal"]
   readonly pickDirectory?: Backend["pickDirectory"] | undefined
-  readonly retryAfterCrashLoop?: Backend["retryAfterCrashLoop"] | undefined
+  readonly crashLoop?: Backend["crashLoop"] | undefined
   readonly canvas: { readonly current: CanvasHandle | null }
   readonly effects: CommandEffects
 }

@@ -2,6 +2,7 @@ import { afterAll, vi } from "vitest"
 
 import { describeBackendContract } from "../../test/backend-contract"
 import { runnerBackend, type RunnerBackend } from "./backend"
+import { pause } from "./pause"
 import { recordingRunner, startTestRunner } from "./testing"
 
 // jsdom has no layout observers, media queries or canvas; xterm falls back without them.
@@ -32,8 +33,6 @@ vi.setConfig({ testTimeout: 10_000 })
 const runner = await startTestRunner()
 afterAll(() => runner.close())
 
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
 let latest: RunnerBackend | undefined
 
 describeBackendContract("runner", {
@@ -58,7 +57,7 @@ describeBackendContract("runner", {
             // A shell that exits sooner counts as failing to start.
             await pause(2_100)
             await attached.write(`exit ${status.exitCode}\r`)
-          } else await attached.close().catch(() => {})
+          } else await runner.client.terminals.close(key.terminalId).catch(() => {})
           for await (const event of attached) if (event.type === "exited") break
           // The adapter hears of the exit on its own subscription.
           await pause(100)

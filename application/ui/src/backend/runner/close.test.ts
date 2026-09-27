@@ -5,6 +5,7 @@ import { activeProject, activeSession, workspaceReducer } from "../../model/stat
 import type { WorkspaceAction } from "../../model/state"
 import { describe, expect, it } from "../../test"
 import { runnerBackend, type RunnerApi } from "./backend"
+import { pause } from "./pause"
 import type { RunnerListing } from "./seed"
 
 // A terminal watch that never reports anything.
@@ -16,8 +17,6 @@ const nothing = (): AsyncIterableIterator<never, undefined> => {
   }
   return iterator
 }
-
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 // A runner whose link drops right after it started a shell, before it could answer:
 // a situation a real runner cannot be put in on cue.

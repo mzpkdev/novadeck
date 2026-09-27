@@ -8,7 +8,7 @@ import type {
 
 // What the runner keeps for a session: opaque to it, and versioned so a state this
 // build cannot read starts the session fresh instead of breaking the load.
-const version = 2
+const version = 1
 
 // The metadata a saved terminal keeps; its status and process come from the runner.
 export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory">

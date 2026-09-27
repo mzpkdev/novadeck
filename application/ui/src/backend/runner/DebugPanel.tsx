@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 
 import type { BackendConnectionState, DebugPanelProps, TerminalKey } from "../port"
 import type { RunnerDebug } from "./debug"
+import { pause } from "./pause"
 
 // What the panel reads from the backend it belongs to.
 export type DebugInspector = {
@@ -23,8 +24,6 @@ type Action = {
   readonly hint: string
   readonly run: () => void | Promise<void>
 }
-
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const startupCodes = [
   "UNAUTHORIZED",

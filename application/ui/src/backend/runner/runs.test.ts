@@ -45,7 +45,6 @@ const summary = (change: Partial<TerminalSummary>): TerminalSummary => ({
   cwd: "/tmp",
   cols: 80,
   rows: 24,
-  status: "running",
   run: 1,
   exit: null,
   process: "zsh",
@@ -109,13 +108,13 @@ describe("runs of a terminal", () => {
   context("while a restart has not answered yet", () => {
     it("ignores late reports about the run it replaces", async () => {
       const exited = { code: 2, signal: null, ranMs: 9_000 }
-      const app = scripted(summary({ status: "exited", exit: exited, process: null }))
+      const app = scripted(summary({ exit: exited, process: null }))
       await flush()
       app.restart(app.key)
       await flush()
       app.changes.push({
         type: "changed",
-        terminal: summary({ status: "exited", exit: exited, process: null }),
+        terminal: summary({ exit: exited, process: null }),
       })
       app.changes.push({ type: "changed", terminal: summary({ run: 2, process: "vim" }) })
       await flush()

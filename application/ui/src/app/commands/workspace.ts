@@ -51,8 +51,7 @@ export type WorkspaceCommands = ShellCommands &
 const createdHighlight = 900
 
 export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands => {
-  const { workspace, ui, navigation, newTerminal, pickDirectory, retryAfterCrashLoop, effects } =
-    ctx
+  const { workspace, ui, navigation, newTerminal, pickDirectory, crashLoop, effects } = ctx
   const { go, navigateWorkspace } = navigation
   const { set, pulse } = shellEdits(ctx)
   const shell = createShellCommands(ctx)
@@ -294,7 +293,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       ui.update((state) =>
         state.crashLoopDismissed ? { ...state, crashLoopDismissed: false } : state,
       )
-      retryAfterCrashLoop?.()
+      crashLoop?.retry()
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
   }

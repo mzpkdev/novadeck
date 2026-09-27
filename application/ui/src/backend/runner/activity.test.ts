@@ -9,7 +9,6 @@ const summary = (change: Partial<TerminalSummary>): TerminalSummary => ({
   cwd: "/home/alex",
   cols: 80,
   rows: 24,
-  status: "running",
   exit: null,
   run: 1,
   process: "zsh",
@@ -61,7 +60,7 @@ describe("terminal activity", () => {
 
   context("once the process exited", () => {
     const exited = (code: number | null, signal: string | null, ranMs: number) =>
-      terminalActivity(summary({ status: "exited", exit: { code, signal, ranMs }, process: null }))
+      terminalActivity(summary({ exit: { code, signal, ranMs }, process: null }))
 
     it("closes the terminal after a clean exit, however soon", () => {
       expect([exited(0, null, 60_000), exited(0, null, 10)]).toEqual([

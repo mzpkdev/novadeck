@@ -78,8 +78,7 @@ const sessionSeed = (session: WorkspaceSession, summaries: readonly TerminalSumm
   const first = saved?.state.roster.nextNumber ?? 1
   const extra = summaries
     .filter(
-      (summary) =>
-        summary.status === "running" && !known.some((terminal) => terminal.id === summary.id),
+      (summary) => summary.exit === null && !known.some((terminal) => terminal.id === summary.id),
     )
     .flatMap((summary, index) => {
       const current = liveTerminal(
@@ -131,9 +130,7 @@ export const cleanlyExited = (listing: RunnerListing): readonly string[] =>
   listing.flatMap(({ sessions }) =>
     sessions.flatMap(({ terminals }) =>
       terminals.flatMap((terminal) =>
-        terminal.status === "exited" && terminalActivity(terminal).status === "clean"
-          ? [terminal.id]
-          : [],
+        terminalActivity(terminal).status === "clean" ? [terminal.id] : [],
       ),
     ),
   )

@@ -1,5 +1,6 @@
 import { afterEach, vi } from "vitest"
 
+import { createStore } from "../../model/store"
 import { context, describe, expect, it } from "../../test"
 import { openCommands } from "../../test/commands"
 import { workspaceFixture } from "../../test/fixtures"
@@ -223,7 +224,7 @@ describe("workspace commands", () => {
 
     it("asks the backend to start over on Try again, and would ask again next time", () => {
       let retries = 0
-      const app = openCommands({ retryAfterCrashLoop: () => retries++ })
+      const app = openCommands({ crashLoop: { crashes: createStore(4), retry: () => retries++ } })
       app.commands.dismissCrashLoop()
       app.commands.retryAfterCrashLoop()
       expect(retries).toBe(1)

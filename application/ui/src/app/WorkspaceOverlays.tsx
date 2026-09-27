@@ -1,9 +1,8 @@
-import { memo, Suspense, useLayoutEffect, useSyncExternalStore } from "react"
+import { memo, Suspense, useLayoutEffect } from "react"
 
 import { terminalElement } from "../interaction/dom"
 import { orderedTerminals } from "../model/roster"
 import { activeProject } from "../model/state"
-import type { Store } from "../model/store"
 import type { TerminalMetadata } from "../model/types"
 import { CrashLoopDialog } from "../shell/CrashLoopDialog"
 import { CloseTerminalDialog } from "../terminals/CloseTerminalDialog"
@@ -12,7 +11,14 @@ import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { useRouteDialog, type RouteDialog } from "./controller/useRouteDialog"
 import { Preferences, TerminalSearch } from "./deferred-views"
-import { currentContext, currentState, sameItems, shallowEqual } from "./selectors"
+import {
+  closeQuestion,
+  crashLoopQuestion,
+  currentContext,
+  currentState,
+  sameItems,
+  shallowEqual,
+} from "./selectors"
 
 // Rendered beside a deferred dialog, so it mounts only once the dialog's view has loaded.
 const Loaded = ({
@@ -26,19 +32,17 @@ const Loaded = ({
   return null
 }
 
-const always = (): (() => void) => () => {}
-// The backend's crash count, 0 where it reports none.
-const useCrashes = (crashes: Store<number> | undefined): number =>
-  useSyncExternalStore(crashes?.subscribe ?? always, () => crashes?.getSnapshot() ?? 0)
-
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = memo((): React.JSX.Element => {
-  const { backend, commands, navigation } = useWorkspaceServices()
+  const { commands, navigation } = useWorkspaceServices()
   const { go, closeDialog } = navigation
   const { chooseRecent, updatePreferences, openSearchResult, closeSwitcher } = commands
   const { confirmClose, cancelClose, retryAfterCrashLoop, dismissCrashLoop } = commands
-  const crashes = useCrashes(backend.runnerCrashes)
-  const crashLoopDismissed = useUiState((state) => state.crashLoopDismissed)
+  const crashes = useUiState(crashLoopQuestion)
+  const pending = useUiState((state) => state.closing)
+  const closingTerminal = useWorkspaceState(
+    (workspace) => closeQuestion({ closing: pending }, workspace) ?? null,
+  )
   const { projectName, context, view } = useWorkspaceState(
     (workspace) => ({
       projectName: activeProject(workspace)!.name,
@@ -51,9 +55,8 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
     (workspace): TerminalMetadata[] => orderedTerminals(currentState(workspace).roster),
     sameItems,
   )
-  const { dialog, section, preferences, switcher, closing } = useUiState(
+  const { dialog, section, preferences, switcher } = useUiState(
     (state) => ({
-      closing: state.closing?.context === context ? state.closing.id : null,
       dialog: state.location.route.dialog,
       section: state.location.route.section,
       preferences: state.preferences,
@@ -63,11 +66,10 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
   )
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(dialog, context)
-  const closingTerminal = closing ? (ordered.find((item) => item.id === closing) ?? null) : null
   return (
     <>
       <CrashLoopDialog
-        crashes={crashes && !crashLoopDismissed ? crashes : null}
+        crashes={crashes || null}
         onRetry={retryAfterCrashLoop}
         onDismiss={dismissCrashLoop}
       />

@@ -1,4 +1,3 @@
-import type { DesktopBridge } from "@novadeck/protocol/bridge"
 import {
   connectRunner,
   desktop,
@@ -13,18 +12,12 @@ import type { BootRehearsals } from "../boot-rehearsal"
 import type { BackendConnection, ConnectFailure } from "../port"
 import { runnerBackend, type RunnerBackend } from "./backend"
 import { createRunnerDebug } from "./debug"
+import { desktopHost } from "./desktop-host"
+import { pause } from "./pause"
 import type { RunnerListing } from "./seed"
 
-// What the desktop host's preload script offers the page; absent in a browser.
-// With the debug panel enabled, the desktop host also offers `debugKillRunner`.
-type DesktopHost = Partial<DesktopBridge> & {
-  readonly debugKillRunner?: () => Promise<boolean>
-}
-const desktopHost = (): DesktopHost | undefined =>
-  (globalThis as { novadeck?: DesktopHost }).novadeck
-
 const transport = (): Transport => {
-  if (desktopHost()?.requestRunner) return desktop()
+  if (desktopHost()) return desktop()
   const url = import.meta.env.VITE_NOVADECK_RUNNER_URL
   const token = import.meta.env.VITE_NOVADECK_RUNNER_TOKEN
   if (!url || !token)
@@ -72,8 +65,6 @@ const newId = (): string => crypto.randomUUID()
 
 // How long closing waits for the last saves before disconnecting anyway.
 const closeGraceMs = 2_000
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
 // What went wrong, sorted by what the person can do about it, in words for them and
 // with the code and the runner's own message for anyone reporting it.
 const transient: ReadonlySet<RunnerError["code"]> = new Set([

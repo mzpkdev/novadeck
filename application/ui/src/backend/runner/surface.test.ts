@@ -6,7 +6,7 @@ import { context, describe, expect, it } from "../../test"
 import { terminalFixture } from "../../test/fixtures"
 import { render, type Rendered } from "../../test/render"
 import type { BackendConnectionState } from "../port"
-import type { RunnerEntry, SurfaceRuntime } from "./backend"
+import type { SurfaceRuntime } from "./backend"
 import { createRunnerTerminal } from "./RunnerTerminal"
 
 // jsdom has no layout observers, media queries or canvas; xterm falls back without them.
@@ -42,10 +42,13 @@ const starting = () => {
     ready: new Promise<boolean>(() => {}),
     revived: new Promise<void>(() => {}),
     closed: false,
-  } as unknown as RunnerEntry
+    size: { cols: 80, rows: 24 },
+  }
   const runtime: SurfaceRuntime = {
     entry: () => entry,
     attach: () => new Promise(() => {}),
+    resized: () => {},
+    attached: () => () => {},
     connected: async () => {},
     lost: () => {},
     restart: () => {},

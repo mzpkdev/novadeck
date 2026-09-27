@@ -7,9 +7,11 @@ import {
   initialUi,
   trackRecent,
   watchClosing,
+  watchCrashLoop,
   watchPresentation,
   watchSwitcher,
 } from "../app/ui-store"
+import type { Backend } from "../backend/port"
 import type { CanvasHandle } from "../layouts/canvas/types"
 import { activeSession } from "../model/state"
 import { createWorkspaceStore } from "../model/store"
@@ -25,8 +27,8 @@ export type CommandsOptions = {
   readonly canvas?: CanvasHandle
   // The backend's folder picker, when it offers one.
   readonly pickDirectory?: () => Promise<string | null>
-  // The backend's restart after a crash loop, when it offers one.
-  readonly retryAfterCrashLoop?: () => void
+  // The backend's crash count and restart, when it reports crash loops.
+  readonly crashLoop?: Backend["crashLoop"]
 }
 
 // Real stores, navigator, commands and store subscriptions over a fixture workspace, with effects that
@@ -39,7 +41,7 @@ export const openCommands = ({
   desktop = true,
   canvas,
   pickDirectory,
-  retryAfterCrashLoop,
+  crashLoop,
 }: CommandsOptions = {}) => {
   const [pathname = "", query = ""] = url.split("?")
   const resolved = resolveRoute(workspace, { pathname, search: `?${query}` }, preferences, 0)
@@ -106,12 +108,13 @@ export const openCommands = ({
     canvas: { current: canvas ?? null },
     effects: record,
     pickDirectory,
-    retryAfterCrashLoop,
+    crashLoop,
   }
   const commands = createWorkspaceCommands(context)
   // The subscriptions the provider attaches; nothing persists to storage here.
   for (const watch of [trackRecent, watchPresentation, watchSwitcher, watchClosing])
     watch(store, ui)
+  watchCrashLoop(crashLoop?.crashes, ui)
   return {
     context,
     workspace: store,

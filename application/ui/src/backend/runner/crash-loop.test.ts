@@ -51,7 +51,6 @@ const crashingRunner = () => {
         cwd: "/tmp",
         cols: 80,
         rows: 24,
-        status: "running",
         run: 1,
         exit: null,
         process: "zsh",
@@ -130,7 +129,7 @@ describe("a runner that crashes while shells start", () => {
     await app.tripped()
     expect(app.creates()).toBeLessThanOrEqual(5)
     // The footer and the dialog hear of it too, with the count.
-    expect(app.backend.runnerCrashes?.getSnapshot()).toBeGreaterThan(3)
+    expect(app.backend.crashLoop?.crashes.getSnapshot()).toBeGreaterThan(3)
     app.stop()
   })
 
@@ -139,8 +138,8 @@ describe("a runner that crashes while shells start", () => {
     await app.tripped()
     const before = app.creates()
     app.heal()
-    app.backend.retryAfterCrashLoop!()
-    expect(app.backend.runnerCrashes?.getSnapshot()).toBe(0)
+    app.backend.crashLoop!.retry()
+    expect(app.backend.crashLoop?.crashes.getSnapshot()).toBe(0)
     await app.idle()
     expect(app.creates()).toBe(before + 1)
     expect(app.received.at(-1)).toMatchObject({
@@ -203,9 +202,12 @@ describe("a crash loop behind the workspace store", () => {
   it("lets the person switch sessions, and says why their terminals wait", async () => {
     const app = openInStore()
     expect(activeSession(app.store.getSnapshot())!.id).toBe("s")
-    await vi.waitFor(() => expect(app.backend.runnerCrashes!.getSnapshot()).toBeGreaterThan(3), {
-      timeout: 8_000,
-    })
+    await vi.waitFor(
+      () => expect(app.backend.crashLoop!.crashes.getSnapshot()).toBeGreaterThan(3),
+      {
+        timeout: 8_000,
+      },
+    )
     expect(() =>
       app.store.dispatch({
         type: "session/select",
@@ -223,16 +225,19 @@ describe("a crash loop behind the workspace store", () => {
     // Try again from the first session: the second one's terminal waits for its
     // session again instead of keeping the crash-loop label.
     app.store.dispatch({ type: "session/select", projectId: "p", workspaceSessionId: "s", now: 20 })
-    app.backend.retryAfterCrashLoop!()
+    app.backend.crashLoop!.retry()
     await vi.waitFor(() => expect(app.statusIn("s2")?.state).toBe("starting"))
     app.stop()
   }, 15_000)
 
   it("stops creating a new terminal into the crash loop", async () => {
     const app = openInStore()
-    await vi.waitFor(() => expect(app.backend.runnerCrashes!.getSnapshot()).toBeGreaterThan(3), {
-      timeout: 8_000,
-    })
+    await vi.waitFor(
+      () => expect(app.backend.crashLoop!.crashes.getSnapshot()).toBeGreaterThan(3),
+      {
+        timeout: 8_000,
+      },
+    )
     const workspace = app.store.getSnapshot()
     const target = { projectId: "p", workspaceSessionId: activeSession(workspace)!.id }
     const terminal = app.backend.newTerminal({ number: 2, directory: "/tmp" })
