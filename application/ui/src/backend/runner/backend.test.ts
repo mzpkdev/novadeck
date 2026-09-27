@@ -416,8 +416,11 @@ describe("runner backend", () => {
       await app.idle()
       const listed = await runner.client.terminals.list({ sessionId: key.workspaceSessionId })
       expect(listed.find((item) => item.id === terminal.id)?.status).toBe("running")
+      // Alive again: "running" where the runner can name the foreground program, and
+      // "idle" on Windows, where it cannot.
       await vi.waitFor(
-        () => expect(statusOf(app, terminal.id).at(-1)?.status.state).toBe("running"),
+        () =>
+          expect(["running", "idle"]).toContain(statusOf(app, terminal.id).at(-1)?.status.state),
         eventually,
       )
       app.stop()
