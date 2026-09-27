@@ -1,9 +1,9 @@
 # Backend API
 
-This is the first backend-only implementation of the [terminal plan](backend-plan.md).
-The Electron host runs the runner and hands its window a port to it; the UI connects
-through that port, or in a browser over a WebSocket, with the runner adapter in
-`application/ui/src/backend/runner/`.
+This describes the runner behind the [terminal plan](backend-plan.md) and how the UI
+uses it. The Electron host runs the runner and hands its window a port to it; the UI
+connects through that port, or in a browser over a WebSocket, with the runner adapter
+in `application/ui/src/backend/runner/`.
 
 ## Run and test
 
@@ -20,7 +20,8 @@ ending a terminal twice harmless. Drop the patch once upstream fixes those issue
 refuses an install whose patch no longer matches the pinned version.
 Do not advance the pin without checking the reported
 [Windows startup regression in beta.15](https://github.com/microsoft/node-pty/issues/955).
-Beta.14 retains the older [delayed-worker startup deadlock risk](https://github.com/microsoft/node-pty/pull/943),
+Beta.14 retains the older
+[delayed-worker startup deadlock risk](https://github.com/microsoft/node-pty/pull/943),
 particularly under a debugger. Keep its pnpm build script enabled and validate
 dependency upgrades on Linux, macOS, and Windows.
 
@@ -69,15 +70,16 @@ involved.
 
 Backend CI runs on Linux, macOS, and Windows. POSIX signal and hangup assertions
 are explicitly platform-specific; Windows process termination is not a graceful
-SIGTERM test. Packaged Electron builds and remote TLS deployment remain verification
-gates before integration.
+SIGTERM test. Packaged Electron builds and remote TLS deployment are checked
+separately from these tests.
 
 Without a token, the runner exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set.
 Programmatic `startServer` from `@novadeck/runner/server` and `createRunner` use
-an in-memory database when no path is supplied. `@novadeck/runner/http` stays free of
-native terminal code, so the Electron main process can serve the status endpoint without it.
+an in-memory database when no path is supplied. `@novadeck/runner/http` stays free
+of native terminal code, so the Electron main process can serve the status endpoint
+without it.
 
 For a VPS, terminate TLS at a trusted reverse proxy and forward WebSocket upgrades.
 Set `CORS_ORIGINS` to the exact trusted frontend origins. A static UI can later
@@ -112,7 +114,11 @@ it reconnects on its own. `runner.status` holds the current state, and
 
 ```ts
 const id = () => crypto.randomUUID()
-const project = await runner.projects.create({ id: id(), name: "My project", cwd: "/work/project" })
+const project = await runner.projects.create({
+  id: id(),
+  name: "My project",
+  cwd: "/work/project",
+})
 const session = await runner.sessions.create({
   id: id(),
   projectId: project.id,
@@ -131,8 +137,8 @@ for await (const event of terminal) render(event) // snapshot, output, resized, 
 // Independent of reading, typically from keyboard and layout handlers:
 await terminal.write("pwd\r")
 await terminal.resize({ cols: 100, rows: 32 })
-await terminal.close() // ends and removes it; iteration then finishes after `exited`
 await terminal.detach() // or `break` out of the loop; the shell keeps running
+await runner.terminals.close(created.id) // ends the shell and removes the terminal
 ```
 
 An attached terminal is a single async stream of events. The client handles
@@ -157,14 +163,17 @@ for terminals that includes exited records the runner still retains. A project
 created without `cwd` opens in the home directory of the user running the runner.
 `sessions.save({ sessionId, state })` replaces a session's `state`, a string the
 runner stores with the session without reading it, such as a UI layout. Sessions
-report `null` until the first save. A state holds at most 196,608 characters.
+report `null` until the first save. A state holds at most `maxClientStateLength`
+(196,608) characters, and over WebSocket the whole call must also fit in one
+`maxWebSocketMessageBytes` (256 KiB) message; both limits are exported from
+`@novadeck/protocol`.
 
 `runner.terminals.watch()` follows every terminal on the runner, across sessions:
 
 ```ts
 for await (const change of runner.terminals.watch()) {
   if (change.type === "reset") startOver() // a fresh sequence follows
-  if (change.type === "changed") show(change.terminal) // includes status and process
+  if (change.type === "changed") show(change.terminal) // includes exit and process
   if (change.type === "removed") forget(change.terminalId)
   if (change.type === "synced") pruneUnreported() // gone unless reported since `reset`
 }
@@ -245,7 +254,7 @@ calls when a socket or port closes. `@novadeck/protocol/wire` exposes the raw
 `WireClient` for protocol tests. Applications use `connectRunner`.
 
 Every connection starts with `runner.handshake({ protocolVersion, token })`, which
-returns `runnerId`, the protocol version, and capabilities. WebSocket connections
+returns `runnerId` and the protocol version. WebSocket connections
 require the token in the handshake, never in a URL, and time out after ten seconds
 without it. MessagePort connections omit it. Each `terminals.attach` stream begins
 with an unsequenced `attached` marker confirming the granted mode, followed by
@@ -266,9 +275,9 @@ not command completion.
   There is one attachment per terminal per connection. Cancelling a controlling
   attachment or disconnecting releases control, but leaves the shell running.
 - Events carry `terminalId` and an increasing `sequence`. Initial attachment emits
-  a serialized screen snapshot with dimensions and running/exited state. Output,
-  resize, and exit events follow in order. A snapshot replaces the old screen; it
-  is not appended. ACK snapshots too, including sequence zero.
+  a serialized screen snapshot with dimensions and `exit`, null while the shell
+  runs. Output, resize, and exit events follow in order. A snapshot replaces the old
+  screen; it is not appended. ACK snapshots too, including sequence zero.
 - An `exited` event, like an exited terminal's summary and snapshot, carries `exit`:
   the shell's exit `code`, the `signal` name that ended it (such as `SIGKILL`; null
   for a normal exit and on Windows), and `ranMs`, how long it ran, so a client can
@@ -280,10 +289,11 @@ not command completion.
   cursors to both runner identity and terminal ID. `connectRunner` does this for
   its attachments; raw wire clients must do it themselves.
 - Default limits are 32 connections, 32 calls in flight per WebSocket connection
-  (1,024 for the trusted MessagePort connection, so the desktop app can, for
-  example, restart every terminal at once), 256 KiB incoming WebSocket messages,
-  16,384 characters per input call, 1 MiB replay per terminal, 4 MiB
-  queued/unacknowledged events per attachment, and a 256 KiB ACK window. The desktop
+  (1,024 for the trusted MessagePort connection: the desktop app keeps ACKs, input,
+  resizes and state saves in flight across many terminals at once),
+  `maxWebSocketMessageBytes` (256 KiB) per incoming WebSocket message, 16,384
+  characters per input call, 1 MiB replay per terminal, 4 MiB queued or
+  unacknowledged events per attachment, and a 256 KiB ACK window. The desktop
   runner starts any number of terminals; a standalone runner (`startServer` and the
   CLI) allows 32 at once. Either keeps at most 32 exited, unattached records and
   evicts the oldest beyond that, or sooner when a capped runner needs room. Headless
@@ -314,9 +324,10 @@ not command completion.
   exited terminal: the same ID, session, and directory, with a new screen. The
   same control rule as closing applies, and the caller then holds control. The
   summary's `run` counts shells, 1 at creation and one more per restart, so a client
-  can discard a late report about an earlier run. Watchers receive `changed`; viewers attach again and get the new screen as a snapshot,
-  even with a cursor from the previous run. A running terminal rejects with `CONFLICT`, and a shell that cannot
-  start rejects with `SPAWN_FAILED`, leaving the terminal exited.
+  can discard a late report about an earlier run. Watchers receive `changed`;
+  viewers attach again and get the new screen as a snapshot, even with a cursor from
+  the previous run. A running terminal rejects with `CONFLICT`, and a shell that
+  cannot start rejects with `SPAWN_FAILED`, leaving the terminal exited.
 - Closing sends a hangup to the owned shell, escalating if the shell ignores it.
   It is not a process-tree kill guarantee: daemonized jobs and descendants that
   ignore hangup may continue, as with an ordinary terminal emulator. Use an OS

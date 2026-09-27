@@ -69,12 +69,6 @@ export const createRouter = (options: {
         return {
           runnerId: options.runnerId,
           protocolVersion,
-          capabilities: [
-            "workspace-metadata",
-            "terminal-replay",
-            "terminal-ack",
-            "terminal-observers",
-          ],
         }
       }),
     },

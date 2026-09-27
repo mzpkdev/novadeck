@@ -72,7 +72,6 @@ const push = (model: Model, action: Extract<Action, { length: number }>): Termin
           data: "界".repeat(action.length),
           cols: 80,
           rows: 24,
-          status: "running",
           exit: null,
         }
       : { terminalId: "terminal", sequence, type: "output", data: "界".repeat(action.length) }

@@ -7,27 +7,24 @@ import type { Project, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
 
-/** Each step upgrades the schema by one version; existing rows are kept. */
-const migrations = [
-  `
-    CREATE TABLE projects (
-      position INTEGER PRIMARY KEY,
-      id TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
-      cwd TEXT NOT NULL CHECK(length(cwd) > 0)
-    ) STRICT;
-    CREATE TABLE sessions (
-      position INTEGER PRIMARY KEY,
-      id TEXT NOT NULL UNIQUE,
-      project_id TEXT NOT NULL REFERENCES projects(id),
-      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200)
-    ) STRICT;
-    CREATE INDEX sessions_project ON sessions(project_id, position);
-  `,
-  // Opaque client state, such as a UI layout; null until the first save.
-  "ALTER TABLE sessions ADD COLUMN state TEXT;",
-]
-const schemaVersion = migrations.length
+const schemaVersion = 1
+const schema = `
+  CREATE TABLE projects (
+    position INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+    cwd TEXT NOT NULL CHECK(length(cwd) > 0)
+  ) STRICT;
+  CREATE TABLE sessions (
+    position INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+    -- Opaque client state, such as a UI layout; null until the first save.
+    state TEXT
+  ) STRICT;
+  CREATE INDEX sessions_project ON sessions(project_id, position);
+`
 
 const prepareFile = (path: string): void => {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -44,17 +41,15 @@ const prepareFile = (path: string): void => {
   }
 }
 
-const migrate = (database: DatabaseSync): void => {
+/** Creates the schema in a new database and refuses one written by a newer runner. */
+const prepareSchema = (database: DatabaseSync): void => {
   database.exec("BEGIN IMMEDIATE")
   try {
     const version = database.prepare("PRAGMA user_version").get()?.user_version
     if (typeof version !== "number" || version > schemaVersion) {
       throw new Error("The workspace database schema is newer than this runner supports")
     }
-    for (const [index, step] of migrations.entries()) {
-      if (index >= version) database.exec(step)
-    }
-    database.exec(`PRAGMA user_version = ${schemaVersion}`)
+    if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")
@@ -73,7 +68,7 @@ export class WorkspaceStore {
       timeout: 5_000,
     })
     try {
-      migrate(this.database)
+      prepareSchema(this.database)
     } catch (error) {
       this.database.close()
       throw error

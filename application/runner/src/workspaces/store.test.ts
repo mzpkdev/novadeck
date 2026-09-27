@@ -68,7 +68,7 @@ describe("workspace metadata", () => {
     expect(first.id).toMatch(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/)
     const database = new DatabaseSync(path)
     try {
-      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(2)
+      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(1)
       expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([])
       expect(() =>
         database
@@ -129,45 +129,6 @@ describe("workspace metadata", () => {
     const reopened = store(path)
     expect(reopened.session(session.id)).toEqual({ ...session, state: '{"layout":2}' })
     expect(reopened.sessions(project.id)).toEqual([{ ...session, state: '{"layout":2}' }])
-  })
-
-  it("upgrades a version 1 database without losing its records", ({ directory, store }) => {
-    const cwd = directory()
-    const path = join(cwd, "workspace.sqlite")
-    const legacy = new DatabaseSync(path)
-    legacy.exec(`
-      CREATE TABLE projects (
-        position INTEGER PRIMARY KEY,
-        id TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
-        cwd TEXT NOT NULL CHECK(length(cwd) > 0)
-      ) STRICT;
-      CREATE TABLE sessions (
-        position INTEGER PRIMARY KEY,
-        id TEXT NOT NULL UNIQUE,
-        project_id TEXT NOT NULL REFERENCES projects(id),
-        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200)
-      ) STRICT;
-      CREATE INDEX sessions_project ON sessions(project_id, position);
-      PRAGMA user_version = 1;
-    `)
-    const projectId = randomUUID()
-    const sessionId = randomUUID()
-    legacy
-      .prepare("INSERT INTO projects (id, name, cwd) VALUES (?, ?, ?)")
-      .run(projectId, "Old", cwd)
-    legacy
-      .prepare("INSERT INTO sessions (id, project_id, name) VALUES (?, ?, ?)")
-      .run(sessionId, projectId, "Old session")
-    legacy.close()
-
-    const workspace = store(path)
-    expect(workspace.projects()).toEqual([{ id: projectId, name: "Old", cwd }])
-    expect(workspace.sessions(projectId)).toEqual([
-      { id: sessionId, projectId, name: "Old session", state: null },
-    ])
-    workspace.saveSession({ sessionId, state: "saved" })
-    expect(workspace.session(sessionId).state).toBe("saved")
   })
 
   it("rejects missing projects and sessions without creating orphan records", ({ store }) => {
@@ -247,13 +208,13 @@ describe("workspace metadata", () => {
     const path = join(directory(), "workspace.sqlite")
     const future = new DatabaseSync(path)
     future.exec(
-      "CREATE TABLE future_data (value TEXT); INSERT INTO future_data VALUES ('saved'); PRAGMA user_version = 3",
+      "CREATE TABLE future_data (value TEXT); INSERT INTO future_data VALUES ('saved'); PRAGMA user_version = 2",
     )
     future.close()
     expect(() => new WorkspaceStore(path)).toThrow(/newer/)
     const database = new DatabaseSync(path)
     try {
-      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(3)
+      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(2)
       expect(database.prepare("SELECT value FROM future_data").get()?.value).toBe("saved")
     } finally {
       database.close()

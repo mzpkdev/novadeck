@@ -7,8 +7,17 @@ export const directory = z.string().min(1).max(4096)
 export const columns = z.number().int().min(2).max(500)
 export const rows = z.number().int().min(1).max(200)
 export const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+
+/** The largest incoming WebSocket message a runner accepts; every call must fit in one. */
+export const maxWebSocketMessageBytes = 256 * 1024
+/**
+ * The longest saved session state, in characters. Over WebSocket, the whole
+ * `sessions.save` call must also fit in `maxWebSocketMessageBytes`.
+ */
+export const maxClientStateLength = 196_608
+
 // Opaque client-owned state the runner stores without reading, such as a UI layout.
-export const clientState = z.string().max(196_608)
+export const clientState = z.string().max(maxClientStateLength)
 
 export const project = z.strictObject({ id, name, cwd: directory })
 export const workspaceSession = z.strictObject({
@@ -32,11 +41,10 @@ export const terminalSummary = z.strictObject({
   cwd: directory,
   cols: columns,
   rows,
-  status: z.enum(["running", "exited"]),
   // Counts the shells this terminal has run: 1 at creation, +1 per restart. A report
   // about an older run is stale.
   run: z.number().int().positive(),
-  // Null while running.
+  // How the shell ended; null while it runs.
   exit: terminalExit.nullable(),
   // The terminal's foreground process name, such as the shell or a program it runs.
   // Null once exited or when the platform cannot tell.
@@ -59,7 +67,7 @@ export const terminalEvent = z.discriminatedUnion("type", [
     data: z.string(),
     cols: columns,
     rows,
-    status: z.enum(["running", "exited"]),
+    // Null while the shell runs.
     exit: terminalExit.nullable(),
   }),
   z.strictObject({ ...envelope, type: z.literal("output"), data: z.string() }),

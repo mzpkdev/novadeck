@@ -57,9 +57,6 @@ export const contract = {
         z.strictObject({
           runnerId: id,
           protocolVersion: z.literal(protocolVersion),
-          capabilities: z.array(
-            z.enum(["workspace-metadata", "terminal-replay", "terminal-ack", "terminal-observers"]),
-          ),
         }),
       ),
   },
@@ -93,7 +90,8 @@ export const contract = {
       )
       .output(terminalSummary),
     // Every terminal across sessions: `changed` for each, `synced`, then later changes
-    // (creation, foreground process, exit) and `removed` when a record is evicted.
+    // (creation, size, foreground process, exit, restart) and `removed` when a record
+    // is closed or evicted.
     watch: procedure.input(z.void()).output(eventIterator(terminalChange)),
     attach: procedure
       .input(

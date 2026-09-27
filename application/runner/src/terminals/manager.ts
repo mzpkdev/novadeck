@@ -169,7 +169,6 @@ export class Terminals {
           cwd,
           cols: input.cols,
           rows: input.rows,
-          status: "running",
           exit: null,
           process: shellName(shell),
           run: 1,
@@ -239,7 +238,7 @@ export class Terminals {
   async restart(input: { terminalId: string } & Size, ownerId: string): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     const record = this.record(input.terminalId)
-    if (record.summary.status !== "exited" || record.restarting)
+    if (record.summary.exit === null || record.restarting)
       throw new DomainError("CONFLICT", "Only an exited terminal can restart.")
     if (record.controller !== undefined && record.controller !== ownerId)
       throw new DomainError("CONTROL_IN_USE")
@@ -262,7 +261,6 @@ export class Terminals {
             ...record.summary,
             cols: input.cols,
             rows: input.rows,
-            status: "running",
             exit: null,
             process: shellName(shell),
             run: record.summary.run + 1,
@@ -370,7 +368,7 @@ export class Terminals {
             ),
           )
         }
-        if (record.summary.status === "exited") subscription.finish()
+        if (record.summary.exit !== null) subscription.finish()
       }).finally(() => {
         record.pendingAttachments -= 1
       })
@@ -490,7 +488,7 @@ export class Terminals {
   private sample(): void {
     let running = false
     for (const record of this.records.values()) {
-      if (record.summary.status !== "running" || record.exitQueued) continue
+      if (record.summary.exit !== null || record.exitQueued) continue
       running = true
       const name = foreground(record.process)
       if (name === record.summary.process) continue
@@ -524,7 +522,7 @@ export class Terminals {
   }
 
   private running(record: Record): void {
-    if (record.summary.status !== "running" || record.exitQueued || record.closing)
+    if (record.summary.exit !== null || record.exitQueued || record.closing)
       throw new DomainError("TERMINAL_EXITED")
   }
 
@@ -669,7 +667,7 @@ export class Terminals {
     record.exitQueued = true
     const exit = { ...ended, ranMs: Math.max(0, Math.round(performance.now() - record.startedAt)) }
     void this.enqueue(record, () => {
-      record.summary = { ...record.summary, status: "exited", exit, process: null }
+      record.summary = { ...record.summary, exit, process: null }
       this.exits += 1
       record.exitOrder = this.exits
       this.announce(record)
@@ -682,7 +680,7 @@ export class Terminals {
 
   private terminate(record: Record): Promise<void> {
     if (record.closing) return record.closing
-    if (record.summary.status === "exited") return record.exited
+    if (record.summary.exit !== null) return record.exited
     record.closing = this.kill(record)
     return record.closing
   }
@@ -717,7 +715,7 @@ export class Terminals {
     const idle = [...this.records.values()]
       .filter(
         (record) =>
-          record.summary.status === "exited" &&
+          record.summary.exit !== null &&
           record.subscribers.size === 0 &&
           record.pendingAttachments === 0 &&
           !record.restarting,

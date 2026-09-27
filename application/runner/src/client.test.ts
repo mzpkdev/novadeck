@@ -202,7 +202,7 @@ describe("runner client over WebSocket", () => {
     const terminal = await runner.terminals.attach(created.id)
     expect(terminal).toMatchObject({ id: created.id, mode: "control" })
     const screen = view(terminal, resources)
-    expect(await screen.next()).toMatchObject({ type: "snapshot", status: "running" })
+    expect(await screen.next()).toMatchObject({ type: "snapshot", exit: null })
     await screen.until("PTY_READY")
     await print(terminal, "HELLO_RUNNER")
     await screen.until("HELLO_RUNNER")
@@ -213,7 +213,9 @@ describe("runner client over WebSocket", () => {
     expect(rest).toContainEqual(expect.objectContaining({ type: "resized", cols: 100, rows: 30 }))
     expect(rest.at(-1)).toMatchObject({ type: "exited", exit: { code: 3 } })
     await expect(terminal.write("ignored")).rejects.toMatchObject({ code: "TERMINAL_EXITED" })
-    await expect(terminal.close()).resolves.toBeUndefined()
+    // Closing an exited terminal needs no attachment and forgets it.
+    await runner.terminals.close(created.id)
+    await expect(runner.terminals.list({ sessionId })).resolves.toEqual([])
   })
 
   it("rejects a wrong token and unknown terminals with typed errors", async ({ resources }) => {
@@ -325,7 +327,7 @@ describe("runner client over WebSocket", () => {
     await expect(runner.projects.list()).rejects.toMatchObject({ code: "CLOSED" })
     const again = await app.connect()
     await expect(again.terminals.list({ sessionId })).resolves.toEqual([
-      expect.objectContaining({ id: created.id, status: "running" }),
+      expect.objectContaining({ id: created.id, exit: null }),
     ])
   })
 })
@@ -427,13 +429,12 @@ describe("runner client terminal restart", () => {
 
     await expect(runner.terminals.restart(created.id, size)).resolves.toMatchObject({
       id: created.id,
-      status: "running",
       exit: null,
       ...size,
     })
     const again = await runner.terminals.attach(created.id)
     const next = view(again, resources)
-    expect(await next.next()).toMatchObject({ type: "snapshot", status: "running", ...size })
+    expect(await next.next()).toMatchObject({ type: "snapshot", exit: null, ...size })
     await next.until("PTY_READY")
     await print(again, "SECOND_RUN")
     await next.until("SECOND_RUN")

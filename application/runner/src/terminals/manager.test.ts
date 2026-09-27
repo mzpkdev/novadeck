@@ -91,7 +91,7 @@ describe("terminal creation ownership", () => {
       expect.objectContaining({ code: "CONTROL_REQUIRED" }),
     )
     const replacement = terminals.attach(manager, terminal.id, "replacement")
-    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", status: "running" })
+    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", exit: null })
     expect(() => manager.write({ terminalId: terminal.id, data: "" }, "replacement")).not.toThrow()
   })
 })
@@ -151,7 +151,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     )
     const first = terminals.attach(manager, terminal.id, "first")
     const initial = await first.next()
-    expect(initial.value).toMatchObject({ type: "snapshot", sequence: 0, status: "running" })
+    expect(initial.value).toMatchObject({ type: "snapshot", sequence: 0, exit: null })
     manager.ack({ terminalId: terminal.id, sequence: initial.value!.sequence }, "first")
     manager.write(
       { terminalId: terminal.id, data: "printf '\\033[31mCOLOR\\033[0m\\n'\n" },
@@ -211,7 +211,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       replayed.push((await replay.next()).value!)
     }
     expect(replayed).toEqual(resumed)
-    expect(manager.get(terminal.id).status).toBe("running")
+    expect(manager.get(terminal.id).exit).toBeNull()
   })
 
   it("releases control on cancellation and denies observers input, resize, and close", async ({
@@ -246,8 +246,8 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     signal.abort()
     expect((await pending).done).toBe(true)
     const replacement = terminals.attach(manager, terminal.id, "replacement")
-    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", status: "running" })
-    expect(manager.get(terminal.id).status).toBe("running")
+    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", exit: null })
+    expect(manager.get(terminal.id).exit).toBeNull()
   })
 
   it("emits natural exit after parsed output and evicts exited records at capacity", async ({
@@ -315,9 +315,9 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     await barrier.next()
     await barrier.return(undefined)
     await expect(stream.next()).rejects.toMatchObject({ code: "SLOW_CONSUMER" })
-    expect(manager.get(terminal.id).status).toBe("running")
+    expect(manager.get(terminal.id).exit).toBeNull()
     const replacement = terminals.attach(manager, terminal.id, "replacement")
-    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", status: "running" })
+    expect((await replacement.next()).value).toMatchObject({ type: "snapshot", exit: null })
   })
 
   it("reports an undersized snapshot allowance without retaining control or killing the shell", async ({
@@ -333,7 +333,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     expect(() => manager.write({ terminalId: terminal.id, data: "" }, "owner")).toThrow(
       expect.objectContaining({ code: "CONTROL_REQUIRED" }),
     )
-    expect(manager.get(terminal.id).status).toBe("running")
+    expect(manager.get(terminal.id).exit).toBeNull()
   })
 
   it("returns clean creation errors without consuming terminal capacity", async ({ terminals }) => {
@@ -401,7 +401,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     const cancelled = manager.attach({ terminalId: terminal.id }, "cancelled", signal.signal)
     expect((await cancelled.next()).done).toBe(true)
     const control = terminals.attach(manager, terminal.id, "final")
-    expect((await control.next()).value).toMatchObject({ type: "snapshot", status: "running" })
+    expect((await control.next()).value).toMatchObject({ type: "snapshot", exit: null })
   })
 
   it("drains a large final output before reporting exit", async ({ terminals }) => {
@@ -477,16 +477,15 @@ describe("terminal watching", () => {
 
     const id = randomUUID()
     const created = await manager.create({ id, sessionId: "two", cwd, cols: 80, rows: 24 }, "owner")
-    expect(created).toMatchObject({ id, sessionId: "two", status: "running" })
+    expect(created).toMatchObject({ id, sessionId: "two", exit: null })
     await watch.until(changed(id))
     manager.write({ terminalId: id, data: command({ type: "exit", code: 5 }) }, "owner")
     expect(
-      await watch.until((change) => changed(id)(change) && change.terminal.status === "exited"),
+      await watch.until((change) => changed(id)(change) && change.terminal.exit !== null),
     ).toEqual({
       type: "changed",
       terminal: {
         ...manager.get(id),
-        status: "exited",
         exit: { code: 5, signal: null, ranMs: expect.any(Number) },
         process: null,
       },
@@ -590,8 +589,8 @@ describe("terminal closing", () => {
     })
 
     manager.write({ terminalId: ended.id, data: command({ type: "exit", code: 2 }) }, "owner")
-    await watch.until((change) => changed(ended.id)(change) && change.terminal.status === "exited")
-    expect(manager.get(ended.id)).toMatchObject({ status: "exited", exit: { code: 2 } })
+    await watch.until((change) => changed(ended.id)(change) && change.terminal.exit !== null)
+    expect(manager.get(ended.id)).toMatchObject({ exit: { code: 2 } })
   })
 
   it("lets any connection close a terminal nobody controls, but not another's", async ({
@@ -645,7 +644,7 @@ describe("terminal restart", () => {
       type: "exited",
       exit: { code: 3, signal: null, ranMs: expect.any(Number) },
     })
-    expect(manager.get(id)).toMatchObject({ status: "exited", exit: { code: 3 }, process: null })
+    expect(manager.get(id)).toMatchObject({ exit: { code: 3 }, process: null })
     await expect(
       manager.restart({ terminalId: id, cols: 100, rows: 30 }, "restarter"),
     ).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
@@ -654,17 +653,17 @@ describe("terminal restart", () => {
 
     await expect(
       manager.restart({ terminalId: id, cols: 100, rows: 30 }, "restarter"),
-    ).resolves.toMatchObject({ id, status: "running", cols: 100, rows: 30, exit: null, run: 2 })
+    ).resolves.toMatchObject({ id, cols: 100, rows: 30, exit: null, run: 2 })
     // Reports about the first run carry `run: 1`, so a client can tell them apart.
     expect(
-      await watch.until((change) => changed(id)(change) && change.terminal.status === "running"),
+      await watch.until((change) => changed(id)(change) && change.terminal.exit === null),
     ).toMatchObject({ terminal: { run: 2 } })
     expect(manager.list()).toEqual([expect.objectContaining({ id, run: 2 })])
     expect(() => manager.write({ terminalId: id, data: "" }, "restarter")).not.toThrow()
     // A cursor from the previous run gets the new screen, not a replay onto the old one.
     const second = terminals.attach(manager, id, "restarter", cursor)
     const snapshot = (await second.next()).value!
-    expect(snapshot).toMatchObject({ type: "snapshot", status: "running", exit: null })
+    expect(snapshot).toMatchObject({ type: "snapshot", exit: null })
     expect(snapshot.sequence).toBeGreaterThan(cursor)
     const text = await until(manager, second, "restarter", (_event, all) =>
       all.includes("PTY_READY"),
@@ -704,7 +703,7 @@ describe("terminal restart", () => {
       await expect(
         manager.restart({ terminalId: id, cols: 80, rows: 24 }, "owner"),
       ).rejects.toMatchObject({ code: "SPAWN_FAILED" })
-      expect(manager.get(id)).toMatchObject({ status: "exited", exit: { signal: "SIGKILL" } })
+      expect(manager.get(id)).toMatchObject({ exit: { signal: "SIGKILL" } })
     },
   )
 })
@@ -727,7 +726,7 @@ describe.skipIf(process.platform === "win32")("terminal limits", () => {
       // eslint-disable-next-line no-await-in-loop -- Creation order decides which records are oldest.
       await retaining.create({ id, sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
       // eslint-disable-next-line no-await-in-loop -- Each shell exits before the next starts.
-      await watch.until((change) => changed(id)(change) && change.terminal.status === "exited")
+      await watch.until((change) => changed(id)(change) && change.terminal.exit !== null)
     }
     await watch.until((change) => change.type === "removed" && change.terminalId === ids[1])
     expect(retaining.list().map((terminal) => terminal.id)).toEqual(ids.slice(2))
@@ -751,7 +750,7 @@ describe.skipIf(process.platform === "win32")("terminal limits", () => {
     for (const id of ids.toReversed()) {
       manager.write({ terminalId: id, data: "exit 0\n" }, "owner")
       // eslint-disable-next-line no-await-in-loop -- Each exit completes before the next.
-      await watch.until((change) => changed(id)(change) && change.terminal.status === "exited")
+      await watch.until((change) => changed(id)(change) && change.terminal.exit !== null)
     }
     await watch.until((change) => change.type === "removed" && change.terminalId === ids[1])
     expect(manager.list().map((terminal) => terminal.id)).toEqual([ids[0]])

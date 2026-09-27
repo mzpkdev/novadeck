@@ -22,7 +22,9 @@ export const servePort = (runner: Runner, port: RunnerPort): (() => void) => {
     verify: () => true,
     terminate: () => port.close(),
     onAuthenticated: () => {},
-    // The trusted desktop client may, for example, restart every terminal at once.
+    // The trusted desktop client keeps many terminals busy at once: ACKs, input,
+    // resizes and state saves overlap across all of them. The bound only stops a
+    // runaway client from queueing unbounded work.
     maxCalls: 1024,
   })
   const disconnect = () => runner.disconnect(connection)

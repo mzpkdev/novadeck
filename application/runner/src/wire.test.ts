@@ -240,10 +240,7 @@ describe("WebSocket authentication and protocol", () => {
       client.sessions.create({ id: randomUUID(), projectId: randomUUID(), name: "denied" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" })
     const info = await client.runner.handshake({ protocolVersion, token })
-    expect(info).toMatchObject({
-      protocolVersion,
-      capabilities: expect.arrayContaining(["terminal-replay", "terminal-ack"]),
-    })
+    expect(info).toEqual({ runnerId: expect.any(String), protocolVersion })
     expect(info.runnerId).toEqual(expect.any(String))
     await expect(client.projects.list()).resolves.toEqual([])
   })
@@ -436,7 +433,7 @@ describe("PTY lifecycle API", () => {
     const output = await reader(resources, client, terminal.id)
     expect(await output.next()).toMatchObject({
       type: "snapshot",
-      status: "running",
+      exit: null,
       cols: 80,
       rows: 24,
     })
@@ -453,7 +450,7 @@ describe("PTY lifecycle API", () => {
     })
     await output.untilText("SIZE_132x43_TTY_true")
     await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
-      expect.objectContaining({ id: terminal.id, status: "running", cols: 132, rows: 43 }),
+      expect.objectContaining({ id: terminal.id, exit: null, cols: 132, rows: 43 }),
     ])
     await client.terminals.write({
       terminalId: terminal.id,
@@ -463,7 +460,7 @@ describe("PTY lifecycle API", () => {
       exit: { code: 7 },
     })
     await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
-      expect.objectContaining({ status: "exited", exit: expect.objectContaining({ code: 7 }) }),
+      expect.objectContaining({ exit: expect.objectContaining({ code: 7 }) }),
     ])
     const sequences = output.events.map((event) => event.sequence)
     expect(sequences).toEqual([...new Set(sequences)].toSorted((a, b) => a - b))
@@ -610,7 +607,7 @@ describe("terminal attachment and recovery API", () => {
     await queued.stream.return()
     const restored = await reader(resources, observer.client, terminal.id, { mode: "observe" })
     const snapshot = await restored.next()
-    expect(snapshot).toMatchObject({ type: "snapshot", status: "exited", exit: { code: 9 } })
+    expect(snapshot).toMatchObject({ type: "snapshot", exit: { code: 9 } })
     expect(restored.text()).toContain("FINAL_QUEUED_OUTPUT")
     await expect(observer.client.projects.list()).resolves.toHaveLength(1)
   })
@@ -803,7 +800,7 @@ describe("terminal attachment and recovery API", () => {
     const restored = await reader(resources, observer.client, terminal.id, { mode: "observe" })
     await restored.untilText("OVERFLOW_RECOVERED")
     await expect(client.terminals.list({ sessionId: session.id })).resolves.toEqual([
-      expect.objectContaining({ status: "running" }),
+      expect.objectContaining({ exit: null }),
     ])
   })
 
@@ -843,7 +840,7 @@ describe("terminal attachment and recovery API", () => {
       ),
     ).toBe(true)
     await expect(owner.client.terminals.list({ sessionId: session.id })).resolves.toEqual([
-      expect.objectContaining({ id: terminal.id, status: "running" }),
+      expect.objectContaining({ id: terminal.id, exit: null }),
     ])
   })
 
@@ -874,7 +871,7 @@ describe("terminal attachment and recovery API", () => {
       afterSequence: 0,
     })
     const snapshot = await restored.next()
-    expect(snapshot).toMatchObject({ type: "snapshot", status: "running" })
+    expect(snapshot).toMatchObject({ type: "snapshot", exit: null })
     if (snapshot.type !== "snapshot") throw new Error("Expected restored screen")
     expect(snapshot.data).toContain("SNAPSHOT_READY")
     expect(snapshot.sequence).toBeGreaterThan(0)

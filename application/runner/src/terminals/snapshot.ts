@@ -23,7 +23,6 @@ export const snapshot = (
       data: serializer.serialize({ scrollback }),
       cols: summary.cols,
       rows: summary.rows,
-      status: summary.status,
       exit: summary.exit,
     }
     if (Buffer.byteLength(JSON.stringify(event)) <= budget) return event

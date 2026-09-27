@@ -103,20 +103,18 @@ describe("compiled desktop runner", () => {
           projectId: project.id,
           name: "Many",
         })
-        const created = []
-        // One at a time: a connection may have only 32 calls in flight.
-        for (let index = 0; index < 33; index += 1) {
-          created.push(
-            // eslint-disable-next-line no-await-in-loop -- Sequential by design.
-            await client.terminals.create({
+        // All at once: the desktop MessagePort connection allows 1,024 calls in flight.
+        const created = await Promise.all(
+          Array.from({ length: 33 }, () =>
+            client.terminals.create({
               id: crypto.randomUUID(),
               sessionId: session.id,
               cols: 80,
               rows: 24,
             }),
-          )
-        }
-        expect(created.filter((terminal) => terminal.status === "running")).toHaveLength(33)
+          ),
+        )
+        expect(created.filter((terminal) => terminal.exit === null)).toHaveLength(33)
         await client.close()
       } finally {
         await runner.close()

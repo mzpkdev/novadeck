@@ -9,7 +9,6 @@ const terminal = (id: string, changes: Partial<TerminalSummary> = {}): TerminalS
   cwd: "/tmp",
   cols: 80,
   rows: 24,
-  status: "running",
   exit: null,
   process: "sh",
   run: 1,

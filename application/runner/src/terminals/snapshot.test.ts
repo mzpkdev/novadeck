@@ -13,7 +13,6 @@ const summary: TerminalSummary = {
   cwd: "/tmp",
   cols: 20,
   rows: 4,
-  status: "running",
   exit: null,
   process: null,
   run: 1,

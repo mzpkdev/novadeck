@@ -14,7 +14,6 @@ const snapshot = (): TerminalEvent => ({
   data: "s".repeat(1024),
   cols: 80,
   rows: 24,
-  status: "running",
   exit: null,
 })
 

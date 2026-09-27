@@ -40,7 +40,7 @@ const permissions = async (model: Model, real: Real): Promise<void> => {
       })
     }
   }
-  expect(real.manager.get(real.id).status).toBe("running")
+  expect(real.manager.get(real.id).exit).toBeNull()
 }
 
 class Step implements fc.AsyncCommand<Model, Real> {
@@ -70,7 +70,7 @@ class Step implements fc.AsyncCommand<Model, Real> {
         expect((await stream.next()).value).toEqual({ type: "attached", terminalId: real.id, mode })
         const { value: event } = await stream.next()
         if (event?.type !== "snapshot") throw new Error(`Expected a snapshot, got ${event?.type}`)
-        expect(event).toMatchObject({ status: "running" })
+        expect(event).toMatchObject({ exit: null })
         real.manager.ack({ terminalId: real.id, sequence: event.sequence }, owner(client))
         real.attached.set(client, { stream, signal })
         model.attached.set(client, mode)

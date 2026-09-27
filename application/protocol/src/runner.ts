@@ -57,8 +57,6 @@ export type AttachedTerminal = AsyncIterableIterator<TerminalEvent> & {
   /** Sends input, including control characters. Never retried; success means accepted. */
   write(data: string): Promise<void>
   resize(size: { readonly cols: number; readonly rows: number }): Promise<void>
-  /** Ends the shell and removes the terminal. The stream then delivers `exited` and finishes. */
-  close(): Promise<void>
   /** Releases this attachment and ends iteration. The shell keeps running. */
   detach(): Promise<void>
 }
@@ -483,16 +481,6 @@ class Attachment implements AttachedTerminal {
     const link = this.control()
     try {
       await link.wire.terminals.resize({ terminalId: this.id, cols: size.cols, rows: size.rows })
-    } catch (error) {
-      throw failure(error, link)
-    }
-  }
-
-  async close(): Promise<void> {
-    if (this.ended === "exited") return
-    const link = this.control()
-    try {
-      await link.wire.terminals.close({ terminalId: this.id })
     } catch (error) {
       throw failure(error, link)
     }

@@ -10,3 +10,17 @@ export type DesktopBridge = {
   /** Asks the user to choose a folder; resolves its absolute path, or null when cancelled. */
   pickDirectory(): Promise<string | null>
 }
+
+/** Present only when the host enables its debug panel for this launch. */
+export type DesktopDebugBridge = {
+  readonly debug: true
+  /** Kills the runner process, as a crash would; false when none runs. */
+  debugKillRunner(): Promise<boolean>
+}
+
+/** `window.novadeck` in a desktop host's page. */
+export type DesktopHost = DesktopBridge &
+  Partial<DesktopDebugBridge> & {
+    /** The host's local HTTP API. */
+    readonly apiUrl: string
+  }
