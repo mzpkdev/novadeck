@@ -117,7 +117,10 @@ describe("runner terminal surface", () => {
     it("says how under its output, in honey for an exit code, and announces it", () => {
       const { bar } = ended({ state: "exited", exitCode: 3, signal: null })
       expect(bar?.dataset.terminalEnding).toBe("warning")
-      expect(bar?.querySelector("[aria-live=polite]")?.textContent).toBe("Exited · code 3")
+      // The announcer sits outside the bar, which is inert while hidden.
+      const announcer = bar?.parentElement?.querySelector(":scope > [aria-live=polite]")
+      expect(announcer?.textContent).toBe("Exited · code 3")
+      expect(announcer?.closest("[inert]")).toBeNull()
       expect(bar?.querySelector("[title]")?.textContent).toBe("Exited · code 3")
     })
 

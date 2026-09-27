@@ -85,36 +85,41 @@ const EndingBar = ({
   // Each render derives a fresh ending; only a different one replaces the shown one.
   if (ending && (ending.tone !== shown?.tone || endingText(ending) !== text)) setShown(ending)
   return (
-    <div
-      className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
-      inert={!ending}
-      data-terminal-ending={ending?.tone}
-    >
-      {/* Rendered from the start, so the text arriving in it is announced. */}
-      <span
-        aria-live="polite"
-        aria-atomic
-        className="min-w-0 truncate font-bold tracking-wider uppercase"
-        title={text || undefined}
-      >
-        {text}
+    <>
+      {/* Announced from outside the bar: the bar is inert while hidden, and an inert
+          region that appears with its text already in place is not announced. Empty
+          while no ending shows, so a repeat of the same ending is announced again. */}
+      <span aria-live="polite" aria-atomic className="sr-only">
+        {ending ? endingText(ending) : ""}
       </span>
-      {shown && (
-        <button
-          type="button"
-          aria-disabled={paused || undefined}
-          className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring) aria-disabled:cursor-default aria-disabled:no-underline aria-disabled:opacity-50"
-          onClick={() => {
-            if (!paused) onRestart()
-          }}
+      <div
+        className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+        inert={!ending}
+        data-terminal-ending={ending?.tone}
+      >
+        <span
+          className="min-w-0 truncate font-bold tracking-wider uppercase"
+          title={text || undefined}
         >
-          Restart
-          <span aria-hidden className="font-normal opacity-60">
-            ↵
-          </span>
-        </button>
-      )}
-    </div>
+          {text}
+        </span>
+        {shown && (
+          <button
+            type="button"
+            aria-disabled={paused || undefined}
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring) aria-disabled:cursor-default aria-disabled:no-underline aria-disabled:opacity-50"
+            onClick={() => {
+              if (!paused) onRestart()
+            }}
+          >
+            Restart
+            <span aria-hidden className="font-normal opacity-60">
+              ↵
+            </span>
+          </button>
+        )}
+      </div>
+    </>
   )
 }
 
