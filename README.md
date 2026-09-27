@@ -150,6 +150,32 @@ and hands the same token to the UI dev server. For UI-only work, use
 `pnpm --filter @novadeck/ui dev` with `VITE_NOVADECK_RUNNER_URL` and
 `VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
+### Debug panel
+
+A small panel for reaching the app's runner states on demand. Press
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> to open or close it; it takes the
+keys before the terminal does.
+
+It is available in development (`pnpm dev`, and `pnpm dev:web` or any Vite dev
+server). A packaged app offers it only when launched with `--debug-panel` or with
+`NOVADECK_DEBUG=1` in its environment; otherwise there is no panel, no shortcut,
+and the main process registers no debug requests. (Plain `--debug` is not usable:
+Electron rejects it as Node's retired debugger flag.) Buttons marked "(sim)" fake the
+state; the others make it happen for real. The top line shows the runner id, the
+connection state, runner restarts in the last minute, and the terminal count.
+
+- **Startup:** boot again from the splash without reloading. "Splash" holds it
+  until you press Escape; each "Error" fails the first attempt with that code, so
+  transient errors retry on their own and the others wait for Retry or Quit.
+- **Runner:** kill the runner process once, or four times 1.5 s apart to trip the
+  crash-loop guard, or show a 5 s outage.
+- **Selected terminal:** type `exit`, `exit 3`, `kill -9 $$`, `sleep 600`, or run a
+  program named claude into the selected terminal's shell.
+- **New terminals:** a shell that exits at once, one started in a missing folder,
+  a simulated terminal limit, or thirty real shells.
+- **Sessions:** start `sleep 600` here, then a fresh session, to see the sessions
+  panel count it as running.
+
 ## Repository map
 
 This is a TypeScript monorepo using pnpm workspaces and Turborepo.

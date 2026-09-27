@@ -90,6 +90,17 @@ export type Backend = {
   // Optional. Asks the person for a folder to open as a project; null when cancelled.
   // Absent where the backend cannot offer one.
   readonly pickDirectory?: () => Promise<string | null>
+  // Optional. The debug panel, where this launch offers it: it triggers the states
+  // the backend can be in. See README "Debug panel".
+  readonly DebugPanel?: ComponentType<DebugPanelProps>
+}
+
+// What the debug panel may ask of the workspace.
+export type DebugPanelProps = {
+  // Adds a terminal to the current session and returns its key.
+  readonly addTerminal: () => TerminalKey
+  readonly startFresh: () => void
+  readonly selected: () => TerminalKey | undefined
 }
 
 // "unavailable" means the backend gave up reconnecting.
@@ -136,4 +147,9 @@ export type BootProgress = {
 // What app/backend.ts chooses: a backend ready at once, or one to connect to.
 export type BackendSelection =
   | { readonly createBackend: CreateBackend }
-  | { readonly connect: ConnectBackend }
+  | {
+      readonly connect: ConnectBackend
+      // Where the debug panel is offered: changes when it asks for a fresh boot, which
+      // the app then runs from the splash without reloading the page.
+      readonly reboots?: Store<number>
+    }

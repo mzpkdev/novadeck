@@ -1,6 +1,7 @@
 import type { TerminalChange, TerminalExit, TerminalSummary } from "@novadeck/protocol"
 import {
   hasCode,
+  RunnerError,
   type AttachedTerminal,
   type Runner,
   type RunnerStatus,
@@ -23,6 +24,8 @@ import type {
 } from "../port"
 import { createTerminalRegistry } from "../registry"
 import { exitStatus, restartable, terminalActivity } from "./activity"
+import type { RunnerDebug } from "./debug"
+import { createDebugPanel } from "./DebugPanel"
 import { createRunnerTerminal } from "./RunnerTerminal"
 import {
   cleanlyExited,
@@ -43,6 +46,8 @@ export type RunnerBackendOptions = {
   readonly saveDelay?: number
   readonly pickDirectory?: () => Promise<string | null>
   readonly now?: () => number
+  // The debug panel's hooks, when this launch offers the panel.
+  readonly debug?: RunnerDebug | undefined
 }
 
 export type TerminalSize = { readonly cols: number; readonly rows: number }
@@ -248,6 +253,15 @@ export const runnerBackend = (
   const entries = new Map<string, RunnerEntry>()
   let sink: BackendSink | undefined
   let runnerId: string | undefined
+  // The latest runner status; a simulated outage from the debug panel shows as
+  // reconnecting over it.
+  let lastStatus: RunnerStatus | undefined
+  const showConnection = (): void => {
+    const outage = options.debug?.outage.getSnapshot() ?? false
+    connection.update(() =>
+      outage ? "reconnecting" : lastStatus ? connectionState(lastStatus) : "connected",
+    )
+  }
   // Counts watch rounds: each `synced`, and each disconnection, starts a new one.
   let round = 0
   let latest: Workspace | undefined
@@ -445,11 +459,14 @@ export const runnerBackend = (
     return track(
       session.then(async (ok) => {
         if (!ok) throw new Error("The runner could not create this session.")
+        const { cwd, fail } = options.debug?.takeCreate() ?? {}
+        if (fail) throw new RunnerError(fail, "Simulated by the debug panel.")
         const summary = await persist(
           () =>
             runner.terminals.create({
               id: terminalId,
               sessionId: workspaceSessionId,
+              ...(cwd ? { cwd } : {}),
               cols: 80,
               rows: 24,
             }),
@@ -802,7 +819,8 @@ export const runnerBackend = (
     }
     const onStatus = (status: RunnerStatus): void => {
       if (!live) return
-      connection.update(() => connectionState(status))
+      lastStatus = status
+      showConnection()
       noteRunner(status)
       // A new connection lists every terminal again before its `synced`.
       if (status.state === "reconnecting") {
@@ -825,12 +843,14 @@ export const runnerBackend = (
     void consume(changes, onChange)
     void consume(statuses, onStatus)
     window.addEventListener("pagehide", flush)
+    const stopOutage = options.debug?.outage.subscribe(showConnection)
     return () => {
       live = false
       if (sink === next) sink = undefined
       void changes.return?.()
       void statuses.return?.()
       window.removeEventListener("pagehide", flush)
+      stopOutage?.()
       // The last changes are saved; nothing retries after this.
       flush()
       halted = true
@@ -848,6 +868,24 @@ export const runnerBackend = (
     boot: bootProgress,
     retryAfterCrashLoop,
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
+    ...(options.debug
+      ? {
+          DebugPanel: createDebugPanel(options.debug, {
+            write: async (key, data) => {
+              const attachment = entries.get(key.terminalId)?.attachment
+              if (!attachment) return false
+              await attachment.write(data)
+              return true
+            },
+            info: () => ({
+              runnerId,
+              connection: connection.getSnapshot(),
+              restarts: restarts.filter((time) => now() - time < restartWindowMs).length,
+              terminals: entries.size,
+            }),
+          }),
+        }
+      : {}),
   }
   return {
     backend,

@@ -126,6 +126,20 @@ export const BackendGate = ({ selection, render }: GateProps): ReactNode => {
     setRetryAt(delay === undefined ? undefined : Date.now() + delay)
   }
 
+  // The debug panel can ask for a fresh boot: the workspace goes and the splash runs
+  // the start again, as on launch, without reloading the page.
+  const reboots = "connect" in initial ? initial.reboots : undefined
+  const reboot = useEffectEvent(() => {
+    setFailures(0)
+    setFailure(null)
+    setRetryAt(undefined)
+    setBoot(null)
+    setLift("up")
+    setPhase("connecting")
+    setAttempt((count) => count + 1)
+  })
+  useEffect(() => reboots?.subscribe(reboot), [reboots])
+
   // Counts down to the next automatic retry, then takes it.
   const retryEvent = useEffectEvent(() => retry(false))
   useEffect(() => {

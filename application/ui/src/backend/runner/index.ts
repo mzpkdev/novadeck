@@ -9,13 +9,19 @@ import {
 } from "@novadeck/protocol/client"
 
 import { sessionName } from "../../model/session-name"
-import type { ConnectBackend, ConnectFailure } from "../port"
+import type { BootRehearsals } from "../boot-rehearsal"
+import type { BackendConnection, ConnectFailure } from "../port"
 import { runnerBackend } from "./backend"
+import { createRunnerDebug } from "./debug"
 import type { RunnerListing } from "./seed"
 
 // What the desktop host's preload script offers the page; absent in a browser.
-const desktopHost = (): Partial<DesktopBridge> | undefined =>
-  (globalThis as { novadeck?: Partial<DesktopBridge> }).novadeck
+// With the debug panel enabled, the desktop host also offers `debugKillRunner`.
+type DesktopHost = Partial<DesktopBridge> & {
+  readonly debugKillRunner?: () => Promise<boolean>
+}
+const desktopHost = (): DesktopHost | undefined =>
+  (globalThis as { novadeck?: DesktopHost }).novadeck
 
 const transport = (): Transport => {
   if (desktopHost()?.requestRunner) return desktop()
@@ -102,8 +108,17 @@ const unavailable = (error: unknown): Error => {
 }
 
 // Connects to the desktop app's own runner, or in a browser to the one the build
-// names, and loads the workspace before the app renders.
-export const connectRunnerBackend: ConnectBackend = async (signal, progress) => {
+// names, and loads the workspace before the app renders. `rehearsals`, present where
+// the debug panel is offered, can hold or fail this start and gives the panel its
+// hooks.
+export const connectRunnerBackend = async (
+  signal: AbortSignal,
+  progress: (stage: "loading") => void,
+  rehearsals?: BootRehearsals,
+): Promise<BackendConnection> => {
+  await rehearsals?.beforeConnect(signal, (code) =>
+    unavailable(new RunnerError(code as RunnerError["code"], "Simulated by the debug panel.")),
+  )
   let runner: Runner
   try {
     runner = await connectRunner(transport(), { signal })
@@ -114,11 +129,16 @@ export const connectRunnerBackend: ConnectBackend = async (signal, progress) => 
   try {
     const listing = await loadListing(runner, newId, Date.now)
     const pick = desktopHost()?.pickDirectory
+    const kill = desktopHost()?.debugKillRunner
+    const debug = rehearsals
+      ? createRunnerDebug({ rehearsals, killRunner: kill && (() => kill()) })
+      : undefined
     return {
       createBackend: () =>
         runnerBackend(runner, listing, {
           newId,
           ...(pick ? { pickDirectory: () => pick() } : {}),
+          debug,
         }).backend,
       close: () => void runner.close(),
     }

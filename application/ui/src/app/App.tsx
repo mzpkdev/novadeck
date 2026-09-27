@@ -15,7 +15,7 @@ import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controlle
 import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
 import { HeaderSection } from "./HeaderSection"
-import { currentState, shallowEqual } from "./selectors"
+import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
@@ -40,6 +40,27 @@ export const App = ({ createBackend }: AppProps): React.JSX.Element => (
     )}
   />
 )
+
+// The backend's debug panel, where this launch offers one.
+const DebugSection = (): React.JSX.Element | null => {
+  const { backend, commands, workspace } = useWorkspaceServices()
+  const Panel = backend.DebugPanel
+  if (!Panel) return null
+  return (
+    <Panel
+      addTerminal={() => {
+        const terminalId = commands.add({ beginRename: false })
+        return { ...currentTarget(workspace.getSnapshot()), terminalId }
+      }}
+      startFresh={commands.startFresh}
+      selected={() => {
+        const snapshot = workspace.getSnapshot()
+        const terminalId = currentState(snapshot).selected
+        return terminalId ? { ...currentTarget(snapshot), terminalId } : undefined
+      }}
+    />
+  )
+}
 
 // Hosts the effects that follow store changes; it renders nothing.
 const WorkspaceEffects = (): null => {
@@ -119,6 +140,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       </div>
       <WorkspaceFooter />
       <WorkspaceOverlays />
+      <DebugSection />
     </main>
   )
 }

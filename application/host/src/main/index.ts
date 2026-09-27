@@ -14,10 +14,19 @@ import {
   type IpcMainInvokeEvent,
 } from "electron"
 
-import { apiUrlArgumentPrefix, directoryPickerChannel, runnerPortChannel } from "../bridge.js"
+import {
+  apiUrlArgumentPrefix,
+  debugArgument,
+  directoryPickerChannel,
+  runnerPortChannel,
+} from "../bridge.js"
+import { debugEnabled, registerDebugIpc } from "./debug.js"
 import { startRunner, type RunnerHost } from "./runner.js"
 
 const appId = "dev.mzpk.novadeck"
+// Whether this launch offers the debug panel: always in development, and in a
+// packaged app only with --debug-panel or NOVADECK_DEBUG=1.
+const debugging = debugEnabled({ argv: process.argv, env: process.env, packaged: app.isPackaged })
 const developmentOrigin = "http://127.0.0.1:5173"
 const currentDirectory = dirname(fileURLToPath(import.meta.url))
 
@@ -69,7 +78,10 @@ const createWindow = (origin: string): BrowserWindow => {
     autoHideMenuBar: true,
     backgroundColor: "#ffffff",
     webPreferences: {
-      additionalArguments: [`${apiUrlArgumentPrefix}${apiUrl}`],
+      additionalArguments: [
+        `${apiUrlArgumentPrefix}${apiUrl}`,
+        ...(debugging ? [debugArgument] : []),
+      ],
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(currentDirectory, "../preload/index.cjs"),
@@ -105,6 +117,11 @@ const launch = async (): Promise<void> => {
   ipcMain.on(runnerPortChannel, (event, id: unknown) => {
     if (!appWindow(event) || typeof id !== "string") return
     runner?.connect(event.sender, id)
+  })
+  registerDebugIpc(ipcMain, {
+    enabled: debugging,
+    allowed: (event) => appWindow(event) !== undefined,
+    killRunner: () => runner?.kill() ?? false,
   })
   ipcMain.handle(directoryPickerChannel, async (event) => {
     const window = appWindow(event)

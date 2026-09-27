@@ -8,6 +8,7 @@ import type {
   BootProgress,
   ConnectFailure,
 } from "../backend/port"
+import { createStore } from "../model/store"
 import { context, describe, expect, it } from "../test"
 import { render, type Rendered } from "../test/render"
 import { BackendGate } from "./BackendGate"
@@ -246,6 +247,21 @@ describe("backend gate", () => {
         "Code: UNAUTHORIZED\nMessage: runner said UNAUTHORIZED\nAttempts: 1",
       )
       expect(page.button("Copied")).toBeDefined()
+    })
+  })
+
+  context("when the debug panel asks for a fresh boot", () => {
+    it("drops the workspace and runs the start again from the splash", async () => {
+      const reboots = createStore(0)
+      const { selection, attempts } = pending()
+      const page = show({ ...selection, reboots } as BackendSelection)
+      await act(async () => attempts.at(-1)!.resolve({ createBackend, close: () => {} }))
+      expect(page.container.textContent).toContain("workspace")
+      const before = attempts.length
+      act(() => void reboots.update((count) => count + 1))
+      expect(attempts.length).toBeGreaterThan(before)
+      expect(page.phase()).toBe("Powering the deck…")
+      expect(page.container.textContent).not.toContain("workspace")
     })
   })
 
