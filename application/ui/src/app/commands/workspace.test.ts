@@ -134,24 +134,65 @@ describe("workspace commands", () => {
   })
 
   context("when closing a terminal a program runs in", () => {
-    it("asks first and keeps the terminal when the person declines", () => {
-      const app = openCommands({ workspace: running(), confirm: false })
+    it("asks first and keeps the terminal until the person answers", () => {
+      const app = openCommands({ workspace: running() })
       app.commands.close("01")
-      expect(app.effects).toContain('confirm Close "Terminal 01"? vim is still running in it.')
+      expect(app.ui.getSnapshot().closing).toMatchObject({ id: "01" })
       expect(terminal(app, "01")).toBeDefined()
     })
 
-    it("closes it once the person agrees", () => {
+    it("keeps it when the person cancels", () => {
       const app = openCommands({ workspace: running() })
       app.commands.close("01")
+      app.commands.cancelClose()
+      expect(app.ui.getSnapshot().closing).toBeNull()
+      expect(terminal(app, "01")).toBeDefined()
+    })
+
+    it("closes it once the person confirms", () => {
+      const app = openCommands({ workspace: running() })
+      app.commands.close("01")
+      app.commands.confirmClose()
+      expect(app.ui.getSnapshot().closing).toBeNull()
       expect(app.state().roster.terminals.map((item) => item.id)).not.toContain("01")
     })
 
-    it("closes an idle terminal without asking", () => {
-      const app = openCommands({ confirm: false })
+    it("does not close it after the session changed", () => {
+      const app = openCommands({ workspace: running() })
       app.commands.close("01")
-      expect(app.effects.some((effect) => effect.startsWith("confirm"))).toBe(false)
+      app.commands.startFresh()
+      app.commands.confirmClose()
+      expect(
+        app.workspace
+          .getSnapshot()
+          .projects[0]!.history.some((session) =>
+            session.state.roster.terminals.some((item) => item.id === "01"),
+          ),
+      ).toBe(true)
+    })
+
+    it("closes an idle terminal without asking", () => {
+      const app = openCommands()
+      app.commands.close("01")
+      expect(app.ui.getSnapshot().closing).toBeNull()
       expect(app.state().roster.terminals.map((item) => item.id)).not.toContain("01")
+    })
+  })
+
+  context("when the runner keeps crashing", () => {
+    it("leaves it for this crash loop on Not now", () => {
+      const app = openCommands()
+      app.commands.dismissCrashLoop()
+      expect(app.ui.getSnapshot().crashLoopDismissed).toBe(true)
+    })
+
+    it("asks the backend to start over on Try again, and would ask again next time", () => {
+      let retries = 0
+      const app = openCommands({ retryAfterCrashLoop: () => retries++ })
+      app.commands.dismissCrashLoop()
+      app.commands.retryAfterCrashLoop()
+      expect(retries).toBe(1)
+      expect(app.ui.getSnapshot().crashLoopDismissed).toBe(false)
     })
   })
 

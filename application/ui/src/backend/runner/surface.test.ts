@@ -52,6 +52,7 @@ const starting = () => {
     exited: () => {},
     connection,
     track: (work) => work,
+    screen: () => {},
   }
   return { runtime, connection }
 }

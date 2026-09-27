@@ -33,8 +33,6 @@ export type CommandEffects = {
   readonly desktop: () => boolean
   readonly now: () => number
   readonly newId: () => string
-  // Asks the person a yes-or-no question and returns the answer.
-  readonly confirm: (message: string) => boolean
 }
 
 export type CommandContext = {
@@ -43,6 +41,7 @@ export type CommandContext = {
   readonly navigation: WorkspaceNavigator
   readonly newTerminal: Backend["newTerminal"]
   readonly pickDirectory?: Backend["pickDirectory"] | undefined
+  readonly retryAfterCrashLoop?: Backend["retryAfterCrashLoop"] | undefined
   readonly canvas: { readonly current: CanvasHandle | null }
   readonly effects: CommandEffects
 }

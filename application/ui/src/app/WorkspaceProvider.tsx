@@ -20,6 +20,7 @@ import {
   persistUi,
   trackRecent,
   watchPresentation,
+  watchCrashLoop,
   watchSwitcher,
   type UiLocation,
 } from "./ui-store"
@@ -60,6 +61,7 @@ const createServices = (
     navigation,
     newTerminal: backend.newTerminal,
     pickDirectory: backend.pickDirectory,
+    retryAfterCrashLoop: backend.retryAfterCrashLoop,
     canvas,
     effects: domEffects,
   })
@@ -90,6 +92,7 @@ export const WorkspaceProvider = ({
   useEffect(() => watchPresentation(services.workspace, services.ui), [services])
   useEffect(() => trackRecent(services.workspace, services.ui), [services])
   useEffect(() => watchSwitcher(services.workspace, services.ui), [services])
+  useEffect(() => watchCrashLoop(services.backend.runnerCrashes, services.ui), [services])
   useRouteSync(sync, { location, navigationType, navigate })
   return <WorkspaceServicesContext value={services}>{children}</WorkspaceServicesContext>
 }

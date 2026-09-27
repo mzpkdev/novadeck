@@ -495,6 +495,39 @@ describe("runner backend", () => {
     })
   })
 
+  context("while the app boots", () => {
+    it("counts the restored session's terminals as they come back", async () => {
+      const [home] = runner.listing
+      const projectId = home!.project.id
+      const id = crypto.randomUUID()
+      const terminals = Array.from({ length: 3 }, (_, index) =>
+        startingTerminal(crypto.randomUUID(), index + 1, home!.project.cwd),
+      )
+      await runner.client.sessions.create({ id, projectId, name: "boot" })
+      await runner.client.sessions.save({
+        sessionId: id,
+        state: encodeSession(
+          {
+            id,
+            name: "boot",
+            visitedAt: Date.now() + 600_000,
+            state: createTerminalState(terminals, "grid", "grid"),
+          },
+          2,
+        ),
+      })
+      const app = open(await runner.reload())
+      expect(activeSession(app.workspace())!.id).toBe(id)
+      expect(app.backend.boot?.getSnapshot()).toMatchObject({ total: 3, done: false })
+      await vi.waitFor(
+        () =>
+          expect(app.backend.boot?.getSnapshot()).toEqual({ attached: 3, total: 3, done: true }),
+        eventually,
+      )
+      app.stop()
+    })
+  })
+
   context("after a terminal restarts", () => {
     it.skipIf(process.platform !== "linux")(
       "reports what its fresh shell runs, and a kill right away as killed",

@@ -1,12 +1,6 @@
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
 import { activeProject, type WorkspaceAction } from "../../model/state"
-import type {
-  PreferencesValue,
-  Project,
-  TerminalMetadata,
-  ViewMode,
-  WorkspaceTarget,
-} from "../../model/types"
+import type { PreferencesValue, Project, ViewMode, WorkspaceTarget } from "../../model/types"
 import { currentContext, currentState, currentTarget, windowedDestination } from "../selectors"
 import type { CommandContext } from "./context"
 import { createLayoutCommands, type LayoutCommands } from "./layout"
@@ -42,17 +36,23 @@ export type WorkspaceCommands = ShellCommands &
     readonly chooseRecent: (id: string) => void
     // Returns the new terminal's ID.
     readonly add: (options?: AddTerminalOptions) => string
+    // Closes the terminal, or asks first while a program runs in it.
     readonly close: (terminalId: string) => void
+    // Answers the pending close confirmation.
+    readonly confirmClose: () => void
+    readonly cancelClose: () => void
+    // Answers the crash-loop dialog: start the terminals over, or leave it until the
+    // next crash loop.
+    readonly retryAfterCrashLoop: () => void
+    readonly dismissCrashLoop: () => void
   }
-
-const closeQuestion = ({ name, process }: TerminalMetadata): string =>
-  `Close "${name}"? ${process ? `${process} is` : "A program is"} still running in it.`
 
 // The terminal created last stays highlighted this long.
 const createdHighlight = 900
 
 export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands => {
-  const { workspace, ui, navigation, newTerminal, pickDirectory, effects } = ctx
+  const { workspace, ui, navigation, newTerminal, pickDirectory, retryAfterCrashLoop, effects } =
+    ctx
   const { go, navigateWorkspace } = navigation
   const { set, pulse } = shellEdits(ctx)
   const shell = createShellCommands(ctx)
@@ -88,6 +88,19 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     effects.after(createdHighlight, () =>
       ui.update((state) => (state.created === created ? { ...state, created: null } : state)),
     )
+  }
+
+  const closeNow = (terminalId: string): void => {
+    const snapshot = workspace.getSnapshot()
+    const { view, selected } = currentState(snapshot)
+    const active = rename.activeRename()
+    if (active?.id === terminalId) rename.finishRename(active, false)
+    navigateWorkspace(
+      [{ type: "terminal/close", target: currentTarget(snapshot), terminalId }],
+      {},
+      true,
+    )
+    if (selected === terminalId && view !== "canvas") pulse()
   }
 
   const switchProject = (next: Project): void => {
@@ -256,17 +269,29 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const closing = currentState(snapshot).roster.terminals.find(
         (terminal) => terminal.id === terminalId,
       )
-      // Closing ends the shell, so ask first while a program still runs in it.
-      if (closing?.state === "running" && !effects.confirm(closeQuestion(closing))) return
-      const { view, selected } = currentState(snapshot)
-      const active = rename.activeRename()
-      if (active?.id === terminalId) rename.finishRename(active, false)
-      navigateWorkspace(
-        [{ type: "terminal/close", target: currentTarget(snapshot), terminalId }],
-        {},
-        true,
-      )
-      if (selected === terminalId && view !== "canvas") pulse()
+      // Closing ends the shell, so ask first while a program still runs in it; the
+      // confirmation dialog renders from this and answers with confirmClose or cancelClose.
+      if (closing?.state === "running")
+        return void ui.update((state) => ({
+          ...state,
+          closing: { context: currentContext(snapshot), id: terminalId },
+        }))
+      closeNow(terminalId)
     },
+    confirmClose: () => {
+      const pending = ui.getSnapshot().closing
+      if (!pending) return
+      ui.update((state) => ({ ...state, closing: null }))
+      // Only in the session it was asked in; a session change drops it.
+      if (pending.context === currentContext(workspace.getSnapshot())) closeNow(pending.id)
+    },
+    cancelClose: () => ui.update((state) => (state.closing ? { ...state, closing: null } : state)),
+    retryAfterCrashLoop: () => {
+      ui.update((state) =>
+        state.crashLoopDismissed ? { ...state, crashLoopDismissed: false } : state,
+      )
+      retryAfterCrashLoop?.()
+    },
+    dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
   }
 }

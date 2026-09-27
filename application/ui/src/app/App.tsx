@@ -1,7 +1,6 @@
-import { memo, useSyncExternalStore } from "react"
 import { HashRouter } from "react-router"
 
-import type { Backend, BackendConnectionState, CreateBackend } from "../backend/port"
+import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
 import { cancelTerminalTransition } from "../layouts/transition"
 import { useDesktop } from "../shell/desktop"
@@ -11,12 +10,14 @@ import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { ZenDock } from "../shell/ZenDock"
 import { selectBackend } from "./backend"
 import { BackendGate } from "./BackendGate"
+import { BootReporter } from "./BootReporter"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
 import { HeaderSection } from "./HeaderSection"
 import { currentState, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
+import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
 import { WorkspaceStage } from "./WorkspaceStage"
@@ -29,57 +30,16 @@ export type AppProps = {
 export const App = ({ createBackend }: AppProps): React.JSX.Element => (
   <BackendGate
     selection={createBackend ? { createBackend } : selectBackend}
-    render={(create) => (
+    render={(create, boot) => (
       <HashRouter useTransitions={false}>
         <WorkspaceProvider createBackend={create}>
+          <BootReporter report={boot} />
           <WorkspaceApp />
         </WorkspaceProvider>
       </HashRouter>
     )}
   />
 )
-
-const connectionLabels: Record<BackendConnectionState, string | null> = {
-  connected: null,
-  reconnecting: "Reconnecting…",
-  unavailable: "Runner unavailable",
-}
-const always = (): (() => void) => () => {}
-const useConnection = ({ connection }: Backend): BackendConnectionState =>
-  useSyncExternalStore(
-    connection?.subscribe ?? always,
-    () => connection?.getSnapshot() ?? "connected",
-  )
-
-// The terminal counts under the workspace, and how the backend link is doing.
-const WorkspaceFooter = memo((): React.JSX.Element => {
-  const { backend } = useWorkspaceServices()
-  const connection = connectionLabels[useConnection(backend)]
-  const zen = useUiState((state) => Boolean(state.shell.zen))
-  const { count, running } = useWorkspaceState((workspace) => {
-    const { terminals } = currentState(workspace).roster
-    return {
-      count: terminals.length,
-      running: terminals.filter((terminal) => terminal.state === "running").length,
-    }
-  }, shallowEqual)
-  return (
-    <footer
-      hidden={zen}
-      className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t border-line bg-paper px-4 text-[10px] text-muted"
-    >
-      <span className="flex items-center gap-2">
-        <span>
-          {count} {count === 1 ? "terminal" : "terminals"}
-        </span>
-        <span className="footer-running max-[701px]:hidden ml-2 border-l border-line pl-3">
-          {running} running
-        </span>
-      </span>
-      <span role="status">{connection}</span>
-    </footer>
-  )
-})
 
 // Hosts the effects that follow store changes; it renders nothing.
 const WorkspaceEffects = (): null => {

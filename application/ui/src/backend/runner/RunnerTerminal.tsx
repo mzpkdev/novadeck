@@ -76,6 +76,7 @@ export const followTerminal = (
       sent = `${event.cols}x${event.rows}`
       await screen.write(event.data)
       screen.live(true)
+      runtime.screen(key, "shown")
       if (event.status === "exited") {
         runtime.exited(key, event.exit)
         screen.exited(waitsForEnter(event.exit))
@@ -362,7 +363,9 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
       }
       scheme?.addEventListener("change", retheme)
       view.current = { xterm, followed }
+      runtime.screen(terminalKey, "mounted")
       return () => {
+        runtime.screen(terminalKey, "gone")
         view.current = null
         scheme?.removeEventListener("change", retheme)
         resizes.disconnect()

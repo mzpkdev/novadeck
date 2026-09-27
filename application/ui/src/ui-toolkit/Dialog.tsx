@@ -15,7 +15,16 @@ export type DialogProps = {
   finalFocusEl?: () => HTMLElement | null
   contentRef?: RefObject<HTMLDivElement | null>
   modal?: boolean
+  // "alertdialog" for a confirmation: Ark then focuses the close trigger (the safe
+  // choice) first and keeps outside clicks from dismissing it unless allowed here.
+  role?: "dialog" | "alertdialog"
+  closeOnInteractOutside?: boolean
 }
+
+// Parts that name, describe and dismiss a dialog; Ark wires their ids and focus.
+export const DialogTitle = ArkDialog.Title
+export const DialogDescription = ArkDialog.Description
+export const DialogCloseTrigger = ArkDialog.CloseTrigger
 
 export const Dialog = ({
   open,
@@ -30,9 +39,13 @@ export const Dialog = ({
   finalFocusEl,
   contentRef,
   modal = true,
+  role = "dialog",
+  closeOnInteractOutside,
 }: DialogProps): React.JSX.Element => (
   <ArkDialog.Root
     open={open}
+    role={role}
+    {...(closeOnInteractOutside === undefined ? {} : { closeOnInteractOutside })}
     onOpenChange={(details) => onOpenChange(details.open)}
     aria-label={label}
     onExitComplete={onExitComplete}

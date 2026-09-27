@@ -1,109 +1,192 @@
-import { Terminal as TerminalIcon } from "lucide-react"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react"
 
-import type { BackendConnection, BackendSelection, CreateBackend } from "../backend/port"
+import type {
+  BackendConnection,
+  BackendSelection,
+  BootProgress,
+  ConnectFailure,
+  CreateBackend,
+} from "../backend/port"
+import {
+  autoRetryDelay,
+  bootFill,
+  bootLine,
+  failureOf,
+  onlineHoldMs,
+  splashFadeMs,
+  type BootStage,
+} from "./boot"
+import { BootFailure } from "./BootFailure"
+import { BootSplash } from "./BootSplash"
 
-type Gate =
-  | { readonly state: "connecting" }
-  | { readonly state: "failed"; readonly message: string }
-  | { readonly state: "ready"; readonly createBackend: CreateBackend }
+// Where the splash stands once the workspace reports it is attached: saying so, fading
+// out, then gone.
+type Lift = "up" | "online" | "leaving" | "gone"
 
-const initialGate = (selection: BackendSelection): Gate =>
-  "createBackend" in selection
-    ? { state: "ready", createBackend: selection.createBackend }
-    : { state: "connecting" }
-
-const Brand = (): React.JSX.Element => (
-  <span className="flex items-center gap-2 text-[16px] font-semibold tracking-[-0.6px] text-ink">
-    <span className="flex size-7 items-center justify-center rounded-control border border-strong bg-strong text-white">
-      <TerminalIcon size={18} strokeWidth={2} aria-hidden="true" />
-    </span>
-    <span>
-      novadeck<span className="text-muted">.</span>
-    </span>
-  </span>
-)
+type Phase = "connecting" | "loading" | "ready"
 
 type GateProps = {
   // Read once when the gate mounts.
   readonly selection: BackendSelection
-  // The workspace, once the backend can be created.
-  readonly render: (createBackend: CreateBackend) => ReactNode
+  // The workspace, once the backend can be created. It mounts behind the splash and
+  // reports, through `boot`, how far its terminals are from attached.
+  readonly render: (
+    createBackend: CreateBackend,
+    boot: (progress: BootProgress) => void,
+  ) => ReactNode
 }
 
-// One attempt to reach the backend; it keeps the connection while it stays mounted.
+// One attempt to reach the backend. It keeps the connection, and the workspace on it,
+// while it stays mounted, and tells the gate how it is going.
 const Attempt = ({
   selection,
   render,
-  onRetry,
-}: GateProps & { readonly onRetry: () => void }): ReactNode => {
-  const [gate, setGate] = useState(() => initialGate(selection))
+  onPhase,
+  onFailed,
+}: {
+  readonly selection: BackendSelection
+  readonly render: (createBackend: CreateBackend) => ReactNode
+  readonly onPhase: (phase: Phase) => void
+  readonly onFailed: (failure: ConnectFailure) => void
+}): ReactNode => {
+  const [createBackend, setCreateBackend] = useState(() =>
+    "createBackend" in selection ? selection.createBackend : undefined,
+  )
+  const phase = useEffectEvent(onPhase)
+  const failed = useEffectEvent(onFailed)
   useEffect(() => {
     if (!("connect" in selection)) return
     const controller = new AbortController()
     let connection: BackendConnection | undefined
-    selection.connect(controller.signal).then(
-      (connected) => {
-        if (controller.signal.aborted) return connected.close()
-        connection = connected
-        setGate({ state: "ready", createBackend: connected.createBackend })
-      },
-      (error: unknown) => {
-        if (controller.signal.aborted) return
-        setGate({
-          state: "failed",
-          message: error instanceof Error ? error.message : String(error),
-        })
-      },
-    )
+    selection
+      .connect(controller.signal, () => {
+        if (!controller.signal.aborted) phase("loading")
+      })
+      .then(
+        (connected) => {
+          if (controller.signal.aborted) return connected.close()
+          connection = connected
+          setCreateBackend(() => connected.createBackend)
+          phase("ready")
+        },
+        (error: unknown) => {
+          if (!controller.signal.aborted) failed(failureOf(error))
+        },
+      )
     return () => {
       controller.abort()
       connection?.close()
     }
   }, [selection])
-  if (gate.state === "ready") return render(gate.createBackend)
-  return (
-    <main className="flex h-dvh flex-col items-center justify-center gap-6 bg-paper px-4">
-      <Brand />
-      {gate.state === "connecting" ? (
-        <p role="status" className="text-[12px] text-muted">
-          Starting your terminals…
-        </p>
-      ) : (
-        <section
-          role="alert"
-          aria-labelledby="backend-gate-title"
-          className="flex w-full max-w-90 flex-col gap-3 rounded-panel border border-line bg-shell p-5 shadow-panel"
-        >
-          <h1 id="backend-gate-title" className="m-0 text-[13px] font-medium text-ink">
-            Couldn’t connect to the runner
-          </h1>
-          <p className="m-0 text-[12px] leading-[1.5] text-muted">{gate.message}</p>
-          <button
-            type="button"
-            className="self-start rounded-control border border-line-strong bg-paper px-3 py-1.5 text-[12px] text-ink shadow-control transition-[background] duration-(--motion-feedback) hover:bg-soft"
-            onClick={onRetry}
-          >
-            Retry
-          </button>
-        </section>
-      )}
-    </main>
-  )
+  return createBackend ? render(createBackend) : null
+}
+
+const ignore = (): void => {}
+
+const stageOf = (phase: Phase, boot: BootProgress | null, lift: Lift): BootStage => {
+  if (lift !== "up") return { phase: "online" }
+  if (phase === "connecting") return { phase: "connecting" }
+  if (phase === "ready" && boot) return { phase: "attaching", progress: boot }
+  return { phase: "loading" }
 }
 
 // Holds the workspace back until its backend is reachable, since the seed comes from
-// it. Shows a splash meanwhile, and what failed with a retry if the attempt fails.
+// it, and keeps the boot splash over it until the restored terminals are attached.
+// When connecting fails the splash stays and explains it in place, retrying transient
+// failures on its own a few times.
 export const BackendGate = ({ selection, render }: GateProps): ReactNode => {
   const [initial] = useState(selection)
+  // A backend ready at once, as in tests, needs no splash.
+  const splashed = "connect" in initial
   // Each retry is a fresh attempt; on desktop it also asks the host for a new runner.
-  const [attempt, setAttempt] = useState(0)
+  const [attempt, setAttempt] = useState(1)
+  const [phase, setPhase] = useState<Phase>(splashed ? "connecting" : "ready")
+  const [failure, setFailure] = useState<ConnectFailure | null>(null)
+  // Failures in a row since the last success or "Retry now", which pace auto-retry.
+  const [failures, setFailures] = useState(0)
+  const [retryAt, setRetryAt] = useState<number | undefined>(undefined)
+  const [now, setNow] = useState(() => Date.now())
+  const [boot, setBoot] = useState<BootProgress | null>(null)
+  const [lift, setLift] = useState<Lift>("up")
+  const [quit, setQuit] = useState(false)
+
+  const retry = (fresh: boolean): void => {
+    if (fresh) setFailures(0)
+    setFailure(null)
+    setRetryAt(undefined)
+    setPhase("connecting")
+    setAttempt((count) => count + 1)
+  }
+  const fail = (next: ConnectFailure): void => {
+    const count = failures + 1
+    const delay = autoRetryDelay(next, count)
+    setFailures(count)
+    setFailure(next)
+    setNow(Date.now())
+    setRetryAt(delay === undefined ? undefined : Date.now() + delay)
+  }
+
+  // Counts down to the next automatic retry, then takes it.
+  const retryEvent = useEffectEvent(() => retry(false))
+  useEffect(() => {
+    if (retryAt === undefined) return
+    const tick = setInterval(() => setNow(Date.now()), 250)
+    const timer = setTimeout(retryEvent, Math.max(0, retryAt - Date.now()))
+    return () => {
+      clearInterval(tick)
+      clearTimeout(timer)
+    }
+  }, [retryAt])
+
+  // Once attached, the splash says so briefly, then fades into the workspace.
+  const attached = Boolean(boot?.done)
+  useEffect(() => {
+    if (!attached) return
+    const timers = [
+      setTimeout(() => setLift("online"), 0),
+      setTimeout(() => setLift("leaving"), onlineHoldMs),
+      setTimeout(() => setLift("gone"), onlineHoldMs + splashFadeMs),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [attached])
+
+  if (quit) return null
+  const stage = stageOf(phase, boot, lift)
   return (
-    <Attempt
-      key={attempt}
-      selection={initial}
-      render={render}
-      onRetry={() => setAttempt((count) => count + 1)}
-    />
+    <>
+      <Attempt
+        key={attempt}
+        selection={initial}
+        render={(createBackend) => render(createBackend, splashed ? setBoot : ignore)}
+        onPhase={(next) => {
+          setPhase(next)
+          if (next === "ready") setFailures(0)
+        }}
+        onFailed={fail}
+      />
+      {splashed && lift !== "gone" && (
+        <BootSplash
+          line={bootLine(stage)}
+          fill={bootFill(stage)}
+          leaving={lift === "leaving"}
+          settled={attempt > 1}
+          failure={
+            failure && (
+              <BootFailure
+                failure={failure}
+                attempts={attempt}
+                retryIn={retryAt === undefined ? undefined : retryAt - now}
+                onRetry={() => retry(true)}
+                onQuit={() => {
+                  // The desktop app closes; a browser tab may refuse, so the page empties.
+                  window.close()
+                  setQuit(true)
+                }}
+              />
+            )
+          }
+        />
+      )}
+    </>
   )
 }

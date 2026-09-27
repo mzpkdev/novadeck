@@ -40,8 +40,21 @@ const crashingRunner = () => {
     }
   }
 
-  const crash = async (): Promise<never> => {
+  let healed = false
+  const crash = async (input: { readonly id?: string }): Promise<unknown> => {
     creates += 1
+    if (healed)
+      return {
+        id: input.id,
+        sessionId: "s",
+        cwd: "/tmp",
+        cols: 80,
+        rows: 24,
+        status: "running",
+        run: 1,
+        exit: null,
+        process: "zsh",
+      }
     generation += 1
     for (const resolve of wake) resolve()
     wake.clear()
@@ -60,38 +73,46 @@ const crashingRunner = () => {
       attach: () => Promise.reject(new RunnerError("DISCONNECTED")),
     },
   } as unknown as RunnerApi satisfies Pick<Runner, "watch">
-  return { api, creates: () => creates }
+  return {
+    api,
+    creates: () => creates,
+    // The runner stops crashing from now on.
+    heal: () => {
+      healed = true
+    },
+  }
 }
 
-describe("a runner that crashes while shells start", () => {
-  it("gives up after a few restarts and leaves the terminal waiting for Enter", async () => {
-    const { api, creates } = crashingRunner()
-    const terminal = startingTerminal("00000000-0000-4000-8000-000000000001", 1, "/tmp")
-    const session = {
-      id: "s",
-      name: "S",
-      visitedAt: 5,
-      state: createTerminalState([terminal], "grid", "grid"),
-    }
-    const listing: RunnerListing = [
-      {
-        project: { id: "p", name: "P", cwd: "/tmp" },
-        sessions: [
-          {
-            session: { id: "s", projectId: "p", name: "S", state: encodeSession(session, 2) },
-            terminals: [],
-          },
-        ],
-      },
-    ]
-    const created = runnerBackend(api, listing, { saveDelay: 10 })
-    created.backend.commit(
-      workspaceFromSeed(created.backend.seed, { view: "grid", windowedView: "grid", now: 1 }),
-      [],
-    )
-    const received: BackendAction[] = []
-    const stop = created.backend.start!({ dispatch: (actions) => received.push(...actions) })
-    await vi.waitFor(
+// A backend on screen over the crashing runner, with one saved terminal to restore.
+const openCrashing = () => {
+  const runner = crashingRunner()
+  const terminal = startingTerminal("00000000-0000-4000-8000-000000000001", 1, "/tmp")
+  const session = {
+    id: "s",
+    name: "S",
+    visitedAt: 5,
+    state: createTerminalState([terminal], "grid", "grid"),
+  }
+  const listing: RunnerListing = [
+    {
+      project: { id: "p", name: "P", cwd: "/tmp" },
+      sessions: [
+        {
+          session: { id: "s", projectId: "p", name: "S", state: encodeSession(session, 2) },
+          terminals: [],
+        },
+      ],
+    },
+  ]
+  const created = runnerBackend(runner.api, listing, { saveDelay: 10 })
+  created.backend.commit(
+    workspaceFromSeed(created.backend.seed, { view: "grid", windowedView: "grid", now: 1 }),
+    [],
+  )
+  const received: BackendAction[] = []
+  const stop = created.backend.start!({ dispatch: (actions) => received.push(...actions) })
+  const tripped = () =>
+    vi.waitFor(
       () =>
         expect(received.at(-1)).toMatchObject({
           type: "terminal/status",
@@ -99,7 +120,32 @@ describe("a runner that crashes while shells start", () => {
         }),
       { timeout: 5_000 },
     )
-    expect(creates()).toBeLessThanOrEqual(5)
-    stop()
+  return { ...runner, ...created, received, stop, tripped }
+}
+
+describe("a runner that crashes while shells start", () => {
+  it("gives up after a few restarts and leaves the terminal waiting for Enter", async () => {
+    const app = openCrashing()
+    await app.tripped()
+    expect(app.creates()).toBeLessThanOrEqual(5)
+    // The footer and the dialog hear of it too, with the count.
+    expect(app.backend.runnerCrashes?.getSnapshot()).toBeGreaterThan(3)
+    app.stop()
+  })
+
+  it("starts over when asked to try again", async () => {
+    const app = openCrashing()
+    await app.tripped()
+    const before = app.creates()
+    app.heal()
+    app.backend.retryAfterCrashLoop!()
+    expect(app.backend.runnerCrashes?.getSnapshot()).toBe(0)
+    await app.idle()
+    expect(app.creates()).toBe(before + 1)
+    expect(app.received.at(-1)).toMatchObject({
+      type: "terminal/status",
+      status: { state: "starting" },
+    })
+    app.stop()
   })
 })

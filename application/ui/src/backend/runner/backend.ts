@@ -16,6 +16,7 @@ import type {
 import type {
   Backend,
   BackendAction,
+  BootProgress,
   BackendConnectionState,
   BackendSink,
   TerminalKey,
@@ -97,6 +98,8 @@ export type SurfaceRuntime = {
   readonly connection: Backend["connection"] & {}
   // Counts the promise as outstanding I/O until it settles.
   readonly track: <T>(work: Promise<T>) => Promise<T>
+  // The surface's screen for boot progress: mounted, first screen drawn, or gone.
+  readonly screen: (key: TerminalKey, state: "mounted" | "shown" | "gone") => void
 }
 
 export type RunnerBackend = {
@@ -263,6 +266,7 @@ export const runnerBackend = (
     if (entry.closed) return
     entry.settled = true
     dispatch(statusAction(entry, status))
+    checkBoot()
   }
   // Lets a mounted surface attach again, as to a shell it has no stream for.
   const reviveSurface = (entry: RunnerEntry): void => {
@@ -309,8 +313,30 @@ export const runnerBackend = (
         entry.run = undefined
         entry.floor = 0
       }
+      noteCrashLoop()
     }
     runnerId = status.runnerId
+  }
+
+  // The crashes behind the guard, for the footer and the crash-loop dialog: counted
+  // while the guard holds, 0 once the restarts that tripped it fall out of the window.
+  const crashLooping = createStore(0)
+  let crashLoopTimer: ReturnType<typeof setTimeout> | undefined
+  const noteCrashLoop = (): void => {
+    clearTimeout(crashLoopTimer)
+    const recent = restarts.filter((time) => now() - time < restartWindowMs)
+    const tripped = restartingOften()
+    crashLooping.update(() => (tripped ? recent.length : 0))
+    if (!tripped) return
+    crashLoopTimer = setTimeout(noteCrashLoop, Math.min(...recent) + restartWindowMs - now() + 50)
+  }
+  // "Try again" after a crash loop: forget the crashes and start fresh shells for the
+  // lost or failed terminals on screen, a few at a time like any burst.
+  const retryAfterCrashLoop = (): void => {
+    restarts.length = 0
+    noteCrashLoop()
+    for (const entry of entries.values())
+      if (onScreen(entry) && (entry.lost || entry.status.startsWith("failed"))) freshShell(entry)
   }
 
   // Resolves once the runner is reachable again, or closed for good.
@@ -565,6 +591,7 @@ export const runnerBackend = (
       entry.closed = true
       entries.delete(key.terminalId)
       void track(endShell(entry))
+      checkBoot()
     },
   })
 
@@ -643,6 +670,73 @@ export const runnerBackend = (
     if (!initial) reviveOnScreen()
   }
 
+  // Boot progress for the splash: the terminals of the session on screen when `start`
+  // first runs, each attached once the runner has its shell and, where a surface shows
+  // it, that surface drew its first screen. Failed, closed or waiting terminals count
+  // as done too, and the splash never waits longer than the cap.
+  const bootGraceMs = 400
+  const bootCapMs = 15_000
+  const bootProgress = createStore<BootProgress>({ attached: 0, total: 0, done: false })
+  let booting: { readonly ids: readonly string[]; readonly since: number } | undefined
+  const bootReady = new Set<string>()
+  // Surfaces mounted during boot, and whether they drew a screen yet.
+  const screens = new Map<string, boolean>()
+  // Counted once the runner has its shell; a surface showing it must also have drawn
+  // its first screen before boot is done, but the count never goes back while a view
+  // that loads late mounts its surfaces.
+  const readyAtBoot = (id: string): boolean => {
+    const entry = entries.get(id)
+    return !entry || entry.closed || entry.settled || bootReady.has(id)
+  }
+  const shownAtBoot = (id: string): boolean => {
+    const entry = entries.get(id)
+    return !entry || entry.closed || entry.settled || screens.get(id) !== false
+  }
+  const checkBoot = (): void => {
+    if (!booting || bootProgress.getSnapshot().done) return
+    const attached = booting.ids.filter(readyAtBoot).length
+    const total = booting.ids.length
+    const waited = now() - booting.since
+    const done =
+      (attached === total && booting.ids.every(shownAtBoot) && waited >= bootGraceMs) ||
+      waited >= bootCapMs
+    bootProgress.update((current) =>
+      current.attached === attached && current.total === total && current.done === done
+        ? current
+        : { attached, total, done },
+    )
+  }
+  const beginBoot = (): void => {
+    if (booting) return
+    const ids = [...entries.values()].filter(onScreen).map((entry) => entry.key.terminalId)
+    booting = { ids, since: now() }
+    for (const id of ids) {
+      // A fresh shell replaces `ready`; follow the latest one.
+      const follow = (): void => {
+        const entry = entries.get(id)
+        if (!entry) return checkBoot()
+        const ready = entry.ready
+        void ready.then(() => {
+          if (entries.get(id)?.ready !== ready) return follow()
+          bootReady.add(id)
+          checkBoot()
+        })
+      }
+      follow()
+    }
+    // A little late, since timers may fire a millisecond before the clock agrees.
+    setTimeout(checkBoot, bootGraceMs + 20)
+    setTimeout(checkBoot, bootCapMs + 20)
+    checkBoot()
+  }
+  const noteScreen: SurfaceRuntime["screen"] = ({ terminalId }, state) => {
+    if (bootProgress.getSnapshot().done) return
+    if (state === "gone") screens.delete(terminalId)
+    else if (state === "mounted") screens.set(terminalId, screens.get(terminalId) ?? false)
+    else screens.set(terminalId, true)
+    checkBoot()
+  }
+
   const runtime: SurfaceRuntime = {
     entry: (key) => registry.get(key)?.entry,
     attach: (terminalId) => runner.terminals.attach(terminalId),
@@ -670,6 +764,7 @@ export const runnerBackend = (
     },
     connection,
     track,
+    screen: noteScreen,
   }
 
   const start: NonNullable<Backend["start"]> = (next) => {
@@ -719,6 +814,7 @@ export const runnerBackend = (
     const changes = runner.terminals.watch()
     const statuses = runner.watch()
     reviveOnScreen()
+    beginBoot()
     // What the runner keeps of shells that exited cleanly while the app was away.
     for (const terminalId of leftovers.splice(0))
       void track(
@@ -748,6 +844,9 @@ export const runnerBackend = (
     TerminalSurface: createRunnerTerminal(runtime),
     start,
     connection,
+    runnerCrashes: crashLooping,
+    boot: bootProgress,
+    retryAfterCrashLoop,
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
   }
   return {

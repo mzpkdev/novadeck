@@ -8,5 +8,6 @@ export const selectBackend: BackendSelection =
   import.meta.env.MODE === "test"
     ? { createBackend: createDemoBackend }
     : {
-        connect: async (signal) => (await import("../backend/runner")).connectRunnerBackend(signal),
+        connect: async (signal, progress) =>
+          (await import("../backend/runner")).connectRunnerBackend(signal, progress),
       }

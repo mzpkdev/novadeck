@@ -323,8 +323,9 @@ receives a sink that commits each call as one store transaction, like a UI
 command; the sink ignores stale targets and anything sent after stop. It reports
 status and the foreground process, which picks the terminal's icon and counts it as
 running, and closes a terminal whose shell exited cleanly. The frame labels an
-exited, killed, or failed terminal. Closing a terminal a program runs in asks first,
-through the `confirm` command effect. A backend may also
+exited, killed, or failed terminal. Closing a terminal a program runs in asks first:
+the `close` command records the pending close in the UI store, and the dialog in
+`terminals/CloseTerminalDialog.tsx` answers with `confirmClose` or `cancelClose`. A backend may also
 expose its connection state, which the footer shows, and a folder picker, which
 enables "Open folder…".
 

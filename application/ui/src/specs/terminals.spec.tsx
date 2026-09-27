@@ -3,6 +3,8 @@ import { page, userEvent, type Locator } from "vitest/browser"
 
 import {
   anyRenameField,
+  closeConfirmation,
+  confirmClose,
   headerAction,
   headerName,
   headerRenameField,
@@ -306,6 +308,7 @@ describe("closing terminals", () => {
       await openWorkspace()
 
       await headerAction("Checkout implementation", "Close Checkout implementation").click()
+      await confirmClose()
 
       await expect.element(terminalTab("Checkout implementation")).not.toBeInTheDocument()
       await expectSelected("Dev server")
@@ -315,19 +318,46 @@ describe("closing terminals", () => {
   })
 
   context("when a program still runs in the terminal", () => {
-    it("asks first, and keeps it when the person declines", async () => {
-      const asked: string[] = []
-      window.confirm = (message) => {
-        asked.push(message ?? "")
-        return false
-      }
+    it("asks first, with Cancel ready, and keeps it when the person cancels", async () => {
       await openWorkspace()
 
       await headerAction("Checkout implementation", "Close Checkout implementation").click()
 
-      expect(asked).toEqual(['Close "Checkout implementation"? claude is still running in it.'])
+      const dialog = closeConfirmation()
+      await expect.element(dialog).toBeVisible()
+      await expect
+        .element(dialog.getByRole("heading", { name: "Close “Checkout implementation”?" }))
+        .toBeVisible()
+      await expect.element(dialog.getByText("claude is still running in it.")).toBeVisible()
+      await expect.element(dialog.getByRole("button", { name: "Cancel" })).toHaveFocus()
+
+      await dialog.getByRole("button", { name: "Cancel" }).click()
+
+      await expect.element(dialog).not.toBeInTheDocument()
       await expect.element(terminalTab("Checkout implementation")).toBeInTheDocument()
       await expect.poll(visibleTerminalCounts).toEqual(["6 terminals"])
+      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+    })
+
+    it("keeps it when the person presses Escape", async () => {
+      await openWorkspace()
+
+      await headerAction("Checkout implementation", "Close Checkout implementation").click()
+      await expect.element(closeConfirmation()).toBeVisible()
+      await userEvent.keyboard("{Escape}")
+
+      await expect.element(closeConfirmation()).not.toBeInTheDocument()
+      await expect.element(terminalTab("Checkout implementation")).toBeInTheDocument()
+    })
+
+    it("closes it once the person confirms", async () => {
+      await openWorkspace()
+
+      await headerAction("Checkout implementation", "Close Checkout implementation").click()
+      await confirmClose()
+
+      await expect.element(terminalTab("Checkout implementation")).not.toBeInTheDocument()
+      await expect.poll(visibleTerminalCounts).toEqual(["5 terminals"])
     })
   })
 
@@ -338,6 +368,7 @@ describe("closing terminals", () => {
       await expect.element(terminal("Tests")).toBeVisible()
 
       await tabAction("Close Tests").click()
+      await confirmClose()
 
       await expect.element(terminalTab("Tests")).not.toBeInTheDocument()
       await expect.element(terminal("Tests")).not.toBeInTheDocument()
@@ -352,6 +383,9 @@ describe("closing terminals", () => {
       for (const name of terminalTabNames()) {
         // oxlint-disable-next-line no-await-in-loop -- Each close changes the list.
         await tabAction(`Close ${name}`).click()
+        // Every demo terminal but Build runs a program, so closing it asks first.
+        // oxlint-disable-next-line no-await-in-loop -- Answers this close before the next.
+        if (name !== "Build") await confirmClose()
       }
 
       await expect.element(page.getByRole("heading", { name: "No terminals open" })).toBeVisible()
@@ -369,6 +403,9 @@ describe("closing terminals", () => {
       for (const name of terminalTabNames().slice(1)) {
         // oxlint-disable-next-line no-await-in-loop -- Each close changes the list.
         await tabAction(`Close ${name}`).click()
+        // Every demo terminal but Build runs a program, so closing it asks first.
+        // oxlint-disable-next-line no-await-in-loop -- Answers this close before the next.
+        if (name !== "Build") await confirmClose()
       }
 
       await expect.poll(visibleTerminalCounts).toEqual(["1 terminal"])
@@ -383,6 +420,7 @@ describe("closing terminals", () => {
         await terminalTab("Dev server").click()
 
         await press("{Delete}")
+        await confirmClose()
 
         await expect.element(terminalTab("Dev server")).not.toBeInTheDocument()
         await expect.element(terminal("Dev server")).not.toBeInTheDocument()

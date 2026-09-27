@@ -78,6 +78,15 @@ export type Backend = {
   // Optional. How the link to the far side is doing, for the footer. Updates may begin
   // only once `start` runs.
   readonly connection?: Store<BackendConnectionState>
+  // Optional. While the far side keeps crashing and the backend stopped restarting
+  // terminals, how many crashes it counted in the last minute; 0 otherwise.
+  readonly runnerCrashes?: Store<number>
+  // Optional. Starts over after such crashes: the count clears and the terminals on
+  // screen that were lost or failed start fresh shells.
+  readonly retryAfterCrashLoop?: () => void
+  // Optional. How far the restored session is from ready, so the boot splash can stay
+  // up until its terminals are attached. Absent means ready at once.
+  readonly boot?: Store<BootProgress>
   // Optional. Asks the person for a folder to open as a project; null when cancelled.
   // Absent where the backend cannot offer one.
   readonly pickDirectory?: () => Promise<string | null>
@@ -97,10 +106,32 @@ export type BackendConnection = {
   readonly close: () => void
 }
 
-// Connects before the app first renders. Rejects with an Error whose message the app
-// shows as it is, such as "Runner unavailable: UNAUTHORIZED". Aborting the signal
-// abandons the attempt; a connection resolved after that is closed by the caller.
-export type ConnectBackend = (signal: AbortSignal) => Promise<BackendConnection>
+// Connects before the app first renders. Rejects with an Error carrying a
+// `failure: ConnectFailure`, which the boot splash explains and acts on. Aborting the
+// signal abandons the attempt; a connection resolved after that is closed by the
+// caller. It reports "loading" once the far side answered and the workspace is listed.
+export type ConnectBackend = (
+  signal: AbortSignal,
+  progress: (stage: "loading") => void,
+) => Promise<BackendConnection>
+
+// Why connecting failed, sorted by what the person can do about it: a transient
+// failure retries on its own, a different version can only quit, and the rest wait
+// for Retry. `message` is for people; `code` and `detail` are for a bug report.
+export type ConnectFailure = {
+  readonly kind: "transient" | "incompatible" | "unauthorized" | "unknown"
+  readonly message: string
+  readonly code: string
+  readonly detail: string
+}
+
+// The restored session's terminals being attached: `done` once they all are, have
+// failed, or the backend stopped waiting.
+export type BootProgress = {
+  readonly attached: number
+  readonly total: number
+  readonly done: boolean
+}
 
 // What app/backend.ts chooses: a backend ready at once, or one to connect to.
 export type BackendSelection =
