@@ -137,29 +137,4 @@ describe.runIf(windows)("the hook launcher on Windows", () => {
     const paths = await installShellFiles(join(root, "shell"))
     expect(paths.launcher).toMatch(/^[\w.:\\~-]+$/)
   })
-
-  // Diagnostic: which PowerShell form hands the hook its stdin, as Claude Code runs it.
-  it("reports how PowerShell passes stdin on", ({ plugins }) => {
-    const variants = {
-      plain: "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude }",
-      input: "if ($env:NOVADECK_HOOK) { $input | & $env:NOVADECK_HOOK claude }",
-      stdin: "if ($env:NOVADECK_HOOK) { [Console]::In.ReadToEnd() | & $env:NOVADECK_HOOK claude }",
-    }
-    for (const [name, command] of Object.entries(variants)) {
-      const result = spawnSync(
-        "powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-Command", command],
-        {
-          env: { ...process.env, NOVADECK_HOOK: plugins.launcher },
-          input: `{"session_id":"${name}"}`,
-          encoding: "utf8",
-          timeout: 15_000,
-        },
-      )
-      console.log(
-        `STDIN-DIAGNOSTIC ${name}: status=${result.status} signal=${result.signal} recorded=${JSON.stringify(plugins.recorded())}`,
-      )
-    }
-    expect(plugins.launcher).toBeTruthy()
-  }, 60_000)
 })
