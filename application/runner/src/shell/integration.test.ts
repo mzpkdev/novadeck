@@ -4,13 +4,14 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 import type { AgentName, TerminalChange, TerminalSummary } from "@novadeck/protocol"
 
@@ -293,6 +294,44 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       else await manager.shutdown()
       await expect.poll(alive, { timeout: 5_000 }).toBe(false)
     })
+
+  it("knows once a resumed agent exits, and takes the next agent started there", async ({
+    shell,
+  }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    reporter(shell.home, [{ agent: "claude", sessionId: "brand-new", seq: 1, source: "startup" }])
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const id = randomUUID()
+    shell.saveSession(id, "claude", session)
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    await create(manager, shell, { id, restore: true, resume: "claude" })
+    await next((summary) => summary.id === id && summary.agent === "claude")
+    // The shell took the command, and nothing is left waiting.
+    expect(readdirSync(join(dirname(shell.plugins), "resume"))).toEqual([])
+    manager.write({ terminalId: id, data: "\r" }, "owner")
+    await next((summary) => summary.id === id && summary.agent === null)
+    manager.write({ terminalId: id, data: "report\r" }, "owner")
+    await expect.poll(() => manager.reportedSession(id, "claude")).toBe("brand-new")
+  })
+
+  it("cancels the resume when someone types before it runs", async ({ shell }) => {
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\nsleep 1\n')
+    fakeAgent(shell.home, "claude")
+    const id = randomUUID()
+    shell.saveSession(id, "claude", "abc-1")
+    const manager = shell.manager()
+    await create(manager, shell, { id, restore: true, resume: "claude" })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    // A focus report is the terminal's, not typing.
+    manager.write({ terminalId: id, data: "\x1b[I" }, "owner")
+    manager.write({ terminalId: id, data: "echo mine\r" }, "owner")
+    await shell.until(manager, id, /mine\r?\n[\s\S]*\$ /)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(await screen(manager, id)).not.toContain("args:")
+    expect(readdirSync(join(dirname(shell.plugins), "resume"))).toEqual([])
+  })
 
   it("shows the transcript when a shell without integration cannot resume", async ({ shell }) => {
     const id = randomUUID()
@@ -602,6 +641,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(zsh))("zsh shell int
     const next = shell.watch(manager)
     await create(manager, shell, { id, restore: true, resume: "claude" })
     await next((summary) => summary.id === id && summary.agent === "claude")
+    // Its exit shows as the shell's prompt.
+    manager.write({ terminalId: id, data: "\r" }, "owner")
+    await next((summary) => summary.id === id && summary.agent === null)
   })
 })
 

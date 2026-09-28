@@ -20,6 +20,8 @@ export type ShellPaths = {
    * marketplace for Claude Code and Codex, a plugin folder for Antigravity.
    */
   readonly plugins: { readonly claude: string; readonly codex: string; readonly agy: string }
+  /** Where a fresh shell finds the command that resumes its agent, one file per shell. */
+  readonly resume: string
   /** The hook's launcher. */
   readonly hook: string
   readonly hookScript: string
@@ -36,6 +38,7 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
     codex: join(directory, "plugins", "codex"),
     agy: join(directory, "plugins", "agy", "novadeck"),
   },
+  resume: join(directory, "resume"),
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
   hookScript: join(directory, "hook.mjs"),
 })
@@ -68,6 +71,8 @@ fi
 
 __novadeck_prompt() {
   local status=$? LC_ALL=C path=$PWD encoded= char byte i
+  # While a resume waits, this prompt is not the shell's yet; see __novadeck_resume.
+  [ -z "\${NOVADECK_RESUME:-}" ] || return $status
   for (( i = 0; i < \${#path}; i++ )); do
     char=\${path:i:1}
     case $char in
@@ -87,12 +92,19 @@ else
 fi
 
 # A restored terminal resumes its agent at the first prompt, after your own prompt
-# commands, as if typed there, but without the typing or a history entry.
+# commands, as if typed there, but without the typing or a history entry. The command
+# waits in the file NOVADECK_RESUME names, which NovaDeck removes if you type first.
+# The prompt is reported once the agent exits, so NovaDeck knows it ended.
 __novadeck_resume() {
   [ -n "\${NOVADECK_RESUME:-}" ] || return 0
-  local resume=$NOVADECK_RESUME
+  local file=$NOVADECK_RESUME resume
   unset NOVADECK_RESUME
-  eval "$resume"
+  if [ -f "$file" ]; then
+    resume=$(<"$file")
+    command rm -f -- "$file"
+    eval "$resume"
+  fi
+  __novadeck_prompt
 }
 if [ -n "\${NOVADECK_RESUME:-}" ]; then
   if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
@@ -140,6 +152,8 @@ if [[ -n "$NOVADECK_BIN" && "$PATH" != "$NOVADECK_BIN":* ]]; then PATH="$NOVADEC
 
 __novadeck_prompt() {
   emulate -L zsh
+  # While a resume waits, this prompt is not the shell's yet; see __novadeck_resume.
+  [[ -z "$NOVADECK_RESUME" ]] || return 0
   setopt extendedglob
   unsetopt multibyte
   local encoded=\${PWD//(#m)[^a-zA-Z0-9\\/._~-]/%\${(l:2::0:)$(( [##16] #MATCH ))}}
@@ -149,13 +163,21 @@ autoload -Uz add-zsh-hook
 add-zsh-hook precmd __novadeck_prompt
 
 # A restored terminal resumes its agent at the first prompt, after your own precmd
-# hooks, as if typed there, but without the typing or a history entry.
+# hooks, as if typed there, but without the typing or a history entry. The command
+# waits in the file NOVADECK_RESUME names, which NovaDeck removes if you type first.
+# The prompt is reported once the agent exits, so NovaDeck knows it ended. The agent
+# gets the terminal itself, as a prompt that draws early may still hold the shell's.
 __novadeck_resume() {
   add-zsh-hook -d precmd __novadeck_resume
   [[ -n "$NOVADECK_RESUME" ]] || return 0
-  local resume=$NOVADECK_RESUME
+  local file=$NOVADECK_RESUME resume
   unset NOVADECK_RESUME
-  eval "$resume"
+  if [[ -f "$file" ]]; then
+    resume=$(<"$file")
+    command rm -f -- "$file"
+    eval "$resume" </dev/tty >/dev/tty 2>/dev/tty
+  fi
+  __novadeck_prompt
 }
 if [[ -n "$NOVADECK_RESUME" ]]; then add-zsh-hook precmd __novadeck_resume; fi
 `
@@ -168,17 +190,26 @@ if set -q NOVADECK_BIN
 end
 
 function __novadeck_prompt --on-event fish_prompt
+    # While a resume waits, this prompt is not the shell's yet; see __novadeck_resume.
+    set -q NOVADECK_RESUME; and return
     printf '\\e]7;file://%s%s\\e\\\\' $hostname (string escape --style=url -- $PWD)
 end
 
 # A restored terminal resumes its agent at the first prompt, as if typed there, but
-# without the typing or a history entry.
+# without the typing or a history entry. The command waits in the file NOVADECK_RESUME
+# names, which NovaDeck removes if you type first. The prompt is reported once the
+# agent exits, so NovaDeck knows it ended.
 function __novadeck_resume --on-event fish_prompt
     set -q NOVADECK_RESUME; or return
-    set -l resume $NOVADECK_RESUME
+    set -l file $NOVADECK_RESUME
     set -e NOVADECK_RESUME
     functions -e __novadeck_resume
-    eval $resume
+    if test -f $file
+        set -l resume (string collect < $file)
+        command rm -f -- $file
+        eval $resume
+    end
+    __novadeck_prompt
 end
 `
 
@@ -200,12 +231,17 @@ function global:prompt {
   "$([char]27)]9;9;\`"$($location.ProviderPath)\`"$([char]27)\\$prompt"
 }
 # A restored terminal resumes its agent before the first prompt, as if typed there, but
-# without the typing or a history entry.
+# without the typing or a history entry. The command waits in the file NOVADECK_RESUME
+# names, which NovaDeck removes if you type first.
 if ($env:NOVADECK_RESUME) {
   $__NovaDeckResume = $env:NOVADECK_RESUME
   Remove-Item Env:NOVADECK_RESUME
-  Invoke-Expression $__NovaDeckResume
-  Remove-Variable __NovaDeckResume
+  if (Test-Path -LiteralPath $__NovaDeckResume) {
+    $__NovaDeckCommand = Get-Content -LiteralPath $__NovaDeckResume -Raw
+    Remove-Item -LiteralPath $__NovaDeckResume
+    Invoke-Expression $__NovaDeckCommand
+  }
+  Remove-Variable __NovaDeckResume, __NovaDeckCommand -ErrorAction SilentlyContinue
 }
 `
 

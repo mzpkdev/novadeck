@@ -418,11 +418,15 @@ still rejects with `TERMINAL_NOT_FOUND` then).
   connected, the runner builds the command that resumes the session it last reported
   in this terminal (`claude --resume <id>`, `codex resume <id>`,
   `agy --conversation <id>`) and the fresh shell runs it once as it starts, and then no
-  transcript is shown. The command goes to the shell in `NOVADECK_RESUME`, which the
-  integration unsets before running it: bash, zsh and fish run it at the first prompt,
-  after the user's startup files and prompt hooks, PowerShell after its profile, and
-  cmd with `/k`. Nothing is typed, so it never lands in the history or in a running
-  program. The runner resumes nothing, and shows the transcript, for an agent not
+  transcript is shown. The runner writes the command to a file of its own, readable
+  by the user only, and gives its path to the shell in `NOVADECK_RESUME`. The
+  integration unsets the variable, reads and removes the file, and runs the command:
+  bash, zsh and fish at the first prompt, after the user's startup files and prompt
+  hooks, reporting that prompt once the agent exits; PowerShell after its profile.
+  cmd gets the command with `/k`. Nothing is typed, so it never lands in the history
+  or in a running program. Input the client writes before the shell took the command,
+  other than the terminal's own replies such as focus reports, removes the file and so
+  cancels the resume; the shell gets that input instead. The runner resumes nothing, and shows the transcript, for an agent not
   connected (disconnecting also forgets every session it reported), a terminal where
   the agent reported no session, a session another terminal is running or resumed and
   has not closed, and a shell without the integration.

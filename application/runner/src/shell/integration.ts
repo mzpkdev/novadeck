@@ -5,14 +5,15 @@ import { fishQuote, psQuote } from "./scripts.js"
 
 /**
  * How to start a shell so it loads NovaDeck's integration after the user's own setup;
- * `integrated` when it will report its prompts. `resumes` says when it runs the resume
- * command: at its first prompt, or before it at startup; undefined when it runs none.
+ * `integrated` when it will report its prompts, and `resumes` when it runs the resume
+ * command. `resumeFile` is where the caller writes that command for the shell to read.
  */
 export type ShellLaunch = {
   readonly args: readonly string[]
   readonly env: NodeJS.ProcessEnv
   readonly integrated: boolean
-  readonly resumes: "prompt" | "startup" | undefined
+  readonly resumes: boolean
+  readonly resumeFile?: string | undefined
 }
 
 // "/bin/zsh", "-zsh" and "pwsh.exe" name "zsh" and "pwsh".
@@ -35,8 +36,10 @@ const pathKey = (env: NodeJS.ProcessEnv): string =>
  * with `codexShim` the Codex shim first on PATH.
  *
  * A `resume` command, plain words from `resumeCommand`, runs once as the shell starts,
- * as if typed at its first prompt: the integration takes it from NOVADECK_RESUME and
- * unsets it first, so nothing the command starts runs it again; cmd runs it with /k.
+ * as if typed at its first prompt. The integration reads it from the file
+ * NOVADECK_RESUME names, which it removes, and unsets the variable first, so nothing
+ * the command starts runs it again; removing the file first cancels it. bash, zsh and
+ * fish run it at the first prompt, PowerShell after its profile. cmd runs it with /k.
  */
 export const shellLaunch = (
   shell: string,
@@ -45,7 +48,10 @@ export const shellLaunch = (
   {
     codexShim = false,
     resume,
-  }: { readonly codexShim?: boolean; readonly resume?: readonly string[] | undefined } = {},
+  }: {
+    readonly codexShim?: boolean
+    readonly resume?: { readonly argv: readonly string[]; readonly file: string } | undefined
+  } = {},
 ): ShellLaunch => {
   const key = pathKey(env)
   const path = env[key]
@@ -60,15 +66,15 @@ export const shellLaunch = (
       NOVADECK_BIN: paths.bin,
     }),
   }
-  const resuming = resume ? { ...withHook, NOVADECK_RESUME: resume.join(" ") } : withHook
-  const atPrompt = resume ? "prompt" : undefined
+  const resuming = resume ? { ...withHook, NOVADECK_RESUME: resume.file } : withHook
+  const fromFile = { resumes: resume !== undefined, resumeFile: resume?.file }
   switch (shellName(shell)) {
     case "bash":
       return {
         args: ["--init-file", paths.bash],
         env: resuming,
         integrated: true,
-        resumes: atPrompt,
+        ...fromFile,
       }
     case "zsh":
       // The user's ZDOTDIR, only when they have one: an unset one reads from home.
@@ -80,14 +86,14 @@ export const shellLaunch = (
           ...(env.ZDOTDIR ? { NOVADECK_ZDOTDIR: env.ZDOTDIR } : {}),
         },
         integrated: true,
-        resumes: atPrompt,
+        ...fromFile,
       }
     case "fish":
       return {
         args: ["--init-command", `source ${fishQuote(paths.fish)}`],
         env: resuming,
         integrated: true,
-        resumes: atPrompt,
+        ...fromFile,
       }
     case "pwsh":
     case "powershell":
@@ -96,17 +102,17 @@ export const shellLaunch = (
         args: ["-NoExit", "-Command", `try { . ${psQuote(paths.powershell)} } catch {}`],
         env: resuming,
         integrated: true,
-        resumes: resume ? "startup" : undefined,
+        ...fromFile,
       }
     case "cmd":
       // $e]9;9;$P$e\ is OSC 9;9 with the current directory, ahead of the usual prompt.
       return {
-        args: resume ? ["/k", ...resume] : [],
+        args: resume ? ["/k", ...resume.argv] : [],
         env: { ...withHook, PROMPT: `$e]9;9;$P$e\\${env.PROMPT || "$P$G"}` },
         integrated: true,
-        resumes: resume ? "startup" : undefined,
+        resumes: resume !== undefined,
       }
     default:
-      return { args: [], env: withHook, integrated: false, resumes: undefined }
+      return { args: [], env: withHook, integrated: false, resumes: false }
   }
 }

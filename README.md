@@ -128,10 +128,12 @@ agent.
   `codex resume <id>` or `agy --conversation <id>` as the shell starts, after your rc
   files and prompt hooks, as if you had typed it at the first prompt, but nothing is
   typed and nothing goes into your shell history. When the agent exits you are at
-  that shell's prompt. A terminal without a known session gets a plain shell, never
-  "continue the last session", a session resumes in one terminal only, never beside
-  another running it, and a shell without the integration shows its transcript
-  instead. Terminals with an agent to resume start at once, in every session and
+  that shell's prompt. Typing before it starts, as while a slow rc file runs, cancels
+  it, so the shell gets what you typed. A terminal without a known session gets a
+  plain shell, never "continue the last session", a session resumes in one terminal
+  only, never beside another running it, and a shell NovaDeck cannot integrate shows
+  its transcript instead. An rc file that replaces the shell, as with `exec fish` or
+  `exec tmux`, resumes nothing. Terminals with an agent to resume start at once, in every session and
   hidden or not; the others start when their session is shown.
 - **Transcripts.** Each terminal's recent output is kept, and a restored terminal shows
   it read-only above a separator and its fresh prompt; a resumed agent shows its own

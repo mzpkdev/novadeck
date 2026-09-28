@@ -39,6 +39,7 @@ export const installShellFiles = async (
     // eslint-disable-next-line no-await-in-loop -- As above.
     await rename(temporary, file.path)
   }
+  await mkdir(paths.resume, { recursive: true, mode: 0o700 })
   return { ...paths, launcher: await launcher(paths.hook) }
 }
 

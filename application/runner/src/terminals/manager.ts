@@ -1,8 +1,8 @@
-import { randomBytes, timingSafeEqual } from "node:crypto"
-import { constants } from "node:fs"
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
+import { constants, rmSync, writeFileSync } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
 import { constants as system } from "node:os"
-import { basename, delimiter, isAbsolute, resolve as resolvePath } from "node:path"
+import { basename, delimiter, isAbsolute, join, resolve as resolvePath } from "node:path"
 
 import type {
   AgentName,
@@ -126,7 +126,8 @@ type Record = {
 
 /**
  * A spawned shell with its own headless screen, before it belongs to a record: the token
- * its agents report with, and when it resumes an agent, until its first prompt.
+ * its agents report with, whether it resumes an agent, and the file holding the command
+ * that does, until the shell takes it or it is cancelled.
  */
 type Started = {
   process: pty.IPty
@@ -134,7 +135,8 @@ type Started = {
   serializer: Serializer
   startedAt: number
   token: string
-  resumes: ShellLaunch["resumes"]
+  resumes: boolean
+  resumeFile: string | undefined
 }
 
 /** The runner's shell integration, once its files are written and reports are heard. */
@@ -151,6 +153,12 @@ const inherited = [
   "NOVADECK_ZDOTDIR",
   "NOVADECK_RESUME",
 ]
+
+// Input the terminal itself sends, not typing: focus reports, cursor-position and device
+// reports, and answers to colour queries.
+const terminalReply =
+  // eslint-disable-next-line no-control-regex -- These replies are control sequences.
+  /^(?:\x1b\[[IO]|\x1b\[\??[\d;]*[Rcn]|\x1b\[>[\d;]*c|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/
 
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
@@ -293,8 +301,9 @@ export class Terminals {
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
       const session = input.resume && saved?.agents[input.resume]?.sessionId
-      const resume = session ? this.claim(input.id, input.resume!, session) : undefined
-      const started = this.spawn(shell, cwd, input, integration, resume)
+      const resume = session ? this.resumable(input.id, input.resume!, session) : undefined
+      const started = this.spawn(shell, cwd, input, integration, resume?.argv)
+      if (resume && started.resumes) this.claims.set(resume.key, input.id)
       const record: Record = {
         summary: {
           id: input.id,
@@ -329,7 +338,7 @@ export class Terminals {
         promptedAt: saved?.promptedAt ?? null,
         changed: false,
         savedAt: 0,
-        submitted: started.resumes === "startup",
+        submitted: started.resumes,
       }
       this.records.set(record.summary.id, record)
       // The resumed agent shows its own history; a shell that resumes none, the transcript.
@@ -361,7 +370,12 @@ export class Terminals {
   write(input: { terminalId: string; data: string }, ownerId: string): void {
     const record = this.control(input.terminalId, ownerId)
     this.running(record)
-    if (/[\r\n]/.test(input.data)) record.submitted = true
+    // Typing before the shell resumes its agent cancels the resume, so the shell gets
+    // what was typed; the terminal's own replies, such as focus reports, are not typing.
+    if (!terminalReply.test(input.data)) {
+      this.cancelResume(record)
+      if (/[\r\n]/.test(input.data)) record.submitted = true
+    }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
     record.process.write(input.data)
   }
@@ -408,8 +422,11 @@ export class Terminals {
         if (this.records.get(input.terminalId) !== record)
           throw new DomainError("TERMINAL_NOT_FOUND")
         const session = input.resume && record.agents[input.resume]?.sessionId
-        const resume = session ? this.claim(record.summary.id, input.resume!, session) : undefined
-        const started = this.spawn(shell, cwd, input, integration, resume)
+        const resume = session
+          ? this.resumable(record.summary.id, input.resume!, session)
+          : undefined
+        const started = this.spawn(shell, cwd, input, integration, resume?.argv)
+        if (resume && started.resumes) this.claims.set(resume.key, record.summary.id)
         const earlier =
           this.transcripts && !started.resumes
             ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
@@ -437,7 +454,7 @@ export class Terminals {
           controller: pending.released ? undefined : ownerId,
           exitQueued: false,
           closing: undefined,
-          submitted: started.resumes === "startup",
+          submitted: started.resumes,
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
@@ -484,15 +501,16 @@ export class Terminals {
   }
 
   /**
-   * The command that resumes `agent`'s `session` in the terminal; undefined when it may
-   * not. One session resumes in one terminal: not while another terminal runs it, nor
-   * once another terminal claimed it, until that terminal closes.
+   * The command that resumes `agent`'s `session` in the terminal, and the claim to
+   * record once a shell runs it; undefined when it may not. One session resumes in one
+   * terminal: not while another terminal runs it, nor once another terminal claimed it,
+   * until that terminal closes.
    */
-  private claim(
+  private resumable(
     terminalId: string,
     agent: AgentName,
     session: string,
-  ): readonly string[] | undefined {
+  ): { argv: readonly string[]; key: string } | undefined {
     const key = `${agent}:${session}`
     const claimant = this.claims.get(key)
     if (claimant !== undefined && claimant !== terminalId) return undefined
@@ -503,9 +521,20 @@ export class Terminals {
         other.agents[agent]?.sessionId === session
       )
         return undefined
-    const command = resumeCommand(agent, session)
-    if (command) this.claims.set(key, terminalId)
-    return command
+    const argv = resumeCommand(agent, session)
+    return argv && { argv, key }
+  }
+
+  /** Removes a resume command the shell has not taken yet, so it never runs. */
+  private cancelResume(record: Record): void {
+    const file = record.resumeFile
+    if (!file) return
+    record.resumeFile = undefined
+    try {
+      rmSync(file, { force: true })
+    } catch {
+      // Taken meanwhile, or unremovable; the shell removes it as it reads it.
+    }
   }
 
   /** Forgets every session `agent` reported, as once it is disconnected. */
@@ -899,14 +928,28 @@ export class Terminals {
     const { cols, rows } = input
     const id = input.id ?? input.terminalId ?? ""
     const token = randomBytes(24).toString("hex")
-    const launch: ShellLaunch = integration
-      ? shellLaunch(shell, integration.paths, this.options.env, {
-          codexShim: integration.codexShim,
-          resume: this.options.shellArgs === undefined ? resume : undefined,
-        })
-      : { args: [], env: this.options.env, integrated: false, resumes: undefined }
+    const launch = (withResume: boolean): ShellLaunch =>
+      integration
+        ? shellLaunch(shell, integration.paths, this.options.env, {
+            codexShim: integration.codexShim,
+            ...(withResume &&
+              resume &&
+              this.options.shellArgs === undefined && {
+                resume: { argv: resume, file: join(integration.paths.resume, randomUUID()) },
+              }),
+          })
+        : { args: [], env: this.options.env, integrated: false, resumes: false }
+    let launched = launch(true)
+    // The shell reads the command from a file only it and the runner can read.
+    if (launched.resumeFile)
+      try {
+        writeFileSync(launched.resumeFile, resume!.join(" "), { mode: 0o600, flag: "wx" })
+      } catch {
+        launched = launch(false)
+      }
+    const { resumeFile } = launched
     const env: NodeJS.ProcessEnv = {
-      ...launch.env,
+      ...launched.env,
       NOVADECK_TERMINAL_ID: id,
       ...(integration && {
         NOVADECK_REPORT: integration.reports.endpoint,
@@ -917,7 +960,7 @@ export class Terminals {
     const serializer = new SerializeAddon()
     screen.loadAddon(serializer)
     try {
-      const child = pty.spawn(shell, [...(this.options.shellArgs ?? launch.args)], {
+      const child = pty.spawn(shell, [...(this.options.shellArgs ?? launched.args)], {
         name: "xterm-256color",
         cols,
         rows,
@@ -932,10 +975,12 @@ export class Terminals {
         serializer,
         startedAt: performance.now(),
         token,
-        resumes: launch.resumes,
+        resumes: launched.resumes,
+        resumeFile,
       }
     } catch {
       screen.dispose()
+      if (resumeFile) rmSync(resumeFile, { force: true })
       throw new DomainError("SPAWN_FAILED", "Could not start the configured shell.")
     }
   }
@@ -976,13 +1021,14 @@ export class Terminals {
 
   /**
    * The shell showed its prompt in `cwd`: its agent is no longer in the foreground. A
-   * shell that resumes an agent at its first prompt runs it now.
+   * shell resuming an agent reports its first prompt once the agent exits, so a resume
+   * command still waiting by now was never taken.
    */
   private prompted(record: Record, child: pty.IPty, cwd: string): void {
     if (record.process !== child) return
     record.promptedAt = Date.now()
-    record.submitted = record.resumes === "prompt"
-    record.resumes = undefined
+    record.submitted = false
+    this.cancelResume(record)
     record.changed = true
     const moved = cwd !== record.summary.cwd
     if (moved || record.summary.agent !== null) {
@@ -1093,7 +1139,7 @@ export class Terminals {
     const exit = { ...ended, ranMs: Math.max(0, Math.round(performance.now() - record.startedAt)) }
     void this.enqueue(record, () => {
       record.summary = { ...record.summary, exit, process: null, agent: null }
-      record.resumes = undefined
+      this.cancelResume(record)
       this.save(record, true)
       this.exits += 1
       record.exitOrder = this.exits
