@@ -32,7 +32,7 @@ export const shellLaunch = (
   env: NodeJS.ProcessEnv,
 ): ShellLaunch => {
   // Connected agents' hooks name the launcher through this; see `hookCommand`.
-  const withHook = { ...env, NOVADECK_HOOK: paths.hook }
+  const withHook = { ...env, NOVADECK_HOOK: paths.launcher }
   switch (shellName(shell)) {
     case "bash":
       return { args: ["--init-file", paths.bash], env: withHook, integrated: true }

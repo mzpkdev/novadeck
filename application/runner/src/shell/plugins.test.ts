@@ -62,7 +62,7 @@ const runHook = (agent: HookedAgent, hook: string | undefined, stdin: string) =>
       ? ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]]
       : [process.env.COMSPEC ?? "cmd.exe", ["/d", "/s", "/c", command]]
     : ["/bin/sh", ["-c", command]]
-  return spawnSync(program, args, { env, input: stdin, encoding: "utf8" })
+  return spawnSync(program, args, { env, input: stdin, encoding: "utf8", timeout: 15_000 })
 }
 
 describe("agent plugin hook commands", () => {
@@ -79,11 +79,11 @@ describe("agent plugin hook commands", () => {
       `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy; else echo '{}'; fi`,
     )
     expect(hookCommand("claude", "win32")).toBe(
-      "if ($env:NOVADECK_HOOK) { $input | & $env:NOVADECK_HOOK claude }",
+      "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude }",
     )
-    expect(hookCommand("codex", "win32")).toBe('if defined NOVADECK_HOOK "%NOVADECK_HOOK%" codex')
+    expect(hookCommand("codex", "win32")).toBe("if defined NOVADECK_HOOK %NOVADECK_HOOK% codex")
     expect(hookCommand("agy", "win32")).toBe(
-      'if defined NOVADECK_HOOK ("%NOVADECK_HOOK%" agy) else (echo {})',
+      "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy) else (echo {})",
     )
   })
 
@@ -128,4 +128,38 @@ describe("agent plugins", () => {
     expect(read(agy, "plugin.json")).toEqual({ name: "novadeck" })
     expect(read(agy, "hooks.json").novadeck.PreInvocation).toHaveLength(1)
   })
+})
+
+describe.runIf(windows)("the hook launcher on Windows", () => {
+  it("is named without spaces or brackets, so cmd runs it unquoted", async ({ resources }) => {
+    const root = mkdtempSync(join(tmpdir(), "novadeck plugins ("))
+    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+    const paths = await installShellFiles(join(root, "shell"))
+    expect(paths.launcher).toMatch(/^[\w.:\\~-]+$/)
+  })
+
+  // Diagnostic: which PowerShell form hands the hook its stdin, as Claude Code runs it.
+  it("reports how PowerShell passes stdin on", ({ plugins }) => {
+    const variants = {
+      plain: "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude }",
+      input: "if ($env:NOVADECK_HOOK) { $input | & $env:NOVADECK_HOOK claude }",
+      stdin: "if ($env:NOVADECK_HOOK) { [Console]::In.ReadToEnd() | & $env:NOVADECK_HOOK claude }",
+    }
+    for (const [name, command] of Object.entries(variants)) {
+      const result = spawnSync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", command],
+        {
+          env: { ...process.env, NOVADECK_HOOK: plugins.launcher },
+          input: `{"session_id":"${name}"}`,
+          encoding: "utf8",
+          timeout: 15_000,
+        },
+      )
+      console.log(
+        `STDIN-DIAGNOSTIC ${name}: status=${result.status} signal=${result.signal} recorded=${JSON.stringify(plugins.recorded())}`,
+      )
+    }
+    expect(plugins.launcher).toBeTruthy()
+  }, 60_000)
 })

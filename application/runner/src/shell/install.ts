@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
+import { promisify } from "node:util"
 
 import { hookScript } from "./hook.js"
 import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
@@ -30,5 +32,22 @@ export const installShellFiles = async (
     // eslint-disable-next-line no-await-in-loop -- As above.
     await rename(temporary, file.path)
   }
-  return paths
+  return { ...paths, launcher: await launcher(paths.hook) }
+}
+
+// cmd's `for` gives a file's short name, as Windows keeps one on most volumes; a path
+// that still needs quoting stays as it is.
+const launcher = async (hook: string): Promise<string> => {
+  if (process.platform !== "win32" || /^[\w.:\\-]+$/.test(hook)) return hook
+  try {
+    const { stdout } = await promisify(execFile)(
+      process.env.COMSPEC || "cmd.exe",
+      ["/d", "/c", `for %A in ("${hook}") do @echo %~sA`],
+      { windowsHide: true },
+    )
+    const short = stdout.trim()
+    return /^[\w.:\\~-]+$/.test(short) ? short : hook
+  } catch {
+    return hook
+  }
 }

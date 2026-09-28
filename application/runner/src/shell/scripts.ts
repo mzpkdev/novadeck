@@ -17,8 +17,13 @@ export type ShellPaths = {
    * marketplace for Claude Code and Codex, a plugin folder for Antigravity.
    */
   readonly plugins: { readonly claude: string; readonly codex: string; readonly agy: string }
-  /** The hook's launcher, which NovaDeck's shells name in NOVADECK_HOOK. */
+  /** The hook's launcher. */
   readonly hook: string
+  /**
+   * The launcher as NovaDeck's shells name it in NOVADECK_HOOK: on Windows its short
+   * name, which holds no spaces or brackets, so cmd runs it unquoted.
+   */
+  readonly launcher: string
   readonly hookScript: string
 }
 
@@ -34,6 +39,7 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
     agy: join(directory, "plugins", "agy", "novadeck"),
   },
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
+  launcher: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
   hookScript: join(directory, "hook.mjs"),
 })
 
@@ -154,10 +160,10 @@ export type HookedAgent = "claude" | "codex" | "agy"
  */
 export const hookCommand = (agent: HookedAgent, platform = process.platform): string => {
   if (platform === "win32") {
-    if (agent === "claude")
-      return "if ($env:NOVADECK_HOOK) { $input | & $env:NOVADECK_HOOK claude }"
-    if (agent === "agy") return 'if defined NOVADECK_HOOK ("%NOVADECK_HOOK%" agy) else (echo {})'
-    return 'if defined NOVADECK_HOOK "%NOVADECK_HOOK%" codex'
+    // Unquoted: an agent may escape inner quotes in a way cmd does not read.
+    if (agent === "claude") return "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude }"
+    if (agent === "agy") return "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy) else (echo {})"
+    return "if defined NOVADECK_HOOK %NOVADECK_HOOK% codex"
   }
   if (agent === "agy")
     return `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy; else echo '{}'; fi`
