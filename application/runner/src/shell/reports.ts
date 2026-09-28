@@ -15,10 +15,10 @@ export type Report = {
   readonly seq: number
   /** The agent's own directory, when it is an absolute path here. */
   readonly cwd?: string
+  /** Why the agent started the session: startup, resume, clear… */
+  readonly source?: string
 }
 
-// The hook also sends `source`, why the agent started the session (startup, resume,
-// clear…), which is informational.
 const absolute = (value: unknown): string | undefined =>
   typeof value === "string" && value.length <= 4096 && !value.includes("\0") && isAbsolute(value)
     ? value
@@ -26,7 +26,7 @@ const absolute = (value: unknown): string | undefined =>
 
 const parse = (value: unknown): Report | undefined => {
   if (typeof value !== "object" || value === null) return undefined
-  const { terminalId, token, agent, sessionId, seq, cwd } = value as Record<string, unknown>
+  const { terminalId, token, agent, sessionId, seq, cwd, source } = value as Record<string, unknown>
   if (typeof terminalId !== "string" || terminalId.length > 64) return undefined
   if (typeof token !== "string" || token.length > 128) return undefined
   if (typeof seq !== "number" || !Number.isFinite(seq)) return undefined
@@ -41,6 +41,7 @@ const parse = (value: unknown): Report | undefined => {
     sessionId: session.data,
     seq,
     ...(where !== undefined && { cwd: where }),
+    ...(typeof source === "string" && source.length <= 32 && { source }),
   }
 }
 

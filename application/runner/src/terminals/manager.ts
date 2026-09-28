@@ -115,6 +115,13 @@ type Record = {
   inputs: number
   /** `performance.now()` when the shell last printed, to type only once it is quiet. */
   outputAt: number
+  /**
+   * The transcript kept saved while a command waits to resume the terminal: if it is
+   * never typed, the earlier screen is not replaced by the new shell's.
+   */
+  held: string | null
+  /** `performance.now()` at the last save of its screen, so saves take turns. */
+  savedAt: number
 } & Omit<Started, "process" | "screen" | "serializer" | "startedAt">
 
 /**
@@ -150,6 +157,15 @@ const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Input the terminal itself sends, not typing: focus reports, cursor-position and device
+// reports, and answers to colour queries.
+const terminalReply =
+  // eslint-disable-next-line no-control-regex -- These replies are control sequences.
+  /^(?:\x1b\[[IO]|\x1b\[\??[\d;]*[Rcn]|\x1b\[>[\d;]*c|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/
+
+// How many changed terminals one periodic save handles.
+const savesPerTick = 4
 
 /** The shell until the first sample, which may add its command line; Windows reports none. */
 const shellProcess = (shell: string): ForegroundProcess | null => {
@@ -317,6 +333,8 @@ export class Terminals {
         changed: false,
         inputs: 0,
         outputAt: 0,
+        held: started.pending && this.transcripts ? (saved?.transcript ?? null) : null,
+        savedAt: 0,
       }
       this.records.set(record.summary.id, record)
       // A shell that cannot take the command shows the transcript instead.
@@ -350,7 +368,7 @@ export class Terminals {
     this.running(record)
     // Someone typing before the first prompt takes the shell over from a queued command;
     // the terminal's own replies, such as focus or colour reports, are not typing.
-    if (!input.data.startsWith("\x1b")) {
+    if (!terminalReply.test(input.data)) {
       record.inputs += 1
       record.pending = undefined
     }
@@ -400,10 +418,10 @@ export class Terminals {
         if (this.records.get(input.terminalId) !== record)
           throw new DomainError("TERMINAL_NOT_FOUND")
         const started = this.spawn(shell, cwd, input, integration)
-        const earlier =
-          this.transcripts && !started.pending
-            ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
-            : null
+        const previous = this.transcripts
+          ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
+          : null
+        const earlier = started.pending ? null : previous
         // Earlier attachments ended at the exit; any still draining are dropped.
         for (const subscription of record.subscribers.values()) subscription.cancel()
         record.subscribers.clear()
@@ -429,6 +447,7 @@ export class Terminals {
           closing: undefined,
           inputs: 0,
           outputAt: 0,
+          held: started.pending ? previous : null,
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
@@ -508,6 +527,18 @@ export class Terminals {
   /** Saves every terminal's changes now, as before the system shuts down. */
   persist(): void {
     for (const record of this.records.values()) if (record.changed) this.save(record, true)
+  }
+
+  /**
+   * Saves a few changed terminals whose screens were saved longest ago, so the runner
+   * never stops for all of them at once; each is saved every `saveMs` or so.
+   */
+  private persistSome(): void {
+    const due = performance.now() - this.options.saveMs
+    const waiting = [...this.records.values()]
+      .filter((record) => record.changed && record.savedAt <= due)
+      .toSorted((a, b) => a.savedAt - b.savedAt)
+    for (const record of waiting.slice(0, savesPerTick)) this.save(record, true)
   }
 
   /** Streams an `attached` marker once established, then snapshot or replay and live events. */
@@ -983,6 +1014,8 @@ export class Terminals {
         await quiet(200, 3_000)
         if (!current()) return
         child.write("\r")
+        // The resumed program shows its own history from here.
+        record.held = null
         await pause(this.options.launchGapMs)
       })
       .catch(() => {})
@@ -1003,9 +1036,18 @@ export class Terminals {
    * the last prompt, the agent holds the foreground, and its directory is where the
    * terminal restores, as a shell that ran `cd … && claude` reports no prompt there.
    */
-  private report({ terminalId, token, agent, sessionId, seq, cwd }: Report): void {
+  private report({ terminalId, token, agent, sessionId, seq, cwd, source }: Report): void {
     const record = this.records.get(terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, token)) return
+    // Processes that merely inherited this terminal's environment report too: a tmux
+    // server or an editor started from it reports while its shell holds the foreground,
+    // and an agent run by the agent in the foreground starts a new session of its own.
+    // A session switch of the agent in the foreground, as /clear or /resume, says so.
+    if (process.platform !== "win32" && this.atPrompt(record)) return
+    const active = record.summary.agent
+    if (active !== null && (source ?? "startup") === "startup") {
+      if (active !== agent || record.agents[active]?.sessionId !== sessionId) return
+    }
     const known = record.agents[agent]
     if (known && known.seq >= seq) return
     record.agents = { ...record.agents, [agent]: { sessionId, seq } }
@@ -1038,7 +1080,10 @@ export class Terminals {
    * saved once the runner is stopping.
    */
   private save(record: Record, transcript: boolean): void {
-    if (transcript) record.changed = false
+    if (transcript) {
+      record.changed = false
+      record.savedAt = performance.now()
+    }
     this.persisting(() =>
       this.options.records?.saveTerminal({
         id: record.summary.id,
@@ -1048,7 +1093,8 @@ export class Terminals {
         promptedAt: record.promptedAt,
         ...(transcript && {
           transcript: this.transcripts
-            ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
+            ? (record.held ??
+              transcriptOf(record.screen, record.serializer, this.options.transcriptChars))
             : null,
         }),
       }),
@@ -1072,7 +1118,7 @@ export class Terminals {
   /** Saves changed terminals every so often, so a runner killed at any moment loses little. */
   private saveChanges(): void {
     if (this.saver || this.stopping || !this.options.records) return
-    this.saver = setInterval(() => this.persist(), this.options.saveMs)
+    this.saver = setInterval(() => this.persistSome(), this.options.saveMs / 5)
     this.saver.unref()
   }
 

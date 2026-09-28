@@ -29,7 +29,7 @@ if (agent === "claude") {
   if (command === "uninstall novadeck@novadeck") write(file, JSON.stringify({ enabledPlugins: {} }))
 }
 if (agent === "codex") {
-  const file = path.join(home, ".codex", "config.toml")
+  const file = path.join(process.env.CODEX_HOME || path.join(home, ".codex"), "config.toml")
   if (command === "add novadeck@novadeck") write(file, '[plugins."novadeck@novadeck"]\\nenabled = true\\n')
   if (command === "remove novadeck@novadeck") write(file, "")
 }
@@ -153,6 +153,25 @@ describe("agents NovaDeck can connect", () => {
     await agents.set("agy", false)
     expect((await agents.list())[2]).toMatchObject({ connected: false })
   })
+
+  it.skipIf(windows)(
+    "find an agent home the login shell moves, as a desktop-launched app would not",
+    async ({ fixture }) => {
+      const moved = join(fixture.home, "codex-elsewhere")
+      mkdirSync(moved)
+      // sh reads $ENV when interactive, as bash and zsh read their rc files.
+      const profile = join(fixture.home, "profile.sh")
+      writeFileSync(profile, `export CODEX_HOME="${moved}"\n`)
+      const agents = fixture.agents({ ENV: profile })
+      expect((await agents.list())[1]).toEqual({
+        agent: "codex",
+        available: true,
+        connected: false,
+      })
+      expect(await agents.set("codex", true)).toMatchObject({ connected: true })
+      expect(readFileSync(join(moved, "config.toml"), "utf8")).toContain("novadeck@novadeck")
+    },
+  )
 
   it("say why an agent could not be connected", async ({ fixture }) => {
     installed(fixture.home, "claude")

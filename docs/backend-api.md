@@ -392,7 +392,12 @@ token for that shell. The endpoint takes one JSON line,
 `{ terminalId, token, agent, sessionId, source, seq }`, and nothing else: it records the
 agent's session for the terminal whose token matches, keeping the report with the
 largest `seq` (the hook's start time) per agent, so `/clear`, a fork, or another agent
-run in between never replaces a later session with an earlier one.
+run in between never replaces a later session with an earlier one. Processes that only
+inherited a shell's environment report too, so the runner ignores a report while the
+shell itself holds the foreground (as from a tmux server or an editor started there and
+running elsewhere), and a new `startup` session while another agent session holds the
+foreground (an agent run by that agent); a session switch such as `/clear` reports its
+own source and is kept.
 
 The runner saves, per terminal, in a `terminals` table next to the sessions: its
 session, last directory, latest session per agent, when it last showed a prompt, and

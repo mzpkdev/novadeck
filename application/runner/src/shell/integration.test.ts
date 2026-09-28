@@ -125,6 +125,38 @@ const create = (
     "owner",
   )
 
+// A stand-in agent in the foreground that sends the hook's reports as given, one after
+// another, then waits.
+const reporter = (
+  home: string,
+  reports: { agent: string; sessionId: string; seq: number; source: string }[],
+): string => {
+  const bin = join(home, "bin")
+  mkdirSync(bin, { recursive: true })
+  const script = join(bin, "report.cjs")
+  writeFileSync(
+    script,
+    [
+      'const net = require("node:net")',
+      `const reports = ${JSON.stringify(reports)}`,
+      "const { NOVADECK_TERMINAL_ID: terminalId, NOVADECK_REPORT_TOKEN: token } = process.env",
+      // Hooks send wall-clock times; the given ones order the reports after that.
+      "const base = Date.now()",
+      "const send = (index) => {",
+      '  if (index === reports.length) { console.log("reports sent"); return process.stdin.resume() }',
+      "  const socket = net.connect(process.env.NOVADECK_REPORT)",
+      '  socket.on("close", () => send(index + 1))',
+      "  const report = { ...reports[index], seq: base + reports[index].seq }",
+      '  socket.end(JSON.stringify({ terminalId, token, ...report }) + "\\n")',
+      "}",
+      "send(0)",
+    ].join("\n"),
+  )
+  writeFileSync(join(bin, "report"), `#!/bin/sh\nexec "${process.execPath}" "${script}"\n`)
+  chmodSync(join(bin, "report"), 0o755)
+  return bin
+}
+
 // A stand-in for Claude Code with NovaDeck's plugin connected: it runs the plugin's
 // SessionStart hook through sh with the session on stdin, then waits.
 const fakeClaude = (home: string, plugins: string, session: string): string => {
@@ -253,19 +285,80 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
   })
 
   it("keeps only the latest report of each agent, by when it was sent", async ({ shell }) => {
-    const manager = shell.manager()
+    const bin = reporter(shell.home, [
+      { agent: "codex", sessionId: "s3", seq: 3, source: "startup" },
+      { agent: "codex", sessionId: "s1", seq: 1, source: "clear" },
+      { agent: "codex", sessionId: "s2", seq: 2, source: "clear" },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
     const terminal = await create(manager, shell)
-    // What the hook would send, read from the shell's own environment.
-    manager.write(
-      {
-        terminalId: terminal.id,
-        data: `for n in 3 1 2; do printf '{"terminalId":"%s","token":"%s","agent":"codex","sessionId":"s%s","seq":%s}\\n' "$NOVADECK_TERMINAL_ID" "$NOVADECK_REPORT_TOKEN" $n $n | "${process.execPath}" -e 'const s=require("net").connect(process.env.NOVADECK_REPORT);process.stdin.pipe(s)'; done; echo sent\r`,
-      },
-      "owner",
-    )
-    await shell.until(manager, terminal.id, /sent\r?\n/)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(await manager.agentSession(terminal.id, "codex")).toBe("s3")
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    expect(manager.agentSession(terminal.id, "codex")).toBe("s3")
+  })
+
+  it("takes a session switch, but not a nested agent's own session", async ({ shell }) => {
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "outer", seq: 1, source: "startup" },
+      // Run by the agent in the foreground, as from its shell tool.
+      { agent: "claude", sessionId: "nested", seq: 2, source: "startup" },
+      { agent: "codex", sessionId: "nested-codex", seq: 3, source: "startup" },
+      // /clear in the agent in the foreground.
+      { agent: "claude", sessionId: "cleared", seq: 4, source: "clear" },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    expect(manager.agentSession(terminal.id, "claude")).toBe("cleared")
+    expect(manager.agentSession(terminal.id, "codex")).toBeNull()
+  })
+
+  it("ignores reports made while the shell holds the foreground", async ({ shell }) => {
+    // As from a tmux server or an editor started from this terminal, running elsewhere.
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "elsewhere", seq: 1, source: "startup" },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "(sleep 0.5; report </dev/null) &\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    expect(manager.agentSession(terminal.id, "claude")).toBeNull()
+  })
+
+  it("never types the command after arrow keys or a paste", async ({ shell }) => {
+    writeFileSync(join(shell.home, ".bash_history"), "echo from-history\n")
+    writeFileSync(join(shell.home, ".bashrc"), "HISTFILE=~/.bash_history; sleep 0.3\n")
+    const manager = shell.manager()
+    const terminal = await create(manager, shell, { command: "echo resumed" })
+    manager.write({ terminalId: terminal.id, data: "\x1b[A" }, "owner")
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    manager.write({ terminalId: terminal.id, data: "\r" }, "owner")
+    const shown = await shell.until(manager, terminal.id, /from-history\r?\n/)
+    expect(shown).not.toContain("resumed")
+  })
+
+  it("keeps the saved transcript when the resume command is never typed", async ({ shell }) => {
+    const id = randomUUID()
+    const first = shell.manager()
+    await create(first, shell, { id })
+    first.write({ terminalId: id, data: "echo before-reboot\r" }, "owner")
+    await shell.until(first, id, /before-reboot[\s\S]*\$ /)
+    await first.shutdown()
+
+    writeFileSync(join(shell.home, ".bashrc"), "sleep 0.3\n")
+    const second = shell.manager()
+    await create(second, shell, { id, restore: true, command: "echo resumed" })
+    second.write({ terminalId: id, data: "echo mine\r" }, "owner")
+    await shell.until(second, id, /mine\r?\n/)
+    second.persist()
+    expect(shell.store.terminal(id)?.transcript).toContain("before-reboot")
   })
 
   it("restores a terminal in its last directory, showing its transcript", async ({ shell }) => {

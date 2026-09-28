@@ -112,16 +112,59 @@ const describe = (paths: ShellPaths, env: NodeJS.ProcessEnv, home: string) => {
 const cmdLine = (argv: readonly string[]): string =>
   argv.map((arg) => (/^[\w@.:\\/-]+$/.test(arg) ? arg : `"${arg}"`)).join(" ")
 
+// Variables the person's terminal has that decide where agents are and live.
+const loginVariables = new Set(["PATH", "CLAUDE_CONFIG_DIR", "CODEX_HOME"])
+const marker = "__NOVADECK_ENV__"
+
 /**
- * Runs one of an agent's commands the way the person would in a terminal: through their
- * login shell, whose startup files put the agent on PATH even when the app was started
- * from a desktop menu, and through cmd on Windows, where agents install as .cmd files.
+ * The environment the person has in a terminal: their login shell's startup files put
+ * agents on PATH, and may move their homes, even when the app was started from a
+ * desktop menu. Only `echo` and `env` run in that shell, so any shell will do. Windows
+ * programs get the person's environment already.
+ */
+const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
+  new Promise<NodeJS.ProcessEnv>((resolve) => {
+    if (platform === "win32") return resolve(env)
+    let output = ""
+    const child = spawn(env.SHELL || "/bin/sh", ["-ilc", `echo ${marker}; env`], {
+      env,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    const timer = setTimeout(() => child.kill(), 10_000)
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => (output += chunk))
+    child.on("error", () => resolve(env))
+    child.on("close", () => {
+      clearTimeout(timer)
+      // Startup files may print before the marker's own line; a shell may also echo it in
+      // a variable of its own, such as `_`.
+      const lines = output.split("\n")
+      const start = lines.indexOf(marker)
+      if (start < 0) return resolve(env)
+      const found: NodeJS.ProcessEnv = {}
+      for (const line of lines.slice(start + 1)) {
+        const split = line.indexOf("=")
+        const name = line.slice(0, split)
+        if (split > 0 && loginVariables.has(name)) found[name] = line.slice(split + 1)
+      }
+      resolve({ ...env, ...found })
+    })
+  })
+
+/**
+ * Runs one of an agent's commands the way the person would in a terminal: with their
+ * login environment, and through cmd on Windows, where agents install as .cmd files.
  */
 const run = (
   argv: readonly string[],
-  { env, platform, timeoutMs }: Required<Omit<AgentsOptions, "home">>,
+  {
+    env,
+    platform,
+    timeoutMs,
+  }: { env: NodeJS.ProcessEnv; platform: NodeJS.Platform; timeoutMs: number },
 ): Promise<void> =>
   new Promise((resolve, reject) => {
+    const [program = "", ...args] = argv
     const child =
       platform === "win32"
         ? spawn(env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", `"${cmdLine(argv)}"`], {
@@ -130,10 +173,7 @@ const run = (
             windowsVerbatimArguments: true,
             windowsHide: true,
           })
-        : spawn(env.SHELL || "/bin/sh", ["-ilc", 'exec "$0" "$@"', ...argv], {
-            env,
-            stdio: ["ignore", "ignore", "pipe"],
-          })
+        : spawn(program, args, { env, stdio: ["ignore", "ignore", "pipe"] })
     let errors = ""
     child.stderr.setEncoding("utf8")
     child.stderr.on("data", (chunk: string) => {
@@ -161,21 +201,24 @@ export const createAgents = (
   paths: () => Promise<ShellPaths | undefined>,
   options: AgentsOptions = {},
 ) => {
-  const env = options.env ?? process.env
-  const home = options.home ?? env.HOME ?? homedir()
-  const settings = {
-    env,
-    platform: options.platform ?? process.platform,
-    timeoutMs: options.timeoutMs ?? 60_000,
+  const base = options.env ?? process.env
+  const home = options.home ?? base.HOME ?? homedir()
+  const platform = options.platform ?? process.platform
+  const timeoutMs = options.timeoutMs ?? 60_000
+  // Looked up once, and again before each change, which may follow an edit to it.
+  let login: Promise<NodeJS.ProcessEnv> | undefined
+  const environment = (fresh = false) => {
+    if (fresh || !login) login = loginEnvironment(base, platform)
+    return login
   }
   const state = async (agent: AgentName, found: Agent): Promise<AgentIntegration> => ({
     agent,
     available: await exists(found.home),
     connected: await found.connected(),
   })
-  const known = async () => {
+  const known = async (fresh = false) => {
     const shell = await paths()
-    return shell && describe(shell, env, home)
+    return shell && describe(shell, await environment(fresh), home)
   }
   // One change at a time: an agent's plugin commands edit its configuration.
   let queue = Promise.resolve()
@@ -193,7 +236,8 @@ export const createAgents = (
     /** Installs or removes NovaDeck's plugin in the agent; resolves to where it stands after. */
     set: (agent: AgentName, connected: boolean): Promise<AgentIntegration> => {
       const change = queue.then(async () => {
-        const described = await known()
+        const described = await known(true)
+        const settings = { env: await environment(), platform, timeoutMs }
         if (!described)
           throw new DomainError("AGENT_SETUP_FAILED", "Shell integration is unavailable.")
         const found = described[agent]

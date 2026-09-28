@@ -120,6 +120,8 @@ export class WorkspaceStore implements TerminalRecords {
       this.database.close()
       throw error
     }
+    // Transcripts may hold secrets: what is deleted is overwritten, not left in free pages.
+    this.database.exec("PRAGMA secure_delete = ON")
     this.queries = this.database.createTagStore(16)
   }
 

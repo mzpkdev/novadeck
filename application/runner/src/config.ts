@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 
 import type { ServerOptions } from "./server.js"
 
@@ -33,9 +33,11 @@ export const readConfig = (environment: NodeJS.ProcessEnv = process.env): Server
   if (token !== undefined && (token.length < 32 || token.length > 512)) {
     throw new Error("NOVADECK_TOKEN must contain between 32 and 512 characters")
   }
-  const database =
+  // Absolute, so shells started anywhere find the shell integration beside it.
+  const database = resolve(
     environment.NOVADECK_DATABASE?.trim() ||
-    join(homedir(), ".local", "share", "novadeck", "workspace.sqlite")
+      join(homedir(), ".local", "share", "novadeck", "workspace.sqlite"),
+  )
   return {
     hostname: environment.HOST?.trim() || "127.0.0.1",
     port: readPort(environment.PORT),

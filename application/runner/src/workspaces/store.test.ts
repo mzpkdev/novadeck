@@ -3,6 +3,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -266,6 +267,16 @@ describe("saved terminals", () => {
     expect(reopened.terminal(terminal.id)?.transcript).toBeNull()
     reopened.removeTerminal(terminal.id)
     expect(reopened.terminal(terminal.id)).toBeUndefined()
+  })
+
+  it("overwrite forgotten transcripts, which may hold secrets", ({ directory, store }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const workspace = store(path)
+    const terminal = { id: randomUUID(), sessionId: "s", cwd: "/", agents: {}, promptedAt: null }
+    workspace.saveTerminal({ ...terminal, transcript: "SECRET_TRANSCRIPT_TEXT" })
+    workspace.clearTranscripts()
+    workspace.close()
+    expect(readFileSync(path).includes("SECRET_TRANSCRIPT_TEXT")).toBe(false)
   })
 
   it("keep the most recently saved terminals only", ({ store }) => {
