@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { promisify } from "node:util"
 
@@ -39,6 +39,8 @@ export const installShellFiles = async (
     // eslint-disable-next-line no-await-in-loop -- As above.
     await rename(temporary, file.path)
   }
+  // A resume command left by a runner that stopped before its shell took it is stale.
+  await rm(paths.resume, { recursive: true, force: true })
   await mkdir(paths.resume, { recursive: true, mode: 0o700 })
   return { ...paths, launcher: await launcher(paths.hook) }
 }

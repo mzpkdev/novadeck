@@ -137,6 +137,8 @@ type Started = {
   token: string
   resumes: boolean
   resumeFile: string | undefined
+  /** The session claimed for the resume, as agent:session, once the shell runs it. */
+  resumeClaim?: string | undefined
 }
 
 /** The runner's shell integration, once its files are written and reports are heard. */
@@ -303,7 +305,10 @@ export class Terminals {
       const session = input.resume && saved?.agents[input.resume]?.sessionId
       const resume = session ? this.resumable(input.id, input.resume!, session) : undefined
       const started = this.spawn(shell, cwd, input, integration, resume?.argv)
-      if (resume && started.resumes) this.claims.set(resume.key, input.id)
+      if (resume && started.resumes) {
+        this.claims.set(resume.key, input.id)
+        started.resumeClaim = resume.key
+      }
       const record: Record = {
         summary: {
           id: input.id,
@@ -373,7 +378,10 @@ export class Terminals {
     // Typing before the shell resumes its agent cancels the resume, so the shell gets
     // what was typed; the terminal's own replies, such as focus reports, are not typing.
     if (!terminalReply.test(input.data)) {
-      this.cancelResume(record)
+      // A cancelled resume leaves its session free for another terminal.
+      const claim = record.resumeClaim
+      if (this.cancelResume(record) && claim && this.claims.get(claim) === record.summary.id)
+        this.claims.delete(claim)
       if (/[\r\n]/.test(input.data)) record.submitted = true
     }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
@@ -426,7 +434,10 @@ export class Terminals {
           ? this.resumable(record.summary.id, input.resume!, session)
           : undefined
         const started = this.spawn(shell, cwd, input, integration, resume?.argv)
-        if (resume && started.resumes) this.claims.set(resume.key, record.summary.id)
+        if (resume && started.resumes) {
+          this.claims.set(resume.key, record.summary.id)
+          started.resumeClaim = resume.key
+        }
         const earlier =
           this.transcripts && !started.resumes
             ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
@@ -525,15 +536,20 @@ export class Terminals {
     return argv && { argv, key }
   }
 
-  /** Removes a resume command the shell has not taken yet, so it never runs. */
-  private cancelResume(record: Record): void {
+  /**
+   * Removes a resume command the shell has not taken yet, so it never runs; true when
+   * one was still waiting.
+   */
+  private cancelResume(record: Record): boolean {
     const file = record.resumeFile
-    if (!file) return
+    if (!file) return false
     record.resumeFile = undefined
     try {
-      rmSync(file, { force: true })
+      rmSync(file)
+      return true
     } catch {
       // Taken meanwhile, or unremovable; the shell removes it as it reads it.
+      return false
     }
   }
 
@@ -977,6 +993,7 @@ export class Terminals {
         token,
         resumes: launched.resumes,
         resumeFile,
+        resumeClaim: undefined,
       }
     } catch {
       screen.dispose()

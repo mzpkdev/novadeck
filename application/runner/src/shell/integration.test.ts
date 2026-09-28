@@ -331,6 +331,11 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await new Promise((resolve) => setTimeout(resolve, 500))
     expect(await screen(manager, id)).not.toContain("args:")
     expect(readdirSync(join(dirname(shell.plugins), "resume"))).toEqual([])
+    // The session it would have resumed is free for another terminal.
+    const other = randomUUID()
+    shell.saveSession(other, "claude", "abc-1")
+    await create(manager, shell, { id: other, restore: true, resume: "claude" })
+    await shell.until(manager, other, "claude args: --resume abc-1")
   })
 
   it("shows the transcript when a shell without integration cannot resume", async ({ shell }) => {
