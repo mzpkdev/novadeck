@@ -65,7 +65,13 @@ describe("agent hook", () => {
   it("reports the session to its terminal with its token", async ({ fixture }) => {
     expect(await fixture.hook("claude", start())).toBe(0)
     expect(fixture.reports).toEqual([
-      { terminalId, token: "token", agent: "claude", sessionId: session, seq: expect.any(Number) },
+      expect.objectContaining({
+        terminalId,
+        token: "token",
+        agent: "claude",
+        sessionId: session,
+        seq: expect.any(Number),
+      }),
     ])
   })
 

@@ -37,6 +37,8 @@ export const shellLaunch = (
     [key]: path ? `${paths.bin}${delimiter}${path}` : paths.bin,
     // The agents' hook commands name the launcher through this; see `hookCommand`.
     NOVADECK_HOOK: paths.hook,
+    // The integration puts the shims back in front after the user's startup files.
+    NOVADECK_BIN: paths.bin,
   }
   switch (shellName(shell)) {
     case "bash":

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { createServer, type Server, type Socket } from "node:net"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join } from "node:path"
 
 import { agentName, agentSessionId, type AgentName } from "@novadeck/protocol"
 
@@ -13,20 +13,35 @@ export type Report = {
   readonly agent: AgentName
   readonly sessionId: string
   readonly seq: number
+  /** The agent's own directory, when it is an absolute path here. */
+  readonly cwd?: string
 }
 
 // The hook also sends `source`, why the agent started the session (startup, resume,
 // clear…), which is informational.
+const directory = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length <= 4096 && !value.includes("\0") && isAbsolute(value)
+    ? value
+    : undefined
+
 const parse = (value: unknown): Report | undefined => {
   if (typeof value !== "object" || value === null) return undefined
-  const { terminalId, token, agent, sessionId, seq } = value as Record<string, unknown>
+  const { terminalId, token, agent, sessionId, seq, cwd } = value as Record<string, unknown>
   if (typeof terminalId !== "string" || terminalId.length > 64) return undefined
   if (typeof token !== "string" || token.length > 128) return undefined
   if (typeof seq !== "number" || !Number.isFinite(seq)) return undefined
   const name = agentName.safeParse(agent)
   const session = agentSessionId.safeParse(sessionId)
   if (!name.success || !session.success) return undefined
-  return { terminalId, token, agent: name.data, sessionId: session.data, seq }
+  const where = directory(cwd)
+  return {
+    terminalId,
+    token,
+    agent: name.data,
+    sessionId: session.data,
+    seq,
+    ...(where !== undefined && { cwd: where }),
+  }
 }
 
 const maxBytes = 4096

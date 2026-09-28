@@ -141,6 +141,7 @@ const inherited = [
   "NOVADECK_REPORT",
   "NOVADECK_REPORT_TOKEN",
   "NOVADECK_HOOK",
+  "NOVADECK_BIN",
   "NOVADECK_AGENT",
   "NOVADECK_ZDOTDIR",
 ]
@@ -970,17 +971,23 @@ export class Terminals {
     }
   }
 
-  /** An agent hook reported its session: the latest report for each agent is kept. */
-  private report({ terminalId, token, agent, sessionId, seq }: Report): void {
+  /**
+   * An agent hook reported its session: the latest report for each agent is kept. Since
+   * the last prompt, the agent holds the foreground, and its directory is where the
+   * terminal restores, as a shell that ran `cd … && claude` reports no prompt there.
+   */
+  private report({ terminalId, token, agent, sessionId, seq, cwd }: Report): void {
     const record = this.records.get(terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, token)) return
     const known = record.agents[agent]
     if (known && known.seq >= seq) return
     record.agents = { ...record.agents, [agent]: { sessionId, seq } }
-    // Reported since the last prompt: the agent holds the foreground.
-    if (seq > (record.promptedAt ?? 0) && record.summary.agent !== agent) {
-      record.summary = { ...record.summary, agent }
-      this.announce(record)
+    if (seq > (record.promptedAt ?? 0)) {
+      const directory = cwd ?? record.summary.cwd
+      if (record.summary.agent !== agent || record.summary.cwd !== directory) {
+        record.summary = { ...record.summary, agent, cwd: directory }
+        this.announce(record)
+      }
     }
     this.save(record, false)
   }

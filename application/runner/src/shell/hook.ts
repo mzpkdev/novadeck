@@ -50,9 +50,10 @@ process.stdin.on("end", () => {
   const sessionId = sessionOf(payload)
   if (!sessionId) process.exit(0)
   const source = typeof payload.source === "string" ? payload.source.slice(0, 32) : undefined
+  const cwd = typeof payload.cwd === "string" ? payload.cwd : undefined
   const socket = connect(endpoint)
   socket.on("error", () => process.exit(0))
   socket.on("close", () => process.exit(0))
-  socket.end(JSON.stringify({ terminalId, token, agent, sessionId, source, seq }) + "\\n")
+  socket.end(JSON.stringify({ terminalId, token, agent, sessionId, source, seq, cwd }) + "\\n")
 })
 `

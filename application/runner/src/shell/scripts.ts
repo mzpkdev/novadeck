@@ -53,6 +53,8 @@ const header = (comment: string, what: string): string =>
  */
 const bash = `${header("#", "shell integration for bash")}
 if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
+# Your startup files may put other directories first; the agent shims go back in front.
+case "$PATH" in "$NOVADECK_BIN":*) ;; *) PATH="$NOVADECK_BIN:$PATH" ;; esac
 
 __novadeck_prompt() {
   local status=$? LC_ALL=C path=$PWD encoded= char i
@@ -92,6 +94,8 @@ const zshrc = `${header("#", "shell integration for zsh")}
 ZDOTDIR=$NOVADECK_ZDOTDIR
 unset NOVADECK_ZDOTDIR
 if [[ -f "$ZDOTDIR/.zshrc" ]]; then . "$ZDOTDIR/.zshrc"; fi
+# Your startup files may put other directories first; the agent shims go back in front.
+[[ "$PATH" == "$NOVADECK_BIN":* ]] || PATH="$NOVADECK_BIN:$PATH"
 
 __novadeck_prompt() {
   emulate -L zsh
@@ -105,6 +109,10 @@ add-zsh-hook precmd __novadeck_prompt
 `
 
 const fish = `${header("#", "shell integration for fish")}
+# Your configuration may put other directories first; the agent shims go back in front,
+# for this shell only.
+set -gx PATH $NOVADECK_BIN (string match -v -- $NOVADECK_BIN $PATH)
+
 function __novadeck_prompt --on-event fish_prompt
     printf '\\e]7;file://%s%s\\e\\\\' $hostname (string escape --style=url -- $PWD)
 end
@@ -113,6 +121,11 @@ end
 // PowerShell loads the user's profile before -Command runs this. The prompt reports
 // the directory with OSC 9;9, as Windows Terminal documents, around the user's own.
 const powershell = `${header("#", "shell integration for PowerShell")}
+# Your profile may put other directories first; the agent shims go back in front.
+$__NovaDeckSeparator = [IO.Path]::PathSeparator
+if (-not $env:PATH.StartsWith("$env:NOVADECK_BIN$__NovaDeckSeparator")) {
+  $env:PATH = "$env:NOVADECK_BIN$__NovaDeckSeparator$env:PATH"
+}
 $global:__NovaDeckPrompt = $function:prompt
 function global:prompt {
   $prompt = & $global:__NovaDeckPrompt

@@ -133,7 +133,7 @@ const fakeClaude = (home: string, session: string): string => {
       "#!/bin/sh",
       '[ "$1" = --plugin-dir ] || { echo "no plugin"; exit 1; }',
       `command=$("${process.execPath}" -e 'console.log(require(process.argv[1]).hooks.SessionStart[0].hooks[0].command)' "$2/hooks/hooks.json")`,
-      `printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"${session}"}' | sh -c "$command"`,
+      `printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"${session}","cwd":"%s"}' "$PWD" | sh -c "$command"`,
       'echo "claude is running"',
       "read line",
     ].join("\n"),
@@ -185,14 +185,18 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
 
   it("tells which agent session runs, through the shim, plugin and hook", async ({ shell }) => {
     const session = randomUUID()
-    const bin = fakeClaude(shell.home, session)
-    const manager = shell.manager({
-      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
-    })
+    fakeClaude(shell.home, session)
+    // As a user's .bashrc often does, it puts its own directory with claude first.
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const project = join(shell.home, "project")
+    mkdirSync(project)
+    const manager = shell.manager()
     const next = shell.watch(manager)
     const terminal = await create(manager, shell)
-    manager.write({ terminalId: terminal.id, data: "claude\r" }, "owner")
-    await next((summary) => summary.agent === "claude")
+    // No prompt shows in the directory claude runs in: its report says where it is.
+    manager.write({ terminalId: terminal.id, data: "cd project && claude\r" }, "owner")
+    const running = await next((summary) => summary.agent === "claude")
+    expect(running.cwd).toBe(project)
     expect(await manager.agentSession(terminal.id, "claude")).toBe(session)
     expect(await manager.agentSession(terminal.id, "codex")).toBeNull()
     expect(shell.store.terminal(terminal.id)?.agents.claude?.sessionId).toBe(session)
