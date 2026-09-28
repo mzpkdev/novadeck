@@ -140,6 +140,12 @@ agent.
 
 Codex may ask you once to review NovaDeck's hook ("Hooks need review") and records the
 answer itself; the hook never changes between NovaDeck versions, so it asks only once.
+Interactive Codex normally runs its sessions, hooks included, in a shared background
+server that cannot tell which terminal a session belongs to. So while Codex is
+connected, NovaDeck's shells run `codex` through a small shim that adds `--no-daemon`,
+keeping the session in the terminal; `codex agents` and `--remote`, which need that
+server, go unchanged, and Codex started by its full path bypasses the shim and does not
+resume. Sessions started this way do not show in `codex agents`.
 Antigravity runs the hook before each model call, and Codex with your first message,
 so their sessions are known from then on. On Windows, Claude Code runs the hook through
 PowerShell.

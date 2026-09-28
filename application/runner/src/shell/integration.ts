@@ -1,4 +1,4 @@
-import { basename } from "node:path"
+import { basename, delimiter } from "node:path"
 
 import { fishQuote, psQuote, type ShellPaths } from "./scripts.js"
 
@@ -19,20 +19,37 @@ const shellName = (shell: string): string =>
     .replace(/\.exe$/i, "")
     .toLowerCase()
 
+// Windows keeps PATH as "Path"; whichever spelling the environment uses is the one to set.
+const pathKey = (env: NodeJS.ProcessEnv): string =>
+  Object.keys(env).find((name) => name.toUpperCase() === "PATH") ?? "PATH"
+
 /**
  * Arguments and environment that load the integration for shells NovaDeck knows, the
  * way VS Code does: bash reads it as its rc file, zsh finds it through ZDOTDIR, fish
  * runs it as an init command, PowerShell dot-sources it after the profile, and cmd
  * reports through its PROMPT. Each first loads the user's own startup files. Other
- * shells start as they are. Every shell gets the hook's launcher in NOVADECK_HOOK.
+ * shells start as they are. Every shell gets the hook's launcher in NOVADECK_HOOK, and
+ * with `shims` NovaDeck's shims first on PATH.
  */
 export const shellLaunch = (
   shell: string,
   paths: ShellPaths,
   env: NodeJS.ProcessEnv,
+  { shims = false }: { readonly shims?: boolean } = {},
 ): ShellLaunch => {
-  // Connected agents' hooks name the launcher through this; see `hookCommand`.
-  const withHook = { ...env, NOVADECK_HOOK: paths.launcher }
+  const key = pathKey(env)
+  const path = env[key]
+  // Connected agents' hooks name the launcher through NOVADECK_HOOK; see `hookCommand`.
+  // With the shims, their folder goes first on PATH, and the integration puts it back
+  // there after the user's startup files.
+  const withHook = {
+    ...env,
+    NOVADECK_HOOK: paths.launcher,
+    ...(shims && {
+      [key]: path ? `${paths.bin}${delimiter}${path}` : paths.bin,
+      NOVADECK_BIN: paths.bin,
+    }),
+  }
   switch (shellName(shell)) {
     case "bash":
       return { args: ["--init-file", paths.bash], env: withHook, integrated: true }

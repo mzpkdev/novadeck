@@ -371,6 +371,12 @@ changed. Only connecting an agent (below) installs anything elsewhere:
   shells, and otherwise runs `"$NOVADECK_HOOK" <agent>` (see `hookCommand` for the
   exact, frozen strings: Codex and Antigravity trust a hook by its definition). On
   Windows, Claude Code's hook runs in PowerShell and the others in cmd.
+- `bin/codex` (`codex.cmd`), which shells get first on `PATH`, with `NOVADECK_BIN`,
+  while Codex is connected: it runs the next `codex` on `PATH` with `--no-daemon`, since
+  interactive Codex otherwise runs sessions and their hooks in a shared background
+  server without the terminal's environment. It leaves `codex agents`, `--remote` and
+  runs outside NovaDeck's shells unchanged. The integration puts `NOVADECK_BIN` back in
+  front after the user's startup files.
 - `hook` (`hook.cmd`), a launcher that runs `hook.mjs` on the runner's own runtime
   (Electron with `ELECTRON_RUN_AS_NODE=1`, or Node), so the hook needs no bash or
   python3. It reads the agent's payload (`session_id`, or Antigravity's

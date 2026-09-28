@@ -234,6 +234,24 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(await manager.agentSession(terminal.id, "claude")).toBe(session)
   })
 
+  it("runs a connected Codex through NovaDeck's shim, even after .bashrc moves PATH", async ({
+    shell,
+  }) => {
+    const bin = join(shell.home, "bin")
+    mkdirSync(bin)
+    writeFileSync(join(bin, "codex"), '#!/bin/sh\necho "codex args: $*"\n', { mode: 0o755 })
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const connected = shell.manager({ shims: () => Promise.resolve(true) })
+    const on = await create(connected, shell)
+    connected.write({ terminalId: on.id, data: "codex resume abc\r" }, "owner")
+    await shell.until(connected, on.id, "codex args: --no-daemon resume abc")
+
+    const disconnected = shell.manager()
+    const off = await create(disconnected, shell)
+    disconnected.write({ terminalId: off.id, data: "codex resume abc\r" }, "owner")
+    await shell.until(disconnected, off.id, /codex args: resume abc\r?\n/)
+  })
+
   it("keeps only the latest report of each agent, by when it was sent", async ({ shell }) => {
     const manager = shell.manager()
     const terminal = await create(manager, shell)

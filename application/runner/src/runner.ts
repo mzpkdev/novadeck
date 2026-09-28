@@ -47,8 +47,11 @@ export type Runner = {
 export const createRunner = (options: RunnerOptions = {}): Runner => {
   const id = randomUUID()
   const store = new WorkspaceStore(options.database)
+  // Codex runs through NovaDeck's shim while it is connected; see `posixCodexShim`.
+  const codexConnected = (): Promise<boolean> => agents.connected("codex")
   const terminals = new Terminals({
     records: store,
+    shims: codexConnected,
     ...(options.shell !== undefined && { integration: { directory: options.shell } }),
     ...options.terminals,
   })

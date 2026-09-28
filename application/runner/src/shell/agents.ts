@@ -180,6 +180,11 @@ export const createAgents = (
   // One change at a time: an agent's plugin commands edit its configuration.
   let queue = Promise.resolve()
   return {
+    /** Whether NovaDeck's plugin is installed into the agent. */
+    connected: async (agent: AgentName): Promise<boolean> => {
+      const described = await known()
+      return described ? described[agent].connected() : false
+    },
     list: async (): Promise<AgentIntegration[]> => {
       const described = await known()
       if (!described) return agents.map((agent) => ({ agent, available: false, connected: false }))

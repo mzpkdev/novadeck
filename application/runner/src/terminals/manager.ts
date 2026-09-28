@@ -56,6 +56,8 @@ export type TerminalOptions = {
   integration?: { readonly directory: string; readonly runtime?: string }
   /** Where terminals are saved for restoring, and the settings; unsaved when omitted. */
   records?: TerminalRecords
+  /** Whether new shells put NovaDeck's shims first on PATH, as while Codex is connected. */
+  shims?: () => Promise<boolean>
   /** How often changed terminals are saved, in milliseconds. */
   saveMs?: number
   /** The pause between commands typed at first prompts, across terminals, in milliseconds. */
@@ -140,6 +142,7 @@ const inherited = [
   "NOVADECK_REPORT",
   "NOVADECK_REPORT_TOKEN",
   "NOVADECK_HOOK",
+  "NOVADECK_BIN",
   "NOVADECK_ZDOTDIR",
 ]
 
@@ -190,11 +193,12 @@ export class Terminals {
   private sampler: ReturnType<typeof setInterval> | undefined
   private saver: ReturnType<typeof setInterval> | undefined
   private readonly options: Required<
-    Omit<TerminalOptions, "env" | "shellArgs" | "integration" | "records">
+    Omit<TerminalOptions, "env" | "shellArgs" | "integration" | "records" | "shims">
   > & {
     env: NodeJS.ProcessEnv
     shellArgs: readonly string[] | undefined
     records: TerminalRecords | undefined
+    shims: () => Promise<boolean>
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
@@ -225,6 +229,7 @@ export class Terminals {
       ackWindowBytes: positive(options.ackWindowBytes, 256 * 1024),
       processPollMs: positive(options.processPollMs, 1000),
       records: options.records,
+      shims: options.shims ?? (() => Promise.resolve(false)),
       saveMs: positive(options.saveMs, 5000),
       launchGapMs: positive(options.launchGapMs, 750),
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
@@ -272,7 +277,7 @@ export class Terminals {
       // A saved directory that is gone falls back to the one asked for.
       const cwd = saved ? await this.directory(saved.cwd).catch(() => origin) : origin
       const shell = await this.executable(cwd)
-      const integration = await this.integration
+      const integration = await this.shellIntegration()
       if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
@@ -388,7 +393,7 @@ export class Terminals {
         this.directory(record.origin),
       )
       const shell = await this.executable(cwd)
-      const integration = await this.integration
+      const integration = await this.shellIntegration()
       // The swap waits for the old shell's queued work, which still uses the old screen.
       return await this.enqueue(record, () => {
         if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
@@ -462,6 +467,13 @@ export class Terminals {
     const live = this.records.get(terminalId)
     const reported = (live ?? this.saved(terminalId))?.agents[agent]
     return reported?.sessionId ?? null
+  }
+
+  /** The integration for a new shell, with whether it gets the shims. */
+  private async shellIntegration(): Promise<(Integration & { shims: boolean }) | undefined> {
+    const integration = await this.integration
+    if (!integration) return undefined
+    return { ...integration, shims: await this.options.shims().catch(() => false) }
   }
 
   /** Where the shell integration and agent plugins are, once written; none without it. */
@@ -840,13 +852,13 @@ export class Terminals {
     shell: string,
     cwd: string,
     input: Size & { id?: string; terminalId?: string; command?: string | undefined },
-    integration: Integration | undefined,
+    integration: (Integration & { shims: boolean }) | undefined,
   ): Started {
     const { cols, rows } = input
     const id = input.id ?? input.terminalId ?? ""
     const token = randomBytes(24).toString("hex")
     const launch = integration
-      ? shellLaunch(shell, integration.paths, this.options.env)
+      ? shellLaunch(shell, integration.paths, this.options.env, { shims: integration.shims })
       : { args: [], env: this.options.env, integrated: false }
     // A command waits for the first prompt, which only an integrated shell reports.
     const reportsPrompts = launch.integrated && this.options.shellArgs === undefined
