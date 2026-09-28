@@ -3,9 +3,10 @@ import { realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute } from "node:path"
 import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 
-import type { Project, WorkspaceSession } from "@novadeck/protocol"
+import type { Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
+import type { SavedTerminal, TerminalRecords } from "../terminals/records.js"
 
 const schemaVersion = 1
 const schema = `
@@ -25,6 +26,31 @@ const schema = `
   ) STRICT;
   CREATE INDEX sessions_project ON sessions(project_id, position);
 `
+// Tables added before the first release are created where missing instead of through
+// a schema version: the app is unreleased, so nothing needs migrating.
+const extras = `
+  -- What restores a terminal after its shell is gone: kept as it changes, so a runner
+  -- that is killed still leaves it behind.
+  CREATE TABLE IF NOT EXISTS terminals (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    -- The shell's last reported directory.
+    cwd TEXT NOT NULL,
+    -- The latest session each agent reported, as JSON: { "claude": { sessionId, seq } }.
+    agents TEXT NOT NULL,
+    -- When the shell last showed its prompt, in epoch milliseconds.
+    prompted_at REAL,
+    -- The screen and scrollback, serialized; null when not kept.
+    transcript TEXT,
+    updated_at REAL NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  ) STRICT;
+`
+// Records of terminals that are gone, kept for restoring; the oldest beyond this go.
+const keptTerminals = 128
 
 const prepareFile = (path: string): void => {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -50,6 +76,7 @@ const prepareSchema = (database: DatabaseSync): void => {
       throw new Error("The workspace database schema is newer than this runner supports")
     }
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
+    database.exec(extras)
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")
@@ -57,7 +84,26 @@ const prepareSchema = (database: DatabaseSync): void => {
   }
 }
 
-export class WorkspaceStore {
+type TerminalRow = {
+  id: string
+  session_id: string
+  cwd: string
+  agents: string
+  prompted_at: number | null
+  transcript: string | null
+  updated_at: number
+}
+
+const agentsOf = (text: string): SavedTerminal["agents"] => {
+  try {
+    const value: unknown = JSON.parse(text)
+    return typeof value === "object" && value !== null ? (value as SavedTerminal["agents"]) : {}
+  } catch {
+    return {}
+  }
+}
+
+export class WorkspaceStore implements TerminalRecords {
   private readonly database: DatabaseSync
   private readonly queries: SQLTagStore
 
@@ -153,6 +199,87 @@ export class WorkspaceStore {
     ` as WorkspaceSession | undefined
     if (!session) throw new DomainError("NOT_FOUND", "Session not found")
     return session
+  }
+
+  terminal(terminalId: string): SavedTerminal | undefined {
+    const row = this.queries.get`
+      SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at FROM terminals
+      WHERE id = ${terminalId}
+    ` as TerminalRow | undefined
+    if (!row) return undefined
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      agents: agentsOf(row.agents),
+      promptedAt: row.prompted_at,
+      transcript: row.transcript,
+      savedAt: row.updated_at,
+    }
+  }
+
+  /** Every saved terminal's agent sessions, to tell whose a session file is. */
+  agentSessions(): Pick<SavedTerminal, "id" | "agents">[] {
+    const rows = this.queries.all`SELECT id, agents FROM terminals` as Pick<
+      TerminalRow,
+      "id" | "agents"
+    >[]
+    return rows.map((row) => ({ id: row.id, agents: agentsOf(row.agents) }))
+  }
+
+  /** Saves what restores the terminal; `transcript` is left as it is when omitted. */
+  saveTerminal(
+    terminal: Omit<SavedTerminal, "transcript" | "savedAt"> & { transcript?: string | null },
+  ): void {
+    const agents = JSON.stringify(terminal.agents)
+    const now = Date.now()
+    if (terminal.transcript === undefined)
+      void this.queries.run`
+        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at)
+        VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
+          ${terminal.promptedAt}, ${now})
+        ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
+          agents = excluded.agents, prompted_at = excluded.prompted_at,
+          updated_at = excluded.updated_at
+      `
+    else
+      void this.queries.run`
+        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at)
+        VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
+          ${terminal.promptedAt}, ${terminal.transcript}, ${now})
+        ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
+          agents = excluded.agents, prompted_at = excluded.prompted_at,
+          transcript = excluded.transcript, updated_at = excluded.updated_at
+      `
+    void this.queries.run`
+      DELETE FROM terminals WHERE id NOT IN (
+        SELECT id FROM terminals ORDER BY updated_at DESC LIMIT ${keptTerminals}
+      )
+    `
+  }
+
+  removeTerminal(terminalId: string): void {
+    void this.queries.run`DELETE FROM terminals WHERE id = ${terminalId}`
+  }
+
+  clearTranscripts(): void {
+    void this.queries.run`UPDATE terminals SET transcript = NULL`
+  }
+
+  settings(): RunnerSettings {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'transcripts'` as
+      | { value: string }
+      | undefined
+    // Transcripts are kept unless turned off.
+    return { transcripts: row?.value !== "false" }
+  }
+
+  saveSettings(settings: RunnerSettings): void {
+    const value = String(settings.transcripts)
+    void this.queries.run`
+      INSERT INTO settings (key, value) VALUES ('transcripts', ${value})
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `
   }
 
   close(): void {

@@ -2,7 +2,9 @@ import type { WireClient } from "./contract.js"
 import { hasCode, normalize, RunnerError } from "./errors.js"
 import {
   protocolVersion,
+  type AgentName,
   type Project,
+  type RunnerSettings,
   type TerminalAttached,
   type TerminalChange,
   type TerminalEvent,
@@ -106,6 +108,13 @@ export type Runner = {
       readonly cwd?: string
       readonly cols: number
       readonly rows: number
+      /**
+       * Starts where the runner's saved record of this terminal left off: in its last
+       * directory, with its saved transcript shown before the shell's output.
+       */
+      readonly restore?: boolean
+      /** Typed at the shell's first prompt, then Enter; no transcript is shown then. */
+      readonly command?: string
     }): Promise<TerminalSummary>
     /**
      * Follows every terminal on the runner, across sessions. Each subscription, the
@@ -133,13 +142,23 @@ export type Runner = {
      */
     restart(
       terminalId: string,
-      size: { readonly cols: number; readonly rows: number },
+      size: { readonly cols: number; readonly rows: number; readonly command?: string },
     ): Promise<TerminalSummary>
+    /**
+     * The session `agent` last reported in the terminal, live or saved, or else the one
+     * its session files show ran there since the shell's last prompt; null when none or
+     * more than one does.
+     */
+    agentSession(terminalId: string, agent: AgentName): Promise<string | null>
     /** Resolves once the runner has granted the attachment; `control` is the default mode. */
     attach(
       terminalId: string,
       options?: { readonly mode?: TerminalMode },
     ): Promise<AttachedTerminal>
+  }
+  readonly settings: {
+    get(): Promise<RunnerSettings>
+    set(settings: RunnerSettings): Promise<void>
   }
   /** Disconnects. Attached terminals finish; their shells keep running on the runner. */
   close(): Promise<void>
@@ -717,13 +736,21 @@ export const connectRunner = async (
       create: (input) => call((wire) => wire.terminals.create(input)),
       watch: () => new TerminalWatch(connection),
       close: (terminalId) => call((wire) => wire.terminals.close({ terminalId })),
-      restart: (terminalId, { cols, rows }) =>
-        call((wire) => wire.terminals.restart({ terminalId, cols, rows })),
+      restart: (terminalId, { cols, rows, command }) =>
+        call((wire) =>
+          wire.terminals.restart({ terminalId, cols, rows, ...(command ? { command } : {}) }),
+        ),
+      agentSession: (terminalId, agent) =>
+        call((wire) => wire.terminals.agentSession({ terminalId, agent })),
       async attach(terminalId, { mode = "control" } = {}) {
         const terminal = new Attachment(connection, terminalId, mode)
         await terminal.attach(connection.current())
         return terminal
       },
+    },
+    settings: {
+      get: () => call((wire) => wire.settings.get()),
+      set: (settings) => call((wire) => wire.settings.set(settings)),
     },
     close: () => connection.close(),
   }

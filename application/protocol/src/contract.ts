@@ -2,6 +2,8 @@ import { eventIterator, oc, type ContractRouterClient } from "@orpc/contract"
 import { z } from "zod"
 
 import {
+  agentName,
+  agentSessionId,
   clientState,
   columns,
   directory,
@@ -10,7 +12,9 @@ import {
   project,
   protocolVersion,
   rows,
+  runnerSettings,
   sequence,
+  shellCommand,
   terminalAttached,
   terminalChange,
   terminalEvent,
@@ -78,6 +82,9 @@ export const contract = {
   },
   terminals: {
     list: procedure.input(z.strictObject({ sessionId: id })).output(z.array(terminalSummary)),
+    // `restore` starts where the runner's saved record of this terminal left off: in its
+    // last directory, showing its saved transcript before the shell's output. `command`
+    // is typed at the fresh shell's first prompt, and then no transcript is shown.
     create: procedure
       .input(
         z.strictObject({
@@ -86,6 +93,8 @@ export const contract = {
           cwd: directory.optional(),
           cols: columns,
           rows,
+          restore: z.boolean().optional(),
+          command: shellCommand.optional(),
         }),
       )
       .output(terminalSummary),
@@ -111,10 +120,23 @@ export const contract = {
     ack: procedure.input(z.strictObject({ terminalId: id, sequence })).output(z.void()),
     close: procedure.input(z.strictObject({ terminalId: id })).output(z.void()),
     // Starts a fresh shell in an exited terminal, keeping its id, session and cwd; the
-    // caller gains control. A running terminal is a CONFLICT.
+    // caller gains control. A running terminal is a CONFLICT. The earlier shell's screen
+    // shows above the new one's, unless `command` is typed at its first prompt.
     restart: procedure
-      .input(z.strictObject({ terminalId: id, cols: columns, rows }))
+      .input(
+        z.strictObject({ terminalId: id, cols: columns, rows, command: shellCommand.optional() }),
+      )
       .output(terminalSummary),
+    // The session `agent` last reported in this terminal, live or saved, or else the one
+    // its own session files show ran there since the shell's last prompt; null when
+    // none or more than one does.
+    agentSession: procedure
+      .input(z.strictObject({ terminalId: id, agent: agentName }))
+      .output(agentSessionId.nullable()),
+  },
+  settings: {
+    get: procedure.input(z.void()).output(runnerSettings),
+    set: procedure.input(runnerSettings).output(z.void()),
   },
 }
 

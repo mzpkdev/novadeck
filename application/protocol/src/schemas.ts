@@ -44,9 +44,25 @@ export const foregroundProcess = z.strictObject({
   argv: z.array(z.string().max(4096)).max(64).nullable(),
 })
 
+// Agents whose sessions NovaDeck identifies and can resume. An agent session id is what
+// the agent itself names its session: a UUID today, kept to a plain token so it can be
+// typed into a shell as it is.
+export const agentName = z.enum(["claude", "codex"])
+export const agentSessionId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
+
+// A command the runner types into a fresh shell at its first prompt, followed by Enter:
+// one line of printable ASCII, so it cannot carry control characters.
+export const shellCommand = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[\x20-\x7e]+$/)
+
 export const terminalSummary = z.strictObject({
   id,
   sessionId: id,
+  // The shell's current directory as its shell integration last reported it, or where
+  // it started; a restart starts there.
   cwd: directory,
   cols: columns,
   rows,
@@ -58,6 +74,9 @@ export const terminalSummary = z.strictObject({
   // The terminal's foreground process, such as the shell or a program it runs. Null
   // once exited or when the platform cannot tell.
   process: foregroundProcess.nullable(),
+  // The agent that reported a session in this shell since its last prompt, so a client
+  // can name the program where the process alone cannot, as on Windows. Null otherwise.
+  agent: agentName.nullable(),
 })
 
 // `terminals.watch` events: every terminal's summary, then each later change.
@@ -95,6 +114,12 @@ export const terminalAttached = z.strictObject({
   mode: z.enum(["control", "observe"]),
 })
 
+// Runner-wide settings a client can change.
+export const runnerSettings = z.strictObject({
+  // Whether each terminal's screen is kept on disk, to show again when it restores.
+  transcripts: z.boolean(),
+})
+
 export type Project = z.infer<typeof project>
 export type WorkspaceSession = z.infer<typeof workspaceSession>
 export type TerminalExit = z.infer<typeof terminalExit>
@@ -103,3 +128,5 @@ export type TerminalSummary = z.infer<typeof terminalSummary>
 export type TerminalChange = z.infer<typeof terminalChange>
 export type TerminalEvent = z.infer<typeof terminalEvent>
 export type TerminalAttached = z.infer<typeof terminalAttached>
+export type AgentName = z.infer<typeof agentName>
+export type RunnerSettings = z.infer<typeof runnerSettings>

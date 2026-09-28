@@ -9,6 +9,11 @@ export type RunnerOptions = {
   database?: string
   /** Terminal limits; the number of terminals is unlimited unless `maxTerminals` is set. */
   terminals?: TerminalOptions
+  /**
+   * Where the shell integration, agent shims and hook are written, such as a `shell`
+   * folder beside the database. Without it shells start without the integration.
+   */
+  shell?: string
 }
 
 export type Runner = {
@@ -26,15 +31,24 @@ export type Runner = {
   ): Connection
   /** Releases a connection's attachments and terminal control. Its shells keep running. */
   disconnect(connection: Connection): void
-  /** Refuses further session saves, then ends every shell and closes the metadata store. */
+  /** Saves every terminal's restore state now, as when the system is shutting down. */
+  persist(): void
+  /**
+   * Saves every terminal, then refuses further saves of sessions and terminals, ends
+   * every shell and closes the metadata store.
+   */
   close(): Promise<void>
 }
 
 /** Owns shells and workspace metadata, independent of how clients reach it. */
 export const createRunner = (options: RunnerOptions = {}): Runner => {
   const id = randomUUID()
-  const terminals = new Terminals(options.terminals)
   const store = new WorkspaceStore(options.database)
+  const terminals = new Terminals({
+    records: store,
+    ...(options.shell !== undefined && { integration: { directory: options.shell } }),
+    ...options.terminals,
+  })
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {
@@ -75,6 +89,9 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
       calls: 0,
     }),
     disconnect,
+    persist: () => {
+      if (!closing) terminals.persist()
+    },
     close() {
       closing ??= (async () => {
         try {

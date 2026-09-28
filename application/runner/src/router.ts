@@ -141,6 +141,13 @@ export const createRouter = (options: {
       close: authorized.terminals.close.handler(({ input, context }) =>
         terminals.close(input, context.connection.id),
       ),
+      agentSession: authorized.terminals.agentSession.handler(({ input }) =>
+        terminals.agentSession(input.terminalId, input.agent),
+      ),
+    },
+    settings: {
+      get: authorized.settings.get.handler(() => terminals.settings()),
+      set: authorized.settings.set.handler(({ input }) => terminals.configure(input)),
     },
   })
 }
