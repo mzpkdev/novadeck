@@ -98,6 +98,10 @@ const ended = (terminal: Partial<TerminalMetadata>) => {
   return { page, bar, restarts, connection }
 }
 
+// Two programs' bodies, each its own component, so switching remounts the content.
+const Agent = (props: { children: ReactNode }) => createElement("section", props)
+const Plain = (props: { children: ReactNode }) => createElement("article", props)
+
 describe("runner terminal surface", () => {
   it("keeps one live xterm, its output and focus while the body around it changes", async () => {
     const { runtime } = starting()
@@ -227,13 +231,40 @@ describe("runner terminal surface", () => {
 
   context("once its shell ended", () => {
     it("says how under its output, in honey for an exit code, and announces it", () => {
-      const { bar } = ended({ state: "exited", exitCode: 3, signal: null })
+      const { page, bar } = ended({ state: "exited", exitCode: 3, signal: null })
       expect(bar?.dataset.terminalEnding).toBe("warning")
       // The announcer sits outside the bar, which is inert while hidden.
-      const announcer = bar?.parentElement?.querySelector(":scope > [aria-live=polite]")
+      const announcer = page.container.querySelector("[aria-live=polite]")
       expect(announcer?.textContent).toBe("Exited · code 3")
       expect(announcer?.closest("[inert]")).toBeNull()
       expect(bar?.querySelector("[title]")?.textContent).toBe("Exited · code 3")
+    })
+
+    it("announces it from a region that outlives the program's body changing", () => {
+      const { runtime } = starting()
+      const Surface = createRunnerTerminal(runtime)
+      const surface = (terminal: TerminalMetadata, Body: typeof Agent) =>
+        createElement(Surface, {
+          terminalKey: key,
+          terminal,
+          projectName: "P",
+          fontSize: 13,
+          focusInput: false,
+          onInputFocused: () => {},
+          renderWindow: (content) => createElement(Body, null, content),
+        })
+      const page = render(surface({ ...terminalFixture(1, "~"), state: "running" }, Agent))
+      mounted.push(page)
+      const announcer = page.container.querySelector("[aria-live=polite]")
+      const content = page.container.querySelector("[data-terminal-content]")
+      expect(announcer?.textContent).toBe("")
+
+      // The agent's shell is killed: the plain body replaces the agent's.
+      const killed = { state: "exited", exitCode: null, signal: "SIGKILL" } as const
+      page.rerender(surface({ ...terminalFixture(1, "~"), ...killed }, Plain))
+      expect(page.container.querySelector("[data-terminal-content]")).not.toBe(content)
+      expect(page.container.querySelector("[aria-live=polite]")).toBe(announcer)
+      expect(announcer?.textContent).toBe("Killed · SIGKILL")
     })
 
     it("names why it could not start, in rose", () => {

@@ -77,8 +77,8 @@ const endingTones: Record<TerminalEnding["tone"], string> = {
 // How the shell ended, along the surface's bottom edge, with the restart Enter also
 // asks for. In Canvas its right end follows the resize grip's scale so the button stays
 // clear of it (runner.css). Restart waits while typing is paused, as a restart then
-// could not reach the runner. It keeps the last ending on screen while it slides away,
-// and announces a new one politely.
+// could not reach the runner. It keeps the last ending on screen while it slides away;
+// the surface announces it.
 const EndingBar = ({
   ending,
   paused,
@@ -93,41 +93,33 @@ const EndingBar = ({
   // Each render derives a fresh ending; only a different one replaces the shown one.
   if (ending && (ending.tone !== shown?.tone || endingText(ending) !== text)) setShown(ending)
   return (
-    <>
-      {/* Announced from outside the bar: the bar is inert while hidden, and an inert
-          region that appears with its text already in place is not announced. Empty
-          while no ending shows, so a repeat of the same ending is announced again. */}
-      <span aria-live="polite" aria-atomic className="sr-only">
-        {ending ? endingText(ending) : ""}
-      </span>
-      <div
-        className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
-        inert={!ending}
-        data-terminal-ending={ending?.tone}
+    <div
+      className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+      inert={!ending}
+      data-terminal-ending={ending?.tone}
+    >
+      <span
+        className="min-w-0 truncate font-bold tracking-wider uppercase"
+        title={text || undefined}
       >
-        <span
-          className="min-w-0 truncate font-bold tracking-wider uppercase"
-          title={text || undefined}
+        {text}
+      </span>
+      {shown && (
+        <button
+          type="button"
+          aria-disabled={paused || undefined}
+          className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring) aria-disabled:cursor-default aria-disabled:no-underline aria-disabled:opacity-50"
+          onClick={() => {
+            if (!paused) onRestart()
+          }}
         >
-          {text}
-        </span>
-        {shown && (
-          <button
-            type="button"
-            aria-disabled={paused || undefined}
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring) aria-disabled:cursor-default aria-disabled:no-underline aria-disabled:opacity-50"
-            onClick={() => {
-              if (!paused) onRestart()
-            }}
-          >
-            Restart
-            <span aria-hidden className="font-normal opacity-60">
-              ↵
-            </span>
-          </button>
-        )}
-      </div>
-    </>
+          Restart
+          <span aria-hidden className="font-normal opacity-60">
+            ↵
+          </span>
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -375,6 +367,13 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
             )}
           </div>,
         )}
+        {/* Announced from outside the window: the bar is inert while hidden, the content
+            remounts when the program's body changes, as when an agent's shell ends, and
+            a region that appears with its text already in place is not announced. Empty
+            while no ending shows, so a repeat of the same ending is announced again. */}
+        <span aria-live="polite" aria-atomic className="sr-only">
+          {ending ? endingText(ending) : ""}
+        </span>
       </>
     )
   }
