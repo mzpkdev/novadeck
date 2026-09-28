@@ -56,15 +56,15 @@ const leaderArgv = (group: Group): string[] | null => {
 }
 
 /**
- * Whether the shell itself holds its terminal's foreground, as at its prompt, from the
- * terminal's foreground process group; undefined where the platform does not tell, as
- * on Windows.
+ * The process group holding the shell's terminal's foreground: the shell's own at its
+ * prompt, a program's while it runs. Undefined where the platform does not tell, as on
+ * Windows, or once the shell is gone.
  */
-export const shellInForeground = async (shellPid: number): Promise<boolean | undefined> => {
+export const terminalForeground = async (shellPid: number): Promise<number | undefined> => {
   try {
     if (process.platform === "linux") {
       const shell = parseProcessStat(readFileSync(`/proc/${shellPid}/stat`, "utf8"))
-      return shell ? shell.tpgid === shellPid : undefined
+      return shell && shell.tpgid > 0 ? shell.tpgid : undefined
     }
     // macOS has no /proc; ps reads the same field, off the event loop.
     if (process.platform === "darwin") {
@@ -73,12 +73,18 @@ export const shellInForeground = async (shellPid: number): Promise<boolean | und
         timeout: 2_000,
       })
       const group = Number(stdout.trim())
-      return Number.isSafeInteger(group) && group > 0 ? group === shellPid : undefined
+      return Number.isSafeInteger(group) && group > 0 ? group : undefined
     }
   } catch {
     // The shell may be gone, or ps unavailable.
   }
   return undefined
+}
+
+/** Whether the shell itself holds its terminal's foreground, as at its prompt. */
+export const shellInForeground = async (shellPid: number): Promise<boolean | undefined> => {
+  const group = await terminalForeground(shellPid)
+  return group === undefined ? undefined : group === shellPid
 }
 
 /** A sample of a terminal's foreground, kept so the next one can reuse its `argv`. */

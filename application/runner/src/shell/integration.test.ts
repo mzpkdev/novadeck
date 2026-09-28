@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -262,6 +263,36 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const shown = await shell.until(manager, id, /ready\r?\n[\s\S]*\$ /)
     expect(shown).not.toContain("args:")
   })
+
+  for (const how of ["close", "shutdown"] as const)
+    it(`ends a resumed agent with its terminal, on ${how}`, async ({ shell }) => {
+      // Left running, it would keep its session open, and the next resume would fail.
+      const bin = join(shell.home, "bin")
+      mkdirSync(bin)
+      const pidFile = join(shell.home, "agent.pid")
+      writeFileSync(join(bin, "codex"), `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 1000\n`, {
+        mode: 0o755,
+      })
+      writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+      const id = randomUUID()
+      shell.saveSession(id, "codex", "abc-1")
+      const manager = shell.manager()
+      await create(manager, shell, { id, restore: true, resume: "codex" })
+      await expect.poll(() => existsSync(pidFile), { timeout: 10_000 }).toBe(true)
+      const pid = Number(readFileSync(pidFile, "utf8"))
+      const alive = () => {
+        try {
+          process.kill(pid, 0)
+          return true
+        } catch {
+          return false
+        }
+      }
+      expect(alive()).toBe(true)
+      if (how === "close") await manager.close({ terminalId: id }, "owner")
+      else await manager.shutdown()
+      await expect.poll(alive, { timeout: 5_000 }).toBe(false)
+    })
 
   it("shows the transcript when a shell without integration cannot resume", async ({ shell }) => {
     const id = randomUUID()

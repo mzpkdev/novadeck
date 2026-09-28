@@ -24,7 +24,12 @@ import { shellLaunch, type ShellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
 import { acceptReport, listenForReports, type Report, type Reports } from "../shell/reports.js"
 import { resumeCommand } from "../shell/resume.js"
-import { sampleForeground, shellInForeground, type Foreground } from "./foreground.js"
+import {
+  sampleForeground,
+  shellInForeground,
+  terminalForeground,
+  type Foreground,
+} from "./foreground.js"
 import type { AgentReport, SavedTerminal, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
@@ -1111,6 +1116,7 @@ export class Terminals {
     // The second signal bounds shutdown even for shells that ignore SIGHUP.
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
+      await this.hangUp(record.process)
       try {
         record.process.kill()
       } catch {
@@ -1126,6 +1132,22 @@ export class Terminals {
       await record.exited
     } finally {
       if (timer) clearTimeout(timer)
+    }
+  }
+
+  /**
+   * Hangs up the program in the terminal's foreground, as closing a real terminal does.
+   * A shell passes its own hangup on to the jobs it started, but not always: bash does
+   * not to a command its prompt hook ran, as a resumed agent is, and would leave it
+   * running without a terminal, still holding its session.
+   */
+  private async hangUp(child: pty.IPty): Promise<void> {
+    const group = await terminalForeground(child.pid)
+    if (group === undefined || group === child.pid) return
+    try {
+      process.kill(-group, "SIGHUP")
+    } catch {
+      // Gone meanwhile.
     }
   }
 
