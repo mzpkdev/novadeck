@@ -931,6 +931,7 @@ export const runnerBackend = (
               restarts: restarts.filter((time) => now() - time < restartWindowMs).length,
               terminals: entries.size,
             }),
+            showOnboarding: () => onboarding.update(() => true),
           }),
         }
       : {}),

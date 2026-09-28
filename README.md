@@ -273,6 +273,7 @@ connection state, runner restarts in the last minute, and the terminal count.
 - **Startup:** boot again from the splash without reloading. "Splash" holds it
   until you press Escape; each "Error" fails the first attempt with that code, so
   transient errors retry on their own and the others wait for Retry or Quit.
+  "Welcome dialog" opens the first-run dialog for connecting agents again.
 - **Runner:** kill the runner process once, or four times 1.5 s apart to trip the
   crash-loop guard, or show a 5 s outage.
 - **Selected terminal:** type `exit`, `exit 3`, `kill -9 $$`, `sleep 600`, or run a
