@@ -297,7 +297,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await shell.until(manager, terminal.id, "reports sent")
-    expect(manager.reportedSession(terminal.id, "codex")).toBe("s3")
+    // Reports may still be waiting for the platform to tell who holds the foreground.
+    await expect.poll(() => manager.reportedSession(terminal.id, "codex")).toBe("s3")
   })
 
   it("takes a session switch, but not a nested agent's own session", async ({ shell }) => {
@@ -315,7 +316,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await shell.until(manager, terminal.id, "reports sent")
-    expect(manager.reportedSession(terminal.id, "claude")).toBe("cleared")
+    await expect.poll(() => manager.reportedSession(terminal.id, "claude")).toBe("cleared")
     expect(manager.reportedSession(terminal.id, "codex")).toBeNull()
   })
 
@@ -336,6 +337,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         "owner",
       )
       await shell.until(manager, terminal.id, "reports sent")
+      // Long enough for a report waiting on the platform to have been taken.
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
       expect(manager.reportedSession(terminal.id, "claude")).toBeNull()
     },
   )
