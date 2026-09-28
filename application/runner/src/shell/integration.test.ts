@@ -605,12 +605,8 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
     })
   }
 
-  // Resuming types nothing, so Windows PowerShell 5.1, which takes no Enter through the
-  // bundled ConPTY, resumes too.
-  for (const { name, shell: program } of [
-    ...shells,
-    { name: "Windows PowerShell", shell: "powershell.exe" },
-  ])
+  // Windows PowerShell 5.1 shows nothing through the bundled ConPTY on CI, resuming or not.
+  for (const { name, shell: program } of shells)
     it(`${name} resumes the saved agent session as it starts`, async ({ shell }) => {
       const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH"
       const bin = join(shell.home, "bin")
