@@ -3,7 +3,7 @@ import type { Project, TerminalSummary, WorkspaceSession } from "@novadeck/proto
 import type { SessionSeed, WorkspaceSeed } from "../../model/seed"
 import type { TerminalMetadata } from "../../model/types"
 import { restartable, terminalActivity } from "./activity"
-import { decodeSession, programToRestore, type SavedTerminal } from "./session-state"
+import { decodeSession, type SavedTerminal } from "./session-state"
 
 // Everything the runner reported at startup, one entry per project.
 export type RunnerListing = readonly {
@@ -31,25 +31,13 @@ export const startingTerminal = (
   state: "starting",
 })
 
-// What a saved terminal keeps as itself; its saved programs only feed `restoredProcess`.
+// What a saved terminal keeps as itself; its `lastProcess` only feeds `restoredProcess`.
 const identity = ({ id, name, directory }: SavedTerminal) => ({ id, name, directory })
 
-// What a saved terminal still has to restore, given its shell now: `undefined` when the
-// shell was lost or ended, which takes the last program with it, else the live status
-// and program. A shell still live moved on while no page watched, to its prompt or
-// another program, so a program that merely ran is over; a pending restore stays
-// unless that same program runs.
-const restored = (
-  saved: SavedTerminal,
-  live?: { readonly running: boolean; readonly process: string },
-): Pick<TerminalMetadata, "restoredProcess"> => {
-  const program = !live
-    ? programToRestore(saved)
-    : live.running && saved.restoredProcess === live.process
-      ? ""
-      : saved.restoredProcess
-  return program ? { restoredProcess: program } : {}
-}
+// The program to resume in a terminal whose shell was lost or ended; a live shell has
+// nothing to restore.
+const restored = (saved: SavedTerminal): Pick<TerminalMetadata, "restoredProcess"> =>
+  saved.lastProcess ? { restoredProcess: saved.lastProcess } : {}
 
 // A terminal as the runner reports it, or undefined once its shell exited cleanly,
 // which closes it.
@@ -61,12 +49,7 @@ const liveTerminal = (
   if (status === "clean") return undefined
   return {
     ...identity(saved),
-    ...restored(
-      saved,
-      restartable(status)
-        ? undefined
-        : { running: status.state === "running", process: process ?? "" },
-    ),
+    ...(restartable(status) ? restored(saved) : {}),
     command: "",
     process: process ?? "",
     ...status,
@@ -111,7 +94,6 @@ const sessionSeed = (session: WorkspaceSession, summaries: readonly TerminalSumm
           name: terminalName(first + index),
           directory: summary.cwd,
           lastProcess: "",
-          restoredProcess: "",
         },
         summary,
       )

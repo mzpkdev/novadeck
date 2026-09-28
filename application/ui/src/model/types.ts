@@ -17,10 +17,9 @@ export type TerminalMetadata = {
   command: string
   // The foreground program's name, as `programName` resolves it.
   process: string
-  // A program to restore: the one in the foreground when the app last closed, or one
-  // that lost its shell while running. Cleared once a program starts after the person
-  // pressed Enter while the terminal showed its shell idle at the prompt; programs the
-  // shell runs on its own, as from rc files, keep it.
+  // The program to resume in the terminal's next shell: one that was running when its
+  // shell was lost or ended, or when the app last closed. Present only while the
+  // terminal has no live shell.
   restoredProcess?: string
 } & TerminalStatus
 

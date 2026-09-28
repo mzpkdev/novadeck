@@ -2,7 +2,7 @@ import { createTerminalState } from "../../model/state"
 import type { TerminalMetadata, WorkspaceSession } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { terminalFixture } from "../../test/fixtures"
-import { decodeSession, encodeSession, programToRestore } from "./session-state"
+import { decodeSession, encodeSession } from "./session-state"
 
 const session = (): WorkspaceSession => {
   const state = createTerminalState(
@@ -60,7 +60,6 @@ describe("saved session state", () => {
         name: "Terminal 01",
         directory: "~/one",
         lastProcess: "",
-        restoredProcess: "",
       })
       expect(saved?.state.layout.canvas.geometry["01"]).toEqual({
         position: { x: 10, y: 20 },
@@ -85,38 +84,33 @@ describe("saved session state", () => {
       return { text, saved: decodeSession(text)!.state.roster.terminals }
     }
 
-    it("saves the program running now apart from the one still waiting to be restored", () => {
+    it("saves the program running now, or else the one its lost shell leaves to resume", () => {
       const { saved } = saving(
-        { state: "running", process: "tmux", restoredProcess: "claude" },
-        { state: "idle", process: "zsh", restoredProcess: "claude" },
-        { state: "starting", process: "", restoredProcess: "codex" },
         { state: "running", process: "vim" },
+        {
+          state: "exited",
+          process: "claude",
+          exitCode: null,
+          signal: "SIGKILL",
+          restoredProcess: "claude",
+        },
+        { state: "starting", process: "", restoredProcess: "codex" },
       )
-      expect(
-        saved.map(({ lastProcess, restoredProcess }) => [lastProcess, restoredProcess]),
-      ).toEqual([
-        ["tmux", "claude"],
-        ["", "claude"],
-        ["", "codex"],
-        ["vim", ""],
-      ])
-      expect(saved.map(programToRestore)).toEqual(["claude", "claude", "codex", "vim"])
+      expect(saved.map((terminal) => terminal.lastProcess)).toEqual(["vim", "claude", "codex"])
     })
 
-    it("saves none once the program ended, however it ended", () => {
+    it("saves none for a shell at its prompt or one that ended with nothing to resume", () => {
       const { saved } = saving(
         { state: "idle", process: "zsh" },
         { state: "exited", process: "claude", exitCode: 1, signal: null },
-        { state: "failed", process: "vim", message: "Exited right after starting" },
       )
-      expect(saved.map((terminal) => terminal.lastProcess)).toEqual(["", "", ""])
+      expect(saved.map((terminal) => terminal.lastProcess)).toEqual(["", ""])
     })
 
     it("saves only the name and requires it", () => {
       const { text, saved } = saving({ state: "running", process: "codex" })
       expect(saved[0]).not.toHaveProperty("process")
       expect(decodeSession(text.replace(',"lastProcess":"codex"', ""))).toBeUndefined()
-      expect(decodeSession(text.replace(',"restoredProcess":""', ""))).toBeUndefined()
       expect(
         decodeSession(text.replace('"lastProcess":"codex"', '"lastProcess":17')),
       ).toBeUndefined()

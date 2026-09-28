@@ -50,7 +50,8 @@ and the terminal switcher carry on. Claude and Codex have their own icons in
 `application/ui/src/ui-toolkit/icons/` and their own bodies beside the profiles, where
 their presentation can grow. To give another program its own look, add a profile
 entry, with its own body if needed, and a launcher entry in `model/process.ts` if it
-runs as a Node script.
+runs as a Node script. Profiles are presentation only: per-program behaviour, such as
+resuming a restored program, goes beside `programName` in `model/`.
 
 The backend port keeps windows out of the backend: a surface renders one content
 element and passes it to `renderWindow`, and `WorkspaceTerminal.tsx` wraps it in the
@@ -58,25 +59,15 @@ shared window and the profile's body. The surface keeps its controller mounted a
 that, so a program change swaps the body without restarting the terminal; the runner
 surface moves its one xterm host into the new body, keeping output, selection and focus.
 
-Saved sessions record, per terminal, program names only, never command lines, which
-can hold secrets: the program running at the save (`lastProcess`) and one still
-waiting to be restored (`restoredProcess`), each empty for none. On the next launch a
-pending restore comes back as the terminal's `restoredProcess` unless that same
-program runs there now. The last program comes back only when its shell was lost or
-ended; a shell still live moved on while no page watched. A program that
-loses its shell while running, as when the runner is lost or the shell killed,
-becomes the one to restore in the fresh shell. A restore holds through programs the
-shell runs on its own, such as rc-file jobs, and through a program's own prompts,
-such as a passphrase; it ends once a program starts after the person pressed Enter
-while the terminal showed the shell idle at its prompt. Reports lag the shell by up
-to a sample, so a command typed right after a startup program exits may not end it;
-the next one from the prompt does. Quitting or closing the desktop app's window lets
-the page save before the runner ends its shells, and the runner refuses saves from
-then on, so the programs still running are what gets recorded. On macOS, closing the
-last window leaves the app and its shells running, so the save then reflects that
-close rather than the final quit. This prepares resuming that program; nothing
-resumes it yet. Saved terminals require both fields; there is no migration for older
-session data.
+Saved sessions record one required program name per terminal (`lastProcess`, never
+its command line, which can hold secrets): the program running at the save, or else the
+one the terminal lost with its shell. A terminal has a `restoredProcess` only while it
+has no live shell: a program running when the runner lost the shell, the shell was
+killed, or the app closed becomes it, and it ends once a shell reaches its prompt or
+runs a program; every replacement shell starts in the runner backend's `freshShell`,
+where resuming that program will go. Quitting or closing the desktop app's window saves
+before the runner ends its shells, except on macOS, where closing the last window leaves
+them running, so the save reflects that close rather than the final quit.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent

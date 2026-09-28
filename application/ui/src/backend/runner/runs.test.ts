@@ -9,7 +9,7 @@ import { context, describe, expect, it } from "../../test"
 import type { BackendAction } from "../port"
 import { runnerBackend, type RunnerApi } from "./backend"
 import { startingTerminal, type RunnerListing } from "./seed"
-import { encodeSession, programToRestore, type SavedTerminal } from "./session-state"
+import { encodeSession, type SavedTerminal } from "./session-state"
 import { startTestRunner } from "./testing"
 
 // Values pushed by the test, read by the adapter as a stream.
@@ -126,7 +126,7 @@ const restoreOf = (app: ReturnType<typeof scripted>) => {
   return {
     state: terminal.state,
     restored: terminal.restoredProcess,
-    saved: programToRestore(saved.state.roster.terminals[0]!),
+    saved: saved.state.roster.terminals[0]!.lastProcess,
   }
 }
 
@@ -144,55 +144,28 @@ describe("a terminal the runner loses", () => {
   })
 })
 
-describe("a restore waiting in a fresh shell", () => {
-  // The terminal as the store holds it once every report so far is applied: its state,
-  // the program waiting to be restored, and what a save records.
-  const opened = async () => {
-    // The runner announces a new shell at once, before sampling what runs in it.
+describe("a program saved to resume", () => {
+  it("is nothing to restore in a shell still live", async () => {
     const app = scripted(summary({ process: { name: "bash", argv: null } }), "claude")
     await flush()
-    const reports = async (...names: string[]) => {
-      for (const name of names) {
-        app.changes.push({ type: "changed", terminal: summary({ process: { name, argv: null } }) })
-        // eslint-disable-next-line no-await-in-loop -- Reports arrive one sample apart.
-        await flush()
-      }
-    }
-    return { app, reports }
-  }
-
-  it("holds through programs the shell runs on its own at startup", async () => {
-    const { app, reports } = await opened()
-    await reports("fastfetch", "bash")
-    expect(restoreOf(app)).toEqual({ state: "idle", restored: "claude", saved: "claude" })
+    expect(restoreOf(app)).toEqual({ state: "idle", restored: undefined, saved: "" })
     app.stop()
   })
 
-  it("holds through Enter at a startup program's own prompt", async () => {
-    const { app, reports } = await opened()
-    await reports("ssh-add")
-    app.submitted(app.key)
-    await reports("fastfetch", "bash")
+  it("waits through a restart with Enter until the fresh shell reports", async () => {
+    const ended = { exit: { code: null, signal: "SIGKILL", ranMs: 9_000 }, process: null }
+    const app = scripted(summary(ended), "claude")
+    await flush()
     expect(restoreOf(app).restored).toBe("claude")
-    app.stop()
-  })
-
-  it("holds while Enter at the prompt starts no program", async () => {
-    const { app, reports } = await opened()
-    app.submitted(app.key)
-    await reports("bash")
-    expect(restoreOf(app)).toEqual({ state: "idle", restored: "claude", saved: "claude" })
-    app.stop()
-  })
-
-  it("ends once the person starts a program from the prompt", async () => {
-    const { app, reports } = await opened()
-    await reports("fastfetch", "bash")
-    app.submitted(app.key)
-    await reports("vim")
-    expect(restoreOf(app)).toEqual({ state: "running", restored: undefined, saved: "vim" })
-    await reports("bash")
-    expect(restoreOf(app).saved).toBe("")
+    app.restart(app.key)
+    await flush()
+    expect(restoreOf(app)).toEqual({ state: "starting", restored: "claude", saved: "claude" })
+    // The runner answers, and announces the fresh shell at its prompt.
+    const fresh = summary({ run: 2, process: { name: "bash", argv: null } })
+    app.restarts[0]!(fresh)
+    app.changes.push({ type: "changed", terminal: fresh })
+    await vi.waitFor(() => expect(restoreOf(app).state).toBe("idle"))
+    expect(restoreOf(app)).toEqual({ state: "idle", restored: undefined, saved: "" })
     app.stop()
   })
 })

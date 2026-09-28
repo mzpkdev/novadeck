@@ -67,12 +67,10 @@ describe("terminal profile", () => {
   context("while a program holds the foreground", () => {
     it("presents Claude and Codex with their own bodies and icons", () => {
       expect(terminalProfile(terminal("claude"))).toEqual({
-        id: "claude",
         icon: ClaudeIcon,
         Body: ClaudeBody,
       })
       expect(terminalProfile(terminal("codex"))).toEqual({
-        id: "codex",
         icon: CodexIcon,
         Body: CodexBody,
       })

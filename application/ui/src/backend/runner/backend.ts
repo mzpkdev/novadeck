@@ -88,9 +88,6 @@ export type RunnerEntry = {
   // What the adapter last reported, so each change reaches the store once.
   status: TerminalStatus
   process: string
-  // The person pressed Enter at this run's prompt, so the next program is one they
-  // started, not one the shell ran on its own at startup.
-  commanded: boolean
 }
 
 // What a mounted surface needs from the adapter. The surface only reads the entry;
@@ -113,8 +110,6 @@ export type SurfaceRuntime = {
   readonly restart: (key: TerminalKey) => void
   // The attached stream saw the shell exit, in order with its output.
   readonly exited: (key: TerminalKey, exit: TerminalExit) => void
-  // The person pressed Enter in the terminal.
-  readonly submitted: (key: TerminalKey) => void
   // How the link is doing; surfaces lock their input while it is down.
   readonly connection: Backend["connection"] & {}
   // Counts the promise as outstanding I/O until it settles.
@@ -131,8 +126,6 @@ export type RunnerBackend = {
   readonly idle: () => Promise<void>
   // What Enter does in an exited or failed terminal.
   readonly restart: (key: TerminalKey) => void
-  // What Enter does in a running terminal.
-  readonly submitted: (key: TerminalKey) => void
 }
 
 // Statuses that read the same; a terminal's metadata carries its status among its fields.
@@ -290,7 +283,6 @@ export const runnerBackend = (
       entry.run = summary.run
       if (!entry.starting) {
         entry.settled = false
-        entry.commanded = false
         if (!entry.attachment) reviveSurface(entry)
       }
     }
@@ -305,17 +297,9 @@ export const runnerBackend = (
     const { process } = activity
     if (process === undefined || entry.process === process) return actions
     entry.process = process
-    // Rc-file programs start without a command; only one the person gave moves on.
-    const fromPrompt = entry.commanded && activity.status.state === "running"
     return [
       ...actions,
-      {
-        type: "terminal/process",
-        target: target(entry.key),
-        terminalId,
-        process,
-        ...(fromPrompt ? { fromPrompt } : {}),
-      },
+      { type: "terminal/process", target: target(entry.key), terminalId, process },
     ]
   }
 
@@ -506,6 +490,8 @@ export const runnerBackend = (
 
   // Starts a fresh shell for the terminal, keeping its id: a restart when the runner
   // still has the exited record, a create when it does not. Its surface attaches again.
+  // Every replacement shell starts here, while the terminal's `restoredProcess` still
+  // names the program it lost: where resuming that program would go.
   const freshShell = (entry: RunnerEntry): void => {
     if (entry.closed || entry.starting) return
     const { terminalId, workspaceSessionId } = entry.key
@@ -531,7 +517,6 @@ export const runnerBackend = (
     }
     entry.starting = true
     entry.settled = false
-    entry.commanded = false
     // Until the restart answers, reports about the run it replaces are stale.
     entry.floor = Math.max(entry.floor, entry.run ?? 0)
     dispatch(statusAction(entry, { state: "starting" }))
@@ -585,7 +570,6 @@ export const runnerBackend = (
     if (entry.closed || entry.starting) return
     entry.lost = true
     entry.confirmed = false
-    entry.commanded = false
     if (entry.settled) return
     if (restartingOften()) return settle(entry, crashLoop)
     dispatch(statusAction(entry, { state: "starting" }))
@@ -628,7 +612,6 @@ export const runnerBackend = (
         attachment: undefined,
         status: terminal,
         process: terminal.process,
-        commanded: false,
       }
       if (isNew) entry.ready = createTerminal(entry)
       entries.set(key.terminalId, entry)
@@ -724,11 +707,6 @@ export const runnerBackend = (
     restart: (key) => {
       const entry = registry.get(key)?.entry
       if (entry?.settled) freshShell(entry)
-    },
-    submitted: (key) => {
-      const entry = registry.get(key)?.entry
-      // Enter at a program's own prompt, as for a passphrase, gives no shell command.
-      if (entry?.status.state === "idle") entry.commanded = true
     },
     connection,
     track,
@@ -846,7 +824,6 @@ export const runnerBackend = (
     backend,
     holds: (key) => registry.get(key) !== undefined,
     restart: runtime.restart,
-    submitted: runtime.submitted,
     idle: async () => {
       const busy = (): boolean => saves.busy() || pending.size > 0
       while (busy()) {

@@ -6,7 +6,7 @@ import { createTerminalState } from "../../model/state"
 import type { TerminalStatus, WorkspaceSession as Session, WorkspaceState } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { cleanlyExited, lostTerminals, runnerSeed, type RunnerListing } from "./seed"
-import { decodeSession, encodeSession, programToRestore } from "./session-state"
+import { decodeSession, encodeSession } from "./session-state"
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 const project = (n: number): Project => ({ id: uuid(n), name: `Project ${n}`, cwd: `/work/${n}` })
@@ -28,16 +28,14 @@ const saved = (
   terminals: readonly {
     readonly id: string
     readonly name: string
-    // A program waiting to be restored, or one running when the session was saved.
-    readonly restore?: string
+    // The program running when the session was saved.
     readonly running?: string
   }[],
   change: Partial<WorkspaceState> = {},
   rank = 0,
 ): WorkspaceSession => {
-  const metadata = terminals.map(({ restore, running, ...terminal }) => ({
+  const metadata = terminals.map(({ running, ...terminal }) => ({
     ...terminal,
-    ...(restore ? { restoredProcess: restore } : {}),
     directory: "/work/1",
     command: "",
     process: running ?? "",
@@ -69,21 +67,14 @@ const defaults = { view: "focus", windowedView: "grid", now: 99 } as const
 
 // What the next save records for the session's first terminal.
 const resave = (current: Session) =>
-  programToRestore(decodeSession(encodeSession(current, 2))!.state.roster.terminals[0]!)
-// The first terminal after the backend reports `status`, then `process`, as it does;
-// `fromPrompt` when the person started the program from the shell's prompt.
-const run = (
-  current: Session,
-  status: TerminalStatus,
-  process: string,
-  fromPrompt = false,
-): Session => {
+  decodeSession(encodeSession(current, 2))!.state.roster.terminals[0]!.lastProcess
+// The first terminal after the backend reports `status`, then `process`, as it does.
+const run = (current: Session, status: TerminalStatus, process: string): Session => {
   const id = current.state.roster.terminals[0]!.id
   const roster = setTerminalProcess(
     setTerminalStatus(current.state.roster, id, status),
     id,
     process,
-    fromPrompt,
   )
   return { ...current, state: { ...current.state, roster } }
 }
@@ -169,148 +160,74 @@ describe("runner seed", () => {
     })
   })
 
-  context("with a program in the foreground when the app last closed", () => {
-    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", restore: "codex" }])
-    const listing = (terminals: TerminalSummary[]): RunnerListing => [
-      { project: project(1), sessions: [{ session, terminals }] },
-    ]
+  context("with a program saved to resume", () => {
+    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "codex" }])
     const seeded = (terminals: TerminalSummary[]) =>
-      workspaceFromSeed(runnerSeed(listing(terminals)), defaults).projects[0]!.history[0]!
+      workspaceFromSeed(
+        runnerSeed([{ project: project(1), sessions: [{ session, terminals }] }]),
+        defaults,
+      ).projects[0]!.history[0]!
 
-    it("restores it for a lost terminal, and for a live one back at its shell", () => {
-      expect(seeded([]).state.roster.terminals[0]).toMatchObject({
-        restoredProcess: "codex",
-        process: "",
-        state: "starting",
-      })
-      expect(seeded([summary(20, 10)]).state.roster.terminals[0]).toMatchObject({
-        restoredProcess: "codex",
-        process: "zsh",
-        state: "idle",
-      })
+    it("restores it where the runner lost the terminal or its shell ended", () => {
+      expect(first(seeded([]))).toMatchObject({ restoredProcess: "codex", state: "starting" })
+      const killed = { exit: { code: null, signal: "SIGKILL", ranMs: 9_000 }, process: null }
+      const failed = { exit: { code: 1, signal: null, ranMs: 10 }, process: null }
+      for (const ended of [killed, failed])
+        expect(first(seeded([summary(20, 10, ended)])).restoredProcess).toBe("codex")
     })
 
-    it("has nothing to restore while that same program still runs", () => {
-      const terminal = seeded([summary(20, 10, foreground("codex"))]).state.roster.terminals[0]!
-      expect(terminal).toMatchObject({ process: "codex", state: "running" })
-      expect(terminal).not.toHaveProperty("restoredProcess")
-    })
-
-    it("keeps it while another program the shell runs holds the foreground", () => {
-      const terminal = seeded([summary(20, 10, foreground("tmux"))]).state.roster.terminals[0]!
-      expect(terminal).toMatchObject({
-        process: "tmux",
-        state: "running",
-        restoredProcess: "codex",
-      })
-    })
-
-    it("keeps it until the person starts a program from the prompt, then saves what runs", () => {
+    it("has nothing to restore in a shell still live, at its prompt or running a program", () => {
       const idle = seeded([summary(20, 10)])
-      expect(resave(idle)).toBe("codex")
-      expect(resave(run(idle, { state: "idle" }, "bash"))).toBe("codex")
-      expect(first(run(idle, { state: "running" }, "fastfetch")).restoredProcess).toBe("codex")
-      const running = run(idle, { state: "running" }, "vim", true)
-      expect(running.state.roster.terminals[0]).not.toHaveProperty("restoredProcess")
-      expect(resave(running)).toBe("vim")
-      expect(resave(run(running, { state: "idle" }, "zsh"))).toBe("")
+      expect(first(idle)).not.toHaveProperty("restoredProcess")
+      expect(resave(idle)).toBe("")
+      const running = seeded([summary(20, 10, foreground("server"))])
+      expect(first(running)).not.toHaveProperty("restoredProcess")
+      expect(resave(running)).toBe("server")
+    })
+  })
+
+  context("when a running program loses its shell", () => {
+    const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "claude" }])
+    const running = workspaceFromSeed(
+      runnerSeed([
+        {
+          project: project(1),
+          sessions: [{ session: current, terminals: [summary(20, 10, foreground("claude"))] }],
+        },
+      ]),
+      defaults,
+    ).projects[0]!.history[0]!
+    const lost = run(running, { state: "starting" }, "claude")
+
+    it("keeps it to resume when the runner loses the shell, or it is killed or fails", () => {
+      const ends: TerminalStatus[] = [
+        { state: "starting" },
+        { state: "exited", exitCode: null, signal: "SIGKILL" },
+        { state: "failed", message: "Runner restarting" },
+      ]
+      for (const status of ends) {
+        const ended = run(running, status, "claude")
+        expect(first(ended).restoredProcess).toBe("claude")
+        expect(resave(ended)).toBe("claude")
+      }
     })
 
-    it("keeps it through programs a fresh shell runs on its own", () => {
-      // The runner announces the fresh shell at once, then samples its rc-file program.
-      const announced = run(seeded([]), { state: "idle" }, "bash")
-      const startup = run(announced, { state: "running" }, "fastfetch")
-      expect(first(startup).restoredProcess).toBe("codex")
-      expect(resave(run(startup, { state: "idle" }, "bash"))).toBe("codex")
-      // A startup program losing its shell does not take the pending restore's place.
-      expect(first(run(startup, { state: "starting" }, "fastfetch")).restoredProcess).toBe("codex")
+    it("keeps it while the replacement shell starts or ends again", () => {
+      const ended = run(lost, { state: "exited", exitCode: 1, signal: null }, "claude")
+      expect(first(ended).restoredProcess).toBe("claude")
     })
 
-    it("forgets a program that only ran once another runs there now", () => {
-      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
-      const reopened = workspaceFromSeed(
-        runnerSeed([
-          {
-            project: project(1),
-            sessions: [{ session: current, terminals: [summary(20, 10, foreground("server"))] }],
-          },
-        ]),
-        defaults,
-      ).projects[0]!.history[0]!
-      expect(first(reopened)).not.toHaveProperty("restoredProcess")
-      expect(resave(reopened)).toBe("server")
+    it("drops it once a shell is live again, at its prompt or running a program", () => {
+      const prompt = run(lost, { state: "idle" }, "bash")
+      expect(first(prompt)).not.toHaveProperty("restoredProcess")
+      expect(resave(prompt)).toBe("")
+      const startup = run(lost, { state: "running" }, "fastfetch")
+      expect(first(startup)).not.toHaveProperty("restoredProcess")
+      expect(resave(startup)).toBe("fastfetch")
     })
 
-    it("restores a program that only ran when its shell was lost or ended", () => {
-      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
-      const reopened = (terminals: TerminalSummary[]) =>
-        first(
-          workspaceFromSeed(
-            runnerSeed([{ project: project(1), sessions: [{ session: current, terminals }] }]),
-            defaults,
-          ).projects[0]!.history[0]!,
-        ).restoredProcess
-      expect(reopened([])).toBe("make")
-      expect(
-        reopened([summary(20, 10, { exit: { code: null, signal: "SIGKILL", ranMs: 9_000 } })]),
-      ).toBe("make")
-      expect(reopened([summary(20, 10, { exit: { code: 1, signal: null, ranMs: 10 } })])).toBe(
-        "make",
-      )
-    })
-
-    it("forgets a program that only ran once the shell is back at its prompt", () => {
-      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
-      const reopened = workspaceFromSeed(
-        runnerSeed([
-          { project: project(1), sessions: [{ session: current, terminals: [summary(20, 10)] }] },
-        ]),
-        defaults,
-      ).projects[0]!.history[0]!
-      expect(first(reopened)).not.toHaveProperty("restoredProcess")
-      expect(resave(reopened)).toBe("")
-    })
-
-    context("when a running program loses its shell", () => {
-      // Saved while that program ran, so nothing waits to be restored.
-      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "claude" }])
-      const running = workspaceFromSeed(
-        runnerSeed([
-          {
-            project: project(1),
-            sessions: [{ session: current, terminals: [summary(20, 10, foreground("claude"))] }],
-          },
-        ]),
-        defaults,
-      ).projects[0]!.history[0]!
-
-      it("restores it in the fresh shell that replaces the lost one", () => {
-        expect(first(running)).not.toHaveProperty("restoredProcess")
-        const lost = run(running, { state: "starting" }, "claude")
-        expect(first(lost).restoredProcess).toBe("claude")
-        const replaced = run(run(lost, { state: "running" }, "tmux"), { state: "idle" }, "bash")
-        expect(resave(replaced)).toBe("claude")
-        expect(resave(run(replaced, { state: "running" }, "vim", true))).toBe("vim")
-        expect(first(run(replaced, { state: "running" }, "vim", true))).not.toHaveProperty(
-          "restoredProcess",
-        )
-      })
-
-      it("restores it after the shell is killed or fails", () => {
-        const killed = run(
-          running,
-          { state: "exited", exitCode: null, signal: "SIGKILL" },
-          "claude",
-        )
-        expect(resave(killed)).toBe("claude")
-        expect(
-          resave(run(running, { state: "failed", message: "Runner restarting" }, "claude")),
-        ).toBe("claude")
-      })
-
-      it("forgets a program that ended at the prompt", () => {
-        expect(resave(run(running, { state: "idle" }, "bash"))).toBe("")
-      })
+    it("has nothing to restore once the program ended at the prompt", () => {
+      expect(resave(run(running, { state: "idle" }, "bash"))).toBe("")
     })
   })
 

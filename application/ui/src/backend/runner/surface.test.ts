@@ -55,7 +55,6 @@ const starting = () => {
     connected: async () => {},
     lost: () => {},
     restart: () => {},
-    submitted: () => {},
     exited: () => {},
     connection,
     track: (work) => work,

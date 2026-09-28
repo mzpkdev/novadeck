@@ -2,7 +2,7 @@ import { useCallback, useMemo, type ReactNode } from "react"
 
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
-import { terminalProfile } from "../terminals/processes/profiles"
+import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
 import {
   WindowShell,
@@ -71,7 +71,8 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
-  const { id: processWindow, icon: Icon, Body } = terminalProfile(terminal)
+  const { icon: Icon, Body } = terminalProfile(terminal)
+  const processWindow = presentedProgram(terminal)
   const frame: Omit<WindowShellProps, "children"> = {
     terminal,
     icon: <Icon size={14} strokeWidth={1.5} />,

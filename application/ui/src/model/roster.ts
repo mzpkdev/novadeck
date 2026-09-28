@@ -85,15 +85,15 @@ const statusFields = (status: TerminalStatus): TerminalStatus => {
   return { state: status.state }
 }
 
-// The program to restore once the terminal takes `status`: one that loses its shell
-// while running, as when the runner is lost or the shell is killed, becomes it unless a
-// restore is still pending. Only a program the person starts ends a restore; see
-// `setTerminalProcess`.
+// A restore exists only while the terminal has no live shell. A program that loses its
+// shell while running, as when the runner is lost or the shell is killed, becomes it; a
+// live shell, at its prompt or running a program, ends it. Other changes, as an ended
+// shell starting afresh, keep it.
 const restoredAfter = (terminal: TerminalMetadata, status: TerminalStatus): string | undefined => {
+  if (status.state === "idle" || status.state === "running") return undefined
   const lost = status.state === "starting" || status.state === "exited" || status.state === "failed"
-  const program =
-    terminal.process && !isShellProcess(terminal.process) ? terminal.process : undefined
-  if (terminal.state === "running" && lost) return terminal.restoredProcess ?? program
+  if (lost && terminal.state === "running" && !isShellProcess(terminal.process))
+    return terminal.process || undefined
   return terminal.restoredProcess
 }
 
@@ -126,20 +126,18 @@ export const setTerminalStatus = (
   }
 }
 
-// The program now in the foreground. One the person started from the prompt ends a
-// pending restore; programs the shell runs on its own at startup, from rc files, do not.
+// The program now in the foreground.
 export const setTerminalProcess = (
   roster: TerminalRoster,
   terminalId: string,
   process: string,
-  fromPrompt = false,
 ): TerminalRoster => {
   const current = roster.terminals.find((terminal) => terminal.id === terminalId)
   if (!current || current.process === process) return roster
-  const { restoredProcess: _restored, ...rest } = current
-  const next = fromPrompt ? { ...rest, process } : { ...current, process }
   return {
     ...roster,
-    terminals: roster.terminals.map((terminal) => (terminal === current ? next : terminal)),
+    terminals: roster.terminals.map((terminal) =>
+      terminal === current ? { ...terminal, process } : terminal,
+    ),
   }
 }
