@@ -15,6 +15,8 @@ type Fixture = {
 }
 
 const terminalId = "00000000-0000-4000-8000-000000000001"
+// Shaped like a runner's token: 48 hex digits.
+const token = "0123456789abcdef".repeat(3)
 const session = "11111111-2222-4333-8444-555555555555"
 
 const it = base.extend<{ fixture: Fixture }>({
@@ -33,7 +35,7 @@ const it = base.extend<{ fixture: Fixture }>({
             ...process.env,
             NOVADECK_TERMINAL_ID: terminalId,
             NOVADECK_REPORT: listening.endpoint,
-            NOVADECK_REPORT_TOKEN: "token",
+            NOVADECK_REPORT_TOKEN: token,
             CURSOR_VERSION: "",
             CODEX_THREAD_ID: "",
             ...env,
@@ -67,7 +69,7 @@ describe("agent hook", () => {
     expect(fixture.reports).toEqual([
       expect.objectContaining({
         terminalId,
-        token: "token",
+        token,
         agent: "claude",
         sessionId: session,
         seq: expect.any(Number),

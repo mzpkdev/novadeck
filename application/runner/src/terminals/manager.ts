@@ -57,7 +57,7 @@ export type TerminalOptions = {
    * them, shells start as they are and no agent session is reported.
    */
   shellFiles?: Promise<InstalledShell | undefined>
-  /** Where terminals are saved for restoring, and the settings; unsaved when omitted. */
+  /** Where terminals are saved for restoring; unsaved when omitted. */
   records?: TerminalRecords
   /** Whether new shells put the Codex shim first on PATH: while Codex is connected. */
   codexShim?: () => Promise<boolean>
@@ -229,6 +229,8 @@ export class Terminals {
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
+  /** Agent reports waiting their turn. */
+  private reports = Promise.resolve()
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
   /** Commands typed at first prompts go one at a time, a pause apart. */
@@ -270,14 +272,14 @@ export class Terminals {
     this.integration = this.integrate(options.shellFiles)
   }
 
-  /** Writes the shell files and listens for agent reports; shells start plainly on failure. */
+  /** Listens for agent reports once the shell files are written; shells start plainly without. */
   private async integrate(
     shellFiles: TerminalOptions["shellFiles"],
   ): Promise<Integration | undefined> {
     try {
       const paths = await shellFiles
       if (!paths) return undefined
-      const reports = await listenForReports((report) => void this.report(report))
+      const reports = await listenForReports((report) => this.queueReport(report))
       if (!this.stopping) return { paths, reports }
       await reports.close()
     } catch (error) {
@@ -1076,6 +1078,16 @@ export class Terminals {
    * the last prompt, the agent holds the foreground, and its directory is where the
    * terminal restores, as a shell that ran `cd … && claude` reports no prompt there.
    */
+  /**
+   * Handles reports one at a time, in the order they arrived, as a report may wait for
+   * the platform to tell who holds the foreground.
+   */
+  private queueReport(report: Report): void {
+    this.reports = this.reports
+      .then(() => this.report(report))
+      .catch((error: unknown) => console.error("NovaDeck could not take an agent report:", error))
+  }
+
   private async report({ terminalId, token, ...report }: Report): Promise<void> {
     const record = this.records.get(terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, token)) return

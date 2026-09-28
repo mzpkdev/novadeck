@@ -30,7 +30,8 @@ const parse = (value: unknown): Report | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const { terminalId, token, agent, sessionId, seq, cwd, source } = value as Record<string, unknown>
   if (typeof terminalId !== "string" || terminalId.length > 64) return undefined
-  if (typeof token !== "string" || token.length > 128) return undefined
+  // The runner's tokens are 48 hex digits; anything else cannot match one.
+  if (typeof token !== "string" || !/^[0-9a-f]{48}$/.test(token)) return undefined
   if (typeof seq !== "number" || !Number.isFinite(seq)) return undefined
   const name = agentName.safeParse(agent)
   const session = agentSessionId.safeParse(sessionId)
