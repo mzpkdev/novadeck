@@ -401,23 +401,3 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
     })
   }
 })
-
-// Diagnostic: whether Windows PowerShell 5.1 takes Enter without NovaDeck's integration.
-describe.runIf(process.platform === "win32")("Windows Enter diagnostics", () => {
-  it("powershell.exe without integration", async ({ shell, resources }) => {
-    const manager = new Terminals({ shell: "powershell.exe" })
-    resources.defer(() => manager.shutdown())
-    const terminal = await manager.create(
-      { id: randomUUID(), sessionId: shell.sessionId, cwd: shell.home, cols: 100, rows: 20 },
-      "owner",
-    )
-    await shell.until(manager, terminal.id, /PS .*>/).catch(() => "")
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
-    manager.write({ terminalId: terminal.id, data: "Write-Output ('dia' + 'gnosed')\r" }, "owner")
-    const worked = await shell
-      .until(manager, terminal.id, "diagnosed")
-      .then(() => true)
-      .catch(() => false)
-    console.log(`ENTER-DIAGNOSTIC powershell.exe plain: ${worked}`)
-  }, 30_000)
-})
