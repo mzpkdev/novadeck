@@ -40,10 +40,11 @@ export const installShellFiles = async (
 const launcher = async (hook: string): Promise<string> => {
   if (process.platform !== "win32" || /^[\w.:\\-]+$/.test(hook)) return hook
   try {
+    // Verbatim, as Node would escape the inner quotes in a way cmd does not read.
     const { stdout } = await promisify(execFile)(
       process.env.COMSPEC || "cmd.exe",
-      ["/d", "/c", `for %A in ("${hook}") do @echo %~sA`],
-      { windowsHide: true },
+      ["/d", "/s", "/c", `"for %A in ("${hook}") do @echo %~sA"`],
+      { windowsHide: true, windowsVerbatimArguments: true },
     )
     const short = stdout.trim()
     return /^[\w.:\\~-]+$/.test(short) ? short : hook
