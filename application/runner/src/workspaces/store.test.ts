@@ -261,7 +261,6 @@ describe("saved terminals", () => {
       transcript: "screen",
       savedAt: expect.any(Number),
     })
-    expect(reopened.agentSessions()).toEqual([{ id: terminal.id, agents: terminal.agents }])
     if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600)
     reopened.clearTranscripts()
     expect(reopened.terminal(terminal.id)?.transcript).toBeNull()
@@ -280,8 +279,9 @@ describe("saved terminals", () => {
 
   it("keep transcripts until they are turned off", ({ store }) => {
     const workspace = store()
-    expect(workspace.settings()).toEqual({ transcripts: true })
+    expect(workspace.settings()).toEqual({ transcripts: true, onboarded: false })
     workspace.saveSettings({ transcripts: false })
-    expect(workspace.settings()).toEqual({ transcripts: false })
+    workspace.saveSettings({ onboarded: true })
+    expect(workspace.settings()).toEqual({ transcripts: false, onboarded: true })
   })
 })

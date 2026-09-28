@@ -43,9 +43,9 @@ const it = base.extend<{ fixture: Fixture }>({
         let printed = ""
         child.stdout.on("data", (data: Buffer) => (printed += data.toString()))
         child.on("exit", (code) => {
-          // Claude Code shows a SessionStart hook's output to the model.
-          expect(printed).toBe("")
-          resolve(code)
+          // Claude Code shows a SessionStart hook's output to the model; Antigravity
+          // reads it as JSON.
+          resolve(printed === (agent === "agy" ? "{}\n" : "") ? code : -1)
         })
         child.stdin.end(typeof payload === "string" ? payload : JSON.stringify(payload))
       })
@@ -103,8 +103,20 @@ describe("agent hook", () => {
     expect(await fixture.hook("claude", "not json")).toBe(0)
     expect(await fixture.hook("claude", start({ session_id: "../../etc" }))).toBe(0)
     expect(await fixture.hook("claude", start({ hook_event_name: "Stop" }))).toBe(0)
-    expect(await fixture.hook("agy", start())).toBe(0)
+    expect(await fixture.hook("gemini", start())).toBe(0)
     expect(fixture.reports).toEqual([])
+  })
+
+  it("reads Antigravity's conversation and workspace, and answers it with JSON", async ({
+    fixture,
+  }) => {
+    const workspace = process.platform === "win32" ? "C:\\work" : "/work"
+    const payload = { conversationId: session, workspacePaths: [workspace], modelName: "auto" }
+    expect(await fixture.hook("agy", payload)).toBe(0)
+    expect(fixture.reports).toEqual([
+      expect.objectContaining({ agent: "agy", sessionId: session, cwd: workspace }),
+    ])
+    expect(await fixture.hook("agy", payload, { NOVADECK_TERMINAL_ID: "" })).toBe(0)
   })
 
   it("gives up without blocking the agent when NovaDeck is gone", async ({ fixture }) => {

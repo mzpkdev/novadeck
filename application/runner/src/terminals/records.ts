@@ -1,5 +1,10 @@
 import type { AgentName, RunnerSettings } from "@novadeck/protocol"
 
+/** Settings to change; those left out, or undefined, stay as they are. */
+export type SettingsChange = {
+  readonly [K in keyof RunnerSettings]?: RunnerSettings[K] | undefined
+}
+
 /** An agent's latest reported session in a terminal; a larger `seq` is a later report. */
 export type AgentReport = { readonly sessionId: string; readonly seq: number }
 
@@ -21,7 +26,6 @@ export type SavedTerminal = {
 /** Where the runner saves terminals and its settings: its metadata store. */
 export type TerminalRecords = {
   terminal(terminalId: string): SavedTerminal | undefined
-  agentSessions(): Pick<SavedTerminal, "id" | "agents">[]
   /** `transcript` is left as it is when omitted. */
   saveTerminal(
     terminal: Omit<SavedTerminal, "transcript" | "savedAt"> & { transcript?: string | null },
@@ -29,5 +33,5 @@ export type TerminalRecords = {
   removeTerminal(terminalId: string): void
   clearTranscripts(): void
   settings(): RunnerSettings
-  saveSettings(settings: RunnerSettings): void
+  saveSettings(settings: SettingsChange): void
 }

@@ -21,6 +21,8 @@ const bash = "/bin/bash"
 
 type Fixture = {
   home: string
+  /** Where NovaDeck writes the plugins agents install when connected. */
+  plugins: string
   store: WorkspaceStore
   sessionId: string
   manager: (options?: TerminalOptions) => Terminals
@@ -100,7 +102,8 @@ const it = base.extend<{ shell: Fixture }>({
         `Terminal never showed ${String(text)}:\n${await screen(terminals, terminalId)}`,
       )
     }
-    await use({ home, store, sessionId: session.id, manager, watch, until })
+    const plugins = join(root, "data", "shell", "plugins")
+    await use({ home, plugins, store, sessionId: session.id, manager, watch, until })
   },
 })
 
@@ -122,9 +125,10 @@ const create = (
     "owner",
   )
 
-// A stand-in for Claude Code that behaves as it does with NovaDeck's plugin: it runs the
-// plugin's SessionStart hook through sh with the session on stdin, then waits.
-const fakeClaude = (home: string, session: string): string => {
+// A stand-in for Claude Code with NovaDeck's plugin connected: it runs the plugin's
+// SessionStart hook through sh with the session on stdin, then waits.
+const fakeClaude = (home: string, plugins: string, session: string): string => {
+  const hooks = join(plugins, "claude", "novadeck", "hooks", "hooks.json")
   const bin = join(home, "bin")
   mkdirSync(bin, { recursive: true })
   const path = join(bin, "claude")
@@ -132,8 +136,7 @@ const fakeClaude = (home: string, session: string): string => {
     path,
     [
       "#!/bin/sh",
-      '[ "$1" = --plugin-dir ] || { echo "no plugin"; exit 1; }',
-      `command=$("${process.execPath}" -e 'console.log(require(process.argv[1]).hooks.SessionStart[0].hooks[0].command)' "$2/hooks/hooks.json")`,
+      `command=$("${process.execPath}" -e 'console.log(require(process.argv[1]).hooks.SessionStart[0].hooks[0].command)' '${hooks}')`,
       `printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"${session}","cwd":"%s"}' "$PWD" | sh -c "$command"`,
       'echo "claude is running"',
       "read line",
@@ -209,10 +212,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shown).not.toContain("resumed")
   })
 
-  it("tells which agent session runs, through the shim, plugin and hook", async ({ shell }) => {
+  it("tells which agent session runs, through a connected agent's plugin", async ({ shell }) => {
     const session = randomUUID()
-    fakeClaude(shell.home, session)
-    // As a user's .bashrc often does, it puts its own directory with claude first.
+    fakeClaude(shell.home, shell.plugins, session)
     writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
     const project = join(shell.home, "project")
     mkdirSync(project)
@@ -311,7 +313,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shell.store.terminal(id)?.transcript).toBeNull()
     manager.persist()
     expect(shell.store.terminal(id)?.transcript).toBeNull()
-    expect(shell.store.settings()).toEqual({ transcripts: false })
+    expect(shell.store.settings()).toMatchObject({ transcripts: false })
   })
 
   it("forgets a closed terminal, even one from an earlier runner", async ({ shell }) => {

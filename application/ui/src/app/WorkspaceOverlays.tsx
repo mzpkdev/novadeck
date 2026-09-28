@@ -1,10 +1,11 @@
-import { memo, Suspense, useLayoutEffect, useSyncExternalStore } from "react"
+import { memo, Suspense, useEffect, useLayoutEffect, useSyncExternalStore } from "react"
 
 import type { Backend } from "../backend/port"
 import { terminalElement } from "../interaction/dom"
 import { orderedTerminals } from "../model/roster"
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
+import { OnboardingDialog } from "../preferences/OnboardingDialog"
 import { CrashLoopDialog } from "../shell/CrashLoopDialog"
 import { CloseTerminalDialog } from "../terminals/CloseTerminalDialog"
 import { visibleSwitcher } from "../terminals/recent"
@@ -45,10 +46,25 @@ const useTranscripts = (
   return transcripts && { enabled, onChange: transcripts.set }
 }
 
+const noAgents: readonly never[] = []
+// The backend's connectable agents and whether to offer them at first run.
+const useAgents = (agents: Backend["agents"]) => {
+  const list = useSyncExternalStore(
+    agents?.state.subscribe ?? always,
+    () => agents?.state.getSnapshot() ?? noAgents,
+  )
+  const onboarding = useSyncExternalStore(
+    agents?.onboarding.subscribe ?? always,
+    () => agents?.onboarding.getSnapshot() ?? false,
+  )
+  return { list, onboarding }
+}
+
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = memo((): React.JSX.Element => {
   const { backend, commands, navigation } = useWorkspaceServices()
   const transcripts = useTranscripts(backend.transcripts)
+  const agents = useAgents(backend.agents)
   const { go, closeDialog } = navigation
   const { chooseRecent, updatePreferences, openSearchResult, closeSwitcher } = commands
   const { confirmClose, cancelClose, retryAfterCrashLoop, dismissCrashLoop } = commands
@@ -80,8 +96,21 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
   )
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(dialog, context)
+  // Preferences shows what is installed and connected now.
+  const refreshAgents = backend.agents?.refresh
+  useEffect(() => {
+    if (settings) refreshAgents?.()
+  }, [settings, refreshAgents])
   return (
     <>
+      {backend.agents && (
+        <OnboardingDialog
+          open={agents.onboarding}
+          agents={agents.list}
+          onChange={backend.agents.set}
+          onDone={backend.agents.finishOnboarding}
+        />
+      )}
       <CrashLoopDialog
         crashes={crashes || null}
         onRetry={retryAfterCrashLoop}
@@ -133,6 +162,9 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
           onChange={updatePreferences}
           onClose={closeDialog}
           {...(transcripts ? { transcripts } : {})}
+          {...(backend.agents
+            ? { agents: { list: agents.list, onChange: backend.agents.set } }
+            : {})}
         />
       </Suspense>
     </>

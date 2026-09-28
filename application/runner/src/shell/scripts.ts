@@ -1,33 +1,38 @@
 import { join } from "node:path"
 
-// The files NovaDeck puts in shells it starts, as text. They are written into its own
-// data directory, never into the user's files, and only its shells load them.
+// The files NovaDeck puts in shells it starts, and the plugins agents install when the
+// person connects them, as text. They are written into NovaDeck's own data directory;
+// only connecting an agent installs anything elsewhere, through the agent's own commands.
 
 /** Where each file lives under the shell directory. */
 export type ShellPaths = {
   readonly directory: string
-  /** Prepended to PATH in NovaDeck's shells: the `claude` and `codex` shims. */
-  readonly bin: string
   readonly bash: string
   /** ZDOTDIR for zsh. */
   readonly zsh: string
   readonly fish: string
   readonly powershell: string
-  /** Claude Code's per-run plugin, loaded with `--plugin-dir`. */
-  readonly claudePlugin: string
-  /** The hook's launcher. Its path is the hook command, so it never changes. */
+  /**
+   * The plugin sources each agent installs from when the person connects it: a local
+   * marketplace for Claude Code and Codex, a plugin folder for Antigravity.
+   */
+  readonly plugins: { readonly claude: string; readonly codex: string; readonly agy: string }
+  /** The hook's launcher, which NovaDeck's shells name in NOVADECK_HOOK. */
   readonly hook: string
   readonly hookScript: string
 }
 
 export const shellPaths = (directory: string, platform = process.platform): ShellPaths => ({
   directory,
-  bin: join(directory, "bin"),
   bash: join(directory, "bash", "novadeck.bash"),
   zsh: join(directory, "zsh"),
   fish: join(directory, "fish", "novadeck.fish"),
   powershell: join(directory, "powershell", "novadeck.ps1"),
-  claudePlugin: join(directory, "claude"),
+  plugins: {
+    claude: join(directory, "plugins", "claude"),
+    codex: join(directory, "plugins", "codex"),
+    agy: join(directory, "plugins", "agy", "novadeck"),
+  },
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
   hookScript: join(directory, "hook.mjs"),
 })
@@ -44,7 +49,7 @@ const header = (comment: string, what: string): string =>
   [
     `${comment} NovaDeck ${what}.`,
     `${comment} Written by NovaDeck into its own data directory, and overwritten on each start.`,
-    `${comment} Only shells NovaDeck starts load it; nothing else of yours is changed.`,
+    `${comment} Only NovaDeck's shells, and agents you connected, use it.`,
   ].join("\n")
 
 /**
@@ -53,8 +58,6 @@ const header = (comment: string, what: string): string =>
  */
 const bash = `${header("#", "shell integration for bash")}
 if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
-# Your startup files may put other directories first; the agent shims go back in front.
-case "$PATH" in "$NOVADECK_BIN":*) ;; *) PATH="$NOVADECK_BIN:$PATH" ;; esac
 
 __novadeck_prompt() {
   local status=$? LC_ALL=C path=$PWD encoded= char byte i
@@ -109,8 +112,6 @@ unset NOVADECK_ZDOTDIR
 if [[ "$HISTFILE" == "$__novadeck_zdotdir"/* ]]; then HISTFILE=$ZDOTDIR/.zsh_history; fi
 unset __novadeck_zdotdir
 if [[ -f "$ZDOTDIR/.zshrc" ]]; then . "$ZDOTDIR/.zshrc"; fi
-# Your startup files may put other directories first; the agent shims go back in front.
-[[ "$PATH" == "$NOVADECK_BIN":* ]] || PATH="$NOVADECK_BIN:$PATH"
 
 __novadeck_prompt() {
   emulate -L zsh
@@ -124,10 +125,6 @@ add-zsh-hook precmd __novadeck_prompt
 `
 
 const fish = `${header("#", "shell integration for fish")}
-# Your configuration may put other directories first; the agent shims go back in front,
-# for this shell only.
-set -gx PATH $NOVADECK_BIN (string match -v -- $NOVADECK_BIN $PATH)
-
 function __novadeck_prompt --on-event fish_prompt
     printf '\\e]7;file://%s%s\\e\\\\' $hostname (string escape --style=url -- $PWD)
 end
@@ -136,11 +133,6 @@ end
 // PowerShell loads the user's profile before -Command runs this. The prompt reports
 // the directory with OSC 9;9, as Windows Terminal documents, around the user's own.
 const powershell = `${header("#", "shell integration for PowerShell")}
-# Your profile may put other directories first; the agent shims go back in front.
-$__NovaDeckSeparator = [IO.Path]::PathSeparator
-if (-not $env:PATH.StartsWith("$env:NOVADECK_BIN$__NovaDeckSeparator")) {
-  $env:PATH = "$env:NOVADECK_BIN$__NovaDeckSeparator$env:PATH"
-}
 $global:__NovaDeckPrompt = $function:prompt
 function global:prompt {
   $prompt = & $global:__NovaDeckPrompt
@@ -150,93 +142,74 @@ function global:prompt {
 }
 `
 
-const posixShim = (program: string, inject: string): string => `#!/bin/sh
-${header("#", `shim for ${program}`)}
-# Runs the real ${program}, adding a per-run hook that tells NovaDeck which session runs
-# in this terminal. Nested runs, and runs outside NovaDeck's terminals, go unchanged.
-novadeck_real=
-novadeck_ifs=$IFS
-IFS=:
-set -f
-for novadeck_dir in $PATH; do
-  [ -n "$novadeck_dir" ] || continue
-  novadeck_candidate=$novadeck_dir/${program}
-  if [ -f "$novadeck_candidate" ] && [ -x "$novadeck_candidate" ] && ! [ "$novadeck_candidate" -ef "$0" ]; then
-    novadeck_real=$novadeck_candidate
-    break
-  fi
-done
-set +f
-IFS=$novadeck_ifs
-if [ -z "$novadeck_real" ]; then
-  echo "${program}: command not found" >&2
-  exit 127
-fi
-if [ -n "\${NOVADECK_AGENT:-}" ] || [ -z "\${NOVADECK_TERMINAL_ID:-}" ]; then
-  exec "$novadeck_real" "$@"
-fi
-NOVADECK_AGENT=${program}
-export NOVADECK_AGENT
-exec "$novadeck_real" ${inject} "$@"
-`
-
-// `where` lists matches in PATH order, including this shim, and on npm installs an
-// extensionless script that only other shells run; the first other runnable one wins.
-const cmdShim = (program: string, inject: string): string => `@echo off
-${header("rem", `shim for ${program}`)}
-rem Runs the real ${program}, adding a per-run hook that tells NovaDeck which session runs
-rem in this terminal. Nested runs, and runs outside NovaDeck's terminals, go unchanged.
-setlocal
-set "novadeck_real="
-for /f "delims=" %%i in ('where ${program} 2^>nul') do call :consider "%%~fi"
-if not defined novadeck_real (
-  echo ${program}: command not found 1>&2
-  exit /b 9009
-)
-if defined NOVADECK_AGENT goto plain
-if not defined NOVADECK_TERMINAL_ID goto plain
-set "NOVADECK_AGENT=${program}"
-"%novadeck_real%" ${inject} %*
-exit /b %ERRORLEVEL%
-:plain
-"%novadeck_real%" %*
-exit /b %ERRORLEVEL%
-:consider
-if defined novadeck_real exit /b
-if /i "%~dp1"=="%~dp0" exit /b
-if /i "%~x1"==".exe" set "novadeck_real=%~1"
-if /i "%~x1"==".cmd" set "novadeck_real=%~1"
-if /i "%~x1"==".bat" set "novadeck_real=%~1"
-if /i "%~x1"==".com" set "novadeck_real=%~1"
-exit /b
-`
+export type HookedAgent = "claude" | "codex" | "agy"
 
 /**
- * The hook command both agents run. Codex trusts a hook by a hash of its whole
- * definition, so the command must stay byte-identical across NovaDeck versions and
- * installs: it names the launcher through NOVADECK_HOOK, which NovaDeck's shells carry,
- * instead of a path. The agent's shell expands it: `$SHELL -lc` or `sh -c` elsewhere,
- * `cmd /C` for Codex and Git Bash for Claude Code on Windows.
+ * The hook command each agent's plugin runs, through the agent's own shell: sh (Claude
+ * Code, Antigravity) or the login shell (Codex) elsewhere; on Windows, PowerShell for
+ * Claude Code and cmd for the others. Outside NovaDeck's shells NOVADECK_HOOK is unset
+ * and the command does nothing, so a plugin left behind never gets in the way.
+ * Antigravity expects JSON back even then. Codex and Antigravity trust a hook by its
+ * definition, so these strings must never change.
  */
-export const hookCommand = (agent: "claude" | "codex", platform = process.platform): string =>
-  platform === "win32" && agent === "codex"
-    ? `"%NOVADECK_HOOK%" ${agent}`
-    : `"$NOVADECK_HOOK" ${agent}`
+export const hookCommand = (agent: HookedAgent, platform = process.platform): string => {
+  if (platform === "win32") {
+    if (agent === "claude")
+      return "if ($env:NOVADECK_HOOK) { $input | & $env:NOVADECK_HOOK claude }"
+    if (agent === "agy") return 'if defined NOVADECK_HOOK ("%NOVADECK_HOOK%" agy) else (echo {})'
+    return 'if defined NOVADECK_HOOK "%NOVADECK_HOOK%" codex'
+  }
+  if (agent === "agy")
+    return `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy; else echo '{}'; fi`
+  return `[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" ${agent} || true`
+}
 
-/** Codex's per-run SessionStart hook as a `-c` override; TOML literal strings hold it. */
-export const codexHookOverride = (platform = process.platform): string =>
-  `hooks.SessionStart=[{matcher='startup|resume|clear|compact',hooks=[{type='command',command='${hookCommand("codex", platform)}'}]}]`
-
-const claudePlugin = {
+const plugin = {
   name: "novadeck",
   version: "1.0.0",
-  description: "Tells NovaDeck which Claude Code session runs in its terminal. Loaded per run.",
+  description: "Tells NovaDeck which session runs in its terminal, so it can resume it.",
 }
+
+const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
+
+// Claude Code and Codex install from a marketplace; both read this local one.
+const marketplace = json({
+  name: "novadeck",
+  owner: { name: "NovaDeck" },
+  plugins: [{ name: "novadeck", source: "./novadeck", description: plugin.description }],
+})
 
 const claudeHooks = (platform: NodeJS.Platform) => ({
   hooks: {
-    SessionStart: [{ hooks: [{ type: "command", command: hookCommand("claude", platform) }] }],
+    SessionStart: [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand("claude", platform),
+            ...(platform === "win32" && { shell: "powershell" }),
+          },
+        ],
+      },
+    ],
   },
+})
+
+const codexHooks = (platform: NodeJS.Platform) => ({
+  hooks: {
+    SessionStart: [
+      {
+        matcher: "startup|resume|clear|compact",
+        hooks: [{ type: "command", command: hookCommand("codex", platform) }],
+      },
+    ],
+  },
+})
+
+// Antigravity runs PreInvocation hooks before each model call, the first time with the
+// conversation's first message.
+const agyHooks = (platform: NodeJS.Platform) => ({
+  novadeck: { PreInvocation: [{ type: "command", command: hookCommand("agy", platform) }] },
 })
 
 // The launcher runs the hook on NovaDeck's own runtime: Electron acting as Node, or Node
@@ -265,7 +238,7 @@ export const shellFiles = (
   hookScript: string,
   platform = process.platform,
 ): ShellFile[] => {
-  const plugin = paths.claudePlugin
+  const { claude, codex, agy } = paths.plugins
   const common = [
     file(paths.bash, bash),
     file(join(paths.zsh, ".zshenv"), zshenv),
@@ -273,34 +246,20 @@ export const shellFiles = (
     file(join(paths.zsh, ".zshrc"), zshrc),
     file(paths.fish, fish),
     file(paths.powershell, powershell),
+    file(join(claude, ".claude-plugin", "marketplace.json"), marketplace),
+    file(join(claude, "novadeck", ".claude-plugin", "plugin.json"), json(plugin)),
+    file(join(claude, "novadeck", "hooks", "hooks.json"), json(claudeHooks(platform))),
+    file(join(codex, ".claude-plugin", "marketplace.json"), marketplace),
     file(
-      join(plugin, ".claude-plugin", "plugin.json"),
-      `${JSON.stringify(claudePlugin, null, 2)}\n`,
+      join(codex, "novadeck", ".codex-plugin", "plugin.json"),
+      json({ ...plugin, hooks: "./hooks/hooks.json" }),
     ),
-    file(
-      join(plugin, "hooks", "hooks.json"),
-      `${JSON.stringify(claudeHooks(platform), null, 2)}\n`,
-    ),
+    file(join(codex, "novadeck", "hooks", "hooks.json"), json(codexHooks(platform))),
+    file(join(agy, "plugin.json"), json({ name: plugin.name })),
+    file(join(agy, "hooks.json"), json(agyHooks(platform))),
     file(paths.hookScript, hookScript),
   ]
-  const claude = `--plugin-dir ${platform === "win32" ? cmdQuote(plugin) : shQuote(plugin)}`
-  const override = codexHookOverride(platform)
-  if (platform === "win32")
-    return [
-      ...common,
-      file(paths.hook, cmdLauncher(runtime, paths)),
-      file(join(paths.bin, "claude.cmd"), cmdShim("claude", claude)),
-      // cmd reads each double quote as a toggle, so the | in the matcher stays quoted
-      // while \" hands Codex's argument parser a literal quote.
-      file(
-        join(paths.bin, "codex.cmd"),
-        cmdShim("codex", `-c "${override.replaceAll('"', '\\"').replaceAll("%", "%%")}"`),
-      ),
-    ]
-  return [
-    ...common,
-    file(paths.hook, posixLauncher(runtime, paths), 0o700),
-    file(join(paths.bin, "claude"), posixShim("claude", claude), 0o700),
-    file(join(paths.bin, "codex"), posixShim("codex", `-c ${shQuote(override)}`), 0o700),
-  ]
+  return platform === "win32"
+    ? [...common, file(paths.hook, cmdLauncher(runtime, paths))]
+    : [...common, file(paths.hook, posixLauncher(runtime, paths), 0o700)]
 }

@@ -25,9 +25,8 @@ import { shellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
 import { listenForReports, type Report, type Reports } from "../shell/reports.js"
 import type { ShellPaths } from "../shell/scripts.js"
-import { findAgentSession } from "../shell/sessions.js"
 import { sampleForeground, type Foreground } from "./foreground.js"
-import type { AgentReport, SavedTerminal, TerminalRecords } from "./records.js"
+import type { AgentReport, SavedTerminal, SettingsChange, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
@@ -51,7 +50,7 @@ export type TerminalOptions = {
   /** How often running terminals' foreground processes are sampled, in milliseconds. */
   processPollMs?: number
   /**
-   * Where the shell integration, agent shims and hook are written. Without it, shells
+   * Where the shell integration, hook and agent plugins are written. Without it, shells
    * start as they are and no agent session is reported.
    */
   integration?: { readonly directory: string; readonly runtime?: string }
@@ -125,8 +124,6 @@ type Started = {
   screen: Screen
   serializer: Serializer
   startedAt: number
-  /** `Date.now()` at spawn. */
-  startedAtTime: number
   /** The shell's own process name, which holds the foreground at its prompt. */
   shellName: string
   token: string
@@ -143,8 +140,6 @@ const inherited = [
   "NOVADECK_REPORT",
   "NOVADECK_REPORT_TOKEN",
   "NOVADECK_HOOK",
-  "NOVADECK_BIN",
-  "NOVADECK_AGENT",
   "NOVADECK_ZDOTDIR",
 ]
 
@@ -462,44 +457,40 @@ export class Terminals {
     this.forget(input.terminalId)
   }
 
-  /**
-   * The session `agent` last reported in the terminal, live or saved, or else the one
-   * its own session files show ran in its directory since its shell's last prompt.
-   * Null when none does, or more than one.
-   */
-  async agentSession(terminalId: string, agent: AgentName): Promise<string | null> {
+  /** The session `agent` last reported in the terminal, live or saved; null when none. */
+  agentSession(terminalId: string, agent: AgentName): string | null {
     const live = this.records.get(terminalId)
-    const saved = live ? undefined : this.saved(terminalId)
-    const reported = live?.agents[agent] ?? saved?.agents[agent]
-    if (reported) return reported.sessionId
-    const cwd = live?.summary.cwd ?? saved?.cwd
-    const since = live ? (live.promptedAt ?? live.startedAtTime) : saved?.promptedAt
-    if (cwd === undefined || since === undefined || since === null) return null
-    const exclude = new Set<string>()
-    for (const other of [
-      ...(this.options.records?.agentSessions() ?? []),
-      ...this.records.values(),
-    ]) {
-      const id = "summary" in other ? other.summary.id : other.id
-      const session = other.agents[agent]?.sessionId
-      if (id !== terminalId && session) exclude.add(session)
-    }
-    return (await findAgentSession(agent, { cwd, since, exclude }).catch(() => undefined)) ?? null
+    const reported = (live ?? this.saved(terminalId))?.agents[agent]
+    return reported?.sessionId ?? null
   }
 
+  /** Where the shell integration and agent plugins are, once written; none without it. */
+  async integrationPaths(): Promise<ShellPaths | undefined> {
+    return (await this.integration)?.paths
+  }
+
+  /** The runner's settings, held with the saved terminals. */
   settings(): RunnerSettings {
-    return { transcripts: this.transcripts }
+    let saved: RunnerSettings | undefined
+    this.persisting(() => {
+      saved = this.options.records?.settings()
+    })
+    return { onboarded: false, ...saved, transcripts: this.transcripts }
   }
 
-  /** Turning transcripts off forgets every saved one; turning them on saves each anew. */
-  configure(settings: RunnerSettings): void {
+  /**
+   * Changes the settings given. Turning transcripts off forgets every saved one; turning
+   * them on saves each anew.
+   */
+  configure(settings: SettingsChange): void {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    this.transcripts = settings.transcripts
+    const { transcripts } = settings
+    if (transcripts !== undefined) this.transcripts = transcripts
     this.persisting(() => {
       this.options.records?.saveSettings(settings)
-      if (!settings.transcripts) this.options.records?.clearTranscripts()
+      if (transcripts === false) this.options.records?.clearTranscripts()
     })
-    if (settings.transcripts) for (const record of this.records.values()) record.changed = true
+    if (transcripts) for (const record of this.records.values()) record.changed = true
   }
 
   /** Saves every terminal's changes now, as before the system shuts down. */
@@ -842,8 +833,8 @@ export class Terminals {
 
   /**
    * Spawns a shell with a fresh screen; the caller attaches it to a record. Every shell
-   * knows its terminal's id; with the integration it also loads it, finds the agent
-   * shims first on PATH, and gets the endpoint and token its agents report with.
+   * knows its terminal's id; with the integration it also loads it, and gets the hook's
+   * launcher and the endpoint and token its connected agents report with.
    */
   private spawn(
     shell: string,
@@ -885,7 +876,6 @@ export class Terminals {
         screen,
         serializer,
         startedAt: performance.now(),
-        startedAtTime: Date.now(),
         shellName: basename(shell),
         token,
         pending: reportsPrompts ? input.command : undefined,

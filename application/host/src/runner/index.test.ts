@@ -103,10 +103,13 @@ describe("compiled desktop runner", () => {
         }
         await client.close()
         expect((await stat(database)).isFile()).toBe(true)
-        // Its shell integration lives beside the database, in the app's own directory.
-        expect(await readdir(join(directory, "shell", "bin"))).toEqual(
-          process.platform === "win32" ? ["claude.cmd", "codex.cmd"] : ["claude", "codex"],
-        )
+        // Its shell integration, and the plugins agents install from, live beside the
+        // database, in the app's own directory.
+        expect((await readdir(join(directory, "shell", "plugins"))).toSorted()).toEqual([
+          "agy",
+          "claude",
+          "codex",
+        ])
       } finally {
         await runner.close()
         await rm(directory, { recursive: true, force: true })

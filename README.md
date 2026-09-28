@@ -39,8 +39,8 @@ process group leader's command line (`argv`); macOS reports only the name, and W
 reports none. `application/ui/src/model/process.ts` turns that into a program name,
 resolving known Node CLIs from the script Node runs, so the Codex and Claude packages
 show as `codex` and `claude` while other Node programs stay `node`. Where the process
-cannot tell, as on Windows or for a Node CLI on macOS, an agent that reported its
-session since the shell's last prompt names the program.
+cannot tell, as on Windows or for a Node CLI on macOS, a connected agent that reported
+its session since the shell's last prompt names the program.
 
 While a program holds the foreground, its profile decides how the terminal looks.
 `application/ui/src/terminals/processes/profiles.ts` maps program names to a tab and
@@ -103,34 +103,34 @@ Switching terminal tabs in Focus uses the same transition.
 ## Restoring terminals
 
 After a reboot, NovaDeck opens each terminal where it was: in the directory its shell
-was last in, with Claude Code or Codex resumed in the session that was running, and
-otherwise with its earlier output shown above a fresh prompt.
+was last in, with its earlier output shown above a fresh prompt, and with Claude Code,
+Codex or Antigravity resumed in the session that was running once you connect that
+agent.
 
-NovaDeck never writes to your files for this: not your shell's rc files or other
-dotfiles, `AGENTS.md` or `CLAUDE.md`, `~/.claude/settings.json`, or
-`~/.codex/config.toml`. Everything happens per run, inside the shells NovaDeck starts,
-from files in its own data directory (a `shell` folder beside `workspace.sqlite`):
-
-- **Shell integration.** Each shell loads your own startup files first, then reports its
-  directory at every prompt: bash through `--init-file`, zsh through `ZDOTDIR`, fish
-  through `--init-command`, PowerShell by dot-sourcing a script after your profile, and
-  cmd through its `PROMPT`. Other shells start as they are. A new terminal and a restart
-  open in the last reported directory.
-- **Agent sessions.** Shells find NovaDeck's `claude` and `codex` shims first on `PATH`.
-  They run the real program with a hook for that run only: Claude Code loads a small
-  plugin with `--plugin-dir`, and Codex gets a `SessionStart` hook with `-c`. The hook
-  runs on NovaDeck's own runtime and tells the terminal which session it runs; runs
-  outside NovaDeck's terminals and agents started by another agent go unchanged. Where
-  no report arrives, the runner looks through the agent's own session files, read-only,
-  for the one session that started in that directory since the last prompt, and gives
-  up rather than guess between several.
-- **Resuming.** When a terminal lost Claude Code or Codex, its fresh shell resumes that
-  session: `claude --resume <id>` or `codex resume <id>`, typed at the shell's first
-  prompt, after a slow rc file has finished. It is never typed into a running program or
-  after you started typing, and a terminal without a known session gets a plain shell,
-  never "continue the last session". Terminals with an agent to resume start at once,
-  in every session and hidden or not, a moment apart; the others start when their
-  session is shown.
+- **Shell integration.** Each shell NovaDeck starts loads your own startup files first,
+  then reports its directory at every prompt: bash through `--init-file`, zsh through
+  `ZDOTDIR`, fish through `--init-command`, PowerShell by dot-sourcing a script after
+  your profile, and cmd through its `PROMPT`. Other shells start as they are. A new
+  terminal and a restart open in the last reported directory. This comes from files in
+  NovaDeck's own data directory (a `shell` folder beside `workspace.sqlite`) and never
+  touches your rc files.
+- **Connecting agents.** Preferences, and a short welcome dialog the first time the app
+  opens, have a switch for each agent, off until you turn it on; an agent that is not
+  installed cannot be switched. Turning one on installs a small NovaDeck plugin into
+  it with the agent's own plugin commands (`claude plugin`, `codex plugin`,
+  `agy plugin`, from a local marketplace or folder in NovaDeck's data directory);
+  turning it off uninstalls it. The plugin holds a single hook that tells the NovaDeck
+  terminal it runs in which session it is, and does nothing when the agent runs
+  anywhere else. It adds nothing to the model's context. Without a connected agent
+  there is no resume: the terminal comes back as a plain shell with its transcript.
+- **Resuming.** When a terminal lost a connected agent, its fresh shell resumes that
+  session: `claude --resume <id>`, `codex resume <id>` or `agy --conversation <id>`,
+  typed at the shell's first prompt, once a slow rc file has finished and the prompt
+  has settled. It is never typed into a running program or after you started typing, a
+  terminal without a known session gets a plain shell, never "continue the last
+  session", and a shell without the integration, which reports no prompt, shows its
+  transcript instead. Terminals with an agent to resume start at once, in every session
+  and hidden or not, a moment apart; the others start when their session is shown.
 - **Transcripts.** Each terminal's recent output is kept, and a restored terminal shows
   it read-only above a separator and its fresh prompt; a resumed agent shows its own
   history instead. Transcripts are on by default and can be turned off in Preferences,
@@ -138,15 +138,15 @@ from files in its own data directory (a `shell` folder beside `workspace.sqlite`
   printed: they live in `workspace.sqlite`, readable by your account only, with up to
   256 KiB kept per terminal.
 
-The first time Codex runs NovaDeck's hook, Codex itself asks you to review it ("Hooks
-need review") and records your choice in its own settings. The hook's command stays the
-same across NovaDeck versions, so it asks once. Codex takes a `-c` hook list in place of
-the one in `config.toml`, so your own `SessionStart` hooks do not run for Codex started
-in NovaDeck's terminals; its other hooks do.
+Codex may ask you once to review NovaDeck's hook ("Hooks need review") and records the
+answer itself; the hook never changes between NovaDeck versions, so it asks only once.
+Antigravity runs the hook before each model call, and Codex with your first message,
+so their sessions are known from then on. On Windows, Claude Code runs the hook through
+PowerShell.
 
-A shell without the integration (sh, nushell and others) reports no prompt, so a
-command could never be typed safely there: such a terminal shows its transcript and a
-plain shell instead of resuming.
+Removing NovaDeck does not remove plugins you left connected, as packaged builds have
+no uninstaller: switch agents off first, or remove the `novadeck` plugin with the
+agent's own `plugin` command. A plugin left behind does nothing.
 
 The runner saves each terminal's directory and agent sessions as they change, and its
 output every few seconds and when the app quits, so a crash or a power cut loses little.

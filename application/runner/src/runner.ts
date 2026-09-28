@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { createRouter, type Connection } from "./router.js"
+import { createAgents, type AgentsOptions } from "./shell/agents.js"
 import { Terminals, type TerminalOptions } from "./terminals/index.js"
 import { WorkspaceStore } from "./workspaces/store.js"
 
@@ -10,10 +11,12 @@ export type RunnerOptions = {
   /** Terminal limits; the number of terminals is unlimited unless `maxTerminals` is set. */
   terminals?: TerminalOptions
   /**
-   * Where the shell integration, agent shims and hook are written, such as a `shell`
+   * Where the shell integration, hook and agent plugins are written, such as a `shell`
    * folder beside the database. Without it shells start without the integration.
    */
   shell?: string
+  /** Where agents are looked for and how their plugin commands run; for tests. */
+  agents?: AgentsOptions
 }
 
 export type Runner = {
@@ -49,6 +52,7 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
     ...(options.shell !== undefined && { integration: { directory: options.shell } }),
     ...options.terminals,
   })
+  const agents = createAgents(() => terminals.integrationPaths(), options.agents)
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {
@@ -77,6 +81,7 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
       claim,
       store,
       terminals,
+      agents,
       closing: () => closing !== undefined,
     }),
     snapshotBytes: options.terminals?.snapshotBytes ?? 32 * 1024 * 1024,

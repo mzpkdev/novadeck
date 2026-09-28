@@ -1,4 +1,4 @@
-import type { TerminalExit, TerminalSummary } from "@novadeck/protocol"
+import type { AgentIntegration, TerminalExit, TerminalSummary } from "@novadeck/protocol"
 import {
   hasCode,
   RunnerError,
@@ -12,6 +12,7 @@ import { resumableProgram, resumeCommand } from "../../model/resume"
 import { createStore } from "../../model/store"
 import type { TerminalMetadata, TerminalStatus, Workspace } from "../../model/types"
 import type {
+  AgentConnection,
   Backend,
   BackendAction,
   BackendConnectionState,
@@ -36,7 +37,10 @@ import {
 } from "./seed"
 
 // The part of the runner client the adapter uses.
-export type RunnerApi = Pick<Runner, "watch" | "projects" | "sessions" | "terminals" | "settings">
+export type RunnerApi = Pick<
+  Runner,
+  "watch" | "projects" | "sessions" | "terminals" | "agents" | "settings"
+>
 
 export type RunnerBackendOptions = {
   readonly newId?: () => string
@@ -51,6 +55,10 @@ export type RunnerBackendOptions = {
   readonly debug?: RunnerDebug | undefined
   // Whether the runner keeps transcripts, as it said at startup; unknown when absent.
   readonly transcripts?: boolean
+  // The agents the runner can connect, and whether the person has seen the first-run
+  // choice, as it said at startup; agents are not offered when absent.
+  readonly agents?: readonly AgentIntegration[]
+  readonly onboarded?: boolean
 }
 
 export type TerminalSize = { readonly cols: number; readonly rows: number }
@@ -225,6 +233,47 @@ export const runnerBackend = (
   const seed = runnerSeed(listing)
   const connection = createStore<BackendConnectionState>("connected")
   const transcripts = createStore(options.transcripts ?? true)
+  const agents = createStore<readonly AgentConnection[]>(
+    (options.agents ?? []).map((agent) => ({ ...agent, busy: false })),
+  )
+  const onboarding = createStore(options.onboarded === false)
+  // Replaces one agent's entry, keeping the others.
+  const updateAgent = (
+    agent: AgentConnection["agent"],
+    next: (current: AgentConnection) => AgentConnection,
+  ) => agents.update((list) => list.map((item) => (item.agent === agent ? next(item) : item)))
+  const connectAgent = (agent: AgentConnection["agent"], connected: boolean): void => {
+    updateAgent(agent, ({ available, connected: was }) => ({
+      agent,
+      available,
+      connected: was,
+      busy: true,
+    }))
+    void track(runner.agents.set(agent, connected)).then(
+      (result) => updateAgent(agent, () => ({ ...result, busy: false })),
+      (error: unknown) =>
+        updateAgent(agent, ({ available, connected: was }) => ({
+          agent,
+          available,
+          connected: was,
+          busy: false,
+          error: error instanceof Error ? error.message : String(error),
+        })),
+    )
+  }
+  const refreshAgents = (): void => {
+    void track(runner.agents.list()).then(
+      (list) =>
+        agents.update((current) =>
+          list.map((found) => {
+            const shown = current.find((item) => item.agent === found.agent)
+            // A change under way reports its own result.
+            return shown?.busy ? shown : { ...found, busy: false }
+          }),
+        ),
+      () => {},
+    )
+  }
   // Created before anything can settle a terminal, since settling checks it.
   const boot = createBootProgress({ entry: (id) => entries.get(id), now })
   const checkBoot = boot.check
@@ -864,6 +913,20 @@ export const runnerBackend = (
               void track(runner.settings.set({ transcripts: enabled })).catch(() =>
                 transcripts.update(() => before),
               )
+            },
+          },
+        }
+      : {}),
+    ...(options.agents !== undefined
+      ? {
+          agents: {
+            state: agents,
+            set: connectAgent,
+            refresh: refreshAgents,
+            onboarding,
+            finishOnboarding: () => {
+              onboarding.update(() => false)
+              void track(runner.settings.set({ onboarded: true })).catch(() => {})
             },
           },
         }

@@ -2,6 +2,7 @@ import type { WireClient } from "./contract.js"
 import { hasCode, normalize, RunnerError } from "./errors.js"
 import {
   protocolVersion,
+  type AgentIntegration,
   type AgentName,
   type Project,
   type RunnerSettings,
@@ -144,11 +145,7 @@ export type Runner = {
       terminalId: string,
       size: { readonly cols: number; readonly rows: number; readonly command?: string },
     ): Promise<TerminalSummary>
-    /**
-     * The session `agent` last reported in the terminal, live or saved, or else the one
-     * its session files show ran there since the shell's last prompt; null when none or
-     * more than one does.
-     */
+    /** The session `agent` last reported in the terminal, live or saved; null when none. */
     agentSession(terminalId: string, agent: AgentName): Promise<string | null>
     /** Resolves once the runner has granted the attachment; `control` is the default mode. */
     attach(
@@ -156,9 +153,18 @@ export type Runner = {
       options?: { readonly mode?: TerminalMode },
     ): Promise<AttachedTerminal>
   }
+  readonly agents: {
+    list(): Promise<AgentIntegration[]>
+    /**
+     * Installs or removes NovaDeck's plugin in the agent through its own commands;
+     * rejects with `AGENT_SETUP_FAILED` saying why when that did not work.
+     */
+    set(agent: AgentName, connected: boolean): Promise<AgentIntegration>
+  }
   readonly settings: {
     get(): Promise<RunnerSettings>
-    set(settings: RunnerSettings): Promise<void>
+    /** Changes the settings given; the others stay. */
+    set(settings: Partial<RunnerSettings>): Promise<void>
   }
   /** Disconnects. Attached terminals finish; their shells keep running on the runner. */
   close(): Promise<void>
@@ -747,6 +753,10 @@ export const connectRunner = async (
         await terminal.attach(connection.current())
         return terminal
       },
+    },
+    agents: {
+      list: () => call((wire) => wire.agents.list()),
+      set: (agent, connected) => call((wire) => wire.agents.set({ agent, connected })),
     },
     settings: {
       get: () => call((wire) => wire.settings.get()),

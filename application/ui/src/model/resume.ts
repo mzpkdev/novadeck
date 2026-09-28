@@ -4,6 +4,7 @@
 const resumers = {
   claude: (session: string) => ["claude", "--resume", session],
   codex: (session: string) => ["codex", "resume", session],
+  agy: (session: string) => ["agy", "--conversation", session],
 } as const satisfies Record<string, (session: string) => readonly string[]>
 
 export type ResumableProgram = keyof typeof resumers

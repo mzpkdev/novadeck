@@ -65,6 +65,7 @@ const scripted = ({
   agentSession = async () => session,
   restart = () => new Promise<TerminalSummary>(() => {}),
   saveSettings = async () => {},
+  connect = async (agent: string, connected: boolean) => ({ agent, available: true, connected }),
 }: {
   shown: readonly Saved[]
   background?: readonly Saved[]
@@ -72,6 +73,7 @@ const scripted = ({
   agentSession?: (terminalId: string, agent: string) => Promise<string | null>
   restart?: () => Promise<TerminalSummary>
   saveSettings?: () => Promise<void>
+  connect?: (agent: string, connected: boolean) => Promise<unknown>
 }) => {
   const changes = channel<TerminalWatchItem>()
   const statuses = channel<RunnerStatus>()
@@ -87,6 +89,13 @@ const scripted = ({
     projects: { list: unused, create: unused, rename: unused },
     sessions: { list: unused, create: unused, rename: unused, save: async () => {} },
     settings: { get: unused, set: note("settings", saveSettings) },
+    agents: {
+      list: async () => [],
+      set: note("agents", (input) => {
+        const [agent, connected] = input as [string, boolean]
+        return connect(agent, connected)
+      }),
+    },
     terminals: {
       list: unused,
       watch: () => changes.iterator,
@@ -126,7 +135,15 @@ const scripted = ({
       ],
     },
   ]
-  const created = runnerBackend(api, listing, { saveDelay: 10, transcripts: true })
+  const created = runnerBackend(api, listing, {
+    saveDelay: 10,
+    transcripts: true,
+    agents: [
+      { agent: "claude", available: true, connected: false },
+      { agent: "agy", available: false, connected: false },
+    ],
+    onboarded: false,
+  })
   created.backend.commit(
     workspaceFromSeed(created.backend.seed, { view: "grid", windowedView: "grid", now: 1 }),
     [],
@@ -280,6 +297,52 @@ describe("the transcript setting", () => {
     transcripts.set(false)
     await app.idle()
     expect(transcripts.enabled.getSnapshot()).toBe(true)
+    app.stop()
+  })
+})
+
+describe("the agent switches", () => {
+  it("connect an agent through the runner, busy until it answers", async () => {
+    const app = scripted({ shown: [] })
+    const agents = app.backend.agents!
+    agents.set("claude", true)
+    expect(agents.state.getSnapshot()[0]).toMatchObject({ busy: true, connected: false })
+    await app.idle()
+    expect(app.of("agents")).toEqual([["claude", true]])
+    expect(agents.state.getSnapshot()[0]).toEqual({
+      agent: "claude",
+      available: true,
+      connected: true,
+      busy: false,
+    })
+    app.stop()
+  })
+
+  it("say why an agent could not be connected, and leave it as it was", async () => {
+    const app = scripted({
+      shown: [],
+      connect: () =>
+        Promise.reject(new RunnerError("AGENT_SETUP_FAILED", "claude plugin install failed")),
+    })
+    const agents = app.backend.agents!
+    agents.set("claude", true)
+    await app.idle()
+    expect(agents.state.getSnapshot()[0]).toMatchObject({
+      connected: false,
+      busy: false,
+      error: "claude plugin install failed",
+    })
+    app.stop()
+  })
+
+  it("offer onboarding until it is done, which the runner remembers", async () => {
+    const app = scripted({ shown: [] })
+    const agents = app.backend.agents!
+    expect(agents.onboarding.getSnapshot()).toBe(true)
+    agents.finishOnboarding()
+    expect(agents.onboarding.getSnapshot()).toBe(false)
+    await app.idle()
+    expect(app.of("settings")).toEqual([{ onboarded: true }])
     app.stop()
   })
 })

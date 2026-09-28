@@ -44,10 +44,11 @@ export const foregroundProcess = z.strictObject({
   argv: z.array(z.string().max(4096)).max(64).nullable(),
 })
 
-// Agents whose sessions NovaDeck identifies and can resume. An agent session id is what
+// Agents whose sessions NovaDeck identifies and can resume once connected: Claude Code,
+// Codex and Antigravity. An agent session id is what
 // the agent itself names its session: a UUID today, kept to a plain token so it can be
 // typed into a shell as it is.
-export const agentName = z.enum(["claude", "codex"])
+export const agentName = z.enum(["claude", "codex", "agy"])
 export const agentSessionId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
 
 // A command the runner types into a fresh shell at its first prompt, followed by Enter:
@@ -114,10 +115,20 @@ export const terminalAttached = z.strictObject({
   mode: z.enum(["control", "observe"]),
 })
 
+// An agent NovaDeck can connect: whether it is installed here, and whether NovaDeck's
+// plugin, which reports its sessions so they can resume, is installed into it.
+export const agentIntegration = z.strictObject({
+  agent: agentName,
+  available: z.boolean(),
+  connected: z.boolean(),
+})
+
 // Runner-wide settings a client can change.
 export const runnerSettings = z.strictObject({
   // Whether each terminal's screen is kept on disk, to show again when it restores.
   transcripts: z.boolean(),
+  // Whether the person has seen the first-run choice of agents to connect.
+  onboarded: z.boolean(),
 })
 
 export type Project = z.infer<typeof project>
@@ -129,4 +140,5 @@ export type TerminalChange = z.infer<typeof terminalChange>
 export type TerminalEvent = z.infer<typeof terminalEvent>
 export type TerminalAttached = z.infer<typeof terminalAttached>
 export type AgentName = z.infer<typeof agentName>
+export type AgentIntegration = z.infer<typeof agentIntegration>
 export type RunnerSettings = z.infer<typeof runnerSettings>

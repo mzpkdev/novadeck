@@ -6,7 +6,7 @@ import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 import type { Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import type { SavedTerminal, TerminalRecords } from "../terminals/records.js"
+import type { SavedTerminal, SettingsChange, TerminalRecords } from "../terminals/records.js"
 
 const schemaVersion = 1
 const schema = `
@@ -219,15 +219,6 @@ export class WorkspaceStore implements TerminalRecords {
     }
   }
 
-  /** Every saved terminal's agent sessions, to tell whose a session file is. */
-  agentSessions(): Pick<SavedTerminal, "id" | "agents">[] {
-    const rows = this.queries.all`SELECT id, agents FROM terminals` as Pick<
-      TerminalRow,
-      "id" | "agents"
-    >[]
-    return rows.map((row) => ({ id: row.id, agents: agentsOf(row.agents) }))
-  }
-
   /** Saves what restores the terminal; `transcript` is left as it is when omitted. */
   saveTerminal(
     terminal: Omit<SavedTerminal, "transcript" | "savedAt"> & { transcript?: string | null },
@@ -270,19 +261,25 @@ export class WorkspaceStore implements TerminalRecords {
   }
 
   settings(): RunnerSettings {
-    const row = this.queries.get`SELECT value FROM settings WHERE key = 'transcripts'` as
-      | { value: string }
-      | undefined
-    // Transcripts are kept unless turned off.
-    return { transcripts: row?.value !== "false" }
+    const rows = this.queries.all`SELECT key, value FROM settings` as {
+      key: string
+      value: string
+    }[]
+    const saved = new Map(rows.map((row) => [row.key, row.value]))
+    // Transcripts are kept unless turned off; onboarding waits until seen.
+    return {
+      transcripts: saved.get("transcripts") !== "false",
+      onboarded: saved.get("onboarded") === "true",
+    }
   }
 
-  saveSettings(settings: RunnerSettings): void {
-    const value = String(settings.transcripts)
-    void this.queries.run`
-      INSERT INTO settings (key, value) VALUES ('transcripts', ${value})
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value
-    `
+  saveSettings(settings: SettingsChange): void {
+    for (const [key, value] of Object.entries(settings))
+      if (value !== undefined)
+        void this.queries.run`
+        INSERT INTO settings (key, value) VALUES (${key}, ${String(value)})
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      `
   }
 
   close(): void {

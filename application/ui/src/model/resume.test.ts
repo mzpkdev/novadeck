@@ -4,9 +4,10 @@ import { resumableProgram, resumeCommand } from "./resume"
 const session = "0c8d6f2e-5b1a-4a7e-9d3c-2f4b6a8e1c0d"
 
 describe("resuming a program", () => {
-  it("knows Claude Code and Codex", () => {
+  it("knows Claude Code, Codex and Antigravity", () => {
     expect(resumableProgram("claude")).toBe("claude")
     expect(resumableProgram("codex")).toBe("codex")
+    expect(resumableProgram("agy")).toBe("agy")
     expect(["vim", "node", "zsh", "", "toString", undefined].map(resumableProgram)).toEqual(
       Array(6).fill(undefined),
     )
@@ -15,6 +16,7 @@ describe("resuming a program", () => {
   it("builds each one's plain resume command for a session", () => {
     expect(resumeCommand("claude", session)).toBe(`claude --resume ${session}`)
     expect(resumeCommand("codex", session)).toBe(`codex resume ${session}`)
+    expect(resumeCommand("agy", session)).toBe(`agy --conversation ${session}`)
   })
 
   it("builds nothing for another program", () => {

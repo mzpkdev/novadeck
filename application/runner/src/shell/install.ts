@@ -5,7 +5,7 @@ import { hookScript } from "./hook.js"
 import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
 
 /**
- * Writes the shell integration, shims, hook and Claude Code plugin into NovaDeck's own
+ * Writes the shell integration, hook and agent plugins into NovaDeck's own
  * directory, each only when it changed, replacing it whole so a shell starting at that
  * moment reads the old or the new file.
  */

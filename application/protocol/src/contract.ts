@@ -2,6 +2,7 @@ import { eventIterator, oc, type ContractRouterClient } from "@orpc/contract"
 import { z } from "zod"
 
 import {
+  agentIntegration,
   agentName,
   agentSessionId,
   clientState,
@@ -40,6 +41,7 @@ export const errors = {
   INVALID_CURSOR: { status: 400 },
   SPAWN_FAILED: { status: 500 },
   RUNTIME_CLOSING: { status: 503 },
+  AGENT_SETUP_FAILED: { status: 500 },
 }
 
 const procedure = oc.errors(errors)
@@ -127,16 +129,24 @@ export const contract = {
         z.strictObject({ terminalId: id, cols: columns, rows, command: shellCommand.optional() }),
       )
       .output(terminalSummary),
-    // The session `agent` last reported in this terminal, live or saved, or else the one
-    // its own session files show ran there since the shell's last prompt; null when
-    // none or more than one does.
+    // The session `agent` last reported in this terminal, live or saved; null when it
+    // reported none, as when the agent is not connected.
     agentSession: procedure
       .input(z.strictObject({ terminalId: id, agent: agentName }))
       .output(agentSessionId.nullable()),
   },
+  // Agents whose sessions resume once NovaDeck's plugin is installed into them.
+  agents: {
+    list: procedure.input(z.void()).output(z.array(agentIntegration)),
+    // Installs or removes the plugin through the agent's own commands.
+    set: procedure
+      .input(z.strictObject({ agent: agentName, connected: z.boolean() }))
+      .output(agentIntegration),
+  },
   settings: {
     get: procedure.input(z.void()).output(runnerSettings),
-    set: procedure.input(runnerSettings).output(z.void()),
+    // Changes the settings given; the others stay.
+    set: procedure.input(runnerSettings.partial()).output(z.void()),
   },
 }
 

@@ -357,29 +357,30 @@ not command completion.
 
 A runner given a shell folder (`RunnerOptions.shell`; the CLI and the desktop app use
 one beside `workspace.sqlite`) writes these files into it on start, each only when it
-changed, and never writes outside it:
+changed. Only connecting an agent (below) installs anything elsewhere:
 
 - `bash/`, `zsh/`, `fish/` and `powershell/` scripts, and for cmd a `PROMPT`, that load
   the user's own startup files first and then report the directory at each prompt with
   OSC 7 (`file://host/path`, percent-encoded) or OSC 9;9 (the path). The runner parses
   both in its headless screen. A report naming another machine, as from a shell over
   SSH, is not the shell's prompt.
-- `bin/claude` and `bin/codex` (`.cmd` on Windows), which run the next program of that
-  name on `PATH` with a hook added for that run: `--plugin-dir <shell>/claude` for
-  Claude Code, and for Codex
-  `-c hooks.SessionStart=[{matcher='startup|resume|clear|compact',hooks=[{type='command',command='"$NOVADECK_HOOK" codex'}]}]`
-  (`"%NOVADECK_HOOK%" codex` on Windows). Codex trusts a hook by a hash of its whole
-  definition, so this string must never change. The shims add nothing outside
-  NovaDeck's terminals, or inside an agent a shim started (`NOVADECK_AGENT`).
+- `plugins/claude` and `plugins/codex`, a local marketplace holding the `novadeck`
+  plugin for each, and `plugins/agy/novadeck`, the plugin for Antigravity. Each holds
+  one hook: Claude Code's and Codex's `SessionStart`, Antigravity's `PreInvocation`. Its
+  command does nothing where `NOVADECK_HOOK` is unset, that is outside NovaDeck's
+  shells, and otherwise runs `"$NOVADECK_HOOK" <agent>` (see `hookCommand` for the
+  exact, frozen strings: Codex and Antigravity trust a hook by its definition). On
+  Windows, Claude Code's hook runs in PowerShell and the others in cmd.
 - `hook` (`hook.cmd`), a launcher that runs `hook.mjs` on the runner's own runtime
   (Electron with `ELECTRON_RUN_AS_NODE=1`, or Node), so the hook needs no bash or
-  python3. It reads the agent's SessionStart payload, drops Claude Code subagents
-  (`agent_id`), Claude Code inside Cursor (`cursor_version`, `CURSOR_VERSION`) and a
-  Codex started by another Codex (`CODEX_THREAD_ID` other than the session), prints
-  nothing, and reports within two seconds or gives up.
+  python3. It reads the agent's payload (`session_id`, or Antigravity's
+  `conversationId`), drops Claude Code subagents (`agent_id`), Claude Code inside Cursor
+  (`cursor_version`, `CURSOR_VERSION`) and a Codex started by another Codex
+  (`CODEX_THREAD_ID` other than the session), prints nothing but the `{}` Antigravity
+  expects, and reports within two seconds or gives up.
 
-Each shell the runner starts gets `NOVADECK_TERMINAL_ID`, and with the integration the
-shims first on `PATH`, `NOVADECK_HOOK`, and `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`:
+Each shell the runner starts gets `NOVADECK_TERMINAL_ID`, and with the integration
+`NOVADECK_HOOK`, and `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`:
 a Unix socket in a private temporary directory, or a named pipe on Windows, and a random
 token for that shell. The endpoint takes one JSON line,
 `{ terminalId, token, agent, sessionId, source, seq }`, and nothing else: it records the
@@ -407,14 +408,20 @@ still rejects with `TERMINAL_NOT_FOUND` then).
   first or while another process holds the foreground, and spaces such commands 750 ms
   apart across terminals.
 - `terminals.agentSession({ terminalId, agent })` answers the session the agent last
-  reported in the terminal, live or saved. Without a report it looks through the
-  agent's own session files, read-only (`~/.claude/projects` or `CLAUDE_CONFIG_DIR`,
-  `~/.codex/sessions` or `CODEX_HOME`), for sessions in the terminal's directory active
-  since its last prompt, leaving out sessions other terminals reported, and answers
-  one only when exactly one remains. Otherwise it answers `null`.
-- `settings.get()` and `settings.set({ transcripts })` read and change whether
-  transcripts are kept. They are kept unless turned off; turning them off forgets every
-  saved transcript.
+  reported in the terminal, live or saved, or `null`, as for an agent not connected.
+- `agents.list()` answers, for `claude`, `codex` and `agy`, whether the agent is
+  installed where the runner runs (its home: `CLAUDE_CONFIG_DIR` or `~/.claude`,
+  `CODEX_HOME` or `~/.codex`, `~/.gemini/antigravity-cli`) and whether NovaDeck's plugin
+  is installed into it, read from the agent's own configuration.
+  `agents.set({ agent, connected })` installs or removes the plugin with the agent's
+  own commands (`claude plugin marketplace add` + `plugin install`, `codex plugin
+marketplace add` + `plugin add`, `agy plugin install`, and their removals), run
+  through the user's login shell (cmd on Windows) so the agent is found on the PATH the
+  person has in a terminal. It answers where the agent stands after, or rejects with
+  `AGENT_SETUP_FAILED` saying why.
+- `settings.get()` and `settings.set({ transcripts?, onboarded? })` read and change
+  whether transcripts are kept (unless turned off; turning them off forgets every saved
+  transcript) and whether the person has seen the first-run choice of agents.
 
 Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
 `INVALID_DIRECTORY`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,

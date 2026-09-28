@@ -8,6 +8,7 @@ import type { PreferencesValue } from "../model/types"
 import { Dialog } from "../ui-toolkit/Dialog"
 import { Select } from "../ui-toolkit/Select"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
+import { AgentSwitches, agentsExplanation, type AgentSwitch } from "./AgentSwitches"
 
 import motion from "../ui-toolkit/ModalMotion.module.css"
 
@@ -23,6 +24,7 @@ export const Preferences = ({
   tab,
   onTabChange,
   transcripts,
+  agents,
 }: {
   open: boolean
   tab: "general" | "shortcuts"
@@ -34,6 +36,11 @@ export const Preferences = ({
   // Whether terminals' screens are kept to show again when they restore; absent where
   // the backend keeps none.
   transcripts?: { readonly enabled: boolean; readonly onChange: (enabled: boolean) => void }
+  // Agents whose sessions resume once connected; absent where the backend has none.
+  agents?: {
+    readonly list: readonly AgentSwitch[]
+    readonly onChange: (agent: AgentSwitch["agent"], connected: boolean) => void
+  }
 }): React.JSX.Element => {
   const dialog = useRef<HTMLDivElement>(null)
   const panels = useRef<HTMLDivElement>(null)
@@ -164,6 +171,17 @@ export const Preferences = ({
                   />
                 </button>
               </div>
+            )}
+            {agents && (
+              <section className="mt-4" aria-labelledby="agents-heading">
+                <h3 id="agents-heading" className="m-0 text-[12px] font-normal">
+                  Resume agents
+                </h3>
+                <p className="mt-1 mb-1 text-[10px] leading-relaxed text-muted">
+                  {agentsExplanation}
+                </p>
+                <AgentSwitches agents={agents.list} onChange={agents.onChange} />
+              </section>
             )}
             <fieldset className="view-preferences m-0 mt-4 min-w-0 border-0 p-0">
               <legend className="mb-2.5 p-0 text-[12px]">View modes</legend>

@@ -4,6 +4,7 @@ import { contract, errors as contractErrors, protocolVersion } from "@novadeck/p
 import { implement, ORPCError } from "@orpc/server"
 
 import { DomainError } from "./errors.js"
+import type { Agents } from "./shell/agents.js"
 import type { Terminals } from "./terminals/index.js"
 import type { WorkspaceStore } from "./workspaces/store.js"
 
@@ -37,10 +38,11 @@ export const createRouter = (options: {
   claim: (connection: Connection, clientId: string) => void
   store: WorkspaceStore
   terminals: Terminals
+  agents: Agents
   /** Whether the runner is shutting down. */
   closing: () => boolean
 }) => {
-  const { store, terminals } = options
+  const { store, terminals, agents } = options
   const api = implement(contract).$context<Context>()
   const authorized = api.use(async ({ context, next }) => {
     const connection = context.connection
@@ -144,6 +146,10 @@ export const createRouter = (options: {
       agentSession: authorized.terminals.agentSession.handler(({ input }) =>
         terminals.agentSession(input.terminalId, input.agent),
       ),
+    },
+    agents: {
+      list: authorized.agents.list.handler(() => agents.list()),
+      set: authorized.agents.set.handler(({ input }) => agents.set(input.agent, input.connected)),
     },
     settings: {
       get: authorized.settings.get.handler(() => terminals.settings()),
