@@ -42,6 +42,8 @@ export type RunnerBackendOptions = {
   // How long saving waits for more changes, in milliseconds.
   readonly saveDelay?: number
   readonly pickDirectory?: () => Promise<string | null>
+  // Where the host lets the page finish its saves before it quits; returns the undo.
+  readonly beforeQuit?: (save: () => Promise<void>) => () => void
   readonly now?: () => number
   // The debug panel's hooks, when this launch offers the panel.
   readonly debug?: RunnerDebug | undefined
@@ -132,8 +134,6 @@ const statusKey = (status: TerminalStatus): string => {
   if (status.state === "failed") return `failed:${status.message}`
   return status.state
 }
-const processKey = ({ process, kind }: { process: string; kind: string }): string =>
-  `${kind}:${process}`
 
 const connectionState = (status: RunnerStatus): BackendConnectionState => {
   if (status.state === "connected") return "connected"
@@ -294,8 +294,8 @@ export const runnerBackend = (
     if (restartable(activity.status)) entry.settled = true
     const actions = statusAction(entry, activity.status)
     const { process } = activity
-    if (!process || entry.process === processKey(process)) return actions
-    entry.process = processKey(process)
+    if (process === undefined || entry.process === process) return actions
+    entry.process = process
     return [
       ...actions,
       { type: "terminal/process", target: target(entry.key), terminalId, process },
@@ -608,7 +608,7 @@ export const runnerBackend = (
         closed: false,
         attachment: undefined,
         status: terminal,
-        process: processKey(terminal),
+        process: terminal.process,
       }
       if (isNew) entry.ready = createTerminal(entry)
       entries.set(key.terminalId, entry)
@@ -770,6 +770,8 @@ export const runnerBackend = (
     void consume(changes, onChange)
     void consume(statuses, onStatus)
     window.addEventListener("pagehide", flush)
+    // Quitting ends the shells after this, so the saves name what still runs.
+    const stopQuit = options.beforeQuit?.(saves.settle)
     const stopOutage = options.debug?.outage.subscribe(showConnection)
     return () => {
       live = false
@@ -777,6 +779,7 @@ export const runnerBackend = (
       void changes.return?.()
       void statuses.return?.()
       window.removeEventListener("pagehide", flush)
+      stopQuit?.()
       stopOutage?.()
       // The last changes are saved; nothing retries after this.
       flush()

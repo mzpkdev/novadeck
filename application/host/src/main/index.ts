@@ -21,6 +21,7 @@ import {
   runnerPortChannel,
 } from "../bridge.js"
 import { debugEnabled, registerDebugIpc } from "./debug.js"
+import { savePages } from "./quit.js"
 import { startRunner, type RunnerHost } from "./runner.js"
 
 const appId = "dev.mzpk.novadeck"
@@ -28,6 +29,8 @@ const appId = "dev.mzpk.novadeck"
 // packaged app only with --debug-panel or NOVADECK_DEBUG=1.
 const debugging = debugEnabled({ argv: process.argv, env: process.env, packaged: app.isPackaged })
 const developmentOrigin = "http://127.0.0.1:5173"
+// How long quitting waits for the pages' last saves.
+const saveBeforeQuitMs = 1_500
 const currentDirectory = dirname(fileURLToPath(import.meta.url))
 
 let server: HttpServer | undefined
@@ -168,7 +171,16 @@ app.on("before-quit", (event) => {
 
   event.preventDefault()
   stopping = true
-  void Promise.allSettled([runner?.close(), server?.close()]).finally(() => app.quit())
+  // Pages save before the runner ends its shells, so the saves name what still runs.
+  const pages = BrowserWindow.getAllWindows()
+    .map((window) => window.webContents)
+    .filter((contents) => contents.getURL() !== "" && isAppPage(contents.getURL()))
+  void savePages(ipcMain, pages, {
+    sender: (answer) => appWindow(answer)?.webContents,
+    timeoutMs: saveBeforeQuitMs,
+  })
+    .then(() => Promise.allSettled([runner?.close(), server?.close()]))
+    .finally(() => app.quit())
 })
 
 app.on("window-all-closed", () => {

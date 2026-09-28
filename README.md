@@ -32,35 +32,39 @@ directly; in the sidebar, use the tab's Rename button or F2. The header and side
 the live draft. Move between either name field to continue editing; saving or
 canceling ends the edit in both places.
 
-Windows start as regular terminals. When the runner recognizes `claude` or `codex`
-in the foreground, the entire window switches to that program's own renderer.
-Claude and Codex each have an independent card renderer and xterm surface. All three
-renderers use `application/ui/src/terminals/WindowShell.tsx` for the shared window
-layout, header, process icon, rename behavior, and controls. Process renderers can
-pass custom content through `children` and a custom header `icon`, or replace the
-shell entirely. Custom icons keep the same terminal-switcher click action.
-Switching presentations keeps the same xterm instance and running shell. Other
-programs keep the regular terminal window. Foreground detection is
-currently available on macOS and Linux; Windows reports the process as unknown.
-On Linux, detection also recognizes the Node launchers used by the Codex and Claude
-CLI packages, while unrelated Node programs remain regular terminals.
-The independent card renderers live in `application/ui/src/app/process-cards/`, selected
-by `WorkspaceTerminal.tsx`. Each controls its whole visible card, including whether to use the shared shell. Their terminal surface
-markup lives in `application/ui/src/backend/runner/`; the shared `RunnerTerminal`
-controller owns the connection and xterm lifecycle. Startup, exit, and failure
-states use the regular terminal UI.
-Saved sessions retain a `lastKnownProcess` name for each terminal. It remembers the
-most recent non-shell program (or the shell until a program is known), surviving
-fresh shells and app restarts. Live process and status remain separate, and no
-process kind is persisted: `model/process.ts` derives it from the name. Saved terminals
-require this field (empty when unknown); there is no migration for older session data.
-This records identity, not process or conversation resumption.
-Terminal tabs show the current foreground process in small gray text beneath the
-name, updating as programs start and finish. The line stays empty when the process
-is unknown.
-Tab and window header icons follow the process too: Claude uses a blocky critter and Codex a cloud-headed robot, drawn as custom Lucide-style SVG icons
-in `application/ui/src/ui-toolkit/icons/`, and other processes use Lucide's Terminal. The mapping lives in
-`application/ui/src/terminals/process-icons.ts`. The window icon still opens the terminal switcher.
+Terminal tabs show the program in the foreground in small gray text beneath the
+name, updating as programs start and finish; the line stays empty when it is unknown.
+The runner reports each terminal's foreground process as its name and, on Linux, the
+process group leader's command line (`argv`); macOS reports only the name, and Windows
+reports none. `application/ui/src/model/process.ts` turns that into a program name,
+resolving known Node CLIs from the script Node runs, so the Codex and Claude packages
+show as `codex` and `claude` while other Node programs stay `node`.
+
+While a program holds the foreground, its profile decides how the terminal looks.
+`application/ui/src/terminals/processes/profiles.ts` maps program names to a tab and
+header icon and a window component; programs it does not list, shells, and terminals
+starting or ended use Lucide's Terminal icon and the plain
+`application/ui/src/terminals/WindowShell.tsx`. Claude and Codex have their own icons
+in `application/ui/src/ui-toolkit/icons/` and their own windows beside the profiles,
+which wrap `WindowShell` and can grow their own chrome or content. The header icon
+still opens the terminal switcher. To give another program its own look, add a
+profile entry, with its own window if needed, and a launcher entry in
+`model/process.ts` if it runs as a Node script.
+
+The backend port keeps windows out of the backend: a surface renders one content
+element and passes it to `renderWindow`, and `WorkspaceTerminal.tsx` wraps it in the
+window the profile names. The surface keeps its controller mounted above that, so a
+program change swaps the window without restarting the terminal; the runner surface
+moves its one xterm host into the new window, keeping output, selection and focus.
+
+Saved sessions record, per terminal, the program that held the foreground when the
+app closed (`lastProcess`, empty for none), and never its command line, which can
+hold secrets. On the next launch it comes back as the terminal's `restoredProcess`
+unless a program runs there now, and stays until this run starts a program of its
+own. Quitting the desktop app lets the page save before the runner ends its shells,
+and the runner refuses saves from then on, so the programs still running are what
+gets recorded. This prepares resuming that program; nothing resumes it yet. Saved terminals
+require the field; there is no migration for older session data.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent

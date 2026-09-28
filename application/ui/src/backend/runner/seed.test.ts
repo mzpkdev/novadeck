@@ -1,8 +1,9 @@
 import type { Project, TerminalSummary, WorkspaceSession } from "@novadeck/protocol"
 
+import { setTerminalProcess, setTerminalStatus } from "../../model/roster"
 import { workspaceFromSeed } from "../../model/seed"
 import { createTerminalState } from "../../model/state"
-import type { WorkspaceState } from "../../model/types"
+import type { TerminalStatus, WorkspaceSession as Session, WorkspaceState } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { cleanlyExited, lostTerminals, runnerSeed, type RunnerListing } from "./seed"
 import { decodeSession, encodeSession } from "./session-state"
@@ -17,26 +18,28 @@ const summary = (n: number, session: number, change: Partial<TerminalSummary> = 
   rows: 24,
   exit: null,
   run: 1,
-  process: "zsh",
+  process: { name: "zsh", argv: null },
   ...change,
 })
+const foreground = (name: string) => ({ process: { name, argv: null } })
 const saved = (
   id: number,
   visitedAt: number,
   terminals: readonly {
     readonly id: string
     readonly name: string
-    readonly lastKnownProcess?: string
+    readonly lastProcess?: string
   }[],
   change: Partial<WorkspaceState> = {},
   rank = 0,
 ): WorkspaceSession => {
-  const metadata = terminals.map((terminal) => ({
+  // An idle terminal saves the program still waiting to be restored.
+  const metadata = terminals.map(({ lastProcess, ...terminal }) => ({
     ...terminal,
+    ...(lastProcess ? { restoredProcess: lastProcess } : {}),
     directory: "/work/1",
     command: "",
     process: "",
-    kind: "shell" as const,
     state: "idle" as const,
   }))
   const state = createTerminalState(metadata, "grid", "grid")
@@ -62,6 +65,10 @@ const fresh = (id: number, projectId = 1): WorkspaceSession => ({
   state: null,
 })
 const defaults = { view: "focus", windowedView: "grid", now: 99 } as const
+
+// What the next save records for the session's first terminal.
+const resave = (current: Session) =>
+  decodeSession(encodeSession(current, 2))!.state.roster.terminals[0]!.lastProcess
 
 describe("runner seed", () => {
   context("on a first run", () => {
@@ -99,8 +106,8 @@ describe("runner seed", () => {
               { selected: uuid(21), view: "canvas" },
             ),
             terminals: [
-              summary(20, 10, { process: "node" }),
-              summary(22, 10, { process: "vim" }),
+              summary(20, 10, foreground("node")),
+              summary(22, 10, foreground("vim")),
               summary(23, 10, {
                 exit: { code: 1, signal: null, ranMs: 9_000 },
                 process: null,
@@ -119,7 +126,6 @@ describe("runner seed", () => {
         name: "server",
         state: "running",
         process: "node",
-        kind: "shell",
       })
     })
 
@@ -144,34 +150,50 @@ describe("runner seed", () => {
     })
   })
 
-  it("retains a remembered process across relaunch and fresh-shell saves without claiming it is live", () => {
-    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", lastKnownProcess: "codex" }])
+  context("with a program in the foreground when the app last closed", () => {
+    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", lastProcess: "codex" }])
     const listing = (terminals: TerminalSummary[]): RunnerListing => [
       { project: project(1), sessions: [{ session, terminals }] },
     ]
-    const restored = workspaceFromSeed(runnerSeed(listing([])), defaults).projects[0]!.history[0]!
-    expect(restored.state.roster.terminals[0]).toMatchObject({
-      lastKnownProcess: "codex",
-      process: "",
-      kind: "shell",
-      state: "starting",
+    const seeded = (terminals: TerminalSummary[]) =>
+      workspaceFromSeed(runnerSeed(listing(terminals)), defaults).projects[0]!.history[0]!
+
+    it("restores it for a lost terminal, and for a live one back at its shell", () => {
+      expect(seeded([]).state.roster.terminals[0]).toMatchObject({
+        restoredProcess: "codex",
+        process: "",
+        state: "starting",
+      })
+      expect(seeded([summary(20, 10)]).state.roster.terminals[0]).toMatchObject({
+        restoredProcess: "codex",
+        process: "zsh",
+        state: "idle",
+      })
     })
-    const shell = workspaceFromSeed(runnerSeed(listing([summary(20, 10)])), defaults).projects[0]!
-      .history[0]!
-    expect(shell.state.roster.terminals[0]).toMatchObject({
-      lastKnownProcess: "codex",
-      process: "zsh",
-      kind: "shell",
-      state: "idle",
+
+    it("lets a program running now win", () => {
+      const terminal = seeded([summary(20, 10, foreground("vim"))]).state.roster.terminals[0]!
+      expect(terminal).toMatchObject({ process: "vim", state: "running" })
+      expect(terminal).not.toHaveProperty("restoredProcess")
     })
-    const savedAgain = decodeSession(encodeSession(shell, 2))!.state.roster.terminals[0]!
-    expect(savedAgain.lastKnownProcess).toBe("codex")
-    expect(savedAgain).not.toHaveProperty("kind")
-    const next = workspaceFromSeed(
-      runnerSeed(listing([summary(20, 10, { process: "vim" })])),
-      defaults,
-    )
-    expect(next.projects[0]!.history[0]!.state.roster.terminals[0]!.lastKnownProcess).toBe("vim")
+
+    it("keeps it until this run starts a program, then saves what runs", () => {
+      const run = (current: Session, status: TerminalStatus, process: string) => {
+        const roster = setTerminalProcess(
+          setTerminalStatus(current.state.roster, uuid(20), status),
+          uuid(20),
+          process,
+        )
+        return { ...current, state: { ...current.state, roster } }
+      }
+      const idle = seeded([summary(20, 10)])
+      expect(resave(idle)).toBe("codex")
+      expect(resave(run(idle, { state: "idle" }, "bash"))).toBe("codex")
+      const running = run(idle, { state: "running" }, "vim")
+      expect(running.state.roster.terminals[0]).not.toHaveProperty("restoredProcess")
+      expect(resave(running)).toBe("vim")
+      expect(resave(run(running, { state: "idle" }, "zsh"))).toBe("")
+    })
   })
 
   context("with exited terminals the save does not know", () => {

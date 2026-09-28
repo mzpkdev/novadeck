@@ -1,5 +1,5 @@
 import { createTerminalState } from "../../model/state"
-import type { WorkspaceSession } from "../../model/types"
+import type { TerminalMetadata, WorkspaceSession } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { terminalFixture } from "../../test/fixtures"
 import { decodeSession, encodeSession } from "./session-state"
@@ -54,12 +54,12 @@ describe("saved session state", () => {
       expect(saved?.state.layout.canvas.minimized).toEqual({ "02": true })
     })
 
-    it("leaves out live status, derived kind and gestures in progress", () => {
-      expect(saved?.state.roster.terminals[1]).toEqual({
-        id: "02",
-        name: "Terminal 02",
+    it("leaves out live status and gestures in progress", () => {
+      expect(saved?.state.roster.terminals[0]).toEqual({
+        id: "01",
+        name: "Terminal 01",
         directory: "~/one",
-        lastKnownProcess: session().state.roster.terminals[1]!.process,
+        lastProcess: "",
       })
       expect(saved?.state.layout.canvas.geometry["01"]).toEqual({
         position: { x: 10, y: 20 },
@@ -69,22 +69,48 @@ describe("saved session state", () => {
     })
   })
 
-  it("saves only the remembered name, rejects missing or malformed names", () => {
-    const current = session()
-    current.state.roster.terminals[0] = {
-      ...current.state.roster.terminals[0]!,
-      process: "codex",
-      kind: "codex",
+  context("for the program in each terminal's foreground", () => {
+    const saving = (...terminals: Partial<TerminalMetadata>[]) => {
+      const current = session()
+      const state = createTerminalState(
+        terminals.map(
+          (terminal, index) =>
+            ({ ...terminalFixture(index + 1, "~/one"), ...terminal }) as TerminalMetadata,
+        ),
+        "canvas",
+        "canvas",
+      )
+      const text = encodeSession({ ...current, state }, 0)
+      return { text, saved: decodeSession(text)!.state.roster.terminals }
     }
-    const text = encodeSession(current, 0)
-    const saved = decodeSession(text)!.state.roster.terminals[0]!
-    expect(saved.lastKnownProcess).toBe("codex")
-    expect(saved).not.toHaveProperty("kind")
-    expect(saved).not.toHaveProperty("process")
-    expect(decodeSession(text.replace(',"lastKnownProcess":"codex"', ""))).toBeUndefined()
-    expect(
-      decodeSession(text.replace('"lastKnownProcess":"codex"', '"lastKnownProcess":17')),
-    ).toBeUndefined()
+
+    it("saves the program running now, or else the one still waiting to be restored", () => {
+      const { saved } = saving(
+        { state: "running", process: "codex", restoredProcess: "claude" },
+        { state: "idle", process: "zsh", restoredProcess: "claude" },
+        { state: "starting", process: "", restoredProcess: "codex" },
+      )
+      expect(saved.map((terminal) => terminal.lastProcess)).toEqual(["codex", "claude", "codex"])
+    })
+
+    it("saves none once the program ended, however it ended", () => {
+      const { saved } = saving(
+        { state: "idle", process: "zsh" },
+        { state: "exited", process: "claude", exitCode: 1, signal: null },
+        { state: "failed", process: "vim", message: "Exited right after starting" },
+      )
+      expect(saved.map((terminal) => terminal.lastProcess)).toEqual(["", "", ""])
+    })
+
+    it("saves only the name and requires it", () => {
+      const { text, saved } = saving({ state: "running", process: "codex" })
+      expect(saved[0]).not.toHaveProperty("process")
+      expect(saved[0]).not.toHaveProperty("restoredProcess")
+      expect(decodeSession(text.replace(',"lastProcess":"codex"', ""))).toBeUndefined()
+      expect(
+        decodeSession(text.replace('"lastProcess":"codex"', '"lastProcess":17')),
+      ).toBeUndefined()
+    })
   })
 
   context("when the runner has nothing this build can read", () => {

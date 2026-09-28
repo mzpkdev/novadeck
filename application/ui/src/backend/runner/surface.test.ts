@@ -1,6 +1,6 @@
 import type { AttachedTerminal } from "@novadeck/protocol/client"
 import { Terminal } from "@xterm/xterm"
-import { act, createElement } from "react"
+import { act, createElement, type ReactNode } from "react"
 import { afterEach, vi } from "vitest"
 
 import { createStore } from "../../model/store"
@@ -76,6 +76,7 @@ const show = (
       fontSize: 13,
       focusInput: false,
       onInputFocused: () => {},
+      renderWindow: (content) => content,
     }),
   )
   mounted.push(page)
@@ -98,7 +99,7 @@ const ended = (terminal: Partial<TerminalMetadata>) => {
 }
 
 describe("runner terminal surface", () => {
-  it("keeps one live xterm and attachment while switching complete cards", async () => {
+  it("keeps one live xterm, its output and focus while the window around it changes", async () => {
     const { runtime } = starting()
     const views: Terminal[] = []
     const originalOpen = Terminal.prototype.open
@@ -149,7 +150,15 @@ describe("runner terminal surface", () => {
     const external = document.createElement("button")
     external.textContent = "Outside"
     document.body.append(external)
-    const props = (presentation: "terminal" | "claude" | "codex") =>
+    // Each window is its own component, so switching remounts the content inside it.
+    const windows = {
+      terminal: (props: { children: ReactNode }) => createElement("section", props),
+      claude: (props: { children: ReactNode }) =>
+        createElement("section", { "data-window": "claude", ...props }),
+      codex: (props: { children: ReactNode }) =>
+        createElement("section", { "data-window": "codex", ...props }),
+    }
+    const props = (window: keyof typeof windows) =>
       createElement(Surface, {
         terminalKey: key,
         terminal: { ...terminalFixture(1, "~"), state: "running" },
@@ -157,8 +166,7 @@ describe("runner terminal surface", () => {
         fontSize: 13,
         focusInput: false,
         onInputFocused: () => {},
-        presentation,
-        renderCard: (surface) => createElement("div", { "data-card": presentation }, surface),
+        renderWindow: (content) => createElement(windows[window], null, content),
       })
     try {
       const page = render(props("terminal"))
@@ -170,15 +178,17 @@ describe("runner terminal surface", () => {
       )
       const textarea = input(page)
       const xterm = page.container.querySelector(".xterm")
+      const content = page.container.querySelector("[data-terminal-content]")
       act(() => textarea.focus())
       expect(document.activeElement).toBe(textarea)
 
       page.rerender(props("claude"))
-      expect(page.container.querySelector("[data-card=claude]")?.contains(xterm)).toBe(true)
+      expect(page.container.querySelector("[data-terminal-content]")).not.toBe(content)
+      expect(page.container.querySelector("[data-window=claude]")?.contains(xterm)).toBe(true)
       expect(input(page)).toBe(textarea)
       expect(document.activeElement).toBe(textarea)
       page.rerender(props("codex"))
-      expect(page.container.querySelector("[data-card=codex]")?.contains(xterm)).toBe(true)
+      expect(page.container.querySelector("[data-window=codex]")?.contains(xterm)).toBe(true)
       expect(document.activeElement).toBe(textarea)
 
       act(() => external.focus())

@@ -34,14 +34,17 @@ const open = async (id: string) => {
   const createBackend: CreateBackend = () => {
     if (!("createBackend" in selectBackend)) throw new Error("Tests expect a ready backend")
     const backend = selectBackend.createBackend()
-    const TerminalSurface = ({ terminal, renderCard }: TerminalSurfaceProps): React.JSX.Element => {
+    const TerminalSurface = ({
+      terminal,
+      renderWindow,
+    }: TerminalSurfaceProps): React.JSX.Element => {
       useEffect(() => {
         lifecycle.mounted += 1
         return () => {
           lifecycle.unmounted += 1
         }
       }, [])
-      const surface = createElement(
+      const content = createElement(
         "div",
         { "data-terminal-content": "" },
         createElement("input", {
@@ -49,7 +52,7 @@ const open = async (id: string) => {
           "aria-label": `Input for ${terminal.name}`,
         }),
       )
-      return createElement(Fragment, null, renderCard ? renderCard(surface) : surface)
+      return createElement(Fragment, null, renderWindow(content))
     }
     return { ...backend, TerminalSurface }
   }
@@ -71,13 +74,13 @@ const open = async (id: string) => {
   )
   const services = await act(() => handedOver)
   const target = { projectId: "storefront", workspaceSessionId: "initial" }
-  const process = (kind: "shell" | "claude" | "codex" | "git") =>
+  const process = (program: string) =>
     act(() => {
       services.workspace.dispatch({
         type: "terminal/process",
         target,
         terminalId: id,
-        process: { process: kind, kind },
+        process: program,
       })
     })
   const fail = () =>
@@ -101,48 +104,54 @@ const open = async (id: string) => {
   return { ...page, lifecycle, process, fail, start }
 }
 
-const visibleCard = (container: HTMLElement): HTMLElement => {
-  const cards = [...container.querySelectorAll<HTMLElement>("[data-terminal]")].filter(
-    (card) =>
-      getComputedStyle(card).display !== "none" &&
-      getComputedStyle(card.parentElement!).display !== "none",
+const visibleWindow = (container: HTMLElement): HTMLElement => {
+  const windows = [...container.querySelectorAll<HTMLElement>("[data-terminal]")].filter(
+    (window) =>
+      getComputedStyle(window).display !== "none" &&
+      getComputedStyle(window.parentElement!).display !== "none",
   )
-  expect(cards).toHaveLength(1)
-  return cards[0]!
+  expect(windows).toHaveLength(1)
+  return windows[0]!
 }
 
-describe("process window cards", () => {
+// The header icon, which the window's program picks.
+const headerIcon = (window: HTMLElement): string | null | undefined =>
+  window.querySelector('button[aria-label="Switch terminal"] svg')?.getAttribute("class")
+
+describe("process windows", () => {
   context("when the foreground process changes", () => {
-    it("shows independent Claude and Codex cards and returns to the terminal without remounting its controller", async () => {
+    it("shows Claude and Codex in their own windows and returns to the terminal without remounting the surface", async () => {
       const page = await open("02")
       try {
-        const terminal = visibleCard(page.container)
+        const terminal = visibleWindow(page.container)
         expect(terminal.querySelector("[data-terminal-input]")).not.toBeNull()
 
         page.process("claude")
-        expect(visibleCard(page.container).dataset.processCard).toBe("claude")
-        expect(visibleCard(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
-        expect(visibleCard(page.container).querySelector(".terminal-header")).not.toBeNull()
+        expect(visibleWindow(page.container).dataset.processWindow).toBe("claude")
+        expect(visibleWindow(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
+        expect(visibleWindow(page.container).querySelector(".terminal-header")).not.toBeNull()
+        expect(headerIcon(visibleWindow(page.container))).toContain("lucide-claude")
 
         page.process("codex")
-        expect(visibleCard(page.container).dataset.processCard).toBe("codex")
-        expect(visibleCard(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
+        expect(visibleWindow(page.container).dataset.processWindow).toBe("codex")
+        expect(visibleWindow(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
 
-        page.process("shell")
-        expect(visibleCard(page.container).dataset.processCard).toBeUndefined()
-        expect(visibleCard(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
+        page.process("zsh")
+        expect(visibleWindow(page.container).dataset.processWindow).toBeUndefined()
+        expect(headerIcon(visibleWindow(page.container))).toContain("lucide-terminal")
+        expect(visibleWindow(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
         expect(page.lifecycle).toEqual({ mounted: 1, unmounted: 0 })
       } finally {
         page.unmount()
       }
     })
 
-    it("keeps non-agent foreground processes on the regular terminal card", async () => {
+    it("keeps other programs in the plain terminal window", async () => {
       const page = await open("02")
       try {
-        const terminal = visibleCard(page.container)
-        page.process("git")
-        expect(visibleCard(page.container)).toBe(terminal)
+        const terminal = visibleWindow(page.container)
+        page.process("vim")
+        expect(visibleWindow(page.container)).toBe(terminal)
         expect(page.lifecycle).toEqual({ mounted: 1, unmounted: 0 })
       } finally {
         page.unmount()
@@ -153,24 +162,24 @@ describe("process window cards", () => {
       const page = await open("02")
       try {
         page.process("claude")
-        expect(visibleCard(page.container).dataset.processCard).toBe("claude")
+        expect(visibleWindow(page.container).dataset.processWindow).toBe("claude")
 
         page.fail()
-        expect(visibleCard(page.container).dataset.processCard).toBeUndefined()
+        expect(visibleWindow(page.container).dataset.processWindow).toBeUndefined()
         expect(page.lifecycle).toEqual({ mounted: 1, unmounted: 0 })
       } finally {
         page.unmount()
       }
     })
 
-    it("shows the terminal during a fresh shell startup even while the last process kind is an agent", async () => {
+    it("shows the terminal during a fresh shell startup even while the last program is an agent", async () => {
       const page = await open("02")
       try {
         page.process("codex")
-        expect(visibleCard(page.container).dataset.processCard).toBe("codex")
+        expect(visibleWindow(page.container).dataset.processWindow).toBe("codex")
 
         page.start()
-        expect(visibleCard(page.container).dataset.processCard).toBeUndefined()
+        expect(visibleWindow(page.container).dataset.processWindow).toBeUndefined()
         expect(page.lifecycle).toEqual({ mounted: 1, unmounted: 0 })
       } finally {
         page.unmount()

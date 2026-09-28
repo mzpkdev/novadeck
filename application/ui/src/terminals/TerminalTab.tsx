@@ -6,7 +6,7 @@ import { endingText, terminalEnding } from "../model/terminal-ending"
 import type { TerminalMetadata } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { processIcon } from "./process-icons"
+import { terminalProfile } from "./processes/profiles"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 // Whole class strings, so Tailwind finds them.
@@ -43,7 +43,8 @@ export const TerminalTab = ({
   onClose: () => void
 }): React.JSX.Element => {
   const editing = Boolean(rename)
-  const icon = processIcon(terminal.process)
+  const Icon = terminalProfile(terminal).icon
+  const icon = <Icon size={14} strokeWidth={1.5} />
   // A shell that ended shows a dot in its tone; the words go to assistive technology
   // and the tooltip.
   const ending = terminalEnding(terminal)

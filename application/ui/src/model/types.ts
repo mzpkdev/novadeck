@@ -10,24 +10,16 @@ export type TerminalStatus =
   | { readonly state: "exited"; readonly exitCode: number | null; readonly signal: string | null }
   | { readonly state: "failed"; readonly message: string }
 
-export type TerminalKind =
-  | "shell"
-  | "server"
-  | "tests"
-  | "git"
-  | "logs"
-  | "build"
-  | "claude"
-  | "codex"
 export type TerminalMetadata = {
   id: string
   name: string
   directory: string
   command: string
+  // The foreground program's name, as `programName` resolves it.
   process: string
-  // Historical foreground program; live process and kind stay separate.
-  lastKnownProcess?: string
-  kind: TerminalKind
+  // The program that held the foreground when the app last closed, until this run
+  // starts one of its own.
+  restoredProcess?: string
 } & TerminalStatus
 
 export type CanvasLayout = {

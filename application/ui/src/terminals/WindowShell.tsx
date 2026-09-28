@@ -14,7 +14,6 @@ import { useRef, type ReactNode } from "react"
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import type { TerminalMetadata, WindowedView } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { processIcon } from "./process-icons"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
 export type MinimizeControls = {
@@ -36,8 +35,10 @@ const headerActionClasses =
 export type WindowShellProps = {
   terminal: TerminalMetadata
   children?: ReactNode
-  icon?: ReactNode
-  processCard?: string
+  // The header's icon, which also opens the terminal switcher.
+  icon: ReactNode
+  // Names the process window this shell frames, for its styles and tests.
+  processWindow?: string
   onFocus?: () => void
   switcher?: { onOpen: (button: HTMLButtonElement) => void }
   onFlyTo?: () => void
@@ -57,12 +58,12 @@ export type WindowShellProps = {
   onRenameCancel: () => void
 }
 
-// Optional shared window chrome. Process renderers choose whether to use it.
+// The window chrome process windows share; one may also replace it entirely.
 export const WindowShell = ({
   terminal,
   children,
-  icon = processIcon(terminal.process),
-  processCard,
+  icon,
+  processWindow,
   onFocus,
   switcher,
   onFlyTo,
@@ -102,7 +103,7 @@ export const WindowShell = ({
       className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${terminal.name} terminal`}
       data-terminal={terminal.id}
-      data-process-card={processCard}
+      data-process-window={processWindow}
       data-new={fresh}
     >
       <div className="terminal-heading relative shrink-0">

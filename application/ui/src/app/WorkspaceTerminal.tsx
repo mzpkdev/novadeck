@@ -2,15 +2,10 @@ import { useCallback, useMemo, type ReactNode } from "react"
 
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
+import { terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
-import {
-  TerminalFrame,
-  type TerminalLayoutControls,
-  type TerminalFrameProps,
-} from "../terminals/TerminalFrame"
+import type { TerminalLayoutControls, WindowShellProps } from "../terminals/WindowShell"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
-import { ClaudeCard } from "./process-cards/ClaudeCard"
-import { CodexCard } from "./process-cards/CodexCard"
 import {
   currentContext,
   currentState,
@@ -20,9 +15,8 @@ import {
   windowedDestination,
 } from "./selectors"
 
-const cards = { terminal: TerminalFrame, claude: ClaudeCard, codex: CodexCard }
-
-// The backend owns one mounted terminal controller above the replaceable card UI.
+// One terminal in the current view: the backend's surface, which keeps its controller
+// mounted while the window the terminal's program calls for wraps its content.
 export const WorkspaceTerminal = ({
   terminal,
   controls: { minimize, onFlyTo, onResizePreset },
@@ -73,12 +67,10 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
-  const presentation =
-    terminal.state === "running" && (terminal.kind === "claude" || terminal.kind === "codex")
-      ? terminal.kind
-      : "terminal"
-  const frame: Omit<TerminalFrameProps, "children"> = {
+  const profile = terminalProfile(terminal)
+  const frame: Omit<WindowShellProps, "children"> = {
     terminal,
+    icon: <profile.icon size={14} strokeWidth={1.5} />,
     active,
     fresh,
     rename: renameView(rename),
@@ -107,8 +99,9 @@ export const WorkspaceTerminal = ({
         ? { windowed: { destination: windowedLabel, onOpen: () => openWindowed(terminal.id) } }
         : {}),
   }
-  const Card = cards[presentation]
-  const renderCard = (surface: ReactNode): ReactNode => <Card {...frame}>{surface}</Card>
+  const renderWindow = (content: ReactNode): ReactNode => (
+    <profile.Window {...frame}>{content}</profile.Window>
+  )
   return (
     <backend.TerminalSurface
       terminalKey={terminalKey}
@@ -119,8 +112,7 @@ export const WorkspaceTerminal = ({
       clipContent={minimize?.clipContent}
       focusInput={keyboardFocus?.view === view && active}
       onInputFocused={onInputFocused}
-      presentation={presentation}
-      renderCard={renderCard}
+      renderWindow={renderWindow}
     />
   )
 }

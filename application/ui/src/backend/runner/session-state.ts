@@ -1,4 +1,3 @@
-import { rememberProcess } from "../../model/process"
 import type {
   TerminalLayout,
   TerminalMetadata,
@@ -11,10 +10,16 @@ import type {
 // build cannot read starts the session fresh instead of breaking the load.
 const version = 1
 
-// Live status and kind are never saved. The remembered process survives a fresh shell.
+// Live status is never saved. `lastProcess` names the program in the foreground when
+// the app closed ("" for none), for the next launch to restore. Only the name: a
+// command line can hold secrets.
 export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory"> & {
-  readonly lastKnownProcess: string
+  readonly lastProcess: string
 }
+
+// A program running now, or else one still waiting to be restored from the last close.
+const lastProcess = (terminal: TerminalMetadata): string =>
+  terminal.state === "running" ? terminal.process : (terminal.restoredProcess ?? "")
 
 export type SavedSession = {
   readonly visitedAt: number
@@ -52,10 +57,12 @@ export const encodeSession = (session: WorkspaceSession, rank: number): string =
     rank,
     state: {
       roster: {
-        terminals: roster.terminals.map(({ id, name, directory, process, lastKnownProcess }) => {
-          const remembered = rememberProcess(lastKnownProcess, process)
-          return { id, name, directory, lastKnownProcess: remembered ?? "" }
-        }),
+        terminals: roster.terminals.map((terminal) => ({
+          id: terminal.id,
+          name: terminal.name,
+          directory: terminal.directory,
+          lastProcess: lastProcess(terminal),
+        })),
         order: roster.order,
         nextNumber: roster.nextNumber,
       },
@@ -79,12 +86,12 @@ const terminal = (value: unknown): SavedTerminal | undefined =>
   isString(value.id) &&
   isString(value.name) &&
   isString(value.directory) &&
-  isString(value.lastKnownProcess)
+  isString(value.lastProcess)
     ? {
         id: value.id,
         name: value.name,
         directory: value.directory,
-        lastKnownProcess: value.lastKnownProcess,
+        lastProcess: value.lastProcess,
       }
     : undefined
 

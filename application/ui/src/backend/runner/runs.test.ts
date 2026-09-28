@@ -47,7 +47,7 @@ const summary = (change: Partial<TerminalSummary>): TerminalSummary => ({
   rows: 24,
   run: 1,
   exit: null,
-  process: "zsh",
+  process: { name: "zsh", argv: null },
   ...change,
 })
 
@@ -116,7 +116,10 @@ describe("runs of a terminal", () => {
         type: "changed",
         terminal: summary({ exit: exited, process: null }),
       })
-      app.changes.push({ type: "changed", terminal: summary({ run: 2, process: "vim" }) })
+      app.changes.push({
+        type: "changed",
+        terminal: summary({ run: 2, process: { name: "vim", argv: null } }),
+      })
       await flush()
       app.restarts[0]!(summary({ run: 2 }))
       await flush()
@@ -132,7 +135,10 @@ describe("runs of a terminal", () => {
       app.changes.push({ type: "changed", terminal: summary({ run: 1 }) })
       app.changes.push({ type: "synced" })
       // Reported during the old sequence, after its `synced`.
-      app.changes.push({ type: "changed", terminal: summary({ run: 1, process: "vim" }) })
+      app.changes.push({
+        type: "changed",
+        terminal: summary({ run: 1, process: { name: "vim", argv: null } }),
+      })
       await flush()
       // The link came back at once: no reconnecting status, only a new sequence.
       app.changes.push({ type: "reset" })
@@ -149,7 +155,10 @@ describe("runs of a terminal", () => {
       await flush()
       app.statuses.push({ state: "connected", runnerId: "runner-2" })
       await flush()
-      app.changes.push({ type: "changed", terminal: summary({ run: 1, process: "vim" }) })
+      app.changes.push({
+        type: "changed",
+        terminal: summary({ run: 1, process: { name: "vim", argv: null } }),
+      })
       await flush()
       expect(app.statusesOf()).toContainEqual({ state: "running" })
       app.stop()

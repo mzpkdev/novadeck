@@ -12,9 +12,8 @@ export const demoBackend = (engine: DemoEngine): Backend => ({
 })
 
 export const createDemoBackend: CreateBackend = () => {
-  const agentCards =
-    new URLSearchParams(window.location.hash.split("?")[1]).get("demo") === "agents"
+  const agents = new URLSearchParams(window.location.hash.split("?")[1]).get("demo") === "agents"
   const engine = createDemoEngine()
   const backend = demoBackend(engine)
-  return agentCards ? { ...backend, seed: demoSeed(Date.now(), true) } : backend
+  return agents ? { ...backend, seed: demoSeed(Date.now(), true) } : backend
 }

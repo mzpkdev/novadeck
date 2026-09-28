@@ -1,5 +1,5 @@
-import { rememberProcess } from "./process"
-import type { TerminalKind, TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
+import { isShellProcess } from "./process"
+import type { TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
 
 export const createRoster = (terminals: TerminalMetadata[]): TerminalRoster => ({
   terminals,
@@ -92,8 +92,7 @@ const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): Termina
   directory: terminal.directory,
   command: terminal.command,
   process: terminal.process,
-  kind: terminal.kind,
-  ...(terminal.lastKnownProcess ? { lastKnownProcess: terminal.lastKnownProcess } : {}),
+  ...(terminal.restoredProcess ? { restoredProcess: terminal.restoredProcess } : {}),
   ...statusFields(status),
 })
 
@@ -112,23 +111,19 @@ export const setTerminalStatus = (
   }
 }
 
-// What runs in the foreground, which picks the terminal's icon.
-export type TerminalProcess = { readonly process: string; readonly kind: TerminalKind }
-
+// The program now in the foreground. Once this run starts a program of its own, the one
+// restored from the last session no longer describes the terminal.
 export const setTerminalProcess = (
   roster: TerminalRoster,
   terminalId: string,
-  { process, kind }: TerminalProcess,
+  process: string,
 ): TerminalRoster => {
   const current = roster.terminals.find((terminal) => terminal.id === terminalId)
-  if (!current || (current.process === process && current.kind === kind)) return roster
-  const lastKnownProcess = rememberProcess(current.lastKnownProcess, process)
+  if (!current || current.process === process) return roster
+  const { restoredProcess: _restored, ...rest } = current
+  const next = process && !isShellProcess(process) ? { ...rest, process } : { ...current, process }
   return {
     ...roster,
-    terminals: roster.terminals.map((terminal) =>
-      terminal === current
-        ? { ...terminal, process, kind, ...(lastKnownProcess ? { lastKnownProcess } : {}) }
-        : terminal,
-    ),
+    terminals: roster.terminals.map((terminal) => (terminal === current ? next : terminal)),
   }
 }

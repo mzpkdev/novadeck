@@ -46,6 +46,17 @@ describe("compiled desktop host", () => {
       expect(preload).toContain("pickDirectory")
     })
 
+    it("lets pages save before quitting ends the runner's shells", async () => {
+      const main = await read("main/index.js")
+      const preload = await read("preload/index.cjs")
+
+      expect(main).toContain('app.on("before-quit"')
+      expect(main).toContain("savePages(ipcMain")
+      expect(main).toContain("saveBeforeQuitChannel")
+      expect(preload).toContain("novadeck:save-before-quit")
+      expect(preload).toContain("beforeQuit")
+    })
+
     it("blocks renderer navigation and denies permissions by default", async () => {
       const main = await read("main/index.js")
 

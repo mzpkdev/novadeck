@@ -1,4 +1,4 @@
-import { act } from "react"
+import { act, type ReactNode } from "react"
 import { afterEach, vi } from "vitest"
 
 import type {
@@ -54,6 +54,8 @@ const commit = (backend: Backend, workspace: Workspace, actions: WorkspaceAction
 }
 
 const ignore = (): void => {}
+// The content alone, with no window around it.
+const bare = (content: ReactNode): ReactNode => content
 
 // Checks the port contract in backend/port.ts against one adapter. Call it from the
 // adapter's colocated contract.test.ts.
@@ -89,6 +91,7 @@ export const describeBackendContract = (name: string, options: BackendContractOp
           fontSize={13}
           focusInput={false}
           onInputFocused={ignore}
+          renderWindow={bare}
           {...props}
           {...next}
         />

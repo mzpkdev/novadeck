@@ -12,15 +12,12 @@ import {
   useSyncExternalStore,
 } from "react"
 
-import { terminalEnding } from "../../model/terminal-ending"
+import { endingText, terminalEnding, type TerminalEnding } from "../../model/terminal-ending"
 import type { TerminalSurfaceProps } from "../port"
 import { restartable } from "./activity"
 import type { SurfaceRuntime } from "./backend"
-import { ClaudeRunnerSurface } from "./ClaudeRunnerSurface"
-import { CodexRunnerSurface } from "./CodexRunnerSurface"
 import { followTerminal, type FollowedTerminal, type Screen } from "./follow"
 import { silenceQueries } from "./queries"
-import { TerminalRunnerSurface } from "./TerminalRunnerSurface"
 
 // The sizes the runner accepts.
 const clamp = (value: number, min: number, max: number): number =>
@@ -60,6 +57,80 @@ const lockNotices = {
   reconnecting: "Reconnecting…",
   unavailable: "Runner offline",
 } as const
+// A lock this short, such as while a screen arrives, stays out of sight: the dimming
+// and the label fade in only after a moment.
+
+const LockNotice = ({ notice }: { readonly notice: string }): React.JSX.Element => (
+  <span className="rounded-control border border-line bg-paper px-3.5 py-2 text-[11px] font-bold tracking-wider text-ink uppercase shadow-floating">
+    {notice}
+  </span>
+)
+
+// Whole class strings, so Tailwind finds them: the footer's tints, a top border of the
+// same hue, and a focus ring in it.
+const endingTones: Record<TerminalEnding["tone"], string> = {
+  danger: "border-danger-fg/20 bg-danger text-danger-fg [--ending-ring:var(--color-danger-fg)]",
+  warning:
+    "border-warning-fg/20 bg-warning text-warning-fg [--ending-ring:var(--color-warning-fg)]",
+}
+
+// How the shell ended, along the surface's bottom edge, with the restart Enter also
+// asks for. In Canvas its right end follows the resize grip's scale so the button stays
+// clear of it (runner.css). Restart waits while typing is paused, as a restart then
+// could not reach the runner. It keeps the last ending on screen while it slides away,
+// and announces a new one politely.
+const EndingBar = ({
+  ending,
+  paused,
+  onRestart,
+}: {
+  readonly ending: TerminalEnding | null
+  readonly paused: boolean
+  readonly onRestart: () => void
+}): React.JSX.Element => {
+  const [shown, setShown] = useState(ending)
+  const text = shown ? endingText(shown) : ""
+  // Each render derives a fresh ending; only a different one replaces the shown one.
+  if (ending && (ending.tone !== shown?.tone || endingText(ending) !== text)) setShown(ending)
+  return (
+    <>
+      {/* Announced from outside the bar: the bar is inert while hidden, and an inert
+          region that appears with its text already in place is not announced. Empty
+          while no ending shows, so a repeat of the same ending is announced again. */}
+      <span aria-live="polite" aria-atomic className="sr-only">
+        {ending ? endingText(ending) : ""}
+      </span>
+      <div
+        className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t pr-6 pl-3 text-[10px] transition-[opacity,translate] duration-(--motion-state) ease-interface ${shown ? endingTones[shown.tone] : ""} ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+        inert={!ending}
+        data-terminal-ending={ending?.tone}
+      >
+        <span
+          className="min-w-0 truncate font-bold tracking-wider uppercase"
+          title={text || undefined}
+        >
+          {text}
+        </span>
+        {shown && (
+          <button
+            type="button"
+            aria-disabled={paused || undefined}
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-0.5 font-bold tracking-wider uppercase underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--ending-ring) aria-disabled:cursor-default aria-disabled:no-underline aria-disabled:opacity-50"
+            onClick={() => {
+              if (!paused) onRestart()
+            }}
+          >
+            Restart
+            <span aria-hidden className="font-normal opacity-60">
+              ↵
+            </span>
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
 // One component per backend, so its identity stays stable while the backend lives.
 export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
   const RunnerTerminal = ({
@@ -70,8 +141,7 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
     clipContent,
     focusInput,
     onInputFocused,
-    presentation = "terminal",
-    renderCard,
+    renderWindow,
   }: TerminalSurfaceProps): React.JSX.Element => {
     // React owns each surface's mount slot; the runner owns this one emulator host.
     // Moving the host preserves its textarea, screen, selection, and PTY attachment.
@@ -264,28 +334,49 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
       onInputFocused()
     }, [focusInput, onInputFocused])
 
-    const Surface =
-      presentation === "claude"
-        ? ClaudeRunnerSurface
-        : presentation === "codex"
-          ? CodexRunnerSurface
-          : TerminalRunnerSurface
-    const surface = (
-      <Surface
-        minimized={minimized}
-        clipContent={clipContent}
-        locked={locked}
-        ending={ending}
-        notice={lockNotices[connection === "connected" && resuming ? "reconnecting" : connection]}
-        onRestart={() => {
-          restart.current.run()
-          view.current?.xterm.focus()
-        }}
-        onRootMount={onRootMount}
-        onHostMount={onHostMount}
-      />
+    // A different window remounts this content; the host moves into the new slot.
+    return (
+      <>
+        {renderWindow(
+          <div
+            ref={onRootMount}
+            data-terminal-content
+            className="terminal-content runner-terminal nodrag nopan relative flex min-h-0 flex-1 flex-col p-3"
+            hidden={minimized && !clipContent}
+            aria-hidden={minimized}
+            inert={minimized}
+            data-locked={locked || undefined}
+          >
+            <div ref={onHostMount} className="flex min-h-0 flex-1 flex-col" />
+            {/* Room for the bar keeps the output clear of it, as far above it as the
+                surface's own padding. */}
+            <EndingBar
+              ending={ending}
+              paused={locked}
+              onRestart={() => {
+                restart.current.run()
+                // The button leaves with the bar; typing goes on in the fresh shell.
+                view.current?.xterm.focus()
+              }}
+            />
+            {locked && (
+              <div
+                role="status"
+                className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/80 transition-opacity delay-200 duration-(--motion-state) ease-interface starting:opacity-0"
+              >
+                <LockNotice
+                  notice={
+                    lockNotices[
+                      connection === "connected" && resuming ? "reconnecting" : connection
+                    ]
+                  }
+                />
+              </div>
+            )}
+          </div>,
+        )}
+      </>
     )
-    return <>{renderCard ? renderCard(surface) : surface}</>
   }
   return RunnerTerminal
 }

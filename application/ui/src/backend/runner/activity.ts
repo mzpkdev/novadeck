@@ -1,10 +1,7 @@
 import type { TerminalExit, TerminalSummary } from "@novadeck/protocol"
 
-import { isShellProcess, processKind, programName } from "../../model/process"
-import type { TerminalProcess } from "../../model/roster"
+import { isShellProcess, programName } from "../../model/process"
 import type { TerminalStatus } from "../../model/types"
-
-export { programName } from "../../model/process"
 
 // A shell that exits sooner than this after starting counts as failing to start.
 export const quickExitMs = 2000
@@ -21,20 +18,20 @@ export const exitStatus = (exit: TerminalExit): TerminalStatus | "clean" => {
 
 export type TerminalActivity = {
   readonly status: TerminalStatus | "clean"
-  // Absent once the process exited: the last foreground program stays on show.
-  readonly process?: TerminalProcess
+  // The foreground program's name; absent once the process exited, so the last
+  // program stays on show.
+  readonly process?: string
 }
 
-// What the UI shows for a terminal the runner reports: its icon, and whether it is
-// busy (a program runs in the foreground) or idle (the shell waits for input). A
-// terminal without an exit is running.
+// What the UI shows for a terminal the runner reports: which program it runs, and
+// whether it is busy (a program runs in the foreground) or idle (the shell waits for
+// input). A terminal without an exit is running.
 export const terminalActivity = (summary: TerminalSummary): TerminalActivity => {
   if (summary.exit) return { status: exitStatus(summary.exit) }
-  const process = summary.process ?? ""
-  const program = programName(process)
+  const program = summary.process ? programName(summary.process) : ""
   return {
-    status: { state: !program || isShellProcess(process) ? "idle" : "running" },
-    process: { process, kind: processKind(process) },
+    status: { state: !program || isShellProcess(program) ? "idle" : "running" },
+    process: program,
   }
 }
 

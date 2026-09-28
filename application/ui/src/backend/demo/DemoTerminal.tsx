@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 
 import type { TerminalSurfaceProps } from "../port"
 import type { DemoEngine, DemoTerminalSnapshot } from "./engine"
+import { demoAgent, demoAgents } from "./samples"
 import { TerminalOutput } from "./TerminalOutput"
 
-type DemoTerminalSurfaceProps = Omit<TerminalSurfaceProps, "terminalKey"> &
+type DemoTerminalSurfaceProps = Omit<TerminalSurfaceProps, "terminalKey" | "renderWindow"> &
   DemoTerminalSnapshot & {
     onCommand: (command: string) => void
     onDraftChange: (draft: string) => void
@@ -28,7 +29,7 @@ const DemoTerminalSurface = ({
   minimized,
   clipContent,
 }: DemoTerminalSurfaceProps): React.JSX.Element => {
-  const agent = terminal.kind === "claude" ? "Claude" : terminal.kind === "codex" ? "Codex" : null
+  const agent = demoAgent(terminal)
   const input = draft
   const setInput = onDraftChange
   const savedScroll = useRef(scrollOffset)
@@ -73,13 +74,7 @@ const DemoTerminalSurface = ({
         onScrollChange(event.currentTarget.scrollTop)
       }}
     >
-      {!cleared && (
-        <TerminalOutput
-          kind={terminal.kind}
-          directory={terminal.directory}
-          projectName={projectName}
-        />
-      )}
+      {!cleared && <TerminalOutput terminal={terminal} projectName={projectName} />}
       {entries.map((entry) => (
         <div className="output-gap" key={entry.id}>
           <p>
@@ -115,7 +110,7 @@ const DemoTerminalSurface = ({
             spellCheck={false}
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder={agent ? `Message ${agent}…` : ""}
+            placeholder={agent ? `Message ${demoAgents[agent]}…` : ""}
           />
         </label>
       </form>
@@ -127,7 +122,7 @@ const DemoTerminalSurface = ({
 export const createDemoTerminal = (engine: DemoEngine) => {
   const DemoTerminal = ({
     terminalKey,
-    renderCard,
+    renderWindow,
     ...props
   }: TerminalSurfaceProps): React.JSX.Element => {
     const { projectId, workspaceSessionId, terminalId } = terminalKey
@@ -142,7 +137,7 @@ export const createDemoTerminal = (engine: DemoEngine) => {
     )
     const snapshot = useSyncExternalStore(subscribe, getSnapshot)
     const key = { projectId, workspaceSessionId, terminalId }
-    const surface = (
+    const content = (
       <DemoTerminalSurface
         {...props}
         {...snapshot}
@@ -151,7 +146,7 @@ export const createDemoTerminal = (engine: DemoEngine) => {
         onCommand={(command) => engine.run(key, command)}
       />
     )
-    return renderCard ? <>{renderCard(surface)}</> : surface
+    return <>{renderWindow(content)}</>
   }
   return DemoTerminal
 }
