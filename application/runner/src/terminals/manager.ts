@@ -25,7 +25,7 @@ import { shellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
 import { listenForReports, type Report, type Reports } from "../shell/reports.js"
 import type { ShellPaths } from "../shell/scripts.js"
-import { sampleForeground, type Foreground } from "./foreground.js"
+import { sampleForeground, shellInForeground, type Foreground } from "./foreground.js"
 import type { AgentReport, SavedTerminal, SettingsChange, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
@@ -1040,10 +1040,11 @@ export class Terminals {
     const record = this.records.get(terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, token)) return
     // Processes that merely inherited this terminal's environment report too: a tmux
-    // server or an editor started from it reports while its shell holds the foreground,
+    // server or an editor started from it reports while its shell holds the foreground
+    // (which Linux tells),
     // and an agent run by the agent in the foreground starts a new session of its own.
     // A session switch of the agent in the foreground, as /clear or /resume, says so.
-    if (process.platform !== "win32" && this.atPrompt(record)) return
+    if (shellInForeground(record.process.pid)) return
     const active = record.summary.agent
     if (active !== null && (source ?? "startup") === "startup") {
       if (active !== agent || record.agents[active]?.sessionId !== sessionId) return

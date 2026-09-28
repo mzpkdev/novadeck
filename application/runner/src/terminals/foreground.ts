@@ -53,6 +53,20 @@ const leaderArgv = (group: Group): string[] | null => {
   return parseCommandLine(readFileSync(`/proc/${group.id}/cmdline`))
 }
 
+/**
+ * Whether the shell itself holds its terminal's foreground, as at its prompt, from its
+ * own process group; undefined where the platform does not tell, as off Linux.
+ */
+export const shellInForeground = (shellPid: number): boolean | undefined => {
+  if (process.platform !== "linux") return undefined
+  try {
+    const shell = parseProcessStat(readFileSync(`/proc/${shellPid}/stat`, "utf8"))
+    return shell ? shell.tpgid === shellPid : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** A sample of a terminal's foreground, kept so the next one can reuse its `argv`. */
 export type Foreground = {
   readonly process: ForegroundProcess | null

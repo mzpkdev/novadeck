@@ -318,19 +318,26 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(manager.agentSession(terminal.id, "codex")).toBeNull()
   })
 
-  it("ignores reports made while the shell holds the foreground", async ({ shell }) => {
-    // As from a tmux server or an editor started from this terminal, running elsewhere.
-    const bin = reporter(shell.home, [
-      { agent: "claude", sessionId: "elsewhere", seq: 1, source: "startup" },
-    ])
-    const manager = shell.manager({
-      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
-    })
-    const terminal = await create(manager, shell)
-    manager.write({ terminalId: terminal.id, data: "(sleep 0.5; report </dev/null) &\r" }, "owner")
-    await shell.until(manager, terminal.id, "reports sent")
-    expect(manager.agentSession(terminal.id, "claude")).toBeNull()
-  })
+  // Linux tells which process group holds a terminal's foreground.
+  it.runIf(process.platform === "linux")(
+    "ignores reports made while the shell holds the foreground",
+    async ({ shell }) => {
+      // As from a tmux server or an editor started from this terminal, running elsewhere.
+      const bin = reporter(shell.home, [
+        { agent: "claude", sessionId: "elsewhere", seq: 1, source: "startup" },
+      ])
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const terminal = await create(manager, shell)
+      manager.write(
+        { terminalId: terminal.id, data: "(sleep 0.5; report </dev/null) &\r" },
+        "owner",
+      )
+      await shell.until(manager, terminal.id, "reports sent")
+      expect(manager.agentSession(terminal.id, "claude")).toBeNull()
+    },
+  )
 
   it("never types the command after arrow keys or a paste", async ({ shell }) => {
     writeFileSync(join(shell.home, ".bash_history"), "echo from-history\n")

@@ -394,7 +394,7 @@ agent's session for the terminal whose token matches, keeping the report with th
 largest `seq` (the hook's start time) per agent, so `/clear`, a fork, or another agent
 run in between never replaces a later session with an earlier one. Processes that only
 inherited a shell's environment report too, so the runner ignores a report while the
-shell itself holds the foreground (as from a tmux server or an editor started there and
+shell itself holds the foreground, where the platform tells (Linux; as from a tmux server or an editor started there and
 running elsewhere), and a new `startup` session while another agent session holds the
 foreground (an agent run by that agent); a session switch such as `/clear` reports its
 own source and is kept.
