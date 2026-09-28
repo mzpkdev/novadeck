@@ -301,3 +301,35 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shell.store.terminal(id)).toBeUndefined()
   })
 })
+
+// macOS's default shell, where it is installed.
+const zsh = "/bin/zsh"
+
+describe.skipIf(process.platform === "win32" || !existsSync(zsh))("zsh shell integration", () => {
+  it("loads the user's own .zshrc and reports each prompt's directory", async ({ shell }) => {
+    const directory = join(shell.home, "my dir ż")
+    mkdirSync(directory)
+    writeFileSync(join(shell.home, ".zshrc"), "FROM_ZSHRC=loaded\n")
+    const manager = shell.manager({ shell: zsh })
+    const next = shell.watch(manager)
+    const terminal = await create(manager, shell)
+    manager.write(
+      { terminalId: terminal.id, data: `cd '${directory}'; echo $FROM_ZSHRC $ZDOTDIR\r` },
+      "owner",
+    )
+    await next((summary) => summary.cwd === directory)
+    // ZDOTDIR is the user's again once their .zshrc has loaded.
+    await shell.until(manager, terminal.id, `loaded ${shell.home}`)
+  })
+
+  it("types a command at the first prompt, after a slow .zshrc finished", async ({ shell }) => {
+    writeFileSync(
+      join(shell.home, ".zshrc"),
+      'sleep 0.5; read -t 0.5 early; echo "rc read [$early]"\n',
+    )
+    const manager = shell.manager({ shell: zsh })
+    const terminal = await create(manager, shell, { command: "echo resumed-$((20 + 22))" })
+    const shown = await shell.until(manager, terminal.id, "resumed-42")
+    expect(shown).toContain("rc read []")
+  })
+})

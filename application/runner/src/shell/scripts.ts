@@ -57,12 +57,13 @@ if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
 case "$PATH" in "$NOVADECK_BIN":*) ;; *) PATH="$NOVADECK_BIN:$PATH" ;; esac
 
 __novadeck_prompt() {
-  local status=$? LC_ALL=C path=$PWD encoded= char i
+  local status=$? LC_ALL=C path=$PWD encoded= char byte i
   for (( i = 0; i < \${#path}; i++ )); do
     char=\${path:i:1}
     case $char in
       [a-zA-Z0-9/._~-]) encoded+=$char ;;
-      *) printf -v char '%%%02X' "'$char"; encoded+=$char ;;
+      # bash 3.2, as macOS ships, reads a byte above 127 as negative.
+      *) printf -v byte '%d' "'$char"; printf -v char '%%%02X' $(( byte & 255 )); encoded+=$char ;;
     esac
   done
   printf '\\033]7;file://%s%s\\033\\\\' "\${HOSTNAME:-}" "$encoded"

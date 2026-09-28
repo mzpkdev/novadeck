@@ -19,7 +19,7 @@ export type Report = {
 
 // The hook also sends `source`, why the agent started the session (startup, resume,
 // clear…), which is informational.
-const directory = (value: unknown): string | undefined =>
+const absolute = (value: unknown): string | undefined =>
   typeof value === "string" && value.length <= 4096 && !value.includes("\0") && isAbsolute(value)
     ? value
     : undefined
@@ -33,7 +33,7 @@ const parse = (value: unknown): Report | undefined => {
   const name = agentName.safeParse(agent)
   const session = agentSessionId.safeParse(sessionId)
   if (!name.success || !session.success) return undefined
-  const where = directory(cwd)
+  const where = absolute(cwd)
   return {
     terminalId,
     token,
