@@ -46,7 +46,8 @@ const screen = async (terminals: Terminals, terminalId: string) => {
 
 const it = base.extend<{ shell: Fixture }>({
   shell: async ({ resources }, use) => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "novadeck-integration-")))
+    // Long names, as Windows shells report them.
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-integration-")))
     resources.defer(() => rmSync(root, { recursive: true, force: true }))
     const home = join(root, "home")
     mkdirSync(home)
@@ -332,4 +333,40 @@ describe.skipIf(process.platform === "win32" || !existsSync(zsh))("zsh shell int
     const shown = await shell.until(manager, terminal.id, "resumed-42")
     expect(shown).toContain("rc read []")
   })
+})
+
+describe.runIf(process.platform === "win32")("Windows shell integration", () => {
+  // Each command prints resumed-42 without the typed line showing it.
+  const shells = [
+    {
+      name: "cmd",
+      shell: process.env.COMSPEC ?? "cmd.exe",
+      cd: (path: string) => `cd /d "${path}"`,
+      command: "echo resumed-4^2",
+    },
+    {
+      name: "PowerShell",
+      shell: "powershell.exe",
+      cd: (path: string) => `Set-Location '${path}'`,
+      command: "Write-Output ('resumed-' + 42)",
+    },
+  ]
+
+  for (const { name, shell: program, cd, command } of shells) {
+    it(`${name} reports each prompt's directory through ConPTY`, async ({ shell }) => {
+      const directory = join(shell.home, "my dir")
+      mkdirSync(directory)
+      const manager = shell.manager({ shell: program })
+      const next = shell.watch(manager)
+      const terminal = await create(manager, shell)
+      manager.write({ terminalId: terminal.id, data: `${cd(directory)}\r` }, "owner")
+      await next((summary) => summary.cwd.toLowerCase() === directory.toLowerCase())
+    })
+
+    it(`${name} gets a command typed and submitted at its first prompt`, async ({ shell }) => {
+      const manager = shell.manager({ shell: program })
+      const terminal = await create(manager, shell, { command })
+      await shell.until(manager, terminal.id, "resumed-42")
+    })
+  }
 })
