@@ -81,6 +81,8 @@ export type WorkspaceAction =
       target: WorkspaceTarget
       terminalId: string
       process: string
+      // The person started it from the prompt, which ends a pending restore.
+      fromPrompt?: boolean
     }
   | { type: "terminal/select"; target: WorkspaceTarget; terminalId: string }
   | { type: "terminal/visibility"; target: WorkspaceTarget; terminalId: string; hidden: boolean }
@@ -364,7 +366,12 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       })
     case "terminal/process":
       return updateTarget(workspace, action.target, (state) => {
-        const roster = setTerminalProcess(state.roster, action.terminalId, action.process)
+        const roster = setTerminalProcess(
+          state.roster,
+          action.terminalId,
+          action.process,
+          action.fromPrompt,
+        )
         return roster === state.roster ? state : { ...state, roster }
       })
     case "terminal/select":

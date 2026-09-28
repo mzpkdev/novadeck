@@ -53,7 +53,8 @@ const summary = (change: Partial<TerminalSummary>): TerminalSummary => ({
 
 // A runner the test drives step by step: what its watches report, and when a restart
 // answers. Timing like this cannot be arranged with a real runner.
-const scripted = (listed: TerminalSummary) => {
+// `lastProcess` is what the session saved for the terminal, to restore.
+const scripted = (listed: TerminalSummary, lastProcess = "") => {
   const changes = channel<TerminalWatchItem>()
   const statuses = channel<RunnerStatus>()
   const restarts: ((summary: TerminalSummary) => void)[] = []
@@ -75,7 +76,16 @@ const scripted = (listed: TerminalSummary) => {
     id: "s",
     name: "S",
     visitedAt: 5,
-    state: createTerminalState([startingTerminal(terminalId, 1, "/tmp")], "grid", "grid"),
+    state: createTerminalState(
+      [
+        {
+          ...startingTerminal(terminalId, 1, "/tmp"),
+          ...(lastProcess ? { restoredProcess: lastProcess } : {}),
+        },
+      ],
+      "grid",
+      "grid",
+    ),
   }
   const listing: RunnerListing = [
     {
@@ -104,6 +114,22 @@ const scripted = (listed: TerminalSummary) => {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 20))
 
+// The terminal once the store applied every action the adapter sent: its state, the
+// program waiting to be restored, and what the next save records.
+const restoreOf = (app: ReturnType<typeof scripted>) => {
+  const seeded = workspaceFromSeed(app.backend.seed, { view: "grid", windowedView: "grid", now: 1 })
+  const session = activeSession(app.received.reduce<Workspace>(workspaceReducer, seeded))!
+  const terminal = session.state.roster.terminals[0]!
+  const saved = JSON.parse(encodeSession(session, 2)) as {
+    state: { roster: { terminals: { lastProcess: string }[] } }
+  }
+  return {
+    state: terminal.state,
+    restored: terminal.restoredProcess,
+    saved: saved.state.roster.terminals[0]!.lastProcess,
+  }
+}
+
 describe("a terminal the runner loses", () => {
   it("keeps the program it was running to restore in the fresh shell", async () => {
     const app = scripted(summary({ process: { name: "claude", argv: null } }))
@@ -113,21 +139,60 @@ describe("a terminal the runner loses", () => {
     app.changes.push({ type: "reset" })
     app.changes.push({ type: "synced" })
     await vi.waitFor(() => expect(app.statusesOf().at(-1)).toEqual({ state: "starting" }))
-    const seeded = workspaceFromSeed(app.backend.seed, {
-      view: "grid",
-      windowedView: "grid",
-      now: 1,
-    })
-    const workspace = app.received.reduce<Workspace>(workspaceReducer, seeded)
-    const session = activeSession(workspace)!
-    expect(session.state.roster.terminals[0]).toMatchObject({
-      state: "starting",
-      restoredProcess: "claude",
-    })
-    const saved = JSON.parse(encodeSession(session, 2)) as {
-      state: { roster: { terminals: { lastProcess: string }[] } }
+    expect(restoreOf(app)).toEqual({ state: "starting", restored: "claude", saved: "claude" })
+    app.stop()
+  })
+})
+
+describe("a restore waiting in a fresh shell", () => {
+  // The terminal as the store holds it once every report so far is applied: its state,
+  // the program waiting to be restored, and what a save records.
+  const opened = async () => {
+    // The runner announces a new shell at once, before sampling what runs in it.
+    const app = scripted(summary({ process: { name: "bash", argv: null } }), "claude")
+    await flush()
+    const reports = async (...names: string[]) => {
+      for (const name of names) {
+        app.changes.push({ type: "changed", terminal: summary({ process: { name, argv: null } }) })
+        // eslint-disable-next-line no-await-in-loop -- Reports arrive one sample apart.
+        await flush()
+      }
     }
-    expect(saved.state.roster.terminals[0]!.lastProcess).toBe("claude")
+    return { app, reports }
+  }
+
+  it("holds through programs the shell runs on its own at startup", async () => {
+    const { app, reports } = await opened()
+    await reports("fastfetch", "bash")
+    expect(restoreOf(app)).toEqual({ state: "idle", restored: "claude", saved: "claude" })
+    app.stop()
+  })
+
+  it("holds through Enter at a startup program's own prompt", async () => {
+    const { app, reports } = await opened()
+    await reports("ssh-add")
+    app.submitted(app.key)
+    await reports("fastfetch", "bash")
+    expect(restoreOf(app).restored).toBe("claude")
+    app.stop()
+  })
+
+  it("holds while Enter at the prompt starts no program", async () => {
+    const { app, reports } = await opened()
+    app.submitted(app.key)
+    await reports("bash")
+    expect(restoreOf(app)).toEqual({ state: "idle", restored: "claude", saved: "claude" })
+    app.stop()
+  })
+
+  it("ends once the person starts a program from the prompt", async () => {
+    const { app, reports } = await opened()
+    await reports("fastfetch", "bash")
+    app.submitted(app.key)
+    await reports("vim")
+    expect(restoreOf(app)).toEqual({ state: "running", restored: undefined, saved: "vim" })
+    await reports("bash")
+    expect(restoreOf(app).saved).toBe("")
     app.stop()
   })
 })

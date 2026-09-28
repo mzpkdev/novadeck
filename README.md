@@ -63,9 +63,10 @@ for none), and never its command line, which can hold secrets: the program runni
 when the app closed, or one still waiting to be restored. On the next launch it comes
 back as the terminal's `restoredProcess` unless a program runs there now. A program
 that loses its shell while running, as when the runner is lost or the shell killed,
-becomes the one to restore in the fresh shell. A restore holds through programs a
-fresh shell starts before its first prompt, such as rc-file jobs, and ends once a
-program starts from a prompt. Quitting or closing the desktop app's window lets the
+becomes the one to restore in the fresh shell. A restore holds through programs the
+shell runs on its own, such as rc-file jobs, and through a program's own prompts,
+such as a passphrase; it ends once the person presses Enter at the shell's prompt and
+a program starts. Quitting or closing the desktop app's window lets the
 page save before the runner ends its shells, and the runner refuses saves from then
 on, so the programs still running are what gets recorded. On macOS, closing the last
 window leaves the app and its shells running, so `lastProcess` then reflects that

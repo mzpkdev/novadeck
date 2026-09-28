@@ -182,6 +182,8 @@ export const followTerminal = (
       const entry = runtime.entry(key)
       if (!attachment || !entry || entry.closed) return
       void attachment.write(data).catch(() => {})
+      // Enter, typed or pasted; replies to terminal queries never carry it.
+      if (data.includes("\r")) runtime.submitted(key)
     },
     refit,
     stop: () => {

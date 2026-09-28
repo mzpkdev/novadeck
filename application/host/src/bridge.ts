@@ -5,8 +5,9 @@ export const databaseArgumentPrefix = "--novadeck-database="
 export const runnerPortChannel = "novadeck:runner-port"
 
 /**
- * Main-to-renderer request, before quitting, to finish the page's saves while its
- * shells still run; the page answers on the same channel once they have landed.
+ * Main-to-renderer request, before a window closes or the app quits, to finish the
+ * page's saves while its shells still run; the page answers on the same channel once
+ * they have landed.
  */
 export const saveBeforeQuitChannel = "novadeck:save-before-quit"
 

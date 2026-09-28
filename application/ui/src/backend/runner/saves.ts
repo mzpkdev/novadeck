@@ -30,7 +30,7 @@ export type SessionSaves = {
   // Sends what changed now.
   readonly flush: () => void
   // Sends what changed now and resolves once every save sent so far has been answered,
-  // as before the app quits.
+  // as before a window closes or the app quits.
   readonly settle: () => Promise<void>
   // Whether a send waits for its spell.
   readonly busy: () => boolean

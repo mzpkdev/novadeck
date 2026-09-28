@@ -83,7 +83,7 @@ describe("session saves", () => {
     })
   })
 
-  context("before the app quits", () => {
+  context("before a window closes or the app quits", () => {
     it("sends what changed at once and settles once the runner answered", async () => {
       let accept!: () => void
       const app = open(() => new Promise((resolve) => (accept = resolve)))

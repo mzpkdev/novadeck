@@ -26,9 +26,10 @@ export type TerminalKey = WorkspaceTarget & { readonly terminalId: string }
 //   `terminal-focused` (Focus) classes; ship them with the adapter.
 // Attach to a running terminal from the surface's effects; `commit` handles lifecycle.
 export type TerminalSurfaceProps = {
-  // Wraps the content in the window the UI chose; render what it returns. The surface
-  // keeps its controller and emulator mounted above it: a different window remounts
-  // the content element, which must not restart the session or its emulator.
+  // Wraps the content in the terminal's window and the body its program calls for;
+  // render what it returns. The surface keeps its controller and emulator mounted above
+  // it: a different body remounts the content element, which must not restart the
+  // session or its emulator.
   readonly renderWindow: (content: ReactNode) => ReactNode
   // Stable for the terminal's lifetime, so it is safe in effect dependencies.
   readonly terminalKey: TerminalKey

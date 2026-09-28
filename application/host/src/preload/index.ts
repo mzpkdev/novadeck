@@ -25,7 +25,8 @@ if (apiUrl.protocol !== "http:" || apiUrl.hostname !== "127.0.0.1" || !apiUrl.po
   throw new Error("NovaDeck API URL must be an HTTP loopback URL with an explicit port")
 }
 
-// What the page finishes before the app quits; a page without one answers at once.
+// What the page finishes before its window closes or the app quits; a page without one
+// answers at once.
 let beforeQuit: (() => Promise<void>) | undefined
 
 ipcRenderer.on(saveBeforeQuitChannel, () => {

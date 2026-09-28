@@ -10,7 +10,7 @@ const agents = [
 
 describe("process windows", () => {
   it.each(agents)(
-    "gives $program its own window with input and controls in every layout",
+    "presents $program in its window with input and controls in every layout",
     async ({ name, program }) => {
       await openWorkspace("/projects/storefront/sessions/initial/grid?demo=agents")
 

@@ -334,7 +334,7 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
       onInputFocused()
     }, [focusInput, onInputFocused])
 
-    // A different window remounts this content; the host moves into the new slot.
+    // A different program body remounts this content; the host moves into the new slot.
     return (
       <>
         {renderWindow(
