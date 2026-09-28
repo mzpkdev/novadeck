@@ -491,7 +491,11 @@ export const runnerBackend = (
   // Starts a fresh shell for the terminal, keeping its id: a restart when the runner
   // still has the exited record, a create when it does not. Its surface attaches again.
   // Every replacement shell starts here, while the terminal's `restoredProcess` still
-  // names the program it lost: where resuming that program would go.
+  // names the program it lost: where resuming that program would go. Resume only once
+  // create or restart returned a summary, as a CONFLICT settles here too while the old
+  // shell lives on, and a failed attach ("Another window controls it") captures a
+  // restore without losing the shell. Copy the restore onto the entry first: the fresh
+  // shell's first idle report drops it from the store.
   const freshShell = (entry: RunnerEntry): void => {
     if (entry.closed || entry.starting) return
     const { terminalId, workspaceSessionId } = entry.key
