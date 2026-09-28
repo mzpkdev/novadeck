@@ -342,23 +342,28 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
       name: "cmd",
       shell: process.env.COMSPEC ?? "cmd.exe",
       cd: (path: string) => `cd /d "${path}"`,
+      prompt: />\s*$/m,
       command: "echo resumed-4^2",
     },
     {
       name: "PowerShell",
       shell: "powershell.exe",
       cd: (path: string) => `Set-Location '${path}'`,
+      prompt: /PS .*>/,
       command: "Write-Output ('resumed-' + 42)",
     },
   ]
 
-  for (const { name, shell: program, cd, command } of shells) {
+  for (const { name, shell: program, cd, prompt, command } of shells) {
     it(`${name} reports each prompt's directory through ConPTY`, async ({ shell }) => {
       const directory = join(shell.home, "my dir")
       mkdirSync(directory)
       const manager = shell.manager({ shell: program })
       const next = shell.watch(manager)
       const terminal = await create(manager, shell)
+      // Typed once the prompt shows, as a person would.
+      await shell.until(manager, terminal.id, prompt)
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
       manager.write({ terminalId: terminal.id, data: `${cd(directory)}\r` }, "owner")
       await next((summary) => summary.cwd.toLowerCase() === directory.toLowerCase())
     })

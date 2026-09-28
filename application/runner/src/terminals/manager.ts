@@ -112,6 +112,8 @@ type Record = {
   changed: boolean
   /** Input calls so far, so a command queued for the first prompt yields to typing. */
   inputs: number
+  /** `performance.now()` when the shell last printed, to type only once it is quiet. */
+  outputAt: number
 } & Omit<Started, "process" | "screen" | "serializer" | "startedAt">
 
 /**
@@ -314,6 +316,7 @@ export class Terminals {
         promptedAt: saved?.promptedAt ?? null,
         changed: false,
         inputs: 0,
+        outputAt: 0,
       }
       this.records.set(record.summary.id, record)
       const shown = saved?.transcript && !input.command && this.transcripts
@@ -421,6 +424,7 @@ export class Terminals {
           exitQueued: false,
           closing: undefined,
           inputs: 0,
+          outputAt: 0,
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
@@ -789,6 +793,7 @@ export class Terminals {
   }
 
   private output(record: Record, child: pty.IPty, data: string): void {
+    record.outputAt = performance.now()
     child.pause()
     record.pendingReads += 1
     void this.enqueue(record, async () => {
@@ -942,18 +947,28 @@ export class Terminals {
    * Types a command at a shell's first prompt, one terminal at a time and a pause apart,
    * so restoring many agents does not start them all at once. It never types into a
    * program: not once someone typed, the shell ended, or another process holds the
-   * foreground. Enter goes separately, as ConPTY can take a line typed in one write
-   * without submitting it.
+   * foreground. Each step waits for the shell to stop printing: the prompt, drawn and
+   * ready for input, then the typed line's echo, and only then Enter. A line editor
+   * still starting up, as PSReadLine behind ConPTY, shows text typed early but can drop
+   * the Enter that follows it.
    */
   private launch(record: Record, child: pty.IPty, command: string): void {
     const inputs = record.inputs
     const current = (): boolean =>
       record.process === child && !record.exitQueued && !this.stopping && record.inputs === inputs
+    // Waits until the shell printed nothing for `ms`, or `limit` passed.
+    const quiet = async (ms: number, limit: number): Promise<void> => {
+      const end = performance.now() + limit
+      while (current() && performance.now() < end && performance.now() - record.outputAt < ms)
+        // eslint-disable-next-line no-await-in-loop -- Polls the shell's output time.
+        await pause(25)
+    }
     this.launches = this.launches
       .then(async () => {
+        await quiet(300, 5_000)
         if (!current() || !this.atPrompt(record)) return
         child.write(command)
-        await pause(50)
+        await quiet(200, 3_000)
         if (!current()) return
         child.write("\r")
         await pause(this.options.launchGapMs)
