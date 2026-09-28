@@ -11,4 +11,10 @@ export const demoBackend = (engine: DemoEngine): Backend => ({
   TerminalSurface: createDemoTerminal(engine),
 })
 
-export const createDemoBackend: CreateBackend = () => demoBackend(createDemoEngine())
+export const createDemoBackend: CreateBackend = () => {
+  const agentCards =
+    new URLSearchParams(window.location.hash.split("?")[1]).get("demo") === "agents"
+  const engine = createDemoEngine()
+  const backend = demoBackend(engine)
+  return agentCards ? { ...backend, seed: demoSeed(Date.now(), true) } : backend
+}

@@ -54,11 +54,12 @@ describe("saved session state", () => {
       expect(saved?.state.layout.canvas.minimized).toEqual({ "02": true })
     })
 
-    it("leaves out what the runner reports and gestures in progress", () => {
+    it("leaves out live status, derived kind and gestures in progress", () => {
       expect(saved?.state.roster.terminals[1]).toEqual({
         id: "02",
         name: "Terminal 02",
         directory: "~/one",
+        lastKnownProcess: session().state.roster.terminals[1]!.process,
       })
       expect(saved?.state.layout.canvas.geometry["01"]).toEqual({
         position: { x: 10, y: 20 },
@@ -66,6 +67,24 @@ describe("saved session state", () => {
         height: 300,
       })
     })
+  })
+
+  it("saves only the remembered name, rejects missing or malformed names", () => {
+    const current = session()
+    current.state.roster.terminals[0] = {
+      ...current.state.roster.terminals[0]!,
+      process: "codex",
+      kind: "codex",
+    }
+    const text = encodeSession(current, 0)
+    const saved = decodeSession(text)!.state.roster.terminals[0]!
+    expect(saved.lastKnownProcess).toBe("codex")
+    expect(saved).not.toHaveProperty("kind")
+    expect(saved).not.toHaveProperty("process")
+    expect(decodeSession(text.replace(',"lastKnownProcess":"codex"', ""))).toBeUndefined()
+    expect(
+      decodeSession(text.replace('"lastKnownProcess":"codex"', '"lastKnownProcess":17')),
+    ).toBeUndefined()
   })
 
   context("when the runner has nothing this build can read", () => {

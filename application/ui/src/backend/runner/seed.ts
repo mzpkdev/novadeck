@@ -1,5 +1,6 @@
 import type { Project, TerminalSummary, WorkspaceSession } from "@novadeck/protocol"
 
+import { rememberProcess } from "../../model/process"
 import type { SessionSeed, WorkspaceSeed } from "../../model/seed"
 import type { TerminalMetadata } from "../../model/types"
 import { terminalActivity } from "./activity"
@@ -40,8 +41,10 @@ const liveTerminal = (
 ): TerminalMetadata | undefined => {
   const { status, process } = terminalActivity(summary)
   if (status === "clean") return undefined
+  const lastKnownProcess = rememberProcess(saved.lastKnownProcess, process?.process ?? "")
   return {
     ...saved,
+    ...(lastKnownProcess ? { lastKnownProcess } : {}),
     command: "",
     process: process?.process ?? "",
     kind: process?.kind ?? "shell",
@@ -82,7 +85,12 @@ const sessionSeed = (session: WorkspaceSession, summaries: readonly TerminalSumm
     )
     .flatMap((summary, index) => {
       const current = liveTerminal(
-        { id: summary.id, name: terminalName(first + index), directory: summary.cwd },
+        {
+          id: summary.id,
+          name: terminalName(first + index),
+          directory: summary.cwd,
+          lastKnownProcess: "",
+        },
         summary,
       )
       return current ? [current] : []

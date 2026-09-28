@@ -1,3 +1,4 @@
+import { rememberProcess } from "../../model/process"
 import type {
   TerminalLayout,
   TerminalMetadata,
@@ -10,8 +11,10 @@ import type {
 // build cannot read starts the session fresh instead of breaking the load.
 const version = 1
 
-// The metadata a saved terminal keeps; its status and process come from the runner.
-export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory">
+// Live status and kind are never saved. The remembered process survives a fresh shell.
+export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory"> & {
+  readonly lastKnownProcess: string
+}
 
 export type SavedSession = {
   readonly visitedAt: number
@@ -49,7 +52,10 @@ export const encodeSession = (session: WorkspaceSession, rank: number): string =
     rank,
     state: {
       roster: {
-        terminals: roster.terminals.map(({ id, name, directory }) => ({ id, name, directory })),
+        terminals: roster.terminals.map(({ id, name, directory, process, lastKnownProcess }) => {
+          const remembered = rememberProcess(lastKnownProcess, process)
+          return { id, name, directory, lastKnownProcess: remembered ?? "" }
+        }),
         order: roster.order,
         nextNumber: roster.nextNumber,
       },
@@ -69,8 +75,17 @@ const isString = (value: unknown): value is string => typeof value === "string"
 const views: readonly unknown[] = ["focus", "grid", "canvas"] satisfies ViewMode[]
 
 const terminal = (value: unknown): SavedTerminal | undefined =>
-  isObject(value) && isString(value.id) && isString(value.name) && isString(value.directory)
-    ? { id: value.id, name: value.name, directory: value.directory }
+  isObject(value) &&
+  isString(value.id) &&
+  isString(value.name) &&
+  isString(value.directory) &&
+  isString(value.lastKnownProcess)
+    ? {
+        id: value.id,
+        name: value.name,
+        directory: value.directory,
+        lastKnownProcess: value.lastKnownProcess,
+      }
     : undefined
 
 const layoutKeys = [

@@ -16,6 +16,7 @@ import type { Terminal as Screen } from "@xterm/headless"
 import * as pty from "node-pty"
 
 import { DomainError } from "../errors.js"
+import { foregroundNodeLauncher } from "./foreground.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { Watcher } from "./watcher.js"
@@ -78,7 +79,10 @@ type Started = { process: pty.IPty; screen: Screen; serializer: Serializer; star
 const foreground = (child: pty.IPty): string | null => {
   if (process.platform === "win32") return null
   try {
-    return basename(child.process).slice(0, 256) || null
+    const name = basename(child.process).slice(0, 256)
+    if (process.platform === "linux" && (name === "node" || name === "nodejs"))
+      return foregroundNodeLauncher(child.pid) ?? name
+    return name || null
   } catch {
     return null
   }
@@ -484,7 +488,7 @@ export class Terminals {
     this.sampler.unref()
   }
 
-  /** Each sample costs one system call and a small read per running terminal. */
+  /** Samples node-pty; Linux Node launchers also require bounded /proc reads. */
   private sample(): void {
     let running = false
     for (const record of this.records.values()) {

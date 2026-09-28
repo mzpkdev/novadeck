@@ -1,3 +1,4 @@
+import { rememberProcess } from "./process"
 import type { TerminalKind, TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
 
 export const createRoster = (terminals: TerminalMetadata[]): TerminalRoster => ({
@@ -92,6 +93,7 @@ const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): Termina
   command: terminal.command,
   process: terminal.process,
   kind: terminal.kind,
+  ...(terminal.lastKnownProcess ? { lastKnownProcess: terminal.lastKnownProcess } : {}),
   ...statusFields(status),
 })
 
@@ -120,10 +122,13 @@ export const setTerminalProcess = (
 ): TerminalRoster => {
   const current = roster.terminals.find((terminal) => terminal.id === terminalId)
   if (!current || (current.process === process && current.kind === kind)) return roster
+  const lastKnownProcess = rememberProcess(current.lastKnownProcess, process)
   return {
     ...roster,
     terminals: roster.terminals.map((terminal) =>
-      terminal === current ? { ...terminal, process, kind } : terminal,
+      terminal === current
+        ? { ...terminal, process, kind, ...(lastKnownProcess ? { lastKnownProcess } : {}) }
+        : terminal,
     ),
   }
 }

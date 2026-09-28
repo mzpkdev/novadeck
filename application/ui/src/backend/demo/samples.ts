@@ -7,10 +7,10 @@ const samples: (TerminalMetadata & { x: number; y: number; height: number })[] =
     id: "01",
     name: "Checkout implementation",
     directory: "~/projects/novadeck",
-    command: "claude",
+    command: "zsh",
     state: "running",
-    kind: "claude",
-    process: "claude",
+    kind: "shell",
+    process: "zsh",
     x: 80,
     y: 80,
     height: 400,
@@ -43,10 +43,10 @@ const samples: (TerminalMetadata & { x: number; y: number; height: number })[] =
     id: "04",
     name: "Checkout review",
     directory: "~/projects/novadeck",
-    command: "codex",
+    command: "zsh",
     state: "running",
-    kind: "codex",
-    process: "codex",
+    kind: "shell",
+    process: "zsh",
     x: 80,
     y: 540,
     height: 330,
@@ -100,21 +100,27 @@ export const initialProjects: Project[] = [
   { id: "api-service", name: "api-service", directory: "~/projects/api-service" },
 ]
 
-export const projectTerminals = (project: Project): TerminalMetadata[] =>
+export const projectTerminals = (project: Project, agentCards = false): TerminalMetadata[] =>
   terminals.map((terminal) => ({
     ...terminal,
     directory: terminal.directory.replace(/^~\/projects\/[^/]+/, project.directory),
+    ...(agentCards && terminal.id === "01"
+      ? { command: "claude", kind: "claude" as const, process: "claude" }
+      : {}),
+    ...(agentCards && terminal.id === "04"
+      ? { command: "codex", kind: "codex" as const, process: "codex" }
+      : {}),
   }))
 
 // Each sample project opens one session with the stable ID "initial".
-export const demoSeed = (now: number): WorkspaceSeed => ({
+export const demoSeed = (now: number, agentCards = false): WorkspaceSeed => ({
   projects: initialProjects.map((project) => ({
     ...project,
     sessions: [
       {
         id: "initial",
         name: sessionName(now),
-        terminals: projectTerminals(project),
+        terminals: projectTerminals(project, agentCards),
         canvasLayout: demoCanvasLayout(),
       },
     ],

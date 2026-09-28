@@ -1,3 +1,5 @@
+import type { AttachedTerminal } from "@novadeck/protocol/client"
+import { Terminal } from "@xterm/xterm"
 import { act, createElement } from "react"
 import { afterEach, vi } from "vitest"
 
@@ -80,7 +82,8 @@ const show = (
   return page
 }
 
-const input = (page: Rendered) => page.container.querySelector("[data-terminal-input]")!
+const input = (page: Rendered) =>
+  page.container.querySelector<HTMLTextAreaElement>("[data-terminal-input]")!
 
 // A surface whose shell ended as `terminal` says, recording the restarts it asks for.
 const ended = (terminal: Partial<TerminalMetadata>) => {
@@ -95,6 +98,105 @@ const ended = (terminal: Partial<TerminalMetadata>) => {
 }
 
 describe("runner terminal surface", () => {
+  it("keeps one live xterm and attachment while switching complete cards", async () => {
+    const { runtime } = starting()
+    const views: Terminal[] = []
+    const originalOpen = Terminal.prototype.open
+    const open = vi.spyOn(Terminal.prototype, "open").mockImplementation(function (
+      this: Terminal,
+      element,
+    ) {
+      views.push(this)
+      return originalOpen.call(this, element)
+    })
+    const attachment: AttachedTerminal = {
+      id: "01",
+      mode: "control",
+      [Symbol.asyncIterator]: () => attachment,
+      next: vi
+        .fn<AttachedTerminal["next"]>()
+        .mockResolvedValueOnce({
+          value: {
+            terminalId: "01",
+            sequence: 1,
+            type: "snapshot",
+            cols: 80,
+            rows: 24,
+            data: "hello from the same shell\r\n",
+            exit: null,
+          },
+          done: false,
+        })
+        .mockImplementation(() => new Promise(() => {})),
+      return: async () => ({ value: undefined, done: true as const }),
+      write: async () => {},
+      resize: async () => {},
+      detach: async () => {},
+    }
+    const attach = vi.fn<SurfaceRuntime["attach"]>(async () => attachment)
+    const screen = vi.fn<SurfaceRuntime["screen"]>()
+    const Surface = createRunnerTerminal({
+      ...runtime,
+      entry: () => ({
+        ready: Promise.resolve(true),
+        revived: new Promise<void>(() => {}),
+        closed: false,
+        size: { cols: 80, rows: 24 },
+      }),
+      attach,
+      screen,
+    })
+    const external = document.createElement("button")
+    external.textContent = "Outside"
+    document.body.append(external)
+    const props = (presentation: "terminal" | "claude" | "codex") =>
+      createElement(Surface, {
+        terminalKey: key,
+        terminal: { ...terminalFixture(1, "~"), state: "running" },
+        projectName: "P",
+        fontSize: 13,
+        focusInput: false,
+        onInputFocused: () => {},
+        presentation,
+        renderCard: (surface) => createElement("div", { "data-card": presentation }, surface),
+      })
+    try {
+      const page = render(props("terminal"))
+      mounted.push(page)
+      await vi.waitFor(() =>
+        expect(views[0]?.buffer.active.getLine(0)?.translateToString()).toContain(
+          "hello from the same shell",
+        ),
+      )
+      const textarea = input(page)
+      const xterm = page.container.querySelector(".xterm")
+      act(() => textarea.focus())
+      expect(document.activeElement).toBe(textarea)
+
+      page.rerender(props("claude"))
+      expect(page.container.querySelector("[data-card=claude]")?.contains(xterm)).toBe(true)
+      expect(input(page)).toBe(textarea)
+      expect(document.activeElement).toBe(textarea)
+      page.rerender(props("codex"))
+      expect(page.container.querySelector("[data-card=codex]")?.contains(xterm)).toBe(true)
+      expect(document.activeElement).toBe(textarea)
+
+      act(() => external.focus())
+      page.rerender(props("terminal"))
+      expect(document.activeElement).toBe(external)
+      expect(input(page)).toBe(textarea)
+      expect(page.container.querySelectorAll(".xterm")).toHaveLength(1)
+      expect(views[0]?.buffer.active.getLine(0)?.translateToString()).toContain(
+        "hello from the same shell",
+      )
+      expect(attach).toHaveBeenCalledTimes(1)
+      expect(screen.mock.calls.map((call) => call[1])).toEqual(["mounted", "shown"])
+    } finally {
+      open.mockRestore()
+      external.remove()
+    }
+  })
+
   context("while its shell has no stream yet", () => {
     it("refuses input where the person can see it", () => {
       const { runtime } = starting()

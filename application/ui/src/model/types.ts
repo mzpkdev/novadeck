@@ -25,6 +25,8 @@ export type TerminalMetadata = {
   directory: string
   command: string
   process: string
+  // Historical foreground program; live process and kind stay separate.
+  lastKnownProcess?: string
   kind: TerminalKind
 } & TerminalStatus
 

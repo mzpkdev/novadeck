@@ -1,39 +1,10 @@
 import type { TerminalExit, TerminalSummary } from "@novadeck/protocol"
 
+import { isShellProcess, processKind, programName } from "../../model/process"
 import type { TerminalProcess } from "../../model/roster"
-import type { TerminalKind, TerminalStatus } from "../../model/types"
+import type { TerminalStatus } from "../../model/types"
 
-// Programs that wait for commands rather than doing work of their own.
-const shells = new Set([
-  "bash",
-  "zsh",
-  "fish",
-  "sh",
-  "dash",
-  "ksh",
-  "mksh",
-  "tcsh",
-  "csh",
-  "ash",
-  "pwsh",
-  "powershell",
-  "cmd",
-  "nu",
-  "elvish",
-  "xonsh",
-])
-const kinds: Readonly<Record<string, TerminalKind>> = {
-  claude: "claude",
-  codex: "codex",
-  git: "git",
-}
-
-// "/usr/bin/zsh", "-zsh" (a login shell) and "pwsh.exe" all name the program "zsh" or "pwsh".
-export const programName = (process: string): string =>
-  (process.split(/[\\/]/).at(-1) ?? process)
-    .replace(/^-/, "")
-    .replace(/\.exe$/i, "")
-    .toLowerCase()
+export { programName } from "../../model/process"
 
 // A shell that exits sooner than this after starting counts as failing to start.
 export const quickExitMs = 2000
@@ -62,8 +33,8 @@ export const terminalActivity = (summary: TerminalSummary): TerminalActivity => 
   const process = summary.process ?? ""
   const program = programName(process)
   return {
-    status: { state: !program || shells.has(program) ? "idle" : "running" },
-    process: { process, kind: kinds[program] ?? "shell" },
+    status: { state: !program || isShellProcess(process) ? "idle" : "running" },
+    process: { process, kind: processKind(process) },
   }
 }
 

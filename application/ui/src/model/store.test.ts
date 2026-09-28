@@ -292,6 +292,7 @@ describe("terminal process", () => {
       ...terminalFixture(1, "~/project"),
       process: "claude",
       kind: "claude",
+      lastKnownProcess: "claude",
     })
   })
 

@@ -5,7 +5,7 @@ import { createTerminalState } from "../../model/state"
 import type { WorkspaceState } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { cleanlyExited, lostTerminals, runnerSeed, type RunnerListing } from "./seed"
-import { encodeSession } from "./session-state"
+import { decodeSession, encodeSession } from "./session-state"
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 const project = (n: number): Project => ({ id: uuid(n), name: `Project ${n}`, cwd: `/work/${n}` })
@@ -23,7 +23,11 @@ const summary = (n: number, session: number, change: Partial<TerminalSummary> = 
 const saved = (
   id: number,
   visitedAt: number,
-  terminals: readonly { readonly id: string; readonly name: string }[],
+  terminals: readonly {
+    readonly id: string
+    readonly name: string
+    readonly lastKnownProcess?: string
+  }[],
   change: Partial<WorkspaceState> = {},
   rank = 0,
 ): WorkspaceSession => {
@@ -138,6 +142,36 @@ describe("runner seed", () => {
       expect(state.roster.nextNumber).toBe(6)
       expect(state.layout.grid.desktop?.some((item) => item.i === uuid(22))).toBe(true)
     })
+  })
+
+  it("retains a remembered process across relaunch and fresh-shell saves without claiming it is live", () => {
+    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", lastKnownProcess: "codex" }])
+    const listing = (terminals: TerminalSummary[]): RunnerListing => [
+      { project: project(1), sessions: [{ session, terminals }] },
+    ]
+    const restored = workspaceFromSeed(runnerSeed(listing([])), defaults).projects[0]!.history[0]!
+    expect(restored.state.roster.terminals[0]).toMatchObject({
+      lastKnownProcess: "codex",
+      process: "",
+      kind: "shell",
+      state: "starting",
+    })
+    const shell = workspaceFromSeed(runnerSeed(listing([summary(20, 10)])), defaults).projects[0]!
+      .history[0]!
+    expect(shell.state.roster.terminals[0]).toMatchObject({
+      lastKnownProcess: "codex",
+      process: "zsh",
+      kind: "shell",
+      state: "idle",
+    })
+    const savedAgain = decodeSession(encodeSession(shell, 2))!.state.roster.terminals[0]!
+    expect(savedAgain.lastKnownProcess).toBe("codex")
+    expect(savedAgain).not.toHaveProperty("kind")
+    const next = workspaceFromSeed(
+      runnerSeed(listing([summary(20, 10, { process: "vim" })])),
+      defaults,
+    )
+    expect(next.projects[0]!.history[0]!.state.roster.terminals[0]!.lastKnownProcess).toBe("vim")
   })
 
   context("with exited terminals the save does not know", () => {

@@ -125,7 +125,11 @@ const DemoTerminalSurface = ({
 
 // One component per engine, so its identity stays stable while the backend lives.
 export const createDemoTerminal = (engine: DemoEngine) => {
-  const DemoTerminal = ({ terminalKey, ...props }: TerminalSurfaceProps): React.JSX.Element => {
+  const DemoTerminal = ({
+    terminalKey,
+    renderCard,
+    ...props
+  }: TerminalSurfaceProps): React.JSX.Element => {
     const { projectId, workspaceSessionId, terminalId } = terminalKey
     const subscribe = useCallback(
       (listener: () => void) =>
@@ -138,7 +142,7 @@ export const createDemoTerminal = (engine: DemoEngine) => {
     )
     const snapshot = useSyncExternalStore(subscribe, getSnapshot)
     const key = { projectId, workspaceSessionId, terminalId }
-    return (
+    const surface = (
       <DemoTerminalSurface
         {...props}
         {...snapshot}
@@ -147,6 +151,7 @@ export const createDemoTerminal = (engine: DemoEngine) => {
         onCommand={(command) => engine.run(key, command)}
       />
     )
+    return renderCard ? <>{renderCard(surface)}</> : surface
   }
   return DemoTerminal
 }

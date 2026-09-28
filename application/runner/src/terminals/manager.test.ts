@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto"
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs"
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
 import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
+import { vi } from "vitest"
 
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions } from "../testing/pty.js"
@@ -528,6 +529,50 @@ describe("terminal watching", () => {
         (change) => change.type === "changed" && change.terminal.process === "novadeck-probe",
       )
       expect(manager.get(terminal.id).process).toBe("novadeck-probe")
+    },
+  )
+
+  it.skipIf(process.platform !== "linux")(
+    "recognizes a Node-backed Codex launcher and restores the shell when it exits",
+    async ({ terminals, resources }) => {
+      const directory = mkdtempSync(join(tmpdir(), "novadeck-launcher-"))
+      resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+      const codex = join(directory, "codex")
+      const other = join(directory, "other.js")
+      writeFileSync(codex, "setInterval(() => {}, 1000)\n")
+      writeFileSync(other, "setInterval(() => {}, 1000)\n")
+
+      const manager = terminals.manager({ processPollMs: 20 })
+      const terminal = await manager.create(
+        { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+        "owner",
+      )
+      const send = (data: string) => manager.write({ terminalId: terminal.id, data }, "owner")
+      const processName = () => manager.get(terminal.id).process
+      const sampled = { timeout: 5_000, interval: 20 }
+
+      send(`'${process.execPath}' '${codex}'\r`)
+      await vi.waitFor(() => expect(processName()).toBe("codex"), sampled)
+      send("\u0003")
+      await vi.waitFor(() => expect(processName()).toBe("sh"), sampled)
+
+      send(`'${process.execPath}' '${other}' codex\r`)
+      await vi.waitFor(() => expect(processName()).toBe("node"), sampled)
+      send("\u0003")
+      await vi.waitFor(() => expect(processName()).toBe("sh"), sampled)
+
+      // A background agent must not take over the window while another command
+      // owns the terminal's foreground process group.
+      send(`'${process.execPath}' '${codex}' & sleep 1\r`)
+      await vi.waitFor(() => expect(processName()).toBe("sleep"), sampled)
+      await vi.waitFor(() => expect(processName()).toBe("sh"), sampled)
+      send("kill $!\r")
+
+      // exec replaces the shell without changing the PTY's PID or process group.
+      send(`exec '${process.execPath}' '${codex}'\r`)
+      await vi.waitFor(() => expect(processName()).toBe("codex"), sampled)
+      send("\u0003")
+      await vi.waitFor(() => expect(manager.get(terminal.id).exit).not.toBeNull(), sampled)
     },
   )
 

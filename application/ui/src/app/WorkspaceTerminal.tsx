@@ -1,10 +1,16 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, type ReactNode } from "react"
 
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
 import { renameView } from "../terminals/rename-state"
-import { TerminalFrame, type TerminalLayoutControls } from "../terminals/TerminalFrame"
+import {
+  TerminalFrame,
+  type TerminalLayoutControls,
+  type TerminalFrameProps,
+} from "../terminals/TerminalFrame"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
+import { ClaudeCard } from "./process-cards/ClaudeCard"
+import { CodexCard } from "./process-cards/CodexCard"
 import {
   currentContext,
   currentState,
@@ -14,7 +20,9 @@ import {
   windowedDestination,
 } from "./selectors"
 
-// One terminal in the current view: the shared frame around the backend's surface.
+const cards = { terminal: TerminalFrame, claude: ClaudeCard, codex: CodexCard }
+
+// The backend owns one mounted terminal controller above the replaceable card UI.
 export const WorkspaceTerminal = ({
   terminal,
   controls: { minimize, onFlyTo, onResizePreset },
@@ -65,55 +73,55 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
+  const presentation =
+    terminal.state === "running" && (terminal.kind === "claude" || terminal.kind === "codex")
+      ? terminal.kind
+      : "terminal"
+  const frame: Omit<TerminalFrameProps, "children"> = {
+    terminal,
+    active,
+    fresh,
+    rename: renameView(rename),
+    onBeginRename: () => startRename(terminal, "header"),
+    onRenameDraft: (draft) => changeRenameDraft(terminal.id, draft),
+    onRenameSave: () => saveRename(terminal.id),
+    onRenameCancel: () => cancelRename(terminal.id),
+    compact,
+    switcher: { onOpen: (button) => openSwitcher(terminal.id, button) },
+    onClose: () => close(terminal.id),
+    ...(minimize ? { minimize } : {}),
+    ...(onFlyTo ? { onFlyTo } : {}),
+    ...(onResizePreset
+      ? {
+          onResizePreset: (button: HTMLButtonElement) => {
+            setSelected(terminal.id)
+            onResizePreset(button)
+          },
+          resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const),
+        }
+      : {}),
+    large,
+    ...(compact && enabledViews.includes("focus")
+      ? { onFocus: () => openFocus(terminal.id) }
+      : !compact && destination
+        ? { windowed: { destination: windowedLabel, onOpen: () => openWindowed(terminal.id) } }
+        : {}),
+  }
+  const Card = cards[presentation]
+  const renderCard = (surface: ReactNode): ReactNode => <Card {...frame}>{surface}</Card>
   return (
-    <TerminalFrame
+    <backend.TerminalSurface
+      terminalKey={terminalKey}
       terminal={terminal}
-      active={active}
-      fresh={fresh}
-      rename={renameView(rename)}
-      onBeginRename={() => startRename(terminal, "header")}
-      onRenameDraft={(draft) => changeRenameDraft(terminal.id, draft)}
-      onRenameSave={() => saveRename(terminal.id)}
-      onRenameCancel={() => cancelRename(terminal.id)}
-      compact={compact}
-      switcher={{ onOpen: (button) => openSwitcher(terminal.id, button) }}
-      onClose={() => close(terminal.id)}
-      {...(minimize ? { minimize } : {})}
-      {...(onFlyTo ? { onFlyTo } : {})}
-      {...(onResizePreset
-        ? {
-            onResizePreset: (button: HTMLButtonElement) => {
-              setSelected(terminal.id)
-              onResizePreset(button)
-            },
-            resizeView: view === "grid" ? ("grid" as const) : ("canvas" as const),
-          }
-        : {})}
-      large={large}
-      {...(compact && enabledViews.includes("focus")
-        ? {
-            onFocus: () => openFocus(terminal.id),
-          }
-        : !compact && destination
-          ? {
-              windowed: {
-                destination: windowedLabel,
-                onOpen: () => openWindowed(terminal.id),
-              },
-            }
-          : {})}
-    >
-      <backend.TerminalSurface
-        terminalKey={terminalKey}
-        terminal={terminal}
-        projectName={projectName}
-        fontSize={fontSize}
-        minimized={minimize?.minimized}
-        clipContent={minimize?.clipContent}
-        focusInput={keyboardFocus?.view === view && active}
-        onInputFocused={onInputFocused}
-      />
-    </TerminalFrame>
+      projectName={projectName}
+      fontSize={fontSize}
+      minimized={minimize?.minimized}
+      clipContent={minimize?.clipContent}
+      focusInput={keyboardFocus?.view === view && active}
+      onInputFocused={onInputFocused}
+      presentation={presentation}
+      renderCard={renderCard}
+    />
   )
 }
 
