@@ -2,8 +2,8 @@ import type { TerminalSummary } from "@novadeck/protocol"
 import { RunnerError } from "@novadeck/protocol/client"
 import { vi } from "vitest"
 
-import { context, describe, expect, it } from "../../test"
-import { id, scripted, session } from "./scripted"
+import { describe, expect, it } from "../../test"
+import { id, scripted } from "./scripted"
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -20,60 +20,34 @@ const exited = (terminalId: string): TerminalSummary => ({
 })
 
 describe("resuming a restored terminal", () => {
-  it("types the agent's resume command at the fresh shell's first prompt, where it left off", async () => {
+  it("asks the runner to resume the agent it lost, where it left off", async () => {
     const app = scripted({ shown: [{ id: id(1), lastProcess: "claude" }] })
     await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
-    expect(app.of("claimAgentSession")).toEqual([[id(1), "claude"]])
-    expect(app.of("create")[0]).toMatchObject({
+    expect(app.of("create")[0]).toEqual({
       id: id(1),
+      sessionId: id(8),
+      cols: 80,
+      rows: 24,
       restore: true,
-      command: `claude --resume ${session}`,
+      resume: "claude",
     })
+    expect(JSON.stringify(app.calls)).not.toContain("continue")
     app.stop()
   })
 
-  it("resumes Codex with its own command", async () => {
+  it("resumes Codex the same way", async () => {
     const app = scripted({ shown: [{ id: id(1), lastProcess: "codex" }] })
     await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
-    expect(app.of("create")[0]).toMatchObject({ command: `codex resume ${session}` })
+    expect(app.of("create")[0]).toMatchObject({ resume: "codex" })
     app.stop()
   })
 
-  context("without a known session", () => {
-    it("starts a plain shell showing its transcript, never continuing the last session", async () => {
-      const app = scripted({
-        shown: [{ id: id(1), lastProcess: "claude" }],
-        claimAgentSession: async () => null,
-      })
-      await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
-      expect(app.of("create")[0]).toEqual({
-        id: id(1),
-        sessionId: id(8),
-        cols: 80,
-        rows: 24,
-        restore: true,
-      })
-      expect(JSON.stringify(app.calls)).not.toContain("continue")
-      app.stop()
-    })
-
-    it("starts a plain shell when the runner cannot say", async () => {
-      const app = scripted({
-        shown: [{ id: id(1), lastProcess: "claude" }],
-        claimAgentSession: () => Promise.reject(new RunnerError("TERMINAL_NOT_FOUND")),
-      })
-      await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
-      expect(app.of("create")[0]).not.toHaveProperty("command")
-      app.stop()
-    })
-
-    it("does not ask about a program that cannot resume", async () => {
-      const app = scripted({ shown: [{ id: id(1), lastProcess: "vim" }] })
-      await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
-      expect(app.of("claimAgentSession")).toEqual([])
-      expect(app.of("create")[0]).not.toHaveProperty("command")
-      app.stop()
-    })
+  it("starts a plain shell, showing its transcript, for a program that cannot resume", async () => {
+    const app = scripted({ shown: [{ id: id(1), lastProcess: "vim" }] })
+    await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
+    expect(app.of("create")[0]).not.toHaveProperty("resume")
+    expect(app.of("create")[0]).toMatchObject({ restore: true })
+    app.stop()
   })
 
   it("resumes agents in background sessions at once, while plain shells wait to be shown", async () => {
@@ -86,9 +60,7 @@ describe("resuming a restored terminal", () => {
     })
     await vi.waitFor(() => expect(app.of("create")).toHaveLength(1))
     await flush()
-    expect(app.of("create")).toEqual([
-      expect.objectContaining({ id: id(1), command: `claude --resume ${session}` }),
-    ])
+    expect(app.of("create")).toEqual([expect.objectContaining({ id: id(1), resume: "claude" })])
     app.stop()
   })
 
@@ -102,16 +74,13 @@ describe("resuming a restored terminal", () => {
     expect(app.of("restart")).toEqual([])
     app.restart(app.key(id(1)))
     await vi.waitFor(() => expect(app.of("restart")).toHaveLength(1))
-    expect(app.of("restart")[0]).toEqual([
-      id(1),
-      { cols: 80, rows: 24, command: `claude --resume ${session}` },
-    ])
+    expect(app.of("restart")[0]).toEqual([id(1), { cols: 80, rows: 24, resume: "claude" }])
     app.stop()
   })
 
   it("resumes nothing into a shell that still runs", async () => {
     // Another window still holds the old shell: the runner refuses the restart, and the
-    // command with it.
+    // resume with it.
     const app = scripted({
       shown: [{ id: id(1), lastProcess: "claude" }],
       listed: [exited(id(1))],

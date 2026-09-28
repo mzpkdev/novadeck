@@ -4,7 +4,6 @@ import { z } from "zod"
 import {
   agentIntegration,
   agentName,
-  agentSessionId,
   clientState,
   columns,
   directory,
@@ -15,7 +14,6 @@ import {
   rows,
   runnerSettings,
   sequence,
-  shellCommand,
   terminalAttached,
   terminalChange,
   terminalEvent,
@@ -85,8 +83,10 @@ export const contract = {
   terminals: {
     list: procedure.input(z.strictObject({ sessionId: id })).output(z.array(terminalSummary)),
     // `restore` starts where the runner's saved record of this terminal left off: in its
-    // last directory, showing its saved transcript before the shell's output. `command`
-    // is typed at the fresh shell's first prompt, and then no transcript is shown.
+    // last directory, showing its saved transcript before the shell's output. `resume`
+    // names the agent that ran there: while it is connected, the runner resumes the
+    // session it last reported in this terminal, instead of showing the transcript.
+    // A session resumes in one terminal only, never beside another terminal running it.
     create: procedure
       .input(
         z.strictObject({
@@ -96,7 +96,7 @@ export const contract = {
           cols: columns,
           rows,
           restore: z.boolean().optional(),
-          command: shellCommand.optional(),
+          resume: agentName.optional(),
         }),
       )
       .output(terminalSummary),
@@ -123,18 +123,10 @@ export const contract = {
     close: procedure.input(z.strictObject({ terminalId: id })).output(z.void()),
     // Starts a fresh shell in an exited terminal, keeping its id, session and cwd; the
     // caller gains control. A running terminal is a CONFLICT. The earlier shell's screen
-    // shows above the new one's, unless `command` is typed at its first prompt.
+    // shows above the new one's, unless `resume` resumes an agent session, as for create.
     restart: procedure
-      .input(
-        z.strictObject({ terminalId: id, cols: columns, rows, command: shellCommand.optional() }),
-      )
+      .input(z.strictObject({ terminalId: id, cols: columns, rows, resume: agentName.optional() }))
       .output(terminalSummary),
-    // Hands the terminal the session `agent` last reported in it, live or saved, to
-    // resume: null when it reported none, the agent is not connected, or another terminal
-    // runs or claimed that session.
-    claimAgentSession: procedure
-      .input(z.strictObject({ terminalId: id, agent: agentName }))
-      .output(agentSessionId.nullable()),
   },
   // Agents whose sessions resume once NovaDeck's plugin is installed into them.
   agents: {

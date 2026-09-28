@@ -85,6 +85,22 @@ if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
 else
   PROMPT_COMMAND="__novadeck_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
+
+# A restored terminal resumes its agent at the first prompt, after your own prompt
+# commands, as if typed there, but without the typing or a history entry.
+__novadeck_resume() {
+  [ -n "\${NOVADECK_RESUME:-}" ] || return 0
+  local resume=$NOVADECK_RESUME
+  unset NOVADECK_RESUME
+  eval "$resume"
+}
+if [ -n "\${NOVADECK_RESUME:-}" ]; then
+  if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+    PROMPT_COMMAND+=(__novadeck_resume)
+  else
+    PROMPT_COMMAND+=$'\n__novadeck_resume'
+  fi
+fi
 `
 
 // zsh reads its startup files from ZDOTDIR, which NovaDeck points here. .zshenv reads
@@ -131,6 +147,17 @@ __novadeck_prompt() {
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd __novadeck_prompt
+
+# A restored terminal resumes its agent at the first prompt, after your own precmd
+# hooks, as if typed there, but without the typing or a history entry.
+__novadeck_resume() {
+  add-zsh-hook -d precmd __novadeck_resume
+  [[ -n "$NOVADECK_RESUME" ]] || return 0
+  local resume=$NOVADECK_RESUME
+  unset NOVADECK_RESUME
+  eval "$resume"
+}
+if [[ -n "$NOVADECK_RESUME" ]]; then add-zsh-hook precmd __novadeck_resume; fi
 `
 
 const fish = `${header("#", "shell integration for fish")}
@@ -142,6 +169,16 @@ end
 
 function __novadeck_prompt --on-event fish_prompt
     printf '\\e]7;file://%s%s\\e\\\\' $hostname (string escape --style=url -- $PWD)
+end
+
+# A restored terminal resumes its agent at the first prompt, as if typed there, but
+# without the typing or a history entry.
+function __novadeck_resume --on-event fish_prompt
+    set -q NOVADECK_RESUME; or return
+    set -l resume $NOVADECK_RESUME
+    set -e NOVADECK_RESUME
+    functions -e __novadeck_resume
+    eval $resume
 end
 `
 
@@ -161,6 +198,14 @@ function global:prompt {
   $location = $executionContext.SessionState.Path.CurrentLocation
   if ($location.Provider.Name -ne 'FileSystem') { return $prompt }
   "$([char]27)]9;9;\`"$($location.ProviderPath)\`"$([char]27)\\$prompt"
+}
+# A restored terminal resumes its agent before the first prompt, as if typed there, but
+# without the typing or a history entry.
+if ($env:NOVADECK_RESUME) {
+  $__NovaDeckResume = $env:NOVADECK_RESUME
+  Remove-Item Env:NOVADECK_RESUME
+  Invoke-Expression $__NovaDeckResume
+  Remove-Variable __NovaDeckResume
 }
 `
 

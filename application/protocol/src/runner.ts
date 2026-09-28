@@ -114,8 +114,11 @@ export type Runner = {
        * directory, with its saved transcript shown before the shell's output.
        */
       readonly restore?: boolean
-      /** Typed at the shell's first prompt, then Enter; no transcript is shown then. */
-      readonly command?: string
+      /**
+       * The agent that ran there: while it is connected, the runner resumes the session
+       * it last reported in this terminal, and shows no transcript.
+       */
+      readonly resume?: AgentName
     }): Promise<TerminalSummary>
     /**
      * Follows every terminal on the runner, across sessions. Each subscription, the
@@ -143,13 +146,8 @@ export type Runner = {
      */
     restart(
       terminalId: string,
-      size: { readonly cols: number; readonly rows: number; readonly command?: string },
+      size: { readonly cols: number; readonly rows: number; readonly resume?: AgentName },
     ): Promise<TerminalSummary>
-    /**
-     * Hands the terminal the session `agent` last reported in it, to resume; null when it
-     * reported none, the agent is not connected, or another terminal runs or claimed it.
-     */
-    claimAgentSession(terminalId: string, agent: AgentName): Promise<string | null>
     /** Resolves once the runner has granted the attachment; `control` is the default mode. */
     attach(
       terminalId: string,
@@ -745,12 +743,10 @@ export const connectRunner = async (
       create: (input) => call((wire) => wire.terminals.create(input)),
       watch: () => new TerminalWatch(connection),
       close: (terminalId) => call((wire) => wire.terminals.close({ terminalId })),
-      restart: (terminalId, { cols, rows, command }) =>
+      restart: (terminalId, { cols, rows, resume }) =>
         call((wire) =>
-          wire.terminals.restart({ terminalId, cols, rows, ...(command ? { command } : {}) }),
+          wire.terminals.restart({ terminalId, cols, rows, ...(resume ? { resume } : {}) }),
         ),
-      claimAgentSession: (terminalId, agent) =>
-        call((wire) => wire.terminals.claimAgentSession({ terminalId, agent })),
       async attach(terminalId, { mode = "control" } = {}) {
         const terminal = new Attachment(connection, terminalId, mode)
         await terminal.attach(connection.current())

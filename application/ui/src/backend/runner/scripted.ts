@@ -36,7 +36,6 @@ const unused = (): never => {
 }
 
 export const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`
-export const session = "0c8d6f2e-5b1a-4a7e-9d3c-2f4b6a8e1c0d"
 
 type Saved = { readonly id: string; readonly lastProcess: string }
 type Call = { readonly call: string; readonly input: unknown }
@@ -57,12 +56,11 @@ const state = (saved: readonly Saved[], visitedAt: number, name: string) => ({
 })
 
 // A runner the test scripts: each session's saved terminals, what the runner still
-// lists, and the agent session it knows. Every call that could start a shell is noted.
+// lists. Every call that could start a shell is noted.
 export const scripted = ({
   shown,
   background = [],
   listed = [],
-  claimAgentSession = async () => session,
   restart = () => new Promise<TerminalSummary>(() => {}),
   saveSettings = async () => {},
   connect = async (agent: string, connected: boolean) => ({ agent, available: true, connected }),
@@ -70,7 +68,6 @@ export const scripted = ({
   shown: readonly Saved[]
   background?: readonly Saved[]
   listed?: readonly TerminalSummary[]
-  claimAgentSession?: (terminalId: string, agent: string) => Promise<string | null>
   restart?: () => Promise<TerminalSummary>
   saveSettings?: () => Promise<void>
   connect?: (agent: string, connected: boolean) => Promise<unknown>
@@ -103,10 +100,6 @@ export const scripted = ({
       create: note("create", () => new Promise(() => {})),
       close: async () => {},
       restart: note("restart", restart),
-      claimAgentSession: note("claimAgentSession", (input) => {
-        const [terminalId, agent] = input as [string, string]
-        return claimAgentSession(terminalId, agent)
-      }),
       attach: () => new Promise(() => {}),
     },
   } as unknown as RunnerApi

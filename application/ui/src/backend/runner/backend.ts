@@ -8,7 +8,7 @@ import {
   type TerminalWatchItem,
 } from "@novadeck/protocol/client"
 
-import { resumableProgram, resumeCommand } from "../../model/resume"
+import { resumableProgram } from "../../model/resume"
 import { createStore } from "../../model/store"
 import type { TerminalMetadata, TerminalStatus, Workspace } from "../../model/types"
 import type {
@@ -549,13 +549,13 @@ export const runnerBackend = (
   // Every replacement shell starts here, while the terminal's `restoredProcess` still
   // names the program it lost, which resumes when the runner knows its agent session.
   // The program is read first, as the fresh shell's first idle report drops it from the
-  // store. The resume command goes with the create or restart, and the runner types it
-  // at the fresh shell's first prompt, after a slow rc file, unless someone typed first
-  // or a program holds the foreground: it can never land in a live process. A CONFLICT,
-  // as while the old shell lives on (a failed attach, "Another window controls it",
-  // captures a restore without losing the shell), refuses the call and the command
-  // with it. Without a session there is no command: a plain shell, with the terminal's
-  // transcript above it instead.
+  // store. It goes with the create or restart as `resume`, and the runner resumes the
+  // session that agent last reported there, from the fresh shell's own startup, so the
+  // agent simply comes back: nothing is typed, and it can never land in a live process.
+  // A CONFLICT, as while the old shell lives on (a failed attach, "Another window
+  // controls it", captures a restore without losing the shell), refuses the call and
+  // the resume with it. Without a session, or with the agent disconnected, the runner
+  // starts a plain shell with the terminal's transcript above it instead.
   const freshShell = (entry: RunnerEntry): void => {
     if (entry.closed || entry.starting) return
     const { terminalId, workspaceSessionId } = entry.key
@@ -566,19 +566,8 @@ export const runnerBackend = (
       if (restartingOften()) throw new CrashLoop()
     }
     const retry: Retry = { done: ["CONFLICT"], stillWanted, cancelled: () => entry.closed }
-    // The command that resumes the agent's session, if the runner knows one.
-    const resume = async (): Promise<string | undefined> => {
-      if (!agent) return undefined
-      const session = await untilAnswered(
-        () => runner.terminals.claimAgentSession(terminalId, agent),
-        retry,
-      ).catch((error: unknown) => {
-        if (error instanceof Cancelled || error instanceof CrashLoop) throw error
-        return null
-      })
-      return session ? resumeCommand(agent, session) : undefined
-    }
-    const create = (command: string | undefined) => {
+    const resume = agent ? { resume: agent } : {}
+    const create = () => {
       // A new record counts runs afresh.
       entry.floor = 0
       entry.run = undefined
@@ -590,7 +579,7 @@ export const runnerBackend = (
           cols,
           rows,
           restore: true,
-          ...(command ? { command } : {}),
+          ...resume,
         })
       }, retry)
     }
@@ -602,19 +591,14 @@ export const runnerBackend = (
     const wasLost = entry.lost
     entry.ready = track(
       throttled(async () => {
-        const command = await resume()
         const summary = wasLost
-          ? await create(command)
+          ? await create()
           : await untilAnswered(() => {
               entry.requested = true
-              return runner.terminals.restart(terminalId, {
-                cols,
-                rows,
-                ...(command ? { command } : {}),
-              })
+              return runner.terminals.restart(terminalId, { cols, rows, ...resume })
             }, retry).catch((error: unknown) => {
               // Never created, or evicted since it exited: start it anew.
-              if (hasCode(error, "TERMINAL_NOT_FOUND", "NOT_FOUND")) return create(command)
+              if (hasCode(error, "TERMINAL_NOT_FOUND", "NOT_FOUND")) return create()
               throw error
             })
         // Unknown when the create or restart had already landed; the floor still holds.

@@ -122,7 +122,6 @@ export const recordingRunner = (runner: Runner, io: string[]): RunnerApi => {
       create: (input) => note(`create terminal ${input.id}`, () => runner.terminals.create(input)),
       close: (id) => note(`close ${id}`, () => runner.terminals.close(id)),
       restart: (id, size) => note(`restart ${id}`, () => runner.terminals.restart(id, size)),
-      claimAgentSession: (id, agent) => runner.terminals.claimAgentSession(id, agent),
       attach: async (id, options) =>
         attachment(await note(`attach ${id}`, () => runner.terminals.attach(id, options))),
     },

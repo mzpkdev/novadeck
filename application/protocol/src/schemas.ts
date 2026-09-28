@@ -45,19 +45,10 @@ export const foregroundProcess = z.strictObject({
 })
 
 // Agents whose sessions NovaDeck identifies and can resume once connected: Claude Code,
-// Codex and Antigravity. An agent session id is what
-// the agent itself names its session: a UUID today, kept to a plain token so it can be
-// typed into a shell as it is.
+// Codex and Antigravity. An agent session id is what the agent itself names its
+// session: a UUID today, kept to a plain token so a shell can run it as it is.
 export const agentName = z.enum(["claude", "codex", "agy"])
 export const agentSessionId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
-
-// A command the runner types into a fresh shell at its first prompt, followed by Enter:
-// one line of printable ASCII, so it cannot carry control characters.
-export const shellCommand = z
-  .string()
-  .min(1)
-  .max(256)
-  .regex(/^[\x20-\x7e]+$/)
 
 export const terminalSummary = z.strictObject({
   id,

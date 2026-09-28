@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { TerminalChange, TerminalSummary } from "@novadeck/protocol"
+import type { AgentName, TerminalChange, TerminalSummary } from "@novadeck/protocol"
 
 import { Terminals, type TerminalOptions } from "../terminals/index.js"
 import { describe, expect, it as base } from "../test.js"
@@ -32,6 +32,8 @@ type Fixture = {
     manager: Terminals,
   ) => (match: (terminal: TerminalSummary) => boolean) => Promise<TerminalSummary>
   until: (manager: Terminals, terminalId: string, text: string | RegExp) => Promise<string>
+  /** Saves the session `agent` last reported in the terminal, as an earlier runner did. */
+  saveSession: (id: string, agent: AgentName, sessionId: string) => void
 }
 
 /** Everything the terminal printed so far, read from its screen. */
@@ -64,7 +66,6 @@ const it = base.extend<{ shell: Fixture }>({
         env: { HOME: home, PS1: "$ ", PATH: process.env.PATH },
         shellFiles: installShellFiles(join(root, "data", "shell")),
         records: store,
-        launchGapMs: 10,
         ...options,
       })
       resources.defer(() => terminals.shutdown())
@@ -104,14 +105,22 @@ const it = base.extend<{ shell: Fixture }>({
       )
     }
     const plugins = join(root, "data", "shell", "plugins")
-    await use({ home, plugins, store, sessionId: session.id, manager, watch, until })
+    const saveSession = (id: string, agent: AgentName, sessionId: string) =>
+      store.saveTerminal({
+        id,
+        sessionId: session.id,
+        cwd: store.terminal(id)?.cwd ?? home,
+        agents: { [agent]: { sessionId, seq: 1 } },
+        promptedAt: null,
+      })
+    await use({ home, plugins, store, sessionId: session.id, manager, watch, until, saveSession })
   },
 })
 
 const create = (
   manager: Terminals,
   fixture: Fixture,
-  input: { id?: string; cwd?: string; restore?: boolean; command?: string } = {},
+  input: { id?: string; cwd?: string; restore?: boolean; resume?: AgentName } = {},
 ) =>
   manager.create(
     {
@@ -121,7 +130,7 @@ const create = (
       cols: 100,
       rows: 20,
       ...(input.restore !== undefined && { restore: input.restore }),
-      ...(input.command !== undefined && { command: input.command }),
+      ...(input.resume !== undefined && { resume: input.resume }),
     },
     "owner",
   )
@@ -155,6 +164,18 @@ const reporter = (
   )
   writeFileSync(join(bin, "report"), `#!/bin/sh\nexec "${process.execPath}" "${script}"\n`)
   chmodSync(join(bin, "report"), 0o755)
+  return bin
+}
+
+// A stand-in agent that prints how it was started, and what it sees, then waits.
+const fakeAgent = (home: string, agent: AgentName): string => {
+  const bin = join(home, "bin")
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(
+    join(bin, agent),
+    `#!/bin/sh\necho "${agent} args: $* prompt=[\${FROM_PROMPT:-}] resume=[\${NOVADECK_RESUME:-}]"\nread line\n`,
+    { mode: 0o755 },
+  )
   return bin
 }
 
@@ -197,28 +218,52 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shell.store.terminal(terminal.id)?.cwd).toBe(directory)
   })
 
-  it("types a command at the first prompt, after a slow .bashrc finished", async ({ shell }) => {
-    // A command typed while .bashrc runs would be read by it instead of the prompt.
-    writeFileSync(
-      join(shell.home, ".bashrc"),
-      'sleep 0.5; read -t 0.5 early; echo "rc read [$early]"\n',
-    )
-    const manager = shell.manager()
-    const terminal = await create(manager, shell, { command: "echo resumed-$((20 + 22))" })
-    const shown = await shell.until(manager, terminal.id, "resumed-42")
-    expect(shown).toContain("rc read []")
-  })
-
-  it("waits for a prompt hook that runs a program in the foreground", async ({ shell }) => {
-    writeFileSync(join(shell.home, ".bashrc"), "PROMPT_COMMAND='/bin/sleep 0.3'\n")
-    const manager = shell.manager()
-    const terminal = await create(manager, shell, { command: "echo resumed-$((20 + 22))" })
-    await shell.until(manager, terminal.id, "resumed-42")
-  })
-
-  it("shows the transcript instead of a command a shell without prompts cannot take", async ({
+  it("resumes the saved agent session at the first prompt, as if typed there", async ({
     shell,
   }) => {
+    // Input while .bashrc runs would be read by it instead of the prompt; the user's own
+    // prompt commands run first, as they would before a typed command.
+    writeFileSync(
+      join(shell.home, ".bashrc"),
+      [
+        'export PATH="$HOME/bin:$PATH"',
+        'sleep 0.5; read -t 0.5 early; echo "rc read [$early]"',
+        "PROMPT_COMMAND='export FROM_PROMPT=yes'",
+        "HISTFILE=~/.bash_history",
+      ].join("\n"),
+    )
+    fakeAgent(shell.home, "claude")
+    const id = randomUUID()
+    shell.saveSession(id, "claude", "abc-1")
+    const manager = shell.manager()
+    await create(manager, shell, { id, restore: true, resume: "claude" })
+    const shown = await shell.until(
+      manager,
+      id,
+      "claude args: --resume abc-1 prompt=[yes] resume=[]",
+    )
+    expect(shown).toContain("rc read []")
+    // Nothing was typed: no command line shows, and none is kept in the history.
+    expect(shown).not.toContain("$ claude")
+    manager.write({ terminalId: id, data: "\rhistory\r" }, "owner")
+    const after = await shell.until(manager, id, /history\r?\n[\s\S]*\$ /)
+    expect(after).not.toMatch(/\d+ +claude/)
+  })
+
+  it("resumes nothing for an agent that reported no session there", async ({ shell }) => {
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    fakeAgent(shell.home, "codex")
+    const id = randomUUID()
+    shell.saveSession(id, "claude", "abc-1")
+    const manager = shell.manager()
+    await create(manager, shell, { id, restore: true, resume: "codex" })
+    await shell.until(manager, id, "$ ")
+    manager.write({ terminalId: id, data: "echo ready\r" }, "owner")
+    const shown = await shell.until(manager, id, /ready\r?\n[\s\S]*\$ /)
+    expect(shown).not.toContain("args:")
+  })
+
+  it("shows the transcript when a shell without integration cannot resume", async ({ shell }) => {
     const id = randomUUID()
     const first = shell.manager({ shell: "/bin/sh" })
     await create(first, shell, { id })
@@ -226,23 +271,30 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await shell.until(first, id, /before-reboot\r?\n/)
     await first.shutdown()
 
-    const second = shell.manager({ shell: "/bin/sh" })
-    await create(second, shell, { id, restore: true, command: "echo resumed" })
+    shell.saveSession(id, "claude", "abc-1")
+    fakeAgent(shell.home, "claude")
+    const second = shell.manager({
+      shell: "/bin/sh",
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${join(shell.home, "bin")}:${process.env.PATH}` },
+    })
+    await create(second, shell, { id, restore: true, resume: "claude" })
     const shown = await shell.until(second, id, "restored transcript")
     await new Promise((resolve) => setTimeout(resolve, 1_000))
     expect(shown).toContain("before-reboot")
-    expect(await screen(second, id)).not.toMatch(/resumed\r?\n/)
+    expect(await screen(second, id)).not.toContain("args:")
   })
 
-  it("never types the command once someone typed first", async ({ shell }) => {
-    writeFileSync(join(shell.home, ".bashrc"), "sleep 0.3\n")
+  it("resumes an agent that then reports its session from the foreground", async ({ shell }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const id = randomUUID()
+    shell.saveSession(id, "claude", session)
     const manager = shell.manager()
-    const terminal = await create(manager, shell, { command: "echo resumed" })
-    manager.write({ terminalId: terminal.id, data: "echo mine\r" }, "owner")
-    await shell.until(manager, terminal.id, /mine[\s\S]*\$ /)
-    manager.write({ terminalId: terminal.id, data: "echo done\r" }, "owner")
-    const shown = await shell.until(manager, terminal.id, /done[\s\S]*\$ /)
-    expect(shown).not.toContain("resumed")
+    const next = shell.watch(manager)
+    await create(manager, shell, { id, restore: true, resume: "claude" })
+    await next((summary) => summary.id === id && summary.agent === "claude")
+    expect(manager.reportedSession(id, "claude")).toBe(session)
   })
 
   it("tells which agent session runs, through a connected agent's plugin", async ({ shell }) => {
@@ -343,91 +395,33 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     },
   )
 
-  it("never types the command after arrow keys or a paste", async ({ shell }) => {
-    writeFileSync(join(shell.home, ".bash_history"), "echo from-history\n")
-    writeFileSync(join(shell.home, ".bashrc"), "HISTFILE=~/.bash_history; sleep 0.3\n")
-    const manager = shell.manager()
-    const terminal = await create(manager, shell, { command: "echo resumed" })
-    manager.write({ terminalId: terminal.id, data: "\x1b[A" }, "owner")
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
-    manager.write({ terminalId: terminal.id, data: "\r" }, "owner")
-    const shown = await shell.until(manager, terminal.id, /from-history\r?\n/)
-    expect(shown).not.toContain("resumed")
-  })
-
-  it("keeps the saved transcript until the resume command is typed or dropped", async ({
-    shell,
-  }) => {
-    const id = randomUUID()
-    const first = shell.manager()
-    await create(first, shell, { id })
-    first.write({ terminalId: id, data: "echo before-reboot\r" }, "owner")
-    await shell.until(first, id, /before-reboot[\s\S]*\$ /)
-    await first.shutdown()
-
-    writeFileSync(join(shell.home, ".bashrc"), "sleep 1\n")
-    const second = shell.manager()
-    await create(second, shell, { id, restore: true, command: "echo resumed" })
-    // Saved while the command waits: the earlier screen, as a crash now would keep it.
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    second.persist()
-    expect(shell.store.terminal(id)?.transcript).toContain("before-reboot")
-    // Typing first drops the command; from then on this shell's own screen is saved.
-    second.write({ terminalId: id, data: "echo later-work\r" }, "owner")
-    await shell.until(second, id, /later-work\r?\n/)
-    second.persist()
-    expect(shell.store.terminal(id)?.transcript).toContain("later-work")
-  })
-
-  it("does not bring back a transcript turned off while its command waited", async ({ shell }) => {
-    const id = randomUUID()
-    const first = shell.manager()
-    await create(first, shell, { id })
-    first.write({ terminalId: id, data: "echo SECRET-OLD\r" }, "owner")
-    await shell.until(first, id, /SECRET-OLD[\s\S]*\$ /)
-    await first.shutdown()
-
-    writeFileSync(join(shell.home, ".bashrc"), "sleep 1\n")
-    const second = shell.manager()
-    await create(second, shell, { id, restore: true, command: "echo resumed" })
-    second.keepTranscripts(false)
-    second.keepTranscripts(true)
-    second.persist()
-    expect(shell.store.terminal(id)?.transcript ?? "").not.toContain("SECRET-OLD")
-  })
-
-  it("gives each saved session to one terminal to resume", async ({ shell }) => {
+  it("resumes each saved session in one terminal only", async ({ shell }) => {
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    fakeAgent(shell.home, "claude")
     const [first, second] = [randomUUID(), randomUUID()]
-    for (const id of [first, second])
-      shell.store.saveTerminal({
-        id,
-        sessionId: shell.sessionId,
-        cwd: shell.home,
-        agents: { claude: { sessionId: "shared", seq: 1 } },
-        promptedAt: null,
-      })
+    for (const id of [first, second]) shell.saveSession(id, "claude", "shared")
     const manager = shell.manager()
-    expect(manager.claimAgentSession(first, "claude")).toBe("shared")
-    // Asking again for the same terminal, as a retried restore does, still answers.
-    expect(manager.claimAgentSession(first, "claude")).toBe("shared")
-    expect(manager.claimAgentSession(second, "claude")).toBeNull()
-    // Closing the terminal that claimed it frees the session.
-    await manager.close({ terminalId: first }, "owner").catch(() => {})
-    expect(manager.claimAgentSession(second, "claude")).toBe("shared")
+    await create(manager, shell, { id: first, restore: true, resume: "claude" })
+    await shell.until(manager, first, "claude args: --resume shared")
+    await create(manager, shell, { id: second, restore: true, resume: "claude" })
+    manager.write({ terminalId: second, data: "echo plain\r" }, "owner")
+    await shell.until(manager, second, /plain\r?\n[\s\S]*\$ /)
+    expect(await screen(manager, second)).not.toContain("args:")
+    // Once the terminal that resumed it closes, the session is free again.
+    await manager.close({ terminalId: first }, "owner")
+    manager.write({ terminalId: second, data: "exit\r" }, "owner")
+    await shell.watch(manager)((summary) => summary.id === second && summary.exit !== null)
+    await manager.restart({ terminalId: second, cols: 100, rows: 20, resume: "claude" }, "owner")
+    await shell.until(manager, second, "claude args: --resume shared")
   })
 
   it("does not resume a session another terminal is running", async ({ shell }) => {
     const bin = reporter(shell.home, [
       { agent: "claude", sessionId: "running", seq: 1, source: "startup" },
     ])
+    fakeAgent(shell.home, "claude")
     const lost = randomUUID()
-    shell.store.saveTerminal({
-      id: lost,
-      sessionId: shell.sessionId,
-      cwd: shell.home,
-      agents: { claude: { sessionId: "running", seq: 1 } },
-      promptedAt: null,
-    })
+    shell.saveSession(lost, "claude", "running")
     const manager = shell.manager({
       env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
     })
@@ -435,7 +429,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await next((summary) => summary.id === terminal.id && summary.agent === "claude")
-    expect(manager.claimAgentSession(lost, "claude")).toBeNull()
+    await create(manager, shell, { id: lost, restore: true, resume: "claude" })
+    manager.write({ terminalId: lost, data: "echo plain\r" }, "owner")
+    const shown = await shell.until(manager, lost, /plain\r?\n[\s\S]*\$ /)
+    expect(shown).not.toContain("args:")
   })
 
   it("restores a terminal in its last directory, showing its transcript", async ({ shell }) => {
@@ -456,7 +453,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shown.indexOf("before-reboot")).toBeLessThan(shown.indexOf("restored transcript"))
   })
 
-  it("shows no transcript when a command resumes the terminal instead", async ({ shell }) => {
+  it("shows no transcript when it resumes an agent instead", async ({ shell }) => {
     const id = randomUUID()
     const first = shell.manager()
     await create(first, shell, { id })
@@ -464,9 +461,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await shell.until(first, id, /before-reboot[\s\S]*\$ /)
     await first.shutdown()
 
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    fakeAgent(shell.home, "claude")
+    shell.saveSession(id, "claude", "abc-1")
     const second = shell.manager()
-    await create(second, shell, { id, restore: true, command: "echo resumed" })
-    const shown = await shell.until(second, id, /resumed\r?\n/)
+    await create(second, shell, { id, restore: true, resume: "claude" })
+    const shown = await shell.until(second, id, "claude args: --resume abc-1")
     expect(shown).not.toContain("before-reboot")
   })
 
@@ -537,39 +537,60 @@ describe.skipIf(process.platform === "win32" || !existsSync(zsh))("zsh shell int
     await shell.until(manager, terminal.id, `loaded ${shell.home}`)
   })
 
-  it("types a command at the first prompt, after a slow .zshrc finished", async ({ shell }) => {
+  it("resumes the saved agent session at the first prompt, as if typed there", async ({
+    shell,
+  }) => {
     writeFileSync(
       join(shell.home, ".zshrc"),
-      'sleep 0.5; read -t 0.5 early; echo "rc read [$early]"\n',
+      [
+        'export PATH="$HOME/bin:$PATH"',
+        'sleep 0.5; read -t 0.5 early; echo "rc read [$early]"',
+        "precmd() { export FROM_PROMPT=yes }",
+      ].join("\n"),
     )
+    fakeAgent(shell.home, "claude")
+    const id = randomUUID()
+    shell.saveSession(id, "claude", "abc-1")
     const manager = shell.manager({ shell: zsh })
-    const terminal = await create(manager, shell, { command: "echo resumed-$((20 + 22))" })
-    const shown = await shell.until(manager, terminal.id, "resumed-42")
+    await create(manager, shell, { id, restore: true, resume: "claude" })
+    const shown = await shell.until(
+      manager,
+      id,
+      "claude args: --resume abc-1 prompt=[yes] resume=[]",
+    )
     expect(shown).toContain("rc read []")
+  })
+
+  it("resumes an agent that then reports its session from the foreground", async ({ shell }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    writeFileSync(join(shell.home, ".zshrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const id = randomUUID()
+    shell.saveSession(id, "claude", session)
+    const manager = shell.manager({ shell: zsh })
+    const next = shell.watch(manager)
+    await create(manager, shell, { id, restore: true, resume: "claude" })
+    await next((summary) => summary.id === id && summary.agent === "claude")
   })
 })
 
 describe.runIf(process.platform === "win32")("Windows shell integration", () => {
-  // Each command prints resumed-42 without the typed line showing it.
   const shells = [
     {
       name: "cmd",
       shell: process.env.COMSPEC ?? "cmd.exe",
       cd: (path: string) => `cd /d "${path}"`,
       prompt: /[A-Za-z]:\\[^\r\n]*>/,
-      command: "echo resumed-4^2",
     },
     {
-      // PowerShell 7. Windows PowerShell 5.1 takes no Enter through the bundled ConPTY.
-      name: "PowerShell",
+      name: "PowerShell 7",
       shell: "pwsh.exe",
       cd: (path: string) => `Set-Location '${path}'`,
       prompt: /PS .*>/,
-      command: "Write-Output ('resumed-' + 42)",
     },
   ]
 
-  for (const { name, shell: program, cd, prompt, command } of shells) {
+  for (const { name, shell: program, cd, prompt } of shells) {
     it(`${name} reports each prompt's directory through ConPTY`, async ({ shell }) => {
       const directory = join(shell.home, "my dir")
       mkdirSync(directory)
@@ -582,11 +603,27 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
       manager.write({ terminalId: terminal.id, data: `${cd(directory)}\r` }, "owner")
       await next((summary) => summary.cwd.toLowerCase() === directory.toLowerCase())
     })
-
-    it(`${name} gets a command typed and submitted at its first prompt`, async ({ shell }) => {
-      const manager = shell.manager({ shell: program })
-      const terminal = await create(manager, shell, { command })
-      await shell.until(manager, terminal.id, "resumed-42")
-    })
   }
+
+  // Resuming types nothing, so Windows PowerShell 5.1, which takes no Enter through the
+  // bundled ConPTY, resumes too.
+  for (const { name, shell: program } of [
+    ...shells,
+    { name: "Windows PowerShell", shell: "powershell.exe" },
+  ])
+    it(`${name} resumes the saved agent session as it starts`, async ({ shell }) => {
+      const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH"
+      const bin = join(shell.home, "bin")
+      mkdirSync(bin)
+      writeFileSync(join(bin, "claude.cmd"), "@echo claude args: %*\r\n")
+      const id = randomUUID()
+      shell.saveSession(id, "claude", "abc-1")
+      const manager = shell.manager({
+        shell: program,
+        // Windows spells it Path; a second spelling would leave which one wins open.
+        env: { HOME: shell.home, [pathKey]: `${bin};${process.env[pathKey]}` },
+      })
+      await create(manager, shell, { id, restore: true, resume: "claude" })
+      await shell.until(manager, id, "claude args: --resume abc-1")
+    })
 })

@@ -53,8 +53,7 @@ and the terminal switcher carry on. Claude and Codex have their own icons in
 their presentation can grow. To give another program its own look, add a profile
 entry, with its own body if needed, and a launcher entry in `model/process.ts` if it
 runs as a Node script. Profiles are presentation only: per-program behaviour goes beside
-`programName` in `model/`, as `model/resume.ts` holds the command that resumes each
-agent's session.
+`programName` in `model/`, as `model/resume.ts` names the agents whose sessions resume.
 
 The backend port keeps windows out of the backend: a surface renders one content
 element and passes it to `renderWindow`, and `WorkspaceTerminal.tsx` wraps it in the
@@ -124,15 +123,16 @@ agent.
   anywhere else. It adds nothing to the model's context. Without a connected agent
   there is no resume, even for sessions it reported before: disconnecting forgets them,
   and the terminal comes back as a plain shell with its transcript.
-- **Resuming.** When a terminal lost a connected agent, its fresh shell resumes that
-  session: `claude --resume <id>`, `codex resume <id>` or `agy --conversation <id>`,
-  typed at the shell's first prompt, once a slow rc file has finished and the prompt
-  has settled. It is never typed into a running program or after you started typing, a
-  terminal without a known session gets a plain shell, never "continue the last
-  session", a session resumes in one terminal only, never beside another running it,
-  and a shell without the integration, which reports no prompt, shows its
-  transcript instead. Terminals with an agent to resume start at once, in every session
-  and hidden or not, a moment apart; the others start when their session is shown.
+- **Resuming.** When a terminal lost a connected agent, its fresh shell comes back
+  with that session already running: the runner runs `claude --resume <id>`,
+  `codex resume <id>` or `agy --conversation <id>` as the shell starts, after your rc
+  files and prompt hooks, as if you had typed it at the first prompt, but nothing is
+  typed and nothing goes into your shell history. When the agent exits you are at
+  that shell's prompt. A terminal without a known session gets a plain shell, never
+  "continue the last session", a session resumes in one terminal only, never beside
+  another running it, and a shell without the integration shows its transcript
+  instead. Terminals with an agent to resume start at once, in every session and
+  hidden or not; the others start when their session is shown.
 - **Transcripts.** Each terminal's recent output is kept, and a restored terminal shows
   it read-only above a separator and its fresh prompt; a resumed agent shows its own
   history instead. Transcripts are on by default and can be turned off in Preferences,

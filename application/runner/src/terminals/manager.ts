@@ -20,15 +20,11 @@ import * as pty from "node-pty"
 
 import { DomainError } from "../errors.js"
 import type { InstalledShell } from "../shell/install.js"
-import { shellLaunch } from "../shell/integration.js"
+import { shellLaunch, type ShellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
 import { acceptReport, listenForReports, type Report, type Reports } from "../shell/reports.js"
-import {
-  foregroundNamedShell,
-  sampleForeground,
-  shellInForeground,
-  type Foreground,
-} from "./foreground.js"
+import { resumeCommand } from "../shell/resume.js"
+import { sampleForeground, shellInForeground, type Foreground } from "./foreground.js"
 import type { AgentReport, SavedTerminal, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
@@ -65,8 +61,6 @@ export type TerminalOptions = {
   transcripts?: boolean
   /** How often changed terminals are saved, in milliseconds. */
   saveMs?: number
-  /** The pause between commands typed at first prompts, across terminals, in milliseconds. */
-  launchGapMs?: number
   /** The longest transcript kept per terminal, in characters. */
   transcriptChars?: number
 }
@@ -78,7 +72,7 @@ type Create = {
   cols: number
   rows: number
   restore?: boolean | undefined
-  command?: string | undefined
+  resume?: AgentName | undefined
 }
 type Size = { cols: number; rows: number }
 type Attach = { terminalId: string; afterSequence?: number; mode?: "control" | "observe" }
@@ -116,17 +110,10 @@ type Record = {
   promptedAt: number | null
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
-  /** Input calls so far, so a command queued for the first prompt yields to typing. */
-  inputs: number
-  /** `performance.now()` when the shell last printed, to type only once it is quiet. */
-  outputAt: number
   /**
-   * The transcript kept saved while a command waits to resume the terminal, so a crash
-   * meanwhile loses nothing; once the command is typed or dropped, the new shell's
-   * screen is saved instead.
+   * Whether a line was entered since the last prompt, or the shell resumed an agent, so
+   * a program may be running.
    */
-  held: string | null
-  /** Whether a line was entered since the last prompt, so a program may be running. */
   submitted: boolean
   /** `performance.now()` at the last save of its screen, so saves take turns. */
   savedAt: number
@@ -134,17 +121,15 @@ type Record = {
 
 /**
  * A spawned shell with its own headless screen, before it belongs to a record: the token
- * its agents report with, and the command to type at its first prompt, until it has one.
+ * its agents report with, and when it resumes an agent, until its first prompt.
  */
 type Started = {
   process: pty.IPty
   screen: Screen
   serializer: Serializer
   startedAt: number
-  /** The shell's own process name, which holds the foreground at its prompt. */
-  shellName: string
   token: string
-  pending: string | undefined
+  resumes: ShellLaunch["resumes"]
 }
 
 /** The runner's shell integration, once its files are written and reports are heard. */
@@ -159,18 +144,11 @@ const inherited = [
   "NOVADECK_HOOK",
   "NOVADECK_BIN",
   "NOVADECK_ZDOTDIR",
+  "NOVADECK_RESUME",
 ]
 
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-// Input the terminal itself sends, not typing: focus reports, cursor-position and device
-// reports, and answers to colour queries.
-const terminalReply =
-  // eslint-disable-next-line no-control-regex -- These replies are control sequences.
-  /^(?:\x1b\[[IO]|\x1b\[\??[\d;]*[Rcn]|\x1b\[>[\d;]*c|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/
 
 // How many changed terminals one periodic save handles.
 const savesPerTick = 4
@@ -233,8 +211,6 @@ export class Terminals {
   private reports = Promise.resolve()
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
-  /** Commands typed at first prompts go one at a time, a pause apart. */
-  private launches = Promise.resolve()
   private creating = 0
   private exits = 0
   private stopping = false
@@ -262,7 +238,6 @@ export class Terminals {
       records: options.records,
       codexShim: options.codexShim ?? (() => Promise.resolve(false)),
       saveMs: positive(options.saveMs, 5000),
-      launchGapMs: positive(options.launchGapMs, 750),
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
     }
     // Child programs do not need the runner's network capability, nor the identity of a
@@ -291,7 +266,7 @@ export class Terminals {
   /**
    * Starts a terminal. With `restore`, it continues the saved terminal of that id: in its
    * last directory, with its saved agent sessions, and its transcript shown first unless
-   * a `command` is typed at the first prompt.
+   * the shell resumes the session `resume` last reported there (see `claim`).
    */
   async create(input: Create, ownerId: string): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
@@ -312,7 +287,9 @@ export class Terminals {
       if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
-      const started = this.spawn(shell, cwd, input, integration)
+      const session = input.resume && saved?.agents[input.resume]?.sessionId
+      const resume = session ? this.claim(input.id, input.resume!, session) : undefined
+      const started = this.spawn(shell, cwd, input, integration, resume)
       const record: Record = {
         summary: {
           id: input.id,
@@ -346,15 +323,12 @@ export class Terminals {
         agents: saved?.agents ?? {},
         promptedAt: saved?.promptedAt ?? null,
         changed: false,
-        inputs: 0,
-        outputAt: 0,
-        held: started.pending && this.transcripts ? (saved?.transcript ?? null) : null,
         savedAt: 0,
-        submitted: false,
+        submitted: started.resumes === "startup",
       }
       this.records.set(record.summary.id, record)
-      // A shell that cannot take the command shows the transcript instead.
-      const shown = saved?.transcript && !started.pending && this.transcripts
+      // The resumed agent shows its own history; a shell that resumes none, the transcript.
+      const shown = saved?.transcript && !started.resumes && this.transcripts
       if (shown) this.show(record, saved.transcript!, new Date(saved.savedAt))
       this.listen(record)
       this.announce(record)
@@ -382,14 +356,7 @@ export class Terminals {
   write(input: { terminalId: string; data: string }, ownerId: string): void {
     const record = this.control(input.terminalId, ownerId)
     this.running(record)
-    // Someone typing before the first prompt takes the shell over from a queued command;
-    // the terminal's own replies, such as focus or colour reports, are not typing.
-    if (!terminalReply.test(input.data)) {
-      record.inputs += 1
-      record.pending = undefined
-      record.held = null
-      if (/[\r\n]/.test(input.data)) record.submitted = true
-    }
+    if (/[\r\n]/.test(input.data)) record.submitted = true
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
     record.process.write(input.data)
   }
@@ -412,7 +379,7 @@ export class Terminals {
    * Viewers attach again for the new screen. A failed start leaves the terminal exited.
    */
   async restart(
-    input: { terminalId: string; command?: string | undefined } & Size,
+    input: { terminalId: string; resume?: AgentName | undefined } & Size,
     ownerId: string,
   ): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
@@ -435,11 +402,13 @@ export class Terminals {
         if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
         if (this.records.get(input.terminalId) !== record)
           throw new DomainError("TERMINAL_NOT_FOUND")
-        const started = this.spawn(shell, cwd, input, integration)
-        const previous = this.transcripts
-          ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
-          : null
-        const earlier = started.pending ? null : previous
+        const session = input.resume && record.agents[input.resume]?.sessionId
+        const resume = session ? this.claim(record.summary.id, input.resume!, session) : undefined
+        const started = this.spawn(shell, cwd, input, integration, resume)
+        const earlier =
+          this.transcripts && !started.resumes
+            ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
+            : null
         // Earlier attachments ended at the exit; any still draining are dropped.
         for (const subscription of record.subscribers.values()) subscription.cancel()
         record.subscribers.clear()
@@ -463,10 +432,7 @@ export class Terminals {
           controller: pending.released ? undefined : ownerId,
           exitQueued: false,
           closing: undefined,
-          inputs: 0,
-          outputAt: 0,
-          held: started.pending ? previous : null,
-          submitted: false,
+          submitted: started.resumes === "startup",
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
@@ -513,25 +479,28 @@ export class Terminals {
   }
 
   /**
-   * Hands the terminal the session `agent` last reported in it, to resume: null when
-   * none. One session resumes in one terminal: not while another terminal runs it, nor
+   * The command that resumes `agent`'s `session` in the terminal; undefined when it may
+   * not. One session resumes in one terminal: not while another terminal runs it, nor
    * once another terminal claimed it, until that terminal closes.
    */
-  claimAgentSession(terminalId: string, agent: AgentName): string | null {
-    const session = this.reportedSession(terminalId, agent)
-    if (!session) return null
+  private claim(
+    terminalId: string,
+    agent: AgentName,
+    session: string,
+  ): readonly string[] | undefined {
     const key = `${agent}:${session}`
     const claimant = this.claims.get(key)
-    if (claimant !== undefined && claimant !== terminalId) return null
+    if (claimant !== undefined && claimant !== terminalId) return undefined
     for (const other of this.records.values())
       if (
         other.summary.id !== terminalId &&
         other.summary.agent === agent &&
         other.agents[agent]?.sessionId === session
       )
-        return null
-    this.claims.set(key, terminalId)
-    return session
+        return undefined
+    const command = resumeCommand(agent, session)
+    if (command) this.claims.set(key, terminalId)
+    return command
   }
 
   /** Forgets every session `agent` reported, as once it is disconnected. */
@@ -555,10 +524,7 @@ export class Terminals {
   keepTranscripts(enabled: boolean): void {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     this.transcripts = enabled
-    for (const record of this.records.values()) {
-      if (enabled) record.changed = true
-      else record.held = null
-    }
+    if (enabled) for (const record of this.records.values()) record.changed = true
     if (!enabled) this.persisting(() => this.options.records?.clearTranscripts())
   }
 
@@ -869,7 +835,6 @@ export class Terminals {
   }
 
   private output(record: Record, child: pty.IPty, data: string): void {
-    record.outputAt = performance.now()
     child.pause()
     record.pendingReads += 1
     void this.enqueue(record, async () => {
@@ -916,24 +881,25 @@ export class Terminals {
   /**
    * Spawns a shell with a fresh screen; the caller attaches it to a record. Every shell
    * knows its terminal's id; with the integration it also loads it, and gets the hook's
-   * launcher and the endpoint and token its connected agents report with.
+   * launcher and the endpoint and token its connected agents report with. A `resume`
+   * command runs as the integration starts; configured shell arguments leave it out.
    */
   private spawn(
     shell: string,
     cwd: string,
-    input: Size & { id?: string; terminalId?: string; command?: string | undefined },
+    input: Size & { id?: string; terminalId?: string },
     integration: (Integration & { codexShim: boolean }) | undefined,
+    resume?: readonly string[],
   ): Started {
     const { cols, rows } = input
     const id = input.id ?? input.terminalId ?? ""
     const token = randomBytes(24).toString("hex")
-    const launch = integration
+    const launch: ShellLaunch = integration
       ? shellLaunch(shell, integration.paths, this.options.env, {
           codexShim: integration.codexShim,
+          resume: this.options.shellArgs === undefined ? resume : undefined,
         })
-      : { args: [], env: this.options.env, integrated: false }
-    // A command waits for the first prompt, which only an integrated shell reports.
-    const reportsPrompts = launch.integrated && this.options.shellArgs === undefined
+      : { args: [], env: this.options.env, integrated: false, resumes: undefined }
     const env: NodeJS.ProcessEnv = {
       ...launch.env,
       NOVADECK_TERMINAL_ID: id,
@@ -960,9 +926,8 @@ export class Terminals {
         screen,
         serializer,
         startedAt: performance.now(),
-        shellName: basename(shell),
         token,
-        pending: reportsPrompts ? input.command : undefined,
+        resumes: launch.resumes,
       }
     } catch {
       screen.dispose()
@@ -1005,13 +970,14 @@ export class Terminals {
   }
 
   /**
-   * The shell showed its prompt in `cwd`: its agent is no longer in the foreground, and
-   * a command waiting for its first prompt is typed now.
+   * The shell showed its prompt in `cwd`: its agent is no longer in the foreground. A
+   * shell that resumes an agent at its first prompt runs it now.
    */
   private prompted(record: Record, child: pty.IPty, cwd: string): void {
     if (record.process !== child) return
     record.promptedAt = Date.now()
-    record.submitted = false
+    record.submitted = record.resumes === "prompt"
+    record.resumes = undefined
     record.changed = true
     const moved = cwd !== record.summary.cwd
     if (moved || record.summary.agent !== null) {
@@ -1019,59 +985,6 @@ export class Terminals {
       this.announce(record)
     }
     if (moved) this.save(record, false)
-    const command = record.pending
-    record.pending = undefined
-    if (command) this.launch(record, child, command)
-  }
-
-  /**
-   * Types a command at a shell's first prompt, one terminal at a time and a pause apart,
-   * so restoring many agents does not start them all at once. It never types into a
-   * program: not once someone typed, the shell ended, or another process holds the
-   * foreground. Each step waits for the shell to stop printing: the prompt, drawn and
-   * ready for input, then the typed line's echo, and only then Enter. A line editor
-   * still starting up, as PSReadLine behind ConPTY, shows text typed early but can drop
-   * the Enter that follows it.
-   */
-  private launch(record: Record, child: pty.IPty, command: string): void {
-    const inputs = record.inputs
-    const current = (): boolean =>
-      record.process === child && !record.exitQueued && !this.stopping && record.inputs === inputs
-    // Waits until the shell printed nothing for `ms`, or `limit` passed.
-    const quiet = async (ms: number, limit: number): Promise<void> => {
-      const end = performance.now() + limit
-      while (current() && performance.now() < end && performance.now() - record.outputAt < ms)
-        // eslint-disable-next-line no-await-in-loop -- Polls the shell's output time.
-        await pause(25)
-    }
-    this.launches = this.launches
-      .then(async () => {
-        await quiet(300, 5_000)
-        // A prompt hook may still run a program in the foreground for a moment.
-        for (let tries = 0; current() && !this.atPrompt(record) && tries < 40; tries += 1)
-          // eslint-disable-next-line no-await-in-loop -- Waits for the shell to take it back.
-          await pause(50)
-        if (!current() || !this.atPrompt(record)) {
-          if (record.process === child) record.held = null
-          return
-        }
-        child.write(command)
-        await quiet(200, 3_000)
-        if (!current()) {
-          if (record.process === child) record.held = null
-          return
-        }
-        child.write("\r")
-        record.submitted = true
-        // The resumed program shows its own history from here.
-        record.held = null
-        await pause(this.options.launchGapMs)
-      })
-      .catch(() => {})
-  }
-
-  private atPrompt(record: Record): boolean {
-    return foregroundNamedShell(record.process, record.shellName)
   }
 
   /**
@@ -1145,8 +1058,7 @@ export class Terminals {
         promptedAt: record.promptedAt,
         ...(transcript && {
           transcript: this.transcripts
-            ? (record.held ??
-              transcriptOf(record.screen, record.serializer, this.options.transcriptChars))
+            ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
             : null,
         }),
       }),
@@ -1176,8 +1088,7 @@ export class Terminals {
     const exit = { ...ended, ranMs: Math.max(0, Math.round(performance.now() - record.startedAt)) }
     void this.enqueue(record, () => {
       record.summary = { ...record.summary, exit, process: null, agent: null }
-      record.pending = undefined
-      record.held = null
+      record.resumes = undefined
       this.save(record, true)
       this.exits += 1
       record.exitOrder = this.exits

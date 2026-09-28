@@ -223,39 +223,60 @@ describe("agents NovaDeck can connect", () => {
   })
 })
 
-describe("resuming an agent's saved session", () => {
+// The runner's shells run bash with the fixture's home and stand-ins, as elsewhere here.
+describe.skipIf(windows)("resuming an agent's saved session", () => {
   it("happens only while the agent is connected, and disconnecting forgets it", async ({
     fixture,
     resources,
   }) => {
     installed(fixture.home, "claude")
     const database = join(fixture.root, "data", "workspace.sqlite")
-    const terminalId = randomUUID()
+    const [before, after] = [randomUUID(), randomUUID()]
     const saved = new WorkspaceStore(database)
-    saved.saveTerminal({
-      id: terminalId,
-      sessionId: randomUUID(),
-      cwd: fixture.home,
-      agents: { claude: { sessionId: "saved-session", seq: 1 } },
-      promptedAt: null,
-    })
-    saved.close()
+    resources.defer(() => saved.close())
+    const project = await saved.createProject({ id: randomUUID(), name: "P", cwd: fixture.home })
+    const session = saved.createSession({ id: randomUUID(), projectId: project.id, name: "S" })
+    for (const [id, sessionId] of [
+      [before, "before-connecting"],
+      [after, "after-connecting"],
+    ] as const)
+      saved.saveTerminal({
+        id,
+        sessionId: session.id,
+        cwd: fixture.home,
+        agents: { claude: { sessionId, seq: 1 } },
+        promptedAt: null,
+      })
     const runner = createRunner({
       database,
       shell: join(fixture.root, "data", "shell"),
       agents: { home: fixture.home, env: fixture.environment() },
+      terminals: { shell: "/bin/bash", env: fixture.environment() },
     })
     resources.defer(() => runner.close())
     const { port1, port2 } = new MessageChannel()
     servePort(runner, port1)
     const client = await connectRunner(messagePort(() => Promise.resolve(port2)))
     resources.defer(() => client.close())
+    const restore = (id: string) =>
+      client.terminals.create({
+        id,
+        sessionId: session.id,
+        cols: 80,
+        rows: 24,
+        restore: true,
+        resume: "claude",
+      })
 
-    expect(await client.terminals.claimAgentSession(terminalId, "claude")).toBeNull()
+    await restore(before)
     await client.agents.set("claude", true)
-    expect(await client.terminals.claimAgentSession(terminalId, "claude")).toBe("saved-session")
+    await restore(after)
+    await expect
+      .poll(fixture.calls, { timeout: 10_000 })
+      .toContainEqual(["claude", "--resume", "after-connecting"])
+    // By now the first shell is long at its prompt, where it would have resumed.
+    expect(fixture.calls()).not.toContainEqual(["claude", "--resume", "before-connecting"])
     await client.agents.set("claude", false)
-    await client.agents.set("claude", true)
-    expect(await client.terminals.claimAgentSession(terminalId, "claude")).toBeNull()
+    expect(saved.terminal(after)?.agents).toEqual({})
   })
 })

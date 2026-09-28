@@ -81,22 +81,6 @@ export const shellInForeground = async (shellPid: number): Promise<boolean | und
   return undefined
 }
 
-/**
- * Whether the foreground process has the shell's name, which node-pty tells everywhere
- * but Windows. Checked before typing at a prompt, where a mistake is harmless: a process
- * with the shell's name, as a script it runs, only delays typing, and another name only
- * skips it. Reports use `shellInForeground`, which compares process groups, since there
- * such a script would wrongly drop an agent's report. Windows counts as at the prompt.
- */
-export const foregroundNamedShell = (child: Pick<IPty, "process">, shellName: string): boolean => {
-  if (process.platform === "win32") return true
-  try {
-    return basename(child.process) === shellName
-  } catch {
-    return true
-  }
-}
-
 /** A sample of a terminal's foreground, kept so the next one can reuse its `argv`. */
 export type Foreground = {
   readonly process: ForegroundProcess | null

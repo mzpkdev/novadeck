@@ -336,12 +336,13 @@ not command completion.
   runner forgets the terminal: `list` omits it, watchers receive `removed`, and later
   calls report `TERMINAL_NOT_FOUND`. Attached viewers still receive `exited` first. A
   shell that exits on its own keeps its record until eviction.
-- `terminals.restart({ terminalId, cols, rows, command? })`, or
-  `runner.terminals.restart(id, { cols, rows, command })`, starts a fresh shell in a
+- `terminals.restart({ terminalId, cols, rows, resume? })`, or
+  `runner.terminals.restart(id, { cols, rows, resume })`, starts a fresh shell in a
   retained exited terminal: the same ID and session, in the shell's last reported
   directory (or where it started, once that is gone), with a new screen that shows the
-  earlier one above a separator while transcripts are on. A `command` is typed at the
-  fresh shell's first prompt instead, and then the earlier screen is not shown. The
+  earlier one above a separator while transcripts are on. With `resume`, the fresh
+  shell resumes that agent's session instead, as for `create`, and then the earlier
+  screen is not shown. The
   same control rule as closing applies, and the caller then holds control. The
   summary's `run` counts shells, 1 at creation and one more per restart, so a client
   can discard a late report about an earlier run. Watchers receive `changed`;
@@ -410,20 +411,21 @@ shell exits, and on `persist()` and `close()`, which save before any shell ends.
 Closing a terminal forgets it, including one from an earlier runner (`terminals.close`
 still rejects with `TERMINAL_NOT_FOUND` then).
 
-- `terminals.create({ …, restore: true, command? })` continues the saved terminal of
+- `terminals.create({ …, restore: true, resume? })` continues the saved terminal of
   that ID in the same session: in its last directory when that still exists, with its
   agent sessions, showing its transcript above a separator before the shell's output.
-  `command`, one line of printable ASCII up to 256 characters, is typed at the shell's
-  first prompt, once the shell stops printing, and Enter once its echo settles; then no
-  transcript is shown. A shell without the integration reports no prompt, so it ignores
-  the command and shows the transcript instead. The runner types
-  it only at a prompt the integration reported, never after the client wrote input
-  first or while another process holds the foreground, and spaces such commands 750 ms
-  apart across terminals.
-- `terminals.claimAgentSession({ terminalId, agent })` hands the terminal the session
-  the agent last reported in it, live or saved, to resume. It answers `null` for an agent
-  not connected (disconnecting also forgets every session it reported), for a session
-  another terminal is running, and for one another terminal claimed and has not closed.
+  `resume` names the agent (`claude`, `codex` or `agy`) that ran there. While it is
+  connected, the runner builds the command that resumes the session it last reported
+  in this terminal (`claude --resume <id>`, `codex resume <id>`,
+  `agy --conversation <id>`) and the fresh shell runs it once as it starts, and then no
+  transcript is shown. The command goes to the shell in `NOVADECK_RESUME`, which the
+  integration unsets before running it: bash, zsh and fish run it at the first prompt,
+  after the user's startup files and prompt hooks, PowerShell after its profile, and
+  cmd with `/k`. Nothing is typed, so it never lands in the history or in a running
+  program. The runner resumes nothing, and shows the transcript, for an agent not
+  connected (disconnecting also forgets every session it reported), a terminal where
+  the agent reported no session, a session another terminal is running or resumed and
+  has not closed, and a shell without the integration.
 - `agents.list()` answers, for `claude`, `codex` and `agy`, whether the agent is
   installed where the runner runs (its home: `CLAUDE_CONFIG_DIR` or `~/.claude`,
   `CODEX_HOME` or `~/.codex`, `~/.gemini/antigravity-cli`) and whether NovaDeck's plugin
