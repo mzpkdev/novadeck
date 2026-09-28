@@ -221,6 +221,8 @@ export class Terminals {
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
+  /** Sessions given out to resume, as agent:session, and the terminal each went to. */
+  private readonly claims = new Map<string, string>()
   /** Commands typed at first prompts go one at a time, a pause apart. */
   private launches = Promise.resolve()
   private creating = 0
@@ -488,11 +490,37 @@ export class Terminals {
     this.forget(input.terminalId)
   }
 
-  /** The session `agent` last reported in the terminal, live or saved; null when none. */
+  /**
+   * The session `agent` last reported in the terminal, live or saved, to resume it; null
+   * when none. One session resumes in one terminal: not while another terminal runs it,
+   * nor once another terminal was given it to resume.
+   */
   agentSession(terminalId: string, agent: AgentName): string | null {
     const live = this.records.get(terminalId)
-    const reported = (live ?? this.saved(terminalId))?.agents[agent]
-    return reported?.sessionId ?? null
+    const session = (live ?? this.saved(terminalId))?.agents[agent]?.sessionId
+    if (!session) return null
+    const key = `${agent}:${session}`
+    const claimant = this.claims.get(key)
+    if (claimant !== undefined && claimant !== terminalId) return null
+    for (const other of this.records.values())
+      if (
+        other.summary.id !== terminalId &&
+        other.summary.agent === agent &&
+        other.agents[agent]?.sessionId === session
+      )
+        return null
+    this.claims.set(key, terminalId)
+    return session
+  }
+
+  /** Forgets every session `agent` reported, as once it is disconnected. */
+  forgetAgent(agent: AgentName): void {
+    for (const record of this.records.values()) {
+      const { [agent]: _forgotten, ...rest } = record.agents
+      record.agents = rest
+    }
+    for (const key of this.claims.keys()) if (key.startsWith(`${agent}:`)) this.claims.delete(key)
+    this.persisting(() => this.options.records?.forgetAgent(agent))
   }
 
   /** The integration for a new shell, with whether it gets the shims. */

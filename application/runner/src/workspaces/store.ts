@@ -3,7 +3,7 @@ import { realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute } from "node:path"
 import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 
-import type { Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
+import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
 import type { SavedTerminal, SettingsChange, TerminalRecords } from "../terminals/records.js"
@@ -256,6 +256,19 @@ export class WorkspaceStore implements TerminalRecords {
 
   removeTerminal(terminalId: string): void {
     void this.queries.run`DELETE FROM terminals WHERE id = ${terminalId}`
+  }
+
+  forgetAgent(agent: AgentName): void {
+    const rows = this.queries.all`SELECT id, agents FROM terminals` as Pick<
+      TerminalRow,
+      "id" | "agents"
+    >[]
+    for (const row of rows) {
+      const { [agent]: forgotten, ...rest } = agentsOf(row.agents)
+      if (forgotten)
+        void this.queries
+          .run`UPDATE terminals SET agents = ${JSON.stringify(rest)} WHERE id = ${row.id}`
+    }
   }
 
   clearTranscripts(): void {

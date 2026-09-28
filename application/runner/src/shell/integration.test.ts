@@ -392,6 +392,45 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shell.store.terminal(id)?.transcript ?? "").not.toContain("SECRET-OLD")
   })
 
+  it("gives each saved session to one terminal to resume", async ({ shell }) => {
+    const [first, second] = [randomUUID(), randomUUID()]
+    for (const id of [first, second])
+      shell.store.saveTerminal({
+        id,
+        sessionId: shell.sessionId,
+        cwd: shell.home,
+        agents: { claude: { sessionId: "shared", seq: 1 } },
+        promptedAt: null,
+      })
+    const manager = shell.manager()
+    expect(manager.agentSession(first, "claude")).toBe("shared")
+    // Asking again for the same terminal, as a retried restore does, still answers.
+    expect(manager.agentSession(first, "claude")).toBe("shared")
+    expect(manager.agentSession(second, "claude")).toBeNull()
+  })
+
+  it("does not resume a session another terminal is running", async ({ shell }) => {
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "running", seq: 1, source: "startup" },
+    ])
+    const lost = randomUUID()
+    shell.store.saveTerminal({
+      id: lost,
+      sessionId: shell.sessionId,
+      cwd: shell.home,
+      agents: { claude: { sessionId: "running", seq: 1 } },
+      promptedAt: null,
+    })
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const next = shell.watch(manager)
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await next((summary) => summary.id === terminal.id && summary.agent === "claude")
+    expect(manager.agentSession(lost, "claude")).toBeNull()
+  })
+
   it("restores a terminal in its last directory, showing its transcript", async ({ shell }) => {
     const directory = join(shell.home, "work")
     mkdirSync(directory)

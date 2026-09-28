@@ -122,13 +122,15 @@ agent.
   turning it off uninstalls it. The plugin holds a single hook that tells the NovaDeck
   terminal it runs in which session it is, and does nothing when the agent runs
   anywhere else. It adds nothing to the model's context. Without a connected agent
-  there is no resume: the terminal comes back as a plain shell with its transcript.
+  there is no resume, even for sessions it reported before: disconnecting forgets them,
+  and the terminal comes back as a plain shell with its transcript.
 - **Resuming.** When a terminal lost a connected agent, its fresh shell resumes that
   session: `claude --resume <id>`, `codex resume <id>` or `agy --conversation <id>`,
   typed at the shell's first prompt, once a slow rc file has finished and the prompt
   has settled. It is never typed into a running program or after you started typing, a
   terminal without a known session gets a plain shell, never "continue the last
-  session", and a shell without the integration, which reports no prompt, shows its
+  session", a session resumes in one terminal only, never beside another running it,
+  and a shell without the integration, which reports no prompt, shows its
   transcript instead. Terminals with an agent to resume start at once, in every session
   and hidden or not, a moment apart; the others start when their session is shown.
 - **Transcripts.** Each terminal's recent output is kept, and a restored terminal shows

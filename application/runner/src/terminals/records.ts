@@ -32,6 +32,8 @@ export type TerminalRecords = {
   ): void
   removeTerminal(terminalId: string): void
   clearTranscripts(): void
+  /** Forgets every session the agent reported, as once it is disconnected. */
+  forgetAgent(agent: AgentName): void
   settings(): RunnerSettings
   saveSettings(settings: SettingsChange): void
 }

@@ -143,13 +143,20 @@ export const createRouter = (options: {
       close: authorized.terminals.close.handler(({ input, context }) =>
         terminals.close(input, context.connection.id),
       ),
-      agentSession: authorized.terminals.agentSession.handler(({ input }) =>
-        terminals.agentSession(input.terminalId, input.agent),
+      // A disconnected agent resumes nothing, whatever it reported before.
+      agentSession: authorized.terminals.agentSession.handler(async ({ input }) =>
+        (await agents.connected(input.agent))
+          ? terminals.agentSession(input.terminalId, input.agent)
+          : null,
       ),
     },
     agents: {
       list: authorized.agents.list.handler(() => agents.list()),
-      set: authorized.agents.set.handler(({ input }) => agents.set(input.agent, input.connected)),
+      set: authorized.agents.set.handler(async ({ input }) => {
+        const result = await agents.set(input.agent, input.connected)
+        if (!result.connected) terminals.forgetAgent(input.agent)
+        return result
+      }),
     },
     settings: {
       get: authorized.settings.get.handler(() => terminals.settings()),

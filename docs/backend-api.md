@@ -421,7 +421,9 @@ still rejects with `TERMINAL_NOT_FOUND` then).
   first or while another process holds the foreground, and spaces such commands 750 ms
   apart across terminals.
 - `terminals.agentSession({ terminalId, agent })` answers the session the agent last
-  reported in the terminal, live or saved, or `null`, as for an agent not connected.
+  reported in the terminal, live or saved, to resume it. It answers `null` for an agent
+  not connected (disconnecting also forgets every session it reported), for a session
+  another terminal is running, and for one this runner already gave another terminal.
 - `agents.list()` answers, for `claude`, `codex` and `agy`, whether the agent is
   installed where the runner runs (its home: `CLAUDE_CONFIG_DIR` or `~/.claude`,
   `CODEX_HOME` or `~/.codex`, `~/.gemini/antigravity-cli`) and whether NovaDeck's plugin

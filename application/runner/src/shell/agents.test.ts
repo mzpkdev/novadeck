@@ -1,8 +1,14 @@
+import { randomUUID } from "node:crypto"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
+import { MessageChannel } from "node:worker_threads"
 
+import { connectRunner, messagePort } from "@novadeck/protocol/client"
+
+import { createRunner, servePort } from "../index.js"
 import { describe, expect, it as base } from "../test.js"
+import { WorkspaceStore } from "../workspaces/store.js"
 import { createAgents } from "./agents.js"
 import { installShellFiles } from "./install.js"
 import type { ShellPaths } from "./scripts.js"
@@ -41,7 +47,9 @@ if (agent === "agy") {
 `
 
 type Fixture = {
+  root: string
   home: string
+  environment: (env?: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   /** Where the stand-in agents are on PATH. */
   bin: string
   paths: ShellPaths
@@ -73,27 +81,25 @@ const it = base.extend<{ fixture: Fixture }>({
         )
     const log = join(root, "calls.log")
     const paths = await installShellFiles(join(root, "shell"))
+    const environment = (env: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      SHELL: "/bin/sh",
+      // Only the stand-ins and system tools: a real agent on this machine never runs.
+      PATH: windows
+        ? [bin, process.env.SystemRoot ? join(process.env.SystemRoot, "System32") : ""].join(
+            delimiter,
+          )
+        : [bin, "/usr/bin", "/bin"].join(delimiter),
+      // Agents' homes inside the fixture; an empty one would mean the working directory.
+      CLAUDE_CONFIG_DIR: join(home, ".claude"),
+      CODEX_HOME: join(home, ".codex"),
+      FAKE_LOG: log,
+      ...env,
+    })
     const agents = (env: NodeJS.ProcessEnv = {}) =>
-      createAgents(() => Promise.resolve(paths), {
-        home,
-        env: {
-          ...process.env,
-          HOME: home,
-          USERPROFILE: home,
-          SHELL: "/bin/sh",
-          // Only the stand-ins and system tools: a real agent on this machine never runs.
-          PATH: windows
-            ? [bin, process.env.SystemRoot ? join(process.env.SystemRoot, "System32") : ""].join(
-                delimiter,
-              )
-            : [bin, "/usr/bin", "/bin"].join(delimiter),
-          // Agents' homes inside the fixture; an empty one would mean the working directory.
-          CLAUDE_CONFIG_DIR: join(home, ".claude"),
-          CODEX_HOME: join(home, ".codex"),
-          FAKE_LOG: log,
-          ...env,
-        },
-      })
+      createAgents(() => Promise.resolve(paths), { home, env: environment(env) })
     const calls = () => {
       try {
         return readFileSync(log, "utf8")
@@ -104,7 +110,7 @@ const it = base.extend<{ fixture: Fixture }>({
         return []
       }
     }
-    await use({ home, bin, paths, agents, calls })
+    await use({ root, home, bin, paths, environment, agents, calls })
   },
 })
 
@@ -214,5 +220,42 @@ describe("agents NovaDeck can connect", () => {
     await expect(fixture.agents().set("codex", true)).rejects.toMatchObject({
       code: "AGENT_SETUP_FAILED",
     })
+  })
+})
+
+describe("resuming an agent's saved session", () => {
+  it("happens only while the agent is connected, and disconnecting forgets it", async ({
+    fixture,
+    resources,
+  }) => {
+    installed(fixture.home, "claude")
+    const database = join(fixture.root, "data", "workspace.sqlite")
+    const terminalId = randomUUID()
+    const saved = new WorkspaceStore(database)
+    saved.saveTerminal({
+      id: terminalId,
+      sessionId: randomUUID(),
+      cwd: fixture.home,
+      agents: { claude: { sessionId: "saved-session", seq: 1 } },
+      promptedAt: null,
+    })
+    saved.close()
+    const runner = createRunner({
+      database,
+      shell: join(fixture.root, "data", "shell"),
+      agents: { home: fixture.home, env: fixture.environment() },
+    })
+    resources.defer(() => runner.close())
+    const { port1, port2 } = new MessageChannel()
+    servePort(runner, port1)
+    const client = await connectRunner(messagePort(() => Promise.resolve(port2)))
+    resources.defer(() => client.close())
+
+    expect(await client.terminals.agentSession(terminalId, "claude")).toBeNull()
+    await client.agents.set("claude", true)
+    expect(await client.terminals.agentSession(terminalId, "claude")).toBe("saved-session")
+    await client.agents.set("claude", false)
+    await client.agents.set("claude", true)
+    expect(await client.terminals.agentSession(terminalId, "claude")).toBeNull()
   })
 })
