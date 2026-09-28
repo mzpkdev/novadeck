@@ -17,8 +17,8 @@ export type TerminalMetadata = {
   command: string
   // The foreground program's name, as `programName` resolves it.
   process: string
-  // The program that held the foreground when the app last closed, until this run
-  // starts one of its own.
+  // A program to restore: the one in the foreground when the app last closed, or one
+  // that lost its shell while running. Cleared once a program starts from a prompt.
   restoredProcess?: string
 } & TerminalStatus
 

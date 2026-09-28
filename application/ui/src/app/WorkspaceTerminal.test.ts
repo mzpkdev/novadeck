@@ -118,13 +118,30 @@ const visibleWindow = (container: HTMLElement): HTMLElement => {
 const headerIcon = (window: HTMLElement): string | null | undefined =>
   window.querySelector('button[aria-label="Switch terminal"] svg')?.getAttribute("class")
 
+// Types a draft into the header's name field, the way React sees input.
+const typeDraft = (field: HTMLInputElement, value: string): void =>
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value)
+    field.dispatchEvent(new Event("input", { bubbles: true }))
+  })
+const beginHeaderRename = (container: HTMLElement): HTMLInputElement => {
+  act(() => {
+    visibleWindow(container)
+      .querySelector("[data-terminal-name]")!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+  })
+  return visibleWindow(container).querySelector<HTMLInputElement>("[data-rename-terminal]")!
+}
+
 describe("process windows", () => {
   context("when the foreground process changes", () => {
-    it("shows Claude and Codex in their own windows and returns to the terminal without remounting the surface", async () => {
+    it("presents Claude and Codex in the same window and returns to the terminal without remounting the surface", async () => {
       const page = await open("02")
       try {
         const terminal = visibleWindow(page.container)
         expect(terminal.querySelector("[data-terminal-input]")).not.toBeNull()
+        // The switcher keeps the button it opened from.
+        const switcher = terminal.querySelector('button[aria-label="Switch terminal"]')
 
         page.process("claude")
         expect(visibleWindow(page.container).dataset.processWindow).toBe("claude")
@@ -137,6 +154,8 @@ describe("process windows", () => {
         expect(visibleWindow(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
 
         page.process("zsh")
+        expect(visibleWindow(page.container)).toBe(terminal)
+        expect(terminal.querySelector('button[aria-label="Switch terminal"]')).toBe(switcher)
         expect(visibleWindow(page.container).dataset.processWindow).toBeUndefined()
         expect(headerIcon(visibleWindow(page.container))).toContain("lucide-terminal")
         expect(visibleWindow(page.container).querySelector("[data-terminal-input]")).not.toBeNull()
@@ -182,6 +201,50 @@ describe("process windows", () => {
         expect(visibleWindow(page.container).dataset.processWindow).toBeUndefined()
         expect(page.lifecycle).toEqual({ mounted: 1, unmounted: 0 })
       } finally {
+        page.unmount()
+      }
+    })
+  })
+
+  context("while the terminal is being renamed", () => {
+    it("keeps the header's draft, caret and focus when a program starts and ends", async () => {
+      const page = await open("02")
+      try {
+        const field = beginHeaderRename(page.container)
+        typeDraft(field, "My new na")
+        field.setSelectionRange(9, 9)
+        expect(document.activeElement).toBe(field)
+
+        for (const program of ["claude", "codex", "zsh"]) {
+          page.process(program)
+          const current = visibleWindow(page.container).querySelector("[data-rename-terminal]")
+          expect(current).toBe(field)
+          expect([field.value, field.selectionStart, field.selectionEnd]).toEqual([
+            "My new na",
+            9,
+            9,
+          ])
+          expect(document.activeElement).toBe(field)
+        }
+      } finally {
+        page.unmount()
+      }
+    })
+
+    it("leaves focus in another rename field when a program starts", async () => {
+      const page = await open("02")
+      // Stands in for the sidebar's field, which continues the same rename.
+      const sidebar = document.createElement("input")
+      sidebar.dataset.renameTerminal = "02"
+      document.body.append(sidebar)
+      try {
+        const header = beginHeaderRename(page.container)
+        act(() => sidebar.focus())
+        page.process("claude")
+        expect(visibleWindow(page.container).querySelector("[data-rename-terminal]")).toBe(header)
+        expect(document.activeElement).toBe(sidebar)
+      } finally {
+        sidebar.remove()
         page.unmount()
       }
     })

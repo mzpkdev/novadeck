@@ -104,6 +104,34 @@ const scripted = (listed: TerminalSummary) => {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 20))
 
+describe("a terminal the runner loses", () => {
+  it("keeps the program it was running to restore in the fresh shell", async () => {
+    const app = scripted(summary({ process: { name: "claude", argv: null } }))
+    await flush()
+    // A new runner reports its terminals, and this one is not among them.
+    app.statuses.push({ state: "connected", runnerId: "runner-2" })
+    app.changes.push({ type: "reset" })
+    app.changes.push({ type: "synced" })
+    await vi.waitFor(() => expect(app.statusesOf().at(-1)).toEqual({ state: "starting" }))
+    const seeded = workspaceFromSeed(app.backend.seed, {
+      view: "grid",
+      windowedView: "grid",
+      now: 1,
+    })
+    const workspace = app.received.reduce<Workspace>(workspaceReducer, seeded)
+    const session = activeSession(workspace)!
+    expect(session.state.roster.terminals[0]).toMatchObject({
+      state: "starting",
+      restoredProcess: "claude",
+    })
+    const saved = JSON.parse(encodeSession(session, 2)) as {
+      state: { roster: { terminals: { lastProcess: string }[] } }
+    }
+    expect(saved.state.roster.terminals[0]!.lastProcess).toBe("claude")
+    app.stop()
+  })
+})
+
 describe("runs of a terminal", () => {
   context("while a restart has not answered yet", () => {
     it("ignores late reports about the run it replaces", async () => {

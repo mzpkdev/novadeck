@@ -243,9 +243,10 @@ reconnection, asks for a fresh port. `window.novadeck.pickDirectory()` opens a f
 picker attached to the page's window, with the same sender checks, and resolves the
 chosen path or `null` when cancelled. If the runner process dies, the host starts a
 new one on the next request; shells end with it, and metadata remains. Quitting the
-app first asks each page to finish its saves, through the callback it registered with
-`window.novadeck.beforeQuit(save)`, and waits up to 1.5 s for the answers; only then
-does it end the runner's shells and exit.
+app, or closing a window, first asks the pages involved to finish their saves, through
+the callback each registered with `window.novadeck.beforeQuit(save)`. It waits up to
+1.5 s for the answers, and not for a page that crashed or went away; only then does
+the window close or the app end the runner's shells and exit.
 
 ### Wire contract
 

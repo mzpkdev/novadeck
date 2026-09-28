@@ -46,12 +46,13 @@ describe("compiled desktop host", () => {
       expect(preload).toContain("pickDirectory")
     })
 
-    it("lets pages save before quitting ends the runner's shells", async () => {
+    it("lets pages save before quitting or closing a window ends the runner's shells", async () => {
       const main = await read("main/index.js")
       const preload = await read("preload/index.cjs")
 
       expect(main).toContain('app.on("before-quit"')
-      expect(main).toContain("savePages(ipcMain")
+      expect(main).toContain("saveWindows(BrowserWindow.getAllWindows())")
+      expect(main).toContain("() => saveWindows([window])")
       expect(main).toContain("saveBeforeQuitChannel")
       expect(preload).toContain("novadeck:save-before-quit")
       expect(preload).toContain("beforeQuit")

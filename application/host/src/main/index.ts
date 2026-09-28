@@ -21,7 +21,7 @@ import {
   runnerPortChannel,
 } from "../bridge.js"
 import { debugEnabled, registerDebugIpc } from "./debug.js"
-import { savePages } from "./quit.js"
+import { saveBeforeClose, savePages } from "./quit.js"
 import { startRunner, type RunnerHost } from "./runner.js"
 
 const appId = "dev.mzpk.novadeck"
@@ -70,6 +70,23 @@ const appWindow = (event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | un
   return window
 }
 
+// Asks these windows' pages to finish their saves, skipping any that crashed, went away,
+// or show something other than the app.
+const saveWindows = (windows: readonly BrowserWindow[]): Promise<void> =>
+  savePages(
+    ipcMain,
+    windows
+      .map((window) => window.webContents)
+      .filter(
+        (contents) =>
+          !contents.isDestroyed() &&
+          !contents.isCrashed() &&
+          contents.getURL() !== "" &&
+          isAppPage(contents.getURL()),
+      ),
+    { sender: (answer) => appWindow(answer)?.webContents, timeoutMs: saveBeforeQuitMs },
+  )
+
 const createWindow = (origin: string): BrowserWindow => {
   const apiUrl = new URL("/api/", origin).href
   const window = new BrowserWindow({
@@ -93,6 +110,12 @@ const createWindow = (origin: string): BrowserWindow => {
   })
 
   window.once("ready-to-show", () => window.show())
+  // Closing the last window quits, which ends the shells: the page saves first.
+  saveBeforeClose(
+    window,
+    () => saveWindows([window]),
+    () => stopping,
+  )
 
   window.webContents.on("will-navigate", (event) => event.preventDefault())
 
@@ -172,13 +195,7 @@ app.on("before-quit", (event) => {
   event.preventDefault()
   stopping = true
   // Pages save before the runner ends its shells, so the saves name what still runs.
-  const pages = BrowserWindow.getAllWindows()
-    .map((window) => window.webContents)
-    .filter((contents) => contents.getURL() !== "" && isAppPage(contents.getURL()))
-  void savePages(ipcMain, pages, {
-    sender: (answer) => appWindow(answer)?.webContents,
-    timeoutMs: saveBeforeQuitMs,
-  })
+  void saveWindows(BrowserWindow.getAllWindows())
     .then(() => Promise.allSettled([runner?.close(), server?.close()]))
     .finally(() => app.quit())
 })

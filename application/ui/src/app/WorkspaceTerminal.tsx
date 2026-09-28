@@ -4,7 +4,11 @@ import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
 import { terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
-import type { TerminalLayoutControls, WindowShellProps } from "../terminals/WindowShell"
+import {
+  WindowShell,
+  type TerminalLayoutControls,
+  type WindowShellProps,
+} from "../terminals/WindowShell"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import {
   currentContext,
@@ -16,7 +20,7 @@ import {
 } from "./selectors"
 
 // One terminal in the current view: the backend's surface, which keeps its controller
-// mounted while the window the terminal's program calls for wraps its content.
+// mounted while the shared window, and the body its program calls for, wrap its content.
 export const WorkspaceTerminal = ({
   terminal,
   controls: { minimize, onFlyTo, onResizePreset },
@@ -67,10 +71,11 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
-  const profile = terminalProfile(terminal)
+  const { id: processWindow, icon: Icon, Body } = terminalProfile(terminal)
   const frame: Omit<WindowShellProps, "children"> = {
     terminal,
-    icon: <profile.icon size={14} strokeWidth={1.5} />,
+    icon: <Icon size={14} strokeWidth={1.5} />,
+    ...(processWindow ? { processWindow } : {}),
     active,
     fresh,
     rename: renameView(rename),
@@ -99,8 +104,9 @@ export const WorkspaceTerminal = ({
         ? { windowed: { destination: windowedLabel, onOpen: () => openWindowed(terminal.id) } }
         : {}),
   }
+  // One shell element whatever runs, so only the body around the content changes.
   const renderWindow = (content: ReactNode): ReactNode => (
-    <profile.Window {...frame}>{content}</profile.Window>
+    <WindowShell {...frame}>{Body ? <Body>{content}</Body> : content}</WindowShell>
   )
   return (
     <backend.TerminalSurface

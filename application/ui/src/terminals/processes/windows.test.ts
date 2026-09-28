@@ -8,23 +8,23 @@ import { render } from "../../test/render"
 import { ClaudeIcon } from "../../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../../ui-toolkit/icons/CodexIcon"
 import { WindowShell } from "../WindowShell"
-import { ClaudeWindow } from "./ClaudeWindow"
-import { CodexWindow } from "./CodexWindow"
+import { ClaudeBody } from "./ClaudeBody"
+import { CodexBody } from "./CodexBody"
 import { terminalProfile } from "./profiles"
 
 const noop = (): void => {}
 
 describe("process windows", () => {
-  it.each([WindowShell, ClaudeWindow, CodexWindow])(
-    "accepts custom content and an icon while retaining the switcher action in %s",
-    (Window) => {
+  it.each([undefined, ClaudeBody, CodexBody])(
+    "shows a program's body and icon in the shared window, keeping the switcher action",
+    (Body) => {
       const opened: HTMLButtonElement[] = []
       const onOpen = (button: HTMLButtonElement): void => {
         opened.push(button)
       }
       const page = render(
         createElement(
-          Window,
+          WindowShell,
           {
             terminal: terminalFixture(1, "~/project"),
             icon: createElement("svg", { "data-custom-icon": "" }),
@@ -35,7 +35,9 @@ describe("process windows", () => {
             onRenameCancel: noop,
             switcher: { onOpen },
           },
-          createElement("article", null, "Custom process content"),
+          Body
+            ? createElement(Body, null, createElement("article", null, "Custom process content"))
+            : createElement("article", null, "Custom process content"),
         ),
       )
       try {
@@ -63,17 +65,22 @@ const terminal = (process: string, status: Partial<TerminalMetadata> = {}) =>
 
 describe("terminal profile", () => {
   context("while a program holds the foreground", () => {
-    it("presents Claude and Codex in their own windows with their icons", () => {
+    it("presents Claude and Codex with their own bodies and icons", () => {
       expect(terminalProfile(terminal("claude"))).toEqual({
+        id: "claude",
         icon: ClaudeIcon,
-        Window: ClaudeWindow,
+        Body: ClaudeBody,
       })
-      expect(terminalProfile(terminal("codex"))).toEqual({ icon: CodexIcon, Window: CodexWindow })
+      expect(terminalProfile(terminal("codex"))).toEqual({
+        id: "codex",
+        icon: CodexIcon,
+        Body: CodexBody,
+      })
     })
 
     it("presents any other program as a plain terminal", () => {
       for (const process of ["vim", "node", "constructor"])
-        expect(terminalProfile(terminal(process))).toEqual({ icon: Terminal, Window: WindowShell })
+        expect(terminalProfile(terminal(process))).toEqual({ icon: Terminal })
     })
   })
 
@@ -86,7 +93,7 @@ describe("terminal profile", () => {
         { state: "exited", exitCode: 1, signal: null },
       ]
       for (const status of states)
-        expect(terminalProfile(terminal("claude", status)).Window).toBe(WindowShell)
+        expect(terminalProfile(terminal("claude", status))).toEqual({ icon: Terminal })
     })
   })
 })

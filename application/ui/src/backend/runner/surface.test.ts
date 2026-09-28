@@ -99,7 +99,7 @@ const ended = (terminal: Partial<TerminalMetadata>) => {
 }
 
 describe("runner terminal surface", () => {
-  it("keeps one live xterm, its output and focus while the window around it changes", async () => {
+  it("keeps one live xterm, its output and focus while the body around it changes", async () => {
     const { runtime } = starting()
     const views: Terminal[] = []
     const originalOpen = Terminal.prototype.open
@@ -150,15 +150,15 @@ describe("runner terminal surface", () => {
     const external = document.createElement("button")
     external.textContent = "Outside"
     document.body.append(external)
-    // Each window is its own component, so switching remounts the content inside it.
-    const windows = {
+    // Each program's body is its own component, so switching remounts the content inside it.
+    const bodies = {
       terminal: (props: { children: ReactNode }) => createElement("section", props),
       claude: (props: { children: ReactNode }) =>
-        createElement("section", { "data-window": "claude", ...props }),
+        createElement("section", { "data-body": "claude", ...props }),
       codex: (props: { children: ReactNode }) =>
-        createElement("section", { "data-window": "codex", ...props }),
+        createElement("section", { "data-body": "codex", ...props }),
     }
-    const props = (window: keyof typeof windows) =>
+    const props = (body: keyof typeof bodies) =>
       createElement(Surface, {
         terminalKey: key,
         terminal: { ...terminalFixture(1, "~"), state: "running" },
@@ -166,7 +166,7 @@ describe("runner terminal surface", () => {
         fontSize: 13,
         focusInput: false,
         onInputFocused: () => {},
-        renderWindow: (content) => createElement(windows[window], null, content),
+        renderWindow: (content) => createElement(bodies[body], null, content),
       })
     try {
       const page = render(props("terminal"))
@@ -184,11 +184,11 @@ describe("runner terminal surface", () => {
 
       page.rerender(props("claude"))
       expect(page.container.querySelector("[data-terminal-content]")).not.toBe(content)
-      expect(page.container.querySelector("[data-window=claude]")?.contains(xterm)).toBe(true)
+      expect(page.container.querySelector("[data-body=claude]")?.contains(xterm)).toBe(true)
       expect(input(page)).toBe(textarea)
       expect(document.activeElement).toBe(textarea)
       page.rerender(props("codex"))
-      expect(page.container.querySelector("[data-window=codex]")?.contains(xterm)).toBe(true)
+      expect(page.container.querySelector("[data-body=codex]")?.contains(xterm)).toBe(true)
       expect(document.activeElement).toBe(textarea)
 
       act(() => external.focus())

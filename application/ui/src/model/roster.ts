@@ -85,16 +85,32 @@ const statusFields = (status: TerminalStatus): TerminalStatus => {
   return { state: status.state }
 }
 
+// The program to restore once the terminal takes `status`. A program started from a
+// prompt in this run replaces it; one that loses its shell while running, as when the
+// runner is lost or the shell is killed, becomes it unless a restore is still pending.
+// Programs a fresh shell starts on its own, before its first prompt, change nothing.
+const restoredAfter = (terminal: TerminalMetadata, status: TerminalStatus): string | undefined => {
+  if (terminal.state === "idle" && status.state === "running") return undefined
+  const lost = status.state === "starting" || status.state === "exited" || status.state === "failed"
+  const program =
+    terminal.process && !isShellProcess(terminal.process) ? terminal.process : undefined
+  if (terminal.state === "running" && lost) return terminal.restoredProcess ?? program
+  return terminal.restoredProcess
+}
+
 // Rebuilds the terminal from its identity so no exit code or message outlives its status.
-const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): TerminalMetadata => ({
-  id: terminal.id,
-  name: terminal.name,
-  directory: terminal.directory,
-  command: terminal.command,
-  process: terminal.process,
-  ...(terminal.restoredProcess ? { restoredProcess: terminal.restoredProcess } : {}),
-  ...statusFields(status),
-})
+const withStatus = (terminal: TerminalMetadata, status: TerminalStatus): TerminalMetadata => {
+  const restoredProcess = restoredAfter(terminal, status)
+  return {
+    id: terminal.id,
+    name: terminal.name,
+    directory: terminal.directory,
+    command: terminal.command,
+    process: terminal.process,
+    ...(restoredProcess ? { restoredProcess } : {}),
+    ...statusFields(status),
+  }
+}
 
 export const setTerminalStatus = (
   roster: TerminalRoster,
@@ -111,8 +127,7 @@ export const setTerminalStatus = (
   }
 }
 
-// The program now in the foreground. Once this run starts a program of its own, the one
-// restored from the last session no longer describes the terminal.
+// The program now in the foreground; its status says whether it replaces a restore.
 export const setTerminalProcess = (
   roster: TerminalRoster,
   terminalId: string,
@@ -120,10 +135,10 @@ export const setTerminalProcess = (
 ): TerminalRoster => {
   const current = roster.terminals.find((terminal) => terminal.id === terminalId)
   if (!current || current.process === process) return roster
-  const { restoredProcess: _restored, ...rest } = current
-  const next = process && !isShellProcess(process) ? { ...rest, process } : { ...current, process }
   return {
     ...roster,
-    terminals: roster.terminals.map((terminal) => (terminal === current ? next : terminal)),
+    terminals: roster.terminals.map((terminal) =>
+      terminal === current ? { ...terminal, process } : terminal,
+    ),
   }
 }

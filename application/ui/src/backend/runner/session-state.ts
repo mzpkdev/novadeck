@@ -17,7 +17,7 @@ export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory"> 
   readonly lastProcess: string
 }
 
-// A program running now, or else one still waiting to be restored from the last close.
+// A program running now, or else one still waiting to be restored.
 const lastProcess = (terminal: TerminalMetadata): string =>
   terminal.state === "running" ? terminal.process : (terminal.restoredProcess ?? "")
 

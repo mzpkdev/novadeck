@@ -37,7 +37,7 @@ export type WindowShellProps = {
   children?: ReactNode
   // The header's icon, which also opens the terminal switcher.
   icon: ReactNode
-  // Names the process window this shell frames, for its styles and tests.
+  // Names the program the window presents as, for its styles and tests.
   processWindow?: string
   onFocus?: () => void
   switcher?: { onOpen: (button: HTMLButtonElement) => void }
@@ -58,7 +58,7 @@ export type WindowShellProps = {
   onRenameCancel: () => void
 }
 
-// The window chrome process windows share; one may also replace it entirely.
+// The window every terminal shares, whatever program runs in it.
 export const WindowShell = ({
   terminal,
   children,

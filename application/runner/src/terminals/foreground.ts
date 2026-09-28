@@ -27,10 +27,12 @@ export const parseProcessStat = (stat: string): ProcessStat | null => {
   return { pgrp, tty, tpgid }
 }
 
-// /proc/<pid>/cmdline ends each argument with a NUL. Truncated to what the protocol takes.
+// /proc/<pid>/cmdline ends each argument with a NUL. A process that retitles itself, as
+// Node does for `process.title`, pads its old argument space with NULs, which would read
+// as empty arguments, so trailing empty ones go. Truncated to what the protocol takes.
 export const parseCommandLine = (cmdline: Buffer): string[] => {
   const args = cmdline.toString("utf8").split("\0")
-  if (args.at(-1) === "") args.pop()
+  while (args.at(-1) === "") args.pop()
   return args.slice(0, argCount).map((arg) => arg.slice(0, argChars))
 }
 

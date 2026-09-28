@@ -42,29 +42,36 @@ show as `codex` and `claude` while other Node programs stay `node`.
 
 While a program holds the foreground, its profile decides how the terminal looks.
 `application/ui/src/terminals/processes/profiles.ts` maps program names to a tab and
-header icon and a window component; programs it does not list, shells, and terminals
-starting or ended use Lucide's Terminal icon and the plain
-`application/ui/src/terminals/WindowShell.tsx`. Claude and Codex have their own icons
-in `application/ui/src/ui-toolkit/icons/` and their own windows beside the profiles,
-which wrap `WindowShell` and can grow their own chrome or content. The header icon
-still opens the terminal switcher. To give another program its own look, add a
-profile entry, with its own window if needed, and a launcher entry in
-`model/process.ts` if it runs as a Node script.
+header icon and a body around the terminal's content; programs it does not list,
+shells, and terminals starting or ended use Lucide's Terminal icon and no body. Every
+terminal keeps the same `application/ui/src/terminals/WindowShell.tsx` window, so a
+program starting or ending never replaces the header: a rename in progress, focus,
+and the terminal switcher carry on. Claude and Codex have their own icons in
+`application/ui/src/ui-toolkit/icons/` and their own bodies beside the profiles, where
+their presentation can grow. To give another program its own look, add a profile
+entry, with its own body if needed, and a launcher entry in `model/process.ts` if it
+runs as a Node script.
 
 The backend port keeps windows out of the backend: a surface renders one content
 element and passes it to `renderWindow`, and `WorkspaceTerminal.tsx` wraps it in the
-window the profile names. The surface keeps its controller mounted above that, so a
-program change swaps the window without restarting the terminal; the runner surface
-moves its one xterm host into the new window, keeping output, selection and focus.
+shared window and the profile's body. The surface keeps its controller mounted above
+that, so a program change swaps the body without restarting the terminal; the runner
+surface moves its one xterm host into the new body, keeping output, selection and focus.
 
-Saved sessions record, per terminal, the program that held the foreground when the
-app closed (`lastProcess`, empty for none), and never its command line, which can
-hold secrets. On the next launch it comes back as the terminal's `restoredProcess`
-unless a program runs there now, and stays until this run starts a program of its
-own. Quitting the desktop app lets the page save before the runner ends its shells,
-and the runner refuses saves from then on, so the programs still running are what
-gets recorded. This prepares resuming that program; nothing resumes it yet. Saved terminals
-require the field; there is no migration for older session data.
+Saved sessions record, per terminal, the program to resume there (`lastProcess`, empty
+for none), and never its command line, which can hold secrets: the program running
+when the app closed, or one still waiting to be restored. On the next launch it comes
+back as the terminal's `restoredProcess` unless a program runs there now. A program
+that loses its shell while running, as when the runner is lost or the shell killed,
+becomes the one to restore in the fresh shell. A restore holds through programs a
+fresh shell starts before its first prompt, such as rc-file jobs, and ends once a
+program starts from a prompt. Quitting or closing the desktop app's window lets the
+page save before the runner ends its shells, and the runner refuses saves from then
+on, so the programs still running are what gets recorded. On macOS, closing the last
+window leaves the app and its shells running, so `lastProcess` then reflects that
+close rather than the final quit. This prepares resuming that program; nothing
+resumes it yet. Saved terminals require the field; there is no migration for older
+session data.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent

@@ -69,6 +69,17 @@ const defaults = { view: "focus", windowedView: "grid", now: 99 } as const
 // What the next save records for the session's first terminal.
 const resave = (current: Session) =>
   decodeSession(encodeSession(current, 2))!.state.roster.terminals[0]!.lastProcess
+// The first terminal after the backend reports `status`, then `process`, as it does.
+const run = (current: Session, status: TerminalStatus, process: string): Session => {
+  const id = current.state.roster.terminals[0]!.id
+  const roster = setTerminalProcess(
+    setTerminalStatus(current.state.roster, id, status),
+    id,
+    process,
+  )
+  return { ...current, state: { ...current.state, roster } }
+}
+const first = (current: Session) => current.state.roster.terminals[0]!
 
 describe("runner seed", () => {
   context("on a first run", () => {
@@ -177,15 +188,7 @@ describe("runner seed", () => {
       expect(terminal).not.toHaveProperty("restoredProcess")
     })
 
-    it("keeps it until this run starts a program, then saves what runs", () => {
-      const run = (current: Session, status: TerminalStatus, process: string) => {
-        const roster = setTerminalProcess(
-          setTerminalStatus(current.state.roster, uuid(20), status),
-          uuid(20),
-          process,
-        )
-        return { ...current, state: { ...current.state, roster } }
-      }
+    it("keeps it until this run starts a program from a prompt, then saves what runs", () => {
       const idle = seeded([summary(20, 10)])
       expect(resave(idle)).toBe("codex")
       expect(resave(run(idle, { state: "idle" }, "bash"))).toBe("codex")
@@ -193,6 +196,47 @@ describe("runner seed", () => {
       expect(running.state.roster.terminals[0]).not.toHaveProperty("restoredProcess")
       expect(resave(running)).toBe("vim")
       expect(resave(run(running, { state: "idle" }, "zsh"))).toBe("")
+    })
+
+    it("keeps it through programs a fresh shell starts before its first prompt", () => {
+      const lost = seeded([])
+      const startup = run(lost, { state: "running" }, "fastfetch")
+      expect(first(startup).restoredProcess).toBe("codex")
+      expect(resave(run(startup, { state: "idle" }, "bash"))).toBe("codex")
+      // A startup program losing its shell does not take the pending restore's place.
+      expect(first(run(startup, { state: "starting" }, "fastfetch")).restoredProcess).toBe("codex")
+    })
+
+    context("when a running program loses its shell", () => {
+      const running = seeded([summary(20, 10, foreground("claude"))])
+
+      it("restores it in the fresh shell that replaces the lost one", () => {
+        expect(first(running)).not.toHaveProperty("restoredProcess")
+        const lost = run(running, { state: "starting" }, "claude")
+        expect(first(lost).restoredProcess).toBe("claude")
+        const replaced = run(run(lost, { state: "running" }, "tmux"), { state: "idle" }, "bash")
+        expect(resave(replaced)).toBe("claude")
+        expect(resave(run(replaced, { state: "running" }, "vim"))).toBe("vim")
+        expect(first(run(replaced, { state: "running" }, "vim"))).not.toHaveProperty(
+          "restoredProcess",
+        )
+      })
+
+      it("restores it after the shell is killed or fails", () => {
+        const killed = run(
+          running,
+          { state: "exited", exitCode: null, signal: "SIGKILL" },
+          "claude",
+        )
+        expect(resave(killed)).toBe("claude")
+        expect(
+          resave(run(running, { state: "failed", message: "Runner restarting" }, "claude")),
+        ).toBe("claude")
+      })
+
+      it("forgets a program that ended at the prompt", () => {
+        expect(resave(run(running, { state: "idle" }, "bash"))).toBe("")
+      })
     })
   })
 
