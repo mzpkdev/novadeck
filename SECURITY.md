@@ -60,5 +60,18 @@ disk, network, or child-process usage. Apply OS/service limits where needed.
 Closing a terminal or stopping the runner is not a process-tree kill guarantee;
 daemonized or hangup-ignoring descendants may survive. Use service-level process
 isolation and cleanup if that guarantee is required.
-Screen state and replay stay in memory and may contain secrets; neither is logged
-or stored in SQLite. Metadata files use owner-only permissions where supported.
+Replay stays in memory. Unless turned off in Preferences (`settings.set`), the runner
+keeps each terminal's transcript, its serialized screen and scrollback capped at 256 KiB,
+in the SQLite metadata file so a restored terminal can show it again. Transcripts may
+contain secrets that were typed or printed. Metadata files use owner-only permissions
+where supported (0600 in a 0700 directory); on Windows they live in the per-user
+application data folder. Nothing is logged.
+
+Each shell the runner starts can report which agent session runs in it, through a
+local endpoint: a Unix socket in a private temporary directory, or a named pipe on
+Windows. The endpoint accepts only an agent session report, for the terminal whose
+random per-shell token (`NOVADECK_REPORT_TOKEN`) the report carries; it is not a runner
+API and grants nothing else. Processes in a shell can read that shell's token, and so
+can misreport its session, which at worst resumes another session of the same user.
+The shell integration, agent shims and hook live in the runner's own `shell` folder;
+the runner never writes to the user's rc files, dotfiles, or agent settings.

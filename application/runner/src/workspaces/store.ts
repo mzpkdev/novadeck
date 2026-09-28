@@ -106,6 +106,7 @@ const agentsOf = (text: string): SavedTerminal["agents"] => {
 export class WorkspaceStore implements TerminalRecords {
   private readonly database: DatabaseSync
   private readonly queries: SQLTagStore
+  private lastSave = 0
 
   constructor(path = ":memory:") {
     if (path !== ":memory:") prepareFile(path)
@@ -232,7 +233,9 @@ export class WorkspaceStore implements TerminalRecords {
     terminal: Omit<SavedTerminal, "transcript" | "savedAt"> & { transcript?: string | null },
   ): void {
     const agents = JSON.stringify(terminal.agents)
-    const now = Date.now()
+    // Strictly increasing, so saves in the same millisecond still sort by recency.
+    const now = Math.max(Date.now(), this.lastSave + 0.001)
+    this.lastSave = now
     if (terminal.transcript === undefined)
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at)

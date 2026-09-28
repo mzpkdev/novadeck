@@ -75,7 +75,9 @@ separately from these tests.
 
 Without a token, the runner exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
-at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set.
+at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set, and
+writes its [shell integration](#shell-integration-and-restoring-terminals) to a `shell`
+folder beside it.
 Programmatic `startServer` from `@novadeck/runner/server` and `createRunner` use
 an in-memory database when no path is supplied. `@novadeck/runner/http` stays free
 of native terminal code, so the Electron main process can serve the status endpoint
@@ -167,7 +169,8 @@ report `null` until the first save. A state holds at most `maxClientStateLength`
 (196,608) characters, and over WebSocket the whole call must also fit in one
 `maxWebSocketMessageBytes` (256 KiB) message; both limits are exported from
 `@novadeck/protocol`. Once the runner starts shutting down it refuses saves with
-`RUNTIME_CLOSING`, so shells ending on the way out cannot overwrite the last state.
+`RUNTIME_CLOSING`, so shells ending on the way out cannot overwrite the last state; it
+saves nothing of its terminals either, after one last save while they still run.
 
 `runner.terminals.watch()` follows every terminal on the runner, across sessions:
 
@@ -195,7 +198,10 @@ when the client closes or on `return()`. A terminal summary's `process`
 is its foreground process, such as the shell or a program running in it: its `name`,
 and `argv`, the process group leader's command line, on Linux (`null` elsewhere and
 before the first sample). It is `null` once the terminal exits and on Windows, where
-no foreground process is known.
+no foreground process is known. `agent` names the agent (`claude` or `codex`) that
+reported a session in the shell since its last prompt, so a client can name the
+program where `process` cannot; it is `null` otherwise. `cwd` is the directory the
+shell last reported at a prompt, or where it started.
 
 Calls made while reconnecting reject with `DISCONNECTED`; input and creation are
 never retried automatically. Each client sends a random client ID in its handshake,
@@ -246,7 +252,12 @@ new one on the next request; shells end with it, and metadata remains. Quitting 
 app, or closing a window, first asks the pages involved to finish their saves, through
 the callback each registered with `window.novadeck.beforeQuit(save)`. It waits up to
 1.5 s for the answers, and not for a page that crashed or went away; only then does
-the window close or the app end the runner's shells and exit.
+the window close or the app end the runner's shells and exit. A system shutdown quits
+the same way on Linux and macOS (Electron's `powerMonitor` `shutdown`, which holds the
+shutdown back meanwhile). On Windows a window's `query-session-end` saves its page and
+has the runner save every terminal while the shells still run, and `session-end`
+quits. The runner writes its shell integration to a `shell` folder beside
+`workspace.sqlite`, in the app's user-data directory.
 
 ### Wire contract
 
@@ -302,8 +313,8 @@ not command completion.
   runner starts any number of terminals; a standalone runner (`startServer` and the
   CLI) allows 32 at once. Either keeps at most 32 exited, unattached records and
   evicts the oldest beyond that, or sooner when a capped runner needs room. Headless
-  screens keep 1,000 scrollback lines. These are bounded recent history, not a
-  durable transcript.
+  screens keep 1,000 scrollback lines. Replay is bounded recent history; the saved
+  transcript is separate and capped at 256 KiB per terminal.
 - Initial snapshots have a separate 32 MiB allowance. Older scrollback is omitted
   if needed to fit that budget; the visible screen is never silently truncated.
   A pathological visible screen that still exceeds it fails with
@@ -314,19 +325,23 @@ not command completion.
   The process keeps running. Dead connections are detected by 30-second ping/pong
   heartbeats, normally within two intervals. Slow viewers do not block the runner
   from draining output or accepting another connection's input.
-- Runner shutdown ends owned PTYs. Backend restarts preserve only project and
-  session metadata, including saved session state, not processes, terminal records,
-  screens, or replay cursors. There is no persistent process supervisor or terminal
-  configuration persistence in this slice.
+- Runner shutdown ends owned PTYs. Backend restarts preserve project and session
+  metadata, including saved session state, and what restores each terminal (see
+  [Shell integration and restoring terminals](#shell-integration-and-restoring-terminals)),
+  but not processes, live terminal records, or replay cursors. There is no persistent
+  process supervisor.
 - `terminals.close({ terminalId })`, or `runner.terminals.close(id)` without an
   attachment, succeeds for the controlling connection or when no connection holds
   control, and rejects with `CONTROL_IN_USE` otherwise. Once the shell has exited, the
   runner forgets the terminal: `list` omits it, watchers receive `removed`, and later
   calls report `TERMINAL_NOT_FOUND`. Attached viewers still receive `exited` first. A
   shell that exits on its own keeps its record until eviction.
-- `terminals.restart({ terminalId, cols, rows })`, or
-  `runner.terminals.restart(id, { cols, rows })`, starts a fresh shell in a retained
-  exited terminal: the same ID, session, and directory, with a new screen. The
+- `terminals.restart({ terminalId, cols, rows, command? })`, or
+  `runner.terminals.restart(id, { cols, rows, command })`, starts a fresh shell in a
+  retained exited terminal: the same ID and session, in the shell's last reported
+  directory (or where it started, once that is gone), with a new screen that shows the
+  earlier one above a separator while transcripts are on. A `command` is typed at the
+  fresh shell's first prompt instead, and then the earlier screen is not shown. The
   same control rule as closing applies, and the caller then holds control. The
   summary's `run` counts shells, 1 at creation and one more per restart, so a client
   can discard a late report about an earlier run. Watchers receive `changed`;
@@ -337,6 +352,67 @@ not command completion.
   It is not a process-tree kill guarantee: daemonized jobs and descendants that
   ignore hangup may continue, as with an ordinary terminal emulator. Use an OS
   service/cgroup or a future supervisor if all descendant cleanup is required.
+
+## Shell integration and restoring terminals
+
+A runner given a shell folder (`RunnerOptions.shell`; the CLI and the desktop app use
+one beside `workspace.sqlite`) writes these files into it on start, each only when it
+changed, and never writes outside it:
+
+- `bash/`, `zsh/`, `fish/` and `powershell/` scripts, and for cmd a `PROMPT`, that load
+  the user's own startup files first and then report the directory at each prompt with
+  OSC 7 (`file://host/path`, percent-encoded) or OSC 9;9 (the path). The runner parses
+  both in its headless screen. A report naming another machine, as from a shell over
+  SSH, is not the shell's prompt.
+- `bin/claude` and `bin/codex` (`.cmd` on Windows), which run the next program of that
+  name on `PATH` with a hook added for that run: `--plugin-dir <shell>/claude` for
+  Claude Code, and for Codex
+  `-c hooks.SessionStart=[{matcher='startup|resume|clear|compact',hooks=[{type='command',command='"$NOVADECK_HOOK" codex'}]}]`
+  (`"%NOVADECK_HOOK%" codex` on Windows). Codex trusts a hook by a hash of its whole
+  definition, so this string must never change. The shims add nothing outside
+  NovaDeck's terminals, or inside an agent a shim started (`NOVADECK_AGENT`).
+- `hook` (`hook.cmd`), a launcher that runs `hook.mjs` on the runner's own runtime
+  (Electron with `ELECTRON_RUN_AS_NODE=1`, or Node), so the hook needs no bash or
+  python3. It reads the agent's SessionStart payload, drops Claude Code subagents
+  (`agent_id`), Claude Code inside Cursor (`cursor_version`, `CURSOR_VERSION`) and a
+  Codex started by another Codex (`CODEX_THREAD_ID` other than the session), prints
+  nothing, and reports within two seconds or gives up.
+
+Each shell the runner starts gets `NOVADECK_TERMINAL_ID`, and with the integration the
+shims first on `PATH`, `NOVADECK_HOOK`, and `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`:
+a Unix socket in a private temporary directory, or a named pipe on Windows, and a random
+token for that shell. The endpoint takes one JSON line,
+`{ terminalId, token, agent, sessionId, source, seq }`, and nothing else: it records the
+agent's session for the terminal whose token matches, keeping the report with the
+largest `seq` (the hook's start time) per agent, so `/clear`, a fork, or another agent
+run in between never replaces a later session with an earlier one.
+
+The runner saves, per terminal, in a `terminals` table next to the sessions: its
+session, last directory, latest session per agent, when it last showed a prompt, and
+its transcript (the serialized screen and scrollback, without the alternate screen,
+capped at 256 KiB), keeping the 128 most recently saved. The directory and agent
+sessions are saved as they change, the rest every five seconds when changed, when a
+shell exits, and on `persist()` and `close()`, which save before any shell ends.
+Closing a terminal forgets it, including one from an earlier runner (`terminals.close`
+still rejects with `TERMINAL_NOT_FOUND` then).
+
+- `terminals.create({ …, restore: true, command? })` continues the saved terminal of
+  that ID in the same session: in its last directory when that still exists, with its
+  agent sessions, showing its transcript above a separator before the shell's output.
+  `command`, one line of printable ASCII up to 256 characters, is typed at the shell's
+  first prompt, text and Enter apart, and then no transcript is shown. The runner types
+  it only at a prompt the integration reported, never after the client wrote input
+  first or while another process holds the foreground, and spaces such commands 750 ms
+  apart across terminals.
+- `terminals.agentSession({ terminalId, agent })` answers the session the agent last
+  reported in the terminal, live or saved. Without a report it looks through the
+  agent's own session files, read-only (`~/.claude/projects` or `CLAUDE_CONFIG_DIR`,
+  `~/.codex/sessions` or `CODEX_HOME`), for sessions in the terminal's directory active
+  since its last prompt, leaving out sessions other terminals reported, and answers
+  one only when exactly one remains. Otherwise it answers `null`.
+- `settings.get()` and `settings.set({ transcripts })` read and change whether
+  transcripts are kept. They are kept unless turned off; turning them off forgets every
+  saved transcript.
 
 Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
 `INVALID_DIRECTORY`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,

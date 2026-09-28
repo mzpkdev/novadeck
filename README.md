@@ -38,7 +38,9 @@ The runner reports each terminal's foreground process as its name and, on Linux,
 process group leader's command line (`argv`); macOS reports only the name, and Windows
 reports none. `application/ui/src/model/process.ts` turns that into a program name,
 resolving known Node CLIs from the script Node runs, so the Codex and Claude packages
-show as `codex` and `claude` while other Node programs stay `node`.
+show as `codex` and `claude` while other Node programs stay `node`. Where the process
+cannot tell, as on Windows or for a Node CLI on macOS, an agent that reported its
+session since the shell's last prompt names the program.
 
 While a program holds the foreground, its profile decides how the terminal looks.
 `application/ui/src/terminals/processes/profiles.ts` maps program names to a tab and
@@ -50,8 +52,9 @@ and the terminal switcher carry on. Claude and Codex have their own icons in
 `application/ui/src/ui-toolkit/icons/` and their own bodies beside the profiles, where
 their presentation can grow. To give another program its own look, add a profile
 entry, with its own body if needed, and a launcher entry in `model/process.ts` if it
-runs as a Node script. Profiles are presentation only: per-program behaviour, such as
-resuming a restored program, goes beside `programName` in `model/`.
+runs as a Node script. Profiles are presentation only: per-program behaviour goes beside
+`programName` in `model/`, as `model/resume.ts` holds the command that resumes each
+agent's session.
 
 The backend port keeps windows out of the backend: a surface renders one content
 element and passes it to `renderWindow`, and `WorkspaceTerminal.tsx` wraps it in the
@@ -64,10 +67,13 @@ its command line, which can hold secrets): the program running at the save, or e
 one the terminal lost with its shell. A terminal has a `restoredProcess` only while it
 has no live shell: a program running when the runner lost the shell, the shell was
 killed, or the app closed becomes it, and it ends once a shell reaches its prompt or
-runs a program; every replacement shell starts in the runner backend's `freshShell`,
-where resuming that program will go. Quitting or closing the desktop app's window saves
-before the runner ends its shells, except on macOS, where closing the last window leaves
-them running, so the save reflects that close rather than the final quit.
+runs a program. Every replacement shell starts in the runner backend's `freshShell`,
+which resumes that program when it can (see [Restoring terminals](#restoring-terminals)).
+Quitting or closing the desktop app's window saves before the runner ends its shells,
+except on macOS, where closing the last window leaves them running, so the save reflects
+that close rather than the final quit. A system shutdown or log-off saves the same way:
+on Linux and macOS it quits the app, and on Windows the window saves as soon as the
+session may end.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent
@@ -93,6 +99,53 @@ Hidden terminals retain
 their content and layout and remain available in Focus view.
 Showing and hiding use a short fade and scale transition; reduced motion skips it.
 Switching terminal tabs in Focus uses the same transition.
+
+## Restoring terminals
+
+After a reboot, NovaDeck opens each terminal where it was: in the directory its shell
+was last in, with Claude Code or Codex resumed in the session that was running, and
+otherwise with its earlier output shown above a fresh prompt.
+
+NovaDeck never writes to your files for this: not your shell's rc files or other
+dotfiles, `AGENTS.md` or `CLAUDE.md`, `~/.claude/settings.json`, or
+`~/.codex/config.toml`. Everything happens per run, inside the shells NovaDeck starts,
+from files in its own data directory (a `shell` folder beside `workspace.sqlite`):
+
+- **Shell integration.** Each shell loads your own startup files first, then reports its
+  directory at every prompt: bash through `--init-file`, zsh through `ZDOTDIR`, fish
+  through `--init-command`, PowerShell by dot-sourcing a script after your profile, and
+  cmd through its `PROMPT`. Other shells start as they are. A new terminal and a restart
+  open in the last reported directory.
+- **Agent sessions.** Shells find NovaDeck's `claude` and `codex` shims first on `PATH`.
+  They run the real program with a hook for that run only: Claude Code loads a small
+  plugin with `--plugin-dir`, and Codex gets a `SessionStart` hook with `-c`. The hook
+  runs on NovaDeck's own runtime and tells the terminal which session it runs; runs
+  outside NovaDeck's terminals and agents started by another agent go unchanged. Where
+  no report arrives, the runner looks through the agent's own session files, read-only,
+  for the one session that started in that directory since the last prompt, and gives
+  up rather than guess between several.
+- **Resuming.** When a terminal lost Claude Code or Codex, its fresh shell resumes that
+  session: `claude --resume <id>` or `codex resume <id>`, typed at the shell's first
+  prompt, after a slow rc file has finished. It is never typed into a running program or
+  after you started typing, and a terminal without a known session gets a plain shell,
+  never "continue the last session". Terminals with an agent to resume start at once,
+  in every session and hidden or not, a moment apart; the others start when their
+  session is shown.
+- **Transcripts.** Each terminal's recent output is kept, and a restored terminal shows
+  it read-only above a separator and its fresh prompt; a resumed agent shows its own
+  history instead. Transcripts are on by default and can be turned off in Preferences,
+  which also forgets the saved ones. They can contain secrets that were typed or
+  printed: they live in `workspace.sqlite`, readable by your account only, with up to
+  256 KiB kept per terminal.
+
+The first time Codex runs NovaDeck's hook, Codex itself asks you to review it ("Hooks
+need review") and records your choice in its own settings. The hook's command stays the
+same across NovaDeck versions, so it asks once.
+
+The runner saves each terminal's directory and agent sessions as they change, and its
+output every few seconds and when the app quits, so a crash or a power cut loses little.
+Once the runner starts shutting down it saves nothing more, so shells ending on the way
+out cannot replace what it saved while they ran.
 
 ## Zen mode
 
@@ -397,8 +450,9 @@ commits arrive, and saves each changed session after a short pause and on
 `pagehide`. On load it restores saved sessions, most recently visited first, and adds
 running terminals the save did not know. A terminal the runner no longer has, after
 a runner restart or a relaunch, gets a fresh shell in place with the same id, name
-and layout once its session is on screen; more than three runner restarts in a
-minute stop that, and each terminal then waits for Enter. An exited, killed, or
+and layout once its session is on screen, or at once when it has an agent to resume;
+more than three runner restarts in a minute stop that, and each terminal then waits
+for Enter. An exited, killed, or
 failed terminal shows "Press Enter to restart", which starts a fresh shell in the
 same tile. While the runner is away, surfaces dim and refuse input.
 
