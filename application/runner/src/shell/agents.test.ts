@@ -81,9 +81,15 @@ const it = base.extend<{ fixture: Fixture }>({
           HOME: home,
           USERPROFILE: home,
           SHELL: "/bin/sh",
-          PATH: `${bin}${delimiter}${process.env.PATH}`,
-          CLAUDE_CONFIG_DIR: "",
-          CODEX_HOME: "",
+          // Only the stand-ins and system tools: a real agent on this machine never runs.
+          PATH: windows
+            ? [bin, process.env.SystemRoot ? join(process.env.SystemRoot, "System32") : ""].join(
+                delimiter,
+              )
+            : [bin, "/usr/bin", "/bin"].join(delimiter),
+          // Agents' homes inside the fixture; an empty one would mean the working directory.
+          CLAUDE_CONFIG_DIR: join(home, ".claude"),
+          CODEX_HOME: join(home, ".codex"),
           FAKE_LOG: log,
           ...env,
         },
@@ -193,9 +199,7 @@ describe("agents NovaDeck can connect", () => {
       const script = readFileSync(join(fixture.bin, "claude"), "utf8")
       writeFileSync(join(local, "claude"), script, { mode: 0o755 })
       rmSync(join(fixture.bin, "claude"))
-      // No other claude on PATH, as for someone with only the local install.
-      const agents = fixture.agents({ PATH: [fixture.bin, "/usr/bin", "/bin"].join(delimiter) })
-      expect(await agents.set("claude", true)).toMatchObject({ connected: true })
+      expect(await fixture.agents().set("claude", true)).toMatchObject({ connected: true })
     },
   )
 
