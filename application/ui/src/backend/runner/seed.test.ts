@@ -241,6 +241,24 @@ describe("runner seed", () => {
       expect(resave(reopened)).toBe("server")
     })
 
+    it("restores a program that only ran when its shell was lost or ended", () => {
+      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
+      const reopened = (terminals: TerminalSummary[]) =>
+        first(
+          workspaceFromSeed(
+            runnerSeed([{ project: project(1), sessions: [{ session: current, terminals }] }]),
+            defaults,
+          ).projects[0]!.history[0]!,
+        ).restoredProcess
+      expect(reopened([])).toBe("make")
+      expect(
+        reopened([summary(20, 10, { exit: { code: null, signal: "SIGKILL", ranMs: 9_000 } })]),
+      ).toBe("make")
+      expect(reopened([summary(20, 10, { exit: { code: 1, signal: null, ranMs: 10 } })])).toBe(
+        "make",
+      )
+    })
+
     it("forgets a program that only ran once the shell is back at its prompt", () => {
       const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
       const reopened = workspaceFromSeed(

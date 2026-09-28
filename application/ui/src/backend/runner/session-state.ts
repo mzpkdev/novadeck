@@ -19,8 +19,9 @@ export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory"> 
   readonly restoredProcess: string
 }
 
-// What the next launch restores in a terminal where no program runs: a pending restore,
-// which programs the shell ran on its own do not replace, or else the last program.
+// What the next launch restores when the terminal's shell was lost or ended: a pending
+// restore, which programs the shell ran on its own do not replace, or else the last
+// program.
 export const programToRestore = (saved: SavedTerminal): string =>
   saved.restoredProcess || saved.lastProcess
 
