@@ -84,13 +84,19 @@ describe("saved session state", () => {
       return { text, saved: decodeSession(text)!.state.roster.terminals }
     }
 
-    it("saves the program running now, or else the one still waiting to be restored", () => {
+    it("saves the one still waiting to be restored, or else the program running now", () => {
       const { saved } = saving(
-        { state: "running", process: "codex", restoredProcess: "claude" },
+        { state: "running", process: "tmux", restoredProcess: "claude" },
         { state: "idle", process: "zsh", restoredProcess: "claude" },
         { state: "starting", process: "", restoredProcess: "codex" },
+        { state: "running", process: "vim" },
       )
-      expect(saved.map((terminal) => terminal.lastProcess)).toEqual(["codex", "claude", "codex"])
+      expect(saved.map((terminal) => terminal.lastProcess)).toEqual([
+        "claude",
+        "claude",
+        "codex",
+        "vim",
+      ])
     })
 
     it("saves none once the program ended, however it ended", () => {

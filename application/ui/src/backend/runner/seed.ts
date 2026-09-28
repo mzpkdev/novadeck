@@ -47,10 +47,11 @@ const liveTerminal = (
 ): TerminalMetadata | undefined => {
   const { status, process } = terminalActivity(summary)
   if (status === "clean") return undefined
-  // A program running now is what the terminal holds; the saved one is history.
+  // A restore still waits unless the saved program is the one running now.
+  const running = status.state === "running" && process === saved.lastProcess
   return {
     ...identity(saved),
-    ...(status.state === "running" ? {} : restored(saved)),
+    ...(running ? {} : restored(saved)),
     command: "",
     process: process ?? "",
     ...status,

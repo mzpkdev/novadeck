@@ -110,8 +110,8 @@ const createWindow = (origin: string): BrowserWindow => {
   })
 
   window.once("ready-to-show", () => window.show())
-  // Closing the last window quits, except on macOS, which ends the shells: the page
-  // saves first.
+  // Closing the last window quits, which ends the shells, except on macOS; either way
+  // the page saves first.
   saveBeforeClose(
     window,
     () => saveWindows([window]),

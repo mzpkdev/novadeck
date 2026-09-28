@@ -189,10 +189,19 @@ describe("runner seed", () => {
       })
     })
 
-    it("lets a program running now win", () => {
-      const terminal = seeded([summary(20, 10, foreground("vim"))]).state.roster.terminals[0]!
-      expect(terminal).toMatchObject({ process: "vim", state: "running" })
+    it("has nothing to restore while that same program still runs", () => {
+      const terminal = seeded([summary(20, 10, foreground("codex"))]).state.roster.terminals[0]!
+      expect(terminal).toMatchObject({ process: "codex", state: "running" })
       expect(terminal).not.toHaveProperty("restoredProcess")
+    })
+
+    it("keeps it while another program the shell runs holds the foreground", () => {
+      const terminal = seeded([summary(20, 10, foreground("tmux"))]).state.roster.terminals[0]!
+      expect(terminal).toMatchObject({
+        process: "tmux",
+        state: "running",
+        restoredProcess: "codex",
+      })
     })
 
     it("keeps it until the person starts a program from the prompt, then saves what runs", () => {
@@ -217,7 +226,17 @@ describe("runner seed", () => {
     })
 
     context("when a running program loses its shell", () => {
-      const running = seeded([summary(20, 10, foreground("claude"))])
+      // Saved while that program ran, so nothing waits to be restored.
+      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", lastProcess: "claude" }])
+      const running = workspaceFromSeed(
+        runnerSeed([
+          {
+            project: project(1),
+            sessions: [{ session: current, terminals: [summary(20, 10, foreground("claude"))] }],
+          },
+        ]),
+        defaults,
+      ).projects[0]!.history[0]!
 
       it("restores it in the fresh shell that replaces the lost one", () => {
         expect(first(running)).not.toHaveProperty("restoredProcess")

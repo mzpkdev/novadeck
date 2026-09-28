@@ -17,9 +17,10 @@ export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory"> 
   readonly lastProcess: string
 }
 
-// A program running now, or else one still waiting to be restored.
+// One still waiting to be restored, which programs the shell ran on its own do not
+// replace, or else the program running now.
 const lastProcess = (terminal: TerminalMetadata): string =>
-  terminal.state === "running" ? terminal.process : (terminal.restoredProcess ?? "")
+  terminal.restoredProcess ?? (terminal.state === "running" ? terminal.process : "")
 
 export type SavedSession = {
   readonly visitedAt: number

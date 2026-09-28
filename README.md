@@ -61,12 +61,14 @@ surface moves its one xterm host into the new body, keeping output, selection an
 Saved sessions record, per terminal, the program to resume there (`lastProcess`, empty
 for none), and never its command line, which can hold secrets: the program running
 when the app closed, or one still waiting to be restored. On the next launch it comes
-back as the terminal's `restoredProcess` unless a program runs there now. A program
+back as the terminal's `restoredProcess` unless that same program runs there now. A program
 that loses its shell while running, as when the runner is lost or the shell killed,
 becomes the one to restore in the fresh shell. A restore holds through programs the
 shell runs on its own, such as rc-file jobs, and through a program's own prompts,
-such as a passphrase; it ends once the person presses Enter at the shell's prompt and
-a program starts. Quitting or closing the desktop app's window lets the
+such as a passphrase, and saving keeps it over them; it ends once a program starts
+after the person pressed Enter while the terminal showed the shell idle at its prompt.
+Reports lag the shell by up to a sample, so a command typed right after a startup
+program exits may not end it; the next one from the prompt does. Quitting or closing the desktop app's window lets the
 page save before the runner ends its shells, and the runner refuses saves from then
 on, so the programs still running are what gets recorded. On macOS, closing the last
 window leaves the app and its shells running, so `lastProcess` then reflects that
