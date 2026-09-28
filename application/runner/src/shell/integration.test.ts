@@ -371,8 +371,9 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
       command: "echo resumed-4^2",
     },
     {
+      // PowerShell 7. Windows PowerShell 5.1 takes no Enter through the bundled ConPTY.
       name: "PowerShell",
-      shell: "powershell.exe",
+      shell: "pwsh.exe",
       cd: (path: string) => `Set-Location '${path}'`,
       prompt: /PS .*>/,
       command: "Write-Output ('resumed-' + 42)",
@@ -401,27 +402,22 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
   }
 })
 
-// Diagnostic: which Enter PSReadLine takes through the bundled ConPTY.
+// Diagnostic: whether Windows PowerShell 5.1 takes Enter without NovaDeck's integration.
 describe.runIf(process.platform === "win32")("Windows Enter diagnostics", () => {
-  const enters = {
-    cr: "\r",
-    crlf: "\r\n",
-    win32: "\x1b[13;28;13;1;0;1_\x1b[13;28;13;0;0;1_",
-  }
-  for (const program of ["powershell.exe", "pwsh.exe"])
-    for (const [name, enter] of Object.entries(enters))
-      it(`${program} with ${name}`, async ({ shell }) => {
-        const manager = shell.manager({ shell: program })
-        const terminal = await create(manager, shell)
-        await shell.until(manager, terminal.id, /PS .*>/).catch(() => "")
-        await new Promise((resolve) => setTimeout(resolve, 1_500))
-        manager.write({ terminalId: terminal.id, data: "Write-Output ('dia' + 'gnosed')" }, "owner")
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        manager.write({ terminalId: terminal.id, data: enter }, "owner")
-        const worked = await shell
-          .until(manager, terminal.id, "diagnosed")
-          .then(() => true)
-          .catch(() => false)
-        console.log(`ENTER-DIAGNOSTIC ${program} ${name}: ${worked}`)
-      }, 30_000)
+  it("powershell.exe without integration", async ({ shell, resources }) => {
+    const manager = new Terminals({ shell: "powershell.exe" })
+    resources.defer(() => manager.shutdown())
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: shell.sessionId, cwd: shell.home, cols: 100, rows: 20 },
+      "owner",
+    )
+    await shell.until(manager, terminal.id, /PS .*>/).catch(() => "")
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    manager.write({ terminalId: terminal.id, data: "Write-Output ('dia' + 'gnosed')\r" }, "owner")
+    const worked = await shell
+      .until(manager, terminal.id, "diagnosed")
+      .then(() => true)
+      .catch(() => false)
+    console.log(`ENTER-DIAGNOSTIC powershell.exe plain: ${worked}`)
+  }, 30_000)
 })
