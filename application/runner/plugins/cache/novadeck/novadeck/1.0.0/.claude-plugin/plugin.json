@@ -1,0 +1,5 @@
+{
+  "name": "novadeck",
+  "version": "1.0.0",
+  "description": "Tells NovaDeck which session runs in its terminal, so it can resume it."
+}

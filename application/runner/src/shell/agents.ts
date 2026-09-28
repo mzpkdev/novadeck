@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { access, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 
 import type { AgentName } from "@novadeck/protocol"
 
@@ -126,18 +126,14 @@ const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
   new Promise<NodeJS.ProcessEnv>((resolve) => {
     if (platform === "win32") return resolve(env)
     let output = ""
-    const child = spawn(env.SHELL || "/bin/sh", ["-ilc", `echo ${marker}; env`], {
-      env,
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-    const timer = setTimeout(() => child.kill(), 10_000)
-    child.stdout.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => (output += chunk))
-    child.on("error", () => resolve(env))
-    child.on("close", () => {
+    let done = false
+    // Startup files may print before the marker's own line; a shell may also echo it in
+    // a variable of its own, such as `_`.
+    const finish = () => {
+      if (done) return
+      done = true
       clearTimeout(timer)
-      // Startup files may print before the marker's own line; a shell may also echo it in
-      // a variable of its own, such as `_`.
+      child.stdout.destroy()
       const lines = output.split("\n")
       const start = lines.indexOf(marker)
       if (start < 0) return resolve(env)
@@ -148,8 +144,36 @@ const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
         if (split > 0 && loginVariables.has(name)) found[name] = line.slice(split + 1)
       }
       resolve({ ...env, ...found })
+    }
+    const child = spawn(env.SHELL || "/bin/sh", ["-ilc", `echo ${marker}; env`], {
+      env,
+      stdio: ["ignore", "pipe", "ignore"],
     })
+    // A background job the startup files leave behind may hold the output open: the
+    // shell's own exit, or a time limit, ends the wait.
+    const timer = setTimeout(() => {
+      child.kill()
+      finish()
+    }, 10_000)
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => (output += chunk))
+    child.on("error", finish)
+    child.on("exit", () => setTimeout(finish, 100))
   })
+
+// Claude Code's local install is an alias in the user's rc file, not on PATH.
+const fallbacks: Partial<Record<string, (home: string) => string>> = {
+  claude: (home) => join(home, ".claude", "local", "claude"),
+}
+
+// The program to run: the one on PATH, or where its installer puts it otherwise.
+const locate = async (program: string, env: NodeJS.ProcessEnv, home: string): Promise<string> => {
+  for (const directory of (env.PATH ?? "").split(delimiter).filter(Boolean))
+    // eslint-disable-next-line no-await-in-loop -- The first match wins.
+    if (await exists(join(directory, program))) return program
+  const fallback = fallbacks[program]?.(home)
+  return fallback && (await exists(fallback)) ? fallback : program
+}
 
 /**
  * Runs one of an agent's commands the way the person would in a terminal: with their
@@ -205,12 +229,15 @@ export const createAgents = (
   const home = options.home ?? base.HOME ?? homedir()
   const platform = options.platform ?? process.platform
   const timeoutMs = options.timeoutMs ?? 60_000
-  // Looked up once, and again before each change, which may follow an edit to it.
-  let login: Promise<NodeJS.ProcessEnv> | undefined
-  const environment = (fresh = false) => {
-    if (fresh || !login) login = loginEnvironment(base, platform)
-    return login
-  }
+  // Looked up in the background from the start, and again before each change. Listing
+  // and spawning shells never wait for it: until it answers they use the app's own.
+  let latest: NodeJS.ProcessEnv | undefined
+  const lookUp = () =>
+    loginEnvironment(base, platform).then((found) => {
+      latest = found
+      return found
+    })
+  void lookUp()
   const state = async (agent: AgentName, found: Agent): Promise<AgentIntegration> => ({
     agent,
     available: await exists(found.home),
@@ -218,7 +245,8 @@ export const createAgents = (
   })
   const known = async (fresh = false) => {
     const shell = await paths()
-    return shell && describe(shell, await environment(fresh), home)
+    const env = fresh ? await lookUp() : (latest ?? base)
+    return shell && describe(shell, env, home)
   }
   // One change at a time: an agent's plugin commands edit its configuration.
   let queue = Promise.resolve()
@@ -237,7 +265,8 @@ export const createAgents = (
     set: (agent: AgentName, connected: boolean): Promise<AgentIntegration> => {
       const change = queue.then(async () => {
         const described = await known(true)
-        const settings = { env: await environment(), platform, timeoutMs }
+        const env = latest ?? base
+        const settings = { env, platform, timeoutMs }
         if (!described)
           throw new DomainError("AGENT_SETUP_FAILED", "Shell integration is unavailable.")
         const found = described[agent]
@@ -245,8 +274,11 @@ export const createAgents = (
           throw new DomainError("AGENT_SETUP_FAILED", `${agent} is not installed here.`)
         for (const command of connected ? found.connect : found.disconnect) {
           try {
+            const [program = "", ...args] = command.argv
             // eslint-disable-next-line no-await-in-loop -- Each step needs the one before.
-            await run(command.argv, settings)
+            const located = platform === "win32" ? program : await locate(program, env, home)
+            // eslint-disable-next-line no-await-in-loop -- As above.
+            await run([located, ...args], settings)
           } catch (error) {
             if (command.optional) continue
             throw new DomainError(

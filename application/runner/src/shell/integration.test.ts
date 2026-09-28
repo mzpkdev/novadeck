@@ -318,8 +318,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(manager.agentSession(terminal.id, "codex")).toBeNull()
   })
 
-  // Linux tells which process group holds a terminal's foreground.
-  it.runIf(process.platform === "linux")(
+  // Linux and macOS tell which process group holds a terminal's foreground.
+  it.runIf(process.platform === "linux" || process.platform === "darwin")(
     "ignores reports made while the shell holds the foreground",
     async ({ shell }) => {
       // As from a tmux server or an editor started from this terminal, running elsewhere.
@@ -351,7 +351,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shown).not.toContain("resumed")
   })
 
-  it("keeps the saved transcript when the resume command is never typed", async ({ shell }) => {
+  it("keeps the saved transcript until the resume command is typed or dropped", async ({
+    shell,
+  }) => {
     const id = randomUUID()
     const first = shell.manager()
     await create(first, shell, { id })
@@ -359,13 +361,35 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await shell.until(first, id, /before-reboot[\s\S]*\$ /)
     await first.shutdown()
 
-    writeFileSync(join(shell.home, ".bashrc"), "sleep 0.3\n")
+    writeFileSync(join(shell.home, ".bashrc"), "sleep 1\n")
     const second = shell.manager()
     await create(second, shell, { id, restore: true, command: "echo resumed" })
-    second.write({ terminalId: id, data: "echo mine\r" }, "owner")
-    await shell.until(second, id, /mine\r?\n/)
+    // Saved while the command waits: the earlier screen, as a crash now would keep it.
+    await new Promise((resolve) => setTimeout(resolve, 300))
     second.persist()
     expect(shell.store.terminal(id)?.transcript).toContain("before-reboot")
+    // Typing first drops the command; from then on this shell's own screen is saved.
+    second.write({ terminalId: id, data: "echo later-work\r" }, "owner")
+    await shell.until(second, id, /later-work\r?\n/)
+    second.persist()
+    expect(shell.store.terminal(id)?.transcript).toContain("later-work")
+  })
+
+  it("does not bring back a transcript turned off while its command waited", async ({ shell }) => {
+    const id = randomUUID()
+    const first = shell.manager()
+    await create(first, shell, { id })
+    first.write({ terminalId: id, data: "echo SECRET-OLD\r" }, "owner")
+    await shell.until(first, id, /SECRET-OLD[\s\S]*\$ /)
+    await first.shutdown()
+
+    writeFileSync(join(shell.home, ".bashrc"), "sleep 1\n")
+    const second = shell.manager()
+    await create(second, shell, { id, restore: true, command: "echo resumed" })
+    second.configure({ transcripts: false })
+    second.configure({ transcripts: true })
+    second.persist()
+    expect(shell.store.terminal(id)?.transcript ?? "").not.toContain("SECRET-OLD")
   })
 
   it("restores a terminal in its last directory, showing its transcript", async ({ shell }) => {

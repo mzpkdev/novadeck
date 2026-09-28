@@ -116,10 +116,13 @@ type Record = {
   /** `performance.now()` when the shell last printed, to type only once it is quiet. */
   outputAt: number
   /**
-   * The transcript kept saved while a command waits to resume the terminal: if it is
-   * never typed, the earlier screen is not replaced by the new shell's.
+   * The transcript kept saved while a command waits to resume the terminal, so a crash
+   * meanwhile loses nothing; once the command is typed or dropped, the new shell's
+   * screen is saved instead.
    */
   held: string | null
+  /** Whether a line was entered since the last prompt, so a program may be running. */
+  submitted: boolean
   /** `performance.now()` at the last save of its screen, so saves take turns. */
   savedAt: number
 } & Omit<Started, "process" | "screen" | "serializer" | "startedAt">
@@ -335,6 +338,7 @@ export class Terminals {
         outputAt: 0,
         held: started.pending && this.transcripts ? (saved?.transcript ?? null) : null,
         savedAt: 0,
+        submitted: false,
       }
       this.records.set(record.summary.id, record)
       // A shell that cannot take the command shows the transcript instead.
@@ -371,6 +375,8 @@ export class Terminals {
     if (!terminalReply.test(input.data)) {
       record.inputs += 1
       record.pending = undefined
+      record.held = null
+      if (/[\r\n]/.test(input.data)) record.submitted = true
     }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
     record.process.write(input.data)
@@ -448,6 +454,7 @@ export class Terminals {
           inputs: 0,
           outputAt: 0,
           held: started.pending ? previous : null,
+          submitted: false,
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
@@ -517,6 +524,7 @@ export class Terminals {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     const { transcripts } = settings
     if (transcripts !== undefined) this.transcripts = transcripts
+    if (transcripts === false) for (const record of this.records.values()) record.held = null
     this.persisting(() => {
       this.options.records?.saveSettings(settings)
       if (transcripts === false) this.options.records?.clearTranscripts()
@@ -970,6 +978,7 @@ export class Terminals {
   private prompted(record: Record, child: pty.IPty, cwd: string): void {
     if (record.process !== child) return
     record.promptedAt = Date.now()
+    record.submitted = false
     record.changed = true
     const moved = cwd !== record.summary.cwd
     if (moved || record.summary.agent !== null) {
@@ -1009,11 +1018,18 @@ export class Terminals {
         for (let tries = 0; current() && !this.atPrompt(record) && tries < 40; tries += 1)
           // eslint-disable-next-line no-await-in-loop -- Waits for the shell to take it back.
           await pause(50)
-        if (!current() || !this.atPrompt(record)) return
+        if (!current() || !this.atPrompt(record)) {
+          if (record.process === child) record.held = null
+          return
+        }
         child.write(command)
         await quiet(200, 3_000)
-        if (!current()) return
+        if (!current()) {
+          if (record.process === child) record.held = null
+          return
+        }
         child.write("\r")
+        record.submitted = true
         // The resumed program shows its own history from here.
         record.held = null
         await pause(this.options.launchGapMs)
@@ -1045,8 +1061,12 @@ export class Terminals {
     // and an agent run by the agent in the foreground starts a new session of its own.
     // A session switch of the agent in the foreground, as /clear or /resume, says so.
     if (shellInForeground(record.process.pid)) return
+    // Windows does not tell the foreground: an agent reports only once a line was entered.
+    if (process.platform === "win32" && !record.submitted) return
+    // A report without a source (Antigravity's) switches its own agent's conversation.
     const active = record.summary.agent
-    if (active !== null && (source ?? "startup") === "startup") {
+    const switched = source === undefined ? agent === active : source !== "startup"
+    if (active !== null && !switched) {
       if (active !== agent || record.agents[active]?.sessionId !== sessionId) return
     }
     const known = record.agents[agent]
@@ -1130,6 +1150,7 @@ export class Terminals {
     void this.enqueue(record, () => {
       record.summary = { ...record.summary, exit, process: null, agent: null }
       record.pending = undefined
+      record.held = null
       this.save(record, true)
       this.exits += 1
       record.exitOrder = this.exits

@@ -394,10 +394,12 @@ agent's session for the terminal whose token matches, keeping the report with th
 largest `seq` (the hook's start time) per agent, so `/clear`, a fork, or another agent
 run in between never replaces a later session with an earlier one. Processes that only
 inherited a shell's environment report too, so the runner ignores a report while the
-shell itself holds the foreground, where the platform tells (Linux; as from a tmux server or an editor started there and
-running elsewhere), and a new `startup` session while another agent session holds the
-foreground (an agent run by that agent); a session switch such as `/clear` reports its
-own source and is kept.
+shell itself holds the foreground (Linux and macOS tell; as from a tmux server or an
+editor started there and running elsewhere), on Windows one made before a line was
+entered since the last prompt, and a new `startup` session while another agent session
+holds the foreground (an agent run by that agent). A session switch such as `/clear`
+reports its own source and is kept, as is a new conversation of the same agent reported
+without a source (Antigravity).
 
 The runner saves, per terminal, in a `terminals` table next to the sessions: its
 session, last directory, latest session per agent, when it last showed a prompt, and

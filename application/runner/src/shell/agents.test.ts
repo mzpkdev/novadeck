@@ -42,6 +42,8 @@ if (agent === "agy") {
 
 type Fixture = {
   home: string
+  /** Where the stand-in agents are on PATH. */
+  bin: string
   paths: ShellPaths
   agents: (env?: NodeJS.ProcessEnv) => ReturnType<typeof createAgents>
   calls: () => string[][]
@@ -96,7 +98,7 @@ const it = base.extend<{ fixture: Fixture }>({
         return []
       }
     }
-    await use({ home, paths, agents, calls })
+    await use({ home, bin, paths, agents, calls })
   },
 })
 
@@ -163,13 +165,37 @@ describe("agents NovaDeck can connect", () => {
       const profile = join(fixture.home, "profile.sh")
       writeFileSync(profile, `export CODEX_HOME="${moved}"\n`)
       const agents = fixture.agents({ ENV: profile })
-      expect((await agents.list())[1]).toEqual({
-        agent: "codex",
-        available: true,
-        connected: false,
-      })
-      expect(await agents.set("codex", true)).toMatchObject({ connected: true })
+      // Connecting waits for the login environment; listing uses it once known.
+      expect(await agents.set("codex", true)).toMatchObject({ available: true, connected: true })
       expect(readFileSync(join(moved, "config.toml"), "utf8")).toContain("novadeck@novadeck")
+      expect((await agents.list())[1]).toEqual({ agent: "codex", available: true, connected: true })
+    },
+  )
+
+  it.skipIf(windows)(
+    "do not wait on a background job the login shell's startup files leave running",
+    async ({ fixture }) => {
+      installed(fixture.home, "claude")
+      const shell = join(fixture.home, "slow-shell")
+      writeFileSync(shell, '#!/bin/sh\nsleep 30 &\nexec /bin/sh "$@"\n', { mode: 0o755 })
+      const started = Date.now()
+      await fixture.agents({ SHELL: shell }).set("claude", true)
+      expect(Date.now() - started).toBeLessThan(10_000)
+    },
+  )
+
+  it.skipIf(windows)(
+    "connect Claude Code's local install, which only an alias names",
+    async ({ fixture }) => {
+      installed(fixture.home, "claude")
+      const local = join(fixture.home, ".claude", "local")
+      mkdirSync(local)
+      const script = readFileSync(join(fixture.bin, "claude"), "utf8")
+      writeFileSync(join(local, "claude"), script, { mode: 0o755 })
+      rmSync(join(fixture.bin, "claude"))
+      // No other claude on PATH, as for someone with only the local install.
+      const agents = fixture.agents({ PATH: [fixture.bin, "/usr/bin", "/bin"].join(delimiter) })
+      expect(await agents.set("claude", true)).toMatchObject({ connected: true })
     },
   )
 

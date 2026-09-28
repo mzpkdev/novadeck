@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "novadeck@novadeck": true
+  },
+  "extraKnownMarketplaces": {
+    "novadeck": {
+      "source": {
+        "source": "directory",
+        "path": "/tmp/novadeck-agents-b1MZAF/shell/plugins/claude"
+      }
+    }
+  }
+}

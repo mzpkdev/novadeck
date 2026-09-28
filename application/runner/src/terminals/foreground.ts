@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { basename } from "node:path"
 
@@ -54,17 +55,30 @@ const leaderArgv = (group: Group): string[] | null => {
 }
 
 /**
- * Whether the shell itself holds its terminal's foreground, as at its prompt, from its
- * own process group; undefined where the platform does not tell, as off Linux.
+ * Whether the shell itself holds its terminal's foreground, as at its prompt, from the
+ * terminal's foreground process group; undefined where the platform does not tell, as
+ * on Windows.
  */
 export const shellInForeground = (shellPid: number): boolean | undefined => {
-  if (process.platform !== "linux") return undefined
   try {
-    const shell = parseProcessStat(readFileSync(`/proc/${shellPid}/stat`, "utf8"))
-    return shell ? shell.tpgid === shellPid : undefined
+    if (process.platform === "linux") {
+      const shell = parseProcessStat(readFileSync(`/proc/${shellPid}/stat`, "utf8"))
+      return shell ? shell.tpgid === shellPid : undefined
+    }
+    // macOS has no /proc; ps reads the same field.
+    if (process.platform === "darwin") {
+      const group = Number(
+        execFileSync("ps", ["-o", "tpgid=", "-p", String(shellPid)], {
+          encoding: "utf8",
+          timeout: 2_000,
+        }).trim(),
+      )
+      return Number.isSafeInteger(group) && group > 0 ? group === shellPid : undefined
+    }
   } catch {
-    return undefined
+    // The shell may be gone, or ps unavailable.
   }
+  return undefined
 }
 
 /** A sample of a terminal's foreground, kept so the next one can reuse its `argv`. */
