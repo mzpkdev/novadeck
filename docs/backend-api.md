@@ -400,7 +400,9 @@ still rejects with `TERMINAL_NOT_FOUND` then).
   that ID in the same session: in its last directory when that still exists, with its
   agent sessions, showing its transcript above a separator before the shell's output.
   `command`, one line of printable ASCII up to 256 characters, is typed at the shell's
-  first prompt, text and Enter apart, and then no transcript is shown. The runner types
+  first prompt, once the shell stops printing, and Enter once its echo settles; then no
+  transcript is shown. A shell without the integration reports no prompt, so it ignores
+  the command and shows the transcript instead. The runner types
   it only at a prompt the integration reported, never after the client wrote input
   first or while another process holds the foreground, and spaces such commands 750 ms
   apart across terminals.

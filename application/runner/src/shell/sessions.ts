@@ -45,6 +45,7 @@ const json = (line: string): Record<string, unknown> | undefined => {
 
 const same = (a: unknown, b: string): boolean => typeof a === "string" && resolve(a) === resolve(b)
 
+// Files untouched since then cannot hold the session, which saves reading them.
 const recent = async (path: string, since: number): Promise<boolean> => {
   try {
     return (await stat(path)).mtimeMs >= since - slackMs
@@ -52,6 +53,11 @@ const recent = async (path: string, since: number): Promise<boolean> => {
     return false
   }
 }
+
+// The session started since then, as its own timestamp says: a session that another
+// app keeps writing to in the same directory started earlier.
+const started = (timestamp: unknown, since: number): boolean =>
+  typeof timestamp === "string" && Date.parse(timestamp) >= since - slackMs
 
 const list = async (directory: string): Promise<string[]> => {
   try {
@@ -70,8 +76,10 @@ const claudeSessions = async (search: SessionSearch, root: string): Promise<stri
       const path = join(directory, name)
       if (!(await recent(path, search.since))) return undefined
       const lines = (await head(path).catch(() => [])).map(json)
-      const cwd = lines.find((line) => line?.cwd !== undefined)?.cwd
-      return same(cwd, search.cwd) ? basename(name, ".jsonl") : undefined
+      const first = lines.find((line) => line?.cwd !== undefined)
+      return first && same(first.cwd, search.cwd) && started(first.timestamp, search.since)
+        ? basename(name, ".jsonl")
+        : undefined
     }),
   )
   return found.filter((id) => id !== undefined)
@@ -106,7 +114,10 @@ const codexSessions = async (search: SessionSearch, root: string): Promise<strin
           if (!(await recent(path, search.since))) return undefined
           const [first] = await head(path).catch(() => [])
           const payload = json(first ?? "")?.payload as Record<string, unknown> | undefined
-          return payload && same(payload.cwd, search.cwd) && typeof payload.id === "string"
+          return payload &&
+            same(payload.cwd, search.cwd) &&
+            started(payload.timestamp, search.since) &&
+            typeof payload.id === "string"
             ? payload.id
             : undefined
         }),
@@ -117,7 +128,7 @@ const codexSessions = async (search: SessionSearch, root: string): Promise<strin
 }
 
 /**
- * The agent's session that ran in `cwd` since `since`, from the agent's own session
+ * The agent's session that started in `cwd` since `since`, from the agent's own session
  * files, read and never written. Undefined when none does, or more than one, so a
  * guess never resumes someone else's session.
  */

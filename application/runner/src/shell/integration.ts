@@ -1,10 +1,16 @@
-import { homedir } from "node:os"
 import { basename, delimiter } from "node:path"
 
 import { fishQuote, psQuote, type ShellPaths } from "./scripts.js"
 
-/** How to start a shell so it loads NovaDeck's integration after the user's own setup. */
-export type ShellLaunch = { readonly args: readonly string[]; readonly env: NodeJS.ProcessEnv }
+/**
+ * How to start a shell so it loads NovaDeck's integration after the user's own setup;
+ * `integrated` when it will report its prompts.
+ */
+export type ShellLaunch = {
+  readonly args: readonly string[]
+  readonly env: NodeJS.ProcessEnv
+  readonly integrated: boolean
+}
 
 // "/bin/zsh", "-zsh" and "pwsh.exe" name "zsh" and "pwsh".
 const shellName = (shell: string): string =>
@@ -42,28 +48,42 @@ export const shellLaunch = (
   }
   switch (shellName(shell)) {
     case "bash":
-      return { args: ["--init-file", paths.bash], env: withBin }
-    case "zsh":
+      return { args: ["--init-file", paths.bash], env: withBin, integrated: true }
+    case "zsh": {
+      // The user's ZDOTDIR, only when they have one: an unset one reads from home.
+      const { NOVADECK_ZDOTDIR: _earlier, ...rest } = withBin
       return {
         args: [],
         env: {
-          ...withBin,
+          ...rest,
           ZDOTDIR: paths.zsh,
-          NOVADECK_ZDOTDIR: env.ZDOTDIR || env.HOME || homedir(),
+          ...(env.ZDOTDIR ? { NOVADECK_ZDOTDIR: env.ZDOTDIR } : {}),
         },
+        integrated: true,
       }
+    }
     case "fish":
-      return { args: ["--init-command", `source ${fishQuote(paths.fish)}`], env: withBin }
+      return {
+        args: ["--init-command", `source ${fishQuote(paths.fish)}`],
+        env: withBin,
+        integrated: true,
+      }
     case "pwsh":
     case "powershell":
+      // A script policy that forbids the integration leaves the shell as it is.
       return {
-        args: ["-NoExit", "-Command", `. ${psQuote(paths.powershell)}`],
+        args: ["-NoExit", "-Command", `try { . ${psQuote(paths.powershell)} } catch {}`],
         env: withBin,
+        integrated: true,
       }
     case "cmd":
       // $e]9;9;$P$e\ is OSC 9;9 with the current directory, ahead of the usual prompt.
-      return { args: [], env: { ...withBin, PROMPT: `$e]9;9;$P$e\\${env.PROMPT || "$P$G"}` } }
+      return {
+        args: [],
+        env: { ...withBin, PROMPT: `$e]9;9;$P$e\\${env.PROMPT || "$P$G"}` },
+        integrated: true,
+      }
     default:
-      return { args: [], env: withBin }
+      return { args: [], env: withBin, integrated: false }
   }
 }

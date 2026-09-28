@@ -633,7 +633,12 @@ export const runnerBackend = (
   // Lost terminals of the session on screen, and those with a program to resume, get
   // their fresh shells.
   const reviveOnScreen = (): void => {
-    for (const entry of entries.values())
+    // The session on screen goes first; the start throttle and the runner's launch gaps
+    // then hold back only the others.
+    const ordered = [...entries.values()].toSorted(
+      (a, b) => Number(onScreen(b)) - Number(onScreen(a)),
+    )
+    for (const entry of ordered)
       if (entry.lost && !entry.settled && !entry.starting && wanted(entry)) {
         if (restartingOften()) settle(entry, crashLoop)
         else freshShell(entry)

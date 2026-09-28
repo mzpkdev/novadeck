@@ -77,14 +77,24 @@ else
 fi
 `
 
-// zsh reads its startup files from ZDOTDIR, which NovaDeck points here. Each file reads
-// the user's own from NOVADECK_ZDOTDIR (their ZDOTDIR, or home), which their .zshenv
-// may move. .zshrc hands ZDOTDIR back, so .zlogin and any nested zsh read theirs.
-const zshStep = (file: string): string => `${header("#", "shell integration for zsh")}
-if [[ -f "$NOVADECK_ZDOTDIR/${file}" ]]; then
+// zsh reads its startup files from ZDOTDIR, which NovaDeck points here. .zshenv reads
+// the user's own with ZDOTDIR as they had it (NOVADECK_ZDOTDIR, or unset), and notes
+// where their .zshenv left it; later files read the user's from there. .zshrc hands
+// ZDOTDIR back, so .zlogin and any nested zsh read theirs.
+const zshenv = `${header("#", "shell integration for zsh")}
+__novadeck_zdotdir=$ZDOTDIR
+if [[ -n "\${NOVADECK_ZDOTDIR+set}" ]]; then ZDOTDIR=$NOVADECK_ZDOTDIR; else unset ZDOTDIR; fi
+if [[ -f "\${ZDOTDIR:-$HOME}/.zshenv" ]]; then . "\${ZDOTDIR:-$HOME}/.zshenv"; fi
+NOVADECK_ZDOTDIR=\${ZDOTDIR:-$HOME}
+ZDOTDIR=$__novadeck_zdotdir
+unset __novadeck_zdotdir
+`
+
+const zprofile = `${header("#", "shell integration for zsh")}
+if [[ -f "$NOVADECK_ZDOTDIR/.zprofile" ]]; then
   __novadeck_zdotdir=$ZDOTDIR
   ZDOTDIR=$NOVADECK_ZDOTDIR
-  . "$ZDOTDIR/${file}"
+  . "$ZDOTDIR/.zprofile"
   NOVADECK_ZDOTDIR=$ZDOTDIR
   ZDOTDIR=$__novadeck_zdotdir
   unset __novadeck_zdotdir
@@ -92,8 +102,12 @@ fi
 `
 
 const zshrc = `${header("#", "shell integration for zsh")}
+__novadeck_zdotdir=$ZDOTDIR
 ZDOTDIR=$NOVADECK_ZDOTDIR
 unset NOVADECK_ZDOTDIR
+# A system zshrc read before this one, as macOS's, may have put history here.
+if [[ "$HISTFILE" == "$__novadeck_zdotdir"/* ]]; then HISTFILE=$ZDOTDIR/.zsh_history; fi
+unset __novadeck_zdotdir
 if [[ -f "$ZDOTDIR/.zshrc" ]]; then . "$ZDOTDIR/.zshrc"; fi
 # Your startup files may put other directories first; the agent shims go back in front.
 [[ "$PATH" == "$NOVADECK_BIN":* ]] || PATH="$NOVADECK_BIN:$PATH"
@@ -254,8 +268,8 @@ export const shellFiles = (
   const plugin = paths.claudePlugin
   const common = [
     file(paths.bash, bash),
-    file(join(paths.zsh, ".zshenv"), zshStep(".zshenv")),
-    file(join(paths.zsh, ".zprofile"), zshStep(".zprofile")),
+    file(join(paths.zsh, ".zshenv"), zshenv),
+    file(join(paths.zsh, ".zprofile"), zprofile),
     file(join(paths.zsh, ".zshrc"), zshrc),
     file(paths.fish, fish),
     file(paths.powershell, powershell),

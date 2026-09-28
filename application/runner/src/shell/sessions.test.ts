@@ -23,9 +23,9 @@ const cwd = process.platform === "win32" ? "C:\\work\\my.app" : "/work/my.app"
 const other = process.platform === "win32" ? "C:\\work\\other" : "/work/other"
 const claudeFile = (home: string, id: string, directory = cwd) =>
   join(home, ".claude", "projects", directory.replace(/[^A-Za-z0-9]/g, "-"), `${id}.jsonl`)
-const claudeLines = (id: string, directory = cwd) => [
+const claudeLines = (id: string, directory = cwd, start = Date.now()) => [
   { type: "summary", sessionId: id },
-  { type: "user", cwd: directory, sessionId: id, timestamp: new Date().toISOString() },
+  { type: "user", cwd: directory, sessionId: id, timestamp: new Date(start).toISOString() },
 ]
 const codexFile = (home: string, id: string, date = new Date()) =>
   join(
@@ -58,6 +58,13 @@ describe("finding a lost agent session in its own files", () => {
     write(codexFile(home, "b"), codexLines("b", other))
     const search = { cwd, since, exclude: new Set<string>(), home, env: {} }
     expect(await findAgentSession("codex", search)).toBe("a")
+  })
+
+  it("leaves out a session another app started earlier and still writes to", async ({ home }) => {
+    const since = Date.now() - 60_000
+    write(claudeFile(home, "elsewhere"), claudeLines("elsewhere", cwd, since - 3_600_000))
+    const search = { cwd, since, exclude: new Set<string>(), home, env: {} }
+    expect(await findAgentSession("claude", search)).toBeUndefined()
   })
 
   it("does not guess between two sessions, but leaves out other terminals' own", async ({

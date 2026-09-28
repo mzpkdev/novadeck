@@ -173,6 +173,31 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shown).toContain("rc read []")
   })
 
+  it("waits for a prompt hook that runs a program in the foreground", async ({ shell }) => {
+    writeFileSync(join(shell.home, ".bashrc"), "PROMPT_COMMAND='/bin/sleep 0.3'\n")
+    const manager = shell.manager()
+    const terminal = await create(manager, shell, { command: "echo resumed-$((20 + 22))" })
+    await shell.until(manager, terminal.id, "resumed-42")
+  })
+
+  it("shows the transcript instead of a command a shell without prompts cannot take", async ({
+    shell,
+  }) => {
+    const id = randomUUID()
+    const first = shell.manager({ shell: "/bin/sh" })
+    await create(first, shell, { id })
+    first.write({ terminalId: id, data: "echo before-reboot\r" }, "owner")
+    await shell.until(first, id, /before-reboot\r?\n/)
+    await first.shutdown()
+
+    const second = shell.manager({ shell: "/bin/sh" })
+    await create(second, shell, { id, restore: true, command: "echo resumed" })
+    const shown = await shell.until(second, id, "restored transcript")
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    expect(shown).toContain("before-reboot")
+    expect(await screen(second, id)).not.toMatch(/resumed\r?\n/)
+  })
+
   it("never types the command once someone typed first", async ({ shell }) => {
     writeFileSync(join(shell.home, ".bashrc"), "sleep 0.3\n")
     const manager = shell.manager()
@@ -342,7 +367,7 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
       name: "cmd",
       shell: process.env.COMSPEC ?? "cmd.exe",
       cd: (path: string) => `cd /d "${path}"`,
-      prompt: />\s*$/m,
+      prompt: /[A-Za-z]:\\[^\r\n]*>/,
       command: "echo resumed-4^2",
     },
     {
@@ -374,4 +399,29 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
       await shell.until(manager, terminal.id, "resumed-42")
     })
   }
+})
+
+// Diagnostic: which Enter PSReadLine takes through the bundled ConPTY.
+describe.runIf(process.platform === "win32")("Windows Enter diagnostics", () => {
+  const enters = {
+    cr: "\r",
+    crlf: "\r\n",
+    win32: "\x1b[13;28;13;1;0;1_\x1b[13;28;13;0;0;1_",
+  }
+  for (const program of ["powershell.exe", "pwsh.exe"])
+    for (const [name, enter] of Object.entries(enters))
+      it(`${program} with ${name}`, async ({ shell }) => {
+        const manager = shell.manager({ shell: program })
+        const terminal = await create(manager, shell)
+        await shell.until(manager, terminal.id, /PS .*>/).catch(() => "")
+        await new Promise((resolve) => setTimeout(resolve, 1_500))
+        manager.write({ terminalId: terminal.id, data: "Write-Output ('dia' + 'gnosed')" }, "owner")
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        manager.write({ terminalId: terminal.id, data: enter }, "owner")
+        const worked = await shell
+          .until(manager, terminal.id, "diagnosed")
+          .then(() => true)
+          .catch(() => false)
+        console.log(`ENTER-DIAGNOSTIC ${program} ${name}: ${worked}`)
+      }, 30_000)
 })

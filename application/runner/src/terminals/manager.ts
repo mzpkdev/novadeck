@@ -319,7 +319,8 @@ export class Terminals {
         outputAt: 0,
       }
       this.records.set(record.summary.id, record)
-      const shown = saved?.transcript && !input.command && this.transcripts
+      // A shell that cannot take the command shows the transcript instead.
+      const shown = saved?.transcript && !started.pending && this.transcripts
       if (shown) this.show(record, saved.transcript!, new Date(saved.savedAt))
       this.listen(record)
       this.announce(record)
@@ -347,9 +348,12 @@ export class Terminals {
   write(input: { terminalId: string; data: string }, ownerId: string): void {
     const record = this.control(input.terminalId, ownerId)
     this.running(record)
-    // Someone typing before the first prompt takes the shell over from a queued command.
-    record.inputs += 1
-    record.pending = undefined
+    // Someone typing before the first prompt takes the shell over from a queued command;
+    // the terminal's own replies, such as focus or colour reports, are not typing.
+    if (!input.data.startsWith("\x1b")) {
+      record.inputs += 1
+      record.pending = undefined
+    }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
     record.process.write(input.data)
   }
@@ -395,11 +399,11 @@ export class Terminals {
         if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
         if (this.records.get(input.terminalId) !== record)
           throw new DomainError("TERMINAL_NOT_FOUND")
+        const started = this.spawn(shell, cwd, input, integration)
         const earlier =
-          this.transcripts && !input.command
+          this.transcripts && !started.pending
             ? transcriptOf(record.screen, record.serializer, this.options.transcriptChars)
             : null
-        const started = this.spawn(shell, cwd, input, integration)
         // Earlier attachments ended at the exit; any still draining are dropped.
         for (const subscription of record.subscribers.values()) subscription.cancel()
         record.subscribers.clear()
@@ -852,7 +856,9 @@ export class Terminals {
     const token = randomBytes(24).toString("hex")
     const launch = integration
       ? shellLaunch(shell, integration.paths, this.options.env)
-      : { args: [], env: this.options.env }
+      : { args: [], env: this.options.env, integrated: false }
+    // A command waits for the first prompt, which only an integrated shell reports.
+    const reportsPrompts = launch.integrated && this.options.shellArgs === undefined
     const env: NodeJS.ProcessEnv = {
       ...launch.env,
       NOVADECK_TERMINAL_ID: id,
@@ -882,7 +888,7 @@ export class Terminals {
         startedAtTime: Date.now(),
         shellName: basename(shell),
         token,
-        pending: input.command,
+        pending: reportsPrompts ? input.command : undefined,
       }
     } catch {
       screen.dispose()
@@ -966,6 +972,10 @@ export class Terminals {
     this.launches = this.launches
       .then(async () => {
         await quiet(300, 5_000)
+        // A prompt hook may still run a program in the foreground for a moment.
+        for (let tries = 0; current() && !this.atPrompt(record) && tries < 40; tries += 1)
+          // eslint-disable-next-line no-await-in-loop -- Waits for the shell to take it back.
+          await pause(50)
         if (!current() || !this.atPrompt(record)) return
         child.write(command)
         await quiet(200, 3_000)

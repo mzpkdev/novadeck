@@ -140,7 +140,13 @@ from files in its own data directory (a `shell` folder beside `workspace.sqlite`
 
 The first time Codex runs NovaDeck's hook, Codex itself asks you to review it ("Hooks
 need review") and records your choice in its own settings. The hook's command stays the
-same across NovaDeck versions, so it asks once.
+same across NovaDeck versions, so it asks once. Codex takes a `-c` hook list in place of
+the one in `config.toml`, so your own `SessionStart` hooks do not run for Codex started
+in NovaDeck's terminals; its other hooks do.
+
+A shell without the integration (sh, nushell and others) reports no prompt, so a
+command could never be typed safely there: such a terminal shows its transcript and a
+plain shell instead of resuming.
 
 The runner saves each terminal's directory and agent sessions as they change, and its
 output every few seconds and when the app quits, so a crash or a power cut loses little.
