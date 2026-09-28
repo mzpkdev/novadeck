@@ -875,8 +875,9 @@ export class Terminals {
     void this.enqueue(record, async () => {
       // Output a previous run left queued belongs to a screen that is gone.
       if (record.process !== child) return
-      record.changed = true
       await new Promise<void>((resolve) => record.screen.write(data, resolve))
+      // Once on the screen: a save while it was drawing may have taken the screen before.
+      record.changed = true
       for (let start = 0; start < data.length;) {
         let end = Math.min(start + OUTPUT_CHARS, data.length)
         const last = data.charCodeAt(end - 1)
@@ -1074,11 +1075,6 @@ export class Terminals {
   }
 
   /**
-   * An agent hook reported its session: the latest report for each agent is kept. Since
-   * the last prompt, the agent holds the foreground, and its directory is where the
-   * terminal restores, as a shell that ran `cd … && claude` reports no prompt there.
-   */
-  /**
    * Handles reports one at a time, in the order they arrived, as a report may wait for
    * the platform to tell who holds the foreground.
    */
@@ -1088,6 +1084,10 @@ export class Terminals {
       .catch((error: unknown) => console.error("NovaDeck could not take an agent report:", error))
   }
 
+  /**
+   * An agent hook reported its session; `acceptReport` decides whether it is this
+   * terminal's own and the latest, and what it changes.
+   */
   private async report({ terminalId, token, ...report }: Report): Promise<void> {
     const record = this.records.get(terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, token)) return
