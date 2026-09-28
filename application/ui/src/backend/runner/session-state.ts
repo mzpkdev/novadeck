@@ -10,17 +10,19 @@ import type {
 // build cannot read starts the session fresh instead of breaking the load.
 const version = 1
 
-// Live status is never saved. `lastProcess` names the program in the foreground when
-// the app closed ("" for none), for the next launch to restore. Only the name: a
-// command line can hold secrets.
+// Live status is never saved. `lastProcess` names the program in the foreground at the
+// save and `restoredProcess` one still waiting to be restored ("" for none); kept apart
+// so the next launch can tell a program that merely ran from a pending restore. Only
+// names: a command line can hold secrets.
 export type SavedTerminal = Pick<TerminalMetadata, "id" | "name" | "directory"> & {
   readonly lastProcess: string
+  readonly restoredProcess: string
 }
 
-// One still waiting to be restored, which programs the shell ran on its own do not
-// replace, or else the program running now.
-const lastProcess = (terminal: TerminalMetadata): string =>
-  terminal.restoredProcess ?? (terminal.state === "running" ? terminal.process : "")
+// What the next launch restores in a terminal where no program runs: a pending restore,
+// which programs the shell ran on its own do not replace, or else the last program.
+export const programToRestore = (saved: SavedTerminal): string =>
+  saved.restoredProcess || saved.lastProcess
 
 export type SavedSession = {
   readonly visitedAt: number
@@ -62,7 +64,8 @@ export const encodeSession = (session: WorkspaceSession, rank: number): string =
           id: terminal.id,
           name: terminal.name,
           directory: terminal.directory,
-          lastProcess: lastProcess(terminal),
+          lastProcess: terminal.state === "running" ? terminal.process : "",
+          restoredProcess: terminal.restoredProcess ?? "",
         })),
         order: roster.order,
         nextNumber: roster.nextNumber,
@@ -87,12 +90,14 @@ const terminal = (value: unknown): SavedTerminal | undefined =>
   isString(value.id) &&
   isString(value.name) &&
   isString(value.directory) &&
-  isString(value.lastProcess)
+  isString(value.lastProcess) &&
+  isString(value.restoredProcess)
     ? {
         id: value.id,
         name: value.name,
         directory: value.directory,
         lastProcess: value.lastProcess,
+        restoredProcess: value.restoredProcess,
       }
     : undefined
 

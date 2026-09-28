@@ -3,7 +3,7 @@ import type { Project, TerminalSummary, WorkspaceSession } from "@novadeck/proto
 import type { SessionSeed, WorkspaceSeed } from "../../model/seed"
 import type { TerminalMetadata } from "../../model/types"
 import { terminalActivity } from "./activity"
-import { decodeSession, type SavedTerminal } from "./session-state"
+import { decodeSession, programToRestore, type SavedTerminal } from "./session-state"
 
 // Everything the runner reported at startup, one entry per project.
 export type RunnerListing = readonly {
@@ -31,13 +31,24 @@ export const startingTerminal = (
   state: "starting",
 })
 
-// What a saved terminal keeps as itself; its `lastProcess` only feeds `restoredProcess`.
+// What a saved terminal keeps as itself; its saved programs only feed `restoredProcess`.
 const identity = ({ id, name, directory }: SavedTerminal) => ({ id, name, directory })
 
-// The program a saved terminal held when the app last closed, for a terminal not
-// running one now.
-const restored = (saved: SavedTerminal): Pick<TerminalMetadata, "restoredProcess"> =>
-  saved.lastProcess ? { restoredProcess: saved.lastProcess } : {}
+// What a saved terminal still has to restore, given the program running there now, if
+// any. A running program replaces a program that merely ran, as the foreground moved
+// on while no page watched, but not a pending restore unless it is that same program.
+const restored = (
+  saved: SavedTerminal,
+  running?: string,
+): Pick<TerminalMetadata, "restoredProcess"> => {
+  const program =
+    running === undefined
+      ? programToRestore(saved)
+      : saved.restoredProcess !== running
+        ? saved.restoredProcess
+        : ""
+  return program ? { restoredProcess: program } : {}
+}
 
 // A terminal as the runner reports it, or undefined once its shell exited cleanly,
 // which closes it.
@@ -47,11 +58,9 @@ const liveTerminal = (
 ): TerminalMetadata | undefined => {
   const { status, process } = terminalActivity(summary)
   if (status === "clean") return undefined
-  // A restore still waits unless the saved program is the one running now.
-  const running = status.state === "running" && process === saved.lastProcess
   return {
     ...identity(saved),
-    ...(running ? {} : restored(saved)),
+    ...restored(saved, status.state === "running" ? (process ?? "") : undefined),
     command: "",
     process: process ?? "",
     ...status,
@@ -96,6 +105,7 @@ const sessionSeed = (session: WorkspaceSession, summaries: readonly TerminalSumm
           name: terminalName(first + index),
           directory: summary.cwd,
           lastProcess: "",
+          restoredProcess: "",
         },
         summary,
       )

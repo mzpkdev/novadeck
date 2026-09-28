@@ -9,7 +9,7 @@ import { context, describe, expect, it } from "../../test"
 import type { BackendAction } from "../port"
 import { runnerBackend, type RunnerApi } from "./backend"
 import { startingTerminal, type RunnerListing } from "./seed"
-import { encodeSession } from "./session-state"
+import { encodeSession, programToRestore, type SavedTerminal } from "./session-state"
 import { startTestRunner } from "./testing"
 
 // Values pushed by the test, read by the adapter as a stream.
@@ -121,12 +121,12 @@ const restoreOf = (app: ReturnType<typeof scripted>) => {
   const session = activeSession(app.received.reduce<Workspace>(workspaceReducer, seeded))!
   const terminal = session.state.roster.terminals[0]!
   const saved = JSON.parse(encodeSession(session, 2)) as {
-    state: { roster: { terminals: { lastProcess: string }[] } }
+    state: { roster: { terminals: SavedTerminal[] } }
   }
   return {
     state: terminal.state,
     restored: terminal.restoredProcess,
-    saved: saved.state.roster.terminals[0]!.lastProcess,
+    saved: programToRestore(saved.state.roster.terminals[0]!),
   }
 }
 

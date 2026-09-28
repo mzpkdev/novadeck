@@ -6,7 +6,7 @@ import { createTerminalState } from "../../model/state"
 import type { TerminalStatus, WorkspaceSession as Session, WorkspaceState } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { cleanlyExited, lostTerminals, runnerSeed, type RunnerListing } from "./seed"
-import { decodeSession, encodeSession } from "./session-state"
+import { decodeSession, encodeSession, programToRestore } from "./session-state"
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 const project = (n: number): Project => ({ id: uuid(n), name: `Project ${n}`, cwd: `/work/${n}` })
@@ -28,19 +28,20 @@ const saved = (
   terminals: readonly {
     readonly id: string
     readonly name: string
-    readonly lastProcess?: string
+    // A program waiting to be restored, or one running when the session was saved.
+    readonly restore?: string
+    readonly running?: string
   }[],
   change: Partial<WorkspaceState> = {},
   rank = 0,
 ): WorkspaceSession => {
-  // An idle terminal saves the program still waiting to be restored.
-  const metadata = terminals.map(({ lastProcess, ...terminal }) => ({
+  const metadata = terminals.map(({ restore, running, ...terminal }) => ({
     ...terminal,
-    ...(lastProcess ? { restoredProcess: lastProcess } : {}),
+    ...(restore ? { restoredProcess: restore } : {}),
     directory: "/work/1",
     command: "",
-    process: "",
-    state: "idle" as const,
+    process: running ?? "",
+    state: running ? ("running" as const) : ("idle" as const),
   }))
   const state = createTerminalState(metadata, "grid", "grid")
   return {
@@ -68,7 +69,7 @@ const defaults = { view: "focus", windowedView: "grid", now: 99 } as const
 
 // What the next save records for the session's first terminal.
 const resave = (current: Session) =>
-  decodeSession(encodeSession(current, 2))!.state.roster.terminals[0]!.lastProcess
+  programToRestore(decodeSession(encodeSession(current, 2))!.state.roster.terminals[0]!)
 // The first terminal after the backend reports `status`, then `process`, as it does;
 // `fromPrompt` when the person started the program from the shell's prompt.
 const run = (
@@ -169,7 +170,7 @@ describe("runner seed", () => {
   })
 
   context("with a program in the foreground when the app last closed", () => {
-    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", lastProcess: "codex" }])
+    const session = saved(10, 500, [{ id: uuid(20), name: "Agent", restore: "codex" }])
     const listing = (terminals: TerminalSummary[]): RunnerListing => [
       { project: project(1), sessions: [{ session, terminals }] },
     ]
@@ -225,9 +226,24 @@ describe("runner seed", () => {
       expect(first(run(startup, { state: "starting" }, "fastfetch")).restoredProcess).toBe("codex")
     })
 
+    it("forgets a program that only ran once another runs there now", () => {
+      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
+      const reopened = workspaceFromSeed(
+        runnerSeed([
+          {
+            project: project(1),
+            sessions: [{ session: current, terminals: [summary(20, 10, foreground("server"))] }],
+          },
+        ]),
+        defaults,
+      ).projects[0]!.history[0]!
+      expect(first(reopened)).not.toHaveProperty("restoredProcess")
+      expect(resave(reopened)).toBe("server")
+    })
+
     context("when a running program loses its shell", () => {
       // Saved while that program ran, so nothing waits to be restored.
-      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", lastProcess: "claude" }])
+      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "claude" }])
       const running = workspaceFromSeed(
         runnerSeed([
           {

@@ -58,22 +58,24 @@ shared window and the profile's body. The surface keeps its controller mounted a
 that, so a program change swaps the body without restarting the terminal; the runner
 surface moves its one xterm host into the new body, keeping output, selection and focus.
 
-Saved sessions record, per terminal, the program to resume there (`lastProcess`, empty
-for none), and never its command line, which can hold secrets: the program running
-when the app closed, or one still waiting to be restored. On the next launch it comes
-back as the terminal's `restoredProcess` unless that same program runs there now. A program
-that loses its shell while running, as when the runner is lost or the shell killed,
+Saved sessions record, per terminal, program names only, never command lines, which
+can hold secrets: the program running at the save (`lastProcess`) and one still
+waiting to be restored (`restoredProcess`), each empty for none. On the next launch a
+pending restore comes back as the terminal's `restoredProcess` unless that same
+program runs there now; otherwise the last program does, unless some program runs
+there now, as the foreground may have moved on while no page watched. A program that
+loses its shell while running, as when the runner is lost or the shell killed,
 becomes the one to restore in the fresh shell. A restore holds through programs the
 shell runs on its own, such as rc-file jobs, and through a program's own prompts,
-such as a passphrase, and saving keeps it over them; it ends once a program starts
-after the person pressed Enter while the terminal showed the shell idle at its prompt.
-Reports lag the shell by up to a sample, so a command typed right after a startup
-program exits may not end it; the next one from the prompt does. Quitting or closing the desktop app's window lets the
-page save before the runner ends its shells, and the runner refuses saves from then
-on, so the programs still running are what gets recorded. On macOS, closing the last
-window leaves the app and its shells running, so `lastProcess` then reflects that
+such as a passphrase; it ends once a program starts after the person pressed Enter
+while the terminal showed the shell idle at its prompt. Reports lag the shell by up
+to a sample, so a command typed right after a startup program exits may not end it;
+the next one from the prompt does. Quitting or closing the desktop app's window lets
+the page save before the runner ends its shells, and the runner refuses saves from
+then on, so the programs still running are what gets recorded. On macOS, closing the
+last window leaves the app and its shells running, so the save then reflects that
 close rather than the final quit. This prepares resuming that program; nothing
-resumes it yet. Saved terminals require the field; there is no migration for older
+resumes it yet. Saved terminals require both fields; there is no migration for older
 session data.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
