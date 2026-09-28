@@ -129,10 +129,10 @@ export const contract = {
         z.strictObject({ terminalId: id, cols: columns, rows, command: shellCommand.optional() }),
       )
       .output(terminalSummary),
-    // The session `agent` last reported in this terminal, live or saved, to resume it;
-    // null when it reported none, the agent is not connected, or another terminal runs or
-    // was given that session.
-    agentSession: procedure
+    // Hands the terminal the session `agent` last reported in it, live or saved, to
+    // resume: null when it reported none, the agent is not connected, or another terminal
+    // runs or claimed that session.
+    claimAgentSession: procedure
       .input(z.strictObject({ terminalId: id, agent: agentName }))
       .output(agentSessionId.nullable()),
   },

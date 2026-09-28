@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { createRouter, type Connection } from "./router.js"
 import { createAgents, type AgentsOptions } from "./shell/agents.js"
+import { installShellFiles } from "./shell/install.js"
 import { Terminals, type TerminalOptions } from "./terminals/index.js"
 import { WorkspaceStore } from "./workspaces/store.js"
 
@@ -47,15 +48,23 @@ export type Runner = {
 export const createRunner = (options: RunnerOptions = {}): Runner => {
   const id = randomUUID()
   const store = new WorkspaceStore(options.database)
-  // Codex runs through NovaDeck's shim while it is connected; see `posixCodexShim`.
-  const codexConnected = (): Promise<boolean> => agents.connected("codex")
+  // Written once, for the shells and for the agents that install NovaDeck's plugin.
+  const shellFiles =
+    options.shell === undefined
+      ? Promise.resolve(undefined)
+      : installShellFiles(options.shell).catch((error: unknown) => {
+          console.error("NovaDeck shell integration is unavailable:", error)
+          return undefined
+        })
+  const agents = createAgents(() => shellFiles, options.agents)
   const terminals = new Terminals({
     records: store,
-    shims: codexConnected,
-    ...(options.shell !== undefined && { integration: { directory: options.shell } }),
+    shellFiles,
+    // Codex runs through NovaDeck's shim while it is connected; see `posixCodexShim`.
+    codexShim: () => agents.connected("codex"),
+    transcripts: store.settings().transcripts,
     ...options.terminals,
   })
-  const agents = createAgents(() => terminals.integrationPaths(), options.agents)
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {

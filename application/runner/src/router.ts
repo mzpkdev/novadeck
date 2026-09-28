@@ -144,9 +144,9 @@ export const createRouter = (options: {
         terminals.close(input, context.connection.id),
       ),
       // A disconnected agent resumes nothing, whatever it reported before.
-      agentSession: authorized.terminals.agentSession.handler(async ({ input }) =>
+      claimAgentSession: authorized.terminals.claimAgentSession.handler(async ({ input }) =>
         (await agents.connected(input.agent))
-          ? terminals.agentSession(input.terminalId, input.agent)
+          ? terminals.claimAgentSession(input.terminalId, input.agent)
           : null,
       ),
     },
@@ -158,9 +158,14 @@ export const createRouter = (options: {
         return result
       }),
     },
+    // The store keeps the settings; the terminals apply the transcript switch.
     settings: {
-      get: authorized.settings.get.handler(() => terminals.settings()),
-      set: authorized.settings.set.handler(({ input }) => terminals.configure(input)),
+      get: authorized.settings.get.handler(() => store.settings()),
+      set: authorized.settings.set.handler(({ input }) => {
+        if (options.closing()) throw new DomainError("RUNTIME_CLOSING")
+        store.saveSettings(input)
+        if (input.transcripts !== undefined) terminals.keepTranscripts(input.transcripts)
+      }),
     },
   })
 }

@@ -1,12 +1,13 @@
 import { join } from "node:path"
 
+import type { AgentName } from "@novadeck/protocol"
+
 // The files NovaDeck puts in shells it starts, and the plugins agents install when the
 // person connects them, as text. They are written into NovaDeck's own data directory;
 // only connecting an agent installs anything elsewhere, through the agent's own commands.
 
 /** Where each file lives under the shell directory. */
 export type ShellPaths = {
-  readonly directory: string
   /** Put first on PATH while Codex is connected: the `codex` shim. */
   readonly bin: string
   readonly bash: string
@@ -21,16 +22,10 @@ export type ShellPaths = {
   readonly plugins: { readonly claude: string; readonly codex: string; readonly agy: string }
   /** The hook's launcher. */
   readonly hook: string
-  /**
-   * The launcher as NovaDeck's shells name it in NOVADECK_HOOK: on Windows its short
-   * name, which holds no spaces or brackets, so cmd runs it unquoted.
-   */
-  readonly launcher: string
   readonly hookScript: string
 }
 
 export const shellPaths = (directory: string, platform = process.platform): ShellPaths => ({
-  directory,
   bin: join(directory, "bin"),
   bash: join(directory, "bash", "novadeck.bash"),
   zsh: join(directory, "zsh"),
@@ -42,12 +37,11 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
     agy: join(directory, "plugins", "agy", "novadeck"),
   },
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
-  launcher: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
   hookScript: join(directory, "hook.mjs"),
 })
 
 // Quoting for each language a path is written into.
-export const shQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
+const shQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 export const psQuote = (value: string): string => `'${value.replaceAll("'", "''")}'`
 export const fishQuote = (value: string): string =>
   `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
@@ -67,7 +61,7 @@ const header = (comment: string, what: string): string =>
  */
 const bash = `${header("#", "shell integration for bash")}
 if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
-# Your startup files may put other directories first; NovaDeck's shims go back in front.
+# Your startup files may put other directories first; the Codex shim goes back in front.
 if [ -n "\${NOVADECK_BIN:-}" ]; then
   case "$PATH" in "$NOVADECK_BIN":*) ;; *) PATH="$NOVADECK_BIN:$PATH" ;; esac
 fi
@@ -125,7 +119,7 @@ unset NOVADECK_ZDOTDIR
 if [[ "$HISTFILE" == "$__novadeck_zdotdir"/* ]]; then HISTFILE=$ZDOTDIR/.zsh_history; fi
 unset __novadeck_zdotdir
 if [[ -f "$ZDOTDIR/.zshrc" ]]; then . "$ZDOTDIR/.zshrc"; fi
-# Your startup files may put other directories first; NovaDeck's shims go back in front.
+# Your startup files may put other directories first; the Codex shim goes back in front.
 if [[ -n "$NOVADECK_BIN" && "$PATH" != "$NOVADECK_BIN":* ]]; then PATH="$NOVADECK_BIN:$PATH"; fi
 
 __novadeck_prompt() {
@@ -140,7 +134,7 @@ add-zsh-hook precmd __novadeck_prompt
 `
 
 const fish = `${header("#", "shell integration for fish")}
-# Your configuration may put other directories first; NovaDeck's shims go back in front,
+# Your configuration may put other directories first; the Codex shim goes back in front,
 # for this shell only.
 if set -q NOVADECK_BIN
     set -gx PATH $NOVADECK_BIN (string match -v -- $NOVADECK_BIN $PATH)
@@ -154,7 +148,7 @@ end
 // PowerShell loads the user's profile before -Command runs this. The prompt reports
 // the directory with OSC 9;9, as Windows Terminal documents, around the user's own.
 const powershell = `${header("#", "shell integration for PowerShell")}
-# Your profile may put other directories first; NovaDeck's shims go back in front.
+# Your profile may put other directories first; the Codex shim goes back in front.
 if ($env:NOVADECK_BIN) {
   $__NovaDeckSeparator = [IO.Path]::PathSeparator
   if (-not $env:PATH.StartsWith("$env:NOVADECK_BIN$__NovaDeckSeparator")) {
@@ -239,8 +233,6 @@ if /i "%~x1"==".bat" set "novadeck_real=%~1"
 exit /b
 `
 
-export type HookedAgent = "claude" | "codex" | "agy"
-
 /**
  * The hook command each agent's plugin runs, through the agent's own shell: sh (Claude
  * Code, Antigravity) or the login shell (Codex) elsewhere; on Windows, PowerShell for
@@ -249,7 +241,7 @@ export type HookedAgent = "claude" | "codex" | "agy"
  * Antigravity expects JSON back even then. Codex and Antigravity trust a hook by its
  * definition, so these strings must never change.
  */
-export const hookCommand = (agent: HookedAgent, platform = process.platform): string => {
+export const hookCommand = (agent: AgentName, platform = process.platform): string => {
   if (platform === "win32") {
     // Unquoted: an agent may escape inner quotes in a way cmd does not read.
     if (agent === "claude") return "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude }"

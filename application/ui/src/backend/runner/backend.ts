@@ -570,7 +570,7 @@ export const runnerBackend = (
     const resume = async (): Promise<string | undefined> => {
       if (!agent) return undefined
       const session = await untilAnswered(
-        () => runner.terminals.agentSession(terminalId, agent),
+        () => runner.terminals.claimAgentSession(terminalId, agent),
         retry,
       ).catch((error: unknown) => {
         if (error instanceof Cancelled || error instanceof CrashLoop) throw error

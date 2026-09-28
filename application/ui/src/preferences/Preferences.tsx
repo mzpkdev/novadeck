@@ -7,6 +7,7 @@ import { viewModes } from "../model/state"
 import type { PreferencesValue } from "../model/types"
 import { Dialog } from "../ui-toolkit/Dialog"
 import { Select } from "../ui-toolkit/Select"
+import { Switch } from "../ui-toolkit/Switch"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
 import { AgentSwitches, agentsExplanation, type AgentSwitch } from "./AgentSwitches"
 
@@ -157,19 +158,12 @@ export const Preferences = ({
                     restart. It can include secrets that were typed or printed.
                   </span>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-labelledby="transcripts-label"
-                  aria-describedby="transcripts-description"
-                  aria-checked={transcripts.enabled}
-                  onClick={() => transcripts.onChange(!transcripts.enabled)}
-                  className={`relative h-5 w-9 shrink-0 cursor-pointer rounded-control border focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-2 ${transcripts.enabled ? "border-strong bg-strong" : "border-line bg-soft"}`}
-                >
-                  <span
-                    className={`absolute top-0.5 size-3.5 rounded-control border border-line-strong bg-paper transition-[left] duration-(--motion-feedback) ease-interface ${transcripts.enabled ? "left-[18px]" : "left-0.5"}`}
-                  />
-                </button>
+                <Switch
+                  checked={transcripts.enabled}
+                  onChange={transcripts.onChange}
+                  labelledBy="transcripts-label"
+                  describedBy="transcripts-description"
+                />
               </div>
             )}
             {agents && (

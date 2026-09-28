@@ -7,6 +7,13 @@ import { hookScript } from "./hook.js"
 import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
 
 /**
+ * The shell files as written, with the launcher as NovaDeck's shells name it in
+ * NOVADECK_HOOK: on Windows its short name, which holds no spaces or brackets, so cmd
+ * runs it unquoted.
+ */
+export type InstalledShell = ShellPaths & { readonly launcher: string }
+
+/**
  * Writes the shell integration, hook and agent plugins into NovaDeck's own
  * directory, each only when it changed, replacing it whole so a shell starting at that
  * moment reads the old or the new file.
@@ -14,7 +21,7 @@ import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
 export const installShellFiles = async (
   directory: string,
   runtime = process.execPath,
-): Promise<ShellPaths> => {
+): Promise<InstalledShell> => {
   const paths = shellPaths(directory)
   for (const file of shellFiles(paths, runtime, hookScript)) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.

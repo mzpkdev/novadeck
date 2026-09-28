@@ -16,6 +16,7 @@ import type { TerminalChange, TerminalSummary } from "@novadeck/protocol"
 import { Terminals, type TerminalOptions } from "../terminals/index.js"
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
+import { installShellFiles } from "./install.js"
 
 const bash = "/bin/bash"
 
@@ -61,7 +62,7 @@ const it = base.extend<{ shell: Fixture }>({
       const terminals = new Terminals({
         shell: bash,
         env: { HOME: home, PS1: "$ ", PATH: process.env.PATH },
-        integration: { directory: join(root, "data", "shell") },
+        shellFiles: installShellFiles(join(root, "data", "shell")),
         records: store,
         launchGapMs: 10,
         ...options,
@@ -257,13 +258,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     manager.write({ terminalId: terminal.id, data: "cd project && claude\r" }, "owner")
     const running = await next((summary) => summary.agent === "claude")
     expect(running.cwd).toBe(project)
-    expect(await manager.agentSession(terminal.id, "claude")).toBe(session)
-    expect(await manager.agentSession(terminal.id, "codex")).toBeNull()
+    expect(manager.reportedSession(terminal.id, "claude")).toBe(session)
+    expect(manager.reportedSession(terminal.id, "codex")).toBeNull()
     expect(shell.store.terminal(terminal.id)?.agents.claude?.sessionId).toBe(session)
     // Back at the prompt, the agent no longer holds the foreground; its session stays.
     manager.write({ terminalId: terminal.id, data: "\r" }, "owner")
     await next((summary) => summary.agent === null && summary.id === terminal.id)
-    expect(await manager.agentSession(terminal.id, "claude")).toBe(session)
+    expect(manager.reportedSession(terminal.id, "claude")).toBe(session)
   })
 
   it("runs a connected Codex through NovaDeck's shim, even after .bashrc moves PATH", async ({
@@ -273,7 +274,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     mkdirSync(bin)
     writeFileSync(join(bin, "codex"), '#!/bin/sh\necho "codex args: $*"\n', { mode: 0o755 })
     writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
-    const connected = shell.manager({ shims: () => Promise.resolve(true) })
+    const connected = shell.manager({ codexShim: () => Promise.resolve(true) })
     const on = await create(connected, shell)
     connected.write({ terminalId: on.id, data: "codex resume abc\r" }, "owner")
     await shell.until(connected, on.id, "codex args: --no-daemon resume abc")
@@ -296,7 +297,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await shell.until(manager, terminal.id, "reports sent")
-    expect(manager.agentSession(terminal.id, "codex")).toBe("s3")
+    expect(manager.reportedSession(terminal.id, "codex")).toBe("s3")
   })
 
   it("takes a session switch, but not a nested agent's own session", async ({ shell }) => {
@@ -314,8 +315,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await shell.until(manager, terminal.id, "reports sent")
-    expect(manager.agentSession(terminal.id, "claude")).toBe("cleared")
-    expect(manager.agentSession(terminal.id, "codex")).toBeNull()
+    expect(manager.reportedSession(terminal.id, "claude")).toBe("cleared")
+    expect(manager.reportedSession(terminal.id, "codex")).toBeNull()
   })
 
   // Linux and macOS tell which process group holds a terminal's foreground.
@@ -335,7 +336,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         "owner",
       )
       await shell.until(manager, terminal.id, "reports sent")
-      expect(manager.agentSession(terminal.id, "claude")).toBeNull()
+      expect(manager.reportedSession(terminal.id, "claude")).toBeNull()
     },
   )
 
@@ -386,8 +387,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     writeFileSync(join(shell.home, ".bashrc"), "sleep 1\n")
     const second = shell.manager()
     await create(second, shell, { id, restore: true, command: "echo resumed" })
-    second.configure({ transcripts: false })
-    second.configure({ transcripts: true })
+    second.keepTranscripts(false)
+    second.keepTranscripts(true)
     second.persist()
     expect(shell.store.terminal(id)?.transcript ?? "").not.toContain("SECRET-OLD")
   })
@@ -403,10 +404,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         promptedAt: null,
       })
     const manager = shell.manager()
-    expect(manager.agentSession(first, "claude")).toBe("shared")
+    expect(manager.claimAgentSession(first, "claude")).toBe("shared")
     // Asking again for the same terminal, as a retried restore does, still answers.
-    expect(manager.agentSession(first, "claude")).toBe("shared")
-    expect(manager.agentSession(second, "claude")).toBeNull()
+    expect(manager.claimAgentSession(first, "claude")).toBe("shared")
+    expect(manager.claimAgentSession(second, "claude")).toBeNull()
+    // Closing the terminal that claimed it frees the session.
+    await manager.close({ terminalId: first }, "owner").catch(() => {})
+    expect(manager.claimAgentSession(second, "claude")).toBe("shared")
   })
 
   it("does not resume a session another terminal is running", async ({ shell }) => {
@@ -428,7 +432,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await next((summary) => summary.id === terminal.id && summary.agent === "claude")
-    expect(manager.agentSession(lost, "claude")).toBeNull()
+    expect(manager.claimAgentSession(lost, "claude")).toBeNull()
   })
 
   it("restores a terminal in its last directory, showing its transcript", async ({ shell }) => {
@@ -490,11 +494,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await shell.until(manager, id, /secret\r?\n/)
     manager.persist()
     expect(shell.store.terminal(id)?.transcript).toContain("secret")
-    manager.configure({ transcripts: false })
+    manager.keepTranscripts(false)
     expect(shell.store.terminal(id)?.transcript).toBeNull()
     manager.persist()
     expect(shell.store.terminal(id)?.transcript).toBeNull()
-    expect(shell.store.settings()).toMatchObject({ transcripts: false })
   })
 
   it("forgets a closed terminal, even one from an earlier runner", async ({ shell }) => {

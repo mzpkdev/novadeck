@@ -1,6 +1,7 @@
 import { basename, delimiter } from "node:path"
 
-import { fishQuote, psQuote, type ShellPaths } from "./scripts.js"
+import type { InstalledShell } from "./install.js"
+import { fishQuote, psQuote } from "./scripts.js"
 
 /**
  * How to start a shell so it loads NovaDeck's integration after the user's own setup;
@@ -29,23 +30,23 @@ const pathKey = (env: NodeJS.ProcessEnv): string =>
  * runs it as an init command, PowerShell dot-sources it after the profile, and cmd
  * reports through its PROMPT. Each first loads the user's own startup files. Other
  * shells start as they are. Every shell gets the hook's launcher in NOVADECK_HOOK, and
- * with `shims` NovaDeck's shims first on PATH.
+ * with `codexShim` the Codex shim first on PATH.
  */
 export const shellLaunch = (
   shell: string,
-  paths: ShellPaths,
+  paths: InstalledShell,
   env: NodeJS.ProcessEnv,
-  { shims = false }: { readonly shims?: boolean } = {},
+  { codexShim = false }: { readonly codexShim?: boolean } = {},
 ): ShellLaunch => {
   const key = pathKey(env)
   const path = env[key]
   // Connected agents' hooks name the launcher through NOVADECK_HOOK; see `hookCommand`.
-  // With the shims, their folder goes first on PATH, and the integration puts it back
+  // With the Codex shim, its folder goes first on PATH, and the integration puts it back
   // there after the user's startup files.
   const withHook = {
     ...env,
     NOVADECK_HOOK: paths.launcher,
-    ...(shims && {
+    ...(codexShim && {
       [key]: path ? `${paths.bin}${delimiter}${path}` : paths.bin,
       NOVADECK_BIN: paths.bin,
     }),

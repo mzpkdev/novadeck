@@ -3,9 +3,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import type { AgentName } from "@novadeck/protocol"
+
 import { describe, expect, it as base } from "../test.js"
 import { installShellFiles } from "./install.js"
-import { hookCommand, type HookedAgent, type ShellPaths } from "./scripts.js"
+import { hookCommand, type ShellPaths } from "./scripts.js"
 
 const windows = process.platform === "win32"
 
@@ -53,7 +55,7 @@ const it = base.extend<{ plugins: Fixture }>({
 // Runs a plugin's hook command the way its agent does: sh -c for Claude Code and
 // Antigravity, the login shell for Codex; PowerShell for Claude Code and cmd for the
 // others on Windows.
-const runHook = (agent: HookedAgent, hook: string | undefined, stdin: string) => {
+const runHook = (agent: AgentName, hook: string | undefined, stdin: string) => {
   const { NOVADECK_HOOK: _outer, ...rest } = process.env
   const env = hook ? { ...rest, NOVADECK_HOOK: hook } : rest
   const command = hookCommand(agent)

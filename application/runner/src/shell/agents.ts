@@ -3,17 +3,10 @@ import { access, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { delimiter, join } from "node:path"
 
-import type { AgentName } from "@novadeck/protocol"
+import type { AgentIntegration, AgentName } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
 import type { ShellPaths } from "./scripts.js"
-
-/** Whether an agent is installed here, and whether NovaDeck's plugin is installed into it. */
-export type AgentIntegration = {
-  readonly agent: AgentName
-  readonly available: boolean
-  readonly connected: boolean
-}
 
 export type AgentsOptions = {
   readonly env?: NodeJS.ProcessEnv

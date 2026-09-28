@@ -145,8 +145,11 @@ export type Runner = {
       terminalId: string,
       size: { readonly cols: number; readonly rows: number; readonly command?: string },
     ): Promise<TerminalSummary>
-    /** The session `agent` last reported in the terminal, live or saved; null when none. */
-    agentSession(terminalId: string, agent: AgentName): Promise<string | null>
+    /**
+     * Hands the terminal the session `agent` last reported in it, to resume; null when it
+     * reported none, the agent is not connected, or another terminal runs or claimed it.
+     */
+    claimAgentSession(terminalId: string, agent: AgentName): Promise<string | null>
     /** Resolves once the runner has granted the attachment; `control` is the default mode. */
     attach(
       terminalId: string,
@@ -746,8 +749,8 @@ export const connectRunner = async (
         call((wire) =>
           wire.terminals.restart({ terminalId, cols, rows, ...(command ? { command } : {}) }),
         ),
-      agentSession: (terminalId, agent) =>
-        call((wire) => wire.terminals.agentSession({ terminalId, agent })),
+      claimAgentSession: (terminalId, agent) =>
+        call((wire) => wire.terminals.claimAgentSession({ terminalId, agent })),
       async attach(terminalId, { mode = "control" } = {}) {
         const terminal = new Attachment(connection, terminalId, mode)
         await terminal.attach(connection.current())

@@ -7,7 +7,6 @@ import { basename, delimiter, isAbsolute, resolve as resolvePath } from "node:pa
 import type {
   AgentName,
   ForegroundProcess,
-  RunnerSettings,
   TerminalAttached,
   TerminalChange,
   TerminalEvent,
@@ -20,13 +19,17 @@ import type { Terminal as Screen } from "@xterm/headless"
 import * as pty from "node-pty"
 
 import { DomainError } from "../errors.js"
-import { installShellFiles } from "../shell/install.js"
+import type { InstalledShell } from "../shell/install.js"
 import { shellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
-import { listenForReports, type Report, type Reports } from "../shell/reports.js"
-import type { ShellPaths } from "../shell/scripts.js"
-import { sampleForeground, shellInForeground, type Foreground } from "./foreground.js"
-import type { AgentReport, SavedTerminal, SettingsChange, TerminalRecords } from "./records.js"
+import { acceptReport, listenForReports, type Report, type Reports } from "../shell/reports.js"
+import {
+  foregroundNamedShell,
+  sampleForeground,
+  shellInForeground,
+  type Foreground,
+} from "./foreground.js"
+import type { AgentReport, SavedTerminal, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
@@ -50,14 +53,16 @@ export type TerminalOptions = {
   /** How often running terminals' foreground processes are sampled, in milliseconds. */
   processPollMs?: number
   /**
-   * Where the shell integration, hook and agent plugins are written. Without it, shells
-   * start as they are and no agent session is reported.
+   * The shell integration and hook, once written (see `installShellFiles`). Without
+   * them, shells start as they are and no agent session is reported.
    */
-  integration?: { readonly directory: string; readonly runtime?: string }
+  shellFiles?: Promise<InstalledShell | undefined>
   /** Where terminals are saved for restoring, and the settings; unsaved when omitted. */
   records?: TerminalRecords
-  /** Whether new shells put NovaDeck's shims first on PATH, as while Codex is connected. */
-  shims?: () => Promise<boolean>
+  /** Whether new shells put the Codex shim first on PATH: while Codex is connected. */
+  codexShim?: () => Promise<boolean>
+  /** Whether terminals' transcripts are kept, until `keepTranscripts` changes it. */
+  transcripts?: boolean
   /** How often changed terminals are saved, in milliseconds. */
   saveMs?: number
   /** The pause between commands typed at first prompts, across terminals, in milliseconds. */
@@ -143,7 +148,7 @@ type Started = {
 }
 
 /** The runner's shell integration, once its files are written and reports are heard. */
-type Integration = { readonly paths: ShellPaths; readonly reports: Reports }
+type Integration = { readonly paths: InstalledShell; readonly reports: Reports }
 
 // Variables of NovaDeck's own shells, which a runner started from one must not pass on.
 const inherited = [
@@ -212,12 +217,15 @@ export class Terminals {
   private sampler: ReturnType<typeof setInterval> | undefined
   private saver: ReturnType<typeof setInterval> | undefined
   private readonly options: Required<
-    Omit<TerminalOptions, "env" | "shellArgs" | "integration" | "records" | "shims">
+    Omit<
+      TerminalOptions,
+      "env" | "shellArgs" | "shellFiles" | "records" | "codexShim" | "transcripts"
+    >
   > & {
     env: NodeJS.ProcessEnv
     shellArgs: readonly string[] | undefined
     records: TerminalRecords | undefined
-    shims: () => Promise<boolean>
+    codexShim: () => Promise<boolean>
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
@@ -250,7 +258,7 @@ export class Terminals {
       ackWindowBytes: positive(options.ackWindowBytes, 256 * 1024),
       processPollMs: positive(options.processPollMs, 1000),
       records: options.records,
-      shims: options.shims ?? (() => Promise.resolve(false)),
+      codexShim: options.codexShim ?? (() => Promise.resolve(false)),
       saveMs: positive(options.saveMs, 5000),
       launchGapMs: positive(options.launchGapMs, 750),
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
@@ -258,18 +266,18 @@ export class Terminals {
     // Child programs do not need the runner's network capability, nor the identity of a
     // NovaDeck terminal the runner itself was started from.
     for (const name of inherited) delete this.options.env[name]
-    this.transcripts = this.options.records?.settings().transcripts ?? true
-    this.integration = this.integrate(options.integration)
+    this.transcripts = options.transcripts ?? true
+    this.integration = this.integrate(options.shellFiles)
   }
 
   /** Writes the shell files and listens for agent reports; shells start plainly on failure. */
   private async integrate(
-    integration: TerminalOptions["integration"],
+    shellFiles: TerminalOptions["shellFiles"],
   ): Promise<Integration | undefined> {
-    if (!integration) return undefined
     try {
-      const paths = await installShellFiles(integration.directory, integration.runtime)
-      const reports = await listenForReports((report) => this.report(report))
+      const paths = await shellFiles
+      if (!paths) return undefined
+      const reports = await listenForReports((report) => void this.report(report))
       if (!this.stopping) return { paths, reports }
       await reports.close()
     } catch (error) {
@@ -490,14 +498,25 @@ export class Terminals {
     this.forget(input.terminalId)
   }
 
-  /**
-   * The session `agent` last reported in the terminal, live or saved, to resume it; null
-   * when none. One session resumes in one terminal: not while another terminal runs it,
-   * nor once another terminal was given it to resume.
-   */
-  agentSession(terminalId: string, agent: AgentName): string | null {
+  /** Forgets what restores the terminal, and the sessions it claimed. */
+  private forget(terminalId: string): void {
+    for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
+    this.persisting(() => this.options.records?.removeTerminal(terminalId))
+  }
+
+  /** The session `agent` last reported in the terminal, live or saved; null when none. */
+  reportedSession(terminalId: string, agent: AgentName): string | null {
     const live = this.records.get(terminalId)
-    const session = (live ?? this.saved(terminalId))?.agents[agent]?.sessionId
+    return (live ?? this.saved(terminalId))?.agents[agent]?.sessionId ?? null
+  }
+
+  /**
+   * Hands the terminal the session `agent` last reported in it, to resume: null when
+   * none. One session resumes in one terminal: not while another terminal runs it, nor
+   * once another terminal claimed it, until that terminal closes.
+   */
+  claimAgentSession(terminalId: string, agent: AgentName): string | null {
+    const session = this.reportedSession(terminalId, agent)
     if (!session) return null
     const key = `${agent}:${session}`
     const claimant = this.claims.get(key)
@@ -523,41 +542,22 @@ export class Terminals {
     this.persisting(() => this.options.records?.forgetAgent(agent))
   }
 
-  /** The integration for a new shell, with whether it gets the shims. */
-  private async shellIntegration(): Promise<(Integration & { shims: boolean }) | undefined> {
+  /** The integration for a new shell, with whether it gets the Codex shim. */
+  private async shellIntegration(): Promise<(Integration & { codexShim: boolean }) | undefined> {
     const integration = await this.integration
     if (!integration) return undefined
-    return { ...integration, shims: await this.options.shims().catch(() => false) }
+    return { ...integration, codexShim: await this.options.codexShim().catch(() => false) }
   }
 
-  /** Where the shell integration and agent plugins are, once written; none without it. */
-  async integrationPaths(): Promise<ShellPaths | undefined> {
-    return (await this.integration)?.paths
-  }
-
-  /** The runner's settings, held with the saved terminals. */
-  settings(): RunnerSettings {
-    let saved: RunnerSettings | undefined
-    this.persisting(() => {
-      saved = this.options.records?.settings()
-    })
-    return { onboarded: false, ...saved, transcripts: this.transcripts }
-  }
-
-  /**
-   * Changes the settings given. Turning transcripts off forgets every saved one; turning
-   * them on saves each anew.
-   */
-  configure(settings: SettingsChange): void {
+  /** Turning transcripts off forgets every saved one; turning them on saves each anew. */
+  keepTranscripts(enabled: boolean): void {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    const { transcripts } = settings
-    if (transcripts !== undefined) this.transcripts = transcripts
-    if (transcripts === false) for (const record of this.records.values()) record.held = null
-    this.persisting(() => {
-      this.options.records?.saveSettings(settings)
-      if (transcripts === false) this.options.records?.clearTranscripts()
-    })
-    if (transcripts) for (const record of this.records.values()) record.changed = true
+    this.transcripts = enabled
+    for (const record of this.records.values()) {
+      if (enabled) record.changed = true
+      else record.held = null
+    }
+    if (!enabled) this.persisting(() => this.options.records?.clearTranscripts())
   }
 
   /** Saves every terminal's changes now, as before the system shuts down. */
@@ -919,13 +919,15 @@ export class Terminals {
     shell: string,
     cwd: string,
     input: Size & { id?: string; terminalId?: string; command?: string | undefined },
-    integration: (Integration & { shims: boolean }) | undefined,
+    integration: (Integration & { codexShim: boolean }) | undefined,
   ): Started {
     const { cols, rows } = input
     const id = input.id ?? input.terminalId ?? ""
     const token = randomBytes(24).toString("hex")
     const launch = integration
-      ? shellLaunch(shell, integration.paths, this.options.env, { shims: integration.shims })
+      ? shellLaunch(shell, integration.paths, this.options.env, {
+          codexShim: integration.codexShim,
+        })
       : { args: [], env: this.options.env, integrated: false }
     // A command waits for the first prompt, which only an integrated shell reports.
     const reportsPrompts = launch.integrated && this.options.shellArgs === undefined
@@ -1065,14 +1067,8 @@ export class Terminals {
       .catch(() => {})
   }
 
-  // Where the platform tells, the shell itself holds the foreground at its prompt.
   private atPrompt(record: Record): boolean {
-    if (process.platform === "win32") return true
-    try {
-      return basename(record.process.process) === record.shellName
-    } catch {
-      return true
-    }
+    return foregroundNamedShell(record.process, record.shellName)
   }
 
   /**
@@ -1080,32 +1076,27 @@ export class Terminals {
    * the last prompt, the agent holds the foreground, and its directory is where the
    * terminal restores, as a shell that ran `cd … && claude` reports no prompt there.
    */
-  private report({ terminalId, token, agent, sessionId, seq, cwd, source }: Report): void {
+  private async report({ terminalId, token, ...report }: Report): Promise<void> {
     const record = this.records.get(terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, token)) return
-    // Processes that merely inherited this terminal's environment report too: a tmux
-    // server or an editor started from it reports while its shell holds the foreground
-    // (which Linux tells),
-    // and an agent run by the agent in the foreground starts a new session of its own.
-    // A session switch of the agent in the foreground, as /clear or /resume, says so.
-    if (shellInForeground(record.process.pid)) return
-    // Windows does not tell the foreground: an agent reports only once a line was entered.
-    if (process.platform === "win32" && !record.submitted) return
-    // A report without a source (Antigravity's) switches its own agent's conversation.
-    const active = record.summary.agent
-    const switched = source === undefined ? agent === active : source !== "startup"
-    if (active !== null && !switched) {
-      if (active !== agent || record.agents[active]?.sessionId !== sessionId) return
-    }
-    const known = record.agents[agent]
-    if (known && known.seq >= seq) return
-    record.agents = { ...record.agents, [agent]: { sessionId, seq } }
-    if (seq > (record.promptedAt ?? 0)) {
-      const directory = cwd ?? record.summary.cwd
-      if (record.summary.agent !== agent || record.summary.cwd !== directory) {
-        record.summary = { ...record.summary, agent, cwd: directory }
-        this.announce(record)
-      }
+    const { process: child } = record
+    const foreground = await shellInForeground(child.pid)
+    if (record.process !== child || record.exitQueued) return
+    const next = acceptReport(
+      { agents: record.agents, active: record.summary.agent, cwd: record.summary.cwd },
+      report,
+      {
+        promptedAt: record.promptedAt,
+        shellInForeground: foreground,
+        submitted: record.submitted,
+        platform: process.platform,
+      },
+    )
+    if (!next) return
+    record.agents = next.agents
+    if (record.summary.agent !== next.active || record.summary.cwd !== next.cwd) {
+      record.summary = { ...record.summary, agent: next.active, cwd: next.cwd }
+      this.announce(record)
     }
     this.save(record, false)
   }
@@ -1148,10 +1139,6 @@ export class Terminals {
         }),
       }),
     )
-  }
-
-  private forget(terminalId: string): void {
-    this.persisting(() => this.options.records?.removeTerminal(terminalId))
   }
 
   /** Runs a write to the records, unless the runner is stopping; a failure is logged. */

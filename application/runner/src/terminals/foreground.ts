@@ -1,6 +1,7 @@
-import { execFileSync } from "node:child_process"
+import { execFile } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { basename } from "node:path"
+import { promisify } from "node:util"
 
 import type { ForegroundProcess } from "@novadeck/protocol"
 import type { IPty } from "node-pty"
@@ -59,26 +60,41 @@ const leaderArgv = (group: Group): string[] | null => {
  * terminal's foreground process group; undefined where the platform does not tell, as
  * on Windows.
  */
-export const shellInForeground = (shellPid: number): boolean | undefined => {
+export const shellInForeground = async (shellPid: number): Promise<boolean | undefined> => {
   try {
     if (process.platform === "linux") {
       const shell = parseProcessStat(readFileSync(`/proc/${shellPid}/stat`, "utf8"))
       return shell ? shell.tpgid === shellPid : undefined
     }
-    // macOS has no /proc; ps reads the same field.
+    // macOS has no /proc; ps reads the same field, off the event loop.
     if (process.platform === "darwin") {
-      const group = Number(
-        execFileSync("ps", ["-o", "tpgid=", "-p", String(shellPid)], {
-          encoding: "utf8",
-          timeout: 2_000,
-        }).trim(),
-      )
+      const { stdout } = await promisify(execFile)("ps", ["-o", "tpgid=", "-p", String(shellPid)], {
+        encoding: "utf8",
+        timeout: 2_000,
+      })
+      const group = Number(stdout.trim())
       return Number.isSafeInteger(group) && group > 0 ? group === shellPid : undefined
     }
   } catch {
     // The shell may be gone, or ps unavailable.
   }
   return undefined
+}
+
+/**
+ * Whether the foreground process has the shell's name, which node-pty tells everywhere
+ * but Windows. Checked before typing at a prompt, where a mistake is harmless: a process
+ * with the shell's name, as a script it runs, only delays typing, and another name only
+ * skips it. Reports use `shellInForeground`, which compares process groups, since there
+ * such a script would wrongly drop an agent's report. Windows counts as at the prompt.
+ */
+export const foregroundNamedShell = (child: Pick<IPty, "process">, shellName: string): boolean => {
+  if (process.platform === "win32") return true
+  try {
+    return basename(child.process) === shellName
+  } catch {
+    return true
+  }
 }
 
 /** A sample of a terminal's foreground, kept so the next one can reuse its `argv`. */

@@ -6,7 +6,12 @@ import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import type { SavedTerminal, SettingsChange, TerminalRecords } from "../terminals/records.js"
+import type { SavedTerminal, TerminalRecords } from "../terminals/records.js"
+
+/** Settings to change; those left out, or undefined, stay as they are. */
+export type SettingsChange = {
+  readonly [K in keyof RunnerSettings]?: RunnerSettings[K] | undefined
+}
 
 const schemaVersion = 1
 const schema = `

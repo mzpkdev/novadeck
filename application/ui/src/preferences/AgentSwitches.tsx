@@ -1,3 +1,5 @@
+import { Switch } from "../ui-toolkit/Switch"
+
 // An agent the person can connect, as its switch shows it.
 export type AgentSwitch = {
   readonly agent: "claude" | "codex" | "agy"
@@ -32,7 +34,6 @@ export const AgentSwitches = ({
   <ul className="m-0 list-none p-0" aria-label="Agents">
     {agents.map((item) => {
       const label = labels[item.agent]
-      const disabled = !item.available || item.busy
       return (
         <li
           key={item.agent}
@@ -48,21 +49,14 @@ export const AgentSwitches = ({
               {note(item)}
             </span>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-labelledby={`agent-${item.agent}`}
-            aria-describedby={`agent-${item.agent}-note`}
-            aria-checked={item.connected}
-            aria-busy={item.busy}
-            disabled={disabled}
-            onClick={() => onChange(item.agent, !item.connected)}
-            className={`relative h-5 w-9 shrink-0 rounded-control border focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-2 ${item.connected ? "border-strong bg-strong" : "border-line bg-soft"} ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-          >
-            <span
-              className={`absolute top-0.5 size-3.5 rounded-control border border-line-strong bg-paper transition-[left] duration-(--motion-feedback) ease-interface ${item.connected ? "left-[18px]" : "left-0.5"}`}
-            />
-          </button>
+          <Switch
+            checked={item.connected}
+            onChange={(connected) => onChange(item.agent, connected)}
+            labelledBy={`agent-${item.agent}`}
+            describedBy={`agent-${item.agent}-note`}
+            disabled={!item.available || item.busy}
+            busy={item.busy}
+          />
         </li>
       )
     })}

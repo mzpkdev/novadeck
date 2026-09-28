@@ -198,7 +198,7 @@ when the client closes or on `return()`. A terminal summary's `process`
 is its foreground process, such as the shell or a program running in it: its `name`,
 and `argv`, the process group leader's command line, on Linux (`null` elsewhere and
 before the first sample). It is `null` once the terminal exits and on Windows, where
-no foreground process is known. `agent` names the agent (`claude` or `codex`) that
+no foreground process is known. `agent` names the agent (`claude`, `codex` or `agy`) that
 reported a session in the shell since its last prompt, so a client can name the
 program where `process` cannot; it is `null` otherwise. `cwd` is the directory the
 shell last reported at a prompt, or where it started.
@@ -420,19 +420,21 @@ still rejects with `TERMINAL_NOT_FOUND` then).
   it only at a prompt the integration reported, never after the client wrote input
   first or while another process holds the foreground, and spaces such commands 750 ms
   apart across terminals.
-- `terminals.agentSession({ terminalId, agent })` answers the session the agent last
-  reported in the terminal, live or saved, to resume it. It answers `null` for an agent
+- `terminals.claimAgentSession({ terminalId, agent })` hands the terminal the session
+  the agent last reported in it, live or saved, to resume. It answers `null` for an agent
   not connected (disconnecting also forgets every session it reported), for a session
-  another terminal is running, and for one this runner already gave another terminal.
+  another terminal is running, and for one another terminal claimed and has not closed.
 - `agents.list()` answers, for `claude`, `codex` and `agy`, whether the agent is
   installed where the runner runs (its home: `CLAUDE_CONFIG_DIR` or `~/.claude`,
   `CODEX_HOME` or `~/.codex`, `~/.gemini/antigravity-cli`) and whether NovaDeck's plugin
   is installed into it, read from the agent's own configuration.
   `agents.set({ agent, connected })` installs or removes the plugin with the agent's
   own commands (`claude plugin marketplace add` + `plugin install`, `codex plugin
-marketplace add` + `plugin add`, `agy plugin install`, and their removals), run
-  through the user's login shell (cmd on Windows) so the agent is found on the PATH the
-  person has in a terminal. It answers where the agent stands after, or rejects with
+marketplace add` + `plugin add`, `agy plugin install`, and their removals). They run
+  directly, with `PATH`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` as the user's login shell
+  has them (read with `$SHELL -ilc 'echo …; env'`, in the background so listing never
+  waits), falling back to `~/.claude/local/claude` for Claude Code's local install; on
+  Windows they run through cmd. It answers where the agent stands after, or rejects with
   `AGENT_SETUP_FAILED` saying why.
 - `settings.get()` and `settings.set({ transcripts?, onboarded? })` read and change
   whether transcripts are kept (unless turned off; turning them off forgets every saved
