@@ -8,6 +8,7 @@ import {
   type TerminalWatchItem,
 } from "@novadeck/protocol/client"
 
+import { resumableProgram, resumeCommand } from "../../model/resume"
 import { createStore } from "../../model/store"
 import type { TerminalMetadata, TerminalStatus, Workspace } from "../../model/types"
 import type {
@@ -35,7 +36,7 @@ import {
 } from "./seed"
 
 // The part of the runner client the adapter uses.
-export type RunnerApi = Pick<Runner, "watch" | "projects" | "sessions" | "terminals">
+export type RunnerApi = Pick<Runner, "watch" | "projects" | "sessions" | "terminals" | "settings">
 
 export type RunnerBackendOptions = {
   readonly newId?: () => string
@@ -48,6 +49,8 @@ export type RunnerBackendOptions = {
   readonly now?: () => number
   // The debug panel's hooks, when this launch offers the panel.
   readonly debug?: RunnerDebug | undefined
+  // Whether the runner keeps transcripts, as it said at startup; unknown when absent.
+  readonly transcripts?: boolean
 }
 
 export type TerminalSize = { readonly cols: number; readonly rows: number }
@@ -221,6 +224,7 @@ export const runnerBackend = (
   const saveDelay = options.saveDelay ?? defaultSaveDelay
   const seed = runnerSeed(listing)
   const connection = createStore<BackendConnectionState>("connected")
+  const transcripts = createStore(options.transcripts ?? true)
   // Created before anything can settle a terminal, since settling checks it.
   const boot = createBootProgress({ entry: (id) => entries.get(id), now })
   const checkBoot = boot.check
@@ -440,8 +444,9 @@ export const runnerBackend = (
 
   // Ends the shell, retrying while the runner is unreachable. A terminal already gone,
   // or one another window controls, is left as it is.
+  // A lost terminal is closed too, so the runner forgets what would restore it.
   const endShell = async (entry: RunnerEntry): Promise<void> => {
-    if (!(await entry.ready) && !entry.requested) return
+    if (!(await entry.ready) && !entry.requested && !entry.lost) return
     await untilAnswered(() => runner.terminals.close(entry.key.terminalId), {
       done: ["TERMINAL_NOT_FOUND", "TERMINAL_EXITED", "NOT_FOUND"],
     }).catch(() => {})
@@ -489,23 +494,42 @@ export const runnerBackend = (
   }
 
   // Starts a fresh shell for the terminal, keeping its id: a restart when the runner
-  // still has the exited record, a create when it does not. Its surface attaches again.
+  // still has the exited record, a create that restores the runner's saved record when
+  // it does not, in the terminal's last directory. Its surface attaches again.
+  //
   // Every replacement shell starts here, while the terminal's `restoredProcess` still
-  // names the program it lost: where resuming that program would go. Resume only once
-  // create or restart returned a summary, as a CONFLICT settles here too while the old
-  // shell lives on, and a failed attach ("Another window controls it") captures a
-  // restore without losing the shell. Copy the restore onto the entry first: the fresh
-  // shell's first idle report drops it from the store.
+  // names the program it lost, which resumes when the runner knows its agent session.
+  // The program is read first, as the fresh shell's first idle report drops it from the
+  // store. The resume command goes with the create or restart, and the runner types it
+  // at the fresh shell's first prompt, after a slow rc file, unless someone typed first
+  // or a program holds the foreground: it can never land in a live process. A CONFLICT,
+  // as while the old shell lives on (a failed attach, "Another window controls it",
+  // captures a restore without losing the shell), refuses the call and the command
+  // with it. Without a session there is no command: a plain shell, with the terminal's
+  // transcript above it instead.
   const freshShell = (entry: RunnerEntry): void => {
     if (entry.closed || entry.starting) return
     const { terminalId, workspaceSessionId } = entry.key
     const { cols, rows } = entry.size
+    const agent = resumableProgram(restoredOf(entry))
     // A runner that keeps dying while this shell starts is a crash loop; stop waiting.
     const stillWanted = (): void => {
       if (restartingOften()) throw new CrashLoop()
     }
     const retry: Retry = { done: ["CONFLICT"], stillWanted, cancelled: () => entry.closed }
-    const create = () => {
+    // The command that resumes the agent's session, if the runner knows one.
+    const resume = async (): Promise<string | undefined> => {
+      if (!agent) return undefined
+      const session = await untilAnswered(
+        () => runner.terminals.agentSession(terminalId, agent),
+        retry,
+      ).catch((error: unknown) => {
+        if (error instanceof Cancelled || error instanceof CrashLoop) throw error
+        return null
+      })
+      return session ? resumeCommand(agent, session) : undefined
+    }
+    const create = (command: string | undefined) => {
       // A new record counts runs afresh.
       entry.floor = 0
       entry.run = undefined
@@ -516,6 +540,8 @@ export const runnerBackend = (
           sessionId: workspaceSessionId,
           cols,
           rows,
+          restore: true,
+          ...(command ? { command } : {}),
         })
       }, retry)
     }
@@ -527,14 +553,19 @@ export const runnerBackend = (
     const wasLost = entry.lost
     entry.ready = track(
       throttled(async () => {
+        const command = await resume()
         const summary = wasLost
-          ? await create()
+          ? await create(command)
           : await untilAnswered(() => {
               entry.requested = true
-              return runner.terminals.restart(terminalId, { cols, rows })
+              return runner.terminals.restart(terminalId, {
+                cols,
+                rows,
+                ...(command ? { command } : {}),
+              })
             }, retry).catch((error: unknown) => {
               // Never created, or evicted since it exited: start it anew.
-              if (hasCode(error, "TERMINAL_NOT_FOUND", "NOT_FOUND")) return create()
+              if (hasCode(error, "TERMINAL_NOT_FOUND", "NOT_FOUND")) return create(command)
               throw error
             })
         // Unknown when the create or restart had already landed; the floor still holds.
@@ -569,7 +600,8 @@ export const runnerBackend = (
   }
 
   // The runner no longer has the terminal: start a fresh shell in place once its
-  // session is on screen, unless the runner keeps restarting.
+  // session is on screen, or at once when it has a program to resume, unless the runner
+  // keeps restarting.
   const markLost = (entry: RunnerEntry): void => {
     if (entry.closed || entry.starting) return
     entry.lost = true
@@ -577,7 +609,7 @@ export const runnerBackend = (
     if (entry.settled) return
     if (restartingOften()) return settle(entry, crashLoop)
     dispatch(statusAction(entry, { state: "starting" }))
-    if (onScreen(entry)) freshShell(entry)
+    if (wanted(entry)) freshShell(entry)
   }
 
   const onScreen = (entry: RunnerEntry): boolean => {
@@ -587,10 +619,22 @@ export const runnerBackend = (
       project.activeSessionId === entry.key.workspaceSessionId
     )
   }
-  // Lost terminals of the session on screen get their fresh shells.
+  // The program the terminal waits to restore, as the workspace last committed it.
+  const restoredOf = ({ key }: RunnerEntry): string | undefined =>
+    latest?.projects
+      .find((project) => project.id === key.projectId)
+      ?.history.find((session) => session.id === key.workspaceSessionId)
+      ?.state.roster.terminals.find((terminal) => terminal.id === key.terminalId)?.restoredProcess
+  // A lost terminal gets its fresh shell once its session shows, but one whose program
+  // resumes starts at once, in any session and hidden or not, so the agent is back
+  // when the person looks; the runner spaces their launches out.
+  const wanted = (entry: RunnerEntry): boolean =>
+    onScreen(entry) || resumableProgram(restoredOf(entry)) !== undefined
+  // Lost terminals of the session on screen, and those with a program to resume, get
+  // their fresh shells.
   const reviveOnScreen = (): void => {
     for (const entry of entries.values())
-      if (entry.lost && !entry.settled && !entry.starting && onScreen(entry)) {
+      if (entry.lost && !entry.settled && !entry.starting && wanted(entry)) {
         if (restartingOften()) settle(entry, crashLoop)
         else freshShell(entry)
       }
@@ -804,6 +848,21 @@ export const runnerBackend = (
     connection,
     crashLoop: { crashes: crashLooping, retry: retryAfterCrashLoop },
     boot: boot.store,
+    ...(options.transcripts !== undefined
+      ? {
+          transcripts: {
+            enabled: transcripts,
+            set: (enabled) => {
+              const before = transcripts.getSnapshot()
+              transcripts.update(() => enabled)
+              // Unsaved, the switch shows what the runner still does.
+              void track(runner.settings.set({ transcripts: enabled })).catch(() =>
+                transcripts.update(() => before),
+              )
+            },
+          },
+        }
+      : {}),
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
     ...(options.debug
       ? {

@@ -22,6 +22,7 @@ export const Preferences = ({
   onExitComplete,
   tab,
   onTabChange,
+  transcripts,
 }: {
   open: boolean
   tab: "general" | "shortcuts"
@@ -30,6 +31,9 @@ export const Preferences = ({
   onChange: (value: PreferencesValue) => void
   onClose: () => void
   onExitComplete?: () => void
+  // Whether terminals' screens are kept to show again when they restore; absent where
+  // the backend keeps none.
+  transcripts?: { readonly enabled: boolean; readonly onChange: (enabled: boolean) => void }
 }): React.JSX.Element => {
   const dialog = useRef<HTMLDivElement>(null)
   const panels = useRef<HTMLDivElement>(null)
@@ -134,6 +138,33 @@ export const Preferences = ({
               onOpenChange={(expanded) => setOpenSelect(expanded ? "font-size" : null)}
               portalContainer={dialog}
             />
+            {transcripts && (
+              <div className="preference-row flex min-h-[62px] items-center justify-between gap-4 border-b border-line py-3 text-[12px] text-ink">
+                <div className="flex flex-col gap-1">
+                  <span id="transcripts-label">Terminal transcripts</span>
+                  <span
+                    id="transcripts-description"
+                    className="text-[10px] leading-relaxed text-muted"
+                  >
+                    Keeps each terminal's recent output on this computer and shows it again after a
+                    restart. It can include secrets that were typed or printed.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-labelledby="transcripts-label"
+                  aria-describedby="transcripts-description"
+                  aria-checked={transcripts.enabled}
+                  onClick={() => transcripts.onChange(!transcripts.enabled)}
+                  className={`relative h-5 w-9 shrink-0 cursor-pointer rounded-control border focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-2 ${transcripts.enabled ? "border-strong bg-strong" : "border-line bg-soft"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 size-3.5 rounded-control border border-line-strong bg-paper transition-[left] duration-(--motion-feedback) ease-interface ${transcripts.enabled ? "left-[18px]" : "left-0.5"}`}
+                  />
+                </button>
+              </div>
+            )}
             <fieldset className="view-preferences m-0 mt-4 min-w-0 border-0 p-0">
               <legend className="mb-2.5 p-0 text-[12px]">View modes</legend>
               <div className="view-preference-options grid grid-cols-3 gap-1.5">

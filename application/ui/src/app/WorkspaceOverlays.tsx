@@ -1,5 +1,6 @@
-import { memo, Suspense, useLayoutEffect } from "react"
+import { memo, Suspense, useLayoutEffect, useSyncExternalStore } from "react"
 
+import type { Backend } from "../backend/port"
 import { terminalElement } from "../interaction/dom"
 import { orderedTerminals } from "../model/roster"
 import { activeProject } from "../model/state"
@@ -32,9 +33,22 @@ const Loaded = ({
   return null
 }
 
+const always = (): (() => void) => () => {}
+// The backend's transcript setting, for Preferences; undefined where it keeps none.
+const useTranscripts = (
+  transcripts: Backend["transcripts"],
+): { readonly enabled: boolean; readonly onChange: (enabled: boolean) => void } | undefined => {
+  const enabled = useSyncExternalStore(
+    transcripts?.enabled.subscribe ?? always,
+    () => transcripts?.enabled.getSnapshot() ?? false,
+  )
+  return transcripts && { enabled, onChange: transcripts.set }
+}
+
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = memo((): React.JSX.Element => {
-  const { commands, navigation } = useWorkspaceServices()
+  const { backend, commands, navigation } = useWorkspaceServices()
+  const transcripts = useTranscripts(backend.transcripts)
   const { go, closeDialog } = navigation
   const { chooseRecent, updatePreferences, openSearchResult, closeSwitcher } = commands
   const { confirmClose, cancelClose, retryAfterCrashLoop, dismissCrashLoop } = commands
@@ -118,6 +132,7 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
           onTabChange={(next) => go({ section: next })}
           onChange={updatePreferences}
           onClose={closeDialog}
+          {...(transcripts ? { transcripts } : {})}
         />
       </Suspense>
     </>

@@ -122,8 +122,14 @@ export const recordingRunner = (runner: Runner, io: string[]): RunnerApi => {
       create: (input) => note(`create terminal ${input.id}`, () => runner.terminals.create(input)),
       close: (id) => note(`close ${id}`, () => runner.terminals.close(id)),
       restart: (id, size) => note(`restart ${id}`, () => runner.terminals.restart(id, size)),
+      agentSession: (id, agent) => runner.terminals.agentSession(id, agent),
       attach: async (id, options) =>
         attachment(await note(`attach ${id}`, () => runner.terminals.attach(id, options))),
+    },
+    settings: {
+      get: () => runner.settings.get(),
+      set: (settings) =>
+        note(`settings ${JSON.stringify(settings)}`, () => runner.settings.set(settings)),
     },
   }
 }

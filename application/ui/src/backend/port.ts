@@ -97,6 +97,13 @@ export type Backend = {
   // Optional. How far the restored session is from ready, so the boot splash can stay
   // up until its terminals are attached. Absent means ready at once.
   readonly boot?: Store<BootProgress>
+  // Optional. Whether each terminal's screen is kept on disk, to show again above its
+  // fresh shell when it restores, and a way to change that. Absent where the backend
+  // keeps none.
+  readonly transcripts?: {
+    readonly enabled: Store<boolean>
+    readonly set: (enabled: boolean) => void
+  }
   // Optional. Asks the person for a folder to open as a project; null when cancelled.
   // Absent where the backend cannot offer one.
   readonly pickDirectory?: () => Promise<string | null>
