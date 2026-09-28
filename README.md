@@ -62,8 +62,8 @@ Saved sessions record, per terminal, program names only, never command lines, wh
 can hold secrets: the program running at the save (`lastProcess`) and one still
 waiting to be restored (`restoredProcess`), each empty for none. On the next launch a
 pending restore comes back as the terminal's `restoredProcess` unless that same
-program runs there now; otherwise the last program does, unless some program runs
-there now, as the foreground may have moved on while no page watched. A program that
+program runs there now. The last program comes back only when its shell was lost or
+ended; a shell still live moved on while no page watched. A program that
 loses its shell while running, as when the runner is lost or the shell killed,
 becomes the one to restore in the fresh shell. A restore holds through programs the
 shell runs on its own, such as rc-file jobs, and through a program's own prompts,

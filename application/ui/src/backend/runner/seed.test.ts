@@ -241,6 +241,18 @@ describe("runner seed", () => {
       expect(resave(reopened)).toBe("server")
     })
 
+    it("forgets a program that only ran once the shell is back at its prompt", () => {
+      const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "make" }])
+      const reopened = workspaceFromSeed(
+        runnerSeed([
+          { project: project(1), sessions: [{ session: current, terminals: [summary(20, 10)] }] },
+        ]),
+        defaults,
+      ).projects[0]!.history[0]!
+      expect(first(reopened)).not.toHaveProperty("restoredProcess")
+      expect(resave(reopened)).toBe("")
+    })
+
     context("when a running program loses its shell", () => {
       // Saved while that program ran, so nothing waits to be restored.
       const current = saved(10, 500, [{ id: uuid(20), name: "Agent", running: "claude" }])

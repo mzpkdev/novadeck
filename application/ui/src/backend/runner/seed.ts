@@ -2,7 +2,7 @@ import type { Project, TerminalSummary, WorkspaceSession } from "@novadeck/proto
 
 import type { SessionSeed, WorkspaceSeed } from "../../model/seed"
 import type { TerminalMetadata } from "../../model/types"
-import { terminalActivity } from "./activity"
+import { restartable, terminalActivity } from "./activity"
 import { decodeSession, programToRestore, type SavedTerminal } from "./session-state"
 
 // Everything the runner reported at startup, one entry per project.
@@ -34,19 +34,20 @@ export const startingTerminal = (
 // What a saved terminal keeps as itself; its saved programs only feed `restoredProcess`.
 const identity = ({ id, name, directory }: SavedTerminal) => ({ id, name, directory })
 
-// What a saved terminal still has to restore, given the program running there now, if
-// any. A running program replaces a program that merely ran, as the foreground moved
-// on while no page watched, but not a pending restore unless it is that same program.
+// What a saved terminal still has to restore, given its shell now: `undefined` when the
+// shell was lost or ended, which takes the last program with it, else the live status
+// and program. A shell still live moved on while no page watched, to its prompt or
+// another program, so a program that merely ran is over; a pending restore stays
+// unless that same program runs.
 const restored = (
   saved: SavedTerminal,
-  running?: string,
+  live?: { readonly running: boolean; readonly process: string },
 ): Pick<TerminalMetadata, "restoredProcess"> => {
-  const program =
-    running === undefined
-      ? programToRestore(saved)
-      : saved.restoredProcess !== running
-        ? saved.restoredProcess
-        : ""
+  const program = !live
+    ? programToRestore(saved)
+    : live.running && saved.restoredProcess === live.process
+      ? ""
+      : saved.restoredProcess
   return program ? { restoredProcess: program } : {}
 }
 
@@ -60,7 +61,12 @@ const liveTerminal = (
   if (status === "clean") return undefined
   return {
     ...identity(saved),
-    ...restored(saved, status.state === "running" ? (process ?? "") : undefined),
+    ...restored(
+      saved,
+      restartable(status)
+        ? undefined
+        : { running: status.state === "running", process: process ?? "" },
+    ),
     command: "",
     process: process ?? "",
     ...status,
