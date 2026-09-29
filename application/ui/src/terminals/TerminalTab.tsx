@@ -42,10 +42,9 @@ export const TerminalTab = ({
   const editing = Boolean(rename)
   const Icon = terminalProfile(terminal).icon
   const icon = <Icon size={14} strokeWidth={1.5} />
-  // The detail line shows the phase: a spinner and the program while one runs, a note
-  // while the shell starts, and the ending in the shell's own terms (`exit 1`,
-  // `SIGKILL`) on a hatched tab once it has ended. The tooltip and assistive technology
-  // get the ending in words.
+  // The detail line shows the phase: a spinner and the program while one runs, and a
+  // note while the shell starts. A tab that has ended is hatched (styles.css); the
+  // tooltip and assistive technology say how it ended.
   const phase = terminalPhase(terminal)
   const ending = terminalEnding(terminal)
   const ended = ending ? endingText(ending) : undefined
@@ -74,15 +73,6 @@ export const TerminalTab = ({
                   <span aria-hidden className="terminal-spinner mr-1.5 inline-block w-[1ch]" />
                 )}
                 {terminal.process}
-              </span>
-            )}
-            {ending && (
-              <span
-                aria-hidden
-                data-terminal-ending={ending.tone}
-                className="terminal-tab-ending shrink-0 rounded-control border border-line-strong bg-paper px-1 font-mono text-[9px] leading-[14px] text-ink"
-              >
-                {ending.mnemonic}
               </span>
             )}
           </>

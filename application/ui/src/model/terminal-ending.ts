@@ -9,24 +9,15 @@ export type TerminalEnding = {
   readonly status: string
   // Why, where known: the code, the signal, or what stopped it starting.
   readonly reason: string | null
-  // The ending in the shell's own terms, for a glance: `exit 1`, `SIGKILL`, `failed`.
-  readonly mnemonic: string
 }
 
 export const terminalEnding = (terminal: TerminalMetadata): TerminalEnding | null => {
   if (terminal.state === "exited") {
-    if (terminal.signal)
-      return {
-        tone: "danger",
-        status: "Killed",
-        reason: terminal.signal,
-        mnemonic: terminal.signal,
-      }
+    if (terminal.signal) return { tone: "danger", status: "Killed", reason: terminal.signal }
     return {
       tone: "warning",
       status: "Exited",
       reason: terminal.exitCode === null ? null : `code ${terminal.exitCode}`,
-      mnemonic: terminal.exitCode === null ? "exit" : `exit ${terminal.exitCode}`,
     }
   }
   if (terminal.state === "failed")
@@ -34,7 +25,6 @@ export const terminalEnding = (terminal: TerminalMetadata): TerminalEnding | nul
       tone: "danger",
       status: "Failed to start",
       reason: terminal.message.replace(/\.$/, "") || null,
-      mnemonic: "failed",
     }
   return null
 }
