@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
 
-import styles from "./OnboardingPreview.module.css"
+import styles from "./WelcomePreview.module.css"
 
 const views = [
   {
@@ -89,7 +89,7 @@ const Status = ({ connected }: { readonly connected?: boolean }): React.JSX.Elem
 
 const reducedMotion = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
-export const OnboardingPreview = ({
+export const WelcomePreview = ({
   connected,
 }: {
   readonly connected: { readonly claude: boolean; readonly codex: boolean }

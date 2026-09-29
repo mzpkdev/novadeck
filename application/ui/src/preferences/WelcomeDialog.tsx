@@ -7,10 +7,10 @@ import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
 import { agentLabels, agentNote, type AgentSwitch } from "./AgentSwitches"
-import { OnboardingPreview } from "./OnboardingPreview"
+import { WelcomePreview } from "./WelcomePreview"
 
 import motion from "../ui-toolkit/ModalMotion.module.css"
-import styles from "./OnboardingDialog.module.css"
+import styles from "./WelcomeDialog.module.css"
 
 type Choices = Record<AgentSwitch["agent"], boolean>
 
@@ -105,7 +105,7 @@ const ChoiceCard = ({
   </label>
 )
 
-const OnboardingForm = ({
+const WelcomeForm = ({
   agents,
   onChange,
   transcripts,
@@ -189,7 +189,7 @@ const OnboardingForm = ({
           </DialogDescription>
         </div>
         <div className={styles.enter} style={at(500)}>
-          <OnboardingPreview connected={choices} />
+          <WelcomePreview connected={choices} />
         </div>
       </div>
 
@@ -215,7 +215,7 @@ const OnboardingForm = ({
                     icon={icons[item.agent]}
                     label={agentLabels[item.agent]}
                     note={note}
-                    noteId={`onboarding-${item.agent}-description`}
+                    noteId={`welcome-${item.agent}-description`}
                     error={Boolean(item.error)}
                     name="agents"
                     value={item.agent}
@@ -248,7 +248,7 @@ const OnboardingForm = ({
                 icon={ScrollText}
                 label="Transcripts"
                 note="Show recent output again after a restart. Saved on this computer, so it can include secrets."
-                noteId="onboarding-transcripts-description"
+                noteId="welcome-transcripts-description"
                 name="transcripts"
                 value="on"
                 checked={keepTranscripts}
@@ -280,7 +280,7 @@ const OnboardingForm = ({
 
 // Choices stay local until submission. Dismissing changes no agent or transcript
 // setting; Preferences keeps its immediate switches.
-export const OnboardingDialog = ({
+export const WelcomeDialog = ({
   open,
   agents,
   onChange,
@@ -307,7 +307,7 @@ export const OnboardingDialog = ({
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
       className={`${motion.dialog} max-h-[calc(100dvh-32px)] w-[min(980px,calc(100vw-32px))] overflow-y-auto rounded-popover border border-line-strong bg-paper text-ink shadow-modal`}
     >
-      <OnboardingForm
+      <WelcomeForm
         agents={agents}
         onChange={onChange}
         transcripts={transcripts}

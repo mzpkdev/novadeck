@@ -47,8 +47,8 @@ describe("Connecting agents", () => {
   })
 
   context("when the app opens for the first time", () => {
-    it("previews each layout without leaving onboarding or connecting agents", async () => {
-      await openWorkspace("/?demo=onboarding")
+    it("previews each layout without leaving the welcome dialog or connecting agents", async () => {
+      await openWorkspace("/?demo=welcome")
       const dialog = welcome()
       await expect
         .element(dialog.getByRole("heading", { name: "Big ideas. Room to build." }))
@@ -67,7 +67,7 @@ describe("Connecting agents", () => {
     })
 
     it("chooses every installed agent, connects the chosen ones, and does not ask again", async () => {
-      await openWorkspace("/?demo=onboarding")
+      await openWorkspace("/?demo=welcome")
       await expect.element(welcome()).toBeVisible()
       await expect.element(agentChoice(welcome(), "Claude Code")).toBeChecked()
       await expect.element(agentChoice(welcome(), "Codex")).toBeChecked()
@@ -85,7 +85,7 @@ describe("Connecting agents", () => {
     })
 
     it("discards its choices when dismissed", async () => {
-      await openWorkspace("/?demo=onboarding")
+      await openWorkspace("/?demo=welcome")
       await expect.element(welcome()).toBeVisible()
       await expect.element(agentChoice(welcome(), "Codex")).toBeChecked()
       await userEvent.keyboard("{Escape}")
@@ -97,7 +97,7 @@ describe("Connecting agents", () => {
     })
 
     it("skips setup without connecting selected agents", async () => {
-      await openWorkspace("/?demo=onboarding")
+      await openWorkspace("/?demo=welcome")
       await expect.element(agentChoice(welcome(), "Claude Code")).toBeChecked()
       await welcome().getByRole("button", { name: "Skip for now" }).click()
       await expect.element(welcome()).not.toBeInTheDocument()
@@ -108,7 +108,7 @@ describe("Connecting agents", () => {
     })
 
     it("keeps transcripts on unless turned off and started", async () => {
-      await openWorkspace("/?demo=onboarding")
+      await openWorkspace("/?demo=welcome")
       const choice = welcome().getByRole("checkbox", { name: "Transcripts" })
       await expect.element(choice).toBeChecked()
       await expect.element(choice).toHaveAccessibleDescription(/secrets/)
@@ -122,7 +122,7 @@ describe("Connecting agents", () => {
     })
 
     it("leaves transcripts as they were when skipped", async () => {
-      await openWorkspace("/?demo=onboarding")
+      await openWorkspace("/?demo=welcome")
       await welcome().getByRole("checkbox", { name: "Transcripts" }).click()
       await welcome().getByRole("button", { name: "Skip for now" }).click()
       await expect.element(welcome()).not.toBeInTheDocument()
