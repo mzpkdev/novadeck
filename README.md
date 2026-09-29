@@ -114,7 +114,9 @@ agent.
   NovaDeck's own data directory (a `shell` folder beside `workspace.sqlite`) and never
   touches your rc files.
 - **Connecting agents.** The first-run welcome dialog includes an interactive preview
-  of Focus, Grid, and Canvas, plus optional agent choices, all off initially.
+  of Focus, Grid, and Canvas, which shows each layout once until you pick one (never with
+  reduced motion), plus optional agent choices, all off initially. A chosen agent's
+  preview terminal marks that its session resumes.
   “Let’s build something” applies those choices; skipping, Escape, or clicking outside
   dismisses the dialog without connecting agents. The preview is illustrative and
   starts no terminals. Preferences offers the same agents as immediate switches;

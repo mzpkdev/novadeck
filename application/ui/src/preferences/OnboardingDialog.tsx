@@ -1,7 +1,7 @@
 import { ArrowRight, Check, RotateCcw, Sparkles } from "lucide-react"
-import { useRef, useState, type RefObject } from "react"
+import { useRef, useState, type CSSProperties, type RefObject } from "react"
 
-import { deckName, DeckMark, DeckWordmark } from "../ui-toolkit/DeckLogo"
+import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/DeckLogo"
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
@@ -9,6 +9,7 @@ import { agentLabels, type AgentSwitch } from "./AgentSwitches"
 import { OnboardingPreview } from "./OnboardingPreview"
 
 import motion from "../ui-toolkit/ModalMotion.module.css"
+import styles from "./OnboardingDialog.module.css"
 
 type Choices = Record<AgentSwitch["agent"], boolean>
 
@@ -19,6 +20,20 @@ const choicesFrom = (agents: readonly AgentSwitch[]): Choices => ({
 })
 
 const icons = { claude: ClaudeIcon, codex: CodexIcon, agy: Sparkles }
+
+// Staggers an entrance: `at` ms after the dialog opens.
+const at = (ms: number): CSSProperties => ({ "--at": `${ms}ms` }) as CSSProperties
+
+const listed = (names: readonly string[]): string =>
+  names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+
+// What starting will install, so nothing about it is a surprise.
+const pluginNote = (names: readonly string[]): string =>
+  names.length === 0
+    ? "Nothing is installed unless you choose an agent. You can connect one anytime in Preferences."
+    : `When you start, we’ll install a small local plugin into ${listed(names)}. You can disconnect it anytime in Preferences.`
+
+const headline = "Room to build."
 
 const choiceNote = (item: AgentSwitch, selected: boolean): string => {
   if (item.busy) return item.connected ? "Disconnecting…" : "Connecting…"
@@ -58,17 +73,21 @@ const OnboardingForm = ({
         submit()
       }}
     >
-      <div className="min-w-0 border-b border-line bg-shell px-8 pt-8 pb-6 min-[820px]:border-r min-[820px]:border-b-0 min-[820px]:px-10 min-[820px]:pt-10 max-[420px]:px-5">
+      <div className="relative isolate min-w-0 overflow-hidden border-b border-line bg-shell px-8 pt-8 pb-6 min-[820px]:border-r min-[820px]:border-b-0 min-[820px]:px-10 min-[820px]:pt-10 max-[420px]:px-5">
+        <DeckPattern className={`${styles.pattern} -z-10`} />
         <div
           className="flex items-center gap-2.5 text-[23px] font-semibold tracking-[-0.8px]"
           role="img"
           aria-label={deckName}
         >
           <DeckMark size={35} animated />
-          <DeckWordmark />
+          <DeckWordmark animated />
         </div>
         <div className="mt-9 max-[819px]:mt-6">
-          <p className="mb-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] text-muted uppercase">
+          <p
+            className={`${styles.enter} mb-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] text-muted uppercase`}
+            style={at(300)}
+          >
             <span className="h-px w-5 bg-accent" aria-hidden="true" />
             Your next great thing starts here
           </p>
@@ -77,19 +96,44 @@ const OnboardingForm = ({
             tabIndex={-1}
             className="m-0 text-[46px] leading-[1.06] font-medium tracking-[-2.2px] focus-visible:outline-none max-[819px]:text-[38px] max-[420px]:text-[34px]"
           >
-            Big ideas.
-            <br />
-            Room to build.
+            {/* Read whole at once; the typed copy is for the eyes only. */}
+            <span className="sr-only">Big ideas. {headline}</span>
+            <span aria-hidden="true">
+              <span className={styles.rise} style={at(420)}>
+                Big ideas.
+              </span>
+              <br />
+              {[...headline].map((letter, index) => (
+                <span
+                  // The letters never reorder.
+                  // oxlint-disable-next-line react/no-array-index-key
+                  key={index}
+                  className={styles.letter}
+                  style={{ "--i": index } as CSSProperties}
+                >
+                  {letter}
+                </span>
+              ))}
+              <span className={styles.caret} />
+            </span>
           </DialogTitle>
-          <DialogDescription className="mt-4 mb-0 max-w-[350px] text-[13px] leading-[1.7] text-muted">
+          <DialogDescription
+            className={`${styles.enter} mt-4 mb-0 max-w-[350px] text-[13px] leading-[1.7] text-muted`}
+            style={at(1300)}
+          >
             Your terminals, agents, and projects. Together in a workspace that moves with you.
           </DialogDescription>
         </div>
-        <OnboardingPreview />
+        <div className={styles.enter} style={at(500)}>
+          <OnboardingPreview connected={choices} />
+        </div>
       </div>
 
       <div className="flex min-w-0 flex-col px-8 pt-10 pb-7 max-[819px]:pt-7 max-[420px]:px-5">
-        <div className="mb-7 flex items-center justify-between gap-2">
+        <div
+          className={`${styles.enter} mb-7 flex items-center justify-between gap-2`}
+          style={at(550)}
+        >
           <span className="font-mono text-[10px] tracking-[0.13em] text-muted uppercase">
             Make yourself at home
           </span>
@@ -97,8 +141,13 @@ const OnboardingForm = ({
             Optional setup
           </span>
         </div>
-        <div className="mb-6">
-          <RotateCcw size={21} strokeWidth={1.5} className="mb-4 text-muted" aria-hidden="true" />
+        <div className={`${styles.enter} mb-6`} style={at(650)}>
+          <RotateCcw
+            size={21}
+            strokeWidth={1.5}
+            className={`${styles.return} mb-4 text-muted`}
+            aria-hidden="true"
+          />
           <h3 className="m-0 text-[25px] leading-[1.2] font-medium tracking-[-0.9px]">
             Good work deserves
             <br />a seamless return.
@@ -108,7 +157,7 @@ const OnboardingForm = ({
           </p>
         </div>
 
-        <fieldset className="m-0 min-w-0 border-0 p-0">
+        <fieldset className={`${styles.enter} m-0 min-w-0 border-0 p-0`} style={at(800)}>
           <legend className="mb-3 p-0 text-[11px] font-medium">Choose your agents</legend>
           <div className="grid gap-2">
             {agents.map((item) => {
@@ -119,14 +168,16 @@ const OnboardingForm = ({
               return (
                 <label
                   key={item.agent}
-                  className={`group flex min-h-[68px] items-center gap-3 rounded-panel border px-3.5 py-3 transition-colors duration-(--motion-feedback) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${selected ? "border-line-strong bg-soft" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
+                  className={`group flex min-h-[68px] items-center gap-3 rounded-panel border px-3 py-3 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${selected ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
                 >
-                  <Icon
-                    size={24}
-                    strokeWidth={1.4}
-                    className={`shrink-0 ${disabled ? "text-muted" : "text-ink"}`}
+                  <span
+                    className={styles.tile}
+                    data-selected={selected || undefined}
+                    data-disabled={disabled || undefined}
                     aria-hidden="true"
-                  />
+                  >
+                    <Icon size={20} strokeWidth={1.4} />
+                  </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span
                       className={`text-[12px] font-medium ${disabled ? "text-muted" : "text-ink"}`}
@@ -161,7 +212,7 @@ const OnboardingForm = ({
                     <Check
                       size={12}
                       strokeWidth={2.5}
-                      className="pointer-events-none relative text-white opacity-0 peer-checked:opacity-100"
+                      className={`${styles.check} pointer-events-none relative text-white`}
                       aria-hidden="true"
                     />
                   </span>
@@ -171,17 +222,23 @@ const OnboardingForm = ({
           </div>
         </fieldset>
 
-        <p className="mt-4 mb-7 text-[10px] leading-[1.65] text-muted">
-          When you start, we’ll install a small local plugin for each selected agent. You can
-          disconnect it anytime in Preferences.
+        <p
+          className={`${styles.enter} mt-4 mb-7 min-h-[2lh] text-[10px] leading-[1.65] text-muted`}
+          style={at(900)}
+        >
+          {pluginNote(
+            agents
+              .filter((item) => item.available && choices[item.agent])
+              .map((item) => agentLabels[item.agent]),
+          )}
         </p>
-        <div className="mt-auto">
+        <div className={`${styles.enter} mt-auto`} style={at(1000)}>
           <button
             type="submit"
-            className="flex min-h-11 w-full items-center justify-between gap-3 rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:bg-ink focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-2"
+            className={`${styles.start} flex min-h-11 w-full items-center justify-between gap-3 rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:bg-ink focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-2`}
           >
             Let’s build something
-            <ArrowRight size={16} aria-hidden="true" />
+            <ArrowRight size={16} className={styles.arrow} aria-hidden="true" />
           </button>
           <button
             type="button"

@@ -1,5 +1,5 @@
-import { Check, Columns2, Grid2X2, Maximize, Terminal } from "lucide-react"
-import { useId, useState } from "react"
+import { Check, Columns2, Grid2X2, Maximize, RotateCcw, Terminal } from "lucide-react"
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react"
 
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
@@ -30,58 +30,177 @@ const views = [
   },
 ] as const
 
-export const OnboardingPreview = (): React.JSX.Element => {
-  const [view, setView] = useState<(typeof views)[number]>(views[2])
+type View = (typeof views)[number]
+
+// Until the person picks a layout, the preview shows each one in turn, once, and
+// settles back on Canvas. Hovering or focusing the preview holds the current step.
+const tour: readonly View["id"][] = ["focus", "grid", "canvas"]
+const tourStart = 3400
+const tourStep = 3200
+
+type Line = {
+  readonly text: string
+  readonly kind: "prompt" | "response" | "check"
+}
+
+// Each line types itself in after the terminals are dealt, `at` ms after opening.
+const TypedLine = ({ text, kind, at }: Line & { readonly at: number }): React.JSX.Element => (
+  <span
+    className={`${styles.typed} ${styles[kind]}`}
+    style={
+      { "--chars": text.length + (kind === "check" ? 2 : 0), "--at": `${at}ms` } as CSSProperties
+    }
+  >
+    {kind === "check" && <Check size={10} />}
+    {text}
+  </span>
+)
+
+const typed = (lines: readonly Line[], from: number): React.JSX.Element[] =>
+  lines.map((line, index) => <TypedLine key={line.text} {...line} at={from + index * 200} />)
+
+// A connected agent's terminal marks that its session resumes, and plays a short scan
+// the moment it connects, as if the terminal had just come back.
+const Status = ({ resumes }: { readonly resumes?: boolean }): React.JSX.Element => (
+  <span className={styles.status} data-resumes={resumes === true || undefined}>
+    {resumes && (
+      <span className={styles.resumes}>
+        <RotateCcw size={7} strokeWidth={2.2} />
+        resumes
+      </span>
+    )}
+    <span className={styles.dot} />
+  </span>
+)
+
+const reducedMotion = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+export const OnboardingPreview = ({
+  connected,
+}: {
+  readonly connected: { readonly claude: boolean; readonly codex: boolean }
+}): React.JSX.Element => {
+  const [view, setView] = useState<View>(views[2])
+  const [step, setStep] = useState<number | undefined>(() => (reducedMotion() ? undefined : -1))
+  const [held, setHeld] = useState(false)
+  const stage = useRef<HTMLDivElement>(null)
   const caption = useId()
+  // The tour ends as it reaches its last layout.
+  const touring = step !== undefined && step < tour.length - 1
+
+  useEffect(() => {
+    if (!touring || held) return
+    const timer = window.setTimeout(
+      () => {
+        const next = step + 1
+        const id = tour[next]
+        if (id) setView(views.find((item) => item.id === id) ?? views[2])
+        setStep(next)
+      },
+      step === -1 ? tourStart : tourStep,
+    )
+    return () => window.clearTimeout(timer)
+  }, [touring, held, step])
+
+  const choose = (item: View): void => {
+    setStep(undefined)
+    setView(item)
+  }
+
+  // The dot grid brightens around the pointer and Canvas terminals drift with it;
+  // written straight to the stage so moving the pointer never re-renders the preview.
+  const follow = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const element = stage.current
+    if (!element) return
+    const box = element.getBoundingClientRect()
+    const x = event.clientX - box.left
+    const y = event.clientY - box.top
+    element.style.setProperty("--mx", `${x}px`)
+    element.style.setProperty("--my", `${y}px`)
+    element.style.setProperty("--px", `${(x / box.width - 0.5) * 2}`)
+    element.style.setProperty("--py", `${(y / box.height - 0.5) * 2}`)
+  }
+
+  const settle = (): void => {
+    stage.current?.style.setProperty("--px", "0")
+    stage.current?.style.setProperty("--py", "0")
+  }
 
   return (
-    <section className="mt-6" aria-label="Explore your workspace">
-      <div className={styles.stage} data-view={view.id} aria-hidden="true">
+    <section
+      className="mt-6"
+      aria-label="Explore your workspace"
+      onPointerEnter={() => setHeld(true)}
+      onPointerLeave={() => setHeld(false)}
+      onFocus={() => setHeld(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setHeld(false)
+      }}
+    >
+      <div
+        ref={stage}
+        className={styles.stage}
+        data-view={view.id}
+        aria-hidden="true"
+        onPointerMove={follow}
+        onPointerLeave={settle}
+      >
         <div className={styles.coordinates}>YOUR WORKSPACE / YOUR WAY</div>
         <div className={`${styles.terminal} ${styles.agent}`}>
           <div className={styles.bar}>
             <ClaudeIcon size={13} />
             <span>Build something great</span>
-            <span className={styles.dot} />
+            <Status resumes={connected.claude} />
           </div>
           <div className={styles.code}>
-            <span className={styles.prompt}>❯ Let’s bring this idea to life.</span>
-            <span className={styles.response}>I’ll start with the big picture.</span>
-            <span className={styles.line}>
-              <Check size={10} /> A place for every project
-            </span>
-            <span className={styles.line}>
-              <Check size={10} /> Room for every possibility
-            </span>
+            {typed(
+              [
+                { text: "❯ Let’s bring this idea to life.", kind: "prompt" },
+                { text: "I’ll start with the big picture.", kind: "response" },
+                { text: "A place for every project", kind: "check" },
+                { text: "Room for every possibility", kind: "check" },
+              ],
+              1300,
+            )}
             <span className={styles.cursor}>
               ❯ <i />
             </span>
           </div>
+          {connected.claude && <i className={styles.scan} />}
         </div>
         <div className={`${styles.terminal} ${styles.review}`}>
           <div className={styles.bar}>
             <CodexIcon size={13} />
             <span>A fresh perspective</span>
-            <span className={styles.dot} />
+            <Status resumes={connected.codex} />
           </div>
           <div className={styles.code}>
-            <span className={styles.prompt}>❯ Review the changes</span>
-            <span className={styles.response}>A second pair of eyes,</span>
-            <span className={styles.response}>right beside your work.</span>
+            {typed(
+              [
+                { text: "❯ Review the changes", kind: "prompt" },
+                { text: "A second pair of eyes,", kind: "response" },
+                { text: "right beside your work.", kind: "response" },
+              ],
+              1450,
+            )}
           </div>
+          {connected.codex && <i className={styles.scan} />}
         </div>
         <div className={`${styles.terminal} ${styles.server}`}>
           <div className={styles.bar}>
             <Terminal size={13} />
             <span>Dev server</span>
-            <span className={styles.dot} />
+            <Status />
           </div>
           <div className={styles.code}>
-            <span className={styles.prompt}>$ pnpm dev</span>
-            <span className={styles.line}>
-              <Check size={10} /> Ready when you are.
-            </span>
-            <span className={styles.response}>localhost:5173</span>
+            {typed(
+              [
+                { text: "$ pnpm dev", kind: "prompt" },
+                { text: "Ready when you are.", kind: "check" },
+                { text: "localhost:5173", kind: "response" },
+              ],
+              1600,
+            )}
           </div>
         </div>
         <div className={styles.scale}>
@@ -97,22 +216,42 @@ export const OnboardingPreview = (): React.JSX.Element => {
       >
         {views.map((item) => {
           const Icon = item.icon
+          const active = view.id === item.id
           return (
             <button
               key={item.id}
               type="button"
-              aria-pressed={view.id === item.id}
-              onClick={() => setView(item)}
-              className={`flex min-h-9 items-center gap-2 rounded-control border px-3 py-2 text-[11px] ${view.id === item.id ? "border-line-strong bg-paper text-ink shadow-control" : "border-transparent text-muted hover:bg-soft hover:text-ink"}`}
+              aria-pressed={active}
+              onClick={() => choose(item)}
+              className={`relative flex min-h-9 items-center gap-2 overflow-hidden rounded-control border px-3 py-2 text-[11px] transition-[background-color,border-color,color,box-shadow] duration-(--motion-state) ${active ? "border-line-strong bg-paper text-ink shadow-control" : "border-transparent text-muted hover:bg-soft hover:text-ink"}`}
             >
               <Icon size={13} strokeWidth={1.6} aria-hidden="true" />
               {item.label}
+              {active && touring && step >= 0 && !held && (
+                <span
+                  key={step}
+                  className={styles.progress}
+                  style={{ "--step": `${tourStep}ms` } as CSSProperties}
+                  aria-hidden="true"
+                />
+              )}
             </button>
           )
         })}
       </div>
-      <div id={caption} className="mt-3 text-center" aria-live="polite" aria-atomic="true">
-        <p className="m-0 text-[12px] font-medium tracking-[-0.1px]">{view.title}</p>
+      {/* Captions announce only the layouts the person picks, not the opening tour. */}
+      <div
+        id={caption}
+        className="mt-3 text-center"
+        aria-live={touring ? "off" : "polite"}
+        aria-atomic="true"
+      >
+        <p
+          key={view.id}
+          className={`m-0 text-[12px] font-medium tracking-[-0.1px] ${styles.caption}`}
+        >
+          {view.title}
+        </p>
         <p className="mt-1 mb-0 text-[10px] leading-relaxed text-muted">{view.detail}</p>
       </div>
     </section>
