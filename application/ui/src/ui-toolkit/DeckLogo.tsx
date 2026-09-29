@@ -71,7 +71,12 @@ export const DeckWordmark = ({
   ]
   return (
     <span
-      className={cn(styles.word, "*:inline-block", animated && styles.animated, className)}
+      className={cn(
+        styles.word,
+        "inline-flex items-baseline font-semibold text-ink *:inline-block",
+        animated && styles.animated,
+        className,
+      )}
       aria-hidden="true"
     >
       {letters.map(({ letter, className: letterClass }, index) => (
@@ -89,6 +94,9 @@ export const DeckWordmark = ({
   )
 }
 
+const patternMask =
+  "linear-gradient(to right, transparent 10%, black 78%), radial-gradient(ellipse at 100% 0%, black 10%, transparent 72%)"
+
 // A quiet repeat of the layered terminal mark for branded backgrounds. It fades in
 // from the right so foreground content can keep a clean reading surface.
 export const DeckPattern = ({
@@ -105,8 +113,12 @@ export const DeckPattern = ({
       viewBox="0 0 640 240"
       preserveAspectRatio="xMidYMid slice"
       style={{
-        maskImage: "linear-gradient(to right, transparent 10%, black 78%)",
-        WebkitMaskImage: "linear-gradient(to right, transparent 10%, black 78%)",
+        // Fades toward the left and away from the top-right corner, where the two
+        // gradients overlap, so the pattern has no hard edge beside the copy.
+        maskImage: patternMask,
+        WebkitMaskImage: patternMask,
+        maskComposite: "intersect",
+        WebkitMaskComposite: "source-in",
       }}
     >
       <defs>

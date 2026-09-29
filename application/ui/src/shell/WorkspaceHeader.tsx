@@ -70,7 +70,7 @@ export const WorkspaceHeader = ({
       <div className="header-workspace max-[701px]:gap-2 flex min-w-0 items-center gap-4">
         <Link
           to={homeTo}
-          className="brand max-[701px]:w-auto max-[701px]:text-[17px] max-[701px]:gap-[7px] [&>span:last-child]:max-[1001px]:hidden flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px] no-underline"
+          className="brand max-[701px]:w-auto max-[701px]:text-[17px] max-[701px]:gap-[7px] min-[702px]:max-[1001px]:[&>span:last-child]:hidden flex shrink-0 items-center gap-2 text-[16px] font-semibold tracking-[-0.6px] no-underline"
           aria-label="novadeck. home"
         >
           <DeckMark size={28} className="brand-symbol" />

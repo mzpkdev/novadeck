@@ -48,15 +48,6 @@
   background: linear-gradient(transparent, rgb(255 255 255 / 0.3) 50%, transparent);
 }
 
-/* Unlayered, so its display outranks a caller's utilities: the header's narrow-width
-   `hidden` on the wordmark does not apply. */
-.word {
-  display: inline-flex;
-  align-items: baseline;
-  font-weight: 600;
-  color: var(--color-ink);
-}
-
 /* Assembling: the face pops in, the cards fan out, the prompt draws itself and the
    letters rise. Without motion everything simply stands in place. */
 @media (prefers-reduced-motion: no-preference) {
