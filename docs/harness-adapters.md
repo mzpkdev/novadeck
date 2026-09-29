@@ -89,9 +89,10 @@ Keep the implementation within `application/runner/src/harnesses/` initially:
 
 ```text
 harnesses/
-  harness.ts       # The Harness type and shared inspection/setup/recognition
-  registry.ts      # harnesses(install), as describe() today
-  service.ts       # createHarnesses: lifecycle and shared entry points
+  harness.ts       # The Harness type and shared plugin helpers
+  registry.ts      # harnesses: Record<AgentName, Harness>
+  resume.ts        # Validated session ID → the harness's resume words
+  service.ts       # createHarnesses: inspection, setup and lifecycle
   bindings.ts      # Pure ownership and observation transitions
   model.ts         # Accepted state → agent model snapshots/changes
   events.ts        # Dependency-light normalized facts
@@ -99,7 +100,7 @@ harnesses/
     host.ts        # Short-lived executable and local reporting
     registry.ts    # Record<AgentName, Decoder>
   claude/
-    index.ts       # claude(install): Harness
+    index.ts       # claude: Harness
     hook.ts        # Decoder, compiled for the hook process
   codex/           # Same shape; its shim is in its `shims`
   agy/
@@ -140,18 +141,18 @@ type AgentSummary = {
 
 type AgentDetail = {
   summary: AgentSummary
-  actors: readonly ActorView[]            // root first; children carry parent edges
+  actors: readonly ActorView[] // root first; children carry parent edges
   attention: readonly AttentionView[]
   plans: readonly PlanView[]
   coverage: FeatureCoverage
-  telemetry: TelemetryBadges              // small derived values only
+  telemetry: TelemetryBadges // small derived values only
 }
 
 type ActorView = {
   ref: ActorRef
   role: "root" | "child"
-  parent: ActorRef | null                 // null for root or unresolved parentage
-  label: string | null                    // native description when exposed
+  parent: ActorRef | null // null for root or unresolved parentage
+  label: string | null // native description when exposed
   activity: "working" | "idle" | "unknown"
   state: "live" | "ended" | "unknown"
   outcome: "completed" | "failed" | "cancelled" | null
@@ -159,17 +160,24 @@ type ActorView = {
 
 type AttentionView = {
   id: AttentionRef
-  actor: ActorRef | null                  // null when attribution is unresolved
+  actor: ActorRef | null // null when attribution is unresolved
   audience: "terminal-user" | "agent" | "unknown"
-  respond: Availability                   // always unavailable in v1
+  respond: Availability // always unavailable in v1
 } & (
   | { kind: "permission"; summary: string; resources: readonly string[] }
   | { kind: "question"; prompt: string; choices: readonly Choice[]; freeText: boolean }
 )
 
 type FeatureCoverage = Record<
-  | "session" | "activity" | "attention" | "actors" | "transcripts"
-  | "planning" | "usage" | "limits" | "context",
+  | "session"
+  | "activity"
+  | "attention"
+  | "actors"
+  | "transcripts"
+  | "planning"
+  | "usage"
+  | "limits"
+  | "context",
   { level: "unsupported" | "partial" | "complete"; reason: CoverageReason | null }
 >
 ```
@@ -188,7 +196,11 @@ The internal read-only facade that application services use is:
 type AgentObservation = {
   summary(terminalId: string): AgentSummary | null
   detail(terminalId: string, signal: AbortSignal): AsyncIterable<AgentDetailChange>
-  transcript(actor: ActorRef, from: TranscriptCursor | null, signal: AbortSignal): AsyncIterable<TranscriptChange>
+  transcript(
+    actor: ActorRef,
+    from: TranscriptCursor | null,
+    signal: AbortSignal,
+  ): AsyncIterable<TranscriptChange>
   telemetry(scope: TelemetryScope, signal: AbortSignal): AsyncIterable<TelemetrySnapshot>
 }
 ```
@@ -225,14 +237,14 @@ compatibility shapes.
 ## Adapter contract
 
 An adapter is a table of what NovaDeck knows about one harness, in the style of
-today's `describe()` in `shell/agents.ts`: static facts are data, behavior is a
+the `describe()` table that used to live in `shell/agents.ts`: static facts are data, behavior is a
 few small functions, and optional features are optional fields. A harness
 without a field does not have that feature; there is no separate flag.
 
 ```ts
-/** What a harness module is built from: where it lives on this machine. */
+/** Where a harness lives on this machine, passed to the fields that need it. */
 type Install = {
-  readonly env: NodeJS.ProcessEnv          // the login environment
+  readonly env: NodeJS.ProcessEnv // the login environment
   readonly home: string
   readonly platform: NodeJS.Platform
   /** NovaDeck's directory for this harness's plugin files. */
@@ -242,28 +254,44 @@ type Install = {
 /** One harness, as its own files and commands describe it. */
 type Harness = {
   readonly id: AgentName
+  /** Where NovaDeck keeps its plugin, under the plugins directory. */
+  readonly plugin: string
   /** Program names that identify it in the foreground or behind a launcher. */
   readonly programs: readonly string[]
+  /** Where its installer puts the program when it is not on PATH. */
+  readonly fallback?: (home: string) => string
   /** Its own home, whose presence says it is installed. */
-  readonly home: string
+  readonly home: (install: Install) => string
   /** Whether its configuration lists NovaDeck's plugin as installed. */
-  readonly connected: () => Promise<boolean>
+  readonly connected: (install: Install) => Promise<boolean>
   /** Its plugin commands, run in order; a failing one marked `optional` is skipped. */
-  readonly connect: readonly Command[]
+  readonly connect: (install: Install) => readonly Command[]
   readonly disconnect: readonly Command[]
-  /** Plugin manifests and hook registrations, relative to `Install.plugin`. */
-  readonly files: readonly ShellFile[]
-  /** Programs NovaDeck's shells put first on PATH, as Codex's shim. */
-  readonly shims?: readonly ShellFile[]
+  /** The command its plugin's hook runs; trusted by definition, so it never changes. */
+  readonly hook: (platform: NodeJS.Platform) => string
+  /** Plugin manifests and hook registrations, relative to its plugin directory. */
+  readonly files: (platform: NodeJS.Platform) => readonly File[]
+  /** Programs NovaDeck's shells put first on PATH while it is connected, as Codex's shim. */
+  readonly shims?: (platform: NodeJS.Platform) => readonly File[]
   /** The words that continue a session by its id. */
   readonly resume?: (session: string) => readonly string[]
+  /** What a hook report's native `source` says of the session it names. */
+  readonly continuity: (source: string | undefined) => Continuity
   /** The launch that starts a fresh session with a task. */
   readonly start?: (task: Task) => Launch
   /** Joins its sources for one terminal run into one stream of facts. */
   readonly watch?: (run: Run, signal: AbortSignal) => AsyncIterable<HarnessEvent>
   readonly transcripts?: {
-    readonly read?: (actor: ActorLocator, from: NativeHistoryCursor | null, signal: AbortSignal) => Promise<TranscriptPage>
-    readonly follow?: (actor: ActorLocator, from: NativeLiveBoundary | null, signal: AbortSignal) => AsyncIterable<TranscriptChange>
+    readonly read?: (
+      actor: ActorLocator,
+      from: NativeHistoryCursor | null,
+      signal: AbortSignal,
+    ) => Promise<TranscriptPage>
+    readonly follow?: (
+      actor: ActorLocator,
+      from: NativeLiveBoundary | null,
+      signal: AbortSignal,
+    ) => AsyncIterable<TranscriptChange>
   }
   readonly telemetry?: {
     readonly usage?: Reader<Usage>
@@ -282,19 +310,19 @@ type Reader<T> = {
 }
 ```
 
-Each harness module exports a function of `Install`, and the registry collects
-them the way `describe()` does today:
+Each harness module exports a static table, and only the fields that depend on
+this machine take `Install`. That keeps static consumers (resume, plugin files,
+hook commands) free of setup state. The registry collects them:
 
 ```ts
-export const claude = (install: Install) => ({ id: "claude", … }) satisfies Harness
+export const claude = { id: "claude", … } satisfies Harness
 
-const harnesses = (install: (agent: AgentName) => Install) =>
-  ({
-    claude: claude(install("claude")),
-    codex: codex(install("codex")),
-    agy: agy(install("agy")),
-  }) satisfies Record<AgentName, Harness>
+export const harnesses: { readonly [agent in AgentName]: Harness } = { claude, codex, agy }
 ```
+
+Step 1 implements `plugin`, `fallback`, `home`, `connected`, `connect`, `disconnect`,
+`hook`, `files`, `shims`, `resume` and `continuity`. The other fields arrive with
+the features that need them.
 
 Use plain objects and functions: no classes, no per-feature `*Adapter` types,
 and no generic `execute(capabilityName, unknownPayload)` entry point.
@@ -371,6 +399,12 @@ completes the hook harmlessly and invalidates the affected coverage; it never
 crashes or blocks the harness. Decoded hook records reach the harness's `watch`
 through its run feed (see [Where sources merge](#where-sources-merge)).
 
+Until the decoders are compiled per harness, the existing single hook script
+keeps running unchanged, and it sends the native `source`. In the runner, the
+harness's `continuity` turns that into `startup`, `native-switch` or
+`conversation-observed` before `acceptReport` sees it. So shared ownership
+policy already reads no native values.
+
 ## Where sources merge
 
 Each harness can offer several native sources for the same run: hook
@@ -438,7 +472,11 @@ type SwitchEvidence =
 
 type SessionEvent =
   | { type: "session-observed"; subject: Subject; cwd?: string }
-  | { type: "session-switch-candidate"; subject: Subject & { scope: "root" }; evidence: SwitchEvidence }
+  | {
+      type: "session-switch-candidate"
+      subject: Subject & { scope: "root" }
+      evidence: SwitchEvidence
+    }
   | { type: "session-ended"; subject: Subject & { scope: "root" } }
   | { type: "actor-discovered"; subject: Subject; label?: string }
   | { type: "actor-ended"; subject: Subject; outcome: "completed" | "failed" | "cancelled" }
