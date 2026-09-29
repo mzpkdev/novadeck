@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Eye, EyeOff, Pencil, X } from "lucide-react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
+import { usageDetail } from "../model/agent-usage"
 import { attentionText, endingText, terminalEnding, terminalPhase } from "../model/terminal-ending"
 import type { TerminalMetadata } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
@@ -52,6 +53,7 @@ export const TerminalTab = ({
   // assistive technology.
   const waiting = attentionText(terminal)
   const note = ended ?? waiting
+  const usage = usageDetail(terminal)
   const { ref, handleRef, isDragSource } = useSortable({
     id: terminal.id,
     index,
@@ -85,7 +87,7 @@ export const TerminalTab = ({
         }
         selected={selected}
         selectLabel={`Select ${terminal.name}${hidden ? " (hidden)" : ""}`}
-        tooltip={`${terminal.name}\n${terminal.directory} · ${terminal.process}${note ? `\n${note}` : ""}`}
+        tooltip={`${terminal.name}\n${terminal.directory} · ${terminal.process}${note ? `\n${note}` : ""}${usage ? `\n${usage}` : ""}`}
         {...(note ? { description: note } : {})}
         onSelect={onSelect}
         data-terminal-tab-id={terminal.id}

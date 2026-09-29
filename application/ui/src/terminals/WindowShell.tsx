@@ -12,6 +12,7 @@ import {
 import { useRef, type ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
+import { usageBadge, usageDetail } from "../model/agent-usage"
 import { attentionText, terminalPhase } from "../model/terminal-ending"
 import type { TerminalMetadata, WindowedView } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
@@ -98,6 +99,7 @@ export const WindowShell = ({
   const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
+  const usage = usageBadge(terminal)
   const headerDoubleAction = onFlyTo
   return (
     <section
@@ -225,6 +227,15 @@ export const WindowShell = ({
               )}
             </>
           </div>
+          {usage && (
+            // The agent's context and busiest rate limit, in full on hover.
+            <span
+              className="terminal-usage ml-auto shrink-0 font-mono text-[10px] text-muted"
+              title={usageDetail(terminal)}
+            >
+              {usage}
+            </span>
+          )}
           <span className="terminal-actions flex shrink-0 items-center gap-1">
             {minimize && (
               <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
