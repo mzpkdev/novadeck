@@ -86,6 +86,16 @@ describe("activity from captured hooks", () => {
     expect(last).toEqual(idle)
   })
 
+  it("settles an approved Codex request, whose result no longer describes the call", () => {
+    const { states, last } = replay("codex", "approve")
+    expect(states).toContainEqual({
+      state: "working",
+      attention: { pending: 1, kind: "permission" },
+    })
+    expect(states).toContainEqual({ state: "working", attention: { pending: 0, kind: null } })
+    expect(last).toEqual(idle)
+  })
+
   it("works through Antigravity's model calls and idles at Stop", () => {
     const { states } = replay("agy", "clear")
     expect(states[0]).toEqual({ state: "working", attention: { pending: 0, kind: null } })
@@ -115,27 +125,53 @@ describe("applying activity", () => {
     ).toBeUndefined()
   })
 
-  it("settles a request by its tool when its call changed, as an answered question's does", () => {
+  const request = (requestId: string, actor: string | null, startedAt = 5) =>
+    fact({
+      type: "attention-requested",
+      requestId,
+      actor,
+      toolName: "Bash",
+      kind: "permission",
+      startedAt,
+    })
+  const result = (requestId: string, actor: string | null, toolName = "Bash", loose = false) =>
+    fact({ type: "attention-resolved", requestId, actor, toolName, loose, outcome: "allowed" })
+
+  it("keeps one actor's request waiting while another actor's calls finish", () => {
+    const waiting = apply(started(0), binding, request("a:Bash:1", "a"))!
+    // Another subagent's own call of the same tool, which needed no permission.
+    expect(apply(waiting, binding, result("b:Bash:2", "b"))).toBeUndefined()
+    expect(apply(waiting, binding, result("a:Bash:1", "a"))?.pending).toEqual([])
+  })
+
+  it("keeps requests of one turn whatever order their hooks arrive in", () => {
+    const later = apply(started(0), binding, request("b", null, 7))!
+    const both = apply(later, binding, request("a", null, 6))!
+    expect(summary(both).attention.pending).toBe(2)
+  })
+
+  it("drops a request from a turn already over", () => {
+    const over = apply(
+      started(0),
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+    )!
+    expect(apply(over, binding, request("a", null, 9))).toBeUndefined()
+  })
+
+  it("settles a question loosely by its actor and tool, as its answered call changed", () => {
     const asked = apply(
       started(0),
       binding,
       fact({
         type: "attention-requested",
-        requestId: "a",
+        requestId: "q1",
+        actor: null,
         toolName: "AskUserQuestion",
         kind: "question",
       }),
     )!
-    const answered = apply(
-      asked,
-      binding,
-      fact({
-        type: "attention-resolved",
-        requestId: "b",
-        toolName: "AskUserQuestion",
-        outcome: "allowed",
-      }),
-    )
-    expect(answered?.pending).toEqual([])
+    expect(apply(asked, binding, result("q2", "sub", "AskUserQuestion", true))).toBeUndefined()
+    expect(apply(asked, binding, result("q2", null, "AskUserQuestion", true))?.pending).toEqual([])
   })
 })

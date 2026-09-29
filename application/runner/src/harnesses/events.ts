@@ -23,8 +23,10 @@ export type SessionObserved = {
 /**
  * What the agent in a session did, as its own hooks report it: a turn started or ended,
  * or a request started or stopped waiting on the person. A request has no id of its own
- * in any harness, so `requestId` is derived from the tool call it asks about, and
- * `toolName` resolves one whose call changed on the way, as an answered question's does.
+ * in any harness, so `requestId` is derived from the tool call it asks about and the
+ * actor that asks: the root agent, or a subagent by its id. A result marked `loose`
+ * resolves the actor's oldest request of that tool when its call changed on the way, as
+ * an answered question's does.
  */
 export type ActivityEvent = {
   readonly agent: AgentName
@@ -37,13 +39,16 @@ export type ActivityEvent = {
   | {
       readonly type: "attention-requested"
       readonly requestId: string
+      readonly actor: string | null
       readonly toolName: string
       readonly kind: "permission" | "question"
     }
   | {
       readonly type: "attention-resolved"
       readonly requestId: string
+      readonly actor: string | null
       readonly toolName: string
+      readonly loose: boolean
       readonly outcome: "allowed"
     }
 )

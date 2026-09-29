@@ -544,6 +544,34 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       .toMatchObject({ agent: null, activity: null })
   })
 
+  it("starts a switched session's activity afresh", async ({ shell }) => {
+    const call = { tool_name: "Bash", tool_input: { command: "touch x" } }
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "s1", seq: 1, source: "startup" },
+      { agent: "claude", sessionId: "s1", seq: 2, source: "", event: "UserPromptSubmit" },
+      {
+        agent: "claude",
+        sessionId: "s1",
+        seq: 3,
+        source: "",
+        event: "PermissionRequest",
+        fields: call,
+      },
+      // /clear in the agent in the foreground.
+      { agent: "claude", sessionId: "s2", seq: 4, source: "clear" },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    await expect
+      .poll(() => manager.list(terminal.sessionId)[0]?.activity, { timeout: 10_000 })
+      .toEqual({ state: "idle", attention: { pending: 0, kind: null } })
+    expect(manager.reportedSession(terminal.id, "claude")).toBe("s2")
+  })
+
   it("keeps an agent session's own markers out of its shells", async ({ shell }) => {
     // As when NovaDeck itself was started from inside Claude Code.
     const manager = shell.manager({

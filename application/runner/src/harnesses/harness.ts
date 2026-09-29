@@ -97,13 +97,15 @@ export const absolute = (value: unknown): string | undefined =>
 
 /**
  * An id for the tool call a permission request asks about, which no harness names: the
- * tool and a digest of its input, so the call's own result can resolve it.
+ * actor that asks (null for the root agent), the tool and a digest of its input, so the
+ * call's own result can resolve it.
  */
-export const callId = (toolName: string, input: unknown): string =>
-  `${toolName}:${createHash("sha256")
+export const callId = (actor: string | null, toolName: string, input: unknown): string => {
+  const digest = createHash("sha256")
     .update(JSON.stringify(input ?? null))
     .digest("hex")
-    .slice(0, 16)}`
+  return `${actor ?? ""}:${toolName}:${digest.slice(0, 16)}`
+}
 
 /** A payload's string field, or undefined. */
 export const text = (value: unknown): string | undefined =>
