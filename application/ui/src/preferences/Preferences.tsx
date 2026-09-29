@@ -144,12 +144,16 @@ export const Preferences = ({
               <X size={16} />
             </button>
           </div>
-          <TabList className="preferences-tabs mt-3 flex gap-5" label="Preference sections">
+          <TabList
+            className="preferences-tabs mt-3 flex gap-5"
+            label="Preference sections"
+            indicatorClassName="bottom-[-1px] h-0.5 bg-strong"
+          >
             {(["general", "shortcuts"] as const).map((id) => (
               <Tab
                 key={id}
                 value={id}
-                className="relative min-h-9 px-0.5 text-left text-[12px] text-muted hover:text-ink data-selected:text-ink data-selected:after:absolute data-selected:after:right-0 data-selected:after:bottom-[-1px] data-selected:after:left-0 data-selected:after:h-0.5 data-selected:after:bg-strong data-selected:after:content-['']"
+                className="relative min-h-9 px-0.5 text-left text-[12px] text-muted hover:text-ink data-selected:text-ink"
               >
                 {id === "general" ? "General" : "Shortcuts"}
               </Tab>

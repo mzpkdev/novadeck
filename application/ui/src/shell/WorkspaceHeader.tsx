@@ -99,6 +99,7 @@ export const WorkspaceHeader = ({
               label,
               icon: <Icon size={14} strokeWidth={1.6} aria-hidden="true" />,
             }))}
+          indicatorClassName="rounded-control border border-line bg-paper shadow-control"
           value={view}
           onValueChange={(value) => {
             const mode = enabledViews.find((candidate) => candidate === value)
