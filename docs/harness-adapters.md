@@ -267,7 +267,7 @@ type Harness = {
   /** Its plugin commands, run in order; a failing one marked `optional` is skipped. */
   readonly connect: (install: Install) => readonly Command[]
   readonly disconnect: readonly Command[]
-  /** The command its plugin's hook runs; trusted by definition, so it never changes. */
+  /** The command its plugin's hook runs, through the harness's own shell. */
   readonly hook: (platform: NodeJS.Platform) => string
   /** Plugin manifests and hook registrations, relative to its plugin directory. */
   readonly files: (platform: NodeJS.Platform) => readonly File[]
@@ -485,7 +485,11 @@ type ActivityEvent = { subject: Subject; turnId: string | null } & (
   | { type: "turn-started" }
   | { type: "turn-ended"; outcome: "completed" | "interrupted" | "failed" }
   | { type: "attention-requested"; request: Attention }
-  | { type: "attention-resolved"; requestId: string; outcome: "answered" | "cancelled" | "expired" }
+  | {
+      type: "attention-resolved"
+      requestId: string
+      outcome: "allowed" | "answered" | "cancelled" | "expired" | "unknown"
+    }
   | { type: "attention-observed"; kind: AttentionKind; audience: "terminal-user" | "unknown" }
   | { type: "observation-lost" }
 )
@@ -500,11 +504,24 @@ type PlanEvent = { subject: Subject } & (
 type HarnessEvent = SessionEvent | ActivityEvent | PlanEvent
 ```
 
-These shapes are provisional until the coverage probes; the probes may add or
-remove variants, but not provider-specific ones. Native `source` values, tool
-names and event names never reach the shared reducer. `null` means missing
-evidence. `attention-observed` has no correlation, so it produces an imprecise
-attention hint and never a response target.
+[Harness coverage](harness-coverage.md) measured these shapes against the
+installed harnesses. Native `source` values, tool names and event names never
+reach the shared reducer. `null` means missing evidence. `attention-observed`
+has no correlation, so it produces an imprecise attention hint and never a
+response target.
+
+No harness gives a permission request its own id. Claude Code and Codex fire
+`PermissionRequest` right after the `PreToolUse` of the same call, whose
+`tool_use_id` becomes the `requestId`. A matching tool result resolves it as
+`allowed`. A denial fires nothing, so the next tool, turn or session event of
+that actor resolves it as `unknown`. Antigravity's status line reports only
+that some confirmation is open, which is `attention-observed`.
+
+`same-root-instance` needs a process identity from the hook: Claude Code puts
+`CLAUDE_PID` in its hooks' environment; Codex and Antigravity have none yet.
+Interruption is signaled only where a source reports it (Codex's `Interrupt`
+hook). Elsewhere a turn stays `working` until its next event, and activity
+coverage is `partial`.
 
 Keep a durable resume reference separate from an ephemeral live binding. A
 binding is runner lifetime, terminal ID, run, a service-issued binding ID, the
@@ -615,22 +632,52 @@ The adapter emits facts and never calls a UI operation. Plan identity, revisions
 presentation and dismissal follow
 [Agent operations in NovaDeck](agent-workspace.md#automatic-planning-and-live-previews).
 
+## Native sources
+
+[Harness coverage](harness-coverage.md) records, per harness and feature, which
+native sources exist and how complete they are, with sanitized payload fixtures
+beside each adapter. Three kinds of source feed a harness's `watch`:
+
+- **Hooks:** the plugin's hook events, one short process per event.
+- **Files:** transcripts and rollouts the harness writes, followed by the adapter.
+- **Status line:** Claude Code and Antigravity pipe a JSON state snapshot to a
+  status line command on every state change. It is the only live source of
+  Claude Code's rate limits and context occupancy, and of Antigravity's agent
+  state, confirmations, usage, quota and context.
+
+The status line is one user-level setting. **Open decision:** NovaDeck either
+installs a bridge command that forwards to the person's own status line
+command, or leaves those features unavailable while the person has one. For
+Claude Code, NovaDeck's shells can pass `--settings` at launch, the way the
+Codex shim adds its flag, so the bridge applies only to NovaDeck's terminals.
+
+Codex's plugin hooks run only once the person trusts them in `/hooks`, and no
+hook reports that they are untrusted. A connected Codex whose hooks are
+untrusted reports `unknown` coverage until the app-server's `hooks/list`
+confirms trust.
+
 ## Usage, quota resets and context
 
 The adapter owns native reads and parsing; the shared telemetry service owns
 scoped measurements, reconciliation, freshness and subscriptions.
 
-| Domain  | Required data and semantics                                                                                                                                         |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Usage   | Actor/session/turn scope; available input/output/cache/reasoning counters; delta versus cumulative; period/epoch; reported versus estimated; cost with currency     |
-| Limits  | Opaque account/provider/model scope as supported; independently identified windows; unit; limit/used/remaining where known; reported reset time or explicit unknown |
-| Context | Actor/session/model scope; occupied and capacity values with units; reported versus estimated; revision and compaction state                                        |
+| Domain  | Required data and semantics                                                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Usage   | Actor/session/turn scope; available input/output/cache/reasoning counters; delta versus cumulative; period/epoch; reported versus estimated; cost with currency          |
+| Limits  | Opaque account/provider/model scope as supported; independently identified windows; used fraction; window length where known; reported reset instant or explicit unknown |
+| Context | Actor/session/model scope; occupied and capacity values with units; reported versus estimated; revision and compaction state                                             |
 
 Every snapshot carries source identity, measurement time (nullable), receipt
 time and freshness. Known zero, unavailable and not-yet-observed differ.
 Estimates are labeled as estimates, and cost estimates state their pricing
 basis. Usage records say whether totals include descendants, so parent and
 child are never double-counted.
+
+Every harness reports a limit window as a used or remaining percentage with a
+reset instant, never the limit itself: Claude Code's five-hour and seven-day
+windows, Codex's primary and secondary windows with `window_minutes`, and
+Antigravity's per-model quota. Store the used fraction and never derive token
+amounts from it.
 
 Limits can span terminals; deduplicate by verified account scope and never merge
 installations with unknown accounts. A reset time is an absolute reported
@@ -754,9 +801,10 @@ local transport and completion. Provider modules own decoding and whether
 harmless completion is silence or `{}`. Send only the normalized fields a
 feature needs, never whole payloads, prompts or tool arguments.
 
-Keep existing launcher command strings stable during extraction. Codex and AGY
-trust hook definitions, so changing definitions or adding event registrations
-can require renewed review; installation and hook trust are distinct states.
+NovaDeck has no users yet, so hook definitions change whenever that improves
+the integration. Codex and AGY trust a hook by its definition, so a changed
+definition or a new event registration asks whoever connected them to review
+the hook again; installation and hook trust are distinct states.
 Publish artifacts as a complete versioned directory with an atomic entry-point
 update, so a running hook never imports a half-updated module graph.
 
@@ -812,9 +860,9 @@ an action by typing guessed keys into a terminal.
    native sources exist for each `FeatureCoverage` key: hook events, streams,
    files, their identifiers and their entering/leaving/failure paths. Commit the
    matrix beside the adapters with payload fixtures. Then fix the event,
-   transcript and telemetry shapes against it. Today's plugins register only
-   Claude/Codex `SessionStart` and AGY `PreInvocation`; AGY attention and
-   resolution events across all providers are the largest unknowns.
+   transcript and telemetry shapes against it. Done for Claude Code and Codex
+   (see [Harness coverage](harness-coverage.md)); Antigravity needs a
+   signed-in machine, and interactive-only paths are listed there as still to probe.
 4. **Observe.** Implement each adapter's `watch`, transcripts and telemetry
    readers to the probed coverage, plus the agent model summary, detail and
    stream tiers in the protocol.
