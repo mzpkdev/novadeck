@@ -1,4 +1,4 @@
-import { Check, Columns2, Grid2X2, Maximize, RotateCcw, Terminal } from "lucide-react"
+import { Check, Columns2, Grid2X2, Maximize, Plug, Terminal } from "lucide-react"
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react"
 
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
@@ -11,22 +11,19 @@ const views = [
     id: "focus",
     label: "Focus",
     icon: Columns2,
-    title: "One thing. Your full attention.",
-    detail: "Give a single terminal the whole stage.",
+    caption: "One terminal, full attention.",
   },
   {
     id: "grid",
     label: "Grid",
     icon: Grid2X2,
-    title: "Parallel work. All in view.",
-    detail: "Keep your agents and tools side by side.",
+    caption: "Everything side by side.",
   },
   {
     id: "canvas",
     label: "Canvas",
     icon: Maximize,
-    title: "More room for your train of thought.",
-    detail: "Arrange your terminals on a zoomable canvas.",
+    caption: "Spread out on a zoomable canvas.",
   },
 ] as const
 
@@ -59,14 +56,13 @@ const TypedLine = ({ text, kind, at }: Line & { readonly at: number }): React.JS
 const typed = (lines: readonly Line[], from: number): React.JSX.Element[] =>
   lines.map((line, index) => <TypedLine key={line.text} {...line} at={from + index * 200} />)
 
-// A connected agent's terminal marks that its session resumes, and plays a short scan
-// the moment it connects, as if the terminal had just come back.
-const Status = ({ resumes }: { readonly resumes?: boolean }): React.JSX.Element => (
-  <span className={styles.status} data-resumes={resumes === true || undefined}>
-    {resumes && (
-      <span className={styles.resumes}>
-        <RotateCcw size={7} strokeWidth={2.2} />
-        resumes
+// A connected agent's terminal says so, and plays a short scan the moment it connects.
+const Status = ({ connected }: { readonly connected?: boolean }): React.JSX.Element => (
+  <span className={styles.status} data-connected={connected === true || undefined}>
+    {connected && (
+      <span className={styles.connected}>
+        <Plug size={7} strokeWidth={2.2} />
+        connected
       </span>
     )}
     <span className={styles.dot} />
@@ -145,12 +141,11 @@ export const OnboardingPreview = ({
         onPointerMove={follow}
         onPointerLeave={settle}
       >
-        <div className={styles.coordinates}>YOUR WORKSPACE / YOUR WAY</div>
         <div className={`${styles.terminal} ${styles.agent}`}>
           <div className={styles.bar}>
             <ClaudeIcon size={13} />
             <span>Build something great</span>
-            <Status resumes={connected.claude} />
+            <Status connected={connected.claude} />
           </div>
           <div className={styles.code}>
             {typed(
@@ -172,7 +167,7 @@ export const OnboardingPreview = ({
           <div className={styles.bar}>
             <CodexIcon size={13} />
             <span>A fresh perspective</span>
-            <Status resumes={connected.codex} />
+            <Status connected={connected.codex} />
           </div>
           <div className={styles.code}>
             {typed(
@@ -246,13 +241,9 @@ export const OnboardingPreview = ({
         aria-live={touring ? "off" : "polite"}
         aria-atomic="true"
       >
-        <p
-          key={view.id}
-          className={`m-0 text-[12px] font-medium tracking-[-0.1px] ${styles.caption}`}
-        >
-          {view.title}
+        <p key={view.id} className={`m-0 text-[12px] text-muted ${styles.caption}`}>
+          {view.caption}
         </p>
-        <p className="mt-1 mb-0 text-[10px] leading-relaxed text-muted">{view.detail}</p>
       </div>
     </section>
   )

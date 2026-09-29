@@ -56,17 +56,11 @@ describe("Connecting agents", () => {
       await expect
         .element(dialog.getByRole("button", { name: "Focus", exact: true }))
         .toHaveAttribute("aria-pressed", "true")
-      await expect
-        .element(dialog.getByText("Give a single terminal the whole stage."))
-        .toBeVisible()
+      await expect.element(dialog.getByText("One terminal, full attention.")).toBeVisible()
       await dialog.getByRole("button", { name: "Grid", exact: true }).click()
-      await expect
-        .element(dialog.getByText("Keep your agents and tools side by side."))
-        .toBeVisible()
+      await expect.element(dialog.getByText("Everything side by side.")).toBeVisible()
       await dialog.getByRole("button", { name: "Canvas", exact: true }).click()
-      await expect
-        .element(dialog.getByText("Arrange your terminals on a zoomable canvas."))
-        .toBeVisible()
+      await expect.element(dialog.getByText("Spread out on a zoomable canvas.")).toBeVisible()
       await expect.element(agentChoice(dialog, "Claude Code")).not.toBeChecked()
       await expect.element(agentChoice(dialog, "Antigravity")).toBeDisabled()
     })
@@ -99,7 +93,7 @@ describe("Connecting agents", () => {
     it("skips setup without connecting selected agents", async () => {
       await openWorkspace("/?demo=onboarding")
       await agentChoice(welcome(), "Claude Code").click()
-      await welcome().getByRole("button", { name: "Skip setup and explore" }).click()
+      await welcome().getByRole("button", { name: "Skip for now" }).click()
       await expect.element(welcome()).not.toBeInTheDocument()
       await openPreferences()
       await expect

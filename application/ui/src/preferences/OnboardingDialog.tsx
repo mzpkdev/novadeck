@@ -1,4 +1,4 @@
-import { ArrowRight, Check, RotateCcw, Sparkles } from "lucide-react"
+import { ArrowRight, Check, Sparkles } from "lucide-react"
 import { useRef, useState, type CSSProperties, type RefObject } from "react"
 
 import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/DeckLogo"
@@ -30,16 +30,17 @@ const listed = (names: readonly string[]): string =>
 // What starting will install, so nothing about it is a surprise.
 const pluginNote = (names: readonly string[]): string =>
   names.length === 0
-    ? "Nothing is installed unless you choose an agent. You can connect one anytime in Preferences."
-    : `When you start, we’ll install a small local plugin into ${listed(names)}. You can disconnect it anytime in Preferences.`
+    ? "You can connect agents later in Preferences."
+    : `Adds a small plugin to ${listed(names)}. Remove it anytime in Preferences.`
 
 const headline = "Room to build."
 
-const choiceNote = (item: AgentSwitch, selected: boolean): string => {
+// Only a state worth knowing gets a note; an agent ready to connect needs none.
+const choiceNote = (item: AgentSwitch): string | undefined => {
   if (item.busy) return item.connected ? "Disconnecting…" : "Connecting…"
   if (item.error) return item.error
-  if (!item.available) return "Not installed on this computer"
-  return selected ? "Resume sessions after a restart" : "Connect to resume your sessions"
+  if (!item.available) return "Not installed"
+  return undefined
 }
 
 const OnboardingForm = ({
@@ -83,14 +84,7 @@ const OnboardingForm = ({
           <DeckMark size={35} animated />
           <DeckWordmark animated />
         </div>
-        <div className="mt-9 max-[819px]:mt-6">
-          <p
-            className={`${styles.enter} mb-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] text-muted uppercase`}
-            style={at(300)}
-          >
-            <span className="h-px w-5 bg-accent" aria-hidden="true" />
-            Your next great thing starts here
-          </p>
+        <div className="mt-10 max-[819px]:mt-6">
           <DialogTitle
             ref={heading}
             tabIndex={-1}
@@ -121,7 +115,7 @@ const OnboardingForm = ({
             className={`${styles.enter} mt-4 mb-0 max-w-[350px] text-[13px] leading-[1.7] text-muted`}
             style={at(1300)}
           >
-            Your terminals, agents, and projects. Together in a workspace that moves with you.
+            Terminals, agents, and projects in one workspace.
           </DialogDescription>
         </div>
         <div className={styles.enter} style={at(500)}>
@@ -130,109 +124,96 @@ const OnboardingForm = ({
       </div>
 
       <div className="flex min-w-0 flex-col px-8 pt-10 pb-7 max-[819px]:pt-7 max-[420px]:px-5">
-        <div
-          className={`${styles.enter} mb-7 flex items-center justify-between gap-2`}
-          style={at(550)}
-        >
-          <span className="font-mono text-[10px] tracking-[0.13em] text-muted uppercase">
-            Make yourself at home
-          </span>
-          <span className="rounded-control border border-line px-2 py-1 text-[10px] text-muted">
-            Optional setup
-          </span>
-        </div>
-        <div className={`${styles.enter} mb-6`} style={at(650)}>
-          <RotateCcw
-            size={21}
-            strokeWidth={1.5}
-            className={`${styles.return} mb-4 text-muted`}
-            aria-hidden="true"
-          />
-          <h3 className="m-0 text-[25px] leading-[1.2] font-medium tracking-[-0.9px]">
-            Good work deserves
-            <br />a seamless return.
-          </h3>
-          <p className="mt-3 mb-0 text-[12px] leading-[1.7] text-muted">
-            Connect your coding agents to pick up the same conversations after a restart.
+        <div className="my-auto">
+          <div className={`${styles.enter} mb-6`} style={at(600)}>
+            <h3 className="m-0 text-[25px] leading-[1.2] font-medium tracking-[-0.9px]">
+              Connect your agents
+            </h3>
+            <p className="mt-2 mb-0 text-[12px] leading-[1.7] text-muted">
+              Unlock NovaDeck features inside your coding agents.
+            </p>
+          </div>
+
+          <fieldset className={`${styles.enter} m-0 min-w-0 border-0 p-0`} style={at(750)}>
+            <legend className="sr-only">Agents</legend>
+            <div className="grid gap-2">
+              {agents.map((item) => {
+                const selected = choices[item.agent]
+                const disabled = !item.available || item.busy
+                const note = choiceNote(item)
+                const description = note ? `onboarding-${item.agent}-description` : undefined
+                const Icon = icons[item.agent]
+                return (
+                  <label
+                    key={item.agent}
+                    className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${selected ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
+                  >
+                    <span
+                      className={styles.tile}
+                      data-selected={selected || undefined}
+                      data-disabled={disabled || undefined}
+                      aria-hidden="true"
+                    >
+                      <Icon size={20} strokeWidth={1.4} />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span
+                        className={`text-[12px] font-medium ${disabled ? "text-muted" : "text-ink"}`}
+                      >
+                        {agentLabels[item.agent]}
+                      </span>
+                      {note && (
+                        <span
+                          id={description}
+                          className={`text-[10px] leading-relaxed ${item.error ? "text-danger-fg" : "text-muted"}`}
+                          role={item.error ? "alert" : undefined}
+                        >
+                          {note}
+                        </span>
+                      )}
+                    </span>
+                    <span className="relative flex size-4 shrink-0 items-center justify-center">
+                      <input
+                        type="checkbox"
+                        name="agents"
+                        value={item.agent}
+                        checked={selected}
+                        disabled={disabled}
+                        aria-label={agentLabels[item.agent]}
+                        aria-describedby={description}
+                        className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-paper checked:border-strong checked:bg-strong disabled:cursor-not-allowed disabled:bg-shell focus-visible:outline-none"
+                        onChange={(event) =>
+                          setChoices((current) => ({
+                            ...current,
+                            [item.agent]: event.target.checked,
+                          }))
+                        }
+                      />
+                      <Check
+                        size={12}
+                        strokeWidth={2.5}
+                        className={`${styles.check} pointer-events-none relative text-white`}
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          <p
+            className={`${styles.enter} mt-3 mb-8 min-h-[2lh] text-[10px] leading-[1.65] text-muted`}
+            style={at(850)}
+          >
+            {pluginNote(
+              agents
+                .filter((item) => item.available && choices[item.agent])
+                .map((item) => agentLabels[item.agent]),
+            )}
           </p>
         </div>
-
-        <fieldset className={`${styles.enter} m-0 min-w-0 border-0 p-0`} style={at(800)}>
-          <legend className="mb-3 p-0 text-[11px] font-medium">Choose your agents</legend>
-          <div className="grid gap-2">
-            {agents.map((item) => {
-              const selected = choices[item.agent]
-              const disabled = !item.available || item.busy
-              const description = `onboarding-${item.agent}-description`
-              const Icon = icons[item.agent]
-              return (
-                <label
-                  key={item.agent}
-                  className={`group flex min-h-[68px] items-center gap-3 rounded-panel border px-3 py-3 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${selected ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
-                >
-                  <span
-                    className={styles.tile}
-                    data-selected={selected || undefined}
-                    data-disabled={disabled || undefined}
-                    aria-hidden="true"
-                  >
-                    <Icon size={20} strokeWidth={1.4} />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span
-                      className={`text-[12px] font-medium ${disabled ? "text-muted" : "text-ink"}`}
-                    >
-                      {agentLabels[item.agent]}
-                    </span>
-                    <span
-                      id={description}
-                      className={`text-[10px] leading-relaxed ${item.error ? "text-danger-fg" : "text-muted"}`}
-                      role={item.error ? "alert" : undefined}
-                    >
-                      {choiceNote(item, selected)}
-                    </span>
-                  </span>
-                  <span className="relative flex size-4 shrink-0 items-center justify-center">
-                    <input
-                      type="checkbox"
-                      name="agents"
-                      value={item.agent}
-                      checked={selected}
-                      disabled={disabled}
-                      aria-label={agentLabels[item.agent]}
-                      aria-describedby={description}
-                      className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-paper checked:border-strong checked:bg-strong disabled:cursor-not-allowed disabled:bg-shell focus-visible:outline-none"
-                      onChange={(event) =>
-                        setChoices((current) => ({
-                          ...current,
-                          [item.agent]: event.target.checked,
-                        }))
-                      }
-                    />
-                    <Check
-                      size={12}
-                      strokeWidth={2.5}
-                      className={`${styles.check} pointer-events-none relative text-white`}
-                      aria-hidden="true"
-                    />
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-        </fieldset>
-
-        <p
-          className={`${styles.enter} mt-4 mb-7 min-h-[2lh] text-[10px] leading-[1.65] text-muted`}
-          style={at(900)}
-        >
-          {pluginNote(
-            agents
-              .filter((item) => item.available && choices[item.agent])
-              .map((item) => agentLabels[item.agent]),
-          )}
-        </p>
-        <div className={`${styles.enter} mt-auto`} style={at(1000)}>
+        <div className={styles.enter} style={at(1000)}>
           <button
             type="submit"
             className={`${styles.start} flex min-h-11 w-full items-center justify-between gap-3 rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:bg-ink focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-2`}
@@ -245,7 +226,7 @@ const OnboardingForm = ({
             className="mt-2 min-h-9 w-full rounded-control px-3 py-2 text-[11px] text-muted hover:bg-shell hover:text-ink"
             onClick={onDone}
           >
-            Skip setup and explore
+            Skip for now
           </button>
         </div>
       </div>
