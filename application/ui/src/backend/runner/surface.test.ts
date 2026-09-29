@@ -34,7 +34,17 @@ vi.hoisted(() => {
 })
 
 const mounted: Rendered[] = []
-afterEach(() => mounted.splice(0).forEach((page) => page.unmount()))
+// A screen closes a moment after its last surface goes; it closes here instead, while
+// the file's DOM is still there to take its listeners off.
+afterEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  try {
+    mounted.splice(0).forEach((page) => page.unmount())
+    vi.runOnlyPendingTimers()
+  } finally {
+    vi.useRealTimers()
+  }
+})
 
 const key = { projectId: "p", workspaceSessionId: "s", terminalId: "01" }
 
