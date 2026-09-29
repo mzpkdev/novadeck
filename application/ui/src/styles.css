@@ -174,14 +174,18 @@
    window reads it from a line under the header, legible at any Canvas zoom: a sweep
    while a program runs, dots while the shell starts, dashes once it has ended, and
    nothing while idle. Reduced motion holds the spinner and sweep still. */
-/* Each tab keeps a one-glyph slot before its program, so the text never shifts. Only
-   what needs a look is marked: a spinner while a program runs, a dot while the shell
-   starts, and a cross once it has ended; an idle tab leaves it blank. */
+/* Each tab keeps a one-glyph slot before its program, so the text never shifts: braille
+   settled at the baseline while idle, a spinner while a program runs, a dot while the
+   shell starts, and a cross once it has ended. Idle and starting stay grey. */
 .terminal-glyph::before {
   content: "\00a0";
 }
+.terminal-tab[data-terminal-phase="idle"] .terminal-glyph,
 .terminal-tab[data-terminal-phase="starting"] .terminal-glyph {
   color: var(--color-muted);
+}
+.terminal-tab[data-terminal-phase="idle"] .terminal-glyph::before {
+  content: "⣀";
 }
 .terminal-tab[data-terminal-phase="starting"] .terminal-glyph::before {
   content: "·";
