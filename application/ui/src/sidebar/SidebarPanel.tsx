@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 
 export const sidebarCreateClasses =
-  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-strong bg-strong px-2.5 shadow-control text-left text-[11px] font-medium text-white hover:border-strong-hover hover:bg-strong-hover focus-visible:bg-strong-hover [&_kbd]:text-white/60"
+  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-line bg-paper pr-2.5 pl-2 shadow-control text-left text-[11px] font-medium text-ink hover:border-line-strong hover:bg-shell focus-visible:bg-shell [&>svg:first-child]:size-5 [&>svg:first-child]:rounded-control [&>svg:first-child]:bg-strong [&>svg:first-child]:p-[3px] [&>svg:first-child]:text-white"
 
 export const SidebarPanel = ({
   id,
