@@ -39,11 +39,18 @@ const themeOf = (element: Element): ITheme => {
   const background = token(style, "--color-paper")
   const foreground = token(style, "--color-ink")
   const selection = token(style, "--color-accent-soft")
+  // The scrollbar matches the app's own: a line-grey thumb that darkens when used.
+  const slider = token(style, "--color-line")
+  const sliderHover = token(style, "--color-line-strong")
+  const sliderActive = token(style, "--color-muted")
   return {
     ...(background ? { background } : {}),
     ...(foreground ? { foreground, cursor: foreground } : {}),
     ...(background ? { cursorAccent: background } : {}),
     ...(selection ? { selectionBackground: selection } : {}),
+    ...(slider ? { scrollbarSliderBackground: slider } : {}),
+    ...(sliderHover ? { scrollbarSliderHoverBackground: sliderHover } : {}),
+    ...(sliderActive ? { scrollbarSliderActiveBackground: sliderActive } : {}),
   }
 }
 
