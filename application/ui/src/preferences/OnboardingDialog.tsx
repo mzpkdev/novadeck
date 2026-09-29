@@ -72,7 +72,7 @@ const ChoiceCard = ({
     className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
   >
     <span
-      className={styles.tile}
+      className={`${styles.tile} relative flex size-[38px] flex-none items-center justify-center rounded-panel border border-line bg-shell text-ink transition-[background-color,border-color,color] duration-(--motion-state) ease-interface`}
       data-selected={checked || undefined}
       data-disabled={disabled || undefined}
       aria-hidden="true"
@@ -143,7 +143,7 @@ const OnboardingForm = ({
       }}
     >
       <div className="relative isolate min-w-0 overflow-hidden border-b border-line bg-shell px-8 pt-8 pb-6 min-[820px]:border-r min-[820px]:border-b-0 min-[820px]:px-10 min-[820px]:pt-10 max-[420px]:px-5">
-        <DeckPattern className={`${styles.pattern} -z-10`} />
+        <DeckPattern className="pointer-events-none absolute top-0 right-0 -z-10 h-[230px] w-[72%] text-line-strong opacity-40" />
         <div
           className="flex items-center gap-2.5 text-[23px] font-semibold tracking-[-0.8px]"
           role="img"
@@ -176,7 +176,9 @@ const OnboardingForm = ({
                   {letter}
                 </span>
               ))}
-              <span className={styles.caret} />
+              <span
+                className={`${styles.caret} ml-[0.08em] inline-block h-[0.8em] w-[0.14em] bg-strong align-[-0.04em] opacity-0`}
+              />
             </span>
           </DialogTitle>
           <DialogDescription
@@ -258,7 +260,7 @@ const OnboardingForm = ({
         <div className={styles.enter} style={at(1000)}>
           <button
             type="submit"
-            className={`${styles.start} flex min-h-11 w-full items-center justify-between gap-3 rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:border-strong-hover hover:bg-strong-hover focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-2`}
+            className={`${styles.start} relative flex min-h-11 w-full items-center justify-between gap-3 overflow-hidden rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:border-strong-hover hover:bg-strong-hover focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-2`}
           >
             Let’s build something
             <ArrowRight size={16} className={styles.arrow} aria-hidden="true" />

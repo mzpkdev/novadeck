@@ -30,7 +30,7 @@ export const DeckMark = ({
     <span
       aria-hidden="true"
       className={cn(
-        styles.mark,
+        "relative inline-block flex-none",
         animated && styles.animated,
         size >= 64 && styles.large,
         className,
@@ -40,7 +40,12 @@ export const DeckMark = ({
       <span className={cn(styles.card, styles.k2)} />
       <span className={cn(styles.card, styles.k1)} />
       <span className={styles.face}>
-        <svg className={styles.glyph} viewBox="0 0 24 24">
+        <svg
+          className="relative z-1 size-[64%] overflow-visible fill-none stroke-current stroke-2"
+          viewBox="0 0 24 24"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path className={styles.chevron} pathLength={1} d="m5 16.5 5.5-5.5-5.5-5.5" />
           <path className={styles.cursor} pathLength={1} d="M12.5 18.5h6.5" />
         </svg>
@@ -60,12 +65,15 @@ export const DeckWordmark = ({
   readonly className?: string | undefined
 }): React.JSX.Element => {
   const letters = [
-    ..."nova".split("").map((letter) => ({ letter, className: styles.nova })),
+    ..."nova".split("").map((letter) => ({ letter, className: "font-normal" })),
     ..."deck".split("").map((letter) => ({ letter, className: undefined })),
-    { letter: ".", className: styles.dot },
+    { letter: ".", className: "text-muted" },
   ]
   return (
-    <span className={cn(styles.word, animated && styles.animated, className)} aria-hidden="true">
+    <span
+      className={cn(styles.word, "*:inline-block", animated && styles.animated, className)}
+      aria-hidden="true"
+    >
       {letters.map(({ letter, className: letterClass }, index) => (
         <span
           // The letters never reorder.

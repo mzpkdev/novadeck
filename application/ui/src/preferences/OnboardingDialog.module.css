@@ -1,46 +1,7 @@
 /* The welcome's own motion: content arrives in reading order behind the assembling
    Deck mark, and the headline's second line types itself. */
 
-.pattern {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 72%;
-  height: 230px;
-  color: var(--color-line-strong);
-  opacity: 0.4;
-  pointer-events: none;
-  mask-image: radial-gradient(ellipse at 100% 0%, black 10%, transparent 72%);
-}
-
-.caret {
-  display: inline-block;
-  width: 0.14em;
-  height: 0.8em;
-  margin-left: 0.08em;
-  vertical-align: -0.04em;
-  background: var(--color-strong);
-  opacity: 0;
-}
-
 /* The agent’s tile turns black, like the Deck mark's face, once it is chosen. */
-.tile {
-  position: relative;
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-panel);
-  background: var(--color-shell);
-  color: var(--color-ink);
-  transition:
-    background-color var(--motion-state) var(--ease-interface),
-    border-color var(--motion-state) var(--ease-interface),
-    color var(--motion-state) var(--ease-interface);
-}
 .tile[data-selected] {
   border-color: transparent;
   background: linear-gradient(180deg, #2b2f35, #15181c);
@@ -74,10 +35,6 @@
   transform: none;
 }
 
-.start {
-  position: relative;
-  overflow: hidden;
-}
 .start .arrow {
   transition: transform var(--motion-state) var(--ease-interface);
 }

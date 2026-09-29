@@ -1,9 +1,6 @@
 @import "@xyflow/react/dist/base.css" layer(base);
 @reference "../../styles.css";
 
-.canvas-viewport {
-  touch-action: none;
-}
 .canvas-viewport .react-flow {
   --xy-background-color: transparent;
 }

@@ -153,12 +153,6 @@
   outline: none;
   background: linear-gradient(var(--color-strong), var(--color-strong)) center / 2px 100% no-repeat;
 }
-.terminal-tab-action:focus-visible {
-  outline-offset: -2px;
-}
-.focus-stage .workspace-dots {
-  background-position: -8px -8px;
-}
 .terminal-focused,
 .grid-terminal.selected .terminal-window,
 .canvas-node.selected .terminal-window {
@@ -315,9 +309,6 @@
 .workspace-dots {
   background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
   background-size: 24px 24px;
-}
-.context-menu-positioner {
-  z-index: 50 !important;
 }
 .grid-terminal {
   opacity: var(--terminal-idle-opacity);
@@ -636,11 +627,6 @@
     grid-template-columns var(--motion-state) var(--ease-interface),
     opacity var(--motion-feedback) var(--ease-interface),
     visibility var(--motion-state);
-}
-.zen-dock-actions {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
 }
 .zen-dock[data-open="true"] .zen-dock-reveal {
   grid-template-columns: 1fr;
