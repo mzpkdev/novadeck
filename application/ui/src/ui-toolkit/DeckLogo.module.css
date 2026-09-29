@@ -57,7 +57,7 @@
   overflow: visible;
 }
 .cursor {
-  stroke: var(--color-accent);
+  stroke: currentColor;
 }
 .scan {
   position: absolute;
@@ -65,11 +65,7 @@
   height: 16px;
   z-index: 2;
   opacity: 0;
-  background: linear-gradient(
-    transparent,
-    color-mix(in srgb, var(--color-accent) 45%, transparent) 50%,
-    transparent
-  );
+  background: linear-gradient(transparent, rgb(255 255 255 / 0.3) 50%, transparent);
 }
 
 .word {

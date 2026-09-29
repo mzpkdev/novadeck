@@ -9,9 +9,6 @@ import { Tooltip } from "../ui-toolkit/Tooltip"
 import { terminalProfile } from "./processes/profiles"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
-// Whole class strings, so Tailwind finds them.
-const endingDots = { danger: "bg-danger-fg", warning: "bg-warning-fg" } as const
-
 const actionClasses =
   "terminal-tab-action flex size-6 shrink-0 items-center justify-center rounded-control p-1.5 text-muted hover:bg-soft hover:text-ink [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
 
@@ -45,8 +42,7 @@ export const TerminalTab = ({
   const editing = Boolean(rename)
   const Icon = terminalProfile(terminal).icon
   const icon = <Icon size={14} strokeWidth={1.5} />
-  // A shell that ended shows a dot in its tone; the words go to assistive technology
-  // and the tooltip.
+  // A shell that ended says so in words, in place of its program; the tooltip adds why.
   const ending = terminalEnding(terminal)
   const ended = ending ? endingText(ending) : undefined
   const { ref, handleRef, isDragSource } = useSortable({
@@ -64,14 +60,17 @@ export const TerminalTab = ({
         icon={icon}
         detail={
           <>
-            {ending && (
+            {ending ? (
               <span
                 aria-hidden
                 data-terminal-ending={ending.tone}
-                className={`size-1.5 shrink-0 rounded-full ${endingDots[ending.tone]}`}
-              />
+                className="terminal-tab-ending truncate font-medium text-ink"
+              >
+                {ending.status}
+              </span>
+            ) : (
+              <span className="terminal-tab-process truncate font-mono">{terminal.process}</span>
             )}
-            <span className="terminal-tab-process truncate font-mono">{terminal.process}</span>
           </>
         }
         selected={selected}

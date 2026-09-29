@@ -49,7 +49,7 @@ export const SegmentGroup = ({
             id={itemId(item.value)}
             value={item.value}
             className={cn(
-              "relative cursor-pointer transition-[background-color,color,border-color] duration-(--motion-feedback) ease-interface data-focus-visible:outline data-focus-visible:outline-2 data-focus-visible:outline-accent-strong data-focus-visible:outline-offset-2",
+              "relative cursor-pointer transition-[background-color,color,border-color] duration-(--motion-feedback) ease-interface data-focus-visible:outline data-focus-visible:outline-2 data-focus-visible:outline-strong data-focus-visible:outline-offset-2",
               itemClassName,
               value === item.value && "active border-line bg-paper text-ink shadow-control",
             )}

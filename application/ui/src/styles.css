@@ -4,9 +4,9 @@
 @import "@fontsource-variable/inter";
 
 @theme {
-  /* Graphite: a near-black primary and greys with a trace of blue, so they sit with
-     the cyan accent. Black is for primary actions and on states (filled buttons,
-     switches, checkboxes); everything else stays grey. */
+  /* Graphite, one colour: a near-black with greys carrying a trace of blue. Black is
+     for primary actions, on states (filled buttons, switches, checkboxes), what is
+     selected, and focus rings; everything else stays grey. */
   --color-paper: #ffffff;
   --color-shell: #f8f9fa;
   --color-canvas: #f2f3f5;
@@ -18,13 +18,8 @@
   --color-soft: #eef0f2;
   --color-strong: #15181c;
   --color-strong-hover: #2b2f35;
-  /* Signal cyan, the brand accent, marks where you are: the selected terminal and
-     sidebar item, the logo's cursor, the boot hairline. Never for text or icons. Its
-     deeper companion draws focus rings, which need 3:1 on light surfaces; the soft
-     tint backs selected text. */
-  --color-accent: #12b0c4;
-  --color-accent-strong: #0891a5;
-  --color-accent-soft: #d9f2f5;
+  /* Behind selected text, in the page and in terminals. */
+  --color-selection: #d6dbe1;
   /* Status colours: soft tints for surfaces such as the footer while the runner is
      away, each with a dark text colour of the same hue (every pair meets WCAG AA). */
   --color-success: #dcebdd;
@@ -103,7 +98,7 @@
     outline: none;
   }
   :focus-visible {
-    outline: 2px solid var(--color-accent-strong);
+    outline: 2px solid var(--color-strong);
     outline-offset: 2px;
   }
   input:focus-visible,
@@ -123,14 +118,14 @@
     min-width: 0;
   }
   ::selection {
-    background: var(--color-accent-soft);
+    background: var(--color-selection);
     color: var(--color-ink);
   }
 }
 
 .workspace-panels {
   --separator-border: var(--color-line);
-  --focus-border: var(--color-accent-strong);
+  --focus-border: var(--color-strong);
   --sash-hover-size: 2px;
 }
 .workspace-panels .sidebar {
@@ -156,8 +151,7 @@
 }
 .sidebar-keyboard-resize:focus-visible {
   outline: none;
-  background: linear-gradient(var(--color-accent-strong), var(--color-accent-strong)) center / 2px
-    100% no-repeat;
+  background: linear-gradient(var(--color-strong), var(--color-strong)) center / 2px 100% no-repeat;
 }
 .terminal-tab-action:focus-visible {
   outline-offset: -2px;
@@ -172,7 +166,7 @@
 }
 .terminal-heading::before {
   content: "";
-  @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-accent;
+  @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-strong;
   opacity: 0;
   transition: opacity var(--motion-state) var(--ease-interface);
 }
@@ -558,7 +552,7 @@
 }
 @keyframes terminal-created {
   from {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-line-strong);
     outline-offset: -2px;
   }
   to {

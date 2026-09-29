@@ -19,7 +19,7 @@
   height: 0.8em;
   margin-left: 0.08em;
   vertical-align: -0.04em;
-  background: var(--color-accent);
+  background: var(--color-strong);
   opacity: 0;
 }
 
@@ -62,7 +62,7 @@
   height: 7px;
   border: 1.5px solid var(--color-paper);
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--color-strong);
   opacity: 0;
   transform: scale(0.4);
   transition:

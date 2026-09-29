@@ -68,7 +68,7 @@ const ChoiceCard = ({
   readonly onChange: (checked: boolean) => void
 }): React.JSX.Element => (
   <label
-    className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-accent-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
+    className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
   >
     <span
       className={styles.tile}
@@ -267,7 +267,7 @@ const OnboardingForm = ({
         <div className={styles.enter} style={at(1000)}>
           <button
             type="submit"
-            className={`${styles.start} flex min-h-11 w-full items-center justify-between gap-3 rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:border-strong-hover hover:bg-strong-hover focus-visible:outline-2 focus-visible:outline-accent-strong focus-visible:outline-offset-2`}
+            className={`${styles.start} flex min-h-11 w-full items-center justify-between gap-3 rounded-control border border-strong bg-strong px-4 py-3 text-[12px] font-medium text-white shadow-control hover:border-strong-hover hover:bg-strong-hover focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-2`}
           >
             Let’s build something
             <ArrowRight size={16} className={styles.arrow} aria-hidden="true" />

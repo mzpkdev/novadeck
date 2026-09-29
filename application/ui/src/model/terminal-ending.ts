@@ -1,8 +1,9 @@
 import type { TerminalMetadata } from "./types"
 
-// How a terminal's session ended, for its end-of-session bar and its sidebar dot:
-// honey for a shell that exited with an error code, rose for one killed or that never
-// started. A terminal still starting, running or idle has none; a clean exit closes it.
+// How a terminal's session ended, in words for its end-of-session bar and its sidebar
+// tab. The tone ranks it: a warning for a shell that exited with an error code, danger
+// for one killed or that never started. A terminal still starting, running or idle has
+// none; a clean exit closes it.
 export type TerminalEnding = {
   readonly tone: "danger" | "warning"
   readonly status: string

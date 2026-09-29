@@ -142,7 +142,7 @@ export const DeckPattern = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <path d="M39 57h9" fill="none" stroke="var(--color-accent)" strokeLinecap="round" />
+            <path d="M39 57h9" fill="none" stroke="currentColor" strokeLinecap="round" />
           </g>
         </pattern>
       </defs>

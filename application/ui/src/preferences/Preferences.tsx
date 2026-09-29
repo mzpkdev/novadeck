@@ -23,7 +23,7 @@ const viewIcons = { focus: PanelLeft, grid: LayoutGrid, canvas: SquareDashedMous
 const sectionTitleClasses = "m-0 text-[9px] font-medium tracking-[1.3px] text-muted uppercase"
 const sectionDescriptionClasses = "m-0 mt-1.5 text-[11px] leading-relaxed text-muted"
 const panelClasses =
-  "preferences-panel col-start-1 row-start-1 flex flex-col gap-6 px-6 py-5 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-2 focus-visible:outline-accent-strong focus-visible:outline-offset-[-2px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0 max-[480px]:px-4"
+  "preferences-panel col-start-1 row-start-1 flex flex-col gap-6 px-6 py-5 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-2 focus-visible:outline-strong focus-visible:outline-offset-[-2px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0 max-[480px]:px-4"
 
 // A titled group of settings; the title names the region unless a label is given.
 const Section = ({
@@ -149,7 +149,7 @@ export const Preferences = ({
               <Tab
                 key={id}
                 value={id}
-                className="relative min-h-9 px-0.5 text-left text-[12px] text-muted hover:text-ink data-selected:text-ink data-selected:after:absolute data-selected:after:right-0 data-selected:after:bottom-[-1px] data-selected:after:left-0 data-selected:after:h-0.5 data-selected:after:bg-accent data-selected:after:content-['']"
+                className="relative min-h-9 px-0.5 text-left text-[12px] text-muted hover:text-ink data-selected:text-ink data-selected:after:absolute data-selected:after:right-0 data-selected:after:bottom-[-1px] data-selected:after:left-0 data-selected:after:h-0.5 data-selected:after:bg-strong data-selected:after:content-['']"
               >
                 {id === "general" ? "General" : "Shortcuts"}
               </Tab>
@@ -210,7 +210,7 @@ export const Preferences = ({
                   return (
                     <label
                       key={mode}
-                      className={`relative flex min-h-[76px] min-w-0 flex-col justify-between gap-3 rounded-panel border p-3 text-[12px] transition-[background-color,border-color,color,box-shadow] duration-(--motion-feedback) ease-interface has-focus-visible:outline-2 has-focus-visible:outline-accent-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-paper text-ink shadow-control" : "border-line bg-paper/60 text-muted hover:border-line-strong hover:text-ink"} ${locked ? "cursor-not-allowed" : "cursor-pointer"}`}
+                      className={`relative flex min-h-[76px] min-w-0 flex-col justify-between gap-3 rounded-panel border p-3 text-[12px] transition-[background-color,border-color,color,box-shadow] duration-(--motion-feedback) ease-interface has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-paper text-ink shadow-control" : "border-line bg-paper/60 text-muted hover:border-line-strong hover:text-ink"} ${locked ? "cursor-not-allowed" : "cursor-pointer"}`}
                     >
                       <Icon aria-hidden="true" className="shrink-0" size={16} strokeWidth={1.5} />
                       <span>{viewLabels[mode]}</span>
