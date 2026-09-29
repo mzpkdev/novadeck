@@ -35,7 +35,8 @@ if (!terminalId || !endpoint || !token || !["claude", "codex", "agy"].includes(a
   // Wall-clock time with sub-millisecond precision: a later hook reports a larger one.
   const seq = performance.timeOrigin + performance.now()
 
-  // A copy small enough to send: long text cut short, deep or wide values dropped.
+  // A copy small enough to send: text past a path's length cut short, deep or wide values
+  // dropped.
   const prune = (value, depth, limit) => {
     if (typeof value === "string") return value.length > limit ? value.slice(0, limit) : value
     if (typeof value !== "object" || value === null) return value
@@ -55,7 +56,7 @@ if (!terminalId || !endpoint || !token || !["claude", "codex", "agy"].includes(a
         return { name, ppid: Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]) }
       }
       if (process.platform === "darwin") {
-        const out = spawnSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8" })
+        const out = spawnSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8", timeout: 500 })
         const match = /^\\s*(\\d+)\\s+(.+)$/.exec(out.stdout.trim())
         return match ? { name: basename(match[2]), ppid: Number(match[1]) } : undefined
       }
@@ -101,7 +102,7 @@ if (!terminalId || !endpoint || !token || !["claude", "codex", "agy"].includes(a
       instance: instance(),
       // Only what tells nested agents apart; nothing else of the environment leaves.
       env: { cursor: Boolean(env.CURSOR_VERSION), codexThread: env.CODEX_THREAD_ID || undefined },
-      payload: prune(payload, 0, 2000),
+      payload: prune(payload, 0, 4096),
     }
     let line = JSON.stringify(report)
     if (line.length > 60_000) line = JSON.stringify({ ...report, payload: prune(payload, 0, 200) })

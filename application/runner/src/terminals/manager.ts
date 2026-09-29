@@ -153,6 +153,17 @@ type Started = {
 /** The runner's shell integration, once its files are written and reports are heard. */
 type Integration = { readonly paths: InstalledShell; readonly reports: Reports }
 
+// Whether process `pid` still runs; one the platform refuses to signal belongs to someone
+// else, and runs.
+const alive = (pid: string): boolean => {
+  try {
+    process.kill(Number(pid), 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
 // Variables of NovaDeck's own shells and of agent sessions, which a runner started from
 // inside one must not pass on.
 const inherited = [
@@ -1141,6 +1152,16 @@ export class Terminals {
     if (record.process !== child || record.exitQueued) return
     // A disconnection while this waited forgot what the report would bring back.
     if (this.disconnections.get(report.agent) !== disconnections) return
+    // The bound agent process may have exited without the shell showing a prompt, as in
+    // tmux or a nested shell: its binding ended with it, and a later process may bind.
+    let changed = false
+    if (record.binding?.instance && !alive(record.binding.instance)) {
+      record.binding = null
+      if (record.summary.agent !== null) {
+        record.summary = { ...record.summary, agent: null }
+        this.announce(record)
+      }
+    }
     const facts = {
       promptedAt: record.promptedAt,
       shellInForeground: foreground,
@@ -1148,7 +1169,6 @@ export class Terminals {
       connected,
       platform: process.platform,
     }
-    let changed = false
     for (const event of events) {
       const next = observe(
         { sessions: record.agents, binding: record.binding, cwd: record.summary.cwd },

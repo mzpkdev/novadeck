@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -9,6 +9,8 @@ import { listenForReports, type Report } from "./reports.js"
 
 type Fixture = {
   endpoint: string
+  /** The hook script, as written. */
+  script: string
   reports: Report[]
   /** Runs the hook as an agent would for `event`, and resolves once it exits. */
   hook: (
@@ -57,7 +59,7 @@ const it = base.extend<{ fixture: Fixture }>({
         })
         child.stdin.end(typeof payload === "string" ? payload : JSON.stringify(payload))
       })
-    await use({ endpoint: listening.endpoint, reports, hook })
+    await use({ endpoint: listening.endpoint, script, reports, hook })
   },
 })
 
@@ -98,6 +100,37 @@ describe("agent hook", () => {
     expect(fixture.reports[0]?.instance).toBe("4242")
   })
 
+  // Linux tells a process's name and parent through /proc.
+  it.runIf(process.platform === "linux")(
+    "names the nearest ancestor with its agent's name as the agent process",
+    async ({ fixture }) => {
+      // A shell named codex that waits for the hook, as Codex runs its hooks.
+      const directory = mkdtempSync(join(tmpdir(), "novadeck-codex-"))
+      const codex = join(directory, "codex")
+      symlinkSync("/bin/sh", codex)
+      const pid = await new Promise<number | undefined>((resolve) => {
+        const child = spawn(
+          codex,
+          ["-c", `"${process.execPath}" "${fixture.script}" codex SessionStart; true`],
+          {
+            env: {
+              ...process.env,
+              CLAUDE_PID: "",
+              NOVADECK_TERMINAL_ID: terminalId,
+              NOVADECK_REPORT: fixture.endpoint,
+              NOVADECK_REPORT_TOKEN: token,
+            },
+            stdio: ["pipe", "ignore", "inherit"],
+          },
+        )
+        child.stdin.end(JSON.stringify(start()))
+        child.on("exit", () => resolve(child.pid))
+      })
+      rmSync(directory, { recursive: true, force: true })
+      expect(fixture.reports[0]?.instance).toBe(String(pid))
+    },
+  )
+
   it("forwards only what tells nested agents apart of its environment", async ({ fixture }) => {
     await fixture.hook(
       "codex",
@@ -110,7 +143,7 @@ describe("agent hook", () => {
 
   it("cuts long text short, so a report stays small", async ({ fixture }) => {
     await fixture.hook("claude", start({ prompt: "x".repeat(10_000) }), {}, "UserPromptSubmit")
-    expect(String(fixture.reports[0]?.payload.prompt)).toHaveLength(2000)
+    expect(String(fixture.reports[0]?.payload.prompt)).toHaveLength(4096)
   })
 
   it("orders reports by when each hook started", async ({ fixture }) => {

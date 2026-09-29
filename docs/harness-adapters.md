@@ -373,7 +373,7 @@ Hooks do not decode anything. The one hook script, shared by every harness
 (`shell/hook.ts`), forwards to the runner:
 
 - the hook event,
-- a bounded copy of the harness's payload: long text cut to 2,000 characters,
+- a bounded copy of the harness's payload: long text cut to 4,096 characters,
   deep or wide values dropped, and the whole report under 60,000 characters,
 - the harness process that ran it,
 - the few environment facts that tell nested agents apart.
