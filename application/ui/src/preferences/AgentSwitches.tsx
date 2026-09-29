@@ -1,4 +1,5 @@
 import { Switch } from "../ui-toolkit/Switch"
+import { settingRowClasses, settingsCardClasses } from "./settings"
 
 // An agent the person can connect, as its switch shows it.
 export type AgentSwitch = {
@@ -31,19 +32,16 @@ export const AgentSwitches = ({
   readonly agents: readonly AgentSwitch[]
   readonly onChange: (agent: AgentSwitch["agent"], connected: boolean) => void
 }): React.JSX.Element => (
-  <ul className="m-0 list-none p-0" aria-label="Agents">
+  <ul className={`m-0 list-none p-0 ${settingsCardClasses}`} aria-label="Agents">
     {agents.map((item) => {
       const label = agentLabels[item.agent]
       return (
-        <li
-          key={item.agent}
-          className="flex min-h-[52px] items-center justify-between gap-4 border-b border-line text-[12px] text-ink"
-        >
+        <li key={item.agent} className={settingRowClasses}>
           <div className="flex min-w-0 flex-col gap-1">
             <span id={`agent-${item.agent}`}>{label}</span>
             <span
               id={`agent-${item.agent}-note`}
-              className={`text-[10px] leading-relaxed ${item.error ? "text-ink" : "text-muted"}`}
+              className={`text-[11px] leading-relaxed ${item.error ? "text-danger-fg" : "text-muted"}`}
               role={item.error ? "alert" : undefined}
             >
               {note(item)}
