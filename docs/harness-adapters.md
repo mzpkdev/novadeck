@@ -517,8 +517,12 @@ No harness gives a permission request its own id. Claude Code and Codex fire
 that actor resolves it as `unknown`. Antigravity's status line reports only
 that some confirmation is open, which is `attention-observed`.
 
-`same-root-instance` needs a process identity from the hook: Claude Code puts
-`CLAUDE_PID` in its hooks' environment; Codex and Antigravity have none yet.
+`same-root-instance` needs a process identity from the hook. Every harness
+provides one through the hook's process ancestry: Claude Code sets
+`CLAUDE_PID`, a Codex hook's parent is `codex`, and an Antigravity hook's
+grandparent is `agy`. The hook host reports the nearest ancestor whose
+executable is the harness. Environment variables alone never prove it, since
+a hook inherits every ancestor harness's variables.
 Interruption is signaled only where a source reports it (Codex's `Interrupt`
 hook). Elsewhere a turn stays `working` until its next event, and activity
 coverage is `partial`.
@@ -538,9 +542,10 @@ Session acquisition is service policy:
   switch tied to the accepted root. A missing predecessor proves nothing.
 - `conversation-observed` (AGY's current payload) may replace only its own
   harness's binding, which keeps today's AGY conversation switching. It never
-  replaces another harness's binding. Once a probe establishes root-instance
-  evidence for AGY, tighten this to `same-root-instance` and treat an
-  observation without it as an unbound candidate.
+  replaces another harness's binding. The coverage probe found root-instance
+  evidence for AGY (the hook's `agy` ancestor), so once the hook host reports
+  it, tighten this to `same-root-instance` and treat an observation without it
+  as an unbound candidate.
 - Integration disablement ends the harness's bindings and gates acceptance:
   a still-running hook of a disconnected harness changes nothing.
 - Unknown or contradictory ownership stays unknown.
@@ -645,11 +650,13 @@ beside each adapter. Three kinds of source feed a harness's `watch`:
   Claude Code's rate limits and context occupancy, and of Antigravity's agent
   state, confirmations, usage, quota and context.
 
-The status line is one user-level setting. **Open decision:** NovaDeck either
-installs a bridge command that forwards to the person's own status line
-command, or leaves those features unavailable while the person has one. For
-Claude Code, NovaDeck's shells can pass `--settings` at launch, the way the
-Codex shim adds its flag, so the bridge applies only to NovaDeck's terminals.
+The status line is one user-level setting. NovaDeck aims for feature parity
+across harnesses, so it installs a bridge command that forwards each snapshot
+to NovaDeck and then runs the person's own status line command, whose output it
+passes through. For Claude Code, NovaDeck's shells pass `--settings` at launch,
+the way the Codex shim adds its flag, so the bridge applies only to NovaDeck's
+terminals. The snapshot can carry the account's email; the bridge forwards only
+the fields a feature needs.
 
 Codex's plugin hooks run only once the person trusts them in `/hooks`, and no
 hook reports that they are untrusted. A connected Codex whose hooks are
@@ -860,9 +867,9 @@ an action by typing guessed keys into a terminal.
    native sources exist for each `FeatureCoverage` key: hook events, streams,
    files, their identifiers and their entering/leaving/failure paths. Commit the
    matrix beside the adapters with payload fixtures. Then fix the event,
-   transcript and telemetry shapes against it. Done for Claude Code and Codex
-   (see [Harness coverage](harness-coverage.md)); Antigravity needs a
-   signed-in machine, and interactive-only paths are listed there as still to probe.
+   transcript and telemetry shapes against it. Done for all three harnesses
+   (see [Harness coverage](harness-coverage.md)); interactive-only paths are
+   listed there as still to probe.
 4. **Observe.** Implement each adapter's `watch`, transcripts and telemetry
    readers to the probed coverage, plus the agent model summary, detail and
    stream tiers in the protocol.

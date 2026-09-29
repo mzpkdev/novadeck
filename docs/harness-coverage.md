@@ -14,20 +14,20 @@ Evidence:
   the claims below that rest on them.
 - **Documented** means the harness's own documentation, not yet seen in a run.
 
-| Harness     | Version | How it was measured                                                                                                                                                                                                             |
-| ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | 2.1.285 | Probed: `claude -p` with every hook event registered through `--settings`. Documented: hooks, status line, agent view and monitoring references.                                                                                |
-| Codex       | 0.158.0 | Probed: `codex exec --json` and its rollout file. Hook payloads are documented only, because new hooks stay inert until the person trusts them in `/hooks`. Documented: hooks reference, generated hook and app-server schemas. |
-| Antigravity | 1.2.12  | Documented only: this machine has no signed-in Antigravity, so no conversation can run. Sources: the CLI's bundled `hooks.md`, the status line and title references, the CLI changelog.                                         |
+| Harness     | Version | How it was measured                                                                                                                                                                                                                 |
+| ----------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | 2.1.285 | Probed: `claude -p` with every hook event registered through `--settings`. Documented: hooks, status line, agent view and monitoring references.                                                                                    |
+| Codex       | 0.158.0 | Probed: `codex exec --json` and its rollout file; hooks in a throwaway `CODEX_HOME` holding only the probe's hooks, run with `--dangerously-bypass-hook-trust`. Documented: hooks reference, generated hook and app-server schemas. |
+| Antigravity | 1.2.12  | Probed: `agy -p` in a scratch workspace whose `.agents/hooks.json` registered every event, and its `stream-json` output. Documented: the CLI's bundled `hooks.md`, the status line and title references, the CLI changelog.         |
 
 ## Matrix
 
 | Feature     | Claude Code                                                                       | Codex                                                                               | Antigravity                                                                   |
 | ----------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| session     | complete: `SessionStart` sources, `SessionEnd` reasons, `CLAUDE_PID` (probed)     | complete, documented: `SessionStart` sources, `SessionEnd`; thread id (probed)      | partial: `conversationId` on every hook; no switch or end event               |
-| activity    | partial: no signal for an Esc interrupt                                           | partial, documented: `Interrupt` hook; a failed turn fires nothing                  | partial: `Stop` with `terminationReason`; cancellation unknown                |
+| session     | complete: `SessionStart` sources, `SessionEnd` reasons, `CLAUDE_PID` (probed)     | complete: `SessionStart` sources, `SessionEnd`, thread id, parent `codex` (probed)  | partial: `conversationId` on every hook, parent `agy` (probed); no end event  |
+| activity    | partial: no signal for an Esc interrupt                                           | partial: `Interrupt` hook (documented); a failed turn fires nothing                 | partial: `PreInvocation`, `Stop` with `terminationReason` (probed)            |
 | attention   | partial: `PermissionRequest` has no request id; a denial leaves no hook (probed)  | partial, documented: `PermissionRequest` has no id and no resolution                | partial: status line `tool_confirmation_pending` only                         |
-| actors      | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)     | partial, documented: `SubagentStart`/`SubagentStop`; parent thread in rollout       | unsupported by hooks; parent id only in `conversation_summaries.db`           |
+| actors      | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)     | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)       | unsupported by hooks; parent id only in `conversation_summaries.db`           |
 | transcripts | partial: session JSONL plus a file per subagent; undocumented records             | partial: rollout JSONL; items appear only when completed (probed)                   | partial: `transcriptPath` JSONL, rewritten on compaction; format undocumented |
 | planning    | partial: `permission_mode: plan`; `ExitPlanMode` carries the plan and its file    | partial, documented: `permission_mode: plan`; `update_plan` tool                    | partial: status line `execution_mode`; `artifactDirectoryPath` on hooks       |
 | usage       | partial: per-message usage in the transcript; cost only as a status line estimate | complete for tokens: `token_count` and `token_usage_record` (probed); no cost       | partial: status line token totals and cost estimate                           |
@@ -109,13 +109,16 @@ In the probe, a background subagent's result began a second turn with its own `U
 - Every payload carries `session_id`, `cwd`, `transcript_path` (the rollout), `model` and `permission_mode`.
 - Turn-scoped events carry `turn_id`.
 - Tool events carry `tool_use_id`, except `PermissionRequest`.
+- Hooks run as direct children of the `codex` process (probed), so the hook's parent process identifies the Codex instance.
+- The hook's environment has `CODEX_HOME` but no thread id (probed).
+- A spawned subagent's `SubagentStart` and tool events carry its `agent_id` and its own `turn_id`, under the root's `session_id` (probed). Spawning shows as the tool `collaborationspawn_agent`.
 - A plugin's hooks stay inert until the person reviews and trusts them in `/hooks`. Trust is kept against the hook definition's hash, and no hook announces the missing trust. The app-server's `hooks/list` reports it.
 
 **Sessions.**
 
 - `SessionStart.source` is `startup`, `resume`, `clear`, `compact` or `fork`.
 - `SessionEnd` fires on a normal end only.
-- The thread id from `codex exec --json`, the rollout file name and `session_meta.id`/`session_id` are the same value (probed). The hook's `session_id` is documented as that id.
+- The thread id from `codex exec --json`, the rollout file name and `session_meta.id`/`session_id` are the same value, and the hook's `session_id` is that id (probed).
 - `CODEX_THREAD_ID` reaches commands Codex runs, not the TUI.
 
 **Activity.**
@@ -163,7 +166,9 @@ Other facts:
 
 - Every payload carries `conversationId`, `workspacePaths`, `transcriptPath`, `artifactDirectoryPath` and `modelName`.
 - `PreToolUse` can allow, deny or ask; `PostInvocation` and `Stop` can force the loop to continue.
-- No payload or documented environment names the Antigravity process, so `same-root-instance` evidence needs a probe of the hook's process tree.
+- Hooks run through `sh`, whose parent is the `agy` process (probed), so the hook's grandparent identifies the Antigravity instance.
+- The hook's environment has `ANTIGRAVITY_CONVERSATION_ID` (probed). It also inherits every ancestor's variables: probed under Claude Code, it carried `CLAUDE_PID`. An environment variable therefore never proves which harness sent a report.
+- Workspace hooks in `.agents/hooks.json` ran in print mode without a trust prompt (probed).
 
 **Sessions.**
 
@@ -173,7 +178,8 @@ Other facts:
 **Activity.**
 
 - `PreInvocation` fires before each model call; `PostInvocation` fires after it.
-- `Stop` ends the execution loop with `terminationReason` (`model_stop`, `max_steps_exceeded`, `error`), `error` and `fullyIdle` (false while background tasks run).
+- `Stop` ends the execution loop with `terminationReason`, `error` and `fullyIdle` (false while background tasks run). The probe saw `NO_TOOL_CALL`, where the documentation lists `model_stop`, `max_steps_exceeded` and `error`, so decoders must accept values beyond those.
+- A tool that failed or was denied fires `PreToolUse` but no `PostToolUse` (probed: print mode denied every tool); `stream-json` marks it `ERROR`.
 - Whether a cancellation fires `Stop` is unknown.
 
 **Attention.**
@@ -203,7 +209,7 @@ It also carries the account's `email`, which must not leave the adapter.
    - Claude Code's rate limits and context occupancy,
    - Antigravity's agent state, attention, usage, limits and context.
 
-   A status line is a single user-level setting. So NovaDeck must either forward to the person's own status line command or leave the feature unavailable while one is set. For Claude Code, NovaDeck's shells can pass `--settings` at launch, as the Codex shim does for its flag. This is an open product decision, recorded in [the design](harness-adapters.md#native-sources).
+   A status line is a single user-level setting. For feature parity NovaDeck installs a bridge command that forwards to the person's own status line command, so their status line keeps working. For Claude Code, NovaDeck's shells can pass `--settings` at launch, as the Codex shim does for its flag, so the bridge applies only to NovaDeck's terminals. See [the design](harness-adapters.md#native-sources).
 
 2. **Permissions have no request ids.** Claude Code and Codex requests correlate with the preceding `PreToolUse` `tool_use_id`. Their resolution is often inferred: a matching `PostToolUse` means allowed, and a later tool, turn or session event means resolved with an unknown outcome. `attention-resolved` needs an `unknown` outcome.
 3. **Interruption is harness-specific.**
@@ -213,12 +219,19 @@ It also carries the account's `email`, which must not leave the adapter.
 
    Without such a source, a turn stays `working` until the next event, and coverage says so.
 
-4. **Root-instance evidence differs.** Claude Code has `CLAUDE_PID`. Codex and Antigravity have none in hooks. Antigravity's `conversation-observed` switching therefore keeps its current rule until a process-tree probe says otherwise.
+4. **Every harness identifies its instance through the hook's process ancestry.**
+   - Claude Code sets `CLAUDE_PID`.
+   - A Codex hook's parent is `codex`.
+   - An Antigravity hook's grandparent, through `sh`, is `agy`.
+
+   The hook host should report the nearest ancestor whose executable is the harness, found through its `programs`. That gives `same-root-instance` evidence for all three, so Antigravity's `conversation-observed` switching can tighten. Linux was probed; macOS and Windows need their own process lookup. Inherited environment variables cannot stand in for it.
+
 5. **Limits are percentages, not token counts.** Every harness reports windows as a used or remaining fraction with an absolute reset instant: Claude Code and Codex in epoch seconds, Antigravity as a time. None reports the limit itself, so the telemetry model stores fractions and never derives token amounts.
 6. **Codex hook trust is a separate readiness state.** A connected Codex with untrusted hooks reports nothing. Detecting that needs the app-server's `hooks/list`, not a hook.
 
 ## Still to probe
 
 - Claude Code: an Esc interrupt in an interactive session, a denied permission in a PTY session, `AskUserQuestion` answers in `PostToolUse`, and plan mode entry and `ExitPlanMode` rejection.
-- Codex: hook payloads once trusted, the `Interrupt`/`turn_aborted` pairing, `request_user_input`, and subagents under `--no-daemon`.
-- Antigravity: everything, once a signed-in machine is available. In particular: whether conversation switches show in hooks, the hook process tree, `Stop` on cancellation, and the transcript and artifact formats.
+- Codex: a `PermissionRequest` (exec mode bypasses approvals), the `Interrupt`/`turn_aborted` pairing, `request_user_input`, and subagents under `--no-daemon`.
+- Antigravity: conversation switches (`/clear`, `/resume`) inside one interactive process, `Stop` on cancellation, `ask_question`, subagent hooks, and the transcript and artifact formats.
+- macOS and Windows: the hook's process ancestry.

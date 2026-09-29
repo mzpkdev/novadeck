@@ -82,3 +82,61 @@ describe("Codex's rollout, as captured", () => {
     expect(count.info.model_context_window).toEqual(expect.any(Number))
   })
 })
+
+type HookProbe = {
+  hookAncestry: string[]
+  hookEnvironment: string[]
+  events: { event: string; payload: Payload }[]
+}
+const codexHooks = fixture<HookProbe>("codex", "hooks.probe.json")
+
+describe("Codex's hooks, as captured", () => {
+  it("run as children of the Codex process, which identifies its instance", () => {
+    expect(codexHooks.hookAncestry).toEqual(["codex"])
+  })
+
+  it("attribute a subagent's tool calls to it, under the root's session", () => {
+    const root = codexHooks.events[0]!.payload.session_id
+    for (const { payload } of codexHooks.events) expect(payload.session_id).toBe(root)
+    const agent = codexHooks.events.find(({ event }) => event === "SubagentStart")?.payload.agent_id
+    const inside = codexHooks.events.filter(
+      ({ event, payload }) => event === "PreToolUse" && payload.agent_id === agent,
+    )
+    expect(inside).not.toEqual([])
+    expect(inside[0]!.payload.turn_id).not.toBe(codexHooks.events[1]!.payload.turn_id)
+  })
+
+  it("mark turns with a turn id, and end the session with a reason", () => {
+    const prompt = codexHooks.events.find(({ event }) => event === "UserPromptSubmit")
+    expect(prompt?.payload.turn_id).toEqual(expect.any(String))
+    expect(codexHooks.events.at(-1)).toMatchObject({
+      event: "SessionEnd",
+      payload: { reason: "other" },
+    })
+  })
+})
+
+const agyHooks = fixture<HookProbe>("agy", "hooks.probe.json")
+
+describe("Antigravity's hooks, as captured", () => {
+  it("run through sh, whose parent is the Antigravity process", () => {
+    expect(agyHooks.hookAncestry).toEqual(["sh", "agy"])
+  })
+
+  it("name the conversation in the payload and the environment", () => {
+    for (const { payload } of agyHooks.events)
+      expect(payload.conversationId).toEqual(expect.any(String))
+    expect(agyHooks.hookEnvironment).toContain("ANTIGRAVITY_CONVERSATION_ID")
+  })
+
+  it("fire no PostToolUse for a tool that failed or was denied", () => {
+    expect(agyHooks.events.some(({ event }) => event === "PreToolUse")).toBe(true)
+    expect(agyHooks.events.some(({ event }) => event === "PostToolUse")).toBe(false)
+  })
+
+  it("end with Stop, naming why in its own upper-case terms", () => {
+    const stop = agyHooks.events.at(-1)!
+    expect(stop.event).toBe("Stop")
+    expect(stop.payload).toMatchObject({ terminationReason: "NO_TOOL_CALL", fullyIdle: true })
+  })
+})
