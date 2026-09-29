@@ -216,12 +216,25 @@
     content: "⠏";
   }
 }
-.terminal-tab[data-terminal-phase="ended"] {
+/* An ended terminal is hatched, in its tab and across its window; the window's hatch
+   lies over its output, which is drawn on an opaque canvas, and lets clicks through. */
+.terminal-tab[data-terminal-phase="ended"],
+.terminal-window[data-terminal-phase="ended"]::after {
   background-image: repeating-linear-gradient(
     135deg,
     transparent 0 6px,
     rgb(21 24 28 / 0.035) 6px 7px
   );
+}
+.terminal-window[data-terminal-phase="ended"] {
+  position: relative;
+}
+.terminal-window[data-terminal-phase="ended"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
 .terminal-tab[data-terminal-phase="ended"] .sidebar-item-select strong,
 .terminal-tab[data-terminal-phase="ended"] .sidebar-item-icon {
@@ -234,7 +247,7 @@
   bottom: 0;
   left: 0;
   z-index: 1;
-  height: 2px;
+  height: 1px;
   pointer-events: none;
 }
 .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
