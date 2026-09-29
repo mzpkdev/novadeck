@@ -2,7 +2,7 @@ import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Eye, EyeOff, Pencil, X } from "lucide-react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
-import { endingText, terminalEnding } from "../model/terminal-ending"
+import { endingText, terminalEnding, terminalPhase } from "../model/terminal-ending"
 import type { TerminalMetadata } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { Tooltip } from "../ui-toolkit/Tooltip"
@@ -42,8 +42,11 @@ export const TerminalTab = ({
   const editing = Boolean(rename)
   const Icon = terminalProfile(terminal).icon
   const icon = <Icon size={14} strokeWidth={1.5} />
-  // A shell that ended keeps its program and adds the ending as the shell would put it,
-  // `exit 1` or `SIGKILL`; the tooltip and assistive technology get it in words.
+  // The detail line shows the phase: a spinner and the program while one runs, a note
+  // while the shell starts, and the ending in the shell's own terms (`exit 1`,
+  // `SIGKILL`) on a hatched tab once it has ended. The tooltip and assistive technology
+  // get the ending in words.
+  const phase = terminalPhase(terminal)
   const ending = terminalEnding(terminal)
   const ended = ending ? endingText(ending) : undefined
   const { ref, handleRef, isDragSource } = useSortable({
@@ -61,7 +64,18 @@ export const TerminalTab = ({
         icon={icon}
         detail={
           <>
-            <span className="terminal-tab-process truncate font-mono">{terminal.process}</span>
+            {phase === "starting" ? (
+              <span className="terminal-tab-starting truncate font-mono italic">starting…</span>
+            ) : (
+              <span
+                className={`terminal-tab-process truncate font-mono ${phase === "running" ? "text-ink" : ""}`}
+              >
+                {phase === "running" && (
+                  <span aria-hidden className="terminal-spinner mr-1.5 inline-block w-[1ch]" />
+                )}
+                {terminal.process}
+              </span>
+            )}
             {ending && (
               <span
                 aria-hidden
@@ -79,6 +93,7 @@ export const TerminalTab = ({
         {...(ended ? { description: ended } : {})}
         onSelect={onSelect}
         data-terminal-tab-id={terminal.id}
+        data-terminal-phase={phase}
         data-terminal-hidden={hidden}
 
         className={`terminal-tab [--sidebar-actions-space:76px] ${hidden ? "[&_.sidebar-item-select]:opacity-50" : ""} ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}

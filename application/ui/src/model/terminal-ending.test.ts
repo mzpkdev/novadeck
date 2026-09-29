@@ -1,6 +1,6 @@
 import { describe, expect, it } from "../test"
 import { terminalFixture } from "../test/fixtures"
-import { endingText, terminalEnding } from "./terminal-ending"
+import { endingText, terminalEnding, terminalPhase } from "./terminal-ending"
 
 const terminal = terminalFixture(1, "~/project")
 
@@ -48,5 +48,14 @@ describe("terminal ending", () => {
       null,
       null,
     ])
+  })
+
+  it("reads each state as a phase for tabs and windows", () => {
+    expect(terminalPhase({ ...terminal, state: "starting" })).toBe("starting")
+    expect(terminalPhase({ ...terminal, state: "idle" })).toBe("idle")
+    expect(terminalPhase({ ...terminal, state: "running" })).toBe("running")
+    expect(terminalPhase({ ...terminal, state: "finished" })).toBe("idle")
+    expect(terminalPhase({ ...terminal, state: "exited", exitCode: 1, signal: null })).toBe("ended")
+    expect(terminalPhase({ ...terminal, state: "failed", message: "" })).toBe("ended")
   })
 })

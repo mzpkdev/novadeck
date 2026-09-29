@@ -175,6 +175,102 @@
 .canvas-node.selected .terminal-heading::before {
   opacity: 1;
 }
+/* A terminal's phase. Its tab reads it as text: a braille spinner beside a running
+   program, as command-line tools show work, and a faint hatch once it has ended. Its
+   window reads it from a line under the header, legible at any Canvas zoom: a sweep
+   while a program runs, dots while the shell starts, dashes once it has ended, and
+   nothing while idle. Reduced motion holds the spinner and sweep still. */
+.terminal-spinner::before {
+  content: "⠋";
+  animation: terminal-spin 800ms steps(1) infinite;
+}
+@keyframes terminal-spin {
+  0% {
+    content: "⠋";
+  }
+  10% {
+    content: "⠙";
+  }
+  20% {
+    content: "⠹";
+  }
+  30% {
+    content: "⠸";
+  }
+  40% {
+    content: "⠼";
+  }
+  50% {
+    content: "⠴";
+  }
+  60% {
+    content: "⠦";
+  }
+  70% {
+    content: "⠧";
+  }
+  80% {
+    content: "⠇";
+  }
+  90% {
+    content: "⠏";
+  }
+}
+.terminal-tab[data-terminal-phase="ended"] {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    rgb(21 24 28 / 0.035) 6px 7px
+  );
+}
+.terminal-tab[data-terminal-phase="ended"] .sidebar-item-select strong,
+.terminal-tab[data-terminal-phase="ended"] .sidebar-item-icon {
+  color: var(--color-muted);
+}
+.terminal-heading::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  height: 2px;
+  pointer-events: none;
+}
+.terminal-window[data-terminal-phase="running"] .terminal-heading::after {
+  background:
+    linear-gradient(to right, transparent, var(--color-strong) 50%, transparent) -60% 0 / 40% 100%
+      no-repeat,
+    var(--color-line);
+  animation: terminal-sweep 1.8s var(--ease-interface) infinite;
+}
+.terminal-window[data-terminal-phase="starting"] .terminal-heading::after {
+  background: repeating-linear-gradient(to right, var(--color-muted) 0 2px, transparent 2px 5px);
+  animation: terminal-pulse 1.2s ease-in-out infinite;
+}
+.terminal-window[data-terminal-phase="ended"] .terminal-heading::after {
+  background: repeating-linear-gradient(to right, var(--color-strong) 0 6px, transparent 6px 10px);
+}
+.terminal-window[data-terminal-phase="ended"] .runner-terminal .xterm {
+  opacity: 0.55;
+}
+@keyframes terminal-sweep {
+  to {
+    background-position:
+      160% 0,
+      0 0;
+  }
+}
+@keyframes terminal-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
+    background: var(--color-strong);
+  }
+}
 .workspace-dots {
   background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
   background-size: 24px 24px;

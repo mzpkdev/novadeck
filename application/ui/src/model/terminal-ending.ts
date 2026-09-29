@@ -42,3 +42,14 @@ export const terminalEnding = (terminal: TerminalMetadata): TerminalEnding | nul
 // The ending in one line, e.g. "Exited · code 1".
 export const endingText = ({ status, reason }: TerminalEnding): string =>
   reason ? `${status} · ${reason}` : status
+
+// What a terminal shows at a glance, in its tab and on its window: a shell starting,
+// idle at its prompt, running a program, or ended. A clean exit closes the terminal,
+// so a finished one reads as idle for the moment it remains.
+export type TerminalPhase = "starting" | "idle" | "running" | "ended"
+
+export const terminalPhase = (terminal: TerminalMetadata): TerminalPhase => {
+  if (terminal.state === "exited" || terminal.state === "failed") return "ended"
+  if (terminal.state === "starting" || terminal.state === "running") return terminal.state
+  return "idle"
+}
