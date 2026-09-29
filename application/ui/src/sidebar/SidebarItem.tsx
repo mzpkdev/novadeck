@@ -54,7 +54,7 @@ export const SidebarItem = ({
       title={tooltip}
       onClick={onSelect}
     >
-      <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted transition-colors duration-(--motion-feedback) ease-interface [.sidebar-item[data-selected=true]_&]:text-accent-strong">
+      <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
         {icon}
       </span>
       <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">

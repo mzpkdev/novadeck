@@ -18,9 +18,9 @@
   --color-strong: #121212;
   --color-strong-hover: #2e2e2e;
   /* Signal cyan, the brand accent, marks where you are: the selected terminal and
-     sidebar item, the logo's cursor, the boot hairline. Never for text. Its deeper
-     companion draws focus rings and active icons, which need 3:1 on light surfaces;
-     the soft tint backs selected text. */
+     sidebar item, the logo's cursor, the boot hairline. Never for text or icons. Its
+     deeper companion draws focus rings, which need 3:1 on light surfaces; the soft
+     tint backs selected text. */
   --color-accent: #12b0c4;
   --color-accent-strong: #0891a5;
   --color-accent-soft: #d9f2f5;
@@ -179,18 +179,6 @@
 .grid-terminal.selected .terminal-heading::before,
 .canvas-node.selected .terminal-heading::before {
   opacity: 1;
-}
-.terminal-title > :first-child svg,
-.terminal-title > svg:first-child {
-  transition: color var(--motion-state) var(--ease-interface);
-}
-.terminal-focused .terminal-title > :first-child svg,
-.terminal-focused .terminal-title > svg:first-child,
-.grid-terminal.selected .terminal-title > :first-child svg,
-.grid-terminal.selected .terminal-title > svg:first-child,
-.canvas-node.selected .terminal-title > :first-child svg,
-.canvas-node.selected .terminal-title > svg:first-child {
-  color: var(--color-accent-strong);
 }
 .workspace-dots {
   background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);

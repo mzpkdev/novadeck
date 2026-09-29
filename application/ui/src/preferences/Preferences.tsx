@@ -209,7 +209,7 @@ export const Preferences = ({
                       />
                       <Icon
                         aria-hidden="true"
-                        className={`shrink-0 ${checked ? "text-accent-strong" : ""} ${checked && value.enabledViews.length === 1 ? "opacity-45" : ""}`}
+                        className={`shrink-0 ${checked && value.enabledViews.length === 1 ? "opacity-45" : ""}`}
                         size={15}
                         strokeWidth={1.5}
                       />
