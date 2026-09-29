@@ -88,7 +88,7 @@ export const Preferences = ({
             <Tab
               key={id}
               value={id}
-              className="relative min-h-[31px] px-0.5 text-left text-[11px] text-muted data-selected:text-ink data-selected:after:absolute data-selected:after:right-0 data-selected:after:bottom-[-1px] data-selected:after:left-0 data-selected:after:h-0.5 data-selected:after:bg-accent data-selected:after:content-['']"
+              className="relative min-h-[31px] px-0.5 text-left text-[11px] text-muted data-selected:text-ink data-selected:after:absolute data-selected:after:right-0 data-selected:after:bottom-[-1px] data-selected:after:left-0 data-selected:after:h-px data-selected:after:bg-strong data-selected:after:content-['']"
             >
               {id === "general" ? "General" : "Shortcuts"}
             </Tab>
@@ -97,7 +97,7 @@ export const Preferences = ({
         <div ref={panels} className="preferences-panels grid min-h-0 overflow-y-auto">
           <TabPanel
             value="general"
-            className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-accent-fg focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
+            className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
             <Select
               className="preference-row min-h-[62px] border-b border-line"
@@ -191,7 +191,7 @@ export const Preferences = ({
                   return (
                     <label
                       key={mode}
-                      className={`relative flex min-h-[66px] min-w-0 flex-col justify-between gap-2 rounded-control border p-[9px] text-[12px] ${checked ? "border-line-strong bg-shell text-ink shadow-control" : "border-line bg-paper text-muted hover:bg-shell hover:text-ink"} ${checked && value.enabledViews.length === 1 ? "cursor-not-allowed" : "cursor-pointer"} has-focus-visible:outline-1 has-focus-visible:outline-accent-fg has-focus-visible:outline-offset-3 max-[360px]:min-h-[60px] max-[360px]:p-[7px] max-[360px]:text-[10px]`}
+                      className={`relative flex min-h-[66px] min-w-0 flex-col justify-between gap-2 rounded-control border p-[9px] text-[12px] ${checked ? "border-line-strong bg-shell text-ink shadow-control" : "border-line bg-paper text-muted hover:bg-shell hover:text-ink"} ${checked && value.enabledViews.length === 1 ? "cursor-not-allowed" : "cursor-pointer"} has-focus-visible:outline-1 has-focus-visible:outline-line-strong has-focus-visible:outline-offset-3 max-[360px]:min-h-[60px] max-[360px]:p-[7px] max-[360px]:text-[10px]`}
                     >
                       <input
                         type="checkbox"
@@ -225,7 +225,7 @@ export const Preferences = ({
           </TabPanel>
           <TabPanel
             value="shortcuts"
-            className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-accent-fg focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
+            className="preferences-panel col-start-1 row-start-1 outline-none transition-opacity duration-(--motion-feedback) ease-interface focus-visible:outline-1 focus-visible:outline-line-strong focus-visible:outline-offset-[-1px] data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0"
           >
             {shortcutGroups(currentPlatform()).map(({ title, description, items }) => (
               <section key={title} className="mt-5" aria-label={`${title} shortcuts`}>

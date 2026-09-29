@@ -20,12 +20,12 @@
 .k1 {
   --ox: var(--k1);
   --oy: calc(var(--k1) * -1);
-  background: var(--color-line-strong);
+  background: #d9ddd6;
 }
 .k2 {
   --ox: var(--k2);
   --oy: calc(var(--k2) * -1);
-  background: var(--color-line);
+  background: #eaece8;
 }
 .face {
   display: flex;
@@ -33,7 +33,7 @@
   justify-content: center;
   overflow: hidden;
   color: #fff;
-  background: var(--color-strong);
+  background: linear-gradient(180deg, #3f443d, #30342e);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.08),
     0 1px 2px rgb(38 40 38 / 0.12);

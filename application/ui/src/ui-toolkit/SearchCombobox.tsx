@@ -4,7 +4,7 @@ import { useMemo, type ReactNode, type RefObject } from "react"
 import { cn } from "../class-name"
 
 export const searchResultClasses =
-  "group flex min-h-15 w-full cursor-pointer items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell data-highlighted:border-accent-line data-highlighted:bg-accent-soft [&>svg]:shrink-0 [&>svg]:text-muted"
+  "group flex min-h-15 w-full cursor-pointer items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-shell data-highlighted:border-line data-highlighted:bg-shell [&>svg]:shrink-0 [&>svg]:text-muted"
 
 export type SearchOption = { value: string; label: string; content: ReactNode }
 

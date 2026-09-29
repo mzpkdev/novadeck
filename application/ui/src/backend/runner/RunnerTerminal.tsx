@@ -38,7 +38,7 @@ const themeOf = (element: Element): ITheme => {
   const style = getComputedStyle(element)
   const background = token(style, "--color-paper")
   const foreground = token(style, "--color-ink")
-  const selection = token(style, "--color-accent-soft")
+  const selection = token(style, "--color-line-strong")
   return {
     ...(background ? { background } : {}),
     ...(foreground ? { foreground, cursor: foreground } : {}),

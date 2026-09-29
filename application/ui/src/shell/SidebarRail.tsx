@@ -47,7 +47,7 @@ export const SidebarRail = ({
           }
           value={id}
           id={`${mobile ? "mobile-" : ""}${id}-toggle`}
-          className={`icon-button border ${activePanel ? "active border-accent-line bg-accent-soft text-accent-fg shadow-control hover:bg-accent-soft hover:text-accent-fg" : "border-transparent"}`}
+          className={`icon-button border ${activePanel ? "active border-line bg-paper text-ink shadow-control" : "border-transparent"}`}
           aria-label={label}
           aria-controls={`${id}-panel`}
           aria-expanded={activePanel}

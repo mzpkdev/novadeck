@@ -30,7 +30,7 @@ export type TerminalLayoutControls = {
 }
 
 const headerActionClasses =
-  "icon-button [&>svg]:opacity-60 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
+  "icon-button [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100"
 
 export type WindowShellProps = {
   terminal: TerminalMetadata
