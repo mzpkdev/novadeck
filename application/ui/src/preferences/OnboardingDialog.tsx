@@ -1,6 +1,7 @@
-import { ArrowRight, Check, ScrollText, Sparkles, type LucideIcon } from "lucide-react"
+import { ArrowRight, ScrollText, Sparkles, type LucideIcon } from "lucide-react"
 import { useRef, useState, type ComponentType, type CSSProperties, type RefObject } from "react"
 
+import { Checkbox } from "../ui-toolkit/Checkbox"
 import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/DeckLogo"
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
@@ -92,25 +93,15 @@ const ChoiceCard = ({
         </span>
       )}
     </span>
-    <span className="relative flex size-4 shrink-0 items-center justify-center">
-      <input
-        type="checkbox"
-        name={name}
-        value={value}
-        checked={checked}
-        disabled={disabled}
-        aria-label={label}
-        aria-describedby={note ? noteId : undefined}
-        className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-paper checked:border-strong checked:bg-strong disabled:cursor-not-allowed disabled:bg-shell focus-visible:outline-none"
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <Check
-        size={12}
-        strokeWidth={2.5}
-        className={`${styles.check} pointer-events-none relative text-white`}
-        aria-hidden="true"
-      />
-    </span>
+    <Checkbox
+      name={name}
+      value={value}
+      checked={checked}
+      disabled={disabled}
+      aria-label={label}
+      aria-describedby={note ? noteId : undefined}
+      onChange={onChange}
+    />
   </label>
 )
 

@@ -1,10 +1,11 @@
-import { Check, LayoutGrid, PanelLeft, SquareDashedMousePointer, X } from "lucide-react"
+import { LayoutGrid, PanelLeft, SquareDashedMousePointer, X } from "lucide-react"
 import { useRef, useState, type ReactNode } from "react"
 
 import { shortcutGroups } from "../interaction/keymap"
 import { currentPlatform } from "../interaction/shortcuts"
 import { viewModes } from "../model/state"
 import type { PreferencesValue } from "../model/types"
+import { Checkbox } from "../ui-toolkit/Checkbox"
 import { Dialog } from "../ui-toolkit/Dialog"
 import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
@@ -218,28 +219,19 @@ export const Preferences = ({
                     >
                       <Icon aria-hidden="true" className="shrink-0" size={16} strokeWidth={1.5} />
                       <span>{viewLabels[mode]}</span>
-                      <span className="absolute top-3 right-3 flex size-3.5 items-center justify-center">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={locked}
-                          className="peer absolute inset-0 m-0 size-full cursor-[inherit] appearance-none rounded-[3px] border border-line-strong bg-paper checked:border-strong checked:bg-strong disabled:opacity-45 focus-visible:outline-none"
-                          onChange={() =>
-                            onChange({
-                              ...value,
-                              enabledViews: viewModes.filter((item) =>
-                                item === mode ? !checked : value.enabledViews.includes(item),
-                              ),
-                            })
-                          }
-                        />
-                        <Check
-                          size={10}
-                          strokeWidth={3}
-                          aria-hidden="true"
-                          className="pointer-events-none relative text-white opacity-0 peer-checked:opacity-100"
-                        />
-                      </span>
+                      <Checkbox
+                        className="absolute top-2.5 right-2.5"
+                        checked={checked}
+                        disabled={locked}
+                        onChange={() =>
+                          onChange({
+                            ...value,
+                            enabledViews: viewModes.filter((item) =>
+                              item === mode ? !checked : value.enabledViews.includes(item),
+                            ),
+                          })
+                        }
+                      />
                     </label>
                   )
                 })}
