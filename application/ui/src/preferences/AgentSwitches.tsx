@@ -46,24 +46,32 @@ export const AgentSwitches = ({
         <li key={item.agent} className={settingRowClasses}>
           <div className="flex min-w-0 flex-col gap-1">
             <span id={`agent-${item.agent}`}>{label}</span>
-            {note && (
+            {note && item.error && (
               <span
                 id={`agent-${item.agent}-note`}
-                className={`text-[11px] leading-relaxed ${item.error ? "text-danger-fg" : "text-muted"}`}
-                role={item.error ? "alert" : undefined}
+                className="text-[11px] leading-relaxed text-danger-fg"
+                role="alert"
               >
                 {note}
               </span>
             )}
           </div>
-          <Switch
-            checked={item.connected}
-            onChange={(connected) => onChange(item.agent, connected)}
-            labelledBy={`agent-${item.agent}`}
-            {...(note ? { describedBy: `agent-${item.agent}-note` } : {})}
-            disabled={!item.available || item.busy}
-            busy={item.busy}
-          />
+          {/* A short state sits beside the switch, so the row keeps its height. */}
+          <div className="flex shrink-0 items-center gap-3">
+            {note && !item.error && (
+              <span id={`agent-${item.agent}-note`} className="text-[11px] text-muted">
+                {note}
+              </span>
+            )}
+            <Switch
+              checked={item.connected}
+              onChange={(connected) => onChange(item.agent, connected)}
+              labelledBy={`agent-${item.agent}`}
+              {...(note ? { describedBy: `agent-${item.agent}-note` } : {})}
+              disabled={!item.available || item.busy}
+              busy={item.busy}
+            />
+          </div>
         </li>
       )
     })}
