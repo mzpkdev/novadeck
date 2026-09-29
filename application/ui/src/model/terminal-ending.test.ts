@@ -5,31 +5,39 @@ import { endingText, terminalEnding } from "./terminal-ending"
 const terminal = terminalFixture(1, "~/project")
 
 describe("terminal ending", () => {
-  it("names the exit code of a shell that exited, in honey", () => {
+  it("names the exit code of a shell that exited, as a warning", () => {
     const ending = terminalEnding({ ...terminal, state: "exited", exitCode: 130, signal: null })
     expect(ending?.tone).toBe("warning")
     expect(ending && endingText(ending)).toBe("Exited · code 130")
+    expect(ending?.mnemonic).toBe("exit 130")
   })
 
   it("says only that the shell exited when the code is unknown", () => {
     const ending = terminalEnding({ ...terminal, state: "exited", exitCode: null, signal: null })
     expect(ending && endingText(ending)).toBe("Exited")
+    expect(ending?.mnemonic).toBe("exit")
   })
 
-  it("names the signal that killed a shell, in rose", () => {
+  it("names the signal that killed a shell, as danger", () => {
     const ending = terminalEnding({
       ...terminal,
       state: "exited",
       exitCode: null,
       signal: "SIGKILL",
     })
-    expect(ending).toEqual({ tone: "danger", status: "Killed", reason: "SIGKILL" })
+    expect(ending).toEqual({
+      tone: "danger",
+      status: "Killed",
+      reason: "SIGKILL",
+      mnemonic: "SIGKILL",
+    })
   })
 
-  it("gives the reason a shell failed to start, in rose", () => {
+  it("gives the reason a shell failed to start, as danger", () => {
     const ending = terminalEnding({ ...terminal, state: "failed", message: "Folder not found" })
     expect(ending?.tone).toBe("danger")
     expect(ending && endingText(ending)).toBe("Failed to start · Folder not found")
+    expect(ending?.mnemonic).toBe("failed")
   })
 
   it("has none while the shell is starting, running, idle or finished", () => {

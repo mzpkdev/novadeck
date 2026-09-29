@@ -42,7 +42,8 @@ export const TerminalTab = ({
   const editing = Boolean(rename)
   const Icon = terminalProfile(terminal).icon
   const icon = <Icon size={14} strokeWidth={1.5} />
-  // A shell that ended says so in words, in place of its program; the tooltip adds why.
+  // A shell that ended keeps its program and adds the ending as the shell would put it,
+  // `exit 1` or `SIGKILL`; the tooltip and assistive technology get it in words.
   const ending = terminalEnding(terminal)
   const ended = ending ? endingText(ending) : undefined
   const { ref, handleRef, isDragSource } = useSortable({
@@ -60,16 +61,15 @@ export const TerminalTab = ({
         icon={icon}
         detail={
           <>
-            {ending ? (
+            <span className="terminal-tab-process truncate font-mono">{terminal.process}</span>
+            {ending && (
               <span
                 aria-hidden
                 data-terminal-ending={ending.tone}
-                className="terminal-tab-ending truncate font-medium text-ink"
+                className="terminal-tab-ending shrink-0 rounded-control border border-line-strong bg-paper px-1 font-mono text-[9px] leading-[14px] text-ink"
               >
-                {ending.status}
+                {ending.mnemonic}
               </span>
-            ) : (
-              <span className="terminal-tab-process truncate font-mono">{terminal.process}</span>
             )}
           </>
         }
