@@ -2,7 +2,7 @@
   "harness": "codex",
   "version": "0.158.0",
   "source": "captured",
-  "how": "first record of each type in the rollout written by the exec probe; account fields, instructions and world state omitted",
+  "how": "first record of each type in the rollout written by the exec probe; account fields, instructions and world state omitted; ids, timezone, message text, credits and usage figures replaced",
   "records": [
     {
       "timestamp": "2026-09-29T20:50:19.206Z",
@@ -21,7 +21,7 @@
         "model_provider": "openai",
         "history_mode": "paginated",
         "context_window": {
-          "window_id": "01a0eeee-beff-7863-936d-8b3b6fba2e89"
+          "window_id": "60000000-0000-4000-8000-000000000001"
         }
       }
     },
@@ -101,7 +101,7 @@
         "cwd": "/home/user/project",
         "workspace_roots": ["<text>"],
         "current_date": "2026-09-29",
-        "timezone": "Europe/Warsaw",
+        "timezone": "UTC",
         "approval_policy": "on-request",
         "approvals_reviewer": "auto_review",
         "sandbox_policy": {
@@ -261,16 +261,16 @@
       "ordinal": 9,
       "type": "event_msg",
       "payload": {
-        "type": "item_completed",
+        "type": "item_fixture000000000002",
         "thread_id": "01900000-0000-7000-8000-000000000001",
         "turn_id": "20000000-0000-4000-8000-000000000003",
         "item": {
           "type": "UserMessage",
-          "id": "01a0eeee-ca69-72f1-9853-7d1944c44b74",
+          "id": "60000000-0000-4000-8000-000000000003",
           "content": [
             {
               "type": "text",
-              "text": "Run the shell command: echo probe-root. Then reply with the single word done.",
+              "text": "<text>",
               "text_elements": []
             }
           ]
@@ -285,9 +285,9 @@
       "type": "response_item",
       "payload": {
         "type": "custom_tool_call",
-        "id": "ctc_009ee2230f94c47d016abc2490d39887d2808cc5acff7e8eac",
+        "id": "ctc_fixture000000000004",
         "status": "completed",
-        "call_id": "call_pbRCz6BVat3ZzW3pR4F4TyVp",
+        "call_id": "call_fixture000000000005",
         "name": "exec",
         "input": "<text>",
         "internal_chat_message_metadata_passthrough": {
@@ -305,7 +305,7 @@
         "turn_id": "20000000-0000-4000-8000-000000000003",
         "session_id": "01900000-0000-7000-8000-000000000001",
         "root_turn_id": "20000000-0000-4000-8000-000000000003",
-        "response_id": "resp_009ee2230f94c47d016abc248e4f1887d2935c18bc20befdd8",
+        "response_id": "resp_fixture000000000006",
         "usage": {
           "input_tokens": 24335,
           "cached_input_tokens": 7168,
@@ -339,11 +339,11 @@
       "payload": {
         "type": "custom_tool_call_output",
         "id": "ctco_01a0eeee-e19e-7260-928a-f0a06f9017e1",
-        "call_id": "call_pbRCz6BVat3ZzW3pR4F4TyVp",
+        "call_id": "call_fixture000000000005",
         "output": [
           {
             "type": "input_text",
-            "text": "Script completed\nWall time 0.6 seconds\nOutput:\n"
+            "text": "<text>"
           },
           {
             "type": "input_text",
@@ -393,9 +393,9 @@
           "limit_id": "codex",
           "limit_name": null,
           "primary": {
-            "used_percent": 37.0,
+            "used_percent": 42.0,
             "window_minutes": 10080,
-            "resets_at": 1791048187
+            "resets_at": 1790000000
           },
           "secondary": null,
           "credits": {
@@ -415,9 +415,9 @@
       "ordinal": 32,
       "type": "event_msg",
       "payload": {
-        "type": "task_complete",
+        "type": "task_fixture000000000007",
         "turn_id": "20000000-0000-4000-8000-000000000003",
-        "last_agent_message": "done",
+        "last_agent_message": "<text>",
         "started_at": 1790715019,
         "completed_at": 1790715036,
         "duration_ms": 17271,

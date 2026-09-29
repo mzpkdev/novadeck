@@ -488,7 +488,7 @@ type ActivityEvent = { subject: Subject; turnId: string | null } & (
   | {
       type: "attention-resolved"
       requestId: string
-      outcome: "allowed" | "answered" | "cancelled" | "expired" | "unknown"
+      outcome: "allowed" | "denied" | "answered" | "cancelled" | "expired" | "unknown"
     }
   | { type: "attention-observed"; kind: AttentionKind; audience: "terminal-user" | "unknown" }
   | { type: "observation-lost" }
@@ -523,8 +523,9 @@ Denials differ by harness:
 - Claude Code fires nothing, but its transcript records the denied tool result and the turn's end.
 - Antigravity fires nothing.
 
-Without such evidence, the next tool, turn or session event of that actor
-resolves the request as `unknown`. Claude Code's `AskUserQuestion` goes through
+Claude Code's transcript resolves such a request as `denied`, and Codex's
+`Interrupt` as `cancelled`. Without such evidence, the next tool, turn or
+session event of that actor resolves the request as `unknown`. Claude Code's `AskUserQuestion` goes through
 `PermissionRequest` too, so the attention kind comes from the tool name.
 
 NovaDeck's Antigravity hook must answer `PreToolUse` with
@@ -537,9 +538,11 @@ provides one through the hook's process ancestry: Claude Code sets
 grandparent is `agy`. The hook host reports the nearest ancestor whose
 executable is the harness. Environment variables alone never prove it, since
 a hook inherits every ancestor harness's variables.
-Interruption is signaled only where a source reports it (Codex's `Interrupt`
-hook). Elsewhere a turn stays `working` until its next event, and activity
-coverage is `partial`.
+
+Interruption reaches NovaDeck differently per harness: Codex fires `Interrupt`,
+Claude Code's transcript records the interruption, and Antigravity reports it
+only through its status line's `agent_state`. Without such a source, a turn
+stays `working` until its next event, and activity coverage is `partial`.
 
 Keep a durable resume reference separate from an ephemeral live binding. A
 binding is runner lifetime, terminal ID, run, a service-issued binding ID, the
@@ -674,8 +677,8 @@ the fields a feature needs.
 
 Codex's plugin hooks run only once the person trusts them in `/hooks`, and no
 hook reports that they are untrusted. A connected Codex whose hooks are
-untrusted reports `unknown` coverage until the app-server's `hooks/list`
-confirms trust.
+untrusted has `unsupported` coverage with an `untrusted` reason until the
+app-server's `hooks/list` confirms trust.
 
 ## Usage, quota resets and context
 

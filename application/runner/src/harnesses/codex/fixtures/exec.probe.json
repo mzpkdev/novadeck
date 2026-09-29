@@ -2,7 +2,7 @@
   "harness": "codex",
   "version": "0.158.0",
   "source": "captured",
-  "how": "codex exec --json running one shell command",
+  "how": "codex exec --json asked to run one shell command; it ran four command executions, each replaced here by a placeholder",
   "events": [
     {
       "type": "thread.started",

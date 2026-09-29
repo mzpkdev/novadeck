@@ -35,12 +35,16 @@ describe("Claude Code's hooks, as captured", () => {
     const before = claude.events[index - 1]!
     expect(before.event).toBe("PreToolUse")
     expect(before.payload.tool_use_id).toEqual(expect.any(String))
-    // A denial fires nothing for that call.
+    // Print mode denies the call itself: no PostToolUse, but PostToolBatch lists it.
     const answered = claude.events.filter(
       ({ event, payload }) =>
         event.startsWith("PostToolUse") && payload.tool_use_id === before.payload.tool_use_id,
     )
     expect(answered).toEqual([])
+    const batch = claude.events.find(({ event }) => event === "PostToolBatch")
+    expect(batch?.payload.tool_calls).toContainEqual(
+      expect.objectContaining({ tool_use_id: before.payload.tool_use_id }),
+    )
   })
 
   it("attribute a subagent's tool calls to it, under the root's session", () => {
@@ -62,7 +66,7 @@ const rollout = fixture<{ records: { type: string; payload: Payload }[] }>(
 )
 
 describe("Codex's rollout, as captured", () => {
-  it("names the same thread as its file and its exec events", () => {
+  it("names the same thread in its session record and its exec events", () => {
     const thread = exec.events.find(({ type }) => type === "thread.started")?.thread_id
     const meta = rollout.records.find(({ type }) => type === "session_meta")?.payload
     expect(meta?.id).toBe(thread)
@@ -180,14 +184,15 @@ describe("Claude Code in a terminal, as captured", () => {
     })
   })
 
-  it("marks planning in every hook, and reviews the plan through ExitPlanMode", () => {
+  it("marks planning on its hooks, and reviews the plan through ExitPlanMode", () => {
     const events = scenario("claude", "plan")
     const review = indexOf(events, "PermissionRequest", "ExitPlanMode")
     expect(Object.keys(events[review]!.payload.tool_input as Payload).toSorted()).toEqual([
       "plan",
       "planFilePath",
     ])
-    expect(events[review]!.payload.permission_mode).toBe("plan")
+    const moded = events.filter((each) => "permission_mode" in each.payload)
+    for (const { payload } of moded) expect(payload.permission_mode).toBe("plan")
     // Rejecting the plan fires nothing, as a denied tool does.
     expect(after(events, review)).toEqual(["SessionEnd"])
   })
@@ -222,6 +227,14 @@ describe("Antigravity in a terminal, as captured", () => {
     expect(new Set(events.map(({ harnessProcess }) => harnessProcess))).toEqual(
       new Set(["process-1"]),
     )
+  })
+
+  it("fires nothing after Esc, in a reply or a running command", () => {
+    const events = scenario("agy", "interrupt")
+    const reply = indexOf(events, "PreInvocation")
+    expect(events[reply + 1]?.event).toBe("PreInvocation")
+    expect(after(events, indexOf(events, "PreToolUse"))).toEqual([])
+    expect(events.some(({ event }) => event === "Stop" || event === "PostInvocation")).toBe(false)
   })
 
   it("follows an approved tool with PostToolUse, and a denied one with nothing", () => {

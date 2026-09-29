@@ -22,17 +22,17 @@ Evidence:
 
 ## Matrix
 
-| Feature     | Claude Code                                                                                          | Codex                                                                                        | Antigravity                                                                            |
-| ----------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| session     | complete: `SessionStart` sources, `SessionEnd` reasons, `CLAUDE_PID` (probed)                        | complete: `SessionStart` sources, `SessionEnd`, thread id, parent `codex` (probed)           | partial: `conversationId` on every hook, parent `agy` (probed); no end event           |
-| activity    | partial: an Esc interrupt or denial fires nothing; the transcript records it (probed)                | partial: `Interrupt` on Esc and on denial (probed); a failed turn fires nothing              | partial: `PreInvocation`, `Stop` (probed); a denial fires nothing (probed)             |
-| attention   | partial: `PermissionRequest`, also for questions; no id; a denial fires nothing (probed)             | partial: `PermissionRequest` without id; approval `PostToolUse`, denial `Interrupt` (probed) | partial: `PreToolUse` then `PostToolUse` by `stepIdx`; a denial fires nothing (probed) |
-| actors      | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)                        | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)                | unsupported by hooks; parent id only in `conversation_summaries.db`                    |
-| transcripts | partial: session JSONL plus a file per subagent; undocumented records                                | partial: rollout JSONL; items appear only when completed (probed)                            | partial: `transcriptPath` JSONL, rewritten on compaction; format undocumented          |
-| planning    | partial: `permission_mode: plan`; draft written to `~/.claude/plans`; `ExitPlanMode` review (probed) | partial, documented: `permission_mode: plan`; `update_plan` tool                             | partial: status line `execution_mode`; `artifactDirectoryPath` on hooks                |
-| usage       | partial: per-message usage in the transcript; cost only as a status line estimate                    | complete for tokens: `token_count` and `token_usage_record` (probed); no cost                | partial: status line token totals and cost estimate                                    |
-| limits      | partial: status line `rate_limits` only                                                              | complete: `rate_limits` windows with reset instants in `token_count` (probed)                | partial: status line `quota` per model                                                 |
-| context     | partial: status line `context_window`; `PreCompact`/`PostCompact`                                    | partial: `model_context_window` plus last response usage (probed); compaction hooks          | partial: status line `context_window`; compaction has no signal                        |
+| Feature     | Claude Code                                                                                          | Codex                                                                                              | Antigravity                                                                            |
+| ----------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| session     | partial: `SessionStart` sources, `SessionEnd` reasons, `CLAUDE_PID` (probed); no signal on a crash   | partial: `SessionStart` sources, `SessionEnd`, thread id, parent `codex` (probed); normal end only | partial: `conversationId` on every hook, parent `agy` (probed); no end event           |
+| activity    | partial: an Esc interrupt or denial fires nothing; the transcript records it (probed)                | partial: `Interrupt` on Esc and on denial (probed); a failed turn fires nothing                    | partial: `PreInvocation`, `Stop` (probed); a denial or Esc fires nothing (probed)      |
+| attention   | partial: `PermissionRequest`, also for questions; no id; a denial fires nothing (probed)             | partial: `PermissionRequest` without id; approval `PostToolUse`, denial `Interrupt` (probed)       | partial: `PreToolUse` then `PostToolUse` by `stepIdx`; a denial fires nothing (probed) |
+| actors      | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)                        | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)                      | unsupported by hooks; parent id only in `conversation_summaries.db`                    |
+| transcripts | partial: session JSONL plus a file per subagent; undocumented records                                | partial: rollout JSONL; items appear only when completed (probed)                                  | partial: `transcriptPath` JSONL, rewritten on compaction; format undocumented          |
+| planning    | partial: `permission_mode: plan`; draft written to `~/.claude/plans`; `ExitPlanMode` review (probed) | partial, documented: `permission_mode: plan`; `update_plan` tool                                   | partial: status line `execution_mode`; `artifactDirectoryPath` on hooks                |
+| usage       | partial: per-message usage in the transcript; cost only as a status line estimate                    | complete for tokens: `token_count` and `token_usage_record` (probed); no cost                      | partial: status line token totals and cost estimate                                    |
+| limits      | partial: status line `rate_limits` only                                                              | complete: `rate_limits` windows with reset instants in `token_count` (probed)                      | partial: status line `quota` per model                                                 |
+| context     | partial: status line `context_window`; `PreCompact`/`PostCompact`                                    | partial: `model_context_window` plus last response usage (probed); compaction hooks                | partial: status line `context_window`; compaction has no signal                        |
 
 ## Claude Code
 
@@ -51,14 +51,14 @@ Evidence:
 - `SessionStart.source` is `startup`, `resume`, `clear`, `compact` or `fork`.
 - `clear` and `fork` mint a new session id.
 - `SessionEnd.reason` is `clear`, `resume`, `logout`, `prompt_input_exit` or `other`.
-- A crash or kill fires nothing, so the PTY exit remains the fallback.
+- Closing the terminal (SIGHUP) fired `SessionEnd` with reason `other` (probed). A crash or SIGKILL should fire nothing (not probed), so the PTY exit remains the fallback.
 
 **Activity.**
 
 - `UserPromptSubmit` starts a turn.
 - `Stop` ends it normally.
 - `StopFailure` ends it on an API error. It carries `error` (`rate_limit`, `overloaded`, `billing_error`, …) and replaces `Stop`.
-- An Esc interrupt fires no hook, not even `Stop` (probed: Esc during a running Bash call). The transcript records a user record `[Request interrupted by user…]` and a `system` record with subtype `turn_duration`, which marks the end of the turn (probed).
+- An Esc interrupt fires no hook, not even `Stop` or `PostToolBatch` (probed with every event registered: Esc during a running Bash call). The transcript records the call's `tool_result` with `is_error` and a user record `[Request interrupted by user for tool use]`, which marks the end of the turn (probed).
 - Transcript saving is off when Claude Code inherits `CLAUDE_CODE_CHILD_SESSION`, as a process started from another Claude Code session does (probed: the TUI says so). NovaDeck's shells must not pass that variable on, or the transcript fallback disappears.
 - `claude agents --json` reports `busy`, `waiting` or `idle` per session and is documented as the supported way to read state from outside. It is a polled command, not a stream.
 
@@ -69,7 +69,8 @@ In the probe, a background subagent's result began a second turn with its own `U
 - `PermissionRequest` fires as the prompt opens. It carries `tool_name`, `tool_input` and `permission_suggestions`, but no `tool_use_id` or request id.
 - `PreToolUse` fires just before it with the `tool_use_id` (probed), so the request correlates with the preceding tool call.
 - Approval shows as that call's `PostToolUse`.
-- A denial by the person fires nothing, not even `Stop` (probed interactively). `PermissionDenied` covers auto mode only. The transcript records the call's `tool_result` with `is_error` and an interruption, then `turn_duration`, so the transcript resolves the request as denied and ends the turn.
+- A denial by the person fires nothing, not even `Stop` or `PostToolBatch` (probed interactively with every event registered). `PermissionDenied` covers auto mode only. The transcript records the call's `tool_result` with `is_error`, the interruption and `turn_duration`, so the transcript resolves the request as denied and ends the turn.
+- In print mode (`-p`), where no one can answer, the denied call is instead listed in `PostToolBatch` with its `tool_use_id` (probed).
 - Questions are the `AskUserQuestion` tool. It fires `PreToolUse`, then `PermissionRequest` like any tool (probed), so the question's kind comes from `tool_name`. Its `PostToolUse` carries `tool_response.answers`, keyed by question text (probed). MCP elicitations have `Elicitation` and `ElicitationResult` with an `elicitation_id`.
 - `PermissionRequest`, `Elicitation` and `PreToolUse` can answer: a later `respond`/`answer` capability has a native path.
 
@@ -108,11 +109,11 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 **Hooks.** 12 events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop` and `Interrupt`.
 
-- Every payload carries `session_id`, `cwd`, `transcript_path` (the rollout), `model` and `permission_mode`.
+- Every payload carries `session_id`, `cwd` and `transcript_path` (the rollout). All but `SessionEnd` also carry `model` and `permission_mode` (probed).
 - Turn-scoped events carry `turn_id`.
 - Tool events carry `tool_use_id`, except `PermissionRequest`.
 - Hooks run as direct children of the `codex` process (probed), so the hook's parent process identifies the Codex instance.
-- The hook's environment has `CODEX_HOME` but no thread id (probed).
+- The hook's environment carries no thread id (probed).
 - A spawned subagent's `SubagentStart` and tool events carry its `agent_id` and its own `turn_id`, under the root's `session_id` (probed). Spawning shows as the tool `collaborationspawn_agent`.
 - A plugin's hooks stay inert until the person reviews and trusts them in `/hooks`. Trust is kept against the hook definition's hash, and no hook announces the missing trust. The app-server's `hooks/list` reports it.
 
@@ -155,7 +156,7 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 - `info.total_token_usage` (cumulative for the thread) and `info.last_token_usage` (the latest response): input, cached, cache write, output, reasoning and total tokens.
 - `info.model_context_window`.
-- `rate_limits.primary` and `rate_limits.secondary`, each with `used_percent` (0–100, probed at `37.0`), `window_minutes` and `resets_at` (epoch seconds, probed). `secondary` can be null.
+- `rate_limits.primary` and `rate_limits.secondary`, each with `used_percent` (0–100, probed), `window_minutes` and `resets_at` (epoch seconds, probed). `secondary` can be null.
 
 Other facts:
 
@@ -185,7 +186,8 @@ Other facts:
 - `Stop` ends the execution loop with `terminationReason`, `error` and `fullyIdle` (false while background tasks run). The probe saw `NO_TOOL_CALL`, where the documentation lists `model_stop`, `max_steps_exceeded` and `error`, so decoders must accept values beyond those.
 - A completed tool fires `PostToolUse` with the `stepIdx` of its `PreToolUse` (probed). A failed or denied one fires no `PostToolUse`.
 - Denying a confirmation fires nothing more for that turn: no `PostToolUse`, `PostInvocation` or `Stop` (probed).
-- Esc while an approved command ran fired no `PostToolUse`; the turn ended with `Stop` and `fullyIdle: false` (probed), which suggests the command went on in the background.
+- Esc fires nothing: pressed during a reply, no `PostInvocation` or `Stop` followed; pressed while an approved command ran in the foreground, no `PostToolUse` or `Stop` followed (probed). The transcript drops the cancelled steps.
+- An approved command still running after about 2 s moves to the background: the turn ends with `Stop` and `fullyIdle: false` while it runs (probed).
 
 **Attention.**
 
@@ -225,7 +227,7 @@ It also carries the account's `email`, which must not leave the adapter.
 4. **Interruption is harness-specific.**
    - Codex fires `Interrupt`.
    - Claude Code fires nothing; its transcript records the interruption and the turn's end.
-   - Antigravity ended an interrupted command's turn with `Stop` and `fullyIdle: false`.
+   - Antigravity fires nothing, and its transcript drops the cancelled steps. Its status line's `agent_state` returning to `idle` is the remaining signal.
 
    Without such a source, a turn stays `working` until the next event, and coverage says so.
 

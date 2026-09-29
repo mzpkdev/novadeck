@@ -2,7 +2,7 @@
   "harness": "agy",
   "version": "1.2.13",
   "source": "captured",
-  "how": "driven interactively in a PTY (120x40) with every hook event registered: Claude through --settings, Codex in a throwaway CODEX_HOME, Antigravity through a scratch workspace .agents/hooks.json",
+  "how": "driven interactively in a PTY (120x40), in a scratch workspace whose .agents/hooks.json registered every event",
   "scenarios": {
     "clear": {
       "what": "A prompt, /clear, another prompt, then /exit, in one agy process",
@@ -92,7 +92,7 @@
       ]
     },
     "confirm": {
-      "what": "Hook answered force_ask: a touch approved with 1, a touch denied with 4, then `sleep 25` approved and Esc pressed while it ran, then /exit",
+      "what": "Hook answered force_ask: a touch approved with 1, a touch denied with 4, then `sleep 25` approved; Antigravity moved it to the background after about 2 s and ended the turn, before Esc was sent",
       "events": [
         {
           "event": "PreInvocation",
@@ -325,6 +325,59 @@
             "fullyIdle": false,
             "modelName": "gemini-3.8-flash-high",
             "terminationReason": "NO_TOOL_CALL",
+            "transcriptPath": "<path>",
+            "workspacePaths": ["<path>"]
+          },
+          "harnessProcess": "process-1"
+        }
+      ]
+    },
+    "interrupt": {
+      "what": "Hook answered force_ask: Esc 2.5 s into a long reply, then Esc 0.4 s after approving `sleep 25`, then /exit",
+      "events": [
+        {
+          "event": "PreInvocation",
+          "payload": {
+            "artifactDirectoryPath": "<path>",
+            "conversationId": "50000000-0000-4000-8000-000000000004",
+            "initialNumSteps": 1,
+            "invocationNum": 0,
+            "modelName": "gemini-3.8-flash-high",
+            "transcriptPath": "<path>",
+            "workspacePaths": ["<path>"]
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PreInvocation",
+          "payload": {
+            "artifactDirectoryPath": "<path>",
+            "conversationId": "50000000-0000-4000-8000-000000000004",
+            "initialNumSteps": 2,
+            "invocationNum": 0,
+            "modelName": "gemini-3.8-flash-high",
+            "transcriptPath": "<path>",
+            "workspacePaths": ["<path>"]
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "artifactDirectoryPath": "<path>",
+            "conversationId": "50000000-0000-4000-8000-000000000004",
+            "modelName": "gemini-3.8-flash-high",
+            "stepIdx": 3,
+            "toolCall": {
+              "args": {
+                "CommandLine": "<command>",
+                "Cwd": "<path>",
+                "WaitMsBeforeAsync": 10000,
+                "toolAction": "Running sleep command",
+                "toolSummary": "Run sleep 25"
+              },
+              "name": "run_command"
+            },
             "transcriptPath": "<path>",
             "workspacePaths": ["<path>"]
           },
