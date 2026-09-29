@@ -176,7 +176,7 @@ export const Preferences = ({
                   <SettingText
                     id="theme-mode-label"
                     label="Dark mode"
-                    description="Light only for now"
+                    description="Coming soon"
                     descriptionId="theme-mode-description"
                   />
                   <Switch
@@ -187,30 +187,20 @@ export const Preferences = ({
                     disabled
                   />
                 </div>
-                <Select
-                  className={`preference-row ${settingRowClasses} [&_[data-part=trigger]]:w-36`}
-                  label="Terminal text size"
-                  items={fontSizes}
-                  value={String(value.fontSize)}
-                  onValueChange={(size) => onChange({ ...value, fontSize: Number(size) })}
-                  open={open && tab === "general" && openSelect === "font-size"}
-                  onOpenChange={(expanded) => setOpenSelect(expanded ? "font-size" : null)}
-                  portalContainer={dialog}
-                />
               </div>
             </Section>
             <fieldset
               className="view-preferences m-0 min-w-0 border-0 p-0"
               aria-describedby="view-modes-description"
             >
-              <legend className="float-left w-full p-0 px-0.5">
+              <legend className="float-left mb-1.5 w-full p-0 px-0.5">
                 <span className={`block ${sectionTitleClasses}`}>View modes</span>
               </legend>
               <p
                 id="view-modes-description"
                 className={`clear-both px-0.5 ${sectionDescriptionClasses}`}
               >
-                The layouts the header offers. Keep at least one.
+                Layouts shown in the header. At least one stays on.
               </p>
               <div className="view-preference-options mt-2.5 grid grid-cols-3 gap-2 max-[360px]:gap-1.5">
                 {viewModes.map((mode) => {
@@ -251,14 +241,24 @@ export const Preferences = ({
                 })}
               </div>
             </fieldset>
-            {transcripts && (
-              <Section title="Terminals">
-                <div className={settingsCardClasses}>
+            <Section title="Terminals">
+              <div className={settingsCardClasses}>
+                <Select
+                  className={`preference-row ${settingRowClasses} [&_[data-part=trigger]]:w-36`}
+                  label="Text size"
+                  items={fontSizes}
+                  value={String(value.fontSize)}
+                  onValueChange={(size) => onChange({ ...value, fontSize: Number(size) })}
+                  open={open && tab === "general" && openSelect === "font-size"}
+                  onOpenChange={(expanded) => setOpenSelect(expanded ? "font-size" : null)}
+                  portalContainer={dialog}
+                />
+                {transcripts && (
                   <div className={`preference-row ${settingRowClasses}`}>
                     <SettingText
                       id="transcripts-label"
-                      label="Terminal transcripts"
-                      description="Keeps each terminal's recent output on this computer and shows it again after a restart. It can include secrets that were typed or printed."
+                      label="Transcripts"
+                      description="Show recent output again after a restart. Saved on this computer, so it can include secrets."
                       descriptionId="transcripts-description"
                     />
                     <Switch
@@ -268,11 +268,11 @@ export const Preferences = ({
                       describedBy="transcripts-description"
                     />
                   </div>
-                </div>
-              </Section>
-            )}
+                )}
+              </div>
+            </Section>
             {agents && (
-              <Section title="Resume agents" description={agentsExplanation}>
+              <Section title="Agents" description={agentsExplanation}>
                 <AgentSwitches agents={agents.list} onChange={agents.onChange} />
               </Section>
             )}

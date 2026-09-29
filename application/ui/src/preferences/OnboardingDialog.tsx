@@ -5,7 +5,7 @@ import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/Dec
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
-import { agentLabels, type AgentSwitch } from "./AgentSwitches"
+import { agentLabels, agentNote, type AgentSwitch } from "./AgentSwitches"
 import { OnboardingPreview } from "./OnboardingPreview"
 
 import motion from "../ui-toolkit/ModalMotion.module.css"
@@ -34,14 +34,6 @@ const pluginNote = (names: readonly string[]): string =>
     : `Adds a small plugin to ${listed(names)}. Remove it anytime in Preferences.`
 
 const headline = "Room to build."
-
-// Only a state worth knowing gets a note; an agent ready to connect needs none.
-const choiceNote = (item: AgentSwitch): string | undefined => {
-  if (item.busy) return item.connected ? "Disconnecting…" : "Connecting…"
-  if (item.error) return item.error
-  if (!item.available) return "Not installed"
-  return undefined
-}
 
 const OnboardingForm = ({
   agents,
@@ -140,7 +132,7 @@ const OnboardingForm = ({
               {agents.map((item) => {
                 const selected = choices[item.agent]
                 const disabled = !item.available || item.busy
-                const note = choiceNote(item)
+                const note = agentNote(item)
                 const description = note ? `onboarding-${item.agent}-description` : undefined
                 const Icon = icons[item.agent]
                 return (

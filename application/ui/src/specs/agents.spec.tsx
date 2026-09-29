@@ -30,7 +30,7 @@ describe("Connecting agents", () => {
       await expect.element(agentSwitch(dialog, "Antigravity")).toBeDisabled()
       await expect
         .element(agentSwitch(dialog, "Antigravity"))
-        .toHaveAccessibleDescription("Not installed on this computer")
+        .toHaveAccessibleDescription("Not installed")
     })
 
     it("connects and disconnects an agent", async () => {
@@ -39,7 +39,8 @@ describe("Connecting agents", () => {
       const claude = agentSwitch(preferencesDialog(), "Claude Code")
       await claude.click()
       await expect.element(claude).toHaveAttribute("aria-checked", "true")
-      await expect.element(claude).toHaveAccessibleDescription(/sessions resume/)
+      // The switch speaks for itself; a connected agent needs no note.
+      await expect.element(claude).not.toHaveAccessibleDescription()
       await claude.click()
       await expect.element(claude).toHaveAttribute("aria-checked", "false")
     })
