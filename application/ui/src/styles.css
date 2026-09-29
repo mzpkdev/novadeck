@@ -256,17 +256,18 @@
 @property --terminal-sweep {
   syntax: "<percentage>";
   inherits: false;
-  initial-value: -20%;
+  initial-value: -35%;
 }
 .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
   border-image: linear-gradient(
       to right,
-      var(--color-line) calc(var(--terminal-sweep) - 20%),
-      var(--color-strong) var(--terminal-sweep),
-      var(--color-line) calc(var(--terminal-sweep) + 20%)
+      var(--color-line) calc(var(--terminal-sweep) - 25%),
+      var(--color-strong) calc(var(--terminal-sweep) - 10%),
+      var(--color-strong) calc(var(--terminal-sweep) + 10%),
+      var(--color-line) calc(var(--terminal-sweep) + 25%)
     )
     1;
-  animation: terminal-sweep 1.8s var(--ease-interface) infinite;
+  animation: terminal-sweep 2.2s var(--ease-interface) infinite;
 }
 .terminal-window[data-terminal-phase="starting"] .terminal-heading::after {
   border-top-style: dotted;
@@ -277,12 +278,34 @@
   border-top-style: dashed;
   border-top-color: var(--color-strong);
 }
+/* The selected tab's bar, a border like the window's line so both snap alike, takes
+   the same state: solid while idle, a sweep running down it, dots while starting,
+   dashes once ended. */
+.terminal-tab[data-terminal-phase="running"]::before {
+  border-image: linear-gradient(
+      to bottom,
+      var(--color-line) calc(var(--terminal-sweep) - 35%),
+      var(--color-strong) calc(var(--terminal-sweep) - 15%),
+      var(--color-strong) calc(var(--terminal-sweep) + 15%),
+      var(--color-line) calc(var(--terminal-sweep) + 35%)
+    )
+    1;
+  animation: terminal-sweep 2.2s var(--ease-interface) infinite;
+}
+.terminal-tab[data-terminal-phase="starting"]::before {
+  border-left-style: dotted;
+  border-left-color: var(--color-muted);
+  animation: terminal-pulse 1.2s ease-in-out infinite;
+}
+.terminal-tab[data-terminal-phase="ended"]::before {
+  border-left-style: dashed;
+}
 .terminal-window[data-terminal-phase="ended"] .runner-terminal .xterm {
   opacity: 0.55;
 }
 @keyframes terminal-sweep {
   to {
-    --terminal-sweep: 120%;
+    --terminal-sweep: 135%;
   }
 }
 @keyframes terminal-pulse {
@@ -291,9 +314,10 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
+  .terminal-window[data-terminal-phase="running"] .terminal-heading::after,
+  .terminal-tab[data-terminal-phase="running"]::before {
     border-image: none;
-    border-top-color: var(--color-strong);
+    border-color: var(--color-strong);
   }
 }
 .workspace-dots {
