@@ -61,7 +61,7 @@ export const ZenDock = ({
         <button
           ref={create}
           data-workspace-zen-create
-          className="zen-create icon-button bg-strong text-white hover:bg-strong-hover hover:text-white"
+          className="zen-create icon-button"
           aria-label="New terminal"
           onClick={onCreate}
         >
