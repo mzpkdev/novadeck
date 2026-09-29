@@ -47,6 +47,11 @@ const monospace = (element: Element): string =>
 
 const darkScheme = "(prefers-color-scheme: dark)"
 
+// How long a terminal's size stays still before it refits after a resize. Each refit
+// forces a layout and may tell the runner, so a zoom or a drag refits once it pauses,
+// not on every frame across dozens of terminals.
+const resizeSettleMs = 120
+
 // Whether a stream draws the terminal now, and whether its shell waits for Enter.
 export type ScreenStream = {
   // A stream draws the current shell; input goes nowhere until one does.
@@ -73,6 +78,8 @@ export type RunnerScreen = {
   // Set when the host leaves a slot while focused, so the next slot focuses it again.
   refocus: boolean
 }
+
+type OpenOptions = { fontSize: number; name: string; waiting: boolean }
 
 type Entry = {
   readonly host: HTMLDivElement
@@ -106,7 +113,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
   const open = (
     key: TerminalKey,
     entry: Entry,
-    { fontSize, name, waiting }: { fontSize: number; name: string; waiting: boolean },
+    { fontSize, name, waiting }: OpenOptions,
   ): RunnerScreen => {
     const element = entry.host
     const xterm = new Terminal({
@@ -169,7 +176,11 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     const input = xterm.onData(send)
     // Some mouse reports arrive as binary; they go to the shell the same way.
     const binary = xterm.onBinary(send)
-    const resizes = new ResizeObserver(() => followed.refit())
+    let settling: ReturnType<typeof setTimeout> | undefined
+    const resizes = new ResizeObserver(() => {
+      clearTimeout(settling)
+      settling = setTimeout(() => followed.refit(), resizeSettleMs)
+    })
     resizes.observe(element)
     const scheme = window.matchMedia?.(darkScheme)
     const retheme = (): void => {
@@ -180,6 +191,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     entry.dispose = () => {
       runtime.screen(key, "gone")
       scheme?.removeEventListener("change", retheme)
+      clearTimeout(settling)
       resizes.disconnect()
       input.dispose()
       binary.dispose()
@@ -210,10 +222,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     // The host a surface places in its slot, the same element for the terminal's life.
     host: (key: TerminalKey): HTMLDivElement => entryOf(key).host,
     // The terminal's screen for a surface that shows it, opened on first use.
-    acquire: (
-      key: TerminalKey,
-      options: { fontSize: number; name: string; waiting: boolean },
-    ): RunnerScreen => {
+    acquire: (key: TerminalKey, options: OpenOptions): RunnerScreen => {
       const entry = entryOf(key)
       entry.users += 1
       if (entry.timer !== undefined) clearTimeout(entry.timer)
