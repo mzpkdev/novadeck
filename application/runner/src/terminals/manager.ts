@@ -237,6 +237,8 @@ export class Terminals {
   private reports = Promise.resolve()
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
+  /** How many times each harness was disconnected, so a report that waited meanwhile is dropped. */
+  private readonly disconnections = new Map<AgentName, number>()
   private creating = 0
   private exits = 0
   private stopping = false
@@ -589,6 +591,7 @@ export class Terminals {
 
   /** Forgets every session `agent` reported, as once it is disconnected. */
   forgetAgent(agent: AgentName): void {
+    this.disconnections.set(agent, (this.disconnections.get(agent) ?? 0) + 1)
     for (const record of this.records.values()) {
       const { [agent]: _forgotten, ...rest } = record.agents
       record.agents = rest
@@ -1114,11 +1117,14 @@ export class Terminals {
     const record = this.records.get(report.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, report.token)) return
     const { process: child } = record
+    const disconnections = this.disconnections.get(report.agent)
     const [foreground, connected] = await Promise.all([
       shellInForeground(child.pid),
       this.connected(report.agent),
     ])
     if (record.process !== child || record.exitQueued) return
+    // A disconnection while this waited forgot what the report would bring back.
+    if (this.disconnections.get(report.agent) !== disconnections) return
     const next = observe(
       { sessions: record.agents, binding: record.binding, cwd: record.summary.cwd },
       observed(report),

@@ -504,6 +504,24 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(manager.reportedSession(terminal.id, "claude")).toBeNull()
   })
 
+  it("drops a report that was still waiting when its agent was disconnected", async ({ shell }) => {
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "late", seq: 1, source: "startup" },
+    ])
+    // Whether it is connected takes a while to tell, long enough to disconnect meanwhile.
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      connected: () => new Promise((resolve) => setTimeout(() => resolve(true), 1_500)),
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    manager.forgetAgent("claude")
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    expect(manager.reportedSession(terminal.id, "claude")).toBeNull()
+    expect(manager.list(terminal.sessionId)[0]?.agent).toBeNull()
+  })
+
   // Linux and macOS tell which process group holds a terminal's foreground.
   it.runIf(process.platform === "linux" || process.platform === "darwin")(
     "ignores reports made while the shell holds the foreground",
