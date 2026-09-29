@@ -158,8 +158,12 @@ const reporter = (
       '  if (index === reports.length) { console.log("reports sent"); return process.stdin.resume() }',
       "  const socket = net.connect(process.env.NOVADECK_REPORT)",
       '  socket.on("close", () => send(index + 1))',
-      "  const report = { ...reports[index], seq: base + reports[index].seq }",
-      '  socket.end(JSON.stringify({ terminalId, token, ...report }) + "\\n")',
+      "  const { agent, sessionId, seq, source } = reports[index]",
+      // As the hook forwards it: the event, and the agent's own payload.
+      '  const event = agent === "agy" ? "PreInvocation" : "SessionStart"',
+      '  const payload = agent === "agy" ? { conversationId: sessionId } : { hook_event_name: event, session_id: sessionId, source }',
+      "  const report = { terminalId, token, agent, event, seq: base + seq, instance: null, env: { cursor: false }, payload }",
+      '  socket.end(JSON.stringify(report) + "\\n")',
       "}",
       "send(0)",
     ].join("\n"),
@@ -445,6 +449,30 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await shell.until(manager, terminal.id, "reports sent")
     await expect.poll(() => manager.reportedSession(terminal.id, "claude")).toBe("cleared")
     expect(manager.reportedSession(terminal.id, "codex")).toBeNull()
+  })
+
+  it("keeps an agent session's own markers out of its shells", async ({ shell }) => {
+    // As when NovaDeck itself was started from inside Claude Code.
+    const manager = shell.manager({
+      env: {
+        HOME: shell.home,
+        PS1: "$ ",
+        CLAUDECODE: "1",
+        CLAUDE_CODE_CHILD_SESSION: "1",
+        CODEX_THREAD_ID: "outer",
+        CLAUDE_CODE_USE_BEDROCK: "kept",
+      },
+    })
+    const terminal = await create(manager, shell)
+    manager.write(
+      {
+        terminalId: terminal.id,
+        data: 'echo "[$CLAUDECODE$CLAUDE_CODE_CHILD_SESSION$CODEX_THREAD_ID|$CLAUDE_CODE_USE_BEDROCK]"\r',
+      },
+      "owner",
+    )
+    // The person's own settings stay.
+    await shell.until(manager, terminal.id, "[|kept]")
   })
 
   it("ignores a switch announced by another agent than the one in the foreground", async ({
