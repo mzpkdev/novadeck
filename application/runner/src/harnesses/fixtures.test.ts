@@ -85,6 +85,17 @@ describe("Codex's rollout, as captured", () => {
     expect(String(resets_at)).toMatch(/^\d{10}$/)
     expect(count.info.model_context_window).toEqual(expect.any(Number))
   })
+
+  it("keeps the turn and item records the coverage doc lists", () => {
+    const kinds = rollout.records.map(({ type, payload }) => `${type}:${payload.type ?? ""}`)
+    for (const kind of [
+      "event_msg:task_started",
+      "event_msg:item_completed",
+      "event_msg:token_count",
+      "event_msg:task_complete",
+    ])
+      expect(kinds).toContain(kind)
+  })
 })
 
 type HookProbe = {
@@ -246,5 +257,14 @@ describe("Antigravity in a terminal, as captured", () => {
     expect(done(tools[1]!.payload.stepIdx)).toBe(false)
     // The denied turn ends without Stop: the next event is the next prompt's invocation.
     expect(after(events, events.indexOf(tools[1]!))[0]).toBe("PreInvocation")
+  })
+})
+
+describe("Claude Code closed with its terminal, as captured", () => {
+  it("ends the session with reason other", () => {
+    expect(scenario("claude", "hangup").at(-1)).toMatchObject({
+      event: "SessionEnd",
+      payload: { reason: "other" },
+    })
   })
 })

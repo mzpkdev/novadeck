@@ -68,8 +68,8 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 - `PermissionRequest` fires as the prompt opens. It carries `tool_name`, `tool_input` and `permission_suggestions`, but no `tool_use_id` or request id.
 - `PreToolUse` fires just before it with the `tool_use_id` (probed), so the request correlates with the preceding tool call.
-- Approval shows as that call's `PostToolUse`.
-- A denial by the person fires nothing, not even `Stop` or `PostToolBatch` (probed interactively with every event registered). `PermissionDenied` covers auto mode only. The transcript records the call's `tool_result` with `is_error`, the interruption and `turn_duration`, so the transcript resolves the request as denied and ends the turn.
+- Approval shows only when the tool finishes, as that call's `PostToolUse` (probed): nothing fires between the approval and the result. While an approved long command runs, the request looks pending; `claude agents --json` reporting `busy` rather than `waiting` is the only other source (documented).
+- A denial by the person fires nothing, not even `Stop` or `PostToolBatch` (probed interactively with every event registered). `PermissionDenied` covers auto mode only. The transcript records the call's `tool_result` with `is_error`, the interruption and `turn_duration`, so the transcript ends the request and the turn. An approved call interrupted with Esc leaves the same records, so the outcome stays unknown.
 - In print mode (`-p`), where no one can answer, the denied call is instead listed in `PostToolBatch` with its `tool_use_id` (probed).
 - Questions are the `AskUserQuestion` tool. It fires `PreToolUse`, then `PermissionRequest` like any tool (probed), so the question's kind comes from `tool_name`. Its `PostToolUse` carries `tool_response.answers`, keyed by question text (probed). MCP elicitations have `Elicitation` and `ElicitationResult` with an `elicitation_id`.
 - `PermissionRequest`, `Elicitation` and `PreToolUse` can answer: a later `respond`/`answer` capability has a native path.
@@ -78,7 +78,7 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 - `SubagentStart` and `SubagentStop` carry `agent_id` and `agent_type`, and `SubagentStop` adds `agent_transcript_path`.
 - The parent's `Agent` tool call links to the child through `subagents/agent-<id>.meta.json` (`toolUseId`), an undocumented file.
-- Internal agents (prompt suggestions, `/btw`) also fire `SubagentStop`, with an empty `agent_type` and no `SubagentStart` (probed); ignore a stop for an agent never seen starting.
+- Internal agents (prompt suggestions, `/btw`) also fire `SubagentStart`/`SubagentStop` (documented). One probe run saw a `SubagentStop` with an empty `agent_type` and no `SubagentStart`; no fixture was kept. Ignore a stop for an agent never seen starting.
 - Subagent failure or interruption has no distinct signal.
 
 **Transcripts.**
@@ -219,15 +219,15 @@ It also carries the account's `email`, which must not leave the adapter.
 
    A status line is a single user-level setting. For feature parity NovaDeck installs a bridge command that forwards to the person's own status line command, so their status line keeps working. For Claude Code, NovaDeck's shells can pass `--settings` at launch, as the Codex shim does for its flag, so the bridge applies only to NovaDeck's terminals. See [the design](harness-adapters.md#native-sources).
 
-2. **Permissions have no request ids.** Requests correlate with the preceding `PreToolUse`: its `tool_use_id` for Claude Code and Codex, its `stepIdx` for Antigravity. A matching `PostToolUse` means allowed.
-   - A denial fires nothing in Claude Code and Antigravity; Claude Code's transcript records it.
+2. **Permissions have no request ids, and approval is seen only at completion.** Requests correlate with the preceding `PreToolUse`: its `tool_use_id` for Claude Code and Codex, its `stepIdx` for Antigravity. A matching `PostToolUse` means allowed, but it fires when the tool finishes, so an approved long command keeps its request looking pending. Claude Code's `claude agents --json` (`busy` versus `waiting`) and Antigravity's `tool_confirmation_pending` can close that gap; Codex exposes approval state only through its app-server.
+   - A denial fires nothing in Claude Code and Antigravity. Claude Code's transcript records an interruption, which an approved call interrupted with Esc also leaves, so it ends the request without saying which.
    - A denial fires `Interrupt` in Codex.
    - Otherwise the next tool, turn or session event resolves the request with an `unknown` outcome.
 3. **NovaDeck's Antigravity hook must answer `PreToolUse` with `{"decision": "ask"}`.** An empty answer denies every tool.
 4. **Interruption is harness-specific.**
    - Codex fires `Interrupt`.
    - Claude Code fires nothing; its transcript records the interruption and the turn's end.
-   - Antigravity fires nothing, and its transcript drops the cancelled steps. Its status line's `agent_state` returning to `idle` is the remaining signal.
+   - Antigravity fires nothing, and its transcript drops the cancelled steps. Its status line's `agent_state` returning to `idle` is the remaining signal (documented; the status line is not yet probed).
 
    Without such a source, a turn stays `working` until the next event, and coverage says so.
 

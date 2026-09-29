@@ -180,6 +180,13 @@ type FeatureCoverage = Record<
   | "context",
   { level: "unsupported" | "partial" | "complete"; reason: CoverageReason | null }
 >
+
+type CoverageReason =
+  | "no-native-source" // the harness exposes nothing for it
+  | "not-connected" // NovaDeck's plugin is not installed
+  | "untrusted" // installed, but the harness has not trusted NovaDeck's hooks
+  | "source-lost" // a source it relies on failed or went quiet
+  | "unverified" // this harness version was never probed
 ```
 
 `ActorRef`, `AttentionRef` and plan IDs are runner-issued opaque identifiers.
@@ -523,8 +530,12 @@ Denials differ by harness:
 - Claude Code fires nothing, but its transcript records the denied tool result and the turn's end.
 - Antigravity fires nothing.
 
-Claude Code's transcript resolves such a request as `denied`, and Codex's
-`Interrupt` as `cancelled`. Without such evidence, the next tool, turn or
+Codex's `Interrupt` resolves such a request as `cancelled`. Claude Code's
+transcript ends it as `unknown`: a denial and an approved call interrupted with
+Esc leave the same records. Approval itself is seen only when the tool
+finishes, so the attention view uses `claude agents --json` (`busy` versus
+`waiting`) for Claude Code and `tool_confirmation_pending` for Antigravity to
+stop showing a request once the person has answered it. Without such evidence, the next tool, turn or
 session event of that actor resolves the request as `unknown`. Claude Code's `AskUserQuestion` goes through
 `PermissionRequest` too, so the attention kind comes from the tool name.
 
@@ -541,7 +552,7 @@ a hook inherits every ancestor harness's variables.
 
 Interruption reaches NovaDeck differently per harness: Codex fires `Interrupt`,
 Claude Code's transcript records the interruption, and Antigravity reports it
-only through its status line's `agent_state`. Without such a source, a turn
+only through its status line's `agent_state` (documented, not yet probed). Without such a source, a turn
 stays `working` until its next event, and activity coverage is `partial`.
 
 Keep a durable resume reference separate from an ephemeral live binding. A

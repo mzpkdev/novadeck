@@ -10,7 +10,7 @@
         {
           "event": "SessionStart",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
+            "session_id": "00000000-0000-4000-8000-000000000007",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "SessionStart",
@@ -23,8 +23,8 @@
         {
           "event": "UserPromptSubmit",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "UserPromptSubmit",
@@ -37,8 +37,8 @@
         {
           "event": "PreToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PreToolUse",
@@ -55,8 +55,8 @@
         {
           "event": "PostToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PostToolUse",
@@ -74,8 +74,8 @@
         {
           "event": "PreToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PreToolUse",
@@ -92,8 +92,8 @@
         {
           "event": "PermissionRequest",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PermissionRequest",
@@ -110,8 +110,8 @@
         {
           "event": "PostToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PostToolUse",
@@ -129,8 +129,8 @@
         {
           "event": "Stop",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
-            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000004",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "Stop",
@@ -144,7 +144,7 @@
         {
           "event": "SessionEnd",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000006",
+            "session_id": "00000000-0000-4000-8000-000000000007",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "SessionEnd",
@@ -160,7 +160,7 @@
         {
           "event": "SessionStart",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
+            "session_id": "00000000-0000-4000-8000-000000000008",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "SessionStart",
@@ -173,8 +173,8 @@
         {
           "event": "UserPromptSubmit",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000005",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "UserPromptSubmit",
@@ -187,8 +187,8 @@
         {
           "event": "PreToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000005",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PreToolUse",
@@ -205,8 +205,8 @@
         {
           "event": "PostToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000005",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PostToolUse",
@@ -224,8 +224,8 @@
         {
           "event": "PreToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000005",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PreToolUse",
@@ -242,8 +242,8 @@
         {
           "event": "PermissionRequest",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000005",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PermissionRequest",
@@ -260,8 +260,8 @@
         {
           "event": "Interrupt",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000005",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "Interrupt",
@@ -273,8 +273,8 @@
         {
           "event": "UserPromptSubmit",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000005",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000006",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "UserPromptSubmit",
@@ -287,8 +287,8 @@
         {
           "event": "PreToolUse",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000005",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000006",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "PreToolUse",
@@ -305,8 +305,8 @@
         {
           "event": "Interrupt",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
-            "turn_id": "20000000-0000-4000-8000-000000000005",
+            "session_id": "00000000-0000-4000-8000-000000000008",
+            "turn_id": "20000000-0000-4000-8000-000000000006",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "Interrupt",
@@ -318,7 +318,7 @@
         {
           "event": "SessionEnd",
           "payload": {
-            "session_id": "00000000-0000-4000-8000-000000000007",
+            "session_id": "00000000-0000-4000-8000-000000000008",
             "transcript_path": "<path>",
             "cwd": "<path>",
             "hook_event_name": "SessionEnd",
