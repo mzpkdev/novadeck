@@ -240,6 +240,8 @@
 .terminal-tab[data-terminal-phase="ended"] .sidebar-item-icon {
   color: var(--color-muted);
 }
+/* The state line is a border, like the header's hairline beneath it, so both snap to
+   the same device pixel at any display scale or Canvas zoom. */
 .terminal-heading::after {
   content: "";
   position: absolute;
@@ -247,31 +249,40 @@
   bottom: 0;
   left: 0;
   z-index: 1;
-  height: 1px;
+  height: 0;
+  border-top: 1px solid transparent;
   pointer-events: none;
 }
+@property --terminal-sweep {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: -20%;
+}
 .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
-  background:
-    linear-gradient(to right, transparent, var(--color-strong) 50%, transparent) -60% 0 / 40% 100%
-      no-repeat,
-    var(--color-line);
+  border-image: linear-gradient(
+      to right,
+      var(--color-line) calc(var(--terminal-sweep) - 20%),
+      var(--color-strong) var(--terminal-sweep),
+      var(--color-line) calc(var(--terminal-sweep) + 20%)
+    )
+    1;
   animation: terminal-sweep 1.8s var(--ease-interface) infinite;
 }
 .terminal-window[data-terminal-phase="starting"] .terminal-heading::after {
-  background: repeating-linear-gradient(to right, var(--color-muted) 0 2px, transparent 2px 5px);
+  border-top-style: dotted;
+  border-top-color: var(--color-muted);
   animation: terminal-pulse 1.2s ease-in-out infinite;
 }
 .terminal-window[data-terminal-phase="ended"] .terminal-heading::after {
-  background: repeating-linear-gradient(to right, var(--color-strong) 0 6px, transparent 6px 10px);
+  border-top-style: dashed;
+  border-top-color: var(--color-strong);
 }
 .terminal-window[data-terminal-phase="ended"] .runner-terminal .xterm {
   opacity: 0.55;
 }
 @keyframes terminal-sweep {
   to {
-    background-position:
-      160% 0,
-      0 0;
+    --terminal-sweep: 120%;
   }
 }
 @keyframes terminal-pulse {
@@ -281,7 +292,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
-    background: var(--color-strong);
+    border-image: none;
+    border-top-color: var(--color-strong);
   }
 }
 .workspace-dots {
