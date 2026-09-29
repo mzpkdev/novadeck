@@ -23,7 +23,7 @@
   opacity: 0;
 }
 
-/* The agent's tile turns charcoal, like the Deck mark's face, once it is chosen. */
+/* The agent’s tile turns black, like the Deck mark's face, once it is chosen. */
 .tile {
   position: relative;
   display: flex;
@@ -43,11 +43,11 @@
 }
 .tile[data-selected] {
   border-color: transparent;
-  background: linear-gradient(180deg, #3f443d, #30342e);
+  background: linear-gradient(180deg, #2b2b2b, #121212);
   color: #fff;
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.08),
-    0 6px 14px -8px rgb(38 40 38 / 0.5);
+    0 6px 14px -8px rgb(18 18 18 / 0.5);
 }
 .tile[data-disabled] {
   color: var(--color-muted);

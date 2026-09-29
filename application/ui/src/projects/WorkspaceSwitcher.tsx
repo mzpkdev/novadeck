@@ -76,7 +76,7 @@ export const WorkspaceSwitcher = ({
                 {selected && (
                   <Check
                     aria-label="Current workspace"
-                    className="shrink-0"
+                    className="shrink-0 text-accent-strong"
                     size={15}
                     strokeWidth={1.8}
                   />

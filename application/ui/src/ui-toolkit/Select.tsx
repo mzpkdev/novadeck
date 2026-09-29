@@ -92,7 +92,7 @@ export const Select = ({
                     {item.description}
                   </span>
                 )}
-                <ArkSelect.ItemIndicator>
+                <ArkSelect.ItemIndicator className="text-accent-strong">
                   <Check size={13} strokeWidth={1.8} aria-hidden="true" />
                 </ArkSelect.ItemIndicator>
               </ArkSelect.Item>

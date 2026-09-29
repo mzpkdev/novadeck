@@ -87,7 +87,7 @@ export const TerminalTab = ({
         editor={
           rename ? (
             <div className="terminal-tab-rename flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px]">
-              <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
+              <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted [.sidebar-item[data-selected=true]_&]:text-accent-strong">
                 {icon}
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-1">

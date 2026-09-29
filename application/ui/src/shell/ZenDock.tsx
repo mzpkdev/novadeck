@@ -61,7 +61,7 @@ export const ZenDock = ({
         <button
           ref={create}
           data-workspace-zen-create
-          className="zen-create icon-button"
+          className="zen-create icon-button bg-strong text-white hover:bg-strong-hover hover:text-white"
           aria-label="New terminal"
           onClick={onCreate}
         >
@@ -90,7 +90,7 @@ export const ZenDock = ({
               .map(({ id, label, icon: Icon }) => (
                 <Tooltip key={id} content={label}>
                   <button
-                    className={`icon-button ${view === id ? "bg-soft text-ink" : "text-muted"}`}
+                    className={`icon-button ${view === id ? "bg-soft text-accent-strong hover:text-accent-strong" : "text-muted"}`}
                     aria-label={`${label} view`}
                     aria-pressed={view === id}
                     onClick={() => onViewChange(id)}
