@@ -4,19 +4,20 @@
 @import "@fontsource-variable/inter";
 
 @theme {
-  /* Neutral greys around a black primary. Black is for primary actions and on states
-     (filled buttons, switches, checkboxes); everything else stays grey. */
+  /* Graphite: a near-black primary and greys with a trace of blue, so they sit with
+     the cyan accent. Black is for primary actions and on states (filled buttons,
+     switches, checkboxes); everything else stays grey. */
   --color-paper: #ffffff;
-  --color-shell: #f9f9f9;
-  --color-canvas: #f3f3f3;
-  --color-ink: #1c1c1c;
-  --color-muted: #6b6b6b;
-  --color-line: #e6e6e6;
-  --color-line-strong: #d0d0d0;
-  --color-scrim: rgb(18 18 18 / 0.18);
-  --color-soft: #efefef;
-  --color-strong: #121212;
-  --color-strong-hover: #2e2e2e;
+  --color-shell: #f8f9fa;
+  --color-canvas: #f2f3f5;
+  --color-ink: #1a1d21;
+  --color-muted: #676c74;
+  --color-line: #e4e6e9;
+  --color-line-strong: #cdd1d6;
+  --color-scrim: rgb(21 24 28 / 0.18);
+  --color-soft: #eef0f2;
+  --color-strong: #15181c;
+  --color-strong-hover: #2b2f35;
   /* Signal cyan, the brand accent, marks where you are: the selected terminal and
      sidebar item, the logo's cursor, the boot hairline. Never for text or icons. Its
      deeper companion draws focus rings, which need 3:1 on light surfaces; the soft
@@ -37,10 +38,10 @@
   --radius-control: 2px;
   --radius-panel: 3px;
   --radius-popover: 4px;
-  --shadow-control: 0 1px 3px rgb(18 18 18 / 0.04);
-  --shadow-panel: 0 1px 2px rgb(18 18 18 / 0.025), 0 4px 12px -6px rgb(18 18 18 / 0.08);
-  --shadow-floating: 0 2px 5px -2px rgb(18 18 18 / 0.06), 0 10px 24px -12px rgb(18 18 18 / 0.16);
-  --shadow-modal: 0 2px 6px -2px rgb(18 18 18 / 0.05), 0 20px 60px -20px rgb(18 18 18 / 0.14);
+  --shadow-control: 0 1px 3px rgb(21 24 28 / 0.04);
+  --shadow-panel: 0 1px 2px rgb(21 24 28 / 0.025), 0 4px 12px -6px rgb(21 24 28 / 0.08);
+  --shadow-floating: 0 2px 5px -2px rgb(21 24 28 / 0.06), 0 10px 24px -12px rgb(21 24 28 / 0.16);
+  --shadow-modal: 0 2px 6px -2px rgb(21 24 28 / 0.05), 0 20px 60px -20px rgb(21 24 28 / 0.14);
   --motion-feedback: 120ms;
   --motion-state: 180ms;
   --motion-layout: 200ms;
