@@ -1,5 +1,5 @@
-import { ArrowRight, Check, Sparkles } from "lucide-react"
-import { useRef, useState, type CSSProperties, type RefObject } from "react"
+import { ArrowRight, Check, ScrollText, Sparkles, type LucideIcon } from "lucide-react"
+import { useRef, useState, type ComponentType, type CSSProperties, type RefObject } from "react"
 
 import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/DeckLogo"
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
@@ -13,11 +13,19 @@ import styles from "./OnboardingDialog.module.css"
 
 type Choices = Record<AgentSwitch["agent"], boolean>
 
+// Every agent found on this computer starts chosen; the person opts out, not in.
+const installed = (agents: readonly AgentSwitch[], id: AgentSwitch["agent"]): boolean =>
+  agents.find(({ agent }) => agent === id)?.available ?? false
 const choicesFrom = (agents: readonly AgentSwitch[]): Choices => ({
-  claude: agents.find(({ agent }) => agent === "claude")?.connected ?? false,
-  codex: agents.find(({ agent }) => agent === "codex")?.connected ?? false,
-  agy: agents.find(({ agent }) => agent === "agy")?.connected ?? false,
+  claude: installed(agents, "claude"),
+  codex: installed(agents, "codex"),
+  agy: installed(agents, "agy"),
 })
+
+export type TranscriptsSetting = {
+  readonly enabled: boolean
+  readonly onChange: (enabled: boolean) => void
+}
 
 const icons = { claude: ClaudeIcon, codex: CodexIcon, agy: Sparkles }
 
@@ -35,18 +43,93 @@ const pluginNote = (names: readonly string[]): string =>
 
 const headline = "Room to build."
 
+// One choice as a card: the icon tile turns black once chosen, like the Deck mark.
+const ChoiceCard = ({
+  icon: Icon,
+  label,
+  note,
+  noteId,
+  error = false,
+  name,
+  value,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  readonly icon: LucideIcon | ComponentType<{ size?: number; strokeWidth?: number }>
+  readonly label: string
+  readonly note?: string | undefined
+  readonly noteId: string
+  readonly error?: boolean
+  readonly name: string
+  readonly value: string
+  readonly checked: boolean
+  readonly disabled?: boolean
+  readonly onChange: (checked: boolean) => void
+}): React.JSX.Element => (
+  <label
+    className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-accent-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
+  >
+    <span
+      className={styles.tile}
+      data-selected={checked || undefined}
+      data-disabled={disabled || undefined}
+      aria-hidden="true"
+    >
+      <Icon size={20} strokeWidth={1.4} />
+    </span>
+    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className={`text-[12px] font-medium ${disabled ? "text-muted" : "text-ink"}`}>
+        {label}
+      </span>
+      {note && (
+        <span
+          id={noteId}
+          className={`text-[10px] leading-relaxed ${error ? "text-danger-fg" : "text-muted"}`}
+          role={error ? "alert" : undefined}
+        >
+          {note}
+        </span>
+      )}
+    </span>
+    <span className="relative flex size-4 shrink-0 items-center justify-center">
+      <input
+        type="checkbox"
+        name={name}
+        value={value}
+        checked={checked}
+        disabled={disabled}
+        aria-label={label}
+        aria-describedby={note ? noteId : undefined}
+        className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-paper checked:border-strong checked:bg-strong disabled:cursor-not-allowed disabled:bg-shell focus-visible:outline-none"
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <Check
+        size={12}
+        strokeWidth={2.5}
+        className={`${styles.check} pointer-events-none relative text-white`}
+        aria-hidden="true"
+      />
+    </span>
+  </label>
+)
+
 const OnboardingForm = ({
   agents,
   onChange,
+  transcripts,
   onDone,
   heading,
 }: {
   readonly agents: readonly AgentSwitch[]
   readonly onChange: (agent: AgentSwitch["agent"], connected: boolean) => void
+  readonly transcripts?: TranscriptsSetting | undefined
   readonly onDone: () => void
   readonly heading: RefObject<HTMLHeadingElement | null>
 }): React.JSX.Element => {
   const [choices, setChoices] = useState<Choices>(() => choicesFrom(agents))
+  // Transcripts start on; the person opts out.
+  const [keepTranscripts, setKeepTranscripts] = useState(true)
 
   const submit = (): void => {
     for (const item of agents) {
@@ -55,6 +138,8 @@ const OnboardingForm = ({
         onChange(item.agent, connected)
       }
     }
+    if (transcripts && keepTranscripts !== transcripts.enabled)
+      transcripts.onChange(keepTranscripts)
     onDone()
   }
 
@@ -130,72 +215,30 @@ const OnboardingForm = ({
             <legend className="sr-only">Agents</legend>
             <div className="grid gap-2">
               {agents.map((item) => {
-                const selected = choices[item.agent]
-                const disabled = !item.available || item.busy
                 const note = agentNote(item)
-                const description = note ? `onboarding-${item.agent}-description` : undefined
-                const Icon = icons[item.agent]
                 return (
-                  <label
+                  <ChoiceCard
                     key={item.agent}
-                    className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-accent-strong has-focus-visible:outline-offset-2 ${selected ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
-                  >
-                    <span
-                      className={styles.tile}
-                      data-selected={selected || undefined}
-                      data-disabled={disabled || undefined}
-                      aria-hidden="true"
-                    >
-                      <Icon size={20} strokeWidth={1.4} />
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span
-                        className={`text-[12px] font-medium ${disabled ? "text-muted" : "text-ink"}`}
-                      >
-                        {agentLabels[item.agent]}
-                      </span>
-                      {note && (
-                        <span
-                          id={description}
-                          className={`text-[10px] leading-relaxed ${item.error ? "text-danger-fg" : "text-muted"}`}
-                          role={item.error ? "alert" : undefined}
-                        >
-                          {note}
-                        </span>
-                      )}
-                    </span>
-                    <span className="relative flex size-4 shrink-0 items-center justify-center">
-                      <input
-                        type="checkbox"
-                        name="agents"
-                        value={item.agent}
-                        checked={selected}
-                        disabled={disabled}
-                        aria-label={agentLabels[item.agent]}
-                        aria-describedby={description}
-                        className="peer absolute inset-0 m-0 size-full cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-paper checked:border-strong checked:bg-strong disabled:cursor-not-allowed disabled:bg-shell focus-visible:outline-none"
-                        onChange={(event) =>
-                          setChoices((current) => ({
-                            ...current,
-                            [item.agent]: event.target.checked,
-                          }))
-                        }
-                      />
-                      <Check
-                        size={12}
-                        strokeWidth={2.5}
-                        className={`${styles.check} pointer-events-none relative text-white`}
-                        aria-hidden="true"
-                      />
-                    </span>
-                  </label>
+                    icon={icons[item.agent]}
+                    label={agentLabels[item.agent]}
+                    note={note}
+                    noteId={`onboarding-${item.agent}-description`}
+                    error={Boolean(item.error)}
+                    name="agents"
+                    value={item.agent}
+                    checked={choices[item.agent]}
+                    disabled={!item.available || item.busy}
+                    onChange={(checked) =>
+                      setChoices((current) => ({ ...current, [item.agent]: checked }))
+                    }
+                  />
                 )
               })}
             </div>
           </fieldset>
 
           <p
-            className={`${styles.enter} mt-3 mb-8 min-h-[2lh] text-[10px] leading-[1.65] text-muted`}
+            className={`${styles.enter} mt-3 min-h-[2lh] text-[10px] leading-[1.65] text-muted ${transcripts ? "mb-5" : "mb-8"}`}
             style={at(850)}
           >
             {pluginNote(
@@ -204,6 +247,22 @@ const OnboardingForm = ({
                 .map((item) => agentLabels[item.agent]),
             )}
           </p>
+
+          {transcripts && (
+            <fieldset className={`${styles.enter} m-0 mb-8 min-w-0 border-0 p-0`} style={at(900)}>
+              <legend className="sr-only">Terminals</legend>
+              <ChoiceCard
+                icon={ScrollText}
+                label="Transcripts"
+                note="Show recent output again after a restart. Saved on this computer, so it can include secrets."
+                noteId="onboarding-transcripts-description"
+                name="transcripts"
+                value="on"
+                checked={keepTranscripts}
+                onChange={setKeepTranscripts}
+              />
+            </fieldset>
+          )}
         </div>
         <div className={styles.enter} style={at(1000)}>
           <button
@@ -226,17 +285,19 @@ const OnboardingForm = ({
   )
 }
 
-// Choices stay local until submission. Dismissing makes no connection changes;
-// Preferences keeps its immediate switches.
+// Choices stay local until submission. Dismissing changes no agent or transcript
+// setting; Preferences keeps its immediate switches.
 export const OnboardingDialog = ({
   open,
   agents,
   onChange,
+  transcripts,
   onDone,
 }: {
   readonly open: boolean
   readonly agents: readonly AgentSwitch[]
   readonly onChange: (agent: AgentSwitch["agent"], connected: boolean) => void
+  readonly transcripts?: TranscriptsSetting | undefined
   readonly onDone: () => void
 }): React.JSX.Element => {
   const heading = useRef<HTMLHeadingElement>(null)
@@ -253,7 +314,13 @@ export const OnboardingDialog = ({
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
       className={`${motion.dialog} max-h-[calc(100dvh-32px)] w-[min(980px,calc(100vw-32px))] overflow-y-auto rounded-popover border border-line-strong bg-paper text-ink shadow-modal`}
     >
-      <OnboardingForm agents={agents} onChange={onChange} onDone={onDone} heading={heading} />
+      <OnboardingForm
+        agents={agents}
+        onChange={onChange}
+        transcripts={transcripts}
+        onDone={onDone}
+        heading={heading}
+      />
     </Dialog>
   )
 }

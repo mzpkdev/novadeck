@@ -108,6 +108,7 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
           open={agents.onboarding}
           agents={agents.list}
           onChange={backend.agents.set}
+          transcripts={transcripts}
           onDone={backend.agents.finishOnboarding}
         />
       )}
