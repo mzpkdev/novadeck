@@ -512,10 +512,24 @@ response target.
 
 No harness gives a permission request its own id. Claude Code and Codex fire
 `PermissionRequest` right after the `PreToolUse` of the same call, whose
-`tool_use_id` becomes the `requestId`. A matching tool result resolves it as
-`allowed`. A denial fires nothing, so the next tool, turn or session event of
-that actor resolves it as `unknown`. Antigravity's status line reports only
-that some confirmation is open, which is `attention-observed`.
+`tool_use_id` becomes the `requestId`. For Antigravity, the status line's
+`tool_confirmation_pending` names no step, so the preceding `PreToolUse`'s
+`stepIdx` becomes the `requestId`. A matching tool result resolves the request
+as `allowed`.
+
+Denials differ by harness:
+
+- Codex fires `Interrupt` for the turn.
+- Claude Code fires nothing, but its transcript records the denied tool result and the turn's end.
+- Antigravity fires nothing.
+
+Without such evidence, the next tool, turn or session event of that actor
+resolves the request as `unknown`. Claude Code's `AskUserQuestion` goes through
+`PermissionRequest` too, so the attention kind comes from the tool name.
+
+NovaDeck's Antigravity hook must answer `PreToolUse` with
+`{"decision": "ask"}`: Antigravity reads an answer without a decision as a
+denial.
 
 `same-root-instance` needs a process identity from the hook. Every harness
 provides one through the hook's process ancestry: Claude Code sets
@@ -936,6 +950,16 @@ declaration.
   added as deltas; a new billing window starts a new series.
 - A reset countdown reaching zero triggers a refresh, not assumed replenishment;
   missing capacity yields an unknown fraction.
+
+**Harness environment**
+
+- NovaDeck's shells drop harness session variables inherited from the runner's
+  own environment (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_PID`, `CODEX_THREAD_ID`,
+  `ANTIGRAVITY_CONVERSATION_ID`). Otherwise a runner started from inside Claude
+  Code makes every Claude Code in its terminals a child session, whose
+  transcript saving is off.
+- NovaDeck's Antigravity hook answers `PreToolUse` with `{"decision": "ask"}`, and
+  a test fails if an empty answer reaches Antigravity.
 
 **Model and clients**
 

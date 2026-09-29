@@ -2,7 +2,7 @@
   "harness": "agy",
   "version": "1.2.12",
   "source": "captured",
-  "how": "agy -p in a scratch workspace whose .agents/hooks.json registered every event; its run_command, view_file and manage_task calls were denied in print mode",
+  "how": "agy -p in a scratch workspace whose .agents/hooks.json registered every event. Its PreToolUse hook answered {}, which Antigravity reads as a denial, so every tool call was denied.",
   "hookAncestry": ["sh", "agy"],
   "hookEnvironment": ["ANTIGRAVITY_CONVERSATION_ID", "TERM_PROGRAM"],
   "inheritedEnvironment": "Variables of any ancestor harness reach the hook too; this probe ran under Claude Code, and its CLAUDE_* variables appeared.",

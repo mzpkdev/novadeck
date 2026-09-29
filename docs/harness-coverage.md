@@ -14,25 +14,25 @@ Evidence:
   the claims below that rest on them.
 - **Documented** means the harness's own documentation, not yet seen in a run.
 
-| Harness     | Version | How it was measured                                                                                                                                                                                                                 |
-| ----------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | 2.1.285 | Probed: `claude -p` with every hook event registered through `--settings`. Documented: hooks, status line, agent view and monitoring references.                                                                                    |
-| Codex       | 0.158.0 | Probed: `codex exec --json` and its rollout file; hooks in a throwaway `CODEX_HOME` holding only the probe's hooks, run with `--dangerously-bypass-hook-trust`. Documented: hooks reference, generated hook and app-server schemas. |
-| Antigravity | 1.2.12  | Probed: `agy -p` in a scratch workspace whose `.agents/hooks.json` registered every event, and its `stream-json` output. Documented: the CLI's bundled `hooks.md`, the status line and title references, the CLI changelog.         |
+| Harness     | Version   | How it was measured                                                                                                                                                                                                                                                                    |
+| ----------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | 2.1.285   | Probed: `claude -p`, and the interactive TUI driven in a PTY, both with every hook event registered through `--settings`. Documented: hooks, status line, agent view and monitoring references.                                                                                        |
+| Codex       | 0.158.0   | Probed: `codex exec --json` and its rollout file, and the interactive TUI driven in a PTY, with hooks in a throwaway `CODEX_HOME` holding only the probe's hooks (`--dangerously-bypass-hook-trust`). Documented: hooks reference, generated hook and app-server schemas.              |
+| Antigravity | 1.2.12–13 | Probed: `agy -p` and the interactive TUI driven in a PTY, in a scratch workspace whose `.agents/hooks.json` registered every event (the CLI updated itself to 1.2.13 between runs). Documented: the CLI's bundled `hooks.md`, the status line and title references, the CLI changelog. |
 
 ## Matrix
 
-| Feature     | Claude Code                                                                       | Codex                                                                               | Antigravity                                                                   |
-| ----------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| session     | complete: `SessionStart` sources, `SessionEnd` reasons, `CLAUDE_PID` (probed)     | complete: `SessionStart` sources, `SessionEnd`, thread id, parent `codex` (probed)  | partial: `conversationId` on every hook, parent `agy` (probed); no end event  |
-| activity    | partial: no signal for an Esc interrupt                                           | partial: `Interrupt` hook (documented); a failed turn fires nothing                 | partial: `PreInvocation`, `Stop` with `terminationReason` (probed)            |
-| attention   | partial: `PermissionRequest` has no request id; a denial leaves no hook (probed)  | partial, documented: `PermissionRequest` has no id and no resolution                | partial: status line `tool_confirmation_pending` only                         |
-| actors      | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)     | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)       | unsupported by hooks; parent id only in `conversation_summaries.db`           |
-| transcripts | partial: session JSONL plus a file per subagent; undocumented records             | partial: rollout JSONL; items appear only when completed (probed)                   | partial: `transcriptPath` JSONL, rewritten on compaction; format undocumented |
-| planning    | partial: `permission_mode: plan`; `ExitPlanMode` carries the plan and its file    | partial, documented: `permission_mode: plan`; `update_plan` tool                    | partial: status line `execution_mode`; `artifactDirectoryPath` on hooks       |
-| usage       | partial: per-message usage in the transcript; cost only as a status line estimate | complete for tokens: `token_count` and `token_usage_record` (probed); no cost       | partial: status line token totals and cost estimate                           |
-| limits      | partial: status line `rate_limits` only                                           | complete: `rate_limits` windows with reset instants in `token_count` (probed)       | partial: status line `quota` per model                                        |
-| context     | partial: status line `context_window`; `PreCompact`/`PostCompact`                 | partial: `model_context_window` plus last response usage (probed); compaction hooks | partial: status line `context_window`; compaction has no signal               |
+| Feature     | Claude Code                                                                                          | Codex                                                                                        | Antigravity                                                                            |
+| ----------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| session     | complete: `SessionStart` sources, `SessionEnd` reasons, `CLAUDE_PID` (probed)                        | complete: `SessionStart` sources, `SessionEnd`, thread id, parent `codex` (probed)           | partial: `conversationId` on every hook, parent `agy` (probed); no end event           |
+| activity    | partial: an Esc interrupt or denial fires nothing; the transcript records it (probed)                | partial: `Interrupt` on Esc and on denial (probed); a failed turn fires nothing              | partial: `PreInvocation`, `Stop` (probed); a denial fires nothing (probed)             |
+| attention   | partial: `PermissionRequest`, also for questions; no id; a denial fires nothing (probed)             | partial: `PermissionRequest` without id; approval `PostToolUse`, denial `Interrupt` (probed) | partial: `PreToolUse` then `PostToolUse` by `stepIdx`; a denial fires nothing (probed) |
+| actors      | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)                        | partial: `SubagentStart`/`SubagentStop` and `agent_id` on tool hooks (probed)                | unsupported by hooks; parent id only in `conversation_summaries.db`                    |
+| transcripts | partial: session JSONL plus a file per subagent; undocumented records                                | partial: rollout JSONL; items appear only when completed (probed)                            | partial: `transcriptPath` JSONL, rewritten on compaction; format undocumented          |
+| planning    | partial: `permission_mode: plan`; draft written to `~/.claude/plans`; `ExitPlanMode` review (probed) | partial, documented: `permission_mode: plan`; `update_plan` tool                             | partial: status line `execution_mode`; `artifactDirectoryPath` on hooks                |
+| usage       | partial: per-message usage in the transcript; cost only as a status line estimate                    | complete for tokens: `token_count` and `token_usage_record` (probed); no cost                | partial: status line token totals and cost estimate                                    |
+| limits      | partial: status line `rate_limits` only                                                              | complete: `rate_limits` windows with reset instants in `token_count` (probed)                | partial: status line `quota` per model                                                 |
+| context     | partial: status line `context_window`; `PreCompact`/`PostCompact`                                    | partial: `model_context_window` plus last response usage (probed); compaction hooks          | partial: status line `context_window`; compaction has no signal                        |
 
 ## Claude Code
 
@@ -58,7 +58,8 @@ Evidence:
 - `UserPromptSubmit` starts a turn.
 - `Stop` ends it normally.
 - `StopFailure` ends it on an API error. It carries `error` (`rate_limit`, `overloaded`, `billing_error`, …) and replaces `Stop`.
-- An Esc interrupt fires no hook: the documentation says `Stop` does not run on a user interrupt. The transcript records `[Request interrupted by user…]` instead.
+- An Esc interrupt fires no hook, not even `Stop` (probed: Esc during a running Bash call). The transcript records a user record `[Request interrupted by user…]` and a `system` record with subtype `turn_duration`, which marks the end of the turn (probed).
+- Transcript saving is off when Claude Code inherits `CLAUDE_CODE_CHILD_SESSION`, as a process started from another Claude Code session does (probed: the TUI says so). NovaDeck's shells must not pass that variable on, or the transcript fallback disappears.
 - `claude agents --json` reports `busy`, `waiting` or `idle` per session and is documented as the supported way to read state from outside. It is a polled command, not a stream.
 
 In the probe, a background subagent's result began a second turn with its own `UserPromptSubmit` and `Stop`. So a turn does not always start with the person typing.
@@ -68,15 +69,15 @@ In the probe, a background subagent's result began a second turn with its own `U
 - `PermissionRequest` fires as the prompt opens. It carries `tool_name`, `tool_input` and `permission_suggestions`, but no `tool_use_id` or request id.
 - `PreToolUse` fires just before it with the `tool_use_id` (probed), so the request correlates with the preceding tool call.
 - Approval shows as that call's `PostToolUse`.
-- A denial by the person fires nothing (probed: no event followed); `PermissionDenied` covers auto mode only. The next tool, turn or session event is all that ends it.
-- Questions are the `AskUserQuestion` tool, visible through `PreToolUse` and `PostToolUse` with its `tool_use_id`. MCP elicitations have `Elicitation` and `ElicitationResult` with an `elicitation_id`.
+- A denial by the person fires nothing, not even `Stop` (probed interactively). `PermissionDenied` covers auto mode only. The transcript records the call's `tool_result` with `is_error` and an interruption, then `turn_duration`, so the transcript resolves the request as denied and ends the turn.
+- Questions are the `AskUserQuestion` tool. It fires `PreToolUse`, then `PermissionRequest` like any tool (probed), so the question's kind comes from `tool_name`. Its `PostToolUse` carries `tool_response.answers`, keyed by question text (probed). MCP elicitations have `Elicitation` and `ElicitationResult` with an `elicitation_id`.
 - `PermissionRequest`, `Elicitation` and `PreToolUse` can answer: a later `respond`/`answer` capability has a native path.
 
 **Actors.**
 
 - `SubagentStart` and `SubagentStop` carry `agent_id` and `agent_type`, and `SubagentStop` adds `agent_transcript_path`.
 - The parent's `Agent` tool call links to the child through `subagents/agent-<id>.meta.json` (`toolUseId`), an undocumented file.
-- Internal agents (prompt suggestions, `/btw`) also fire `SubagentStart`/`SubagentStop`; filter them by `agent_type`.
+- Internal agents (prompt suggestions, `/btw`) also fire `SubagentStop`, with an empty `agent_type` and no `SubagentStart` (probed); ignore a stop for an agent never seen starting.
 - Subagent failure or interruption has no distinct signal.
 
 **Transcripts.**
@@ -89,8 +90,9 @@ In the probe, a background subagent's result began a second turn with its own `U
 **Planning.**
 
 - Hooks carry `permission_mode`; `plan` means planning mode. No hook fires on the mode change itself; the status line reruns on it.
-- `ExitPlanMode` is a tool whose `PreToolUse` input carries `plan` (Markdown) and `planFilePath`, and whose `PostToolUse` means it was approved.
-- A rejected plan has no documented signal.
+- While planning, Claude Code writes the draft with the `Write` tool to `~/.claude/plans/<name>.md` (probed), so `Write` hooks on that directory are a native draft signal.
+- `ExitPlanMode` asks for review: `PreToolUse` then `PermissionRequest`, both with `plan` (Markdown) and `planFilePath` in `tool_input` (probed). Its `PostToolUse` means the plan was approved.
+- Rejecting the plan fires nothing, as a denial does (probed); the transcript records it the same way.
 
 **Usage, limits, context.**
 
@@ -124,12 +126,13 @@ In the probe, a background subagent's result began a second turn with its own `U
 **Activity.**
 
 - `UserPromptSubmit` starts a user turn; the rollout's `task_started` covers every turn.
-- `Stop` ends a turn, and `Interrupt` marks a user interrupt (rollout: `turn_aborted` with `reason`).
+- `Stop` ends a turn. `Interrupt` fires with the turn's `turn_id` when Esc interrupts a running tool, with no `PostToolUse` or `Stop` after it (probed); the rollout records `turn_aborted`.
 - A failed turn (usage limit, context exceeded) fires no hook and leaves no rollout record, so activity becomes unknown there.
 
 **Attention.**
 
-- `PermissionRequest` carries `tool_name` and `tool_input` but no id, and nothing reports its resolution. Correlate it with the preceding `PreToolUse`, the same as for Claude Code.
+- `PermissionRequest` carries `tool_name` and `tool_input` but no id. It follows the call's `PreToolUse`, the same as for Claude Code (probed).
+- Approval shows as that call's `PostToolUse` (probed). A denial (Esc) fires `Interrupt` for the turn (probed), which resolves the request and ends the turn.
 - Approvals are not written to the rollout.
 - `request_user_input` is a function tool, and whether it reaches `PreToolUse` needs a probe.
 - `PermissionRequest` can answer `allow` or `deny`.
@@ -168,24 +171,27 @@ Other facts:
 - `PreToolUse` can allow, deny or ask; `PostInvocation` and `Stop` can force the loop to continue.
 - Hooks run through `sh`, whose parent is the `agy` process (probed), so the hook's grandparent identifies the Antigravity instance.
 - The hook's environment has `ANTIGRAVITY_CONVERSATION_ID` (probed). It also inherits every ancestor's variables: probed under Claude Code, it carried `CLAUDE_PID`. An environment variable therefore never proves which harness sent a report.
-- Workspace hooks in `.agents/hooks.json` ran in print mode without a trust prompt (probed).
+- Workspace hooks in `.agents/hooks.json` ran without a trust prompt in print mode; the interactive TUI asked to trust the folder first (probed).
+- **A `PreToolUse` answer without a `decision` is a denial** (probed: `{}` denied every tool with "tool call denied by pre-tool hook"). An observing hook must answer `{"decision": "ask"}`, which leaves the person's own permission policy in charge; `force_ask` always shows the confirmation.
 
 **Sessions.**
 
-- `/clear`, `/resume` and `/fork` switch conversations inside one process. The only sign is a new `conversationId` on the next hook.
+- `/clear`, `/resume` and `/fork` switch conversations inside one process. The only sign is a new `conversationId` on the next hook, from the same `agy` process (probed with `/clear`).
 - Nothing marks the end of a session.
 
 **Activity.**
 
 - `PreInvocation` fires before each model call; `PostInvocation` fires after it.
 - `Stop` ends the execution loop with `terminationReason`, `error` and `fullyIdle` (false while background tasks run). The probe saw `NO_TOOL_CALL`, where the documentation lists `model_stop`, `max_steps_exceeded` and `error`, so decoders must accept values beyond those.
-- A tool that failed or was denied fires `PreToolUse` but no `PostToolUse` (probed: print mode denied every tool); `stream-json` marks it `ERROR`.
-- Whether a cancellation fires `Stop` is unknown.
+- A completed tool fires `PostToolUse` with the `stepIdx` of its `PreToolUse` (probed). A failed or denied one fires no `PostToolUse`.
+- Denying a confirmation fires nothing more for that turn: no `PostToolUse`, `PostInvocation` or `Stop` (probed).
+- Esc while an approved command ran fired no `PostToolUse`; the turn ended with `Stop` and `fullyIdle: false` (probed), which suggests the command went on in the background.
 
 **Attention.**
 
-- There is no permission or question hook.
-- The status line's `tool_confirmation_pending` says a confirmation dialog is open, without saying which request.
+- There is no permission hook. Whether a confirmation shows depends on the person's policy, so `PreToolUse` alone does not mean one is open.
+- The status line's `tool_confirmation_pending` says a confirmation dialog is open, without naming the step. With the preceding `PreToolUse`, it identifies the request.
+- The confirmation offers yes, yes for this conversation, yes persisted, and no. Approval shows as `PostToolUse` for the step; a denial ends the turn silently.
 - The `ask_question` tool probably shows as `PreToolUse`, pending a probe.
 
 **Actors.** Subagents are separate conversations. Hooks do not say whether they fire for them. `conversation_summaries.db` records `parent_conversation_id` and `nesting_depth`.
@@ -211,27 +217,32 @@ It also carries the account's `email`, which must not leave the adapter.
 
    A status line is a single user-level setting. For feature parity NovaDeck installs a bridge command that forwards to the person's own status line command, so their status line keeps working. For Claude Code, NovaDeck's shells can pass `--settings` at launch, as the Codex shim does for its flag, so the bridge applies only to NovaDeck's terminals. See [the design](harness-adapters.md#native-sources).
 
-2. **Permissions have no request ids.** Claude Code and Codex requests correlate with the preceding `PreToolUse` `tool_use_id`. Their resolution is often inferred: a matching `PostToolUse` means allowed, and a later tool, turn or session event means resolved with an unknown outcome. `attention-resolved` needs an `unknown` outcome.
-3. **Interruption is harness-specific.**
-   - Codex has an `Interrupt` hook.
-   - Claude Code has none; its transcript and `claude agents --json` show the interruption.
-   - Antigravity is unknown.
+2. **Permissions have no request ids.** Requests correlate with the preceding `PreToolUse`: its `tool_use_id` for Claude Code and Codex, its `stepIdx` for Antigravity. A matching `PostToolUse` means allowed.
+   - A denial fires nothing in Claude Code and Antigravity; Claude Code's transcript records it.
+   - A denial fires `Interrupt` in Codex.
+   - Otherwise the next tool, turn or session event resolves the request with an `unknown` outcome.
+3. **NovaDeck's Antigravity hook must answer `PreToolUse` with `{"decision": "ask"}`.** An empty answer denies every tool.
+4. **Interruption is harness-specific.**
+   - Codex fires `Interrupt`.
+   - Claude Code fires nothing; its transcript records the interruption and the turn's end.
+   - Antigravity ended an interrupted command's turn with `Stop` and `fullyIdle: false`.
 
    Without such a source, a turn stays `working` until the next event, and coverage says so.
 
-4. **Every harness identifies its instance through the hook's process ancestry.**
+5. **Every harness identifies its instance through the hook's process ancestry.**
    - Claude Code sets `CLAUDE_PID`.
    - A Codex hook's parent is `codex`.
    - An Antigravity hook's grandparent, through `sh`, is `agy`.
 
    The hook host should report the nearest ancestor whose executable is the harness, found through its `programs`. That gives `same-root-instance` evidence for all three, so Antigravity's `conversation-observed` switching can tighten. Linux was probed; macOS and Windows need their own process lookup. Inherited environment variables cannot stand in for it.
 
-5. **Limits are percentages, not token counts.** Every harness reports windows as a used or remaining fraction with an absolute reset instant: Claude Code and Codex in epoch seconds, Antigravity as a time. None reports the limit itself, so the telemetry model stores fractions and never derives token amounts.
-6. **Codex hook trust is a separate readiness state.** A connected Codex with untrusted hooks reports nothing. Detecting that needs the app-server's `hooks/list`, not a hook.
+6. **Limits are percentages, not token counts.** Every harness reports windows as a used or remaining fraction with an absolute reset instant: Claude Code and Codex in epoch seconds, Antigravity as a time. None reports the limit itself, so the telemetry model stores fractions and never derives token amounts.
+7. **Codex hook trust is a separate readiness state.** A connected Codex with untrusted hooks reports nothing. Detecting that needs the app-server's `hooks/list`, not a hook.
 
 ## Still to probe
 
-- Claude Code: an Esc interrupt in an interactive session, a denied permission in a PTY session, `AskUserQuestion` answers in `PostToolUse`, and plan mode entry and `ExitPlanMode` rejection.
-- Codex: a `PermissionRequest` (exec mode bypasses approvals), the `Interrupt`/`turn_aborted` pairing, `request_user_input`, and subagents under `--no-daemon`.
-- Antigravity: conversation switches (`/clear`, `/resume`) inside one interactive process, `Stop` on cancellation, `ask_question`, subagent hooks, and the transcript and artifact formats.
-- macOS and Windows: the hook's process ancestry.
+- Claude Code: plan mode entered with Shift+Tab mid-session, a failed turn (`StopFailure`), and subagent interruption.
+- Codex: a failed turn, `request_user_input`, plan mode, and subagents under `--no-daemon`.
+- Antigravity: `ask_question`, plan mode artifacts, subagent hooks, the status line payload in a NovaDeck terminal, and the transcript and artifact formats.
+- The status line bridge for Claude Code and Antigravity, once built.
+- macOS and Windows: the hook's process ancestry, and every probe above.

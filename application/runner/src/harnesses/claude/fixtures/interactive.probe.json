@@ -1,0 +1,659 @@
+{
+  "harness": "claude",
+  "version": "2.1.285",
+  "source": "captured",
+  "how": "driven interactively in a PTY (120x40) with every hook event registered: Claude through --settings, Codex in a throwaway CODEX_HOME, Antigravity through a scratch workspace .agents/hooks.json",
+  "scenarios": {
+    "interrupt": {
+      "what": "Esc while an allowed `sleep 20` Bash call ran; then the process was killed",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "claude-haiku-4-5-20251001"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000001",
+            "permission_mode": "default",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<text>"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000001",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "Sleep for 20 seconds"
+            },
+            "tool_use_id": "toolu_fixture01"
+          }
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000001",
+            "hook_event_name": "SessionEnd",
+            "reason": "other"
+          }
+        }
+      ]
+    },
+    "deny": {
+      "what": "A Bash permission prompt answered 3 (No), then /exit",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "claude-haiku-4-5-20251001"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000002",
+            "permission_mode": "default",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<text>"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000002",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "Create empty file denied.txt"
+            },
+            "tool_use_id": "toolu_fixture02"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PermissionRequest",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000002",
+            "permission_mode": "default",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "Create empty file denied.txt"
+            },
+            "permission_suggestions": [
+              {
+                "type": "addDirectories",
+                "directories": ["<path>"],
+                "destination": "session"
+              },
+              {
+                "type": "setMode",
+                "mode": "acceptEdits",
+                "destination": "session"
+              }
+            ]
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000003",
+            "hook_event_name": "SessionEnd",
+            "reason": "prompt_input_exit"
+          },
+          "harnessProcess": "process-1"
+        }
+      ]
+    },
+    "allow": {
+      "what": "A Bash permission prompt answered 1 (Yes), then /exit",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "claude-haiku-4-5-20251001"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000004",
+            "permission_mode": "default",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<text>"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000004",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "Create allowed.txt file"
+            },
+            "tool_use_id": "toolu_fixture03"
+          }
+        },
+        {
+          "event": "PermissionRequest",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000004",
+            "permission_mode": "default",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "Create allowed.txt file"
+            },
+            "permission_suggestions": [
+              {
+                "type": "addDirectories",
+                "directories": ["<path>"],
+                "destination": "session"
+              },
+              {
+                "type": "setMode",
+                "mode": "acceptEdits",
+                "destination": "session"
+              }
+            ]
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000004",
+            "permission_mode": "default",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "Create allowed.txt file"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": "",
+              "interrupted": false,
+              "isImage": false,
+              "noOutputExpected": true
+            },
+            "tool_use_id": "toolu_fixture03",
+            "duration_ms": 59
+          }
+        },
+        {
+          "event": "Stop",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000004",
+            "permission_mode": "default",
+            "hook_event_name": "Stop",
+            "stop_hook_active": false,
+            "last_assistant_message": "<text>",
+            "background_tasks": [],
+            "session_crons": []
+          }
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000005",
+            "hook_event_name": "SessionEnd",
+            "reason": "prompt_input_exit"
+          }
+        }
+      ]
+    },
+    "question": {
+      "what": "AskUserQuestion with one question and two options; the first option chosen, then /exit",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "claude-haiku-4-5-20251001"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000006",
+            "permission_mode": "default",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<text>"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000006",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+              "questions": [
+                {
+                  "question": "Which color?",
+                  "header": "Color",
+                  "options": [
+                    {
+                      "label": "Red",
+                      "description": "The color red"
+                    },
+                    {
+                      "label": "Blue",
+                      "description": "The color blue"
+                    }
+                  ],
+                  "multiSelect": false
+                }
+              ]
+            },
+            "tool_use_id": "toolu_fixture04"
+          }
+        },
+        {
+          "event": "PermissionRequest",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000006",
+            "permission_mode": "default",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+              "questions": [
+                {
+                  "question": "Which color?",
+                  "header": "Color",
+                  "options": [
+                    {
+                      "label": "Red",
+                      "description": "The color red"
+                    },
+                    {
+                      "label": "Blue",
+                      "description": "The color blue"
+                    }
+                  ],
+                  "multiSelect": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000006",
+            "permission_mode": "default",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+              "questions": [
+                {
+                  "question": "Which color?",
+                  "header": "Color",
+                  "options": [
+                    {
+                      "label": "Red",
+                      "description": "The color red"
+                    },
+                    {
+                      "label": "Blue",
+                      "description": "The color blue"
+                    }
+                  ],
+                  "multiSelect": false
+                }
+              ],
+              "answers": {
+                "Which color?": "Red"
+              },
+              "annotations": {}
+            },
+            "tool_response": {
+              "questions": [
+                {
+                  "question": "Which color?",
+                  "header": "Color",
+                  "options": [
+                    {
+                      "label": "Red",
+                      "description": "The color red"
+                    },
+                    {
+                      "label": "Blue",
+                      "description": "The color blue"
+                    }
+                  ],
+                  "multiSelect": false
+                }
+              ],
+              "answers": {
+                "Which color?": "Red"
+              },
+              "annotations": {}
+            },
+            "tool_use_id": "toolu_fixture04",
+            "duration_ms": 0
+          }
+        },
+        {
+          "event": "Stop",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000006",
+            "permission_mode": "default",
+            "hook_event_name": "Stop",
+            "stop_hook_active": false,
+            "last_assistant_message": "<text>",
+            "background_tasks": [],
+            "session_crons": []
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000006",
+            "permission_mode": "default",
+            "agent_id": "40000000-0000-7000-8000-000000000001",
+            "agent_type": "",
+            "hook_event_name": "SubagentStop",
+            "stop_hook_active": false,
+            "agent_transcript_path": "<path>",
+            "background_tasks": [],
+            "session_crons": []
+          }
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000004",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000007",
+            "hook_event_name": "SessionEnd",
+            "reason": "prompt_input_exit"
+          }
+        }
+      ]
+    },
+    "plan": {
+      "what": "Started with --permission-mode plan; the ExitPlanMode prompt rejected with Esc, then /exit",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "claude-haiku-4-5-20251001"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<text>"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "<path>",
+              "content": "<text>"
+            },
+            "tool_use_id": "toolu_fixture05"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "<path>",
+              "content": "<text>"
+            },
+            "tool_response": {
+              "type": "create",
+              "filePath": "<path>",
+              "content": "<text>",
+              "structuredPatch": [],
+              "originalFile": null,
+              "userModified": false
+            },
+            "tool_use_id": "toolu_fixture05",
+            "duration_ms": 46
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "ToolSearch",
+            "tool_input": {
+              "query": "select:ExitPlanMode",
+              "max_results": 1
+            },
+            "tool_use_id": "toolu_fixture06"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "ToolSearch",
+            "tool_input": {
+              "query": "select:ExitPlanMode",
+              "max_results": 1
+            },
+            "tool_response": {
+              "matches": ["ExitPlanMode"],
+              "query": "select:ExitPlanMode",
+              "total_deferred_tools": 40
+            },
+            "tool_use_id": "toolu_fixture06",
+            "duration_ms": 2
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "ExitPlanMode",
+            "tool_input": {
+              "plan": "<text>",
+              "planFilePath": "<path>"
+            },
+            "tool_use_id": "toolu_fixture07"
+          }
+        },
+        {
+          "event": "PermissionRequest",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000008",
+            "permission_mode": "plan",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "ExitPlanMode",
+            "tool_input": {
+              "plan": "<text>",
+              "planFilePath": "<path>"
+            }
+          }
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000005",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "scratchpad_dir": "<path>",
+            "prompt_id": "10000000-0000-4000-8000-000000000009",
+            "hook_event_name": "SessionEnd",
+            "reason": "prompt_input_exit"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -13,7 +13,7 @@ const claude = fixture<{
   hookEnvironment: string[]
   events: { event: string; payload: Payload }[]
 }>("claude", "hooks.probe.json")
-const events = (name: string) => claude.events.filter(({ event }) => event === name)
+const named = (name: string) => claude.events.filter(({ event }) => event === name)
 
 describe("Claude Code's hooks, as captured", () => {
   it("name the session and its transcript in every payload", () => {
@@ -21,7 +21,7 @@ describe("Claude Code's hooks, as captured", () => {
       expect(payload.session_id).toEqual(expect.any(String))
       expect(payload.transcript_path).toEqual(expect.any(String))
     }
-    expect(events("SessionStart")[0]?.payload.source).toBe("startup")
+    expect(named("SessionStart")[0]?.payload.source).toBe("startup")
   })
 
   it("name the Claude Code process in the hook's environment", () => {
@@ -44,14 +44,14 @@ describe("Claude Code's hooks, as captured", () => {
   })
 
   it("attribute a subagent's tool calls to it, under the root's session", () => {
-    const [start] = events("SubagentStart")
+    const [start] = named("SubagentStart")
     const agent = start!.payload.agent_id
     const inside = claude.events.filter(
       ({ event, payload }) => event === "PreToolUse" && payload.agent_id === agent,
     )
     expect(inside).not.toEqual([])
     expect(inside[0]!.payload.session_id).toBe(start!.payload.session_id)
-    expect(events("SubagentStop")[0]?.payload.agent_transcript_path).toEqual(expect.any(String))
+    expect(named("SubagentStop")[0]?.payload.agent_transcript_path).toEqual(expect.any(String))
   })
 })
 
@@ -129,7 +129,7 @@ describe("Antigravity's hooks, as captured", () => {
     expect(agyHooks.hookEnvironment).toContain("ANTIGRAVITY_CONVERSATION_ID")
   })
 
-  it("fire no PostToolUse for a tool that failed or was denied", () => {
+  it("fire no PostToolUse for a tool its PreToolUse hook denied", () => {
     expect(agyHooks.events.some(({ event }) => event === "PreToolUse")).toBe(true)
     expect(agyHooks.events.some(({ event }) => event === "PostToolUse")).toBe(false)
   })
@@ -138,5 +138,100 @@ describe("Antigravity's hooks, as captured", () => {
     const stop = agyHooks.events.at(-1)!
     expect(stop.event).toBe("Stop")
     expect(stop.payload).toMatchObject({ terminationReason: "NO_TOOL_CALL", fullyIdle: true })
+  })
+})
+
+type Event = { event: string; payload: Payload; harnessProcess?: string | null }
+type Interactive = { scenarios: { [name: string]: { events: Event[] } } }
+const scenario = (harness: string, name: string) =>
+  fixture<Interactive>(harness, "interactive.probe.json").scenarios[name]!.events
+const after = (events: Event[], index: number) => events.slice(index + 1).map(({ event }) => event)
+const indexOf = (events: Event[], event: string, tool?: string) =>
+  events.findIndex((each) => each.event === event && (!tool || each.payload.tool_name === tool))
+
+describe("Claude Code in a terminal, as captured", () => {
+  it("fires nothing when Esc interrupts a running tool", () => {
+    const events = scenario("claude", "interrupt")
+    expect(after(events, indexOf(events, "PreToolUse", "Bash"))).toEqual(["SessionEnd"])
+  })
+
+  it("fires nothing after a denied permission, not even Stop", () => {
+    const events = scenario("claude", "deny")
+    expect(after(events, indexOf(events, "PermissionRequest"))).toEqual(["SessionEnd"])
+    expect(events.at(-1)?.payload.reason).toBe("prompt_input_exit")
+  })
+
+  it("follows an allowed permission with the tool's own result", () => {
+    const events = scenario("claude", "allow")
+    const request = indexOf(events, "PermissionRequest")
+    expect(events[request - 1]?.event).toBe("PreToolUse")
+    expect(events[request + 1]).toMatchObject({
+      event: "PostToolUse",
+      payload: { tool_use_id: events[request - 1]!.payload.tool_use_id },
+    })
+  })
+
+  it("asks a question through a permission request, and answers it in the tool response", () => {
+    const events = scenario("claude", "question")
+    expect(indexOf(events, "PermissionRequest", "AskUserQuestion")).toBeGreaterThan(-1)
+    const answered = events[indexOf(events, "PostToolUse", "AskUserQuestion")]!
+    expect((answered.payload.tool_response as Payload).answers).toEqual({
+      "Which color?": expect.any(String),
+    })
+  })
+
+  it("marks planning in every hook, and reviews the plan through ExitPlanMode", () => {
+    const events = scenario("claude", "plan")
+    const review = indexOf(events, "PermissionRequest", "ExitPlanMode")
+    expect(Object.keys(events[review]!.payload.tool_input as Payload).toSorted()).toEqual([
+      "plan",
+      "planFilePath",
+    ])
+    expect(events[review]!.payload.permission_mode).toBe("plan")
+    // Rejecting the plan fires nothing, as a denied tool does.
+    expect(after(events, review)).toEqual(["SessionEnd"])
+  })
+})
+
+describe("Codex in a terminal, as captured", () => {
+  it("follows an approved request with the tool's own result", () => {
+    const events = scenario("codex", "approve")
+    const request = indexOf(events, "PermissionRequest")
+    expect(events[request + 1]).toMatchObject({
+      event: "PostToolUse",
+      payload: { tool_use_id: events[request - 1]!.payload.tool_use_id },
+    })
+  })
+
+  it("reports a denial and an interrupt alike, as Interrupt for that turn", () => {
+    const events = scenario("codex", "deny-then-interrupt")
+    const request = indexOf(events, "PermissionRequest")
+    expect(events[request + 1]).toMatchObject({
+      event: "Interrupt",
+      payload: { turn_id: events[request]!.payload.turn_id },
+    })
+    const sleeping = events.findLastIndex(({ event }) => event === "PreToolUse")
+    expect(after(events, sleeping)).toEqual(["Interrupt", "SessionEnd"])
+  })
+})
+
+describe("Antigravity in a terminal, as captured", () => {
+  it("starts a new conversation on /clear in the same process", () => {
+    const events = scenario("agy", "clear")
+    expect(new Set(events.map(({ payload }) => payload.conversationId)).size).toBe(2)
+    expect(new Set(events.map(({ harnessProcess }) => harnessProcess))).toEqual(
+      new Set(["process-1"]),
+    )
+  })
+
+  it("follows an approved tool with PostToolUse, and a denied one with nothing", () => {
+    const events = scenario("agy", "confirm")
+    const tools = events.filter(({ event }) => event === "PreToolUse")
+    const done = (step: unknown) =>
+      events.some(({ event, payload }) => event === "PostToolUse" && payload.stepIdx === step)
+    expect(done(tools[0]!.payload.stepIdx)).toBe(true)
+    expect(done(tools[1]!.payload.stepIdx)).toBe(false)
+    // The denied turn ends without Stop: the next event is the next prompt's invocation.
+    expect(after(events, events.indexOf(tools[1]!))[0]).toBe("PreInvocation")
   })
 })

@@ -1,0 +1,323 @@
+{
+  "harness": "codex",
+  "version": "0.158.0",
+  "source": "captured",
+  "how": "driven interactively in a PTY (120x40) with every hook event registered: Claude through --settings, Codex in a throwaway CODEX_HOME, Antigravity through a scratch workspace .agents/hooks.json",
+  "scenarios": {
+    "approve": {
+      "what": "-s read-only -a on-request; an escalated touch approved with y, then Ctrl+C twice",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "SessionStart",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "source": "startup"
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "UserPromptSubmit",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "prompt": "<text>"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PreToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_use_id": "toolu_fixture08"
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PostToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_response": "touch: cannot touch 'approved.txt': Read-only file system\n",
+            "tool_use_id": "toolu_fixture08"
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PreToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_use_id": "toolu_fixture09"
+          }
+        },
+        {
+          "event": "PermissionRequest",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PermissionRequest",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "<text>"
+            }
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PostToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_response": "",
+            "tool_use_id": "toolu_fixture09"
+          }
+        },
+        {
+          "event": "Stop",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "turn_id": "20000000-0000-4000-8000-000000000001",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "Stop",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "stop_hook_active": false,
+            "last_assistant_message": "<text>"
+          }
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000006",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "SessionEnd",
+            "reason": "other"
+          }
+        }
+      ]
+    },
+    "deny-then-interrupt": {
+      "what": "An escalated touch denied with Esc; then Esc while `sleep 25` ran; then Ctrl+C twice",
+      "events": [
+        {
+          "event": "SessionStart",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "SessionStart",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "source": "startup"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "UserPromptSubmit",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "prompt": "<text>"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PreToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_use_id": "toolu_fixture10"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PostToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PostToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_response": "touch: cannot touch 'denied.txt': Read-only file system\n",
+            "tool_use_id": "toolu_fixture10"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PreToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_use_id": "toolu_fixture11"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PermissionRequest",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PermissionRequest",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>",
+              "description": "<text>"
+            }
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "Interrupt",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000002",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "Interrupt",
+            "model": "gpt-6-astra",
+            "permission_mode": "default"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "UserPromptSubmit",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "prompt": "<text>"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "PreToolUse",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "PreToolUse",
+            "model": "gpt-6-astra",
+            "permission_mode": "default",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "<command>"
+            },
+            "tool_use_id": "toolu_fixture12"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "Interrupt",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "turn_id": "20000000-0000-4000-8000-000000000003",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "Interrupt",
+            "model": "gpt-6-astra",
+            "permission_mode": "default"
+          },
+          "harnessProcess": "process-1"
+        },
+        {
+          "event": "SessionEnd",
+          "payload": {
+            "session_id": "00000000-0000-4000-8000-000000000007",
+            "transcript_path": "<path>",
+            "cwd": "<path>",
+            "hook_event_name": "SessionEnd",
+            "reason": "other"
+          },
+          "harnessProcess": "process-1"
+        }
+      ]
+    }
+  }
+}
