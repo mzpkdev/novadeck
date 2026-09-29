@@ -158,9 +158,11 @@
 .canvas-node.selected .terminal-window {
   border-color: var(--color-line-strong);
 }
+/* The selection bar is one size in every view, centred on the header whatever its
+   height; Canvas scales it with the rest of the header chrome. */
 .terminal-heading::before {
   content: "";
-  @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-strong;
+  @apply absolute left-0 top-1/2 z-1 h-6 w-0.5 -translate-y-1/2 bg-strong;
   opacity: 0;
   transition: opacity var(--motion-state) var(--ease-interface);
 }
