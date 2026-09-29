@@ -34,7 +34,7 @@ export const ContextMenu = ({ label, trigger, items }: ContextMenuProps): React.
                 key={item.value}
                 value={item.value}
                 onSelect={item.onSelect}
-                className="flex min-h-8 cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 outline-none data-highlighted:bg-shell"
+                className="flex min-h-8 cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 outline-none data-highlighted:bg-accent-soft"
               >
                 {item.icon}
                 <ArkMenu.ItemText>{item.label}</ArkMenu.ItemText>

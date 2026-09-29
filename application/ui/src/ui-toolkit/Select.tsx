@@ -62,7 +62,7 @@ export const Select = ({
           className={
             variant === "icon"
               ? "flex size-8 shrink-0 items-center justify-center rounded-control text-ink hover:bg-shell data-[state=open]:bg-shell"
-              : "flex min-h-8 min-w-30 items-center justify-between gap-4 rounded-control border border-line bg-paper px-2.5 py-1.75 text-[11px] text-ink shadow-control hover:bg-shell data-[state=open]:border-line-strong"
+              : "flex min-h-8 min-w-30 items-center justify-between gap-4 rounded-control border border-line bg-paper px-2.5 py-1.75 text-[11px] text-ink shadow-control hover:bg-shell data-[state=open]:border-accent-fg"
           }
         >
           <ArkSelect.ValueText className={variant === "icon" ? "sr-only" : "truncate"} />
@@ -76,7 +76,7 @@ export const Select = ({
         <ArkSelect.Positioner className="z-50">
           <ArkSelect.Content
             className={cn(
-              "z-50 max-h-[min(240px,var(--available-height))] overflow-y-auto rounded-control border border-line bg-paper p-1 text-[11px] text-ink shadow-floating focus-visible:outline-none",
+              "z-50 max-h-[min(240px,var(--available-height))] overflow-y-auto rounded-popover border border-line bg-paper p-1 text-[11px] text-ink shadow-floating focus-visible:outline-none",
               variant === "icon" && "min-w-48 max-w-[calc(100vw-24px)]",
             )}
           >
@@ -84,7 +84,7 @@ export const Select = ({
               <ArkSelect.Item
                 key={item.value}
                 item={item}
-                className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-control px-2 py-1.5 outline-none data-highlighted:bg-shell"
+                className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-control px-2 py-1.5 outline-none data-highlighted:bg-accent-soft"
               >
                 <ArkSelect.ItemText className="min-w-0 truncate">{item.label}</ArkSelect.ItemText>
                 {item.description && (
@@ -92,7 +92,7 @@ export const Select = ({
                     {item.description}
                   </span>
                 )}
-                <ArkSelect.ItemIndicator>
+                <ArkSelect.ItemIndicator className="text-accent-fg">
                   <Check size={13} strokeWidth={1.8} aria-hidden="true" />
                 </ArkSelect.ItemIndicator>
               </ArkSelect.Item>

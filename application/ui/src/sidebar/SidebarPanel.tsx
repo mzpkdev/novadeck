@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 
 export const sidebarCreateClasses =
-  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-line bg-paper px-2.5 shadow-control text-left text-[11px] text-ink hover:bg-soft focus-visible:bg-soft"
+  "sidebar-create flex min-h-9 w-full shrink-0 items-center gap-2 rounded-control border border-strong bg-strong px-2.5 shadow-control text-left text-[11px] font-medium text-white hover:bg-ink focus-visible:bg-ink [&_kbd]:text-white/70"
 
 export const SidebarPanel = ({
   id,
@@ -46,7 +46,7 @@ export const SidebarPanel = ({
       </Tooltip>
       <Tooltip content="Hide">
         <button
-          className="icon-button sidebar-close size-7 [&>svg]:opacity-25 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
+          className="icon-button sidebar-close size-7 [&>svg]:opacity-60 [&>svg]:transition-opacity [&>svg]:duration-(--motion-feedback) [&>svg]:ease-interface hover:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100"
           type="button"
           aria-label={`Hide ${title.toLowerCase()}`}
           onClick={onClose}

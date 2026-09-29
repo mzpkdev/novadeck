@@ -5,18 +5,20 @@
 
 @theme {
   --color-paper: #ffffff;
-  --color-shell: #f8f9f8;
-  --color-canvas: #f3f4f3;
-  --color-ink: #262826;
-  --color-muted: #6b7069;
-  --color-line: #e6e8e4;
-  --color-line-strong: #cdd2ca;
-  --color-scrim: rgb(38 40 38 / 0.18);
-  --color-soft: #eff1ed;
-  --color-strong: #373c35;
-  /* Signal cyan, the brand accent: for small marks only (the logo's cursor, the boot
-     hairline and attach flash), never for text. */
-  --color-accent: #12b0c4;
+  --color-shell: #fafafa;
+  --color-canvas: #f3f4f5;
+  --color-ink: #18181b;
+  --color-muted: #62626b;
+  --color-line: #e4e4e7;
+  --color-line-strong: #c4c4cc;
+  --color-scrim: rgb(0 0 0 / 0.18);
+  --color-soft: #f0f0f3;
+  --color-strong: #09090b;
+  /* Cyan marks selection and focus; use the darker companion for text on light surfaces. */
+  --color-accent: #06b6d4;
+  --color-accent-fg: #087e91;
+  --color-accent-soft: #e5f7fa;
+  --color-accent-line: #a5dce5;
   /* Status colours: soft tints for surfaces such as the footer while the runner is
      away, each with a dark text colour of the same hue (every pair meets WCAG AA). */
   --color-success: #dcebdd;
@@ -27,13 +29,13 @@
   --color-danger-fg: #8a2a22;
   --font-sans: "Inter Variable", "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --radius-control: 2px;
-  --radius-panel: 3px;
-  --radius-popover: 4px;
-  --shadow-control: 0 1px 3px rgb(38 40 38 / 0.04);
-  --shadow-panel: 0 1px 2px rgb(38 40 38 / 0.025), 0 4px 12px -6px rgb(38 40 38 / 0.08);
-  --shadow-floating: 0 2px 5px -2px rgb(38 40 38 / 0.06), 0 10px 24px -12px rgb(38 40 38 / 0.16);
-  --shadow-modal: 0 2px 6px -2px rgb(38 40 38 / 0.05), 0 20px 60px -20px rgb(38 40 38 / 0.14);
+  --radius-control: 5px;
+  --radius-panel: 8px;
+  --radius-popover: 10px;
+  --shadow-control: 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.025), 0 4px 12px -6px rgb(0 0 0 / 0.08);
+  --shadow-floating: 0 2px 5px -2px rgb(0 0 0 / 0.06), 0 10px 24px -12px rgb(0 0 0 / 0.16);
+  --shadow-modal: 0 2px 6px -2px rgb(0 0 0 / 0.05), 0 20px 60px -20px rgb(0 0 0 / 0.14);
   --motion-feedback: 120ms;
   --motion-state: 180ms;
   --motion-layout: 200ms;
@@ -95,7 +97,7 @@
     outline: none;
   }
   :focus-visible {
-    outline: 1px solid var(--color-muted);
+    outline: 2px solid var(--color-accent-fg);
     outline-offset: 2px;
   }
   input:focus-visible,
@@ -115,14 +117,14 @@
     min-width: 0;
   }
   ::selection {
-    background: #dce1d8;
-    color: #20241e;
+    background: var(--color-accent-soft);
+    color: var(--color-ink);
   }
 }
 
 .workspace-panels {
   --separator-border: var(--color-line);
-  --focus-border: var(--color-muted);
+  --focus-border: var(--color-accent-fg);
   --sash-hover-size: 2px;
 }
 .workspace-panels .sidebar {
@@ -148,7 +150,8 @@
 }
 .sidebar-keyboard-resize:focus-visible {
   outline: none;
-  background: linear-gradient(var(--color-muted), var(--color-muted)) center / 2px 100% no-repeat;
+  background: linear-gradient(var(--color-accent-fg), var(--color-accent-fg)) center / 2px 100%
+    no-repeat;
 }
 .terminal-tab-action:focus-visible {
   outline-offset: -2px;
@@ -159,11 +162,11 @@
 .terminal-focused,
 .grid-terminal.selected .terminal-window,
 .canvas-node.selected .terminal-window {
-  border-color: var(--color-line-strong);
+  border-color: var(--color-accent-line);
 }
 .terminal-heading::before {
   content: "";
-  @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-strong;
+  @apply absolute left-0 top-3 bottom-3 z-1 w-0.5 bg-accent;
   opacity: 0;
   transition: opacity var(--motion-state) var(--ease-interface);
 }
@@ -218,8 +221,8 @@
   @apply h-12 px-4;
 }
 .workspace-background {
-  --terminal-idle-opacity: 0.5;
-  --terminal-hover-opacity: 0.75;
+  --terminal-idle-opacity: 0.82;
+  --terminal-hover-opacity: 0.95;
   background-color: var(--color-canvas);
   --canvas-grid-opacity: 0.16;
   --canvas-grid-spotlight-opacity: 0.48;
@@ -446,11 +449,17 @@
   kbd {
     @apply inline-flex min-h-5 items-center justify-center rounded-control border border-line bg-shell px-1.5 font-mono text-[9px];
   }
+  .action-button,
   .small-button {
-    @apply flex h-9 items-center gap-2 rounded-control border border-line bg-paper px-4 text-[11px] shadow-control hover:bg-soft;
+    @apply inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-control border border-line bg-paper px-3 py-2 text-[12px] font-medium text-ink shadow-control hover:border-line-strong hover:bg-soft;
   }
+  .action-button.primary,
   .small-button.primary {
-    @apply border-strong bg-strong text-white hover:bg-ink;
+    @apply border-strong bg-strong text-white hover:border-ink hover:bg-ink;
+  }
+  .action-button:disabled,
+  .small-button:disabled {
+    @apply pointer-events-none opacity-50;
   }
 }
 

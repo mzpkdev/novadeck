@@ -90,7 +90,7 @@ export const ZenDock = ({
               .map(({ id, label, icon: Icon }) => (
                 <Tooltip key={id} content={label}>
                   <button
-                    className={`icon-button ${view === id ? "bg-soft text-ink" : "text-muted"}`}
+                    className={`icon-button ${view === id ? "bg-strong text-white hover:bg-ink hover:text-white" : "text-muted"}`}
                     aria-label={`${label} view`}
                     aria-pressed={view === id}
                     onClick={() => onViewChange(id)}

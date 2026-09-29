@@ -218,7 +218,7 @@ export const OnboardingPreview = ({
               type="button"
               aria-pressed={active}
               onClick={() => choose(item)}
-              className={`relative flex min-h-9 items-center gap-2 overflow-hidden rounded-control border px-3 py-2 text-[11px] transition-[background-color,border-color,color,box-shadow] duration-(--motion-state) ${active ? "border-line-strong bg-paper text-ink shadow-control" : "border-transparent text-muted hover:bg-soft hover:text-ink"}`}
+              className={`relative flex min-h-9 items-center gap-2 overflow-hidden rounded-control border px-3 py-2 text-[11px] transition-[background-color,border-color,color,box-shadow] duration-(--motion-state) ${active ? "border-strong bg-strong text-white shadow-control" : "border-transparent text-muted hover:bg-soft hover:text-ink"}`}
             >
               <Icon size={13} strokeWidth={1.6} aria-hidden="true" />
               {item.label}
