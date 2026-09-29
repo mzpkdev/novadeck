@@ -180,7 +180,22 @@
    window reads it from a line under the header, legible at any Canvas zoom: a sweep
    while a program runs, dots while the shell starts, dashes once it has ended, and
    nothing while idle. Reduced motion holds the spinner and sweep still. */
-.terminal-spinner::before {
+/* Each tab keeps a one-glyph slot before its program, so the text never shifts. Only
+   what needs a look is marked: a spinner while a program runs, a dot while the shell
+   starts, and a cross once it has ended; an idle tab leaves it blank. */
+.terminal-glyph::before {
+  content: "\00a0";
+}
+.terminal-tab[data-terminal-phase="starting"] .terminal-glyph {
+  color: var(--color-muted);
+}
+.terminal-tab[data-terminal-phase="starting"] .terminal-glyph::before {
+  content: "·";
+}
+.terminal-tab[data-terminal-phase="ended"] .terminal-glyph::before {
+  content: "×";
+}
+.terminal-tab[data-terminal-phase="running"] .terminal-glyph::before {
   content: "⠋";
   animation: terminal-spin 800ms steps(1) infinite;
 }
@@ -278,28 +293,6 @@
   border-top-style: dashed;
   border-top-color: var(--color-strong);
 }
-/* The selected tab's bar, a border like the window's line so both snap alike, takes
-   the same state: solid while idle, a sweep running down it, dots while starting,
-   dashes once ended. */
-.terminal-tab[data-terminal-phase="running"]::before {
-  border-image: linear-gradient(
-      to bottom,
-      var(--color-line) calc(var(--terminal-sweep) - 35%),
-      var(--color-strong) calc(var(--terminal-sweep) - 15%),
-      var(--color-strong) calc(var(--terminal-sweep) + 15%),
-      var(--color-line) calc(var(--terminal-sweep) + 35%)
-    )
-    1;
-  animation: terminal-sweep 2.2s var(--ease-interface) infinite;
-}
-.terminal-tab[data-terminal-phase="starting"]::before {
-  border-left-style: dotted;
-  border-left-color: var(--color-muted);
-  animation: terminal-pulse 1.2s ease-in-out infinite;
-}
-.terminal-tab[data-terminal-phase="ended"]::before {
-  border-left-style: dashed;
-}
 .terminal-window[data-terminal-phase="ended"] .runner-terminal .xterm {
   opacity: 0.55;
 }
@@ -314,10 +307,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .terminal-window[data-terminal-phase="running"] .terminal-heading::after,
-  .terminal-tab[data-terminal-phase="running"]::before {
+  .terminal-window[data-terminal-phase="running"] .terminal-heading::after {
     border-image: none;
-    border-color: var(--color-strong);
+    border-top-color: var(--color-strong);
   }
 }
 .workspace-dots {
