@@ -20,5 +20,33 @@ export type SessionObserved = {
   readonly cwd?: string
 }
 
+/**
+ * What the agent in a session did, as its own hooks report it: a turn started or ended,
+ * or a request started or stopped waiting on the person. A request has no id of its own
+ * in any harness, so `requestId` is derived from the tool call it asks about, and
+ * `toolName` resolves one whose call changed on the way, as an answered question's does.
+ */
+export type ActivityEvent = {
+  readonly agent: AgentName
+  readonly sessionId: string
+  readonly instance: string | null
+  readonly startedAt: number
+} & (
+  | { readonly type: "turn-started" }
+  | { readonly type: "turn-ended"; readonly outcome: "completed" | "interrupted" | "failed" }
+  | {
+      readonly type: "attention-requested"
+      readonly requestId: string
+      readonly toolName: string
+      readonly kind: "permission" | "question"
+    }
+  | {
+      readonly type: "attention-resolved"
+      readonly requestId: string
+      readonly toolName: string
+      readonly outcome: "allowed"
+    }
+)
+
 /** A normalized fact a harness reported. */
-export type HarnessEvent = SessionObserved
+export type HarnessEvent = SessionObserved | ActivityEvent

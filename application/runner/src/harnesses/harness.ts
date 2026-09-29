@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { isAbsolute } from "node:path"
 
 import { agentSessionId, type AgentName } from "@novadeck/protocol"
@@ -93,3 +94,17 @@ export const absolute = (value: unknown): string | undefined =>
   typeof value === "string" && value.length <= 4096 && !value.includes("\0") && isAbsolute(value)
     ? value
     : undefined
+
+/**
+ * An id for the tool call a permission request asks about, which no harness names: the
+ * tool and a digest of its input, so the call's own result can resolve it.
+ */
+export const callId = (toolName: string, input: unknown): string =>
+  `${toolName}:${createHash("sha256")
+    .update(JSON.stringify(input ?? null))
+    .digest("hex")
+    .slice(0, 16)}`
+
+/** A payload's string field, or undefined. */
+export const text = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined
