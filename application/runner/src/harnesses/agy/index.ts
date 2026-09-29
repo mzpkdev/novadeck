@@ -7,15 +7,13 @@ import { decode } from "./decode.js"
 // Antigravity keeps its own state beside other Google tools in ~/.gemini.
 const gemini = (home: string) => join(home, ".gemini")
 
-// Antigravity reads every hook's answer as JSON, even outside NovaDeck's shells, and
-// denies a tool whose PreToolUse answer says nothing: "ask" leaves its own policy in
-// charge.
-const answer = (event: string): string => (event === "PreToolUse" ? '{"decision":"ask"}' : "{}")
-
+// Antigravity reads every hook's answer as JSON, even outside NovaDeck's shells. It
+// denies a tool whose PreToolUse answer says nothing, so registering PreToolUse needs an
+// answer of "ask" here too, in a form cmd passes on intact; none is registered yet.
 const hook = (platform: NodeJS.Platform, event: string): string =>
   platform === "win32"
-    ? `if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy ${event}) else (echo ${answer(event)})`
-    : `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '${answer(event)}'; fi`
+    ? `if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy ${event}) else (echo {})`
+    : `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '{}'; fi`
 
 export const agy = {
   id: "agy",

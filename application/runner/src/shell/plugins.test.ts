@@ -95,13 +95,6 @@ describe("agent plugin hook commands", () => {
     )
   })
 
-  it("let Antigravity keep its own policy for a tool, even outside NovaDeck's shells", () => {
-    const result = runHook("agy", "PreToolUse", undefined, "{}")
-    expect(result.status).toBe(0)
-    // An answer without a decision would deny the tool.
-    expect(JSON.parse(result.stdout)).toEqual({ decision: "ask" })
-  })
-
   for (const agent of ["claude", "codex", "agy"] as const) {
     it(`do nothing outside NovaDeck's shells for ${agent}`, ({ plugins }) => {
       const result = runHook(agent, events[agent], undefined, "{}")
