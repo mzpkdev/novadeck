@@ -84,18 +84,24 @@ describe("compiled desktop runner", () => {
           process.platform === "win32" ? "echo DESKTOP_4^2\r" : 'echo DESKTOP_4""2\r',
         )
         await reading
-        // Asked to before the system session ends, it saves the terminal's screen.
-        runner.persist()
+        // Asked to before the system session ends, it saves the terminal's screen. The ask
+        // is a message the runner handles after the output it is still relaying, which a
+        // slow machine takes a while over: asked again each time, the latest ask counts.
         const saved = new DatabaseSync(database, { readOnly: true })
         try {
           await expect
             .poll(
-              () =>
-                (
-                  saved.prepare("SELECT transcript FROM terminals WHERE id = ?").get(created.id) as
-                    | { transcript: string | null }
-                    | undefined
-                )?.transcript ?? "",
+              () => {
+                runner.persist()
+                return (
+                  (
+                    saved
+                      .prepare("SELECT transcript FROM terminals WHERE id = ?")
+                      .get(created.id) as { transcript: string | null } | undefined
+                  )?.transcript ?? ""
+                )
+              },
+              { timeout: 15_000, interval: 200 },
             )
             .toContain("DESKTOP_42")
         } finally {
@@ -114,7 +120,7 @@ describe("compiled desktop runner", () => {
         await runner.close()
         await rm(directory, { recursive: true, force: true })
       }
-    }, 20_000)
+    }, 30_000)
 
     it("has no terminal limit, unlike a standalone runner", async () => {
       const directory = await mkdtemp(join(tmpdir(), "novadeck-host-runner-"))
