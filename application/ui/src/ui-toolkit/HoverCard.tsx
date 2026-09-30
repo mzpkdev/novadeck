@@ -39,8 +39,9 @@ export const HoverCard = ({ trigger, children, className }: HoverCardProps): Rea
         onPointerLeave={() => {
           hovering.current = false
         }}
+        // The right button, or Control with the left on a Mac, asks for the context menu.
         onPointerDown={(event) => {
-          if (event.button === 2) setOpen(false)
+          if (event.button === 2 || (event.button === 0 && event.ctrlKey)) setOpen(false)
         }}
       >
         {trigger}
