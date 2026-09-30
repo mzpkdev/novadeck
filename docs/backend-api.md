@@ -456,6 +456,20 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   agent and ends when the terminal is closed; an unknown one is `TERMINAL_NOT_FOUND`.
   The client's `agents.detail(terminalId)` resubscribes across reconnections and ends
   once the terminal is gone.
+- `agents.transcript({ terminalId, actor })` streams an actor's conversation, by the ref
+  `agents.detail` names it by, as its harness recorded it: batches of up to 256 items
+  from the start of the record, then each one appended, and `reset` when the record was
+  rewritten (the items follow again from the start). An item is the person's or the
+  agent's text, a tool call with its input as text, or a tool's result, numbered from
+  the record's start, with when it was written; `call` pairs a result with its call by a
+  runner-issued ref. Text past 16 KiB is cut short and marked `truncated`, and reasoning
+  never appears. It reads Claude Code's session transcript and its per-subagent ones,
+  and Codex's rollouts, without the context Codex adds as the person's message or its
+  developer messages; Antigravity's is not read. A slow reader holds the reading back.
+  An actor the terminal's session does not have, or without a transcript NovaDeck reads,
+  is `NOT_FOUND`; the stream ends when the terminal's agent leaves that session. The
+  client's `agents.transcript(terminalId, actor)` resubscribes across reconnections,
+  yielding `reset` before the items follow again.
 - `settings.get()` and `settings.set({ transcripts?, welcomed? })` read and change
   whether transcripts are kept (unless turned off; turning them off forgets every saved
   transcript) and whether the person has seen the first-run choice of agents.
