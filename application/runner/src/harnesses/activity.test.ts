@@ -288,20 +288,21 @@ describe("applying activity", () => {
   })
 })
 
+const interrupt = (payload: Report["payload"]): Report => ({
+  terminalId: "t",
+  token: "0".repeat(48),
+  agent: "codex",
+  event: "Interrupt",
+  seq: 1,
+  instance: null,
+  env: { cursor: false },
+  payload,
+})
+
 describe("a Codex subagent's interrupt", () => {
   it("ends its own work, not the turn", () => {
-    const report = (payload: Report["payload"]): Report => ({
-      terminalId: "t",
-      token: "0".repeat(48),
-      agent: "codex",
-      event: "Interrupt",
-      seq: 1,
-      instance: null,
-      env: { cursor: false },
-      payload,
-    })
-    expect(harnesses.codex.decode(report({ session_id: "s", agent_id: "a" }))).toEqual([])
-    expect(harnesses.codex.decode(report({ session_id: "s" }))).toMatchObject([
+    expect(harnesses.codex.decode(interrupt({ session_id: "s", agent_id: "a" }))).toEqual([])
+    expect(harnesses.codex.decode(interrupt({ session_id: "s" }))).toMatchObject([
       { type: "turn-ended", outcome: "interrupted" },
     ])
   })
