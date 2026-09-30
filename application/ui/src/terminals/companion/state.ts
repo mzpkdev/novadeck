@@ -177,6 +177,8 @@ type Session = {
   readonly pending: Map<string, PlanSnapshot>
   // Per plan, how many saves in a row failed, which spaces out the next try.
   readonly failures: Map<string, number>
+  // Per plan, texts sent in saves whose answer never came: the file may hold any of them.
+  readonly unconfirmed: Map<string, readonly string[]>
   readonly content: Map<string, Promise<ArtifactContent>>
   // A pane for each terminal that has none yet, the same one each time it's asked for.
   readonly empty: Map<string, PaneState>
@@ -278,6 +280,8 @@ const persist = (session: Session, key: CompanionKey, ref: string): void => {
   }
   const failed = (): void => {
     if (!settleAttempt()) return
+    // It may have been written all the same: the next version of the file tells.
+    session.unconfirmed.set(id, [...(session.unconfirmed.get(id) ?? []), sent])
     const failures = (session.failures.get(id) ?? 0) + 1
     session.failures.set(id, failures)
     mark(true)
@@ -300,6 +304,7 @@ const persist = (session: Session, key: CompanionKey, ref: string): void => {
   const timer = setTimeout(failed, saveTimeout)
   session.companions.save(key, ref, text, basedOn).then(async (result) => {
     if (!settleAttempt()) return
+    if (result.saved) session.unconfirmed.delete(id)
     session.failures.delete(id)
     mark(false)
     const pending = session.pending.get(id)
@@ -336,15 +341,22 @@ const revise = async (
     session.pending.set(id, snapshot)
     return
   }
-  const { merge } = await import("./plan-editor/sync")
-  const echo = inFlight === theirs
+  const { distance, merge } = await import("./plan-editor/sync")
+  const unconfirmed = session.unconfirmed.get(id) ?? []
+  const echo = inFlight === theirs || unconfirmed.includes(theirs)
   change(session, key, (pane) =>
     withPlan(pane, snapshot.ref, (plan) => {
       if (snapshot.revision === plan.revision && theirs === plan.base) return plan
       // A backend watching the file reports the user's own save back.
       if (echo || theirs === plan.text)
         return { ...plan, base: theirs, revision: snapshot.revision, eol: eolOf(snapshot.text) }
-      const written = merge(plan.base, plan.text, theirs)
+      // A save whose answer never came may have been written: the rewrite merges over
+      // whichever the file now stands closest to, so a written save's edits aren't
+      // merged in twice and an unwritten one's aren't taken for the agent's.
+      const base = [plan.base, ...unconfirmed].reduce((closest, candidate) =>
+        distance(candidate, theirs) < distance(closest, theirs) ? candidate : closest,
+      )
+      const written = merge(base, plan.text, theirs)
       const writes = plan.writes + 1
       return {
         ...plan,
@@ -362,6 +374,8 @@ const revise = async (
       }
     }),
   )
+  // This version settles what the file holds; saves still unanswered no longer matter.
+  session.unconfirmed.delete(id)
   persist(session, key, snapshot.ref)
 }
 
@@ -384,6 +398,7 @@ const sessionOf = (companions: Companions): Session => {
     waiting: new Map(),
     pending: new Map(),
     failures: new Map(),
+    unconfirmed: new Map(),
     content: new Map(),
     empty: new Map(),
   }

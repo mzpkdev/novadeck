@@ -184,6 +184,53 @@ describe("companion store", () => {
     expect(plan(actions)).toMatchObject({ unsaved: false, revision: "2" })
   })
 
+  context("when a save timed out but was written", () => {
+    it("merges a rewrite over it, so the user's edit stays once", async () => {
+      const { companions, saves, emit } = backend()
+      const actions = companionActions(companions, key)
+      const edited = first.replace("beta\n", "beta\nUSER LINE\n")
+      actions.edit("root", edited, [])
+      actions.flush("root")
+      emit({
+        type: "plan/changed",
+        key,
+        plan: snapshot(edited.replace("gamma", "GAMMA (agent)"), "3"),
+      })
+      await vi.advanceTimersByTimeAsync(20_000)
+      await settle()
+      expect(plan(actions).text).toBe("# Plan\n\nalpha\nbeta\nUSER LINE\nGAMMA (agent)\n")
+      saves[0]!.answer({ saved: true, revision: "2" })
+      await settle()
+      expect(plan(actions).text.split("USER LINE")).toHaveLength(2)
+    })
+
+    it("keeps the user's edit when the save never reached the file", async () => {
+      const { companions, saves, emit } = backend()
+      const actions = companionActions(companions, key)
+      actions.edit("root", first.replace("beta\n", "beta\nUSER LINE\n"), [])
+      actions.flush("root")
+      saves[0]!.fail()
+      await settle()
+      emit({ type: "plan/changed", key, plan: snapshot(first.replace("gamma", "GAMMA"), "3") })
+      await settle()
+      expect(plan(actions).text).toBe("# Plan\n\nalpha\nbeta\nUSER LINE\nGAMMA\n")
+    })
+
+    it("takes the file refusing a retry with that save's text as the user's own", async () => {
+      const { companions, saves } = backend()
+      const actions = companionActions(companions, key)
+      actions.edit("root", `${first}ONE\n`, [])
+      actions.flush("root")
+      await vi.advanceTimersByTimeAsync(20_000)
+      actions.edit("root", `${first}ONE\nTWO\n`, [])
+      await vi.advanceTimersByTimeAsync(2000)
+      saves[1]!.answer({ saved: false, current: snapshot(`${first}ONE\n`, "2") })
+      await settle()
+      expect(plan(actions)).toMatchObject({ text: `${first}ONE\nTWO\n`, writes: 0, revision: "2" })
+      expect(saves[2]).toMatchObject({ basedOn: "2", text: `${first}ONE\nTWO\n` })
+    })
+  })
+
   it("saves once typing pauses", async () => {
     const { companions, saves } = backend()
     const actions = companionActions(companions, key)
