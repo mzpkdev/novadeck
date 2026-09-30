@@ -8,6 +8,7 @@ import {
   noteInput,
   noteSafe,
   notesReopened,
+  withoutEmptyNotes,
 } from "./notes"
 
 const doc = (value: string): Text => Text.of(value.split("\n"))
@@ -103,5 +104,19 @@ describe("plan notes and what's typed in them", () => {
     expect(fix && deleted.newDoc.replace(fix.from, fix.to, Text.of([fix.insert])).toString()).toBe(
       "<!-- novadeck: p -> q -->",
     )
+  })
+})
+
+describe("plan notes left empty when the editor closes", () => {
+  it("go, with the highlights after them moved to match", () => {
+    const text = "A\n<!-- novadeck:  -->\nB"
+    expect(withoutEmptyNotes(text, [{ from: text.indexOf("B"), to: text.length }])).toEqual({
+      text: "A\nB",
+      marks: [{ from: 2, to: 3 }],
+    })
+  })
+
+  it("leave a plan without them alone", () => {
+    expect(withoutEmptyNotes("A\n<!-- novadeck: Hi -->", [])).toBeNull()
   })
 })

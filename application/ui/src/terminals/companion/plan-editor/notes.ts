@@ -1,7 +1,8 @@
-import { EditorSelection, type Line, type Text, type Transaction } from "@codemirror/state"
+import { ChangeSet, EditorSelection, Text, type Line, type Transaction } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
 import { noteClose, noteOpen, notePattern, noteSafe } from "../../../model/companion"
+import type { Mark } from "../state"
 import { findTables } from "./tables"
 
 // Notes as NovaDeck writes them into the plan, and the control that adds one.
@@ -171,4 +172,20 @@ export const emptyNoteRemovals = (
     )
   }
   return removals
+}
+
+// A plan without the notes left empty in it, and its highlights moved to match; null
+// when it has none.
+export const withoutEmptyNotes = (
+  text: string,
+  marks: readonly Mark[],
+): { text: string; marks: Mark[] } | null => {
+  const doc = Text.of(text.split("\n"))
+  const removals = emptyNoteRemovals(doc, null)
+  if (!removals.length) return null
+  const changes = ChangeSet.of(removals, doc.length)
+  return {
+    text: changes.apply(doc).toString(),
+    marks: marks.map(({ from, to }) => ({ from: changes.mapPos(from), to: changes.mapPos(to) })),
+  }
 }

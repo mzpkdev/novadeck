@@ -1,13 +1,12 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
 import { Language, LanguageSupport, defineLanguageFacet } from "@codemirror/language"
-import { Annotation, ChangeSet, EditorState, Text, Transaction } from "@codemirror/state"
+import { Annotation, EditorState, Transaction } from "@codemirror/state"
 import { EditorView, keymap } from "@codemirror/view"
 import { GFM, parser } from "@lezer/markdown"
 import { useEffect, useLayoutEffect, useRef } from "react"
 
 import type { Mark } from "../state"
 import { currentAgentMarks, livePreview, setMarks } from "./live-preview"
-import { emptyNoteRemovals } from "./notes"
 import { lineChanges } from "./sync"
 
 // Markdown with GitHub's tables and task lists, and nothing embedded: plans don't need
@@ -29,19 +28,21 @@ export const PlanEditor = ({
   marks,
   onChange,
   onReady,
+  onClose,
 }: {
   text: string
   marks: readonly Mark[]
   // The text, and the latest revision's highlights moved along with the edit.
   onChange: (text: string, marks: readonly Mark[]) => void
   onReady: (handle: PlanEditorHandle) => void
+  onClose: () => void
 }): React.JSX.Element => {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   // The latest props, for the editor's listeners, which outlive a render.
-  const latest = useRef({ text, marks, onChange, onReady })
+  const latest = useRef({ text, marks, onChange, onReady, onClose })
   useLayoutEffect(() => {
-    latest.current = { text, marks, onChange, onReady }
+    latest.current = { text, marks, onChange, onReady, onClose }
   })
   useEffect(() => {
     const editor = new EditorView({
@@ -74,18 +75,7 @@ export const PlanEditor = ({
     })
     return () => {
       // Closing the pane leaves no empty note behind: none of the editor's updates follow.
-      // It's cleaned from the file as it now stands, which an agent may have rewritten
-      // in the same render that closed the pane.
-      const { text: current, marks: shown } = latest.current
-      const doc = Text.of(current.split("\n"))
-      const removals = emptyNoteRemovals(doc, null)
-      if (removals.length) {
-        const changes = ChangeSet.of(removals, doc.length)
-        latest.current.onChange(
-          changes.apply(doc).toString(),
-          shown.map(({ from, to }) => ({ from: changes.mapPos(from), to: changes.mapPos(to) })),
-        )
-      }
+      latest.current.onClose()
       editor.destroy()
     }
   }, [])

@@ -156,6 +156,8 @@ export type CompanionHandle = {
   // The user edited the plan: the file changes, for the agent to read. `marks` are the
   // latest revision's highlights, moved along with the edit.
   readonly edit: (text: string, marks: readonly Mark[]) => void
+  // The editor closed: notes left empty in the file go, from the file as it now stands.
+  readonly dropEmptyNotes: () => void
 }
 
 export const useCompanion = (companions: Companions, terminalId: string): CompanionHandle => {
@@ -172,6 +174,16 @@ export const useCompanion = (companions: Companions, terminalId: string): Compan
         text === plan.text ? plan : { ...plan, text, marks, marked: text },
       )
       if (edited) companions.save(terminalId, text)
+    },
+    dropEmptyNotes: () => {
+      // The note code is already loaded: the editor that closed shares it.
+      void import("./plan-editor/notes").then(({ withoutEmptyNotes }) => {
+        const cleaned = change(panes, terminalId, (plan) => {
+          const kept = withoutEmptyNotes(plan.text, currentMarks(plan))
+          return kept ? { ...plan, ...kept, marked: kept.text } : plan
+        })
+        if (cleaned) companions.save(terminalId, cleaned.text)
+      })
     },
   }
 }

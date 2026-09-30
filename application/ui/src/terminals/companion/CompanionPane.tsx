@@ -126,6 +126,7 @@ export const CompanionPane = ({
                 onReady={(handle) => {
                   editor.current = handle
                 }}
+                onClose={companion.dropEmptyNotes}
               />
             </Suspense>
           </div>
