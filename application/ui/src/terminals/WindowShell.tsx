@@ -227,10 +227,11 @@ export const WindowShell = ({
               )}
             </>
           </div>
-          {usage && (
-            // The agent's context and busiest rate limit, in full on hover.
+          {usage && !compact && (
+            // The agent's context and busiest rate limit, in full on hover. Only a focused
+            // window has room beside its name; a compact one leaves it to the tab.
             <span
-              className="terminal-usage ml-auto shrink-0 font-mono text-[10px] text-muted"
+              className="terminal-usage ml-auto min-w-0 truncate font-mono text-[10px] text-muted"
               title={usageDetail(terminal)}
             >
               {usage}

@@ -47,7 +47,7 @@ export const transcriptEvents = (
       cache_creation_input_tokens: written,
       cache_read_input_tokens: read,
     } = usage as Record<string, unknown>
-    const occupied = count(input) + count(written) + count(read)
+    const occupied = Math.round(count(input) + count(written) + count(read))
     return occupied > 0
       ? [{ type: "telemetry-observed", ...base, context: { occupied, capacity: null } }]
       : []

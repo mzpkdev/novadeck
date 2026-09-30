@@ -22,7 +22,7 @@ const limit = (window: unknown): Limit | undefined => {
   const length = number(minutes)
   const at = number(resets)
   return {
-    minutes: length !== undefined && length > 0 ? Math.round(length) : null,
+    minutes: length !== undefined && length >= 1 ? Math.round(length) : null,
     used: Math.min(1, Math.max(0, used / 100)),
     resetsAt: at !== undefined ? at * 1000 : null,
   }
@@ -66,8 +66,8 @@ export const rolloutEvents = (
       startedAt,
       ...(occupied !== undefined && {
         context: {
-          occupied: Math.round(occupied),
-          capacity: capacity !== undefined && capacity > 0 ? Math.round(capacity) : null,
+          occupied: Math.max(0, Math.round(occupied)),
+          capacity: capacity !== undefined && capacity >= 1 ? Math.round(capacity) : null,
         },
       }),
       ...(limits !== undefined && limits !== null && { limits: known }),

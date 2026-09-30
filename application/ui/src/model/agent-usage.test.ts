@@ -14,14 +14,19 @@ const terminal = (usage?: AgentUsage): TerminalMetadata => ({
 const codex: AgentUsage = {
   context: { occupied: 30_000, capacity: 200_000 },
   limits: [
-    { minutes: 300, used: 0.4, resetsAt: 1_000 },
+    { minutes: 300, used: 0.4, resetsAt: 10_000 },
     { minutes: 10_080, used: 0.1, resetsAt: null },
   ],
 }
 
 describe("an agent's usage", () => {
   it("shows the context's fill and the busiest window at a glance", () => {
-    expect(usageBadge(terminal(codex))).toBe("ctx 15% · 5h 40%")
+    expect(usageBadge(terminal(codex), 0)).toBe("ctx 15% · 5h 40%")
+  })
+
+  it("passes over a window that has reset since the agent last said", () => {
+    expect(usageBadge(terminal(codex), 20_000)).toBe("ctx 15% · 7d 10%")
+    expect(usageDetail(terminal(codex), 20_000)).toContain("5h limit: reset since")
   })
 
   it("counts tokens where the capacity is unknown, as Claude Code's transcript leaves it", () => {
@@ -31,10 +36,10 @@ describe("an agent's usage", () => {
   })
 
   it("details every window with when it resets", () => {
-    expect(usageDetail(terminal(codex), () => "Tue 14:05")).toBe(
+    expect(usageDetail(terminal(codex), 0, () => "14:05")).toBe(
       [
         "Context: 30k of 200k tokens",
-        "5h limit: 40% used, resets Tue 14:05",
+        "5h limit: 40% used, resets 14:05",
         "7d limit: 10% used",
       ].join("\n"),
     )
