@@ -407,6 +407,36 @@ describe("runner client terminal closing", () => {
   })
 })
 
+describe("runner client agent detail", () => {
+  it("follows a terminal's agent, and ends once the terminal is gone", async ({ resources }) => {
+    const app = await deployed(resources)
+    const client = await app.connect()
+    const { id: sessionId } = await session(client, app.directory)
+    const terminal = await client.terminals.create(shell(sessionId))
+    const details = client.agents.detail(terminal.id)
+    await expect(details.next()).resolves.toEqual({
+      done: false,
+      value: {
+        terminalId: terminal.id,
+        agent: null,
+        sessionId: null,
+        activity: null,
+        telemetry: null,
+        actors: [],
+        requests: [],
+        coverage: null,
+      },
+    })
+    const ending = details.next()
+    await client.terminals.close(terminal.id)
+    await expect(ending).resolves.toEqual({ done: true, value: undefined })
+    await expect(client.agents.detail(crypto.randomUUID()).next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    })
+  })
+})
+
 describe("runner client terminal restart", () => {
   it("restarts an exited terminal in place and attaches to its new screen", async ({
     resources,

@@ -2,6 +2,10 @@ import type { AgentActivity } from "@novadeck/protocol"
 
 import type { Binding } from "./bindings.js"
 import type { ActivityEvent } from "./events.js"
+import { ref } from "./harness.js"
+
+/** The reference clients know a subagent by. */
+export const subagentRef = (id: string): string => ref("subagent", id)
 
 /** A request waiting on the person, as its harness identified it. */
 type Request = {
@@ -9,6 +13,8 @@ type Request = {
   readonly actor: string | null
   readonly toolName: string
   readonly kind: "permission" | "question" | "plan"
+  readonly subject: string | null
+  readonly choices: readonly string[]
 }
 
 /** A subagent running under the bound agent, since its start hook started. */
@@ -158,7 +164,7 @@ export const apply = (
     }
     case "attention-requested": {
       if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
-      const { requestId, actor, toolName, kind } = event
+      const { requestId, actor, toolName, kind, subject, choices } = event
       // An actor shows one plan for review at a time: a revised one replaces it.
       const kept =
         kind === "plan"
@@ -167,7 +173,7 @@ export const apply = (
       return {
         ...activity,
         state: "working",
-        pending: [...kept, { requestId, actor, toolName, kind }],
+        pending: [...kept, { requestId, actor, toolName, kind, subject, choices }],
       }
     }
     case "attention-resolved": {
@@ -183,5 +189,5 @@ export const summary = ({ state, pending, subagents, planning }: Activity): Agen
   state,
   planning,
   attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
-  subagents: subagents.map(({ id, type }) => ({ id, type })),
+  subagents: subagents.map(({ id, type }) => ({ id: subagentRef(id), type })),
 })
