@@ -86,9 +86,7 @@ const PlanTab = ({
       <div className="plan-document-scroll" data-changes={plan.showChanges}>
         <div className="plan-meta">
           <code className="plan-meta-path">{plan.path}</code>
-          <span>
-            v{plan.writes + 1} · {plan.writes ? "updated just now" : "written 2 min ago"}
-          </span>
+          <span>v{plan.writes + 1}</span>
           {marks.length > 0 && (
             <button
               className="plan-changes-toggle"

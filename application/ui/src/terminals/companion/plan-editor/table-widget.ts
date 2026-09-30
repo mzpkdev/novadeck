@@ -1,4 +1,4 @@
-import { StateField, type EditorState } from "@codemirror/state"
+import { StateField, type ChangeSpec, type EditorState } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 
 import { addNote, noteIcon, noteLabel } from "./notes"
@@ -127,6 +127,14 @@ class TableWidget extends WidgetType {
       return commit(view, start, active.place, active.text())
     }
 
+    // Reshapes the table; a change the editor refused, as in a read-only plan, leaves
+    // no focus waiting for a table that isn't coming.
+    const dispatchReshape = (changes: ChangeSpec): void => {
+      const before = view.state.doc
+      view.dispatch({ changes })
+      if (view.state.doc === before) pending = null
+    }
+
     // Opens a row's note, adding it if it has none. The header's note is on the whole
     // table, and goes after it.
     const noteOn = (row: number): void => {
@@ -151,7 +159,7 @@ class TableWidget extends WidgetType {
       const added = addRowNote(current, row)
       if (!added) return
       pending = { row, note: true }
-      view.dispatch({ changes: added.change })
+      dispatchReshape(added.change)
     }
 
     const rowNoteButton = (row: number): HTMLButtonElement => {
@@ -247,7 +255,7 @@ class TableWidget extends WidgetType {
       const { changes, focus } = reshape(current, place)
       if (!changes || (Array.isArray(changes) && !changes.length)) return
       pending = focus
-      view.dispatch({ changes })
+      dispatchReshape(changes)
     }
 
     const toolbar = document.createElement("div")
