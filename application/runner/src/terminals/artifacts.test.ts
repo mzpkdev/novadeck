@@ -68,9 +68,7 @@ describe("what an agent may show", () => {
     writeFileSync(join(fixture.outside, "notes.txt"), "notes\n")
     symlinkSync(join(fixture.outside, "notes.txt"), join(fixture.project, "link.txt"))
     const outside = { ok: false, reason: "That file is outside this project." }
-    await expect(capture({ path: "../outside/notes.txt" }, fixture.place)).resolves.toEqual(
-      outside,
-    )
+    await expect(capture({ path: "../outside/notes.txt" }, fixture.place)).resolves.toEqual(outside)
     await expect(capture({ path: "link.txt" }, fixture.place)).resolves.toEqual(outside)
     // Another folder the terminal may show from, as where it started.
     await expect(
@@ -284,7 +282,7 @@ describe("what an agent may not show", () => {
     await expect(capture({ path: "a.ts" }, place)).resolves.toEqual({
       ok: false,
       reason:
-        "This terminal's project is the home folder; NovaDeck shows files only from a project folder.",
+        "This terminal's project holds the whole home folder; NovaDeck shows files only from a project folder.",
     })
   })
 
@@ -293,6 +291,13 @@ describe("what an agent may not show", () => {
     mkdirSync(join(fixture.project, "home"))
     const place: Place = { ...fixture.place, home: join(fixture.project, "home") }
     await expect(capture({ path: "a.ts" }, place)).resolves.toMatchObject({ ok: false })
+  })
+
+  it("is not code that merely mentions secrets", async ({ fixture }) => {
+    writeFileSync(join(fixture.project, "secrets.ts"), "export {}\n")
+    await expect(capture({ path: "secrets.ts" }, fixture.place)).resolves.toMatchObject({
+      ok: true,
+    })
   })
 
   it("is a file that often holds secrets, anywhere in the project", async ({ fixture }) => {

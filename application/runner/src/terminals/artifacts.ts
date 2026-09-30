@@ -92,7 +92,7 @@ const secretNames = [
   /^\.pypirc$/i,
   /^\.pgpass$/i,
   /^credentials(\.json)?$/i,
-  /^secrets?(\..*)?$/i,
+  /^secrets?\.(json|ya?ml|toml|ini|env|txt|properties)$/i,
   /^service-account.*\.json$/i,
   /^id_(rsa|dsa|ecdsa|ed25519)(_[^.]*)?$/i,
   /\.(pem|key|p12|pfx|keystore|jks|tfstate)$/i,
@@ -192,7 +192,7 @@ export const capture = async (
   if (!folders.some((folder) => inside(folder, path)))
     return failure(
       resolved.some((folder) => folder !== undefined && holdsHome(folder))
-        ? "This terminal's project is the home folder; NovaDeck shows files only from a project folder."
+        ? "This terminal's project holds the whole home folder; NovaDeck shows files only from a project folder."
         : "That file is outside this project.",
     )
   if (secret(path)) return failure("That file may hold secrets, so NovaDeck won't show it.")
