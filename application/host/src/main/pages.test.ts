@@ -88,7 +88,8 @@ describe("a page view", () => {
     return {
       opened,
       open: (url: string) => contents.opener?.({ url }),
-      input: (type: string) => contents.emit("input-event", {}, { type }),
+      input: (type: string, isAutoRepeat = false) =>
+        contents.emit("input-event", {}, { type, isAutoRepeat }),
       wait: (ms: number) => (time += ms),
     }
   }
@@ -115,6 +116,19 @@ describe("a page view", () => {
     page.wait(gestureMs + 1)
     page.open("https://example.com/late")
     expect(page.opened).toEqual(["https://example.com/one", "https://example.com/two"])
+  })
+
+  it("counts a click's release, as a link opens then, but not a held key's repeats", () => {
+    const page = guarded()
+    page.input("mouseDown")
+    page.wait(gestureMs + 300)
+    page.input("mouseUp")
+    page.open("https://example.com/long-press")
+    page.input("rawKeyDown")
+    page.open("https://example.com/key")
+    page.input("rawKeyDown", true)
+    page.open("https://example.com/repeat")
+    expect(page.opened).toEqual(["https://example.com/long-press", "https://example.com/key"])
   })
 
   it("goes only to http(s) addresses, by a link or a redirect", () => {

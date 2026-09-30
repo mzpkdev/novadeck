@@ -27,8 +27,8 @@ export const kindIcons: Record<ArtifactKind, typeof Image> = {
 // Viewers for what an agent shows beside its terminal. Files show without highlighting.
 // A page loads live where the backend's host allows, in Electron's <webview>, which the
 // desktop app locks down (no Node, its own session, http(s) only; see ./webview.ts);
-// elsewhere it's a link
-// to open in the browser, with a snapshot when the backend has one.
+// elsewhere it's a link to open in the browser, with a snapshot when the backend has
+// one.
 
 const ImageViewer = ({
   artifact,

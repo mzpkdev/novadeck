@@ -10,8 +10,8 @@ export type WebviewElement = HTMLWebViewElement & {
 
 // Made here rather than by React, which leaves `allowpopups` off the element; Electron
 // reads its attributes once, as it attaches. With it, a page's new windows reach the
-// desktop app, which opens one in the browser right after the person's click or key. The app gives it the pages'
-// session whatever it asks; it's named to match.
+// desktop app, which opens one in the browser right after the person's click or key.
+// The app gives it the pages' session whatever it asks; it's named to match.
 export const createWebview = (url: string): WebviewElement => {
   const element = document.createElement("webview") as WebviewElement
   element.className = "artifact-webview"

@@ -321,8 +321,10 @@ from what this document describes:
   memory, where every permission and download is refused and no file loads. Its own
   links and redirects go only to http(s) addresses. A window it opens goes to the
   person's browser only right after they clicked or typed in it, one each, so a page
-  can't open tabs on its own (`application/host/src/main/pages.ts`). Where the host can't, as the web version,
-  a page is a link to open in the browser.
+  can't open tabs on its own; a frame from another site in the page can take that one
+  window, as Electron doesn't say which frame opened it
+  (`application/host/src/main/pages.ts`). Where the host can't, as the web version, a
+  page is a link to open in the browser.
 - **Saving** is a new authorized plan-write operation with the revision check above,
   scoped like `present`: the caller may write only the plan the terminal's agent keeps.
 

@@ -49,12 +49,22 @@ type Opener = (url: string) => unknown
 // How soon after the person's click or key a page's new window still counts as theirs.
 // `allowpopups` lifts Chromium's own need for one, and the handler has no gesture flag.
 export const gestureMs = 1_000
-const gestures = new Set(["mouseDown", "keyDown", "rawKeyDown", "touchStart"])
+// A press or its release: a link opening a window follows the release, however long
+// the press. A key held down counts once, not for each repeat.
+const gestures = new Set([
+  "mouseDown",
+  "mouseUp",
+  "keyDown",
+  "rawKeyDown",
+  "touchStart",
+  "touchEnd",
+])
 
 /**
  * Keeps a page view to http(s) addresses by its own links and redirects, and sends a
  * window it opens to the browser only right after the person's click or key, one each,
- * so a page can't open tabs on its own.
+ * so a page can't open tabs on its own. The handler isn't told which frame opened the
+ * window, so a frame from another site in the page can take the click's one window.
  */
 export const guardPage = (
   contents: WebContents,
@@ -63,7 +73,9 @@ export const guardPage = (
 ): void => {
   let gesture: number | undefined
   contents.on("input-event", (_event, input) => {
-    if (gestures.has(input.type)) gesture = now()
+    // A key event marks a held key's repeats; others don't carry the flag.
+    const repeat = "isAutoRepeat" in input && input.isAutoRepeat === true
+    if (gestures.has(input.type) && !repeat) gesture = now()
   })
   contents.setWindowOpenHandler(({ url }) => {
     const theirs = gesture !== undefined && now() - gesture <= gestureMs
