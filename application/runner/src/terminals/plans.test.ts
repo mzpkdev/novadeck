@@ -55,7 +55,7 @@ describe("a plan's content", () => {
     "is nothing but a plain file, so a pipe in its place never blocks",
     async ({ directory }) => {
       const path = join(directory, "p.md")
-      spawnSync("mkfifo", [path])
+      expect(spawnSync("mkfifo", [path]).status).toBe(0)
       await expect(planStamp({ kind: "file", path })).resolves.toBeUndefined()
       await expect(planContent("r", { kind: "file", path })).resolves.toBeUndefined()
     },

@@ -53,7 +53,7 @@ export type Activity = {
   readonly interrupted: { readonly from: number; readonly to: number } | null
   readonly planning: boolean
   readonly planningAt: number
-  /** Each actor's latest plan, oldest first. */
+  /** Each actor's latest plan, in the order the actors first planned. */
   readonly plans: readonly Plan[]
   readonly turnAt: number
 }
