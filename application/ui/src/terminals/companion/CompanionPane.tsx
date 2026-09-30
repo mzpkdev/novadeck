@@ -106,8 +106,11 @@ const PlanTab = ({
               {plan.agent} resolved {plural(plan.resolved, "note")}
             </span>
           )}
+          {!plan.writable && (
+            <span className="plan-meta-hint">Read-only: NovaDeck can't write this plan yet.</span>
+          )}
           {/* Without NovaDeck's skill, notes wait for the user to point the agent at them. */}
-          {!plan.skill && notesIn(plan.text) > 0 && (
+          {plan.writable && !plan.skill && notesIn(plan.text) > 0 && (
             <span className="plan-meta-hint">
               {plan.agent} doesn't have NovaDeck's skill. Ask it to re-read the plan.
             </span>
@@ -115,6 +118,7 @@ const PlanTab = ({
         </div>
         <Suspense fallback={null}>
           <PlanEditor
+            readOnly={!plan.writable}
             text={plan.text}
             marks={marks}
             onChange={(text, moved) => companion.edit(plan.ref, text, moved)}
@@ -162,7 +166,7 @@ export const CompanionPane = ({
       }}
     >
       {plan ? (
-        <PlanTab key={plan.ref} companion={companion} plan={plan} />
+        <PlanTab key={`${plan.ref}:${plan.writable}`} companion={companion} plan={plan} />
       ) : artifact ? (
         <ArtifactTab
           key={`${artifact.id}@${artifact.version}`}

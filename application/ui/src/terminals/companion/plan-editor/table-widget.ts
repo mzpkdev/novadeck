@@ -101,6 +101,7 @@ class TableWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div")
     wrapper.className = "cm-plan-table-widget"
+    if (view.state.readOnly) wrapper.dataset.readonly = "true"
     const table = document.createElement("table")
     const width = columnsOf(this.table)
     const height = this.table.rows.length
@@ -183,6 +184,7 @@ class TableWidget extends WidgetType {
       const label = noteLabel()
       const input = document.createElement("textarea")
       input.className = "cm-plan-row-note-input"
+      input.readOnly = view.state.readOnly
       input.rows = 1
       input.spellcheck = false
       input.value = text
@@ -288,6 +290,8 @@ class TableWidget extends WidgetType {
         // A text area, not editable markup: typing changes its value, not the DOM the
         // editor watches, so the editor never mistakes it for an edit of its own.
         const cell = document.createElement("textarea")
+        // A plan the backend can't write reads, but takes no edits.
+        cell.readOnly = view.state.readOnly
         cell.className = "cm-plan-cell"
         cell.rows = 1
         cell.spellcheck = false
