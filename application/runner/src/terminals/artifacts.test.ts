@@ -212,6 +212,69 @@ describe("a present request", () => {
     expect(readRequest({ path: "a.ts", title: "t".repeat(257) })).toMatchObject({ ok: false })
     expect(readRequest({ path: "a.ts", extra: 1 })).toMatchObject({ ok: false })
   })
+
+  it("names a page by its url, or a path, never both, and lines only for a file", () => {
+    expect(readRequest({ url: "http://localhost:5173/", open: true })).toEqual({
+      ok: true,
+      request: { url: "http://localhost:5173/", open: true },
+    })
+    expect(readRequest({ url: "http://localhost:5173/", path: "a.ts" })).toEqual({
+      ok: false,
+      reason: "Give a path or a url, not both.",
+    })
+    expect(readRequest({ url: "http://a/", lines: { from: 1, to: 1 } })).toMatchObject({
+      ok: false,
+    })
+    expect(readRequest({ url: "" })).toMatchObject({ ok: false })
+  })
+})
+
+describe("a page an agent shows", () => {
+  const place: Place = { cwd: "/p", project: "/p", home: "/h", folders: ["/p"] }
+
+  it("is any http or https address, named by its host or its title", async () => {
+    const page = await capture({ url: "http://localhost:5173/app?x=1#top" }, place)
+    expect(page).toMatchObject({
+      ok: true,
+      name: "localhost:5173",
+      detail: "http://localhost:5173/app?x=1#top",
+      content: { kind: "page", url: "http://localhost:5173/app?x=1#top" },
+    })
+    await expect(
+      capture({ url: "https://example.com", title: "Example" }, place),
+    ).resolves.toMatchObject({
+      ok: true,
+      name: "Example",
+      content: { kind: "page", url: "https://example.com/" },
+    })
+  })
+
+  it("is shown again under the same id by the same address", async () => {
+    const first = await capture({ url: "https://example.com/" }, place)
+    const again = await capture({ url: "https://example.com" }, place)
+    expect(first.ok && again.ok && first.id === again.id).toBe(true)
+  })
+
+  it("is never another scheme, an address with credentials, or not an address", async () => {
+    await expect(capture({ url: "file:///etc/passwd" }, place)).resolves.toEqual({
+      ok: false,
+      reason: "NovaDeck shows only http and https pages.",
+    })
+    await expect(capture({ url: "javascript:alert(1)" }, place)).resolves.toMatchObject({
+      ok: false,
+    })
+    await expect(capture({ url: "https://me:secret@example.com/" }, place)).resolves.toEqual({
+      ok: false,
+      reason: "NovaDeck won't show an address with a user name or password in it.",
+    })
+    await expect(capture({ url: "localhost:5173" }, place)).resolves.toMatchObject({
+      ok: false,
+    })
+    await expect(capture({ url: "not an address" }, place)).resolves.toEqual({
+      ok: false,
+      reason: "That isn't a valid address.",
+    })
+  })
 })
 
 const captured = (id: string, line = "a"): Captured => ({

@@ -159,6 +159,23 @@ describe("NovaDeck's MCP server", () => {
       })
     })
 
+    it("forwards a page by its url", async () => {
+      calls.length = 0
+      answer = { ok: true, id: "def", kind: "page", name: "localhost:5173" }
+      const [, shown] = await session(terminal(), [
+        initialize,
+        {
+          id: 3,
+          method: "tools/call",
+          params: { name: "show", arguments: { url: "http://localhost:5173/", open: true } },
+        },
+      ])
+      expect(calls.map((call) => call.type === "present" && call.request)).toEqual([
+        { url: "http://localhost:5173/", open: true },
+      ])
+      expect(shown?.result).toMatchObject({ isError: false })
+    })
+
     it("passes on why something can't be shown", async () => {
       answer = { ok: false, reason: "That file is outside this project." }
       const [, refused] = await session(terminal(), [
