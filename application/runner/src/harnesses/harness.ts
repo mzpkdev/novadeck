@@ -53,8 +53,12 @@ export type Harness = {
   readonly disconnect: readonly Command[]
   /** The command its plugin runs for a hook `event`, through the harness's own shell. */
   readonly hook: (platform: NodeJS.Platform, event: string) => string
-  /** Its plugin's manifests and hook registrations, relative to its plugin directory. */
-  readonly files: (platform: NodeJS.Platform) => readonly File[]
+  /**
+   * Its plugin's manifests, hook registrations and MCP server, relative to its plugin
+   * directory. The MCP server starts through `launchers.mcp`, an absolute path: an agent
+   * starts it directly, not through a shell that could expand a variable.
+   */
+  readonly files: (platform: NodeJS.Platform, launchers: Launchers) => readonly File[]
   /**
    * Changes its own settings once connected, and puts them back before disconnecting, for
    * what it offers no way to set per launch, as Antigravity's status line.
@@ -98,11 +102,22 @@ export type Harness = {
 
 export const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 
+/** Where the plugin's commands start from, as NovaDeck wrote them for this run. */
+export type Launchers = { readonly mcp: string }
+
+/** The terminal's variables NovaDeck's MCP server finds its terminal and runner by. */
+export const mcpVariables = [
+  "NOVADECK_TERMINAL_ID",
+  "NOVADECK_REPORT",
+  "NOVADECK_REPORT_TOKEN",
+] as const
+
 /** NovaDeck's plugin, as every harness's manifest names it. */
 export const plugin = {
   name: "novadeck",
-  version: "1.0.0",
-  description: "Tells NovaDeck which session runs in its terminal, so it can resume it.",
+  version: "1.1.0",
+  description:
+    "Tells NovaDeck which session runs in its terminal, so it can resume it, and lets the agent show you files beside it.",
 }
 
 /** The local marketplace Claude Code and Codex both install NovaDeck's plugin from. */

@@ -174,3 +174,31 @@ describe.runIf(windows)("the hook launcher on Windows", () => {
     expect(paths.launcher).toMatch(/^[\w.:\\~-]+$/)
   })
 })
+
+// NovaDeck's MCP server, as a plugin's MCP configuration declares it.
+const server = (root: string, path: string) =>
+  (
+    JSON.parse(readFileSync(join(root, path), "utf8")) as {
+      mcpServers: { novadeck: { command: string; env_vars?: string[] } }
+    }
+  ).mcpServers.novadeck
+
+describe("NovaDeck's MCP server in each agent's plugin", () => {
+  it("starts through NovaDeck's MCP launcher, with the terminal's variables for Codex", ({
+    plugins: { paths },
+  }) => {
+    const claude = server(paths.plugins.claude, join("novadeck", ".mcp.json"))
+    const codex = server(paths.plugins.codex, join("novadeck", ".mcp.json"))
+    const agy = server(paths.plugins.agy, "mcp_config.json")
+    for (const each of [claude, codex, agy]) expect(each.command).toBe(paths.mcp)
+    expect(codex.env_vars).toEqual([
+      "NOVADECK_TERMINAL_ID",
+      "NOVADECK_REPORT",
+      "NOVADECK_REPORT_TOKEN",
+    ])
+    const manifest = JSON.parse(
+      readFileSync(join(paths.plugins.codex, "novadeck", ".codex-plugin", "plugin.json"), "utf8"),
+    ) as { mcpServers?: string }
+    expect(manifest.mcpServers).toBe("./.mcp.json")
+  })
+})

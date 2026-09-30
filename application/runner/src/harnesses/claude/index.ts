@@ -61,9 +61,15 @@ export const claude = {
     { argv: ["claude", "plugin", "marketplace", "remove", "novadeck"], optional: true },
   ],
   hook,
-  files: (platform) => [
+  files: (platform, launchers) => [
     { path: join(".claude-plugin", "marketplace.json"), content: marketplace },
     { path: join("novadeck", ".claude-plugin", "plugin.json"), content: json(plugin) },
+    // Its MCP server, which Claude Code finds at the plugin's root and starts with the
+    // terminal's environment.
+    {
+      path: join("novadeck", ".mcp.json"),
+      content: json({ mcpServers: { novadeck: { command: launchers.mcp } } }),
+    },
     {
       path: join("novadeck", "hooks", "hooks.json"),
       content: json({

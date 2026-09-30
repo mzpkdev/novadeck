@@ -4,6 +4,7 @@ import { dirname } from "node:path"
 import { promisify } from "node:util"
 
 import { hookScript } from "./hook.js"
+import { mcpScript } from "./mcp.js"
 import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
 
 /**
@@ -23,7 +24,7 @@ export const installShellFiles = async (
   runtime = process.execPath,
 ): Promise<InstalledShell> => {
   const paths = shellPaths(directory)
-  for (const file of shellFiles(paths, runtime, hookScript)) {
+  for (const file of shellFiles(paths, runtime, hookScript, mcpScript)) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
     await mkdir(dirname(file.path), { recursive: true, mode: 0o700 })
     // eslint-disable-next-line no-await-in-loop -- Unchanged files are left alone.

@@ -37,8 +37,14 @@ export const agy = {
   // Antigravity runs PreInvocation hooks before each model call, the first time with the
   // conversation's first message, Stop once the turn ends, and PostToolUse after each
   // tool, which names the artifacts it writes, as a plan.
-  files: (platform) => [
+  files: (platform, launchers) => [
     { path: "plugin.json", content: json({ name: plugin.name }) },
+    // Its MCP server, which Antigravity takes from the plugin and starts with the
+    // terminal's environment.
+    {
+      path: "mcp_config.json",
+      content: json({ mcpServers: { novadeck: { command: launchers.mcp } } }),
+    },
     {
       path: "hooks.json",
       content: json({

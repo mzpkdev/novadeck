@@ -25,6 +25,9 @@ export type ShellPaths = {
   /** The hook's launcher. */
   readonly hook: string
   readonly hookScript: string
+  /** The MCP server's launcher, which connected agents' plugins start. */
+  readonly mcp: string
+  readonly mcpScript: string
 }
 
 export const shellPaths = (directory: string, platform = process.platform): ShellPaths => ({
@@ -39,6 +42,8 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
   resume: join(directory, "resume"),
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
   hookScript: join(directory, "hook.mjs"),
+  mcp: join(directory, platform === "win32" ? "mcp.cmd" : "mcp"),
+  mcpScript: join(directory, "mcp.mjs"),
 })
 
 // Quoting for each language a path is written into.
@@ -236,19 +241,19 @@ if ($env:NOVADECK_RESUME) {
 }
 `
 
-// The launcher runs the hook on NovaDeck's own runtime: Electron acting as Node, or Node
+// A launcher runs a script on NovaDeck's own runtime: Electron acting as Node, or Node
 // itself for a standalone runner. It is rewritten on each start, as that path moves.
-const posixLauncher = (runtime: string, paths: ShellPaths): string => `#!/bin/sh
-${header("#", "agent hook launcher")}
+const posixLauncher = (runtime: string, script: string, what: string): string => `#!/bin/sh
+${header("#", what)}
 ELECTRON_RUN_AS_NODE=1
 export ELECTRON_RUN_AS_NODE
-exec ${shQuote(runtime)} ${shQuote(paths.hookScript)} "$@"
+exec ${shQuote(runtime)} ${shQuote(script)} "$@"
 `
 
-const cmdLauncher = (runtime: string, paths: ShellPaths): string => `@echo off
-${header("rem", "agent hook launcher")}
+const cmdLauncher = (runtime: string, script: string, what: string): string => `@echo off
+${header("rem", what)}
 set ELECTRON_RUN_AS_NODE=1
-${cmdQuote(runtime)} ${cmdQuote(paths.hookScript)} %*
+${cmdQuote(runtime)} ${cmdQuote(script)} %*
 `
 
 export type ShellFile = { readonly path: string; readonly content: string; readonly mode: number }
@@ -260,6 +265,7 @@ export const shellFiles = (
   paths: ShellPaths,
   runtime: string,
   hookScript: string,
+  mcpScript: string,
   platform = process.platform,
 ): ShellFile[] => {
   const common = [
@@ -271,15 +277,26 @@ export const shellFiles = (
     file(paths.powershell, powershell),
     ...agents.flatMap((agent) =>
       harnesses[agent]
-        .files(platform)
+        .files(platform, { mcp: paths.mcp })
         .map((each) => file(join(paths.plugins[agent], each.path), each.content, each.mode)),
     ),
     file(paths.hookScript, hookScript),
+    file(paths.mcpScript, mcpScript),
   ]
   // Every harness's shims, which the shells put first on PATH only while one is connected.
   const shims = agents.flatMap((agent) => harnesses[agent].shims?.(platform) ?? [])
   const bin = shims.map((each) => file(join(paths.bin, each.path), each.content, each.mode))
   return platform === "win32"
-    ? [...common, file(paths.hook, cmdLauncher(runtime, paths)), ...bin]
-    : [...common, file(paths.hook, posixLauncher(runtime, paths), 0o700), ...bin]
+    ? [
+        ...common,
+        file(paths.hook, cmdLauncher(runtime, paths.hookScript, "agent hook launcher")),
+        file(paths.mcp, cmdLauncher(runtime, paths.mcpScript, "MCP server launcher")),
+        ...bin,
+      ]
+    : [
+        ...common,
+        file(paths.hook, posixLauncher(runtime, paths.hookScript, "agent hook launcher"), 0o700),
+        file(paths.mcp, posixLauncher(runtime, paths.mcpScript, "MCP server launcher"), 0o700),
+        ...bin,
+      ]
 }
