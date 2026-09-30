@@ -198,6 +198,9 @@ export const mockReply = (command: string, terminal: TerminalMetadata): string =
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
+  if (terminal.plan === "studio" && /^show\b/i.test(input))
+    return "Here's something to look at. It's beside this terminal."
+  if (terminal.plan === "studio" && /^open\b/i.test(input)) return "Opening it for you."
   if (terminal.plan === "studio")
     return /^(y|yes)$/i.test(input)
       ? "Approved. Re-reading plans/studio.md for your notes, then starting."

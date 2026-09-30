@@ -3,11 +3,20 @@ import { useSyncExternalStore } from "react"
 import { planTerminal } from "../../model/plan-agent"
 import { createStore } from "../../model/store"
 import type { ViewMode } from "../../model/types"
+import {
+  nextArtifact,
+  openCompanion,
+  planTab,
+  sampleArtifacts,
+  selectTab,
+  show,
+  type Companion,
+  type Shown,
+} from "./artifacts"
 import { notesIn, samplePlans, toMarkdown, type PlanFile } from "./plan-content"
 
-// Where a plan opens: beside the terminal inside its window, over the workspace, or
-// hanging off a canvas node.
-export type PlanPresentation = "split" | "overlay" | "attached"
+// Where a plan opens: beside the terminal inside its window, or hanging off a canvas node.
+export type PlanPresentation = "split" | "attached"
 
 // Simulation only: what the sample agent is doing, which drives its revisions. NovaDeck
 // can't read this from a real agent's interface, so nothing shows it.
@@ -16,7 +25,8 @@ export type AgentPhase = "planning" | "revising" | "working"
 // A stretch of the text the agent's latest revision wrote.
 export type Mark = { readonly from: number; readonly to: number }
 
-export type PlanState = {
+// A terminal's companion pane: its plan, then what else its agent showed the user.
+export type PlanState = Companion & {
   readonly open: boolean
   readonly phase: AgentPhase
   readonly revision: number
@@ -34,7 +44,6 @@ export type PlanState = {
 
 export type PlanStore = {
   readonly plans: Readonly<Record<string, PlanState>>
-  readonly presentations: Readonly<Record<ViewMode, PlanPresentation>>
 }
 
 const initialState = (file: PlanFile): PlanState => ({
@@ -48,28 +57,38 @@ const initialState = (file: PlanFile): PlanState => ({
   changes: 0,
   showChanges: false,
   resolved: 0,
+  tab: planTab,
+  artifacts: (sampleArtifacts[file.id]?.shown ?? []).map((artifact): Shown => ({
+    ...artifact,
+    fresh: false,
+    at: "1 min ago",
+  })),
 })
 
 export const initialStore: PlanStore = {
   plans: Object.fromEntries(
     Object.values(samplePlans).map((file) => [file.id, initialState(file)]),
   ),
-  presentations: { focus: "split", grid: "overlay", canvas: "attached" },
 }
 
-// A plan's size when it isn't expanded over the workspace: beside the terminal, or on
-// the canvas, attached to the terminal's node.
-export const inPlace = (view: ViewMode): PlanPresentation =>
+// Beside the terminal, or on the canvas, attached to the terminal's node.
+export const presentationOf = (view: ViewMode): PlanPresentation =>
   view === "canvas" ? "attached" : "split"
 
 // The latest revision's marks, while the text is still the one they describe.
 export const currentMarks = (plan: PlanState): readonly Mark[] =>
   plan.marked === plan.text ? plan.marks : []
 
+// Opening the pane goes to what's new, and counts as reading the plan's latest revision.
 export const openPlan = (plan: PlanState): PlanState => ({
-  ...plan,
-  open: true,
+  ...openCompanion(plan),
   seen: plan.revision,
+})
+
+// Opening the pane to a chosen tab. Only the plan's own tab counts as reading the plan.
+export const openTab = (plan: PlanState, tab: string): PlanState => ({
+  ...selectTab(plan, tab),
+  seen: tab === planTab ? plan.revision : plan.seen,
 })
 
 export const closePlan = (plan: PlanState): PlanState => ({ ...plan, open: false })
@@ -152,6 +171,18 @@ planTerminal.subscribe(() => {
   const file = event && samplePlans[event.plan]
   const before = file && store.getSnapshot().plans[file.id]
   if (!file || !before) return
+  // Demo only: "show" has the agent show its next artifact, "open" plays the user asking
+  // for it. Neither answers the agent's plan prompt.
+  const showing = /^(show|open)\b/i.exec(event.input.trim())?.[1]?.toLowerCase()
+  if (showing) {
+    later(500, () =>
+      updatePlan(file.id, (plan) => {
+        const artifact = nextArtifact(file.id, plan)
+        return artifact ? show(plan, artifact, showing === "open") : plan
+      }),
+    )
+    return
+  }
   if (!file.skill && notesIn(before.text) && asksToReread(event.input)) {
     later(1200, () => revise(file, true))
     return
@@ -167,18 +198,9 @@ planTerminal.subscribe(() => {
 
 export const planActions = {
   update: updatePlan,
-  present: (view: ViewMode, presentation: PlanPresentation): void => {
-    store.update((current) => ({
-      ...current,
-      presentations: { ...current.presentations, [view]: presentation },
-    }))
-  },
 }
 
 export const usePlan = (id: string): PlanState => {
   const plans = useSyncExternalStore(store.subscribe, () => store.getSnapshot().plans)
   return plans[id]!
 }
-
-export const usePresentations = (): PlanStore["presentations"] =>
-  useSyncExternalStore(store.subscribe, () => store.getSnapshot().presentations)

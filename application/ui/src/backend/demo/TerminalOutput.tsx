@@ -27,6 +27,9 @@ export const TerminalOutput = ({
           <strong>Implement this plan?</strong>{" "}
           <span className="text-muted">y to approve · anything else to keep planning</span>
         </p>
+        <p className="output-gap text-muted">
+          Demo: type show to have Codex show you something, or open to ask it to open it.
+        </p>
       </>
     )
   if (terminal.plan === "auth")

@@ -112,7 +112,6 @@ export const WorkspaceTerminal = ({
       {terminal.plan ? (
         <TerminalPlan
           planId={terminal.plan}
-          terminalName={terminal.name}
           view={view}
           onReveal={onReveal}
           minimized={minimize?.minimized}

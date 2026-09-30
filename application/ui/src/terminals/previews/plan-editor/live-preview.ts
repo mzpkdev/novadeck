@@ -51,6 +51,23 @@ class CheckboxWidget extends WidgetType {
     box.className = "cm-plan-checkbox"
     box.dataset.checked = String(this.checked)
     box.setAttribute("aria-hidden", "true")
+    if (this.checked) {
+      // A real tick, drawn like the plan's other icons.
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+      for (const [name, value] of Object.entries({
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "3.5",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }))
+        svg.setAttribute(name, value)
+      const tick = document.createElementNS("http://www.w3.org/2000/svg", "path")
+      tick.setAttribute("d", "M20 6 9 17l-5-5")
+      svg.append(tick)
+      box.append(svg)
+    }
     return box
   }
   // Clicks reach the plugin, which flips the marker in the text.
@@ -147,15 +164,18 @@ const decorate = (view: EditorView): Rendered => {
           )
         } else if (name === "ListMark")
           ranges.push(mark("cm-plan-listmark").range(node.from, node.to))
-        else if (name === "TaskMarker")
+        else if (name === "TaskMarker") {
+          const done = /x/i.test(doc.sliceString(node.from, node.to))
+          // A done task recedes, so what's left stands out.
+          if (done) eachLine(node.from, node.node.parent?.to ?? node.to, line("cm-plan-task-done"))
           ranges.push(
             editing(node.from)
               ? mark("cm-plan-syntax").range(node.from, node.to)
               : Decoration.replace({
-                  widget: new CheckboxWidget(/x/i.test(doc.sliceString(node.from, node.to))),
+                  widget: new CheckboxWidget(done),
                 }).range(node.from, node.to),
           )
-        else if (
+        } else if (
           (name === "QuoteMark" || name === "EmphasisMark" || name === "CodeMark") &&
           node.node.parent?.name !== "FencedCode"
         ) {

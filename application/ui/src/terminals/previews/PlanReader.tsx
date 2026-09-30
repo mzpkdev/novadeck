@@ -1,8 +1,6 @@
-import { FileText, PanelRightClose, Scaling, Shrink, X } from "lucide-react"
-import { lazy, Suspense, useRef, type Ref } from "react"
+import { lazy, Suspense, useRef } from "react"
 
-import type { ViewMode } from "../../model/types"
-import { Tooltip } from "../../ui-toolkit/Tooltip"
+import { ArtifactViewer } from "./ArtifactViewer"
 import { headingsOf, notePattern, notesIn, samplePlans } from "./plan-content"
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
 import {
@@ -10,10 +8,8 @@ import {
   currentMarks,
   edit,
   planActions,
-  inPlace,
   toggleChanges,
   usePlan,
-  usePresentations,
   type PlanPresentation,
   type PlanState,
 } from "./plan-state"
@@ -63,114 +59,80 @@ const PlanOutline = ({
   )
 }
 
-// The plan itself, wherever it is presented: the file, edited where it's read.
+// A terminal's companion pane, wherever it is presented: its plan, edited where it's
+// read, or one of the other things its agent showed the user.
 export const PlanReader = ({
   planId,
-  view,
   presentation,
-  closeRef,
 }: {
   planId: string
-  view: ViewMode
   presentation: PlanPresentation
-  closeRef?: Ref<HTMLButtonElement>
 }): React.JSX.Element => {
   const file = samplePlans[planId]!
   const plan = usePlan(planId)
-  const expanded = usePresentations()[view] === "overlay"
   const editor = useRef<PlanEditorHandle | null>(null)
   const marks = currentMarks(plan)
+  const artifact = plan.artifacts.find((shown) => shown.id === plan.tab)
   return (
     <section
       className="plan-reader"
+      data-workspace-companion
       data-presentation={presentation}
-      aria-label={`Plan from ${file.agent}`}
+      aria-label={`What ${file.agent} showed you`}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && presentation !== "overlay") {
+        if (event.key === "Escape") {
           event.stopPropagation()
           planActions.update(planId, closePlan)
         }
       }}
     >
-      <header className="plan-reader-header">
-        <FileText size={14} strokeWidth={1.5} />
-        <span className="plan-reader-path" title={file.path}>
-          {file.path.split("/").slice(0, -1).join("/")}/
-          <strong>{file.path.split("/").at(-1)}</strong>
-        </span>
-        <span className="plan-status">v{plan.revision + 1}</span>
-        {/* Two sizes, like a terminal's: in place, or over the whole workspace. */}
-        <Tooltip content={expanded ? "Shrink" : "Expand"}>
-          <button
-            className="plan-close plan-expand"
-            aria-label={expanded ? "Shrink plan" : "Expand plan"}
-            aria-pressed={expanded}
-            onClick={() => planActions.present(view, expanded ? inPlace(view) : "overlay")}
-          >
-            {expanded ? (
-              <Shrink size={14} strokeWidth={1.5} />
-            ) : (
-              <Scaling size={14} strokeWidth={1.5} />
-            )}
-          </button>
-        </Tooltip>
-        {/* A panel beside the terminal collapses rather than closes, so it doesn't share an
-            X with the terminal's own close right above it. */}
-        <Tooltip content={presentation === "overlay" ? "Close · Esc" : "Hide plan · Esc"}>
-          <button
-            ref={closeRef}
-            className="plan-close"
-            aria-label={presentation === "overlay" ? "Close plan" : "Hide plan"}
-            onClick={() => planActions.update(planId, closePlan)}
-          >
-            {presentation === "overlay" ? (
-              <X size={15} />
-            ) : (
-              <PanelRightClose size={15} strokeWidth={1.5} />
-            )}
-          </button>
-        </Tooltip>
-      </header>
-      <div className="plan-reader-body" data-outline={headingsOf(plan.text).length > 0}>
-        <PlanOutline plan={plan} jump={(at) => editor.current?.jumpTo(at)} />
-        <div className="plan-document-scroll" data-changes={plan.showChanges}>
-          <div className="plan-meta">
-            <span>{plan.revision ? "Updated just now" : "Written 2 min ago"}</span>
-            {marks.length > 0 && (
-              <button
-                className="plan-changes-toggle"
-                aria-pressed={plan.showChanges}
-                onClick={() => planActions.update(planId, toggleChanges)}
-              >
-                <i aria-hidden="true" />
-                {plural(plan.changes, "change")} since you last read
-                <span>{plan.showChanges ? "Hide" : "Show"}</span>
-              </button>
-            )}
-            {plan.resolved > 0 && plan.marked === plan.text && (
+      {artifact ? (
+        <ArtifactViewer key={artifact.id} artifact={artifact} />
+      ) : (
+        <div className="plan-reader-body" data-outline={headingsOf(plan.text).length > 0}>
+          <PlanOutline plan={plan} jump={(at) => editor.current?.jumpTo(at)} />
+          <div className="plan-document-scroll" data-changes={plan.showChanges}>
+            <div className="plan-meta">
+              <code className="plan-meta-path">{file.path}</code>
               <span>
-                {file.agent} resolved {plural(plan.resolved, "note")}
+                v{plan.revision + 1} · {plan.revision ? "updated just now" : "written 2 min ago"}
               </span>
-            )}
-            {/* Without NovaDeck's skill, notes wait for the user to point the agent at them. */}
-            {!file.skill && notesIn(plan.text) > 0 && (
-              <span className="plan-meta-hint">
-                {file.agent} doesn't have NovaDeck's skill. Ask it to re-read the plan.
-              </span>
-            )}
+              {marks.length > 0 && (
+                <button
+                  className="plan-changes-toggle"
+                  aria-pressed={plan.showChanges}
+                  onClick={() => planActions.update(planId, toggleChanges)}
+                >
+                  <i aria-hidden="true" />
+                  {plural(plan.changes, "change")} since you last read
+                  <span>{plan.showChanges ? "Hide" : "Show"}</span>
+                </button>
+              )}
+              {plan.resolved > 0 && plan.marked === plan.text && (
+                <span>
+                  {file.agent} resolved {plural(plan.resolved, "note")}
+                </span>
+              )}
+              {/* Without NovaDeck's skill, notes wait for the user to point the agent at them. */}
+              {!file.skill && notesIn(plan.text) > 0 && (
+                <span className="plan-meta-hint">
+                  {file.agent} doesn't have NovaDeck's skill. Ask it to re-read the plan.
+                </span>
+              )}
+            </div>
+            <Suspense fallback={null}>
+              <PlanEditor
+                text={plan.text}
+                marks={marks}
+                onChange={(text) => planActions.update(planId, (state) => edit(state, text))}
+                onReady={(handle) => {
+                  editor.current = handle
+                }}
+              />
+            </Suspense>
           </div>
-          <Suspense fallback={null}>
-            <PlanEditor
-              text={plan.text}
-              marks={marks}
-              onChange={(text) => planActions.update(planId, (state) => edit(state, text))}
-              onReady={(handle) => {
-                editor.current = handle
-              }}
-            />
-          </Suspense>
         </div>
-      </div>
+      )}
     </section>
   )
 }

@@ -1,65 +1,12 @@
-import { FileText, Terminal } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import type { ViewMode } from "../../model/types"
-import { Dialog, DialogTitle } from "../../ui-toolkit/Dialog"
 import type { TerminalLayoutControls } from "../WindowShell"
-import { notesIn, samplePlans, titleOf } from "./plan-content"
-import { closePlan, openPlan, planActions, usePlan, usePresentations } from "./plan-state"
+import { presentationOf, usePlan } from "./plan-state"
 import { PlanReader } from "./PlanReader"
+import { Taskbar } from "./Taskbar"
 
 import "./plan.css"
-
-// The plan's footprint in the terminal: what it is, whether it changed, the next move.
-const PlanStrip = ({
-  planId,
-  trigger,
-  open,
-}: {
-  planId: string
-  trigger: React.RefObject<HTMLButtonElement | null>
-  open: boolean
-}): React.JSX.Element => {
-  const file = samplePlans[planId]!
-  const plan = usePlan(planId)
-  const unread = plan.seen < plan.revision
-  const changes = plan.changes
-  const notes = notesIn(plan.text)
-  const summary = [
-    `v${plan.revision + 1}`,
-    unread && changes ? `${changes} changes` : "",
-    notes ? `${notes} note${notes > 1 ? "s" : ""} in the plan` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ")
-  const toggle = (): void => planActions.update(planId, open ? closePlan : openPlan)
-  return (
-    <div className="plan-strip nodrag nopan" data-open={open}>
-      <button
-        ref={trigger}
-        className="plan-strip-main"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={toggle}
-      >
-        <span className="plan-strip-icon" aria-hidden="true">
-          <FileText size={13} strokeWidth={1.5} />
-          {unread && <i className="plan-strip-new" />}
-        </span>
-        <span className="plan-strip-text">
-          <span className="plan-strip-title">
-            {titleOf(file.path, plan.text)}
-            {unread && <span className="sr-only"> (unread)</span>}
-          </span>
-          <span className="plan-strip-summary">{summary}</span>
-        </span>
-      </button>
-      <button className="plan-button" onClick={toggle}>
-        {open ? "Hide plan" : "Review"}
-      </button>
-    </div>
-  )
-}
 
 const clamp = (value: number): number => Math.min(0.7, Math.max(0.22, value))
 
@@ -68,12 +15,10 @@ const SplitPlan = ({
   planId,
   view,
   children,
-  closeRef,
 }: {
   planId: string
   view: ViewMode
   children: ReactNode
-  closeRef: React.RefObject<HTMLButtonElement | null>
 }): React.JSX.Element => {
   const [ratio, setRatio] = useState(view === "focus" ? 0.36 : 0.42)
   const frame = useRef<HTMLDivElement>(null)
@@ -113,7 +58,7 @@ const SplitPlan = ({
         }}
       />
       <div className="plan-split-reader nodrag nopan nowheel">
-        <PlanReader planId={planId} view={view} presentation="split" closeRef={closeRef} />
+        <PlanReader planId={planId} presentation="split" />
       </div>
     </div>
   )
@@ -126,11 +71,9 @@ const attachedExtent = { right: 20 + 720, height: 560 }
 // positioned against the node, outside the window's clipping.
 const AttachedPlan = ({
   planId,
-  closeRef,
   onReveal,
 }: {
   planId: string
-  closeRef: React.RefObject<HTMLButtonElement | null>
   onReveal: TerminalLayoutControls["onReveal"]
 }): React.JSX.Element => {
   // Frame once as the sheet opens, not whenever the canvas hands over a new callback.
@@ -138,15 +81,14 @@ const AttachedPlan = ({
   useEffect(() => reveal.current?.(attachedExtent), [])
   return (
     <div className="plan-attached nodrag nopan nowheel">
-      <PlanReader planId={planId} view="canvas" presentation="attached" closeRef={closeRef} />
+      <PlanReader planId={planId} presentation="attached" />
     </div>
   )
 }
 
-// UI-only plan review. The originating terminal renders in one place at a time.
+// UI-only plan review, in the terminal's own window or beside its canvas node.
 export const TerminalPlan = ({
   planId,
-  terminalName,
   view,
   onReveal,
   children,
@@ -154,7 +96,6 @@ export const TerminalPlan = ({
   clipContent,
 }: {
   planId: string
-  terminalName: string
   view: ViewMode
   onReveal?: TerminalLayoutControls["onReveal"]
   children: ReactNode
@@ -162,76 +103,34 @@ export const TerminalPlan = ({
   clipContent?: boolean | undefined
 }): React.JSX.Element => {
   const plan = usePlan(planId)
-  const file = samplePlans[planId]!
   const trigger = useRef<HTMLButtonElement>(null)
-  const close = useRef<HTMLButtonElement>(null)
-  const presentation = usePresentations()[view]
+  const presentation = presentationOf(view)
   const open = plan.open && !minimized
-  const inline = open && presentation !== "overlay"
   const wasOpen = useRef(open)
-  // Inline presentations have no dialog to move focus, so do it here.
+  // Opening leaves focus on the taskbar. Hiding the pane from inside it (Escape) would
+  // drop focus with the pane, so it goes back to the taskbar.
   useEffect(() => {
-    if (inline && !wasOpen.current) close.current?.focus({ preventScroll: true })
-    if (!open && wasOpen.current && presentation !== "overlay")
-      trigger.current?.focus({ preventScroll: true })
+    const lost = !document.activeElement || document.activeElement === document.body
+    if (!open && wasOpen.current && lost) trigger.current?.focus({ preventScroll: true })
     wasOpen.current = open
-  }, [inline, open, presentation])
+  }, [open])
   return (
-    <>
-      <div
-        className="terminal-plan"
-        data-plan-open={open}
-        hidden={minimized && !clipContent}
-        aria-hidden={minimized}
-        inert={minimized}
-      >
-        {open && presentation === "split" ? (
-          <SplitPlan planId={planId} view={view} closeRef={close}>
-            {children}
-          </SplitPlan>
-        ) : open && presentation === "overlay" ? (
-          <div className="plan-open-placeholder">
-            <FileText size={20} strokeWidth={1} />
-            <span>Reviewing plan</span>
-          </div>
-        ) : (
-          children
-        )}
-        <PlanStrip planId={planId} trigger={trigger} open={open} />
-        {open && presentation === "attached" && view === "canvas" && (
-          <AttachedPlan planId={planId} closeRef={close} onReveal={onReveal} />
-        )}
-      </div>
-      <Dialog
-        open={open && presentation === "overlay"}
-        onOpenChange={(next) => planActions.update(planId, next ? openPlan : closePlan)}
-        label={`Plan from ${file.agent}`}
-        className="plan-dialog"
-        backdropClassName="plan-backdrop"
-        positionerClassName="plan-positioner"
-        initialFocusEl={() => close.current}
-        finalFocusEl={() => trigger.current}
-        onEscapeKeyDown={(event) => {
-          // Escape in a table's cell or row note cancels that, not the review.
-          if ((event.target as Element | null)?.closest?.(".cm-plan-table-widget"))
-            event.preventDefault()
-        }}
-      >
-        <DialogTitle className="sr-only">Review plan</DialogTitle>
-        <div className="plan-overlay">
-          <section className="plan-terminal" aria-label={`${terminalName} terminal in plan review`}>
-            <header className="plan-panel-heading">
-              <Terminal size={13} />
-              <span>{terminalName}</span>
-              <span className="plan-panel-meta">{file.agent}</span>
-            </header>
-            <div className="plan-terminal-body">
-              {open && presentation === "overlay" && children}
-            </div>
-          </section>
-          <PlanReader planId={planId} view={view} presentation="overlay" closeRef={close} />
-        </div>
-      </Dialog>
-    </>
+    <div
+      className="terminal-plan"
+      data-plan-open={open}
+      hidden={minimized && !clipContent}
+      aria-hidden={minimized}
+      inert={minimized}
+    >
+      {open && presentation === "split" ? (
+        <SplitPlan planId={planId} view={view}>
+          {children}
+        </SplitPlan>
+      ) : (
+        children
+      )}
+      <Taskbar planId={planId} trigger={trigger} open={open} />
+      {open && presentation === "attached" && <AttachedPlan planId={planId} onReveal={onReveal} />}
+    </div>
   )
 }

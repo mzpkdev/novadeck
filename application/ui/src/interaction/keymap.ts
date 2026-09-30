@@ -122,6 +122,7 @@ const gates: Record<
     !state.switcher &&
     !input.target.editing &&
     !input.target.zenDock &&
+    !input.target.companion &&
     !environment.overlayOpen() &&
     !environment.tabInteraction(),
   // Arrows move through terminals and views, except where a control uses them itself.

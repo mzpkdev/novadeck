@@ -279,18 +279,15 @@ Two samples show the range. “Build Studio” runs Codex with a structured plan
 Claude Code with plain prose and no skill. Each terminal asks its own question:
 answer `y` to approve or type anything else to keep planning.
 
-A strip under each terminal names the plan and its state. Review opens it where
-the current view suits it best:
+A taskbar along each terminal's bottom has an icon for the plan. Opening it shows
+the plan beside its terminal, never over the workspace:
 
-- **Focus** splits the window: terminal on the left, plan on the right, with a
-  draggable divider.
-- **Grid** opens an overlay across the workspace, the terminal at 25% and the
-  plan at 75%.
+- **Focus** and **Grid** split the window: terminal on the left, plan on the
+  right, with a draggable divider; a narrow window stacks them.
 - **Canvas** attaches the plan as a sheet beside the node, which pans and zooms
   with it; the canvas frames both as it opens.
 
-An expand button in the reader's header toggles between the plan in place and the
-overlay, remembered per view. The plan is always editable: it's the file's
+The plan is always editable: it's the file's
 Markdown in a CodeMirror 6 live-preview editor. Markdown syntax shows, dimmed,
 only on the line being edited, so typing Markdown is how you format the plan;
 there are no formatting controls. A heading's `#` marks hang in the margin so its
@@ -307,6 +304,18 @@ version, its changes merge into yours line by line, the lines it wrote are
 highlighted, and the notes it applied are gone. Without the skill, as in “Refactor
 auth”, notes wait until you ask the agent in its terminal to re-read the plan.
 Escape closes the plan. Plans never create sidebar tabs or separate windows.
+
+Besides its plan, an agent can show you other things: an image, a file from the
+project, a page in a preview browser. They join the plan in the terminal's
+companion pane, which has no header of its own.
+Each gets an icon in the taskbar, as an OS taskbar has, with several images grouped under one. The
+mark under an icon says whether it's new, showing, or seen; something new hops
+once, and nothing opens on its own unless you asked for it. Hover an icon to peek:
+a card per thing behind it, each a preview, its name and the same mark, with no
+copy. Click an icon or a card to open it, click the icon again (or press Escape) to
+hide the pane, and dismiss from a card's corner button or the icon's right-click. In
+“Build Studio”, type `show` to have Codex show the next thing, or `open` to play
+asking it to open it. The image, code and page viewers are mocked.
 
 The plans, their revisions, the skill's effect, terminal output and timing are
 hardcoded; no runner, filesystem, or real skill is connected. The editor and its
