@@ -5,6 +5,7 @@ import { join } from "node:path"
 
 import { afterAll, beforeAll } from "vitest"
 
+import { plugin } from "../harnesses/harness.js"
 import { describe, expect, it } from "../test.js"
 import { mcpScript } from "./mcp.js"
 import { listenForReports, type Call, type Reports } from "./reports.js"
@@ -34,11 +35,11 @@ type Answer = {
 }
 
 // Runs the server as an agent would, sends it these messages, and collects its answers
-// until it has answered every one with an id.
+// until it has answered every one with an id, and every batch.
 const session = (env: NodeJS.ProcessEnv, messages: readonly object[]) =>
   new Promise<Answer[]>((resolve, reject) => {
     const child = spawn(process.execPath, [script], { env, stdio: ["pipe", "pipe", "inherit"] })
-    const expected = messages.filter((message) => "id" in message).length
+    const expected = messages.filter((message) => Array.isArray(message) || "id" in message).length
     const answers: Answer[] = []
     let buffer = ""
     child.stdout.setEncoding("utf8")
@@ -56,7 +57,9 @@ const session = (env: NodeJS.ProcessEnv, messages: readonly object[]) =>
     })
     child.on("error", reject)
     for (const message of messages)
-      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`)
+      child.stdin.write(
+        `${JSON.stringify(Array.isArray(message) ? message : { jsonrpc: "2.0", ...message })}\n`,
+      )
   })
 
 const initialize = { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }
@@ -156,6 +159,29 @@ describe("NovaDeck's MCP server", () => {
         ],
       )
       expect(unreachable?.result).toMatchObject({ isError: true })
+    })
+  })
+
+  it("names its version, and answers a version it doesn't know with the newest it does", async () => {
+    const [known] = await session({ PATH: process.env.PATH }, [
+      { id: 1, method: "initialize", params: { protocolVersion: "2024-11-05" } },
+    ])
+    expect(known?.result).toMatchObject({
+      protocolVersion: "2024-11-05",
+      serverInfo: { version: plugin.version },
+    })
+    const [unknown] = await session({ PATH: process.env.PATH }, [
+      { id: 1, method: "initialize", params: { protocolVersion: "2099-01-01" } },
+    ])
+    expect(unknown?.result).toMatchObject({ protocolVersion: "2025-11-25" })
+  })
+
+  it("refuses a batch", async () => {
+    const [refused] = await session({ PATH: process.env.PATH }, [[initialize, list]])
+    expect(refused).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32600, message: "Invalid Request" },
     })
   })
 

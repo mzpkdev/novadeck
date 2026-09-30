@@ -5,8 +5,10 @@
  * file from the project in front of the user, beside the terminal the agent runs in. It
  * forwards the call to that terminal's runner over the endpoint the agent's hooks
  * report to, with the terminal's own token, and returns the runner's answer. Outside
- * NovaDeck's terminals it offers no tools.
+ * NovaDeck's terminals it offers no tools, so agents there aren't pointed at it.
  */
+import { plugin } from "../harnesses/harness.js"
+
 export const mcpScript = `// NovaDeck MCP server. Written by NovaDeck into its own data directory, and
 // overwritten on each start. Only agents started from NovaDeck's terminals get its tool.
 import { connect } from "node:net"
@@ -53,6 +55,9 @@ const tool = {
     additionalProperties: false,
   },
 }
+
+// The MCP versions this server speaks; it answers others with the newest.
+const versions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n")
 
@@ -115,16 +120,22 @@ const call = async (id, params) => {
 }
 
 const handle = (message) => {
+  // One request per line: a batch, or anything but an object, is refused.
+  if (typeof message !== "object" || message === null || Array.isArray(message))
+    return send({ id: null, error: { code: -32600, message: "Invalid Request" } })
   const { id, method, params } = message
-  // Notifications, such as notifications/initialized, need no answer.
-  if (id === undefined || id === null) return
+  // Notifications, such as notifications/initialized, need no answer; nor do answers,
+  // since this server asks nothing.
+  if (id === undefined || id === null || typeof method !== "string") return
   if (method === "initialize")
     return send({
       id,
       result: {
-        protocolVersion: params?.protocolVersion || "2025-06-18",
+        protocolVersion: versions.includes(params?.protocolVersion)
+          ? params.protocolVersion
+          : versions[0],
         capabilities: { tools: {} },
-        serverInfo: { name: "novadeck", version: "1.0.0" },
+        serverInfo: { name: "novadeck", version: "${plugin.version}" },
       },
     })
   if (method === "ping") return send({ id, result: {} })

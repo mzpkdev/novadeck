@@ -303,9 +303,10 @@ from what this document describes:
   MCP servers without the terminal's environment), `mcp_config.json` for Antigravity.
   Its one tool, `show`, takes a path, optional lines, a title and `open`, which the
   agent sets when the user asked to see it (`asked`). The server finds its terminal
-  from `NOVADECK_TERMINAL_ID`, `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`, and
-  offers no tools outside NovaDeck's terminals. It forwards the call over the
-  terminal's report endpoint, where the runner checks the token and shows only
+  from `NOVADECK_TERMINAL_ID`, `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`. Like
+  the hooks, it is installed for every session, but outside NovaDeck's terminals it
+  lists no tools, so the agent never sees `show`, and a call anyway does nothing. It
+  forwards the call over the terminal's report endpoint, where the runner checks the token and shows only
   images and text files inside the terminal's project folder, its starting folder
   or Claude Code's plans folder, symlinks resolved. The UI reads them through
   `agents.shown` and fetches each with `agents.artifact`, never by path. Pages, which
