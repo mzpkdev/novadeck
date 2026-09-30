@@ -125,6 +125,9 @@ describe("following a Codex rollout", () => {
     expect(activity.plans).toHaveLength(1)
     // What the rollout said before keeps its own time.
     const planned = events.find(({ type }) => type === "plan-observed")
-    expect(planned?.startedAt).toBeLessThan(bound)
+    const written = plan.records.find(
+      (record) => (record as { payload?: { type?: string } }).payload?.type === "item_completed",
+    )!
+    expect(planned?.startedAt).toBe(Date.parse(written.timestamp))
   })
 })
