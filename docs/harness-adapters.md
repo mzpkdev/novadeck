@@ -937,8 +937,9 @@ an action by typing guessed keys into a terminal.
       Code's `ExitPlanMode` review is its own attention kind, `plan`, so the
       terminal says a plan waits for review rather than for permission; its
       `PostToolUse` means approved, and a rejection settles with the next turn,
-      as a denial does. Antigravity's status line `execution_mode` follows once
-      probed. Plan content and presentation belong to step 5.
+      as a denial does. Antigravity's status line names `cycle_mode` (`plan`,
+      `accept-edits`) only while the mode is not the default, and reruns when
+      it changes. Plan content and presentation belong to step 5.
 5. **Operate.** Add caller/operation, messaging, artifact and presentation
    services, with MCP and UI exercising the same operations, including the
    spawn-Codex and present-plan walkthroughs in the companion design.

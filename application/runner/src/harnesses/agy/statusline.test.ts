@@ -26,7 +26,7 @@ const report = (payload: Report["payload"], seq = 5): Report => ({
 })
 const activity = (payload: Report["payload"]) =>
   decode(report(payload)).filter(
-    ({ type }) => type !== "session-observed" && type !== "telemetry-observed",
+    ({ type }) => !["session-observed", "telemetry-observed", "mode-observed"].includes(type),
   )
 const telemetry = (payload: Report["payload"]) =>
   decode(report(payload)).find(({ type }) => type === "telemetry-observed")
@@ -79,6 +79,20 @@ describe("Antigravity's status line, as captured", () => {
         },
       ],
     })
+  })
+
+  it("says whether the agent plans, by the mode it names only when not the default", () => {
+    const { cycleMode } = JSON.parse(
+      readFileSync(join(import.meta.dirname, "fixtures", "modes.probe.json"), "utf8"),
+    ) as { cycleMode: Record<string, string | null> }
+    const conversation = payloads.at(-1)!.conversation_id
+    const planning = (mode: string | null) =>
+      decode(
+        report({ conversation_id: conversation, ...(mode === null ? {} : { cycle_mode: mode }) }),
+      ).find(({ type }) => type === "mode-observed")
+    expect(planning(cycleMode.plan!)).toMatchObject({ planning: true })
+    expect(planning(cycleMode["accept-edits"]!)).toMatchObject({ planning: false })
+    expect(planning(cycleMode.default!)).toMatchObject({ planning: false })
   })
 
   it("leaves out what it does not know, and never reads the person's account", () => {
