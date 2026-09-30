@@ -12,22 +12,29 @@ const context =
 // rollout under the day it starts, and a session can outlast midnight.
 const days = 7
 
-// The day folders from `folder` (sessions/YYYY/MM/DD) on, up to `days` of them.
+const dayFolder = (sessions: string, day: Date): string =>
+  join(
+    sessions,
+    String(day.getFullYear()),
+    String(day.getMonth() + 1).padStart(2, "0"),
+    String(day.getDate()).padStart(2, "0"),
+  )
+
+// The day folders from `folder` (sessions/YYYY/MM/DD) on, up to `days` of them, then
+// today's and yesterday's, for a session resumed long after it began.
 const dayFolders = (folder: string): string[] => {
   const match = /(\d{4})[/\\](\d{2})[/\\](\d{2})$/.exec(folder)
   if (!match) return [folder]
   const sessions = dirname(dirname(dirname(folder)))
-  const start = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-  return Array.from({ length: days }, (_, offset) => {
-    const day = new Date(start + offset * 86_400_000)
-    const [year, month, date] = [day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate()]
-    return join(
-      sessions,
-      String(year),
-      String(month).padStart(2, "0"),
-      String(date).padStart(2, "0"),
-    )
-  })
+  const [year, month, date] = [Number(match[1]), Number(match[2]) - 1, Number(match[3])]
+  const later = Array.from({ length: days }, (_, offset) =>
+    dayFolder(sessions, new Date(year, month, date + offset)),
+  )
+  const now = new Date()
+  const recent = [0, 1].map((back) =>
+    dayFolder(sessions, new Date(now.getFullYear(), now.getMonth(), now.getDate() - back)),
+  )
+  return [...new Set([...later, ...recent])]
 }
 
 /**

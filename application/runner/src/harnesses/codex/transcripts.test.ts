@@ -71,13 +71,21 @@ describe("Codex's transcripts", () => {
         mkdirSync(folder, { recursive: true })
         return folder
       }
-      const root = join(day("2026-09-30"), "rollout-2026-09-30T23-05-15-s1.jsonl")
-      const child = join(day("2026-09-30"), "rollout-2026-09-30T23-06-00-a7.jsonl")
-      const later = join(day("2026-10-01"), "rollout-2026-10-01T00-10-00-a9.jsonl")
+      const root = join(day("2020-09-30"), "rollout-2020-09-30T23-05-15-s1.jsonl")
+      const child = join(day("2020-09-30"), "rollout-2020-09-30T23-06-00-a7.jsonl")
+      const later = join(day("2020-10-01"), "rollout-2020-10-01T00-10-00-a9.jsonl")
       for (const file of [root, child, later]) writeFileSync(file, "")
       await expect(transcripts.locate(root, "s1", null)).resolves.toBe(root)
       await expect(transcripts.locate(root, "s1", "a7")).resolves.toBe(child)
       await expect(transcripts.locate(root, "s1", "a9")).resolves.toBe(later)
+      // Resumed long after it began, its new subagents start today.
+      const now = new Date()
+      const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+        .map((part) => String(part).padStart(2, "0"))
+        .join("-")
+      const resumed = join(day(today), "rollout-now-b3.jsonl")
+      writeFileSync(resumed, "")
+      await expect(transcripts.locate(root, "s1", "b3")).resolves.toBe(resumed)
       await expect(transcripts.locate(root, "s1", "a8")).resolves.toBeUndefined()
     } finally {
       rmSync(sessions, { recursive: true, force: true })
