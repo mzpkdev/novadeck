@@ -39,7 +39,10 @@ set -f
 for novadeck_dir in $PATH; do
   [ -n "$novadeck_dir" ] || continue
   novadeck_candidate=$novadeck_dir/claude
-  if [ -f "$novadeck_candidate" ] && [ -x "$novadeck_candidate" ] && ! [ "$novadeck_candidate" -ef "$0" ]; then
+  # Another NovaDeck's shim, as from a runner started in a NovaDeck terminal, would call
+  # this one back: only the program itself counts.
+  if [ -f "$novadeck_candidate" ] && [ -x "$novadeck_candidate" ] && ! [ "$novadeck_candidate" -ef "$0" ] &&
+    ! head -c 256 "$novadeck_candidate" 2>/dev/null | grep -q "NovaDeck shim for claude"; then
     novadeck_real=$novadeck_candidate
     break
   fi

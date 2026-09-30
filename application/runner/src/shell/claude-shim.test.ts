@@ -8,6 +8,8 @@ import { installShellFiles } from "./install.js"
 
 type Fixture = {
   run: (args: string[], env?: NodeJS.ProcessEnv) => string[]
+  bin: string
+  real: string
   settings: string
   remove: () => void
 }
@@ -50,11 +52,24 @@ const it = base.extend<{ shim: Fixture }>({
       if (result.status !== 0) throw new Error(`claude failed: ${result.stderr}`)
       return JSON.parse(readFileSync(log, "utf8")) as string[]
     }
-    await use({ run, settings, remove: () => rmSync(settings) })
+    await use({ run, bin: paths.bin, real, settings, remove: () => rmSync(settings) })
   },
 })
 
 describe.skipIf(process.platform === "win32")("claude shim", () => {
+  it("passes over another NovaDeck's shim on PATH, as a runner started in a NovaDeck terminal leaves", async ({
+    shim,
+  }) => {
+    // Another NovaDeck's shell files, whose shim would call this one back.
+    const other = await installShellFiles(mkdtempSync(join(tmpdir(), "novadeck-other-")))
+    const settings = expect.stringMatching(/statusline\.json$/)
+    expect(
+      shim.run(["hi"], {
+        PATH: [shim.bin, other.bin, shim.real, process.env.PATH].join(delimiter),
+      }),
+    ).toEqual(["--settings", settings, "hi"])
+  })
+
   it("runs a session with NovaDeck's status line, passing every argument on", ({ shim }) => {
     const settings = expect.stringMatching(/plugins\/claude\/statusline\.json$/)
     expect(shim.run([])).toEqual(["--settings", settings])

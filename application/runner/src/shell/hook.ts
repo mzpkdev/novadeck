@@ -25,10 +25,20 @@ const token = env.NOVADECK_REPORT_TOKEN
 // the person's own status line: its output is what this hook prints.
 const statusLine = agent === "claude" && event === "StatusLine"
 let output = ""
+// The person's own status line while it runs, and what it has printed so far.
+let own
+let printed = ""
 let finished = false
 const done = () => {
   if (finished) return
   finished = true
+  if (own && own.exitCode === null && own.signalCode === null) {
+    // Out of time: show what it printed, and end it with whatever it started.
+    output = printed.slice(0, 65_536)
+    try {
+      process.kill(-own.pid, "SIGTERM")
+    } catch {}
+  }
   if (agent !== "agy") {
     if (!output) return process.exit(0)
     return process.stdout.write(output, () => process.exit(0))
@@ -106,10 +116,16 @@ if (!terminalId || !endpoint || !token || !["claude", "codex", "agy"].includes(a
   }
 
   // Runs the person's status line with the same input, keeping at most 64 KiB it prints.
+  // It runs in its own process group, as Claude Code runs a status line, so a deadline
+  // ends everything it started.
   const runStatusLine = (command, input, finish) => {
-    let printed = ""
     try {
-      const child = spawn(command, { shell: true, stdio: ["pipe", "pipe", "ignore"] })
+      const child = spawn(command, {
+        shell: true,
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "ignore"],
+      })
+      own = child
       child.stdout.setEncoding("utf8")
       child.stdout.on("data", (chunk) => {
         if (printed.length < 65_536) printed += chunk

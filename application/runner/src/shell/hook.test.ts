@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -209,6 +209,44 @@ describe("agent hook", () => {
       expect(printed.trim()).toBe("mine")
       expect(fixture.reports.map(({ event }) => event)).toEqual(["StatusLine"])
     },
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "cuts off a status line that takes too long, keeping what it printed",
+    async ({ fixture }) => {
+      const home = mkdtempSync(join(tmpdir(), "novadeck-claude-home-"))
+      const pidFile = join(home, "pid")
+      writeFileSync(
+        join(home, "settings.json"),
+        JSON.stringify({
+          statusLine: {
+            type: "command",
+            command: `echo partial; echo $$ > '${pidFile}'; exec sleep 30`,
+          },
+        }),
+      )
+      const started = performance.now()
+      const printed = await fixture.run(
+        "claude",
+        { session_id: session, cwd: home },
+        { CLAUDE_CONFIG_DIR: home },
+        "StatusLine",
+      )
+      expect(performance.now() - started).toBeLessThan(8_000)
+      expect(printed.trim()).toBe("partial")
+      const pid = Number(readFileSync(pidFile, "utf8"))
+      const alive = () => {
+        try {
+          process.kill(pid, 0)
+          return true
+        } catch {
+          return false
+        }
+      }
+      await expect.poll(alive, { timeout: 3_000 }).toBe(false)
+      rmSync(home, { recursive: true, force: true })
+    },
+    15_000,
   )
 
   it("shows no status line of its own when the person has none", async ({ fixture }) => {

@@ -175,7 +175,9 @@ export const createHarnesses = (
     shims: async (): Promise<AgentName[]> => {
       const install = await installs()
       if (!install) return []
-      const shimmed = agents.filter((agent) => harnesses[agent].shims)
+      const shimmed = agents.filter(
+        (agent) => (harnesses[agent].shims?.(platform) ?? []).length > 0,
+      )
       const connected = await Promise.all(
         shimmed.map((agent) => harnesses[agent].connected(install(agent))),
       )
