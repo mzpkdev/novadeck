@@ -30,12 +30,15 @@ export type PlanState = Companion & {
   readonly resolved: number
 }
 
+// The editor and the merge work on LF text, whatever line endings the file has.
+const lf = (text: string): string => text.replace(/\r\n?/g, "\n")
+
 const initialState = ({ plan, shown }: CompanionSeed): PlanState => ({
   open: false,
   revision: 0,
   seen: -1,
-  base: plan.text,
-  text: plan.text,
+  base: lf(plan.text),
+  text: lf(plan.text),
   marks: [],
   marked: "",
   changes: 0,
@@ -100,18 +103,19 @@ const revise = (
   event: Extract<CompanionEvent, { type: "plan/revised" }>,
 ): void => {
   void import("./plan-editor/sync").then(({ merge, resolveNotes }) => {
+    const text = lf(event.text)
     const revised = change(panes, event.terminalId, (plan) => {
-      const written = merge(plan.base, plan.text, event.text)
+      const written = merge(plan.base, plan.text, text)
       const result = event.appliedNotes
         ? resolveNotes(written.text, written.marks)
         : { ...written, resolved: 0 }
-      if (event.text === plan.base && !result.resolved) return plan
+      if (text === plan.base && !result.resolved) return plan
       const revision = plan.revision + 1
       return {
         ...plan,
         revision,
         seen: plan.open && plan.tab === planTab ? revision : plan.seen,
-        base: event.text,
+        base: text,
         text: result.text,
         marks: result.marks,
         marked: result.text,
