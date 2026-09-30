@@ -213,7 +213,11 @@ class TableWidget extends WidgetType {
         save()
       })
       notes[row] = input
-      box.append(label, input)
+      // A bubble sized to its text, as notes elsewhere in the plan are.
+      const bubble = document.createElement("span")
+      bubble.className = "cm-plan-row-note-bubble"
+      bubble.append(label, input)
+      box.append(bubble)
       line.append(box)
       return line
     }

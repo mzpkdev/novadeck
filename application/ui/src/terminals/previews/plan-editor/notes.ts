@@ -1,6 +1,7 @@
-import { EditorSelection } from "@codemirror/state"
+import { EditorSelection, type Line, type Text } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
+import { notePattern } from "../plan-content"
 import { findTables } from "./tables"
 
 // Notes as NovaDeck writes them into the plan, and the control that adds one.
@@ -65,4 +66,70 @@ export const noteLabel = (): HTMLElement => {
   label.setAttribute("aria-label", "Note")
   label.append(noteIcon(false))
   return label
+}
+
+// Enter in a note's text ends the note there, starting a line after it: a line break
+// inside would split the comment the note is written as.
+export const leaveNote = (doc: Text, pos: number): { at: number } | null => {
+  const { spans, line } = notesOn(doc, pos)
+  return spans.some((span) => pos >= span.body && pos <= span.close) ? { at: line.to } : null
+}
+
+// Where a note sits on its line: the whole comment, and the text between its wrappers.
+type NoteSpan = {
+  readonly from: number
+  readonly to: number
+  readonly body: number
+  readonly close: number
+}
+
+const notesOn = (doc: Text, pos: number): { spans: NoteSpan[]; line: Line } => {
+  const line = doc.lineAt(pos)
+  const spans = [...line.text.matchAll(notePattern)].map((match) => {
+    const from = line.from + match.index
+    const to = from + match[0].length
+    return { from, to, body: from + noteOpen.length, close: to - noteClose.length }
+  })
+  return { spans, line }
+}
+
+// A click in a note's line lands in its text: on its hidden wrappers, or on the line
+// around a note that has the line to itself, it would type outside the note.
+export const caretInNote = (doc: Text, pos: number): number => {
+  const { spans, line } = notesOn(doc, pos)
+  const alone =
+    spans.length === 1 &&
+    line.text.trim() === line.text.slice(spans[0]!.from - line.from, spans[0]!.to - line.from)
+  const note =
+    spans.find((span) => pos >= span.from && pos <= span.to) ?? (alone ? spans[0] : undefined)
+  if (!note) return pos
+  return Math.min(Math.max(pos, note.body), note.close)
+}
+
+// Empty notes, with the line each had to itself, except one the caret is in: a note
+// opened and left empty is dropped.
+export const emptyNoteRemovals = (
+  doc: Text,
+  caret: number | null,
+): { from: number; to: number }[] => {
+  const text = doc.toString()
+  const empty = noteOpen + noteClose
+  // A table's row notes are edited, and dropped when left empty, by the table itself.
+  const tables = findTables(text)
+  const removals: { from: number; to: number }[] = []
+  for (let from = text.indexOf(empty); from >= 0; from = text.indexOf(empty, from + 1)) {
+    const to = from + empty.length
+    if (caret !== null && caret >= from && caret <= to) continue
+    if (tables.some((table) => from >= table.from && to <= table.to)) continue
+    const line = doc.lineAt(from)
+    const alone = line.text.trim() === empty
+    removals.push(
+      alone
+        ? line.number > 1
+          ? { from: line.from - 1, to: line.to }
+          : { from: line.from, to: Math.min(line.to + 1, doc.length) }
+        : { from: text[from - 1] === " " ? from - 1 : from, to },
+    )
+  }
+  return removals
 }

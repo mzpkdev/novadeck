@@ -627,25 +627,63 @@
 .plan-editor .cm-activeLineGutter {
   background: transparent;
 }
+/* A note is a warm speech bubble: apricot, apart from NovaDeck's cool greys and from the
+   butter amber that marks the agent's changes, with a tail up at what it's about. */
+.plan-reader {
+  --note-fill: #fdf2eb;
+  --note-mark: #c27a55;
+}
 .cm-plan-note-label {
   display: inline-flex;
   margin-right: 7px;
-  color: var(--color-muted);
+  color: var(--note-mark);
   vertical-align: -2px;
 }
+/* Notes outrank the plan around them, by space and contrast rather than weight of
+   colour: room above and below, full-contrast text, and an ink rule to find them by. */
 .cm-plan-note-text {
   color: var(--color-ink);
+  font-weight: 500;
 }
 .plan-editor .cm-plan-note-line {
-  margin: 2px 0;
-  padding: 3px 10px !important;
-  border-radius: 4px;
-  background: var(--color-soft);
-  font-size: 12px;
-}
-.plan-editor .cm-plan-item.cm-plan-note-line {
-  padding-left: 10px !important;
+  --note-indent: 0px;
+  /* Its own stacking context, so the bubble drawn behind the text stays in the line. */
+  position: relative;
+  z-index: 0;
+  /* Sized to its text, which no Markdown element is. */
+  width: fit-content;
+  max-width: 100%;
+  padding: 14px 12px 8px calc(var(--note-indent) + 10px) !important;
   text-indent: 0;
+  line-height: 1.6;
+}
+.plan-editor .cm-plan-note-line::before,
+.plan-editor .cm-plan-note-line::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.plan-editor .cm-plan-note-line::before {
+  inset: 9px 0 3px var(--note-indent);
+  border-radius: 9px;
+  background: var(--note-fill);
+}
+/* The tail: a turned square whose top corner points up at the line above. */
+.plan-editor .cm-plan-note-line::after {
+  top: 5px;
+  left: calc(var(--note-indent) + 14px);
+  width: 8px;
+  height: 8px;
+  background: var(--note-fill);
+  transform: rotate(45deg);
+}
+/* Under a list item, the rule lines up with the item's text. */
+.plan-editor .cm-plan-item.cm-plan-note-line {
+  --note-indent: 22px;
+}
+.plan-editor .cm-plan-item-task.cm-plan-note-line {
+  --note-indent: 44px;
 }
 /* What the agent's latest revision wrote, while changes are shown. */
 [data-changes="true"] .cm-plan-changed {
@@ -799,13 +837,32 @@
   color: var(--color-ink);
 }
 .cm-plan-row-note td {
-  padding: 4px 10px;
+  padding: 4px 8px 6px;
   border-top: 0;
-  background: var(--color-soft);
+}
+.cm-plan-row-note-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 4px 12px 4px 10px;
+  border-radius: 9px;
+  background: var(--note-fill);
+}
+.cm-plan-row-note-bubble::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 13px;
+  width: 8px;
+  height: 8px;
+  background: var(--note-fill);
+  transform: rotate(45deg);
 }
 .cm-plan-row-note .cm-plan-note-label {
-  float: left;
-  margin: 4px 7px 0 0;
+  flex-shrink: 0;
+  margin: 3px 7px 0 0;
 }
 .cm-plan-row-note-input {
   display: block;
@@ -817,9 +874,10 @@
   resize: none;
   background: transparent;
   color: var(--color-ink);
+  font-weight: 500;
   font: inherit;
   line-height: 1.6;
   outline: none;
   field-sizing: content;
-  min-width: 60%;
+  min-width: 4ch;
 }

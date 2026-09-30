@@ -1,5 +1,12 @@
 import { syntaxTree } from "@codemirror/language"
-import { EditorSelection, Prec, StateEffect, StateField, type Range } from "@codemirror/state"
+import {
+  EditorSelection,
+  EditorState,
+  Prec,
+  StateEffect,
+  StateField,
+  type Range,
+} from "@codemirror/state"
 import {
   Decoration,
   EditorView,
@@ -15,7 +22,16 @@ import {
 
 import { notePattern } from "../plan-content"
 import type { Mark } from "../plan-state"
-import { addNote, noteClose, noteIcon, noteLabel as noteMark, noteOpen } from "./notes"
+import {
+  addNote,
+  caretInNote,
+  emptyNoteRemovals,
+  leaveNote,
+  noteClose,
+  noteIcon,
+  noteLabel as noteMark,
+  noteOpen,
+} from "./notes"
 import { tables } from "./table-widget"
 
 // Markdown shown as a document and edited in place. Formatting marks show, dimmed, only on
@@ -168,7 +184,11 @@ const decorate = (view: EditorView): Rendered => {
       atomic.push(noteLabel.range(start, body), hide.range(close, end))
       if (close > body) ranges.push(mark("cm-plan-note-text").range(body, close))
       const at = doc.lineAt(start)
-      if (at.text.trim() === match[0]) ranges.push(line("cm-plan-note-line").range(at.from))
+      if (at.text.trim() === match[0]) {
+        ranges.push(line("cm-plan-note-line").range(at.from))
+        // A note indented into a list item lines up by style, not by its spaces.
+        if (start > at.from) ranges.push(hide.range(at.from, start))
+      }
     }
   }
   return { decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
@@ -285,12 +305,60 @@ const removeEmptyNote = (view: EditorView): boolean => {
   return true
 }
 
+// A click in a note's line types in the note, not past its hidden wrapper.
+const clickIntoNotes = EditorState.transactionFilter.of((transaction) => {
+  if (!transaction.selection || !transaction.isUserEvent("select.pointer")) return transaction
+  const { head, empty } = transaction.selection.main
+  const caret = empty ? caretInNote(transaction.newDoc, head) : head
+  return caret === head
+    ? transaction
+    : [transaction, { selection: EditorSelection.cursor(caret), sequential: true }]
+})
+
+// Enter in a note finishes it and starts a line after it.
+const finishNote = (view: EditorView): boolean => {
+  const { head, empty } = view.state.selection.main
+  const leave = empty ? leaveNote(view.state.doc, head) : null
+  if (!leave) return false
+  view.dispatch({
+    changes: { from: leave.at, insert: "\n" },
+    selection: EditorSelection.cursor(leave.at + 1),
+    scrollIntoView: true,
+  })
+  return true
+}
+
+// Notes opened and left empty go once the caret leaves them or the editor loses focus.
+const dropEmptyNotes = ViewPlugin.fromClass(
+  class {
+    update(update: ViewUpdate): void {
+      if (!update.docChanged && !update.selectionSet && !update.focusChanged) return
+      const { view } = update
+      const caret = (): number | null =>
+        update.focusChanged && !view.hasFocus ? null : view.state.selection.main.head
+      if (!emptyNoteRemovals(view.state.doc, caret()).length) return
+      // An update can't dispatch; do it right after, from the state then.
+      queueMicrotask(() => {
+        const removals = emptyNoteRemovals(view.state.doc, caret())
+        if (removals.length) view.dispatch({ changes: removals })
+      })
+    }
+  },
+)
+
 export const livePreview = [
+  clickIntoNotes,
+  dropEmptyNotes,
   preview,
   tables,
   agentMarks,
   noteGutter,
   highlightActiveLineGutter(),
   EditorView.atomicRanges.of((view) => view.plugin(preview)?.rendered.atomic ?? Decoration.none),
-  Prec.high(keymap.of([{ key: "Backspace", run: removeEmptyNote }])),
+  Prec.high(
+    keymap.of([
+      { key: "Backspace", run: removeEmptyNote },
+      { key: "Enter", run: finishNote },
+    ]),
+  ),
 ]
