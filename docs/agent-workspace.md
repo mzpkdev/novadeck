@@ -9,7 +9,9 @@ adapters provide native integration behavior.
 The concrete product scenarios are session resume; truthful activity and attention;
 native subagent trees with live transcripts; usage, quotas/reset times and context;
 Claude starting an independent Codex terminal; and an agent presenting a plan
-document in a NovaDeck modal, explicitly or from verified native planning events.
+document, or an image, file or page, in its terminal's companion pane, explicitly or
+from verified native planning events. Where this document says a modal opens, the
+companion pane opens to that plan or artifact; see [Companion pane](#companion-pane).
 
 ## Responsibilities
 
@@ -133,9 +135,11 @@ different request kinds and cannot resolve one another implicitly.
 5. The UI receives a typed request referencing authorized artifact content. A
    browser does not try to open a filesystem path on the runner. Fetching content
    rechecks UI authorization; artifact IDs alone are not bearer credentials.
-6. The UI opens a read-only Markdown modal and acknowledges rendering. An
-   acknowledged opening means rendered, not read or approved. Failure and
-   dismissal are separate outcomes.
+6. The UI opens the document in the terminal's companion pane, or waits in its
+   taskbar when the request isn't marked as asked for, and acknowledges rendering.
+   An acknowledged opening means rendered, not read or approved. Failure and
+   dismissal are separate outcomes. A plan opens editable; see
+   [Companion pane](#companion-pane).
 7. The caller can query the operation; relevant completion events can also enter
    its mailbox. Native wakeup/delivery is a separate adapter capability.
 
@@ -242,6 +246,57 @@ cannot race into duplicate modal claims. Expired/cancelled automatic requests st
 suppressed for that generation; late draft updates cannot recreate them. Resuming
 a plan after application restart restores history and suppression, not live source
 authority; reconciliation is required before automatic updates or a new opening.
+
+## Companion pane
+
+The UI presents what an agent shows in its terminal's companion pane: a taskbar along
+the terminal's bottom with an icon for each plan and each artifact, and a pane beside
+the terminal (inside its window in Focus and Grid, attached to its node in Canvas).
+Nothing opens on its own unless the user asked for it; everything else waits in the
+taskbar, marked new. The UI reads all of it through the backend port's optional
+`companions` capability (`application/ui/src/model/companion.ts`):
+
+| `companions`                    | What it carries                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| `snapshot()`                    | Each terminal's plans and shown artifacts, keyed by project, session and terminal    |
+| `plan/changed`, `plan/removed`  | A plan appeared or its file changed, with the text and a revision; a plan ended      |
+| `artifact/shown`                | Something was shown, or shown again with a newer version; `asked` opens it           |
+| `companion/closed`              | The terminal's agent is gone                                                         |
+| `load(key, artifactId)`         | An artifact's content, on demand: an image URL, a file's lines, a page               |
+| `save(key, ref, text, basedOn)` | The user's edit written to the plan file, unless it changed since revision `basedOn` |
+
+### Plans are edited in their file
+
+Unlike the read-only `document` presentation, a plan opens editable. The user's
+edits, and the notes they leave (`<!-- novadeck: … -->` comments), are written into
+the plan file itself: the file is the channel back to the agent, which re-reads it
+(NovaDeck's skill tells it to) and removes each note it applies. Closing the pane
+never approves anything; approval stays in the agent's own prompt.
+
+Every plan text carries a `revision`. The UI saves an edit with the revision it was
+made on, once typing pauses and at once when focus leaves the plan. The backend
+writes only if the file is still at that revision; otherwise it returns the file as it
+now stands, and the UI merges the edit into it line by line, as it merges an agent's
+rewrite, and saves again. The last revision both sides agreed on is the merge base, so
+an agent's rewrite that already contains the user's edits merges cleanly. A backend
+watching the file may report the UI's own save back as `plan/changed`; the UI
+recognizes it by its text. The file keeps its own line breaks.
+
+### Connecting the runner
+
+Only the content-preview demo implements `companions` so far. A runner implements it
+from what this document describes:
+
+- **Plans** come from native observation: `agents.detail` lists each actor's latest
+  plan (root and subagents) and `agents.plan` streams its text on each change, which
+  become `plan/changed` with the file's revision (a content hash or modification
+  stamp). `plans.report` over MCP covers harnesses without native signals.
+- **Artifacts** come from `documents.present` over MCP, extended to images, project
+  files and preview-browser pages, with an `open` hint the agent sets when the user
+  asked for it (`asked`). Content is fetched through authorized artifact references,
+  never by path, and pages need a hosted browser view instead of a snapshot.
+- **Saving** is a new authorized plan-write operation with the revision check above,
+  scoped like `present`: the caller may write only the plan the terminal's agent keeps.
 
 ## Presentation routing and results
 
