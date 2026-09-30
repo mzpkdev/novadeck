@@ -48,7 +48,7 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
   hookScript: join(directory, "hook.mjs"),
   mcp: join(directory, platform === "win32" ? "mcp.cmd" : "mcp"),
   mcpScript: join(directory, "mcp.mjs"),
-  mcpIdle: join(directory, "mcp-idle.ps1"),
+  mcpIdle: join(directory, "mcp-idle.js"),
 })
 
 // Quoting for each language a path is written into.
@@ -304,7 +304,11 @@ while IFS= read -r novadeck_line || [ -n "$novadeck_line" ]; do
 done
 `
 
-const cmdMcpLauncher = (runtime: string, script: string, idle: string): string => `@echo off
+// cmd reads a batch file's labels reliably only with CRLF line endings.
+const crlf = (text: string): string => text.replaceAll("\n", "\r\n")
+
+const cmdMcpLauncher = (runtime: string, script: string, idle: string): string =>
+  crlf(`@echo off
 ${header("rem", "MCP server launcher")}
 if not defined NOVADECK_TERMINAL_ID goto idle
 if not defined NOVADECK_REPORT goto idle
@@ -314,50 +318,40 @@ set ELECTRON_RUN_AS_NODE=1
 ${cmdQuote(runtime)} ${cmdQuote(script)} %*
 exit /b %ERRORLEVEL%
 :idle
-powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ${cmdQuote(idle)}
-`
+cscript.exe //nologo //E:jscript ${cmdQuote(idle)}
+`)
 
-const mcpIdle = `${header("#", "MCP server, as it answers outside NovaDeck's terminals")}
-# The handshake, and no tools, one JSON message per line.
-$versions = @(${mcpVersions.map(psQuote).join(", ")})
-$reader = [Console]::In
-$writer = [Console]::Out
-function Send($message) {
-  $writer.WriteLine((ConvertTo-Json -InputObject $message -Compress -Depth 5))
-  $writer.Flush()
+// Windows Script Host's JScript, which starts at once where PowerShell can take seconds.
+// Like the sh loop, it reads each request by pattern: agents write the id last or before
+// the params, and none of these requests' params holds an "id".
+const mcpIdle = `${header("//", "MCP server, as it answers outside NovaDeck's terminals")}
+var versions = ${JSON.stringify(mcpVersions)}
+var input = WScript.StdIn
+var output = WScript.StdOut
+function field(line, pattern) {
+  var found = pattern.exec(line)
+  return found ? found[1] : null
 }
-function Refuse($code, $text) {
-  Send ([ordered]@{ jsonrpc = '2.0'; id = $null; error = [ordered]@{ code = $code; message = $text } })
+function known(version) {
+  for (var i = 0; i < versions.length; i++) if (versions[i] === version) return true
+  return false
 }
-while ($null -ne ($line = $reader.ReadLine())) {
-  $line = $line.Trim()
-  if (-not $line) { continue }
-  if ($line.StartsWith('[')) { Refuse -32600 'Invalid Request'; continue }
-  try { $message = ConvertFrom-Json $line } catch { Refuse -32700 'Parse error'; continue }
-  if ($message -isnot [System.Management.Automation.PSCustomObject]) {
-    Refuse -32600 'Invalid Request'
-    continue
-  }
-  $id = $message.id
-  $method = $message.method
-  # Notifications, and anything but a request, need no answer.
-  if ($null -eq $id -or $method -isnot [string]) { continue }
-  $answer = [ordered]@{ jsonrpc = '2.0'; id = $id }
-  switch -CaseSensitive ($method) {
-    'initialize' {
-      $version = $message.params.protocolVersion
-      if ($versions -cnotcontains $version) { $version = $versions[0] }
-      $answer.result = [ordered]@{
-        protocolVersion = $version
-        capabilities = [ordered]@{ tools = @{} }
-        serverInfo = [ordered]@{ name = 'novadeck'; version = '${plugin.version}' }
-      }
-    }
-    'ping' { $answer.result = @{} }
-    'tools/list' { $answer.result = @{ tools = @() } }
-    default { $answer.error = [ordered]@{ code = -32601; message = 'Method not found' } }
-  }
-  Send $answer
+while (!input.AtEndOfStream) {
+  var line = input.ReadLine()
+  var id = field(line, /^.*"id"\\s*:\\s*(-?\\d+|"[^"\\\\]*")/)
+  var method = field(line, /"method"\\s*:\\s*"([^"]*)"/)
+  // Notifications, and anything but a request, need no answer.
+  if (id === null || method === null) continue
+  var answer
+  if (method === "initialize") {
+    var version = field(line, /"protocolVersion"\\s*:\\s*"([^"]*)"/)
+    if (!known(version)) version = versions[0]
+    answer = '"result":{"protocolVersion":"' + version + '","capabilities":{"tools":{}},' +
+      '"serverInfo":{"name":"novadeck","version":"${plugin.version}"}}'
+  } else if (method === "ping") answer = '"result":{}'
+  else if (method === "tools/list") answer = '"result":{"tools":[]}'
+  else answer = '"error":{"code":-32601,"message":"Method not found"}'
+  output.Write('{"jsonrpc":"2.0","id":' + id + "," + answer + "}\\n")
 }
 `
 

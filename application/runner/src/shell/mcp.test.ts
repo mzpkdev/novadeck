@@ -221,11 +221,14 @@ describe("NovaDeck's MCP server", () => {
       }
       const inTerminal = () => ({ ...outside(), ...terminal(), PATH: process.env.PATH })
 
-      it("answers the handshake with no tools outside a NovaDeck terminal", async () => {
+      it("answers the handshake with no tools outside a NovaDeck terminal, promptly", async () => {
         const start = await installed()
+        const began = Date.now()
         const [hello, tools] = await session(outside(), [initialize, initialized, list], {
           start,
         })
+        // Well within the 10 s Codex gives an MCP server to start.
+        expect(Date.now() - began).toBeLessThan(5_000)
         expect(hello?.result).toMatchObject({
           protocolVersion: "2025-06-18",
           serverInfo: { name: "novadeck", version: plugin.version },

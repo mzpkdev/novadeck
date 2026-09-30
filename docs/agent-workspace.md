@@ -306,8 +306,8 @@ from what this document describes:
   from `NOVADECK_TERMINAL_ID`, `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`. Like
   the hooks, it is installed for every session, but outside NovaDeck's terminals it
   lists no tools, so the agent never sees `show`, and a call anyway does nothing.
-  There its launcher answers itself (sh, or PowerShell on Windows, which agents reach
-  through `cmd.exe`) without starting NovaDeck's runtime, which a packaged NovaDeck
+  There its launcher answers itself (sh, or Windows Script Host's JScript on Windows,
+  which agents reach through `cmd.exe`) without starting NovaDeck's runtime, which a packaged NovaDeck
   can unpack into a folder that goes when it quits. In a terminal it forwards the call
   over the terminal's report endpoint, where the runner checks the token and shows only
   images and text files inside the terminal's project folder, its starting folder
