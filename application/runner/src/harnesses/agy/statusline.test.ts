@@ -223,6 +223,10 @@ describe("connecting Antigravity's status line", () => {
         { type: "command", command: "echo empty" },
       ],
       [{ type: "command", command: "", padding: 3 }, { padding: 3 }],
+      [
+        { type: "static", command: "echo typed" },
+        { type: "command", command: "echo typed" },
+      ],
       [null, undefined],
     ] as const
     for (const [own, back] of cases) {

@@ -86,8 +86,7 @@ export const statusLineSettings = (home: (install: Install) => string) => ({
     if (ownOf(settings.statusLine) !== undefined) return
     const own = line(settings.statusLine)
     // Antigravity runs a command whatever its type names, or none.
-    const runs = own?.type === undefined || own.type === "" || own.type === "command"
-    const command = runs && typeof own?.command === "string" ? own.command : ""
+    const command = typeof own?.command === "string" ? own.command : ""
     // The person's display choices stay; without a status line of their own, Antigravity's
     // default keeps showing above NovaDeck's, which prints nothing.
     settings.statusLine = {
