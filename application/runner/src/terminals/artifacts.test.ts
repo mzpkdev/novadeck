@@ -7,6 +7,7 @@ import {
   capture,
   captureWindow,
   readRequest,
+  maxShownBytes,
   remember,
   type Artifact,
   type Captured,
@@ -29,7 +30,11 @@ const it = base.extend<{ fixture: Fixture }>({
     const outside = join(root, "outside")
     mkdirSync(join(project, "src"), { recursive: true })
     mkdirSync(outside)
-    await use({ project, outside, place: { cwd: project, project, folders: [project] } })
+    await use({
+      project,
+      outside,
+      place: { cwd: project, project, home: join(root, "home"), folders: [project] },
+    })
   },
 })
 
@@ -218,6 +223,15 @@ const captured = (id: string, line = "a"): Captured => ({
   content: { kind: "file", path: `/p/${id}.txt`, firstLine: 1, lines: [line], from: 1, to: 1 },
 })
 
+// An image of this many bytes of content.
+const image = (id: string, bytes: number): Captured => ({
+  ok: true,
+  id,
+  name: `${id}.png`,
+  detail: "",
+  content: { kind: "image", src: "x".repeat(bytes) },
+})
+
 describe("what a terminal shows", () => {
   it("replaces what is shown again with a later version, as the newest", () => {
     let shown: ReadonlyMap<string, Artifact> = new Map()
@@ -251,5 +265,61 @@ describe("what a terminal shows", () => {
       shown = remember(shown, captured(`f${index}`), false)
     expect(shown.size).toBe(64)
     expect([...shown.keys()][0]).toBe("f1")
+  })
+
+  it("keeps no more of what was shown than its budget, the newest always", () => {
+    let shown: ReadonlyMap<string, Artifact> = new Map()
+    const third = Math.floor(maxShownBytes / 3)
+    for (const id of ["a", "b", "c", "d"]) shown = remember(shown, image(id, third), false)
+    expect([...shown.keys()]).toEqual(["b", "c", "d"])
+    shown = remember(shown, image("huge", maxShownBytes + 1), false)
+    expect([...shown.keys()]).toEqual(["huge"])
+  })
+})
+
+describe("what an agent may not show", () => {
+  it("is anything, when the terminal's project is the home folder itself", async ({ fixture }) => {
+    writeFileSync(join(fixture.project, "a.ts"), "a\n")
+    const place: Place = { ...fixture.place, home: fixture.project }
+    await expect(capture({ path: "a.ts" }, place)).resolves.toEqual({
+      ok: false,
+      reason:
+        "This terminal's project is the home folder; NovaDeck shows files only from a project folder.",
+    })
+  })
+
+  it("is a file that often holds secrets, anywhere in the project", async ({ fixture }) => {
+    mkdirSync(join(fixture.project, ".ssh"))
+    const secrets = [
+      ".env",
+      ".env.local",
+      join(".ssh", "config"),
+      "server.pem",
+      "id_ed25519",
+      ".npmrc",
+    ]
+    for (const path of secrets) writeFileSync(join(fixture.project, path), "secret\n")
+    for (const path of secrets)
+      // eslint-disable-next-line no-await-in-loop -- One file after another.
+      await expect(capture({ path }, fixture.place)).resolves.toEqual({
+        ok: false,
+        reason: "That file may hold secrets, so NovaDeck won't show it.",
+      })
+  })
+
+  it("is the folder itself, which is a folder, not outside", async ({ fixture }) => {
+    await expect(capture({ path: "." }, fixture.place)).resolves.toEqual({
+      ok: false,
+      reason: "That's a folder; only files can be shown.",
+    })
+  })
+})
+
+describe("a text file's lines", () => {
+  it("end at any line break, old Mac ones too", async ({ fixture }) => {
+    writeFileSync(join(fixture.project, "cr.txt"), "one\rtwo\r\nthree\n")
+    await expect(capture({ path: "cr.txt" }, fixture.place)).resolves.toMatchObject({
+      content: { lines: ["one", "two", "three"] },
+    })
   })
 })

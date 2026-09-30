@@ -52,6 +52,8 @@ export type Captured = {
 export type Place = {
   readonly cwd: string
   readonly project: string | undefined
+  /** The person's home folder, which is never a folder to show from as a whole. */
+  readonly home: string
   readonly folders: readonly (string | undefined)[]
 }
 
@@ -76,6 +78,25 @@ const maxLines = 2000
 const maxLineChars = 4096
 /** The most a terminal keeps shown; the oldest go first. */
 export const maxShown = 64
+/** The most a terminal keeps of what it showed, in bytes of content; the oldest go first. */
+export const maxShownBytes = 48 * 1024 * 1024
+
+// Files that often hold secrets: a key, credentials, an environment file. An agent can
+// read them, but NovaDeck won't put them on screen, as while the person shares it.
+const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"])
+const secretNames = [
+  /^\.env(\..*)?$/i,
+  /^\.netrc$/i,
+  /^\.git-credentials$/i,
+  /^\.npmrc$/i,
+  /^\.pypirc$/i,
+  /^credentials(\.json)?$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)$/i,
+  /\.(pem|key|p12|pfx|keystore|jks)$/i,
+]
+const secret = (path: string): boolean =>
+  path.split(sep).some((part) => secretFolders.has(part)) ||
+  secretNames.some((name) => name.test(basename(path)))
 
 const failure = (reason: string): PresentFailure => ({ ok: false, reason })
 
@@ -110,6 +131,12 @@ const size = (bytes: number): string => {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+/** Roughly what content takes in memory. */
+export const bytesOf = (content: ArtifactContent): number =>
+  content.kind === "image"
+    ? content.src.length
+    : content.lines.reduce((total, line) => total + line.length, 0)
 
 /**
  * The lines of a file of `total` lines captured, from `first` to `last`, and the ones
@@ -147,11 +174,22 @@ export const capture = async (
   const given = resolve(place.cwd, request.path)
   const path = await real(given)
   if (!path) return failure("That file doesn't exist.")
-  const folders = await Promise.all(
+  const home = await real(place.home)
+  const resolved = await Promise.all(
     place.folders.map((folder) => (folder === undefined ? undefined : real(folder))),
   )
-  if (!folders.some((folder) => folder !== undefined && inside(folder, path)))
-    return failure("That file is outside this project.")
+  // A project in the home folder itself would make all of it showable.
+  const folders = resolved.filter(
+    (folder): folder is string => folder !== undefined && folder !== home,
+  )
+  if (resolved.includes(path)) return failure("That's a folder; only files can be shown.")
+  if (!folders.some((folder) => inside(folder, path)))
+    return failure(
+      resolved.some((folder) => folder !== undefined && folder === home)
+        ? "This terminal's project is the home folder; NovaDeck shows files only from a project folder."
+        : "That file is outside this project.",
+    )
+  if (secret(path)) return failure("That file may hold secrets, so NovaDeck won't show it.")
   const mime = images[extname(path).toLowerCase()]
   const limit = mime ? maxImageBytes : maxTextBytes
   let bytes: Buffer
@@ -191,7 +229,7 @@ export const capture = async (
   }
   if (bytes.subarray(0, sniffBytes).includes(0))
     return failure("Only images and text files can be shown.")
-  const all = bytes.toString("utf8").split(/\r?\n/)
+  const all = bytes.toString("utf8").split(/\r\n|\r|\n/)
   // The line a final newline ends is the last one.
   if (all.length > 1 && all.at(-1) === "") all.pop()
   const window = captureWindow(all.length, request.lines)
@@ -221,7 +259,7 @@ export const capture = async (
 /**
  * What a terminal shows once `captured` is shown too, oldest first: shown again, it
  * replaces what was captured before, with a later version, and becomes the newest.
- * Beyond `maxShown`, the oldest go.
+ * Beyond `maxShown`, or `maxShownBytes` of content, the oldest go.
  */
 export const remember = (
   shown: ReadonlyMap<string, Artifact>,
@@ -233,9 +271,13 @@ export const remember = (
   const next = new Map(shown)
   next.delete(id)
   next.set(id, { shown: { id, kind: content.kind, name, detail, version, asked }, content })
-  for (const oldest of next.keys()) {
-    if (next.size <= maxShown) break
+  let bytes = 0
+  for (const each of next.values()) bytes += bytesOf(each.content)
+  // The newest always stays.
+  for (const [oldest, each] of next) {
+    if ((next.size <= maxShown && bytes <= maxShownBytes) || oldest === id) break
     next.delete(oldest)
+    bytes -= bytesOf(each.content)
   }
   return next
 }

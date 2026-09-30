@@ -905,6 +905,7 @@ export class Terminals {
     const captured = await capture(request, {
       cwd: record.summary.cwd,
       project,
+      home: env.HOME ?? homedir(),
       folders: [project, record.origin, plans],
     })
     if (!captured.ok) return captured

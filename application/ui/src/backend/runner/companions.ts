@@ -120,13 +120,23 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
   ): void => {
     void (async () => {
       try {
+        // What the first snapshot lists was shown before this follow, as before a
+        // reload: it's listed as already seen, and opens nothing.
+        let first = true
         for await (const snapshot of stream) {
           if (followed.get(companionKeyId(terminal.key)) !== terminal) return
           for (const { asked, ...artifact } of snapshot.shown) {
             if ((terminal.versions.get(artifact.id) ?? 0) >= artifact.version) continue
             terminal.versions.set(artifact.id, artifact.version)
-            emit({ type: "artifact/shown", key: terminal.key, artifact, asked })
+            emit({
+              type: "artifact/shown",
+              key: terminal.key,
+              artifact,
+              asked,
+              ...(first && { seen: true }),
+            })
           }
+          first = false
         }
       } catch {
         // The runner closed or lost the terminal; its detail's end starts it over.

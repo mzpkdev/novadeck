@@ -1305,9 +1305,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const manager = shell.manager({
         env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
       })
-      const terminal = await create(manager, shell)
+      // A project folder, not the home folder itself, which NovaDeck never shows from.
+      const project = join(shell.home, "many")
+      mkdirSync(project)
+      const terminal = await create(manager, shell, { cwd: project })
       const names = Array.from({ length: 65 }, (_, index) => `f${index}.txt`)
-      for (const name of names) writeFileSync(join(shell.home, name), `${name}\n`)
+      for (const name of names) writeFileSync(join(project, name), `${name}\n`)
       const answers = (await present(
         shell,
         manager,

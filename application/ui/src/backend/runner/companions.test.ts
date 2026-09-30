@@ -282,6 +282,8 @@ describe("runner companions", () => {
     it("reports it once, again when shown with new content, and loads it from the runner", async () => {
       const runner = running()
       runner.companions.follow(key)
+      // Nothing was shown before.
+      runner.shown.push({ terminalId: "t1", shown: [] })
       runner.shown.push({ terminalId: "t1", shown: [image(1, true)] })
       runner.shown.push({ terminalId: "t1", shown: [image(1, true)] })
       runner.shown.push({ terminalId: "t1", shown: [image(2)] })
@@ -295,6 +297,16 @@ describe("runner companions", () => {
         src: "data:,",
       })
       expect(runner.fetched).toEqual(["hero"])
+    })
+
+    it("lists what was shown before it followed, as after a reload, as already seen", async () => {
+      const runner = running()
+      runner.companions.follow(key)
+      runner.shown.push({ terminalId: "t1", shown: [image(1, true)] })
+      await settle()
+      expect(runner.events).toEqual([
+        { type: "artifact/shown", key, artifact: reported(1), asked: true, seen: true },
+      ])
     })
 
     it("stops following what's shown when the terminal is unfollowed", async () => {
