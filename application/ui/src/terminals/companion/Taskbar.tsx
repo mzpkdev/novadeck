@@ -103,6 +103,10 @@ export const Taskbar = ({
     }
   }
   const agent = pane.plans[0]?.agent ?? "The agent"
+  const slots = slotsOf(pane.artifacts)
+  // Focus comes back to the first icon when the pane hides: the agent's own plan, or
+  // the first thing it showed when it has no plan.
+  const firstSlot = slots[0]
   return (
     <div
       className="plan-taskbar nodrag nopan"
@@ -155,7 +159,7 @@ export const Taskbar = ({
           />,
         )
       })}
-      {slotsOf(pane.artifacts).map((entry) => {
+      {slots.map((entry) => {
         if (entry.kind === "one") {
           const { artifact } = entry
           const Icon = kindIcons[artifact.kind]
@@ -164,7 +168,7 @@ export const Taskbar = ({
             artifact.name,
             [opening(artifact.id), dismissing(artifact.id)],
             <button
-              ref={pane.plans.length ? undefined : trigger}
+              ref={pane.plans.length || entry !== firstSlot ? undefined : trigger}
               className="plan-tb-item"
               data-state={state(artifact.id, artifact.fresh)}
               aria-label={`${artifact.name}${artifact.fresh ? ", new" : ""}`}
@@ -187,6 +191,7 @@ export const Taskbar = ({
             dismissing(image.id, `Dismiss ${image.name}`),
           ]),
           <button
+            ref={pane.plans.length || entry !== firstSlot ? undefined : trigger}
             className="plan-tb-item"
             data-state={fresh ? "new" : openImage ? "open" : "seen"}
             aria-label={`${images.length} images${fresh ? ", new" : ""}`}

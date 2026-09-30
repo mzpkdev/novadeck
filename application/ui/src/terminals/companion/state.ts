@@ -48,6 +48,8 @@ export type PlanDoc = Omit<PlanSnapshot, "text" | "revision"> & {
   readonly showChanges: boolean
   // Notes the agent removed in its latest rewrite, having applied them.
   readonly resolved: number
+  // The last save didn't reach the file; it's tried again.
+  readonly unsaved: boolean
 }
 
 // A terminal's companion pane: its plans, the root one first, then what else its agent
@@ -59,6 +61,12 @@ export type PaneState = Companion & {
 
 const lf = (text: string): string => text.replace(/\r\n?/g, "\n")
 
+// The file's line break: CRLF when every line ends so, LF otherwise.
+const eolOf = (text: string): "\n" | "\r\n" => {
+  const breaks = text.split("\n").length - 1
+  return breaks > 0 && text.split("\r\n").length - 1 === breaks ? "\r\n" : "\n"
+}
+
 const docOf = (plan: PlanSnapshot): PlanDoc => ({
   ref: plan.ref,
   role: plan.role,
@@ -67,7 +75,7 @@ const docOf = (plan: PlanSnapshot): PlanDoc => ({
   skill: plan.skill,
   base: lf(plan.text),
   revision: plan.revision,
-  eol: plan.text.includes("\r\n") ? "\r\n" : "\n",
+  eol: eolOf(plan.text),
   text: lf(plan.text),
   writes: 0,
   seen: -1,
@@ -76,6 +84,7 @@ const docOf = (plan: PlanSnapshot): PlanDoc => ({
   changes: 0,
   showChanges: false,
   resolved: 0,
+  unsaved: false,
 })
 
 // The root plan first, then subagents' plans in the order they came.
@@ -163,6 +172,11 @@ type Session = {
   // Per plan, the text of the save under way, and the one waiting for typing to pause.
   readonly saving: Map<string, string>
   readonly waiting: Map<string, ReturnType<typeof setTimeout>>
+  // Per plan, a rewrite that came while a save was under way, applied once it answers:
+  // until then the base it was written over isn't known.
+  readonly pending: Map<string, PlanSnapshot>
+  // Per plan, how many saves in a row failed, which spaces out the next try.
+  readonly failures: Map<string, number>
   readonly content: Map<string, Promise<ArtifactContent>>
   // A pane for each terminal that has none yet, the same one each time it's asked for.
   readonly empty: Map<string, PaneState>
@@ -187,7 +201,12 @@ const change = (
   session.panes.update((current) => {
     const pane = current[id]
     if (!pane) return current
-    const next = update(pane)
+    const updated = update(pane)
+    // A pane left with nothing to show closes, so nothing reopens it on its own later.
+    const next =
+      updated.open && !updated.plans.length && !updated.artifacts.length
+        ? { ...updated, open: false }
+        : updated
     if (next === pane) return current
     changed = next
     return { ...current, [id]: next }
@@ -222,7 +241,8 @@ const saveNow = (session: Session, key: CompanionKey, ref: string): void => {
 }
 
 // The user's edits reach the file one save at a time. A save the file refused, having
-// changed since, merges like any rewrite, and what's left of the edits goes again.
+// changed since, merges like any rewrite, and what's left of the edits goes again. A
+// save that failed is tried again, less often each time, and the plan says so.
 const persist = (session: Session, key: CompanionKey, ref: string): void => {
   const id = planId(key, ref)
   const plan = planIn(session, key, ref)
@@ -231,10 +251,21 @@ const persist = (session: Session, key: CompanionKey, ref: string): void => {
   const basedOn = plan.revision
   session.saving.set(id, sent)
   const text = plan.eol === "\n" ? sent : sent.replaceAll("\n", plan.eol)
+  const mark = (unsaved: boolean): void => {
+    change(session, key, (pane) =>
+      withPlan(pane, ref, (current) =>
+        current.unsaved === unsaved ? current : { ...current, unsaved },
+      ),
+    )
+  }
   session.companions.save(key, ref, text, basedOn).then(
     async (result) => {
       session.saving.delete(id)
-      if (result.saved)
+      session.failures.delete(id)
+      mark(false)
+      const pending = session.pending.get(id)
+      session.pending.delete(id)
+      if (result.saved) {
         change(session, key, (pane) =>
           withPlan(pane, ref, (current) =>
             current.revision === basedOn
@@ -242,10 +273,32 @@ const persist = (session: Session, key: CompanionKey, ref: string): void => {
               : current,
           ),
         )
-      else await revise(session, key, result.current)
+        // A rewrite that came meanwhile was written over this save.
+        if (pending) await revise(session, key, pending)
+      } else await revise(session, key, result.current)
       persist(session, key, ref)
     },
-    () => session.saving.delete(id),
+    () => {
+      session.saving.delete(id)
+      const failures = (session.failures.get(id) ?? 0) + 1
+      session.failures.set(id, failures)
+      mark(true)
+      // A rewrite that came meanwhile applies now, over the base the file still has.
+      const pending = session.pending.get(id)
+      session.pending.delete(id)
+      if (pending) void revise(session, key, pending)
+      clearTimeout(session.waiting.get(id))
+      session.waiting.set(
+        id,
+        setTimeout(
+          () => {
+            session.waiting.delete(id)
+            persist(session, key, ref)
+          },
+          Math.min(30_000, 1000 * 2 ** failures),
+        ),
+      )
+    },
   )
 }
 
@@ -257,22 +310,30 @@ const revise = async (
   key: CompanionKey,
   snapshot: PlanSnapshot,
 ): Promise<void> => {
-  const { merge } = await import("./plan-editor/sync")
+  const id = planId(key, snapshot.ref)
   const theirs = lf(snapshot.text)
-  const echo = session.saving.get(planId(key, snapshot.ref)) === theirs
+  const inFlight = session.saving.get(id)
+  // A rewrite that isn't the save under way waits for its answer: it may have been
+  // written over that save, which the plan's base doesn't hold yet.
+  if (inFlight !== undefined && inFlight !== theirs) {
+    session.pending.set(id, snapshot)
+    return
+  }
+  const { merge } = await import("./plan-editor/sync")
+  const echo = inFlight === theirs
   change(session, key, (pane) =>
     withPlan(pane, snapshot.ref, (plan) => {
-      if (snapshot.revision === plan.revision) return plan
+      if (snapshot.revision === plan.revision && theirs === plan.base) return plan
       // A backend watching the file reports the user's own save back.
       if (echo || theirs === plan.text)
-        return { ...plan, base: theirs, revision: snapshot.revision }
+        return { ...plan, base: theirs, revision: snapshot.revision, eol: eolOf(snapshot.text) }
       const written = merge(plan.base, plan.text, theirs)
       const writes = plan.writes + 1
       return {
         ...plan,
         base: theirs,
         revision: snapshot.revision,
-        eol: snapshot.text.includes("\r\n") ? "\r\n" : "\n",
+        eol: eolOf(snapshot.text),
         text: written.text,
         writes,
         seen: reading(pane, plan.ref) ? writes : plan.seen,
@@ -304,6 +365,8 @@ const sessionOf = (companions: Companions): Session => {
     panes,
     saving: new Map(),
     waiting: new Map(),
+    pending: new Map(),
+    failures: new Map(),
     content: new Map(),
     empty: new Map(),
   }
@@ -363,16 +426,16 @@ export type CompanionHandle = {
   readonly load: (artifact: Shown) => Promise<ArtifactContent>
 }
 
-export const useCompanion = (companions: Companions, key: CompanionKey): CompanionHandle => {
+// What can be done with a terminal's pane, apart from rendering it.
+export type CompanionActions = Omit<CompanionHandle, "pane" | "present"> & {
+  readonly current: () => PaneState
+}
+
+export const companionActions = (companions: Companions, key: CompanionKey): CompanionActions => {
   const session = sessionOf(companions)
   const id = companionKeyId(key)
-  const pane = useSyncExternalStore(
-    session.panes.subscribe,
-    () => session.panes.getSnapshot()[id] ?? emptyPane(session, key),
-  )
   return {
-    pane,
-    present: pane.plans.length > 0 || pane.artifacts.length > 0,
+    current: () => session.panes.getSnapshot()[id] ?? emptyPane(session, key),
     update: (update) => {
       change(session, key, update)
     },
@@ -399,10 +462,25 @@ export const useCompanion = (companions: Companions, key: CompanionKey): Compani
     flush: (ref) => saveNow(session, key, ref),
     load: (artifact) => {
       const cached = `${id}/${artifact.id}@${artifact.version}`
-      const loading = session.content.get(cached) ?? companions.load(key, artifact.id)
+      const known = session.content.get(cached)
+      if (known) return known
+      const loading = companions.load(key, artifact.id)
       session.content.set(cached, loading)
+      // A load that failed is tried again the next time the artifact is opened.
+      loading.catch(() => session.content.delete(cached))
       return loading
     },
+  }
+}
+
+export const useCompanion = (companions: Companions, key: CompanionKey): CompanionHandle => {
+  const { panes } = sessionOf(companions)
+  const actions = companionActions(companions, key)
+  const pane = useSyncExternalStore(panes.subscribe, actions.current)
+  return {
+    ...actions,
+    pane,
+    present: pane.plans.length > 0 || pane.artifacts.length > 0,
   }
 }
 

@@ -23,6 +23,12 @@ describe("sample agents revising their plans", () => {
       expect(revised).toContain("<!-- novadeck: Keep serif? -->")
     })
 
+    it("keep a note in the middle of a line they rewrite", () => {
+      expect(applyEdits("A <!-- novadeck: x --> B\n", [{ line: "A B", with: "A2 B" }])).toBe(
+        "A2 B <!-- novadeck: x -->\n",
+      )
+    })
+
     it("keep the file's line breaks", () => {
       const crlf = studioV1.replaceAll("\n", "\r\n")
       expect(applyEdits(crlf, studioAgent.revisions[0]!)).toBe(studioV2.replaceAll("\n", "\r\n"))

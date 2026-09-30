@@ -100,6 +100,7 @@ const PlanTab = ({
               <span>{plan.showChanges ? "Hide" : "Show"}</span>
             </button>
           )}
+          {plan.unsaved && <span className="plan-meta-hint">Not saved yet. Trying again.</span>}
           {plan.resolved > 0 && plan.marked === plan.text && (
             <span>
               {plan.agent} resolved {plural(plan.resolved, "note")}

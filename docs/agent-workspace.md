@@ -278,9 +278,14 @@ made on, once typing pauses and at once when focus leaves the plan. The backend
 writes only if the file is still at that revision; otherwise it returns the file as it
 now stands, and the UI merges the edit into it line by line, as it merges an agent's
 rewrite, and saves again. The last revision both sides agreed on is the merge base, so
-an agent's rewrite that already contains the user's edits merges cleanly. A backend
-watching the file may report the UI's own save back as `plan/changed`; the UI
-recognizes it by its text. The file keeps its own line breaks.
+an agent's rewrite that already contains the user's edits merges cleanly. A rewrite
+reported while a save is under way waits for that save's answer, since it may have been
+written over it. A revision must change whenever the text does, so derive it from the
+content (a hash), not a timestamp: two writes in one tick would otherwise share one. A
+backend watching the file may report the UI's own save back as `plan/changed`; it must
+carry the revision the save answered with, and the UI takes it as its own. A save that
+fails is tried again, less often each time, and the plan shows it isn't saved yet. The
+file keeps its line breaks when it uses one kind throughout; a mixed file saves as LF.
 
 ### Connecting the runner
 
@@ -289,8 +294,8 @@ from what this document describes:
 
 - **Plans** come from native observation: `agents.detail` lists each actor's latest
   plan (root and subagents) and `agents.plan` streams its text on each change, which
-  become `plan/changed` with the file's revision (a content hash or modification
-  stamp). `plans.report` over MCP covers harnesses without native signals.
+  become `plan/changed` with the file's revision (a hash of its content).
+  `plans.report` over MCP covers harnesses without native signals.
 - **Artifacts** come from `documents.present` over MCP, extended to images, project
   files and preview-browser pages, with an `open` hint the agent sets when the user
   asked for it (`asked`). Content is fetched through authorized artifact references,

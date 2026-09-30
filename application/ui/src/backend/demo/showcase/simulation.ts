@@ -69,11 +69,11 @@ export const createShowcase = (
     revision: String(agent.writes),
   })
 
-  // The agent reads the plan file and writes its next revision over it. When it read
-  // the notes first it applied them, and removed each.
-  const revise = (agent: Running, readNotes: boolean): void => {
+  // The agent reads the plan file and writes over it: its next revision, when it's
+  // revising, and, when it read the notes, each applied and removed.
+  const revise = (agent: Running, readNotes: boolean, revising = true): void => {
     if (agent.phase === "revising") agent.phase = "planning"
-    const edits = agent.sample.revisions[agent.revised]
+    const edits = revising ? agent.sample.revisions[agent.revised] : undefined
     const edited = edits ? applyEdits(agent.file, edits) : agent.file
     const text = readNotes ? removeNotes(edited) : edited
     if (text === agent.file) return
@@ -134,7 +134,8 @@ export const createShowcase = (
       if (/^(y|yes)$/i.test(said)) {
         agent.phase = "working"
         // With the skill it re-reads the plan before starting, and applies any notes.
-        if (agent.sample.plan.skill && notesIn(agent.file)) later(1200, () => revise(agent, true))
+        if (agent.sample.plan.skill && notesIn(agent.file))
+          later(1200, () => revise(agent, true, false))
         return
       }
       agent.phase = "revising"

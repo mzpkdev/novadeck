@@ -79,11 +79,12 @@ describe("showcase agents", () => {
       expect(text).not.toContain(note)
     })
 
-    it("re-reads notes before starting once approved, with the skill", async () => {
+    it("re-reads notes before starting once approved, with the skill, and only applies them", async () => {
       const { showcase, events, plan } = running()
-      await showcase.save(studio, "root", studioAgent.text + note, plan(studio).revision)
+      await showcase.save(studio, "root", `${studioAgent.text}${note}\n`, plan(studio).revision)
       showcase.told(studio, "y")
-      expect(events).toMatchObject([{ type: "plan/changed" }])
+      const [revised] = events
+      expect(revised?.type === "plan/changed" && revised.plan.text).toBe(studioAgent.text)
     })
 
     it("starts without writing again when there's nothing to apply", () => {

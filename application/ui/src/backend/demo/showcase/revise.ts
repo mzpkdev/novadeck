@@ -3,7 +3,7 @@ import { notePattern } from "../../../model/companion"
 // How a sample agent revises its plan: edits to the file as it finds it, as an agent
 // rewrites the lines it means to change and leaves the rest, the user's edits included.
 export type PlanEdit =
-  // The line reading `line`, notes aside, now reads `with`; notes on it stay.
+  // The line reading `line`, notes aside, now reads `with`; its notes stay, after it.
   | { readonly line: string; readonly with: string }
   // A new line after the one reading `after`.
   | { readonly after: string; readonly insert: string }
@@ -20,7 +20,9 @@ export const applyEdits = (text: string, edits: readonly PlanEdit[]): string => 
     const target = "line" in edit ? edit.line : edit.after
     const index = lines.findIndex((line) => withoutNotes(line) === target)
     if (index < 0) continue
-    if ("line" in edit) lines[index] = edit.with + lines[index]!.slice(target.length)
+    // The line's notes stay, after its new text.
+    if ("line" in edit)
+      lines[index] = edit.with + (lines[index]!.match(/ ?<!-- novadeck: .*? -->/g) ?? []).join("")
     else lines.splice(index + 1, 0, edit.insert)
   }
   return lines.join(eol)
