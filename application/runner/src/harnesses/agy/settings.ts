@@ -47,6 +47,9 @@ const ownOf = (value: unknown): string | null | undefined => {
   return statusLineCommand(own) === command ? own : undefined
 }
 
+// What NovaDeck's line shows without the person's own.
+const added: Record<string, unknown> = { enabled: true, stack_with_default: true }
+
 const settingsFile = (home: string): string => join(home, "settings.json")
 
 // Settings, or undefined when the file holds something else.
@@ -82,11 +85,13 @@ export const statusLineSettings = (home: (install: Install) => string) => ({
       throw new Error(`${file} is not valid settings. Repair it, then connect Antigravity again.`)
     if (ownOf(settings.statusLine) !== undefined) return
     const own = line(settings.statusLine)
-    const command = own?.type === "command" && typeof own.command === "string" ? own.command : ""
+    // Antigravity runs a command whatever its type names, or none.
+    const runs = own?.type === undefined || own.type === "" || own.type === "command"
+    const command = runs && typeof own?.command === "string" ? own.command : ""
     // The person's display choices stay; without a status line of their own, Antigravity's
     // default keeps showing above NovaDeck's, which prints nothing.
     settings.statusLine = {
-      ...(own ?? { enabled: true, stack_with_default: true }),
+      ...(own ?? added),
       type: "command",
       command: statusLineCommand(command || undefined),
     }
@@ -100,8 +105,13 @@ export const statusLineSettings = (home: (install: Install) => string) => ({
     const settings = await read(file)
     const own = settings && ownOf(settings.statusLine)
     if (!settings || own === undefined) return
-    if (own === null) delete settings.statusLine
-    else settings.statusLine = { ...line(settings.statusLine), command: own }
+    if (own === null) {
+      // Only what NovaDeck added goes; a line the person switched off stays so.
+      const { command: _command, type: _type, ...rest } = line(settings.statusLine) ?? {}
+      if (Object.entries(rest).every(([key, value]) => value === added[key]))
+        delete settings.statusLine
+      else settings.statusLine = rest
+    } else settings.statusLine = { ...line(settings.statusLine), command: own }
     await write(file, settings)
   },
 })

@@ -213,6 +213,30 @@ describe("connecting Antigravity's status line", () => {
     expect(read(fixture.settings)).toEqual({ statusLine: { ...own, enabled: false } })
   })
 
+  it("keeps what the person had without a command of theirs", async ({ fixture }) => {
+    const { apply, revert } = settingsOf(fixture)
+    const cases = [
+      [{ enabled: false }, { enabled: false }],
+      [{ command: "echo untyped" }, { type: "command", command: "echo untyped" }],
+      [
+        { type: "", command: "echo empty" },
+        { type: "command", command: "echo empty" },
+      ],
+      [{ type: "command", command: "", padding: 3 }, { padding: 3 }],
+      [null, undefined],
+    ] as const
+    for (const [own, back] of cases) {
+      writeFileSync(fixture.settings, JSON.stringify({ statusLine: own }))
+      // eslint-disable-next-line no-await-in-loop -- Each case rewrites the same file.
+      await apply(fixture.install)
+      const command = (read(fixture.settings).statusLine as { command: string }).command
+      if (own && "command" in own && own.command) expect(command).toContain(own.command)
+      // eslint-disable-next-line no-await-in-loop -- As above.
+      await revert(fixture.install)
+      expect(read(fixture.settings).statusLine).toEqual(back)
+    }
+  })
+
   it("leaves settings it cannot read as they are, and still disconnects", async ({ fixture }) => {
     writeFileSync(fixture.settings, "{ not json")
     const { apply, revert } = settingsOf(fixture)
