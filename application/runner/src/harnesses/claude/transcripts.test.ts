@@ -55,6 +55,12 @@ describe("Claude Code's transcript records", () => {
 
   it("leave out what Claude Code writes for itself, and anything not a record", () => {
     expect(items([{ type: "user", isMeta: true, message: { content: "caveat" } }])).toEqual([])
+    expect(
+      items([{ type: "user", isCompactSummary: true, message: { content: "summary" } }]),
+    ).toEqual([])
+    expect(
+      items([{ type: "user", message: { content: "<task-notification>\n</task-notification>" } }]),
+    ).toEqual([])
     expect(transcripts.items("not json")).toEqual([])
     expect(transcripts.items("[]")).toEqual([])
   })

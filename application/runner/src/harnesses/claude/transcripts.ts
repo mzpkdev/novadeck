@@ -10,8 +10,12 @@ const safeId = /^[\w-]{1,128}$/
  * Claude Code's transcripts: the session's JSONL, and beside it a folder named for the
  * session with a JSONL per subagent. Each user or assistant record holds its message's
  * text, tool calls and tool results; thinking stays out, as do the records Claude Code
- * writes for itself (`isMeta`).
+ * writes for itself (`isMeta`), its compaction summaries, and the notices of background
+ * tasks it hands the model as the person's message.
  */
+
+// A background task's notice, in the person's place.
+const notice = /^\s*<task-notification>/
 export const transcripts: NonNullable<Harness["transcripts"]> = {
   locate: (root, sessionId, subagent) => {
     if (subagent === null) return Promise.resolve(root)
@@ -21,11 +25,17 @@ export const transcripts: NonNullable<Harness["transcripts"]> = {
   items: (line) => {
     const fields = record(line)
     const role = fields?.type
-    if (!fields || (role !== "user" && role !== "assistant") || fields.isMeta === true) return []
+    if (
+      !fields ||
+      (role !== "user" && role !== "assistant") ||
+      fields.isMeta === true ||
+      fields.isCompactSummary === true
+    )
+      return []
     const time = at(fields.timestamp)
     const content = (fields.message as { content?: unknown } | undefined)?.content
     if (typeof content === "string")
-      return content ? [entry(role, "text", content, { at: time })] : []
+      return content && !notice.test(content) ? [entry(role, "text", content, { at: time })] : []
     return (Array.isArray(content) ? content : []).flatMap((part) => {
       const {
         type,

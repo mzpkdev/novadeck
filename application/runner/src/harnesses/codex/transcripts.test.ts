@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -41,6 +41,12 @@ describe("Codex's rollout records", () => {
           role: "assistant",
           content: [{ type: "output_text", text: "yo" }],
         }),
+        item({
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "# AGENTS.md instructions for /p" }],
+        }),
+        item({ type: "message", role: "user", content: [{ type: "input_text", text: "<skill>" }] }),
         item({ type: "reasoning", summary: [] }),
       ]).map(({ role, text }) => `${role}: ${text}`),
     ).toEqual(["user: hi", "assistant: yo"])
@@ -57,18 +63,24 @@ describe("Codex's rollout records", () => {
 })
 
 describe("Codex's transcripts", () => {
-  it("are the session's rollout, and a subagent's beside it, named for its thread", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "novadeck-codex-rollouts-"))
+  it("are the session's rollout, and a subagent's named for its thread, on its day or later", async () => {
+    const sessions = mkdtempSync(join(tmpdir(), "novadeck-codex-rollouts-"))
     try {
-      const root = join(directory, "rollout-2026-09-29T23-05-15-s1.jsonl")
-      const child = join(directory, "rollout-2026-09-29T23-06-00-a7.jsonl")
-      writeFileSync(root, "")
-      writeFileSync(child, "")
+      const day = (date: string) => {
+        const folder = join(sessions, ...date.split("-"))
+        mkdirSync(folder, { recursive: true })
+        return folder
+      }
+      const root = join(day("2026-09-30"), "rollout-2026-09-30T23-05-15-s1.jsonl")
+      const child = join(day("2026-09-30"), "rollout-2026-09-30T23-06-00-a7.jsonl")
+      const later = join(day("2026-10-01"), "rollout-2026-10-01T00-10-00-a9.jsonl")
+      for (const file of [root, child, later]) writeFileSync(file, "")
       await expect(transcripts.locate(root, "s1", null)).resolves.toBe(root)
       await expect(transcripts.locate(root, "s1", "a7")).resolves.toBe(child)
+      await expect(transcripts.locate(root, "s1", "a9")).resolves.toBe(later)
       await expect(transcripts.locate(root, "s1", "a8")).resolves.toBeUndefined()
     } finally {
-      rmSync(directory, { recursive: true, force: true })
+      rmSync(sessions, { recursive: true, force: true })
     }
   })
 })

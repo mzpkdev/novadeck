@@ -627,6 +627,8 @@ class Resubscription<T> implements AsyncIterableIterator<T, undefined> {
 
   /** Whether the next item is the start of a new subscription, after the first. */
   private started = false
+  /** The first item of a new subscription, held back behind `fresh`. */
+  private held: T | undefined
   private subscribed = false
 
   constructor(
@@ -648,9 +650,10 @@ class Resubscription<T> implements AsyncIterableIterator<T, undefined> {
         if (!(await this.subscribe())) break
         continue
       }
-      if (this.started) {
-        this.started = false
-        if (this.fresh !== undefined) return { value: this.fresh, done: false }
+      if (this.held !== undefined) {
+        const value = this.held
+        this.held = undefined
+        return { value, done: false }
       }
       try {
         // eslint-disable-next-line no-await-in-loop -- Snapshots are delivered in order.
@@ -658,6 +661,14 @@ class Resubscription<T> implements AsyncIterableIterator<T, undefined> {
         if (this.ended || !result) break
         if (!result.done) {
           this.refusals = 0
+          // A new subscription says it starts over only once it has something to follow,
+          // so one that finds nothing does not wipe what came before.
+          if (this.started && this.fresh !== undefined) {
+            this.started = false
+            this.held = result.value
+            return { value: this.fresh, done: false }
+          }
+          this.started = false
           return { value: result.value, done: false }
         }
         // The terminal closed, or the runner is shutting down: a new subscription tells.

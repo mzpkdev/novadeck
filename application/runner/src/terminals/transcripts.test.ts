@@ -1,4 +1,4 @@
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -78,5 +78,15 @@ describe("an actor's transcript as changes", () => {
     appendFileSync(file.path, "b\n")
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(texts(changes)).toEqual([["0:a"]])
+  })
+
+  it("starts over when another file takes its place", async ({ file }) => {
+    writeFileSync(file.path, "a\n")
+    const { changes } = file.read()
+    await expect.poll(() => texts(changes)).toEqual([["0:a"]])
+    const replacement = `${file.path}.new`
+    writeFileSync(replacement, "b\nc\n")
+    renameSync(replacement, file.path)
+    await expect.poll(() => texts(changes)).toEqual([["0:a"], "reset", ["0:b", "1:c"]])
   })
 })

@@ -12,8 +12,8 @@ const chunk = 1024 * 1024
  * `intervalMs`. A file that already exists is followed from its end: only what is
  * written from now on counts, unless `fromStart` reads it whole first. One that does not
  * exist yet is read from its start once it appears, as an agent may create its
- * transcript after its first hook. A file that shrinks was rewritten: `onReset` is told,
- * and it is read again from its start. `onIdle` is told whenever it has read all there
+ * transcript after its first hook. A file that shrinks, or another put in its place,
+ * was rewritten: `onReset` is told, and it is read again from its start. `onIdle` is told whenever it has read all there
  * is for now, and each read waits for `pace`, so a slow reader holds it back.
  */
 export const followLines = async (
@@ -40,14 +40,18 @@ export const followLines = async (
         ({ size }) => size,
         () => 0,
       )
+  // Which file it reads, so one put in its place starts over, whatever its size.
+  let file: number | undefined
   let decoder = new StringDecoder("utf8")
   let rest = ""
   // One poll: reads what was appended since the last, and says how much it read.
   const poll = async (): Promise<number> => {
     let read = 0
     try {
-      const { size } = await stat(path)
-      if (size < offset) {
+      const { size, ino } = await stat(path)
+      const replaced = file !== undefined && ino !== file
+      file = ino
+      if (size < offset || replaced) {
         offset = 0
         decoder = new StringDecoder("utf8")
         rest = ""

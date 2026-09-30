@@ -5,11 +5,34 @@ import type { Harness } from "../harness.js"
 import { at, entry, joined, record, textOf } from "../items.js"
 
 // Context Codex writes into the conversation as the person's message.
-const context = /^\s*<(environment_context|user_instructions)>/
+const context =
+  /^\s*(<(environment_context|user_instructions|recommended_plugins|skill|subagent_notification)>|# AGENTS\.md instructions)/
+
+// How many days after its parent's a subagent's rollout may start: Codex files each
+// rollout under the day it starts, and a session can outlast midnight.
+const days = 7
+
+// The day folders from `folder` (sessions/YYYY/MM/DD) on, up to `days` of them.
+const dayFolders = (folder: string): string[] => {
+  const match = /(\d{4})[/\\](\d{2})[/\\](\d{2})$/.exec(folder)
+  if (!match) return [folder]
+  const sessions = dirname(dirname(dirname(folder)))
+  const start = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return Array.from({ length: days }, (_, offset) => {
+    const day = new Date(start + offset * 86_400_000)
+    const [year, month, date] = [day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate()]
+    return join(
+      sessions,
+      String(year),
+      String(month).padStart(2, "0"),
+      String(date).padStart(2, "0"),
+    )
+  })
+}
 
 /**
  * Codex's transcripts are its rollouts: the session's, and one per subagent, named for
- * its thread and kept beside its parent's. Each response item holds the person's or the
+ * its thread and kept under the day it started, its parent's or a later one. Each response item holds the person's or the
  * agent's text, a tool call or its output; reasoning stays out, as do developer
  * messages and the context Codex adds as the person's.
  */
@@ -17,9 +40,13 @@ export const transcripts: NonNullable<Harness["transcripts"]> = {
   locate: async (root, _sessionId, subagent) => {
     if (subagent === null) return root
     const suffix = `-${subagent}.jsonl`
-    const names = await readdir(dirname(root)).catch(() => [])
-    const name = names.find((each) => each.startsWith("rollout-") && each.endsWith(suffix))
-    return name && join(dirname(root), name)
+    for (const folder of dayFolders(dirname(root))) {
+      // eslint-disable-next-line no-await-in-loop -- The earliest day holding it wins.
+      const names = await readdir(folder).catch(() => [])
+      const name = names.find((each) => each.startsWith("rollout-") && each.endsWith(suffix))
+      if (name) return join(folder, name)
+    }
+    return undefined
   },
   items: (line) => {
     const fields = record(line)
