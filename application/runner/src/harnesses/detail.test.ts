@@ -168,6 +168,62 @@ describe("an agent's detail", () => {
     expect(detail.actors[1]).toMatchObject({ role: "subagent", type: null })
   })
 
+  it("never leaves a request unlisted when subagents fill every place", () => {
+    const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
+    const base = { agent: "claude", sessionId: "s", instance: null, startedAt: 1 } as const
+    const running: ActivityEvent[] = Array.from({ length: 32 }, (_, index) => ({
+      ...base,
+      type: "subagent-started",
+      actor: `a${index}`,
+      actorType: "Explore",
+    }))
+    const activity = [
+      ...running,
+      {
+        ...base,
+        type: "attention-requested",
+        requestId: "late:Bash:x",
+        actor: "late",
+        toolName: "Bash",
+        kind: "permission",
+        subject: null,
+        choices: [],
+      } satisfies ActivityEvent,
+    ].reduce((state, event) => apply(state, binding, event) ?? state, started(0))
+    const detail = agentDetail("t", binding, activity, null)
+    expect(detail.actors).toHaveLength(33)
+    expect(detail.requests).toHaveLength(1)
+    expect(detail.actors.map(({ ref }) => ref)).toContain(detail.requests[0]?.actor)
+  })
+
+  it("settles a subagent's requests when it stops", () => {
+    const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
+    const base = { agent: "claude", sessionId: "s", instance: null } as const
+    const events: ActivityEvent[] = [
+      { ...base, startedAt: 1, type: "subagent-started", actor: "a", actorType: "Explore" },
+      {
+        ...base,
+        startedAt: 2,
+        type: "attention-requested",
+        requestId: "a:Bash:x",
+        actor: "a",
+        toolName: "Bash",
+        kind: "permission",
+        subject: null,
+        choices: [],
+      },
+      { ...base, startedAt: 3, type: "subagent-stopped", actor: "a" },
+    ]
+    const activity = events.reduce(
+      (state, event) => apply(state, binding, event) ?? state,
+      started(0),
+    )
+    const detail = agentDetail("t", binding, activity, null)
+    expect(detail.actors).toHaveLength(1)
+    expect(detail.requests).toEqual([])
+    expect(detail.activity?.attention.pending).toBe(0)
+  })
+
   it("shows subagents and their requests under their own refs, never their native ids", () => {
     const binding: Binding = { agent: "codex", sessionId: "s", instance: null }
     const base = { agent: "codex", sessionId: "s", instance: null, startedAt: 1 } as const

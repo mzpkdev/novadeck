@@ -129,9 +129,11 @@ export const apply = (
       const running = subagents.some(({ id }) => id === actor)
       if (actor.length > maxText || (!running && startedAt <= (endOf(ended, actor) ?? -1)))
         return undefined
-      // A stop may arrive before its start: remembered, it keeps that start out.
+      // A stop may arrive before its start: remembered, it keeps that start out. A
+      // stopped subagent waits on the person no longer, whatever it asked.
       return {
         ...activity,
+        pending: activity.pending.filter((request) => request.actor !== actor),
         subagents: subagents.filter(({ id }) => id !== actor),
         ended: end(ended, [actor], startedAt),
       }
