@@ -6,9 +6,13 @@ import { describe, expect, it } from "../../test.js"
 import { decode } from "./decode.js"
 import { transcripts } from "./transcripts.js"
 
-const { transcript, hooks } = JSON.parse(
+const { transcript, parallel, hooks } = JSON.parse(
   readFileSync(join(import.meta.dirname, "fixtures", "transcript.probe.json"), "utf8"),
-) as { transcript: object[]; hooks: { event: string; payload: Report["payload"] }[] }
+) as {
+  transcript: object[]
+  parallel: object[]
+  hooks: { event: string; payload: Report["payload"] }[]
+}
 const items = transcript.flatMap((step) => transcripts.items(JSON.stringify(step)))
 
 describe("Antigravity's transcript, as captured", () => {
@@ -40,6 +44,24 @@ describe("Antigravity's transcript, as captured", () => {
     const results = items.filter(({ kind }) => kind === "tool-result")
     expect(results.map(({ call }) => call)).toEqual(calls.map(({ call }) => call))
     expect(new Set(calls.map(({ call }) => call)).size).toBe(calls.length)
+  })
+
+  it("pairs calls made at once with their results, which it may write before them", () => {
+    const steps = parallel.flatMap((step) => transcripts.items(JSON.stringify(step)))
+    const calls = steps.filter(({ kind }) => kind === "tool-call")
+    const results = steps.filter(({ kind }) => kind === "tool-result")
+    expect(calls).toHaveLength(3)
+    // Each result names the file its call viewed, or says the call failed.
+    const viewed = results.map(({ text }) =>
+      /c\.txt/.test(text) ? "c.txt" : /b\.txt/.test(text) ? "b.txt" : "failed",
+    )
+    const pairs = calls.map(
+      (call) => viewed[results.findIndex((result) => result.call === call.call)],
+    )
+    expect(pairs).toEqual(["failed", "c.txt", "b.txt"])
+    expect(steps.findIndex(({ kind }) => kind === "tool-result")).toBeLessThan(
+      steps.findIndex(({ kind }) => kind === "tool-call"),
+    )
   })
 
   it("is the one its hooks name, with no subagents", async () => {

@@ -458,7 +458,9 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   once the terminal is gone.
 - `agents.transcript({ terminalId, actor })` streams an actor's conversation, by the ref
   `agents.detail` names it by, as its harness recorded it: batches of up to 256 items
-  from the start of the record, then each one appended, and `reset` when the record was
+  from the start of the record in the order the harness wrote them (Antigravity may
+  write a tool's result before its call; `call` pairs them), then each one appended,
+  and `reset` when the record was
   rewritten (the items follow again from the start). An item is the person's or the
   agent's text, a tool call with its input as text, or a tool's result, numbered from
   the record's start, with when it was written; `call` pairs a result with its call by a
