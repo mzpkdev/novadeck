@@ -133,7 +133,9 @@ export const apply = (
       // stopped subagent waits on the person no longer, whatever it asked.
       return {
         ...activity,
-        pending: activity.pending.filter((request) => request.actor !== actor),
+        pending: activity.pending.filter(
+          (request) => request.actor !== actor || request.askedAt > startedAt,
+        ),
         subagents: subagents.filter(({ id }) => id !== actor),
         ended: end(ended, [actor], startedAt),
       }
@@ -168,6 +170,9 @@ export const apply = (
     }
     case "attention-requested": {
       if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
+      // Asked by a subagent before it stopped, it waits on the person no longer.
+      const stopped = event.actor === null ? undefined : endOf(activity.ended, event.actor)
+      if (stopped !== undefined && event.startedAt < stopped) return undefined
       const { requestId, actor, toolName, kind, subject, choices } = event
       // An actor shows one plan for review at a time: a revised one replaces it.
       const kept =

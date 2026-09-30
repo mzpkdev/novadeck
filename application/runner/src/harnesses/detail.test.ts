@@ -224,6 +224,73 @@ describe("an agent's detail", () => {
     expect(detail.activity?.attention.pending).toBe(0)
   })
 
+  it("keeps a resumed subagent's request from its earlier run's late stop, and a stopped one's out", () => {
+    const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
+    const base = { agent: "claude", sessionId: "s", instance: null } as const
+    const ask = (startedAt: number): ActivityEvent => ({
+      ...base,
+      startedAt,
+      type: "attention-requested",
+      requestId: `x:Bash:${startedAt}`,
+      actor: "x",
+      toolName: "Bash",
+      kind: "permission",
+      subject: null,
+      choices: [],
+    })
+    const start = (startedAt: number): ActivityEvent => ({
+      ...base,
+      startedAt,
+      type: "subagent-started",
+      actor: "x",
+      actorType: "Explore",
+    })
+    const stop = (startedAt: number): ActivityEvent => ({
+      ...base,
+      startedAt,
+      type: "subagent-stopped",
+      actor: "x",
+    })
+    const waiting = (events: ActivityEvent[]) =>
+      agentDetail(
+        "t",
+        binding,
+        events.reduce((state, event) => apply(state, binding, event) ?? state, started(0)),
+        null,
+      ).requests.length
+    expect(waiting([start(1), start(20), ask(21), stop(10)])).toBe(1)
+    expect(waiting([start(2), stop(5), ask(3)])).toBe(0)
+    expect(waiting([start(2), stop(5), start(9), ask(10)])).toBe(1)
+  })
+
+  it("keeps its subagents oldest first while one asks", () => {
+    const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
+    const base = { agent: "claude", sessionId: "s", instance: null, startedAt: 1 } as const
+    const events: ActivityEvent[] = [
+      { ...base, type: "subagent-started", actor: "first", actorType: "a" },
+      { ...base, type: "subagent-started", actor: "second", actorType: "b" },
+      {
+        ...base,
+        type: "attention-requested",
+        requestId: "second:Bash:x",
+        actor: "second",
+        toolName: "Bash",
+        kind: "permission",
+        subject: null,
+        choices: [],
+      },
+    ]
+    const activity = events.reduce(
+      (state, event) => apply(state, binding, event) ?? state,
+      started(0),
+    )
+    expect(agentDetail("t", binding, activity, null).actors.map(({ type }) => type)).toEqual([
+      null,
+      "a",
+      "b",
+    ])
+  })
+
   it("shows subagents and their requests under their own refs, never their native ids", () => {
     const binding: Binding = { agent: "codex", sessionId: "s", instance: null }
     const base = { agent: "codex", sessionId: "s", instance: null, startedAt: 1 } as const

@@ -39,17 +39,22 @@ export const agentDetail = (
   const pending = (activity?.pending ?? []).slice(0, maxRequests)
   const subagents = activity?.subagents ?? []
   // A subagent asking before its start was seen, as one running when the session was
-  // bound, is listed too, so every request names a listed actor.
-  // Those asking come first, so no request goes unlisted for want of room.
+  // bound, is listed too, so every request names a listed actor. Those asking take
+  // their places first, so none goes unlisted for want of room; the listed keep their
+  // order, oldest first, with those never seen starting last.
   const asking = new Set(
     pending.map(({ actor }) => actor).filter((actor): actor is string => actor !== null),
   )
-  const children = [
-    ...[...asking].map(
-      (id) => subagents.find((subagent) => subagent.id === id) ?? { id, type: null },
-    ),
-    ...subagents.filter(({ id }) => !asking.has(id)),
-  ].slice(0, maxActors - 1)
+  const unseen = [...asking]
+    .filter((id) => !subagents.some((subagent) => subagent.id === id))
+    .map((id) => ({ id, type: null }))
+  const quiet = new Set(
+    subagents
+      .filter(({ id }) => !asking.has(id))
+      .slice(0, Math.max(0, maxActors - 1 - asking.size))
+      .map(({ id }) => id),
+  )
+  const children = [...subagents.filter(({ id }) => asking.has(id) || quiet.has(id)), ...unseen]
   const listed = (actor: string) => children.some(({ id }) => id === actor)
   return {
     terminalId,
