@@ -59,6 +59,9 @@ describe("the report endpoint", () => {
     expect(calls).toEqual([])
   })
 
+  // Windows' named pipes close whole once the caller ends its side.
+  const halfOpen = process.platform !== "win32"
+
   it("answers a call with one line, whether or not the caller ended its side", async ({
     resources,
   }) => {
@@ -72,9 +75,9 @@ describe("the report endpoint", () => {
     )
     resources.defer(() => reports.close())
     const answer = `${JSON.stringify({ ok: true, id: "abc", kind: "file", name: "a.md" })}\n`
-    await expect(send(reports.endpoint, JSON.stringify(call))).resolves.toBe(answer)
+    if (halfOpen) await expect(send(reports.endpoint, JSON.stringify(call))).resolves.toBe(answer)
     await expect(send(reports.endpoint, JSON.stringify(call), { end: false })).resolves.toBe(answer)
-    expect(calls).toEqual([call, call])
+    expect(calls).toEqual(halfOpen ? [call, call] : [call])
   })
 
   it("answers a call it cannot read as a failure, without asking", async ({ resources }) => {
@@ -96,7 +99,7 @@ describe("the report endpoint", () => {
       { ...call, request: ["a.md"] },
     ]
     const answers = await Promise.all(
-      malformed.map((value) => send(reports.endpoint, JSON.stringify(value))),
+      malformed.map((value) => send(reports.endpoint, JSON.stringify(value), { end: false })),
     )
     expect(answers).toEqual(malformed.map(() => failed))
     expect(calls).toEqual([])
@@ -131,7 +134,8 @@ describe("the report endpoint", () => {
     )
     resources.defer(() => reports.close())
     const failed = `${JSON.stringify(unanswered)}\n`
-    await expect(send(reports.endpoint, JSON.stringify(call))).resolves.toBe(failed)
-    await expect(send(reports.endpoint, JSON.stringify(call))).resolves.toBe(failed)
+    const open = { end: false }
+    await expect(send(reports.endpoint, JSON.stringify(call), open)).resolves.toBe(failed)
+    await expect(send(reports.endpoint, JSON.stringify(call), open)).resolves.toBe(failed)
   })
 })

@@ -141,7 +141,9 @@ export const listenForReports = async (
     // A caller that never closes its side is let go after a while.
     socket.setTimeout(readMs)
   }
-  // Half open: a sender that ends its side after its line still reads the answer.
+  // Half open: a sender that ends its side after its line still reads the answer, where
+  // the platform keeps a half-closed connection. Windows' named pipes don't, so a caller
+  // there, as NovaDeck's MCP server everywhere, keeps its side open until the answer.
   const server: Server = createServer({ allowHalfOpen: true }, (socket: Socket) => {
     let text = ""
     let taken = false

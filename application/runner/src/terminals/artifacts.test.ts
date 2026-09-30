@@ -24,7 +24,8 @@ type Fixture = {
 
 const it = base.extend<{ fixture: Fixture }>({
   fixture: async ({ resources }, use) => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "novadeck-artifacts-")))
+    // Native, as capture resolves paths: on Windows it also expands short names.
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-artifacts-")))
     resources.defer(() => rmSync(root, { recursive: true, force: true }))
     const project = join(root, "project")
     const outside = join(root, "outside")
