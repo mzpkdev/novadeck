@@ -21,11 +21,14 @@ export const webAddress = (url: string): boolean => {
 
 /**
  * Settles a page view's settings as it attaches, from `will-attach-webview`; false when
- * it must not attach, as for anything but an http(s) address.
+ * it must not attach, as for anything but an http(s) address. Only `preferences` take
+ * effect here: Electron has read the element's attributes into them already, and
+ * ignores changes to `params`. So `allowpopups`, which lets a page's new windows reach
+ * `guardPage`'s handler, is the element's to set.
  */
 export const attachPage = (
   preferences: WebPreferences,
-  params: Record<string, string>,
+  params: { readonly src?: string },
 ): boolean => {
   delete preferences.preload
   preferences.nodeIntegration = false
@@ -37,9 +40,6 @@ export const attachPage = (
   preferences.allowRunningInsecureContent = false
   preferences.webviewTag = false
   preferences.partition = pagesPartition
-  params.partition = pagesPartition
-  delete params.preload
-  delete params.allowpopups
   return webAddress(params.src ?? "")
 }
 

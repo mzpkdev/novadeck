@@ -105,12 +105,26 @@ const OpenInBrowser = ({ url }: { url: string }): React.JSX.Element => (
   </a>
 )
 
+// Made here rather than by React, which leaves `allowpopups` off the element; Electron
+// reads its attributes once, as it attaches. With it, a page's new windows reach the
+// desktop app, which opens them in the browser instead. The app gives it the pages'
+// session whatever it asks; it's named to match.
+const createWebview = (url: string): WebviewElement => {
+  const element = document.createElement("webview") as WebviewElement
+  element.className = "artifact-webview"
+  element.setAttribute("partition", "novadeck-pages")
+  element.setAttribute("allowpopups", "")
+  element.setAttribute("src", url)
+  return element
+}
+
 const LivePage = ({ url }: { url: string }): React.JSX.Element => {
-  const view = useRef<WebviewElement>(null)
+  const frame = useRef<HTMLDivElement>(null)
+  const view = useRef<WebviewElement | null>(null)
   const [place, setPlace] = useState<Place>({ url, back: false, forward: false })
   useEffect(() => {
-    const element = view.current
-    if (!element) return
+    const element = createWebview(url)
+    view.current = element
     const update = (): void => {
       try {
         setPlace({
@@ -124,10 +138,13 @@ const LivePage = ({ url }: { url: string }): React.JSX.Element => {
     }
     const events = ["dom-ready", "did-navigate", "did-navigate-in-page", "did-stop-loading"]
     for (const event of events) element.addEventListener(event, update)
+    frame.current?.append(element)
     return () => {
       for (const event of events) element.removeEventListener(event, update)
+      element.remove()
+      view.current = null
     }
-  }, [])
+  }, [url])
   return (
     <div className="artifact-browser" data-live="">
       <div className="artifact-browser-bar">
@@ -147,8 +164,7 @@ const LivePage = ({ url }: { url: string }): React.JSX.Element => {
         <span className="artifact-url">{place.url}</span>
         <OpenInBrowser url={place.url} />
       </div>
-      {/* The desktop app gives it this session whatever it asks; named to match. */}
-      <webview ref={view} className="artifact-webview" src={url} partition="novadeck-pages" />
+      <div ref={frame} className="artifact-webview-frame" />
     </div>
   )
 }

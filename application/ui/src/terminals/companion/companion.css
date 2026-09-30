@@ -1067,6 +1067,11 @@
   flex: 1;
   min-height: 0;
 }
+.artifact-webview-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
 .artifact-webview {
   display: flex;
   flex: 1;

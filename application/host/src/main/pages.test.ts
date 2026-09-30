@@ -31,12 +31,7 @@ describe("a page view as it attaches", () => {
       webSecurity: false,
       webviewTag: true,
     }
-    const params: Record<string, string> = {
-      src: "http://localhost:5173/",
-      partition: "persist:main",
-      preload: "file:///evil.js",
-      allowpopups: "",
-    }
+    const params = { src: "http://localhost:5173/" }
     expect(attachPage(preferences, params)).toBe(true)
     expect(preferences).toEqual({
       nodeIntegration: false,
@@ -49,7 +44,6 @@ describe("a page view as it attaches", () => {
       webviewTag: false,
       partition: pagesPartition,
     })
-    expect(params).toEqual({ src: "http://localhost:5173/", partition: pagesPartition })
   })
 
   it("is refused for anything but an http(s) address", () => {
