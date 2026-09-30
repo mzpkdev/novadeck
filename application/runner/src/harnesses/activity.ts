@@ -15,6 +15,8 @@ type Request = {
   readonly kind: "permission" | "question" | "plan"
   readonly subject: string | null
   readonly choices: readonly string[]
+  /** When its hook started: asked again later, the same call is another request. */
+  readonly askedAt: number
 }
 
 /** A subagent running under the bound agent, since its start hook started. */
@@ -173,7 +175,10 @@ export const apply = (
       return {
         ...activity,
         state: "working",
-        pending: [...kept, { requestId, actor, toolName, kind, subject, choices }],
+        pending: [
+          ...kept,
+          { requestId, actor, toolName, kind, subject, choices, askedAt: event.startedAt },
+        ],
       }
     }
     case "attention-resolved": {

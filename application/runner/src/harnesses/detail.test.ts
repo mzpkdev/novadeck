@@ -117,6 +117,57 @@ describe("an agent's detail", () => {
     ])
   })
 
+  it("gives a request asked again a new ref, and keeps it while the request waits", () => {
+    const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
+    const base = { agent: "claude", sessionId: "s", instance: null } as const
+    const ask = (startedAt: number): ActivityEvent => ({
+      ...base,
+      startedAt,
+      type: "attention-requested",
+      requestId: "root:Bash:x",
+      actor: null,
+      toolName: "Bash",
+      kind: "permission",
+      subject: "npm test",
+      choices: [],
+    })
+    const first = apply(started(0), binding, ask(1))!
+    const ref = agentDetail("t", binding, first, null).requests[0]?.ref
+    const done = apply(first, binding, {
+      ...base,
+      startedAt: 2,
+      type: "attention-resolved",
+      requestId: "root:Bash:x",
+      actor: null,
+      toolName: "Bash",
+      loose: false,
+      outcome: "allowed",
+    })!
+    expect(agentDetail("t", binding, done, null).requests[0]?.ref).toBeUndefined()
+    const again = apply(done, binding, ask(3))!
+    expect(agentDetail("t", binding, again, null).requests[0]?.ref).not.toBe(ref)
+  })
+
+  it("lists a subagent that asks before its start was seen", () => {
+    const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
+    const activity = apply(started(0), binding, {
+      agent: "claude",
+      sessionId: "s",
+      instance: null,
+      startedAt: 1,
+      type: "attention-requested",
+      requestId: "a1:Bash:x",
+      actor: "a1",
+      toolName: "Bash",
+      kind: "permission",
+      subject: null,
+      choices: [],
+    })!
+    const detail = agentDetail("t", binding, activity, null)
+    expect(detail.actors.map(({ ref }) => ref)).toContain(detail.requests[0]?.actor)
+    expect(detail.actors[1]).toMatchObject({ role: "subagent", type: null })
+  })
+
   it("shows subagents and their requests under their own refs, never their native ids", () => {
     const binding: Binding = { agent: "codex", sessionId: "s", instance: null }
     const base = { agent: "codex", sessionId: "s", instance: null, startedAt: 1 } as const

@@ -6,8 +6,9 @@ import { ref } from "./harness.js"
 import { harnesses } from "./registry.js"
 import { telemetrySummary, type Telemetry } from "./telemetry.js"
 
-// More requests than any agent keeps waiting at once.
+// More requests than any agent keeps waiting at once, and more actors than it runs.
 const maxRequests = 32
+const maxActors = 33
 
 /** The reference clients know a session's root agent by. */
 export const rootRef = ({ agent, sessionId }: Binding): string => ref("root", agent, sessionId)
@@ -35,6 +36,21 @@ export const agentDetail = (
       coverage: null,
     }
   const root = rootRef(binding)
+  const pending = (activity?.pending ?? []).slice(0, maxRequests)
+  const subagents = activity?.subagents ?? []
+  // A subagent asking before its start was seen, as one running when the session was
+  // bound, is listed too, so every request names a listed actor.
+  const unseen = [
+    ...new Set(
+      pending
+        .map(({ actor }) => actor)
+        .filter(
+          (actor): actor is string => actor !== null && !subagents.some(({ id }) => id === actor),
+        ),
+    ),
+  ].map((id) => ({ id, type: null }))
+  const children = [...subagents, ...unseen].slice(0, maxActors - 1)
+  const listed = (actor: string) => children.some(({ id }) => id === actor)
   return {
     terminalId,
     agent: binding.agent,
@@ -43,17 +59,17 @@ export const agentDetail = (
     telemetry: telemetry && telemetrySummary(telemetry),
     actors: [
       { ref: root, role: "root", parent: null, type: null },
-      ...(activity?.subagents ?? []).map(({ id, type }) => ({
+      ...children.map(({ id, type }) => ({
         ref: subagentRef(id),
         role: "subagent" as const,
         parent: null,
         type,
       })),
     ],
-    requests: (activity?.pending ?? [])
-      .slice(0, maxRequests)
-      .map(({ requestId, actor, toolName, kind, subject, choices }) => ({
-        ref: ref("request", binding.sessionId, requestId),
+    requests: pending
+      .filter(({ actor }) => actor === null || listed(actor))
+      .map(({ requestId, actor, toolName, kind, subject, choices, askedAt }) => ({
+        ref: ref("request", binding.sessionId, requestId, String(askedAt)),
         actor: actor === null ? root : subagentRef(actor),
         kind,
         tool: toolName.slice(0, 256),

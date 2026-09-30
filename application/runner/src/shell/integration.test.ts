@@ -701,6 +701,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       .poll(() => snapshots.at(-1)?.requests, { timeout: 10_000 })
       .toMatchObject([{ kind: "permission", tool: "Bash", subject: "touch x" }])
     expect(snapshots.at(-1)).toMatchObject({ agent: "claude", sessionId: "s1" })
+    // Disconnecting the agent ends its binding.
+    manager.forgetAgent("claude")
+    await expect.poll(() => snapshots.at(-1)).toMatchObject({ agent: null, requests: [] })
     await manager.close({ terminalId: terminal.id }, "owner")
     await reading
     await expect(manager.detail(terminal.id).next()).rejects.toMatchObject({

@@ -447,7 +447,7 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   behind gets only the newest, and never one equal to the last it read). A snapshot names
   the agent and its session, its activity and telemetry as in the summary, its actors
   (the root first, then each subagent with its kind; a subagent's parent is null, as no
-  harness says which agent started a nested one), each request waiting on the person
+  harness says which agent started a nested one; a subagent seen only through its requests is listed without a kind), each request waiting on the person
   (its kind, tool, the actor asking, what it asks about: a command, a path, a question
   and its answers, or a plan's file), and how much of each feature the agent's harness
   tells (`unsupported`, `partial`, `complete`). Actors and requests have runner-issued
