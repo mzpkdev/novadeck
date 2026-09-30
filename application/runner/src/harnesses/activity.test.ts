@@ -209,19 +209,48 @@ describe("applying activity", () => {
     )!
     expect(summary(next).subagents).toEqual([{ id: "a", type: "explorer" }])
     // Its stop's hook started before the turn did; subagents answer to no turn.
-    expect(apply(next, binding, subagent("subagent-stopped", "a", 7))?.subagents).toEqual([])
+    expect(summary(apply(next, binding, subagent("subagent-stopped", "a", 7))!).subagents).toEqual(
+      [],
+    )
   })
 
   it("ignores a stop for a subagent never seen starting, as internal agents send", () => {
-    expect(apply(started(0), binding, subagent("subagent-stopped", "x"))).toBeUndefined()
+    expect(
+      summary(apply(started(0), binding, subagent("subagent-stopped", "x"))!).subagents,
+    ).toEqual([])
   })
 
-  it("ends every subagent with an interrupted turn, which stops them without a word", () => {
-    const running = apply(started(0), binding, subagent("subagent-started", "a"))!
-    expect(
-      apply(running, binding, fact({ type: "turn-ended", outcome: "interrupted", startedAt: 6 }))
-        ?.subagents,
-    ).toEqual([])
+  it("ends the subagents an interrupted turn started, and keeps a background one", () => {
+    const background = apply(started(0), binding, subagent("subagent-started", "bg", 3))!
+    const turn = apply(background, binding, fact({ type: "turn-started", startedAt: 10 }))!
+    const running = apply(turn, binding, subagent("subagent-started", "fg", 12))!
+    const stopped = apply(
+      running,
+      binding,
+      fact({ type: "turn-ended", outcome: "interrupted", startedAt: 20 }),
+    )!
+    expect(summary(stopped).subagents).toEqual([{ id: "bg", type: "explorer" }])
+    // Its start's hook began before the interrupt, but its report came after.
+    expect(apply(stopped, binding, subagent("subagent-started", "late", 15))).toBeUndefined()
+    expect(apply(stopped, binding, subagent("subagent-started", "fg", 12))).toBeUndefined()
+    expect(apply(stopped, binding, subagent("subagent-started", "next", 25))).toBeDefined()
+  })
+
+  it("keeps a subagent out whose stop arrived before its start", () => {
+    const gone = apply(started(0), binding, subagent("subagent-stopped", "a", 12))!
+    expect(summary(gone).subagents).toEqual([])
+    expect(apply(gone, binding, subagent("subagent-started", "a", 11))).toBeUndefined()
+  })
+
+  it("carries no id or kind longer than the protocol takes", () => {
+    const long = "x".repeat(300)
+    expect(apply(started(0), binding, subagent("subagent-started", long))).toBeUndefined()
+    const typed = apply(
+      started(0),
+      binding,
+      fact({ type: "subagent-started", actor: "a", actorType: long }),
+    )!
+    expect(summary(typed).subagents[0]?.type).toHaveLength(256)
   })
 
   it("keeps at most 32 subagents", () => {

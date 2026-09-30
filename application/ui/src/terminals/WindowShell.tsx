@@ -233,8 +233,9 @@ export const WindowShell = ({
           </div>
           {(usage || subagents) && !compact && (
             // The agent's subagents, context and busiest rate limit, in full on hover. Only
-            // a focused window has room beside its name; a compact one leaves it to the tab.
-            <span className="ml-auto flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted">
+            // a focused window has room beside its name; a compact one leaves them to its
+            // tab's tooltip.
+            <span className="ml-auto flex min-w-0 items-center gap-2 overflow-hidden font-mono text-[10px] text-muted">
               {subagents && (
                 <span className="terminal-subagents shrink-0" title={subagentsDetail(terminal)}>
                   {subagents}

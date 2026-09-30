@@ -11,22 +11,30 @@ type Request = {
   readonly kind: "permission" | "question"
 }
 
-/** A subagent running under the bound agent. */
-type Subagent = { readonly id: string; readonly type: string | null }
+/** A subagent running under the bound agent, since its start hook started. */
+type Subagent = { readonly id: string; readonly type: string | null; readonly startedAt: number }
 
 // More than any agent runs at once; a runaway harness cannot grow the summary.
 const maxSubagents = 32
+// How many ended subagents are remembered, so a start arriving after its end is ignored.
+const maxEnded = 64
+// What the protocol carries of an id or a kind.
+const maxText = 256
 
 /**
  * What the bound agent is doing, as its hooks said. `turnAt` is when the hook of the
  * latest turn start or end started: a fact from a hook that started before it belongs to
  * a turn already over, however late it arrives. Requests of one turn arrive in any order.
- * Subagents outlive turns, as a background one does, so no turn fences them.
+ * Subagents outlive turns, as a background one does, so no turn fences them; `ended`
+ * names those that stopped, and `interrupted` spans the latest interrupted turn, whose
+ * subagents stopped with it, so a start that arrives late is not taken for a new one.
  */
 export type Activity = {
   readonly state: "working" | "idle"
   readonly pending: readonly Request[]
   readonly subagents: readonly Subagent[]
+  readonly ended: readonly string[]
+  readonly interrupted: { readonly from: number; readonly to: number } | null
   readonly turnAt: number
 }
 
@@ -35,8 +43,13 @@ export const started = (at: number): Activity => ({
   state: "idle",
   pending: [],
   subagents: [],
+  ended: [],
+  interrupted: null,
   turnAt: at,
 })
+
+const end = (ended: readonly string[], ids: readonly string[]): readonly string[] =>
+  [...ended, ...ids].slice(-maxEnded)
 
 /** Whether an event belongs to the bound session, from its own process where known. */
 export const bound = (
@@ -63,7 +76,8 @@ const resolved = (
  * The activity after an event, or undefined when it changes nothing: another session's,
  * or from a turn already over. A turn's start or end settles every request still
  * waiting, since no harness reports a denial: the person answered it one way or another.
- * An interrupted turn ends its subagents too, which report no stop then.
+ * An interrupted turn ends the subagents it started, which report no stop then; a
+ * background one from an earlier turn runs on.
  */
 export const apply = (
   activity: Activity,
@@ -73,28 +87,48 @@ export const apply = (
   if (!bound(binding, event)) return undefined
   switch (event.type) {
     case "subagent-started": {
-      const { subagents } = activity
-      if (subagents.length >= maxSubagents || subagents.some(({ id }) => id === event.actor))
+      const { subagents, ended, interrupted } = activity
+      const { actor: id, startedAt } = event
+      if (
+        id.length > maxText ||
+        subagents.length >= maxSubagents ||
+        subagents.some((subagent) => subagent.id === id) ||
+        ended.includes(id) ||
+        (interrupted && startedAt >= interrupted.from && startedAt < interrupted.to)
+      )
         return undefined
-      return { ...activity, subagents: [...subagents, { id: event.actor, type: event.actorType }] }
+      const type = event.actorType?.slice(0, maxText) ?? null
+      return { ...activity, subagents: [...subagents, { id, type, startedAt }] }
     }
     case "subagent-stopped": {
-      const index = activity.subagents.findIndex(({ id }) => id === event.actor)
-      if (index < 0) return undefined
-      return { ...activity, subagents: activity.subagents.toSpliced(index, 1) }
+      const { subagents, ended } = activity
+      if (event.actor.length > maxText || ended.includes(event.actor)) return undefined
+      // A stop may arrive before its start: remembered, it keeps the start out.
+      return {
+        ...activity,
+        subagents: subagents.filter(({ id }) => id !== event.actor),
+        ended: end(ended, [event.actor]),
+      }
     }
   }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
       return { ...activity, state: "working", pending: [], turnAt: event.startedAt }
-    case "turn-ended":
+    case "turn-ended": {
+      const turn = { state: "idle", pending: [], turnAt: event.startedAt } as const
+      if (event.outcome !== "interrupted") return { ...activity, ...turn }
+      const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
       return {
-        state: "idle",
-        pending: [],
-        subagents: event.outcome === "interrupted" ? [] : activity.subagents,
-        turnAt: event.startedAt,
+        ...turn,
+        subagents: activity.subagents.filter((subagent) => !stopped.includes(subagent)),
+        ended: end(
+          activity.ended,
+          stopped.map(({ id }) => id),
+        ),
+        interrupted: { from: activity.turnAt, to: event.startedAt },
       }
+    }
     case "attention-requested": {
       if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
       const { requestId, actor, toolName, kind } = event
@@ -116,5 +150,5 @@ export const apply = (
 export const summary = ({ state, pending, subagents }: Activity): AgentActivity => ({
   state,
   attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
-  subagents: [...subagents],
+  subagents: subagents.map(({ id, type }) => ({ id, type })),
 })

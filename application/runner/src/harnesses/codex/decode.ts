@@ -44,7 +44,8 @@ export const decode = ({ event, seq, instance, env, payload }: Report): readonly
       // A subagent's stop ends its own work, not the turn.
       return actor ? [] : [{ type: "turn-ended", ...base, outcome: "completed" }]
     case "Interrupt":
-      return [{ type: "turn-ended", ...base, outcome: "interrupted" }]
+      // A subagent's own interrupt ends its work, not the turn.
+      return actor ? [] : [{ type: "turn-ended", ...base, outcome: "interrupted" }]
     case "SubagentStart":
       return actor
         ? [

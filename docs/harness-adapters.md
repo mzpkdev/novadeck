@@ -904,8 +904,10 @@ an action by typing guessed keys into a terminal.
       their `agent_id` and `agent_type`, in `TerminalSummary.activity`; a
       focused window's header counts them and names their kinds on hover.
       Subagents outlive turns, as a background one does, so no turn fences
-      them; an interrupted turn ends them all, since an interrupted subagent
-      reports no stop, and a stop for one never seen starting is ignored.
+      them. An interrupted turn ends the subagents it started, since an
+      interrupted subagent reports no stop, and a background one from an
+      earlier turn runs on; a start that arrives after its stop, or within an
+      interrupted turn, is not taken for a new subagent.
       Antigravity's hooks report no subagents. Subagent transcripts follow.
    4. Telemetry, then the status line bridge. It starts from the sources
       already followed: Codex's rollout gives the context against the model's
