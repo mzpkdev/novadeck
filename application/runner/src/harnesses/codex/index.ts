@@ -1,7 +1,15 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { json, marketplace, mcpVariables, plugin, type Harness, type Install } from "../harness.js"
+import {
+  json,
+  marketplace,
+  mcpServer,
+  mcpVariables,
+  plugin,
+  type Harness,
+  type Install,
+} from "../harness.js"
 import { decode } from "./decode.js"
 import { followRollout } from "./rollout.js"
 import { cmdShim, posixShim } from "./shim.js"
@@ -57,7 +65,9 @@ export const codex = {
     {
       path: join("novadeck", ".mcp.json"),
       content: json({
-        mcpServers: { novadeck: { command: launchers.mcp, env_vars: [...mcpVariables] } },
+        mcpServers: {
+          novadeck: { ...mcpServer(platform, launchers), env_vars: [...mcpVariables] },
+        },
       }),
     },
     {

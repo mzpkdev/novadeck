@@ -179,7 +179,7 @@ describe.runIf(windows)("the hook launcher on Windows", () => {
 const server = (root: string, path: string) =>
   (
     JSON.parse(readFileSync(join(root, path), "utf8")) as {
-      mcpServers: { novadeck: { command: string; env_vars?: string[] } }
+      mcpServers: { novadeck: { command: string; args?: string[]; env_vars?: string[] } }
     }
   ).mcpServers.novadeck
 
@@ -190,7 +190,14 @@ describe("NovaDeck's MCP server in each agent's plugin", () => {
     const claude = server(paths.plugins.claude, join("novadeck", ".mcp.json"))
     const codex = server(paths.plugins.codex, join("novadeck", ".mcp.json"))
     const agy = server(paths.plugins.agy, "mcp_config.json")
-    for (const each of [claude, codex, agy]) expect(each.command).toBe(paths.mcp)
+    // Agents start it without a shell; a .cmd file needs cmd, and is named by its short
+    // name there.
+    for (const each of [claude, codex, agy])
+      if (process.platform === "win32") {
+        expect(each.command).toBe("cmd.exe")
+        expect(each.args?.slice(0, 2)).toEqual(["/d", "/c"])
+        expect(each.args?.[2]).toMatch(/^[\w.:\\~-]+\\mcp\.cmd$/i)
+      } else expect(each).toMatchObject({ command: paths.mcp })
     expect(codex.env_vars).toEqual([
       "NOVADECK_TERMINAL_ID",
       "NOVADECK_REPORT",

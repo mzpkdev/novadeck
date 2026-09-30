@@ -305,8 +305,11 @@ from what this document describes:
   agent sets when the user asked to see it (`asked`). The server finds its terminal
   from `NOVADECK_TERMINAL_ID`, `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`. Like
   the hooks, it is installed for every session, but outside NovaDeck's terminals it
-  lists no tools, so the agent never sees `show`, and a call anyway does nothing. It
-  forwards the call over the terminal's report endpoint, where the runner checks the token and shows only
+  lists no tools, so the agent never sees `show`, and a call anyway does nothing.
+  There its launcher answers itself (sh, or PowerShell on Windows, which agents reach
+  through `cmd.exe`) without starting NovaDeck's runtime, which a packaged NovaDeck
+  can unpack into a folder that goes when it quits. In a terminal it forwards the call
+  over the terminal's report endpoint, where the runner checks the token and shows only
   images and text files inside the terminal's project folder, its starting folder
   or Claude Code's plans folder, symlinks resolved. The UI reads them through
   `agents.shown` and fetches each with `agents.artifact`, never by path. Pages, which

@@ -9,6 +9,9 @@
  */
 import { plugin } from "../harnesses/harness.js"
 
+/** The MCP versions NovaDeck's server speaks, newest first; it answers others with the newest. */
+export const mcpVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+
 export const mcpScript = `// NovaDeck MCP server. Written by NovaDeck into its own data directory, and
 // overwritten on each start. Only agents started from NovaDeck's terminals get its tool.
 import { connect } from "node:net"
@@ -56,8 +59,8 @@ const tool = {
   },
 }
 
-// The MCP versions this server speaks; it answers others with the newest.
-const versions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+// The MCP versions this server speaks, newest first; it answers others with the newest.
+const versions = ${JSON.stringify(mcpVersions)}
 
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n")
 
@@ -163,5 +166,6 @@ process.stdin.on("data", (chunk) => {
     handle(message)
   }
 })
-process.stdin.on("end", () => process.exit(0))
+// No exit when the agent closes its side: calls under way still answer, then the server
+// ends by itself.
 `

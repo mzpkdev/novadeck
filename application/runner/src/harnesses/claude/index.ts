@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { followLines } from "../follow.js"
-import { json, marketplace, plugin, type Harness, type Install } from "../harness.js"
+import { json, marketplace, mcpServer, plugin, type Harness, type Install } from "../harness.js"
 import { decode } from "./decode.js"
 import { posixShim } from "./shim.js"
 import { transcriptEvents } from "./transcript.js"
@@ -68,7 +68,7 @@ export const claude = {
     // terminal's environment.
     {
       path: join("novadeck", ".mcp.json"),
-      content: json({ mcpServers: { novadeck: { command: launchers.mcp } } }),
+      content: json({ mcpServers: { novadeck: mcpServer(platform, launchers) } }),
     },
     {
       path: join("novadeck", "hooks", "hooks.json"),

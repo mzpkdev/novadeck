@@ -55,8 +55,7 @@ export type Harness = {
   readonly hook: (platform: NodeJS.Platform, event: string) => string
   /**
    * Its plugin's manifests, hook registrations and MCP server, relative to its plugin
-   * directory. The MCP server starts through `launchers.mcp`, an absolute path: an agent
-   * starts it directly, not through a shell that could expand a variable.
+   * directory. The MCP server starts as `mcpServer` says.
    */
   readonly files: (platform: NodeJS.Platform, launchers: Launchers) => readonly File[]
   /**
@@ -104,6 +103,19 @@ export const json = (value: unknown): string => `${JSON.stringify(value, null, 2
 
 /** Where the plugin's commands start from, as NovaDeck wrote them for this run. */
 export type Launchers = { readonly mcp: string }
+
+/**
+ * How an agent starts NovaDeck's MCP server: the launcher, by its absolute path, since an
+ * agent starts it without a shell that could expand a variable. On Windows that is cmd,
+ * which a .cmd file needs.
+ */
+export const mcpServer = (
+  platform: NodeJS.Platform,
+  launchers: Launchers,
+): { readonly command: string; readonly args?: readonly string[] } =>
+  platform === "win32"
+    ? { command: "cmd.exe", args: ["/d", "/c", launchers.mcp] }
+    : { command: launchers.mcp }
 
 /** The terminal's variables NovaDeck's MCP server finds its terminal and runner by. */
 export const mcpVariables = [

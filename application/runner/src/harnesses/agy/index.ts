@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises"
 import { join } from "node:path"
 
-import { json, plugin, type Harness, type Install } from "../harness.js"
+import { json, mcpServer, plugin, type Harness, type Install } from "../harness.js"
 import { decode } from "./decode.js"
 import { statusLineSettings } from "./settings.js"
 import { transcripts } from "./transcripts.js"
@@ -43,7 +43,7 @@ export const agy = {
     // terminal's environment.
     {
       path: "mcp_config.json",
-      content: json({ mcpServers: { novadeck: { command: launchers.mcp } } }),
+      content: json({ mcpServers: { novadeck: mcpServer(platform, launchers) } }),
     },
     {
       path: "hooks.json",
