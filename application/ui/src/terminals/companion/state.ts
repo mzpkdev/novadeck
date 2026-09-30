@@ -153,8 +153,9 @@ export type CompanionHandle = {
   readonly state: PlanState
   readonly plan: Omit<AgentPlan, "text">
   readonly update: (update: (plan: PlanState) => PlanState) => void
-  // The user edited the plan: the file changes, for the agent to read.
-  readonly edit: (text: string) => void
+  // The user edited the plan: the file changes, for the agent to read. `marks` are the
+  // latest revision's highlights, moved along with the edit.
+  readonly edit: (text: string, marks: readonly Mark[]) => void
 }
 
 export const useCompanion = (companions: Companions, terminalId: string): CompanionHandle => {
@@ -166,9 +167,11 @@ export const useCompanion = (companions: Companions, terminalId: string): Compan
     update: (update) => {
       change(panes, terminalId, update)
     },
-    edit: (text) => {
-      if (change(panes, terminalId, (plan) => (text === plan.text ? plan : { ...plan, text })))
-        companions.save(terminalId, text)
+    edit: (text, marks) => {
+      const edited = change(panes, terminalId, (plan) =>
+        text === plan.text ? plan : { ...plan, text, marks, marked: text },
+      )
+      if (edited) companions.save(terminalId, text)
     },
   }
 }

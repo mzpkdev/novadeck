@@ -1,12 +1,12 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
 import { Language, LanguageSupport, defineLanguageFacet } from "@codemirror/language"
-import { Annotation, EditorState, Transaction } from "@codemirror/state"
+import { Annotation, ChangeSet, EditorState, Text, Transaction } from "@codemirror/state"
 import { EditorView, keymap } from "@codemirror/view"
 import { GFM, parser } from "@lezer/markdown"
 import { useEffect, useLayoutEffect, useRef } from "react"
 
 import type { Mark } from "../state"
-import { livePreview, setMarks } from "./live-preview"
+import { currentAgentMarks, livePreview, setMarks } from "./live-preview"
 import { emptyNoteRemovals } from "./notes"
 import { lineChanges } from "./sync"
 
@@ -32,7 +32,8 @@ export const PlanEditor = ({
 }: {
   text: string
   marks: readonly Mark[]
-  onChange: (text: string) => void
+  // The text, and the latest revision's highlights moved along with the edit.
+  onChange: (text: string, marks: readonly Mark[]) => void
   onReady: (handle: PlanEditorHandle) => void
 }): React.JSX.Element => {
   const host = useRef<HTMLDivElement>(null)
@@ -60,7 +61,7 @@ export const PlanEditor = ({
                 (transaction) => transaction.docChanged && !transaction.annotation(fromAgent),
               )
             )
-              latest.current.onChange(update.state.doc.toString())
+              latest.current.onChange(update.state.doc.toString(), currentAgentMarks(update.state))
           }),
         ],
       }),
@@ -73,9 +74,18 @@ export const PlanEditor = ({
     })
     return () => {
       // Closing the pane leaves no empty note behind: none of the editor's updates follow.
-      const removals = emptyNoteRemovals(editor.state.doc, null)
-      if (removals.length)
-        latest.current.onChange(editor.state.update({ changes: removals }).state.doc.toString())
+      // It's cleaned from the file as it now stands, which an agent may have rewritten
+      // in the same render that closed the pane.
+      const { text: current, marks: shown } = latest.current
+      const doc = Text.of(current.split("\n"))
+      const removals = emptyNoteRemovals(doc, null)
+      if (removals.length) {
+        const changes = ChangeSet.of(removals, doc.length)
+        latest.current.onChange(
+          changes.apply(doc).toString(),
+          shown.map(({ from, to }) => ({ from: changes.mapPos(from), to: changes.mapPos(to) })),
+        )
+      }
       editor.destroy()
     }
   }, [])

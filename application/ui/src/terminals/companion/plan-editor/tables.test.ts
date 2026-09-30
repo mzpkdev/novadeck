@@ -168,6 +168,12 @@ describe("plan table row notes", () => {
       ])
     })
 
+    it("keeps the row's comment closed whatever `-->` it's given", () => {
+      expect(apply(noted, [setRowNote(notedTable, 1, "use ---> here")!])).toContain(
+        "<!-- novadeck: use -> here -->",
+      )
+    })
+
     it("removes it and the space before it once empty", () => {
       expect(apply(noted, [setRowNote(notedTable, 1, " ")!])).toBe(
         "| Page | Why |\n| --- | --- |\n| About | Contact |\n",

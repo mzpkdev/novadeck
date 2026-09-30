@@ -1,3 +1,5 @@
+import { noteClose, noteOpen, noteSafe } from "../../../model/companion"
+
 // Markdown tables in a plan's text, down to each cell's place in the file, so a cell can
 // be edited without touching the pipes and spacing the agent wrote.
 
@@ -34,8 +36,6 @@ export type RowNote = {
   readonly textTo: number
 }
 
-const noteOpen = "<!-- novadeck: "
-const noteClose = " -->"
 const rowNote = /<!-- novadeck: (.*?) -->/
 
 const delimiterRow = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/
@@ -188,10 +188,8 @@ export const removeColumn = (table: Table, column: number): Change[] =>
 // A note's text as a row needs it: one line, pipes escaped so they can't split a cell,
 // and no `-->` to end the comment early.
 const noteSource = (text: string): string =>
-  text
-    .replace(/\s*\n\s*/g, " ")
+  noteSafe(text)
     .trim()
-    .replace(/-->/g, "->")
     .replace(/(?<!\\)\|/g, "\\|")
 
 // An empty note at the end of a row's last cell, and where to type in it.

@@ -91,3 +91,11 @@ export const noteClose = " -->"
 export const notePattern = /<!-- novadeck: (.*?) -->/g
 
 export const notesIn = (text: string): number => [...text.matchAll(notePattern)].length
+
+// A note's text as the comment around it allows: one line, and no `-->`, which would
+// end the comment early and spill the rest of the note into the plan.
+export const noteSafe = (text: string): string => {
+  let safe = text.replace(/\s*\n\s*/g, " ")
+  while (safe.includes("-->")) safe = safe.replaceAll("-->", "->")
+  return safe
+}

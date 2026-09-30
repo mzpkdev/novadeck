@@ -106,6 +106,15 @@ class TableWidget extends WidgetType {
     const height = this.table.rows.length
     const cells: HTMLTextAreaElement[][] = []
     const at = (): number => view.posAtDOM(wrapper)
+    // Where the table is, unless the editor already let go of it: an agent rewriting the
+    // table blurs the field being edited while its widget is being removed.
+    const placed = (): number | null => {
+      try {
+        return view.posAtDOM(wrapper)
+      } catch {
+        return null
+      }
+    }
     // The cell being edited, and how to hand it over before the table changes.
     let active: { place: Place; text: () => string; leave: () => void } | null = null
     const notes: HTMLTextAreaElement[] = []
@@ -211,7 +220,7 @@ class TableWidget extends WidgetType {
           return
         }
         // The table was rewritten under the note, which went with it.
-        if (!wrapper.isConnected) return
+        if (placed() === null) return
         save()
       })
       notes[row] = input
@@ -348,8 +357,8 @@ class TableWidget extends WidgetType {
           }
           // The agent rewrote the table under the cell: its place is gone, and so is what
           // was typed in it.
-          if (!wrapper.isConnected) return
-          if (cell.value !== original) commit(view, at(), place, cell.value)
+          const start = placed()
+          if (start !== null && cell.value !== original) commit(view, start, place, cell.value)
         })
         cells[rowIndex]!.push(cell)
         box.append(cell)

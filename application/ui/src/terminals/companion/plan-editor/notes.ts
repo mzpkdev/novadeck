@@ -1,12 +1,12 @@
-import { EditorSelection, type Line, type Text } from "@codemirror/state"
+import { EditorSelection, type Line, type Text, type Transaction } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
-import { noteClose, noteOpen, notePattern } from "../../../model/companion"
+import { noteClose, noteOpen, notePattern, noteSafe } from "../../../model/companion"
 import { findTables } from "./tables"
 
 // Notes as NovaDeck writes them into the plan, and the control that adds one.
 
-export { noteClose, noteOpen }
+export { noteClose, noteOpen, noteSafe }
 
 // Lucide's message-square-plus, as the plan's other note controls use. Widgets are plain
 // DOM, so it's drawn here rather than through lucide-react.
@@ -105,14 +105,6 @@ export const caretInNote = (doc: Text, pos: number): number => {
   return Math.min(Math.max(pos, note.body), note.close)
 }
 
-// A note's text as the comment around it allows: one line, and no `-->`, which would
-// end the comment early and spill the rest of the note into the plan.
-export const noteSafe = (text: string): string => {
-  let safe = text.replace(/\s*\n\s*/g, " ")
-  while (safe.includes("-->")) safe = safe.replaceAll("-->", "->")
-  return safe
-}
-
 // Typing into a note, kept safe: null when the text needs no change, or else the note's
 // whole text rewritten and where the caret goes.
 export const noteInput = (
@@ -129,6 +121,24 @@ export const noteInput = (
   const insert = noteSafe(typed + after)
   if (insert === before + text + after) return null
   return { from: note.body, to: note.close, insert, caret: note.body + typed.length }
+}
+
+// A deletion that joined `--` and `>` inside a note: the note's text made safe again,
+// as a change after it.
+export const notesReopened = (
+  transaction: Transaction,
+): { from: number; to: number; insert: string }[] => {
+  const fixes: { from: number; to: number; insert: string }[] = []
+  transaction.changes.iterChangedRanges((fromA, toA) => {
+    for (const span of notesOn(transaction.startState.doc, fromA).spans) {
+      if (toA < span.body || fromA > span.close) continue
+      const from = transaction.changes.mapPos(span.body, -1)
+      const to = transaction.changes.mapPos(span.close, 1)
+      const text = transaction.newDoc.sliceString(from, to)
+      if (text.includes("-->")) fixes.push({ from, to, insert: noteSafe(text) })
+    }
+  })
+  return fixes
 }
 
 // Whether a position is in a note's text, between its hidden wrappers.

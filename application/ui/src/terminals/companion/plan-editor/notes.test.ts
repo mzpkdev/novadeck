@@ -1,7 +1,14 @@
-import { Text } from "@codemirror/state"
+import { EditorState, Text } from "@codemirror/state"
 
 import { context, describe, expect, it } from "../../../test"
-import { caretInNote, emptyNoteRemovals, leaveNote, noteInput, noteSafe } from "./notes"
+import {
+  caretInNote,
+  emptyNoteRemovals,
+  leaveNote,
+  noteInput,
+  noteSafe,
+  notesReopened,
+} from "./notes"
 
 const doc = (value: string): Text => Text.of(value.split("\n"))
 const apply = (value: string, removals: { from: number; to: number }[]): string =>
@@ -83,5 +90,18 @@ describe("plan notes and what's typed in them", () => {
   it("leaves ordinary typing, and text outside notes, to the editor", () => {
     expect(noteInput(doc(text), end, end, " b")).toBeNull()
     expect(noteInput(doc(text), text.length, text.length, "-->")).toBeNull()
+  })
+
+  it("keeps it closed when a deletion joins `--` and `>`", () => {
+    const note = "<!-- novadeck: p --x> q -->"
+    const x = note.indexOf("x")
+    const deleted = EditorState.create({ doc: note }).update({
+      changes: { from: x, to: x + 1 },
+      userEvent: "delete.backward",
+    })
+    const [fix] = notesReopened(deleted)
+    expect(fix && deleted.newDoc.replace(fix.from, fix.to, Text.of([fix.insert])).toString()).toBe(
+      "<!-- novadeck: p -> q -->",
+    )
   })
 })

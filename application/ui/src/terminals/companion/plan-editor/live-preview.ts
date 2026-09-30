@@ -34,6 +34,7 @@ import {
   noteSafe,
   noteLabel as noteMark,
   noteOpen,
+  notesReopened,
 } from "./notes"
 import { tables } from "./table-widget"
 
@@ -276,6 +277,17 @@ const agentMarks = StateField.define<DecorationSet>({
 
 const addNoteShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘⌥M" : "Ctrl+Alt+M"
 
+// The highlighted lines as they stand, moved along with the user's edits.
+export const currentAgentMarks = (state: EditorState): Mark[] => {
+  const marks: Mark[] = []
+  const iterator = state.field(agentMarks).iter()
+  for (; iterator.value; iterator.next()) {
+    const { from, to } = state.doc.lineAt(iterator.from)
+    marks.push({ from, to })
+  }
+  return marks
+}
+
 class AddNoteMarker extends GutterMarker {
   constructor(readonly heading: number) {
     super()
@@ -386,6 +398,11 @@ const safeNoteInput = [
   EditorView.clipboardInputFilter.of((text, state) =>
     inNoteText(state.doc, state.selection.main.head) ? noteSafe(text) : text,
   ),
+  EditorState.transactionFilter.of((transaction) => {
+    if (!transaction.docChanged || !transaction.isUserEvent("delete")) return transaction
+    const fixes = notesReopened(transaction)
+    return fixes.length ? [transaction, { changes: fixes, sequential: true }] : transaction
+  }),
 ]
 
 // The keyboard's way to the note button: a note under the caret's line.
