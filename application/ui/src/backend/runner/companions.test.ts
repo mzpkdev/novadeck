@@ -68,10 +68,14 @@ const content = (ref: string, text: string): PlanContent => ({
 })
 
 const running = () => {
-  const details = channel<AgentDetail>()
+  let details = channel<AgentDetail>()
   const plans = new Map<string, ReturnType<typeof channel<PlanContent>>>()
   const companions = createRunnerCompanions({
-    detail: () => details.iterator,
+    // A fresh subscription once the last one ended, as following starts over.
+    detail: () => {
+      if (details.ended) details = channel<AgentDetail>()
+      return details.iterator
+    },
     plan: (_terminalId, ref) => {
       const stream = channel<PlanContent>()
       plans.set(ref, stream)
@@ -80,7 +84,14 @@ const running = () => {
   })
   const events: CompanionEvent[] = []
   companions.subscribe((event) => events.push(event))
-  return { companions, details, plans, events }
+  return {
+    companions,
+    get details() {
+      return details
+    },
+    plans,
+    events,
+  }
 }
 
 describe("runner companions", () => {
@@ -170,5 +181,70 @@ describe("runner companions", () => {
     const { companions } = running()
     await expect(companions.save(key, "planAAAAAAAAAAAA", "x", "r")).rejects.toThrow()
     await expect(companions.load(key, "image")).rejects.toThrow()
+  })
+
+  context("when the runner loses the terminal", () => {
+    it("drops its plans, and follows it again once asked after a fresh shell", async () => {
+      const runner = running()
+      const listed = {
+        ref: "planAAAAAAAAAAAA",
+        actor: root,
+        source: "file",
+        name: "plan.md",
+      } as const
+      runner.companions.follow(key)
+      runner.details.push(detail([listed]))
+      await settle()
+      runner.plans.get(listed.ref)!.push(content(listed.ref, "v1"))
+      await settle()
+      // Its detail ends, as on "not found".
+      runner.details.end()
+      await settle()
+      expect(runner.events.map((event) => event.type)).toEqual(["plan/changed", "plan/removed"])
+      runner.companions.follow(key)
+      runner.details.push(detail([listed]))
+      await settle()
+      runner.plans.get(listed.ref)!.push(content(listed.ref, "v1"))
+      await settle()
+      expect(runner.events.map((event) => event.type)).toEqual([
+        "plan/changed",
+        "plan/removed",
+        "plan/changed",
+      ])
+    })
+  })
+
+  it("reports nothing more about a terminal once it's closed", async () => {
+    const runner = running()
+    runner.companions.follow(key)
+    runner.details.push(
+      detail([{ ref: "planAAAAAAAAAAAA", actor: root, source: "file", name: "plan.md" }]),
+    )
+    await settle()
+    runner.plans.get("planAAAAAAAAAAAA")!.push(content("planAAAAAAAAAAAA", "v1"))
+    await settle()
+    runner.companions.unfollow(key)
+    await settle()
+    expect(runner.events.map((event) => event.type)).toEqual(["plan/changed", "companion/closed"])
+  })
+
+  it("names a plan by what the latest detail says of it", async () => {
+    const runner = running()
+    const listed = {
+      ref: "planAAAAAAAAAAAA",
+      actor: root,
+      source: "file",
+      name: "plan.md",
+    } as const
+    runner.companions.follow(key)
+    runner.details.push(detail([listed]))
+    await settle()
+    runner.details.push({ ...detail([{ ...listed, name: "renamed.md" }]), agent: "codex" })
+    await settle()
+    runner.plans.get(listed.ref)!.push({ ...content(listed.ref, "long"), truncated: true })
+    await settle()
+    expect(runner.events).toMatchObject([
+      { plan: { path: "renamed.md", agent: "Codex", truncated: true } },
+    ])
   })
 })

@@ -635,6 +635,7 @@ export const runnerBackend = (
     const { revive } = entry
     Object.assign(entry, revival())
     revive()
+    followWhenReady(entry)
   }
 
   // The runner no longer has the terminal: start a fresh shell in place once its
@@ -689,6 +690,14 @@ export const runnerBackend = (
     plan: (terminalId, plan) => runner.agents.plan(terminalId, plan),
   })
   let following = false
+  // Follows a terminal's plans once the runner has it: its detail answers "not found"
+  // before then. Called whenever a shell is created or started afresh.
+  const followWhenReady = (entry: RunnerEntry): void => {
+    const { ready } = entry
+    void ready.then((ok) => {
+      if (ok && following && !entry.closed && entry.ready === ready) companions.follow(entry.key)
+    })
+  }
 
   const registry = createTerminalRegistry<RunnerEntry>({
     open: (key, terminal: TerminalMetadata, isNew) => {
@@ -713,7 +722,7 @@ export const runnerBackend = (
       }
       if (isNew) entry.ready = createTerminal(entry)
       entries.set(key.terminalId, entry)
-      if (following) companions.follow(key)
+      followWhenReady(entry)
       return entry
     },
     close: (entry, key) => {
@@ -877,7 +886,7 @@ export const runnerBackend = (
     void consume(changes, onChange)
     void consume(statuses, onStatus)
     following = true
-    for (const entry of entries.values()) if (!entry.closed) companions.follow(entry.key)
+    for (const entry of entries.values()) if (!entry.closed) followWhenReady(entry)
     window.addEventListener("pagehide", flush)
     // The host waits for these saves before a close or quit can end the shells, so they
     // name what still runs.

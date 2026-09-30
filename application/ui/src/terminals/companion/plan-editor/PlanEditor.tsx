@@ -59,6 +59,15 @@ export const PlanEditor = ({
           EditorView.lineWrapping,
           // Fixed for the editor's life: the pane remounts it if that changes.
           EditorState.readOnly.of(latest.current.readOnly),
+          // Read-only holds for every change, not only typing: note keys, checkboxes and
+          // the table's own edits dispatch directly. Only the file's own changes land.
+          EditorState.transactionFilter.of((transaction) =>
+            transaction.docChanged &&
+            transaction.startState.readOnly &&
+            !transaction.annotation(fromAgent)
+              ? []
+              : transaction,
+          ),
           EditorView.contentAttributes.of({ "aria-label": "Plan" }),
           livePreview,
           EditorView.updateListener.of((update) => {

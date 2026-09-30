@@ -109,6 +109,9 @@ const PlanTab = ({
           {!plan.writable && (
             <span className="plan-meta-hint">Read-only: NovaDeck can't write this plan yet.</span>
           )}
+          {plan.truncated && (
+            <span className="plan-meta-hint">It's long, so only its start is shown.</span>
+          )}
           {/* Without NovaDeck's skill, notes wait for the user to point the agent at them. */}
           {plan.writable && !plan.skill && notesIn(plan.text) > 0 && (
             <span className="plan-meta-hint">

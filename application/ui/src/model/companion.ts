@@ -32,6 +32,8 @@ export type PlanSnapshot = {
   readonly writable: boolean
   readonly text: string
   readonly revision: string
+  // The backend sent only the start of a very long plan.
+  readonly truncated?: boolean
 }
 
 export type ArtifactKind = "image" | "file" | "page"

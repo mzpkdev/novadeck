@@ -29,7 +29,8 @@ export type PlanPresentation = "split" | "attached"
 export type Mark = { readonly from: number; readonly to: number }
 
 // A plan as the pane holds it.
-export type PlanDoc = Omit<PlanSnapshot, "text" | "revision"> & {
+export type PlanDoc = Omit<PlanSnapshot, "text" | "revision" | "truncated"> & {
+  readonly truncated: boolean
   // The file as both sides last agreed on it, at `revision`: the agent's rewrites and
   // the user's edits merge against it.
   readonly base: string
@@ -74,6 +75,7 @@ const docOf = (plan: PlanSnapshot): PlanDoc => ({
   agent: plan.agent,
   skill: plan.skill,
   writable: plan.writable,
+  truncated: Boolean(plan.truncated),
   base: lf(plan.text),
   revision: plan.revision,
   eol: eolOf(plan.text),
@@ -348,12 +350,19 @@ const revise = async (
   const echo = inFlight === theirs || unconfirmed.includes(theirs)
   change(session, key, (pane) =>
     withPlan(pane, snapshot.ref, (plan) => {
-      if (snapshot.revision === plan.revision && theirs === plan.base) return plan
+      if (
+        snapshot.revision === plan.revision &&
+        theirs === plan.base &&
+        snapshot.writable === plan.writable &&
+        Boolean(snapshot.truncated) === plan.truncated
+      )
+        return plan
       // A backend watching the file reports the user's own save back.
       if (echo || theirs === plan.text)
         return {
           ...plan,
           writable: snapshot.writable,
+          truncated: Boolean(snapshot.truncated),
           base: theirs,
           revision: snapshot.revision,
           eol: eolOf(snapshot.text),
@@ -369,6 +378,7 @@ const revise = async (
       return {
         ...plan,
         writable: snapshot.writable,
+        truncated: Boolean(snapshot.truncated),
         base: theirs,
         revision: snapshot.revision,
         eol: eolOf(snapshot.text),
@@ -494,6 +504,7 @@ export const companionActions = (companions: Companions, key: CompanionKey): Com
       void import("./plan-editor/notes").then(({ withoutEmptyNotes }) => {
         change(session, key, (current) =>
           withPlan(current, ref, (plan) => {
+            if (!plan.writable) return plan
             const kept = withoutEmptyNotes(plan.text, currentMarks(plan))
             return kept ? { ...plan, ...kept, marked: kept.text } : plan
           }),

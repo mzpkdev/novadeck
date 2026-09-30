@@ -19,7 +19,8 @@ export type PlanStreams = {
 }
 
 export type RunnerCompanions = Companions & {
-  // The workspace holds the terminal: follow its agent's plans.
+  // The runner has the terminal: follow its agent's plans. Call again after a fresh
+  // shell starts; following that ended starts over, and following that runs goes on.
   readonly follow: (key: CompanionKey) => void
   // The terminal is gone: stop following it.
   readonly unfollow: (key: CompanionKey) => void
@@ -47,6 +48,8 @@ type Followed = {
   readonly key: CompanionKey
   readonly detail: AsyncIterableIterator<AgentDetail, undefined>
   // Each plan it lists, while it lists it: its stream, and its latest text once known.
+  // What the latest detail says of each plan it lists: its role, name and agent.
+  readonly described: Map<string, Omit<PlanSnapshot, "text" | "revision">>
   readonly plans: Map<
     string,
     { readonly stream: AsyncIterableIterator<PlanContent, undefined>; snapshot?: PlanSnapshot }
@@ -66,11 +69,7 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
     if (plan.snapshot) emit({ type: "plan/removed", key: terminal.key, ref })
   }
 
-  const followPlan = (
-    terminal: Followed,
-    ref: string,
-    describe: () => Omit<PlanSnapshot, "text" | "revision">,
-  ): void => {
+  const followPlan = (terminal: Followed, ref: string): void => {
     let stream: AsyncIterableIterator<PlanContent, undefined>
     try {
       stream = streams.plan(terminal.key.terminalId, ref)
@@ -83,10 +82,14 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
       try {
         for await (const content of stream) {
           if (terminal.plans.get(ref) !== plan) return
+          const described = terminal.described.get(ref)
+          if (!described) continue
           plan.snapshot = {
-            ...describe(),
+            ...described,
             text: content.text,
             revision: revisionOf(content.text),
+            // Past 256 KiB the runner sends the plan cut short.
+            ...(content.truncated ? { truncated: true } : {}),
           }
           emit({ type: "plan/changed", key: terminal.key, plan: plan.snapshot })
         }
@@ -108,7 +111,7 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
       // Plans are extra: a runner that can't follow them leaves the terminal as it is.
       return
     }
-    const terminal: Followed = { key, detail: details, plans: new Map() }
+    const terminal: Followed = { key, detail: details, described: new Map(), plans: new Map() }
     followed.set(id, terminal)
     void (async () => {
       try {
@@ -119,8 +122,7 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
           const listed = new Set(detail.plans.map((plan) => plan.ref))
           for (const ref of terminal.plans.keys()) if (!listed.has(ref)) dropPlan(terminal, ref)
           for (const plan of detail.plans) {
-            if (terminal.plans.has(plan.ref)) continue
-            followPlan(terminal, plan.ref, () => ({
+            terminal.described.set(plan.ref, {
               ref: plan.ref,
               role: roles.get(plan.actor) === "root" ? "root" : "subagent",
               path: plan.name ?? `${agent} plan`,
@@ -128,12 +130,18 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
               // NovaDeck can't tell yet whether its skill is installed.
               skill: false,
               writable: false,
-            }))
+            })
+            if (!terminal.plans.has(plan.ref)) followPlan(terminal, plan.ref)
           }
         }
       } catch {
         // The runner closed or lost the terminal.
       }
+      // Following ended while the terminal is still held, as when the runner lost it or
+      // a fresh shell hasn't started yet: its plans go, and a later `follow` starts over.
+      if (followed.get(id) !== terminal) return
+      followed.delete(id)
+      for (const ref of terminal.plans.keys()) dropPlan(terminal, ref)
     })()
   }
 
@@ -143,7 +151,10 @@ export const createRunnerCompanions = (streams: PlanStreams): RunnerCompanions =
     if (!terminal) return
     followed.delete(id)
     void terminal.detail.return?.()
-    for (const { stream } of terminal.plans.values()) void stream.return?.()
+    const streamsLeft = [...terminal.plans.values()]
+    // Emptied first, so the ending streams report nothing about a closed terminal.
+    terminal.plans.clear()
+    for (const { stream } of streamsLeft) void stream.return?.()
     emit({ type: "companion/closed", key })
   }
 
