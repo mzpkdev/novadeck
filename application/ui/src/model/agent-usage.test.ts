@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test"
-import { usageBadge, usageDetail } from "./agent-usage"
+import { nextReset, usageBadge, usageDetail } from "./agent-usage"
 import type { AgentUsage, TerminalMetadata } from "./types"
 
 const terminal = (usage?: AgentUsage): TerminalMetadata => ({
@@ -43,6 +43,11 @@ describe("an agent's usage", () => {
         "7d limit: 10% used",
       ].join("\n"),
     )
+  })
+
+  it("names when the soonest window still to reset does", () => {
+    expect(nextReset(terminal(codex), 0)).toBe(10_000)
+    expect(nextReset(terminal(codex), 20_000)).toBeUndefined()
   })
 
   it("shows nothing without usage", () => {

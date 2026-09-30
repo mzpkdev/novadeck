@@ -85,3 +85,12 @@ export const usageDetail = (
   }
   return lines.length > 0 ? lines.join("\n") : undefined
 }
+
+// When the soonest rate-limit window still to reset does, so a view can show it reset
+// though the agent reports nothing new; undefined without one.
+export const nextReset = (terminal: TerminalMetadata, now = Date.now()): number | undefined => {
+  const times = (usageOf(terminal)?.limits ?? [])
+    .map(({ resetsAt }) => resetsAt)
+    .filter((at): at is number => at !== null && at > now)
+  return times.length > 0 ? Math.min(...times) : undefined
+}

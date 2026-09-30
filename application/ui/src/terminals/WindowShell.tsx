@@ -12,11 +12,12 @@ import {
 import { useRef, type ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
-import { usageBadge, usageDetail } from "../model/agent-usage"
+import { nextReset, usageBadge, usageDetail } from "../model/agent-usage"
 import { attentionText, terminalPhase } from "../model/terminal-ending"
 import type { TerminalMetadata, WindowedView } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
+import { useRenderAt } from "./use-render-at"
 
 export type MinimizeControls = {
   minimized: boolean
@@ -99,6 +100,7 @@ export const WindowShell = ({
   const headerTap = useRef<{ x: number; y: number; time: number; rename: boolean } | null>(null)
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
+  useRenderAt(nextReset(terminal))
   const usage = usageBadge(terminal)
   const headerDoubleAction = onFlyTo
   return (
