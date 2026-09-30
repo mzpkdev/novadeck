@@ -90,9 +90,12 @@ const secretNames = [
   /^\.git-credentials$/i,
   /^\.npmrc$/i,
   /^\.pypirc$/i,
+  /^\.pgpass$/i,
   /^credentials(\.json)?$/i,
-  /^id_(rsa|dsa|ecdsa|ed25519)$/i,
-  /\.(pem|key|p12|pfx|keystore|jks)$/i,
+  /^secrets?(\..*)?$/i,
+  /^service-account.*\.json$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)(_[^.]*)?$/i,
+  /\.(pem|key|p12|pfx|keystore|jks|tfstate)$/i,
 ]
 const secret = (path: string): boolean =>
   path.split(sep).some((part) => secretFolders.has(part)) ||
@@ -178,14 +181,17 @@ export const capture = async (
   const resolved = await Promise.all(
     place.folders.map((folder) => (folder === undefined ? undefined : real(folder))),
   )
-  // A project in the home folder itself would make all of it showable.
+  // A project in the home folder itself, or in a folder holding it, would make all of
+  // it showable.
+  const holdsHome = (folder: string): boolean =>
+    home !== undefined && (folder === home || inside(folder, home))
   const folders = resolved.filter(
-    (folder): folder is string => folder !== undefined && folder !== home,
+    (folder): folder is string => folder !== undefined && !holdsHome(folder),
   )
   if (resolved.includes(path)) return failure("That's a folder; only files can be shown.")
   if (!folders.some((folder) => inside(folder, path)))
     return failure(
-      resolved.some((folder) => folder !== undefined && folder === home)
+      resolved.some((folder) => folder !== undefined && holdsHome(folder))
         ? "This terminal's project is the home folder; NovaDeck shows files only from a project folder."
         : "That file is outside this project.",
     )

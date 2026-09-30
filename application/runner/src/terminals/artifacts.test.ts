@@ -65,10 +65,10 @@ describe("what an agent may show", () => {
   })
 
   it("is nothing outside them, even through a symlink inside", async ({ fixture }) => {
-    writeFileSync(join(fixture.outside, "secret.txt"), "secret\n")
-    symlinkSync(join(fixture.outside, "secret.txt"), join(fixture.project, "link.txt"))
+    writeFileSync(join(fixture.outside, "notes.txt"), "notes\n")
+    symlinkSync(join(fixture.outside, "notes.txt"), join(fixture.project, "link.txt"))
     const outside = { ok: false, reason: "That file is outside this project." }
-    await expect(capture({ path: "../outside/secret.txt" }, fixture.place)).resolves.toEqual(
+    await expect(capture({ path: "../outside/notes.txt" }, fixture.place)).resolves.toEqual(
       outside,
     )
     await expect(capture({ path: "link.txt" }, fixture.place)).resolves.toEqual(outside)
@@ -286,6 +286,13 @@ describe("what an agent may not show", () => {
       reason:
         "This terminal's project is the home folder; NovaDeck shows files only from a project folder.",
     })
+  })
+
+  it("is anything, when the project is a folder holding the home folder", async ({ fixture }) => {
+    writeFileSync(join(fixture.project, "a.ts"), "a\n")
+    mkdirSync(join(fixture.project, "home"))
+    const place: Place = { ...fixture.place, home: join(fixture.project, "home") }
+    await expect(capture({ path: "a.ts" }, place)).resolves.toMatchObject({ ok: false })
   })
 
   it("is a file that often holds secrets, anywhere in the project", async ({ fixture }) => {
