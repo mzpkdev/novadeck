@@ -284,7 +284,8 @@ written over it. A revision must change whenever the text does, so derive it fro
 content (a hash), not a timestamp: two writes in one tick would otherwise share one. A
 backend watching the file may report the UI's own save back as `plan/changed`; it must
 carry the revision the save answered with, and the UI takes it as its own. A save that
-fails is tried again, less often each time, and the plan shows it isn't saved yet. The
+fails, or goes unanswered for 20 seconds, is tried again, less often each time, and the
+plan shows it isn't saved yet until it is, or until there's nothing left to save. The
 file keeps its line breaks when it uses one kind throughout; a mixed file saves as LF.
 
 ### Connecting the runner

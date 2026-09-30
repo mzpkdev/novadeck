@@ -154,6 +154,36 @@ describe("companion store", () => {
     expect(plan(actions)).toMatchObject({ unsaved: false, revision: "2" })
   })
 
+  it("stops saying a plan isn't saved once there's nothing left to save", async () => {
+    const { companions, saves } = backend()
+    const actions = companionActions(companions, key)
+    actions.edit("root", `${first}No blog.\n`, [])
+    actions.flush("root")
+    saves[0]!.fail()
+    await settle()
+    expect(plan(actions).unsaved).toBe(true)
+    actions.edit("root", first, [])
+    actions.flush("root")
+    expect(plan(actions).unsaved).toBe(false)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(saves).toHaveLength(1)
+  })
+
+  it("counts a save that never answers as failed, and ignores its late answer", async () => {
+    const { companions, saves } = backend()
+    const actions = companionActions(companions, key)
+    actions.edit("root", `${first}No blog.\n`, [])
+    actions.flush("root")
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(plan(actions).unsaved).toBe(true)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(saves).toHaveLength(2)
+    saves[0]!.answer({ saved: true, revision: "late" })
+    saves[1]!.answer({ saved: true, revision: "2" })
+    await settle()
+    expect(plan(actions)).toMatchObject({ unsaved: false, revision: "2" })
+  })
+
   it("saves once typing pauses", async () => {
     const { companions, saves } = backend()
     const actions = companionActions(companions, key)

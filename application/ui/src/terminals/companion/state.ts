@@ -243,14 +243,13 @@ const saveNow = (session: Session, key: CompanionKey, ref: string): void => {
 // The user's edits reach the file one save at a time. A save the file refused, having
 // changed since, merges like any rewrite, and what's left of the edits goes again. A
 // save that failed is tried again, less often each time, and the plan says so.
+// How long a save may go unanswered before it counts as failed and is tried again.
+const saveTimeout = 20_000
+
 const persist = (session: Session, key: CompanionKey, ref: string): void => {
   const id = planId(key, ref)
   const plan = planIn(session, key, ref)
-  if (session.saving.has(id) || !plan || plan.text === plan.base) return
-  const sent = plan.text
-  const basedOn = plan.revision
-  session.saving.set(id, sent)
-  const text = plan.eol === "\n" ? sent : sent.replaceAll("\n", plan.eol)
+  if (session.saving.has(id) || !plan) return
   const mark = (unsaved: boolean): void => {
     change(session, key, (pane) =>
       withPlan(pane, ref, (current) =>
@@ -258,48 +257,66 @@ const persist = (session: Session, key: CompanionKey, ref: string): void => {
       ),
     )
   }
-  session.companions.save(key, ref, text, basedOn).then(
-    async (result) => {
-      session.saving.delete(id)
-      session.failures.delete(id)
-      mark(false)
-      const pending = session.pending.get(id)
-      session.pending.delete(id)
-      if (result.saved) {
-        change(session, key, (pane) =>
-          withPlan(pane, ref, (current) =>
-            current.revision === basedOn
-              ? { ...current, base: sent, revision: result.revision }
-              : current,
-          ),
-        )
-        // A rewrite that came meanwhile was written over this save.
-        if (pending) await revise(session, key, pending)
-      } else await revise(session, key, result.current)
-      persist(session, key, ref)
-    },
-    () => {
-      session.saving.delete(id)
-      const failures = (session.failures.get(id) ?? 0) + 1
-      session.failures.set(id, failures)
-      mark(true)
-      // A rewrite that came meanwhile applies now, over the base the file still has.
-      const pending = session.pending.get(id)
-      session.pending.delete(id)
-      if (pending) void revise(session, key, pending)
-      clearTimeout(session.waiting.get(id))
-      session.waiting.set(
-        id,
-        setTimeout(
-          () => {
-            session.waiting.delete(id)
-            persist(session, key, ref)
-          },
-          Math.min(30_000, 1000 * 2 ** failures),
+  // Nothing left to save, as when the user undid the edit or the agent wrote the same.
+  if (plan.text === plan.base) {
+    session.failures.delete(id)
+    if (plan.unsaved) mark(false)
+    return
+  }
+  const sent = plan.text
+  const basedOn = plan.revision
+  session.saving.set(id, sent)
+  const text = plan.eol === "\n" ? sent : sent.replaceAll("\n", plan.eol)
+  // Only this attempt's answer counts: one that comes after it timed out is ignored.
+  let answered = false
+  const settleAttempt = (): boolean => {
+    if (answered) return false
+    answered = true
+    clearTimeout(timer)
+    session.saving.delete(id)
+    return true
+  }
+  const failed = (): void => {
+    if (!settleAttempt()) return
+    const failures = (session.failures.get(id) ?? 0) + 1
+    session.failures.set(id, failures)
+    mark(true)
+    // A rewrite that came meanwhile applies now, over the base the file still has.
+    const pending = session.pending.get(id)
+    session.pending.delete(id)
+    if (pending) void revise(session, key, pending)
+    clearTimeout(session.waiting.get(id))
+    session.waiting.set(
+      id,
+      setTimeout(
+        () => {
+          session.waiting.delete(id)
+          persist(session, key, ref)
+        },
+        Math.min(30_000, 1000 * 2 ** failures),
+      ),
+    )
+  }
+  const timer = setTimeout(failed, saveTimeout)
+  session.companions.save(key, ref, text, basedOn).then(async (result) => {
+    if (!settleAttempt()) return
+    session.failures.delete(id)
+    mark(false)
+    const pending = session.pending.get(id)
+    session.pending.delete(id)
+    if (result.saved) {
+      change(session, key, (pane) =>
+        withPlan(pane, ref, (current) =>
+          current.revision === basedOn
+            ? { ...current, base: sent, revision: result.revision }
+            : current,
         ),
       )
-    },
-  )
+      // A rewrite that came meanwhile was written over this save.
+      if (pending) await revise(session, key, pending)
+    } else await revise(session, key, result.current)
+    persist(session, key, ref)
+  }, failed)
 }
 
 // The plan's file changed: the agent rewrote it over the file as the user left it. Its
