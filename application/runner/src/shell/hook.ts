@@ -25,15 +25,17 @@ const token = env.NOVADECK_REPORT_TOKEN
 // the person's own status line: its output is what this hook prints.
 const statusLine = agent === "claude" && event === "StatusLine"
 let output = ""
-// The person's own status line while it runs, and what it has printed so far.
+// The person's own status line, what it has printed so far, and whether its output ended.
 let own
 let printed = ""
+let ownEnded = false
 let finished = false
 const done = () => {
   if (finished) return
   finished = true
-  if (own && own.exitCode === null && own.signalCode === null) {
-    // Out of time: show what it printed, and end it with whatever it started.
+  if (own && !ownEnded) {
+    // Out of time, or a process it started still holds its output: show what it printed,
+    // and end it with whatever it started.
     output = printed.slice(0, 65_536)
     try {
       process.kill(-own.pid, "SIGTERM")
@@ -130,8 +132,14 @@ if (!terminalId || !endpoint || !token || !["claude", "codex", "agy"].includes(a
       child.stdout.on("data", (chunk) => {
         if (printed.length < 65_536) printed += chunk
       })
-      child.on("error", () => finish(""))
-      child.on("close", () => finish(printed.slice(0, 65_536)))
+      child.on("error", () => {
+        ownEnded = true
+        finish("")
+      })
+      child.on("close", () => {
+        ownEnded = true
+        finish(printed.slice(0, 65_536))
+      })
       child.stdin.on("error", () => {})
       child.stdin.end(input)
     } catch {

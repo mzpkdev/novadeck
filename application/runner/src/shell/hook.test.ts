@@ -249,6 +249,28 @@ describe("agent hook", () => {
     15_000,
   )
 
+  it.skipIf(process.platform === "win32")(
+    "cuts off a status line whose background process holds its output",
+    async ({ fixture }) => {
+      const home = mkdtempSync(join(tmpdir(), "novadeck-claude-home-"))
+      writeFileSync(
+        join(home, "settings.json"),
+        JSON.stringify({
+          statusLine: { type: "command", command: "cat >/dev/null; (sleep 30 &); echo bg" },
+        }),
+      )
+      const printed = await fixture.run(
+        "claude",
+        { session_id: session, cwd: home },
+        { CLAUDE_CONFIG_DIR: home },
+        "StatusLine",
+      )
+      rmSync(home, { recursive: true, force: true })
+      expect(printed.trim()).toBe("bg")
+    },
+    15_000,
+  )
+
   it("shows no status line of its own when the person has none", async ({ fixture }) => {
     const home = mkdtempSync(join(tmpdir(), "novadeck-claude-home-"))
     const printed = await fixture.run(
