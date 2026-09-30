@@ -171,15 +171,15 @@ export const createHarnesses = (
       const install = await installs()
       return install ? harnesses[agent].connected(install(agent)) : false
     },
-    /** Whether a connected harness needs its shims first on NovaDeck's shells' PATH. */
-    shims: async (): Promise<boolean> => {
+    /** The connected harnesses whose shims NovaDeck's shells put first on PATH. */
+    shims: async (): Promise<AgentName[]> => {
       const install = await installs()
-      if (!install) return false
+      if (!install) return []
       const shimmed = agents.filter((agent) => harnesses[agent].shims)
       const connected = await Promise.all(
         shimmed.map((agent) => harnesses[agent].connected(install(agent))),
       )
-      return connected.includes(true)
+      return shimmed.filter((_, index) => connected[index])
     },
     list: async (): Promise<AgentIntegration[]> => {
       const install = await installs()

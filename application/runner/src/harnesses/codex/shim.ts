@@ -28,6 +28,8 @@ if [ -z "$novadeck_real" ]; then
   exit 127
 fi
 [ -n "\${NOVADECK_TERMINAL_ID:-}" ] || exec "$novadeck_real" "$@"
+# Only while Codex is connected: NovaDeck's shells name the harnesses whose shims apply.
+case " \${NOVADECK_SHIMS:-} " in *" codex "*) ;; *) exec "$novadeck_real" "$@" ;; esac
 for novadeck_arg in "$@"; do
   case $novadeck_arg in
     agents | --remote | --remote=* | --no-daemon) exec "$novadeck_real" "$@" ;;
@@ -50,6 +52,8 @@ if not defined novadeck_real (
   exit /b 9009
 )
 if not defined NOVADECK_TERMINAL_ID goto plain
+rem Only while Codex is connected: NovaDeck's shells name the harnesses whose shims apply.
+echo " %NOVADECK_SHIMS% " | findstr /c:" codex " >nul || goto plain
 for %%a in (%*) do (
   if /i "%%~a"=="agents" goto plain
   if /i "%%~a"=="--remote" goto plain
