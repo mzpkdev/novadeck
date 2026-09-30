@@ -26,9 +26,12 @@ import {
   addNote,
   caretInNote,
   emptyNoteRemovals,
+  inNoteText,
   leaveNote,
   noteClose,
   noteIcon,
+  noteInput,
+  noteSafe,
   noteLabel as noteMark,
   noteOpen,
 } from "./notes"
@@ -271,6 +274,8 @@ const agentMarks = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 })
 
+const addNoteShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘⌥M" : "Ctrl+Alt+M"
+
 class AddNoteMarker extends GutterMarker {
   constructor(readonly heading: number) {
     super()
@@ -283,7 +288,7 @@ class AddNoteMarker extends GutterMarker {
     button.className = "cm-plan-add-note"
     // Headings sit lower in their taller lines; the marker follows their text.
     if (this.heading) button.dataset.heading = String(this.heading)
-    button.title = "Add a note"
+    button.title = `Add a note (${addNoteShortcut})`
     button.setAttribute("aria-label", "Add a note")
     button.append(noteIcon())
     return button
@@ -366,8 +371,32 @@ const dropEmptyNotes = ViewPlugin.fromClass(
   },
 )
 
+// Text typed or pasted into a note stays one line with no `-->` in it.
+const safeNoteInput = [
+  EditorView.inputHandler.of((view, from, to, text) => {
+    const change = noteInput(view.state.doc, from, to, text)
+    if (!change) return false
+    view.dispatch({
+      changes: { from: change.from, to: change.to, insert: change.insert },
+      selection: EditorSelection.cursor(change.caret),
+      userEvent: "input.type",
+    })
+    return true
+  }),
+  EditorView.clipboardInputFilter.of((text, state) =>
+    inNoteText(state.doc, state.selection.main.head) ? noteSafe(text) : text,
+  ),
+]
+
+// The keyboard's way to the note button: a note under the caret's line.
+const addNoteHere = (view: EditorView): boolean => {
+  addNote(view, view.state.doc.lineAt(view.state.selection.main.head).from)
+  return true
+}
+
 export const livePreview = [
   clickIntoNotes,
+  safeNoteInput,
   dropEmptyNotes,
   preview,
   tables,
@@ -379,6 +408,7 @@ export const livePreview = [
     keymap.of([
       { key: "Backspace", run: removeEmptyNote },
       { key: "Enter", run: finishNote },
+      { key: "Mod-Alt-m", run: addNoteHere },
     ]),
   ),
 ]

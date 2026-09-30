@@ -73,4 +73,16 @@ describe("plan editor sync", () => {
       expect(written).toContain("confident grotesk")
     })
   })
+
+  context("when the file doesn't end with a line break", () => {
+    it("keeps a line added after the last one on its own line", () => {
+      expect(merge("a\nb", "a\nb user", "a\nb\nc").text).toBe("a\nb user\nc")
+      expect(merge("a\nb", "a\nb\nuser", "a\nb\nagent").text).toBe("a\nb\nuser\nagent")
+    })
+
+    it("ends as the agent left it when it changed that, else as the user did", () => {
+      expect(merge("a\nb", "a\nb", "a\nb\n").text).toBe("a\nb\n")
+      expect(merge("a\nb\n", "a\nb", "a\nc\n").text).toBe("a\nc")
+    })
+  })
 })

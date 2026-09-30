@@ -52,21 +52,30 @@ export const lineChanges = (before: string, after: string): ChangeSet => {
 
 const textOf = (value: string): Text => Text.of(value.split("\n"))
 
+// A last line without its line break merges as if it had one, so a line either side adds
+// after it doesn't join it.
+const breaks = (text: string): boolean => text.endsWith("\n")
+const ended = (text: string): string => (text === "" || text.endsWith("\n") ? text : `${text}\n`)
+
 // The agent wrote `theirs` over `base`, while the file had become `ours`. Its changes
-// apply on top of the user's, and the marks cover what it wrote.
+// apply on top of the user's, and the marks cover what it wrote. The file ends with a
+// line break as the agent left it, if it changed that, or else as the user did.
 export const merge = (
   base: string,
   ours: string,
   theirs: string,
 ): { text: string; marks: Mark[]; changes: number } => {
-  const apply = lineChanges(base, theirs).map(lineChanges(base, ours))
+  const endsWithBreak = breaks(theirs) !== breaks(base) ? breaks(theirs) : breaks(ours)
+  const apply = lineChanges(ended(base), ended(theirs)).map(lineChanges(ended(base), ended(ours)))
+  const merged = apply.apply(textOf(ended(ours))).toString()
+  const text = endsWithBreak || !breaks(merged) ? merged : merged.slice(0, -1)
   const marks: Mark[] = []
   let changes = 0
   apply.iterChanges((_fromA, _toA, from, to) => {
     changes++
-    if (to > from) marks.push({ from, to })
+    if (Math.min(to, text.length) > from) marks.push({ from, to: Math.min(to, text.length) })
   })
-  return { text: apply.apply(textOf(ours)).toString(), marks, changes }
+  return { text, marks, changes }
 }
 
 // The agent read NovaDeck's notes, applied them, and removed each one, with the line it

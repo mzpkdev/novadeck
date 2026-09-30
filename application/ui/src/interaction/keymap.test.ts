@@ -180,8 +180,9 @@ describe("keymap", () => {
           ).toEqual([])
         })
 
-        it("leaves them to inputs, dialogs and modified presses", () => {
+        it("leaves them to inputs, companion panes, dialogs and modified presses", () => {
           expect(keydown(platform, { key: "ArrowDown", target: terminalInput })).toEqual([])
+          expect(keydown(platform, { key: "ArrowDown", target: { companion: true } })).toEqual([])
           expect(keydown(platform, { key: "ArrowDown" }, { state: { dialog: true } })).toEqual([])
           expect(keydown(platform, { key: "ArrowDown", ctrlKey: true })).toEqual([])
           expect(keydown(platform, { key: "ArrowDown", shiftKey: true })).toEqual([])

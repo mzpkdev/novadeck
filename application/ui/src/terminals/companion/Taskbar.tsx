@@ -23,26 +23,28 @@ const PlanThumb = ({ plan, title }: { plan: PlanState; title: string }): React.J
   </span>
 )
 
-// A taskbar slot: its icon, the peek above it, and its menu, when it has one.
+// A taskbar slot: its icon, the peek above it, and its menu, which is also the
+// keyboard's way to everything the peek offers.
 const slot = (
   key: string,
+  label: string,
   items: ContextMenuItem[],
   button: React.ReactElement,
   peek: React.ReactNode,
-): React.JSX.Element => {
-  const body = (
-    <span className="plan-tb-slot" key={key}>
-      <HoverCard trigger={button} className="plan-tb-peek">
-        {peek}
-      </HoverCard>
-    </span>
-  )
-  return items.length ? (
-    <ContextMenu key={key} label={`${key} actions`} items={items} trigger={body} />
-  ) : (
-    body
-  )
-}
+): React.JSX.Element => (
+  <ContextMenu
+    key={key}
+    label={`${label} actions`}
+    items={items}
+    trigger={
+      <span className="plan-tb-slot">
+        <HoverCard trigger={button} className="plan-tb-peek">
+          {peek}
+        </HoverCard>
+      </span>
+    }
+  />
+)
 
 // The pane's taskbar along the terminal's bottom: the plan, then what else its agent
 // showed, an icon each, images grouped. Hover peeks, click opens or hides, right-click
@@ -99,12 +101,16 @@ export const Taskbar = ({
       aria-label={`What ${file.agent} showed you`}
       // Opening leaves focus here, so Escape hides the pane from here too.
       onKeyDown={(event) => {
+        // Keys from its menus and peeks bubble here through React's portals; theirs is
+        // their own Escape.
         if (event.key !== "Escape" || !open) return
+        if (!event.currentTarget.contains(event.target as Node)) return
         event.stopPropagation()
         companion.update(closePlan)
       }}
     >
       {slot(
+        "plan",
         "Plan",
         menu(planTab, false),
         <button
@@ -136,6 +142,7 @@ export const Taskbar = ({
           const { artifact } = entry
           const Icon = kindIcons[artifact.kind]
           return slot(
+            artifact.id,
             artifact.name,
             menu(artifact.id, true),
             <button
@@ -154,8 +161,20 @@ export const Taskbar = ({
         const fresh = images.some((shown) => shown.fresh)
         const current = images.find((shown) => showing(shown.id))
         return slot(
+          "images",
           "Images",
-          [],
+          images.flatMap((image) => [
+            {
+              value: `open-${image.id}`,
+              label: `Open ${image.name}`,
+              onSelect: () => companion.update((state) => openTab(state, image.id)),
+            },
+            {
+              value: `dismiss-${image.id}`,
+              label: `Dismiss ${image.name}`,
+              onSelect: () => companion.update((state) => dismiss(state, image.id)),
+            },
+          ]),
           <button
             className="plan-tb-item"
             data-state={fresh ? "new" : current ? "open" : "seen"}

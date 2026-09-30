@@ -183,4 +183,11 @@ describe("plan table row notes", () => {
       expect(after.rows).toHaveLength(2)
     })
   })
+
+  context("when a line with a pipe is underlined", () => {
+    it("reads a heading, not a table, unless the underline has a cell for each column", () => {
+      expect(findTables("Use `a | b` here\n---\n")).toEqual([])
+      expect(findTables("| a | b |\n| --- |\n| c | d |\n")).toEqual([])
+    })
+  })
 })

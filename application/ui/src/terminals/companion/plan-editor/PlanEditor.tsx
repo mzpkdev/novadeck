@@ -1,12 +1,13 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
 import { Language, LanguageSupport, defineLanguageFacet } from "@codemirror/language"
-import { Annotation, EditorState } from "@codemirror/state"
+import { Annotation, EditorState, Transaction } from "@codemirror/state"
 import { EditorView, keymap } from "@codemirror/view"
 import { GFM, parser } from "@lezer/markdown"
 import { useEffect, useLayoutEffect, useRef } from "react"
 
 import type { Mark } from "../state"
 import { livePreview, setMarks } from "./live-preview"
+import { emptyNoteRemovals } from "./notes"
 import { lineChanges } from "./sync"
 
 // Markdown with GitHub's tables and task lists, and nothing embedded: plans don't need
@@ -70,9 +71,16 @@ export const PlanEditor = ({
       jumpTo: (at) =>
         editor.dispatch({ effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 24 }) }),
     })
-    return () => editor.destroy()
+    return () => {
+      // Closing the pane leaves no empty note behind: none of the editor's updates follow.
+      const removals = emptyNoteRemovals(editor.state.doc, null)
+      if (removals.length)
+        latest.current.onChange(editor.state.update({ changes: removals }).state.doc.toString())
+      editor.destroy()
+    }
   }, [])
-  // The file changed outside the editor: apply the difference, keeping the cursor.
+  // The file changed outside the editor: apply the difference, keeping the cursor. It
+  // isn't the user's to undo: undoing it would only write the old plan back.
   useEffect(() => {
     const editor = view.current
     if (!editor) return
@@ -81,7 +89,7 @@ export const PlanEditor = ({
     editor.dispatch({
       changes: lineChanges(doc, text),
       effects: setMarks.of(marks),
-      annotations: fromAgent.of(true),
+      annotations: [fromAgent.of(true), Transaction.addToHistory.of(false)],
     })
   }, [text, marks])
   return <div ref={host} className="plan-editor nodrag nopan nowheel" />

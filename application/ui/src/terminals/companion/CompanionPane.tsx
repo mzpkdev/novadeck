@@ -95,7 +95,9 @@ export const CompanionPane = ({
               <span>
                 v{plan.revision + 1} · {plan.revision ? "updated just now" : "written 2 min ago"}
               </span>
-              {marks.length > 0 && (
+              {/* The editor keeps the highlights through the user's edits, so the toggle
+                  stays too, as long as the latest revision wrote something. */}
+              {plan.marks.length > 0 && (
                 <button
                   className="plan-changes-toggle"
                   aria-pressed={plan.showChanges}

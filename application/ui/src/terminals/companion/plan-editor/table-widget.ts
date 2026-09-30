@@ -210,6 +210,8 @@ class TableWidget extends WidgetType {
           left = false
           return
         }
+        // The table was rewritten under the note, which went with it.
+        if (!wrapper.isConnected) return
         save()
       })
       notes[row] = input
@@ -344,6 +346,9 @@ class TableWidget extends WidgetType {
             left = false
             return
           }
+          // The agent rewrote the table under the cell: its place is gone, and so is what
+          // was typed in it.
+          if (!wrapper.isConnected) return
           if (cell.value !== original) commit(view, at(), place, cell.value)
         })
         cells[rowIndex]!.push(cell)

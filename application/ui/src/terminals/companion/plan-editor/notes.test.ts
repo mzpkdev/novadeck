@@ -1,7 +1,7 @@
 import { Text } from "@codemirror/state"
 
 import { context, describe, expect, it } from "../../../test"
-import { caretInNote, emptyNoteRemovals, leaveNote } from "./notes"
+import { caretInNote, emptyNoteRemovals, leaveNote, noteInput, noteSafe } from "./notes"
 
 const doc = (value: string): Text => Text.of(value.split("\n"))
 const apply = (value: string, removals: { from: number; to: number }[]): string =>
@@ -66,5 +66,22 @@ describe("plan notes and Enter", () => {
 
   it("leaves other lines to the editor", () => {
     expect(leaveNote(doc(text), text.length)).toBeNull()
+  })
+})
+
+describe("plan notes and what's typed in them", () => {
+  const text = "<!-- novadeck: use a -->\nNext"
+  const end = text.indexOf(" -->")
+
+  it("keeps a note's comment closed when `-->` is typed in it", () => {
+    const change = noteInput(doc("<!-- novadeck: use a -- -->"), 23, 23, ">")!
+    expect(change.insert).toBe("use a ->")
+    expect(noteSafe("a --> b\nc")).toBe("a -> b c")
+    expect(noteSafe("--->")).toBe("->")
+  })
+
+  it("leaves ordinary typing, and text outside notes, to the editor", () => {
+    expect(noteInput(doc(text), end, end, " b")).toBeNull()
+    expect(noteInput(doc(text), text.length, text.length, "-->")).toBeNull()
   })
 })

@@ -95,7 +95,11 @@ export const findTables = (text: string): Table[] => {
     if (/^\s*```/.test(line)) fenced = !fenced
     const next = lines[index + 1]
     if (fenced || !line.includes("|") || next === undefined || !delimiterRow.test(next)) continue
-    const parsed = [rowOf(line, starts[index]!)]
+    const head = rowOf(line, starts[index]!)
+    // As in GFM, the delimiter row has a cell for each header cell; a lone `---` under a
+    // line with a pipe in it underlines a heading instead.
+    if (cellsOf(next, 0).length !== head.cells.length) continue
+    const parsed = [head]
     let last = index + 1
     // A note after the table is an HTML block, which ends it.
     while (

@@ -125,12 +125,14 @@ const gates: Record<
     !input.target.companion &&
     !environment.overlayOpen() &&
     !environment.tabInteraction(),
-  // Arrows move through terminals and views, except where a control uses them itself.
+  // Arrows move through terminals and views, except where a control or a companion pane
+  // (which scrolls, and moves through its own buttons) uses them itself.
   navigation: (input, state) =>
     !modified(input) &&
     !state.dialog &&
     !state.switcher &&
-    (input.target.viewSwitch || (!input.target.editing && !input.target.navigationControl)),
+    (input.target.viewSwitch ||
+      (!input.target.editing && !input.target.navigationControl && !input.target.companion)),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,

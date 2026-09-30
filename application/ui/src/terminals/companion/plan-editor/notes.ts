@@ -105,6 +105,36 @@ export const caretInNote = (doc: Text, pos: number): number => {
   return Math.min(Math.max(pos, note.body), note.close)
 }
 
+// A note's text as the comment around it allows: one line, and no `-->`, which would
+// end the comment early and spill the rest of the note into the plan.
+export const noteSafe = (text: string): string => {
+  let safe = text.replace(/\s*\n\s*/g, " ")
+  while (safe.includes("-->")) safe = safe.replaceAll("-->", "->")
+  return safe
+}
+
+// Typing into a note, kept safe: null when the text needs no change, or else the note's
+// whole text rewritten and where the caret goes.
+export const noteInput = (
+  doc: Text,
+  from: number,
+  to: number,
+  text: string,
+): { from: number; to: number; insert: string; caret: number } | null => {
+  const note = notesOn(doc, from).spans.find((span) => from >= span.body && to <= span.close)
+  if (!note) return null
+  const before = doc.sliceString(note.body, from)
+  const after = doc.sliceString(to, note.close)
+  const typed = noteSafe(before + text)
+  const insert = noteSafe(typed + after)
+  if (insert === before + text + after) return null
+  return { from: note.body, to: note.close, insert, caret: note.body + typed.length }
+}
+
+// Whether a position is in a note's text, between its hidden wrappers.
+export const inNoteText = (doc: Text, pos: number): boolean =>
+  notesOn(doc, pos).spans.some((span) => pos >= span.body && pos <= span.close)
+
 // Empty notes, with the line each had to itself, except one the caret is in: a note
 // opened and left empty is dropped.
 export const emptyNoteRemovals = (
