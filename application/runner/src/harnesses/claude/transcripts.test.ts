@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 import { describe, expect, it } from "../../test.js"
 import { transcripts } from "./transcripts.js"
@@ -77,7 +77,7 @@ describe("Claude Code's transcripts", () => {
     const root = "/home/user/.claude/projects/-p/s1.jsonl"
     await expect(transcripts.locate(root, "s1", null)).resolves.toBe(root)
     await expect(transcripts.locate(root, "s1", "a1b2")).resolves.toBe(
-      "/home/user/.claude/projects/-p/s1/subagents/agent-a1b2.jsonl",
+      join(dirname(root), "s1", "subagents", "agent-a1b2.jsonl"),
     )
     await expect(transcripts.locate(root, "s1", "../x")).resolves.toBeUndefined()
   })
