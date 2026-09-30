@@ -42,7 +42,11 @@ const count = (value: unknown): number | undefined =>
 const windows = { weekly: 10_080, daily: 1440 } as const
 
 // A confirmation is the one request Antigravity shows at a time, and says nothing of.
-const confirmation = { requestId: "confirmation", actor: null, toolName: "confirmation" } as const
+const confirmation = {
+  requestId: "confirmation",
+  actor: null,
+  toolName: "confirmation",
+} as const
 
 /**
  * Antigravity's status line: whether the agent works or waits on the person's
@@ -63,20 +67,15 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
       ...(cwd !== undefined && { cwd }),
     },
   ]
-  // Idle ends the turn however it ended, an Esc included; a turn's start is left to its
-  // hook, since it settles the confirmation this may be waiting on.
+  // Idle ends the turn however it ended, an Esc or a denial included. Working without a
+  // confirmation starts it again, settling any it waited on: a snapshot's hook may start
+  // after the next turn's, so neither holds for long against a wrong one.
   if (payload.agent_state === "idle")
     events.push({ type: "turn-ended", ...base, outcome: "completed" })
   else if (payload.tool_confirmation_pending === true)
     events.push({ type: "attention-requested", ...base, ...confirmation, kind: "permission" })
-  else if (typeof payload.agent_state === "string")
-    events.push({
-      type: "attention-resolved",
-      ...base,
-      ...confirmation,
-      loose: false,
-      outcome: "allowed",
-    })
+  else if (payload.agent_state === "working" || payload.agent_state === "tool_use")
+    events.push({ type: "turn-started", ...base })
   const window = (payload.context_window ?? {}) as Record<string, unknown>
   const capacity = count(window.context_window_size)
   const percent = count(window.used_percentage)
@@ -104,8 +103,8 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
   events.push({
     type: "telemetry-observed",
     ...base,
-    // Its share of the window counts what the model last read, as its tokens only do
-    // once a turn is over.
+    // Its share of the window, as it reports it: its token counts come only once a turn
+    // is over.
     ...(capacity !== undefined &&
       capacity >= 1 &&
       percent !== undefined && {

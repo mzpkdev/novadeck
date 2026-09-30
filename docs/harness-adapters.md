@@ -915,9 +915,10 @@ an action by typing guessed keys into a terminal.
       harness's optional `settings` step edits its user settings after a
       verified connect and before a disconnect: its status line becomes a
       command that hands the snapshot to NovaDeck's hook inside NovaDeck's
-      shells, then runs the person's own, saved beside NovaDeck's plugin until
-      disconnecting puts it back. Its snapshots give the agent's idle state
-      (ending a turn after an Esc or a denial), the pending confirmation, the
+      shells, then runs the person's own, which the command itself names, so
+      disconnecting puts it back from the settings alone. Its snapshots give
+      the agent's state (idle ends a turn after an Esc or a denial, working
+      starts one again), the pending confirmation, the
       context window's share in use, and each named quota window. Windows keeps
       the person's status line until the command is proven there.
    5. Planning signals.

@@ -5,9 +5,11 @@ import { join } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
 import { describe, expect, it as base } from "../../test.js"
+import { apply as applyActivity, started, summary } from "../activity.js"
+import type { ActivityEvent } from "../events.js"
 import type { Install } from "../harness.js"
 import { decode } from "./decode.js"
-import { ownStatusLineFile, statusLineCommand, statusLineSettings } from "./settings.js"
+import { statusLineCommand, statusLineSettings } from "./settings.js"
 
 const { payloads } = JSON.parse(
   readFileSync(join(import.meta.dirname, "fixtures", "statusline.probe.json"), "utf8"),
@@ -44,7 +46,7 @@ describe("Antigravity's status line, as captured", () => {
       evidence: "conversation-observed",
       cwd: "/home/user/project",
     })
-    expect(activity(working!)).toMatchObject([{ type: "attention-resolved", loose: false }])
+    expect(activity(working!)).toMatchObject([{ type: "turn-started" }])
     expect(activity(confirming!)).toEqual([
       {
         type: "attention-requested",
@@ -95,8 +97,59 @@ describe("Antigravity's status line, as captured", () => {
     })
     expect(JSON.stringify(decode(report(sparse)))).not.toContain("person@example.com")
   })
-})
 
+  it("keep a terminal's activity true to the agent, whatever order their hooks start in", () => {
+    const [, , , working, confirming, idle] = payloads
+    const binding = {
+      agent: "agy",
+      sessionId: working!.conversation_id as string,
+      instance: "7",
+    } as const
+    const run = (reports: [Report["payload"], number][]) =>
+      summary(
+        reports
+          .flatMap(([payload, seq]) => decode(report(payload, seq)))
+          .filter((event): event is ActivityEvent =>
+            ["turn-started", "turn-ended", "attention-requested", "attention-resolved"].includes(
+              event.type,
+            ),
+          )
+          .reduce((state, event) => applyActivity(state, binding, event) ?? state, started(0)),
+      )
+    expect(
+      run([
+        [working!, 1],
+        [confirming!, 2],
+      ]),
+    ).toEqual({
+      state: "working",
+      attention: { pending: 1, kind: "permission" },
+    })
+    expect(
+      run([
+        [working!, 1],
+        [confirming!, 2],
+        [idle!, 3],
+      ]),
+    ).toEqual({
+      state: "idle",
+      attention: { pending: 0, kind: null },
+    })
+    // An idle snapshot whose hook started late does not outlast the turn.
+    expect(
+      run([
+        [idle!, 2],
+        [working!, 3],
+      ]),
+    ).toMatchObject({ state: "working" })
+    expect(
+      run([
+        [working!, 3],
+        [idle!, 2],
+      ]),
+    ).toMatchObject({ state: "working" })
+  })
+})
 type Fixture = { root: string; install: Install; settings: string }
 
 const it = base.extend<{ fixture: Fixture }>({
@@ -112,7 +165,6 @@ const it = base.extend<{ fixture: Fixture }>({
   },
 })
 
-const { apply, revert } = statusLineSettings(() => "")
 const settingsOf = (fixture: Fixture) =>
   statusLineSettings(() => join(fixture.root, "antigravity-cli"))
 const read = (file: string) => JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>
@@ -122,9 +174,9 @@ describe("connecting Antigravity's status line", () => {
     fixture,
   }) => {
     writeFileSync(fixture.settings, JSON.stringify({ trustedWorkspaces: ["/w"] }))
-    const settings = settingsOf(fixture)
-    await settings.apply(fixture.install)
-    await settings.apply(fixture.install)
+    const { apply, revert } = settingsOf(fixture)
+    await apply(fixture.install)
+    await apply(fixture.install)
     expect(read(fixture.settings)).toEqual({
       trustedWorkspaces: ["/w"],
       statusLine: {
@@ -134,34 +186,52 @@ describe("connecting Antigravity's status line", () => {
         command: statusLineCommand(undefined),
       },
     })
-    await settings.revert(fixture.install)
+    await revert(fixture.install)
+    await revert(fixture.install)
     expect(read(fixture.settings)).toEqual({ trustedWorkspaces: ["/w"] })
   })
 
-  it("keeps the person's own status line running, and gives it back", async ({ fixture }) => {
-    const own = { type: "command", command: "echo mine", enabled: true, padding: 2 }
+  it("gives the person's own status line back from the settings alone", async ({ fixture }) => {
+    const own = { type: "command", command: "printf '%s' \"it's\"\n# mine", enabled: true }
     writeFileSync(fixture.settings, JSON.stringify({ statusLine: own }))
-    const settings = settingsOf(fixture)
-    await settings.apply(fixture.install)
+    const { apply, revert } = settingsOf(fixture)
+    await apply(fixture.install)
     expect(read(fixture.settings).statusLine).toEqual({
       ...own,
-      command: statusLineCommand("echo mine"),
+      command: statusLineCommand(own.command),
     })
-    await settings.revert(fixture.install)
-    expect(read(fixture.settings)).toEqual({ statusLine: own })
-    expect(() => readFileSync(ownStatusLineFile(fixture.install))).toThrow()
+    // Another NovaDeck connected it too; what the person changed meanwhile stays.
+    await apply({ ...fixture.install, plugin: join(fixture.root, "elsewhere") })
+    const connected = read(fixture.settings)
+    writeFileSync(
+      fixture.settings,
+      JSON.stringify({ statusLine: { ...(connected.statusLine as object), enabled: false } }),
+    )
+    await revert({ ...fixture.install, plugin: join(fixture.root, "elsewhere") })
+    expect(read(fixture.settings)).toEqual({ statusLine: { ...own, enabled: false } })
+    await revert(fixture.install)
+    expect(read(fixture.settings)).toEqual({ statusLine: { ...own, enabled: false } })
   })
 
-  it("leaves settings it cannot read as they are", async ({ fixture }) => {
+  it("leaves settings it cannot read as they are, and still disconnects", async ({ fixture }) => {
     writeFileSync(fixture.settings, "{ not json")
-    await expect(settingsOf(fixture).apply(fixture.install)).rejects.toThrow("not valid JSON")
+    const { apply, revert } = settingsOf(fixture)
+    await expect(apply(fixture.install)).rejects.toThrow("not valid settings")
+    await revert(fixture.install)
     expect(readFileSync(fixture.settings, "utf8")).toBe("{ not json")
   })
 
   it("leaves Windows as it is", async ({ fixture }) => {
+    const own = JSON.stringify({ statusLine: { type: "command", command: "echo mine" } })
+    writeFileSync(fixture.settings, own)
+    const { apply, revert } = settingsOf(fixture)
     await apply({ ...fixture.install, platform: "win32" })
+    expect(readFileSync(fixture.settings, "utf8")).toBe(own)
+    await apply(fixture.install)
     await revert({ ...fixture.install, platform: "win32" })
-    expect(() => readFileSync(fixture.settings)).toThrow()
+    expect(read(fixture.settings).statusLine).toMatchObject({
+      command: statusLineCommand("echo mine"),
+    })
   })
 })
 
@@ -182,5 +252,14 @@ describe.skipIf(process.platform === "win32")("NovaDeck's status line for Antigr
     rmSync(log)
     expect(run({ NOVADECK_HOOK: "" })).toBe(`{"A":1}\nit's mine\n`)
     expect(() => readFileSync(log)).toThrow()
+  })
+
+  it("stays quiet when NovaDeck's hook cannot run", ({ fixture }) => {
+    const result = spawnSync("sh", ["-c", statusLineCommand(undefined)], {
+      input: "{}",
+      encoding: "utf8",
+      env: { ...process.env, NOVADECK_HOOK: join(fixture.root, "missing") },
+    })
+    expect(result).toMatchObject({ status: 0, stdout: "" })
   })
 })
