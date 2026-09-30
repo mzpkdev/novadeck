@@ -1,13 +1,12 @@
 import { EditorSelection, type Line, type Text } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
-import { notePattern } from "../plan-content"
+import { noteClose, noteOpen, notePattern } from "../../../model/companion"
 import { findTables } from "./tables"
 
 // Notes as NovaDeck writes them into the plan, and the control that adds one.
 
-export const noteOpen = "<!-- novadeck: "
-export const noteClose = " -->"
+export { noteClose, noteOpen }
 
 // Lucide's message-square-plus, as the plan's other note controls use. Widgets are plain
 // DOM, so it's drawn here rather than through lucide-react.

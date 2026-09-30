@@ -1,12 +1,12 @@
 import { EditorState, Text } from "@codemirror/state"
 
 import { context, describe, expect, it } from "../../../test"
-import { samplePlans, toMarkdown } from "../plan-content"
+import planV1 from "./fixtures/plan-v1.md?raw"
+import planV2 from "./fixtures/plan-v2.md?raw"
 import { lineChanges, merge, resolveNotes } from "./sync"
 
-const plan = samplePlans["studio"]!
-const v1 = toMarkdown(plan.revisions[0]!)
-const v2 = toMarkdown(plan.revisions[1]!)
+const v1 = planV1
+const v2 = planV2
 const text = (value: string): Text => Text.of(value.split("\n"))
 const withNote = v1.replace(
   "warm ivory background.\n",

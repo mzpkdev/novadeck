@@ -2,11 +2,11 @@ import { FileText, Image } from "lucide-react"
 
 import { ContextMenu, type ContextMenuItem } from "../../ui-toolkit/ContextMenu"
 import { HoverCard } from "../../ui-toolkit/HoverCard"
-import { dismiss, pickFromGroup, planTab, slotsOf, type Shown } from "./artifacts"
 import { ArtifactThumb, kindIcons } from "./ArtifactViewer"
+import { dismiss, pickFromGroup, planTab, slotsOf, type Shown } from "./pane"
 import { Peek, type Indicator, type PeekEntry } from "./Peek"
-import { headingsOf, samplePlans, titleOf } from "./plan-content"
-import { closePlan, openTab, planActions, usePlan, type PlanState } from "./plan-state"
+import { headingsOf, titleOf } from "./plan-text"
+import { closePlan, openTab, type CompanionHandle, type PlanState } from "./state"
 
 const indicatorOf = (plan: PlanState, tab: string, fresh: boolean, open: boolean): Indicator =>
   fresh ? "new" : open && plan.tab === tab ? "open" : "seen"
@@ -48,33 +48,32 @@ const slot = (
 // showed, an icon each, images grouped. Hover peeks, click opens or hides, right-click
 // dismisses. Nothing opens on its own.
 export const Taskbar = ({
-  planId,
+  companion,
   trigger,
   open,
 }: {
-  planId: string
+  companion: CompanionHandle
   trigger: React.RefObject<HTMLButtonElement | null>
   open: boolean
 }): React.JSX.Element => {
-  const file = samplePlans[planId]!
-  const plan = usePlan(planId)
+  const { state: plan, plan: file } = companion
   const unread = plan.seen < plan.revision
   const showing = (tab: string): boolean => open && plan.tab === tab
   // Clicking what the pane is showing hides it, as a taskbar minimizes the active window.
   const activate = (tab: string): void =>
-    planActions.update(planId, (state) => (showing(tab) ? closePlan(state) : openTab(state, tab)))
+    companion.update((state) => (showing(tab) ? closePlan(state) : openTab(state, tab)))
   const menu = (tab: string, dismissable: boolean): ContextMenuItem[] => [
     {
       value: "open",
       label: "Open",
-      onSelect: () => planActions.update(planId, (state) => openTab(state, tab)),
+      onSelect: () => companion.update((state) => openTab(state, tab)),
     },
     ...(dismissable
       ? [
           {
             value: "dismiss",
             label: "Dismiss",
-            onSelect: () => planActions.update(planId, (state) => dismiss(state, tab)),
+            onSelect: () => companion.update((state) => dismiss(state, tab)),
           },
         ]
       : []),
@@ -88,8 +87,8 @@ export const Taskbar = ({
       icon: <Icon size={13} strokeWidth={1.5} />,
       preview: <ArtifactThumb artifact={artifact} />,
       state: indicatorOf(plan, artifact.id, artifact.fresh, open),
-      onOpen: () => planActions.update(planId, (state) => openTab(state, artifact.id)),
-      onDismiss: () => planActions.update(planId, (state) => dismiss(state, artifact.id)),
+      onOpen: () => companion.update((state) => openTab(state, artifact.id)),
+      onDismiss: () => companion.update((state) => dismiss(state, artifact.id)),
     }
   }
   return (
@@ -102,7 +101,7 @@ export const Taskbar = ({
       onKeyDown={(event) => {
         if (event.key !== "Escape" || !open) return
         event.stopPropagation()
-        planActions.update(planId, closePlan)
+        companion.update(closePlan)
       }}
     >
       {slot(
@@ -127,7 +126,7 @@ export const Taskbar = ({
               icon: <FileText size={13} strokeWidth={1.5} />,
               preview: <PlanThumb plan={plan} title={title} />,
               state: indicatorOf(plan, planTab, unread, open),
-              onOpen: () => planActions.update(planId, (state) => openTab(state, planTab)),
+              onOpen: () => companion.update((state) => openTab(state, planTab)),
             },
           ]}
         />,

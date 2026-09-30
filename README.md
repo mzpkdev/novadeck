@@ -315,10 +315,17 @@ a card per thing behind it, each a preview, its name and the same mark, with no
 copy. Click an icon or a card to open it, click the icon again (or press Escape) to
 hide the pane, and dismiss from a card's corner button or the icon's right-click. In
 “Build Studio”, type `show` to have Codex show the next thing, or `open` to play
-asking it to open it. The image, code and page viewers are mocked.
+asking it to open it. Files show without highlighting, and a page shows as a
+snapshot until the pane hosts a browser.
 
-The plans, their revisions, the skill's effect, terminal output and timing are
-hardcoded; no runner, filesystem, or real skill is connected. The editor and its
+The pane reads everything from the backend's optional `companions` capability
+(`model/companion.ts`): each agent terminal's plan and what it has shown, events as
+the agent revises its plan or shows something, and a way to save the user's edits
+back to the plan file. Only the content-preview demo implements it, with sample
+agents in `backend/demo/showcase/`: their plans as Markdown files, their artifacts,
+transcripts and replies, and a simulation of their timing and of the skill's
+effect. The runner doesn't implement it yet, so its terminals show no taskbar;
+connecting it means reporting the same from the agents' files. The editor and its
 merge code load when a plan first opens.
 Normal development and packaged builds keep their runner behavior.
 
@@ -388,11 +395,14 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `app/controller/`                                  | React glue: context, selector hook, route sync, keyboard dispatcher, effects.           |
 | `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.                   |
 | `backend/demo/`                                    | The demo adapter for tests and specs: sample projects and simulated terminals.          |
+| `backend/demo/showcase/`                           | The content preview's sample agents: plans, artifacts, and their simulated work.        |
 | `backend/runner/`                                  | The runner adapter: connection, seed from the runner, saves, and the xterm surface.     |
 | `model/`                                           | Pure domain: types, reducer, workspace store, seed, and layout rules in `layout/`.      |
+| `model/companion.ts`                               | The contract for agents' plans and artifacts, and the plan note format.                 |
 | `model/roster.ts`                                  | A session's terminals, their sidebar order, and their status.                           |
 | `model/layout/workspace-layout.ts`                 | Where each terminal sits and how big it is in each view.                                |
 | `terminals/`                                       | Terminal frame, tabs, rename state, and the recent-terminal switcher.                   |
+| `terminals/companion/`                             | A terminal's taskbar and companion pane; the plan editor is in `plan-editor/`.          |
 | `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                             |
 | `layouts/` (top level)                             | Helpers shared by views: view transitions, background gestures, visibility.             |
 | `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell state transitions.                   |

@@ -1,22 +1,23 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
+import type { Companions } from "../../model/companion"
 import type { ViewMode } from "../../model/types"
 import type { TerminalLayoutControls } from "../WindowShell"
-import { presentationOf, usePlan } from "./plan-state"
-import { PlanReader } from "./PlanReader"
+import { CompanionPane } from "./CompanionPane"
+import { presentationOf, useCompanion, type CompanionHandle } from "./state"
 import { Taskbar } from "./Taskbar"
 
-import "./plan.css"
+import "./companion.css"
 
 const clamp = (value: number): number => Math.min(0.7, Math.max(0.22, value))
 
 // Terminal left, plan right, inside the terminal's own window. The divider drags.
 const SplitPlan = ({
-  planId,
+  companion,
   view,
   children,
 }: {
-  planId: string
+  companion: CompanionHandle
   view: ViewMode
   children: ReactNode
 }): React.JSX.Element => {
@@ -58,7 +59,7 @@ const SplitPlan = ({
         }}
       />
       <div className="plan-split-reader nodrag nopan nowheel">
-        <PlanReader planId={planId} presentation="split" />
+        <CompanionPane companion={companion} presentation="split" />
       </div>
     </div>
   )
@@ -70,10 +71,10 @@ const attachedExtent = { right: 20 + 720, height: 560 }
 // A sheet hanging off the canvas node's right edge, so it pans and zooms with it. It is
 // positioned against the node, outside the window's clipping.
 const AttachedPlan = ({
-  planId,
+  companion,
   onReveal,
 }: {
-  planId: string
+  companion: CompanionHandle
   onReveal: TerminalLayoutControls["onReveal"]
 }): React.JSX.Element => {
   // Frame once as the sheet opens, not whenever the canvas hands over a new callback.
@@ -81,31 +82,34 @@ const AttachedPlan = ({
   useEffect(() => reveal.current?.(attachedExtent), [])
   return (
     <div className="plan-attached nodrag nopan nowheel">
-      <PlanReader planId={planId} presentation="attached" />
+      <CompanionPane companion={companion} presentation="attached" />
     </div>
   )
 }
 
-// UI-only plan review, in the terminal's own window or beside its canvas node.
-export const TerminalPlan = ({
-  planId,
+// A terminal's companion: its taskbar, and the pane it opens in the terminal's own
+// window or beside its canvas node.
+export const TerminalCompanion = ({
+  companions,
+  terminalId,
   view,
   onReveal,
   children,
   minimized,
   clipContent,
 }: {
-  planId: string
+  companions: Companions
+  terminalId: string
   view: ViewMode
   onReveal?: TerminalLayoutControls["onReveal"]
   children: ReactNode
   minimized?: boolean | undefined
   clipContent?: boolean | undefined
 }): React.JSX.Element => {
-  const plan = usePlan(planId)
+  const companion = useCompanion(companions, terminalId)
   const trigger = useRef<HTMLButtonElement>(null)
   const presentation = presentationOf(view)
-  const open = plan.open && !minimized
+  const open = companion.state.open && !minimized
   const wasOpen = useRef(open)
   // Opening leaves focus on the taskbar. Hiding the pane from inside it (Escape) would
   // drop focus with the pane, so it goes back to the taskbar.
@@ -123,14 +127,16 @@ export const TerminalPlan = ({
       inert={minimized}
     >
       {open && presentation === "split" ? (
-        <SplitPlan planId={planId} view={view}>
+        <SplitPlan companion={companion} view={view}>
           {children}
         </SplitPlan>
       ) : (
         children
       )}
-      <Taskbar planId={planId} trigger={trigger} open={open} />
-      {open && presentation === "attached" && <AttachedPlan planId={planId} onReveal={onReveal} />}
+      <Taskbar companion={companion} trigger={trigger} open={open} />
+      {open && presentation === "attached" && (
+        <AttachedPlan companion={companion} onReveal={onReveal} />
+      )}
     </div>
   )
 }

@@ -1,10 +1,11 @@
 import { gridColumns } from "../../model/layout/grid-placement"
-import { planTerminal } from "../../model/plan-agent"
 import { createTerminalState } from "../../model/state"
 import type { CanvasLayout, GridBreakpoint, GridLayouts, TerminalMetadata } from "../../model/types"
 import type { CreateBackend } from "../port"
 import { createDemoEngine, type DemoEngine } from "./engine"
 import { demoBackend } from "./index"
+import { authAgent, studioAgent } from "./showcase/agents"
+import { createShowcase } from "./showcase/simulation"
 
 // A UI-only workspace. The previews never start processes or request a runner.
 export const createContentDemo: CreateBackend = () => {
@@ -16,7 +17,6 @@ export const createContentDemo: CreateBackend = () => {
       process: "codex",
       state: "running",
       directory: "~/projects/studio",
-      plan: "studio",
     },
     {
       id: "03",
@@ -25,7 +25,6 @@ export const createContentDemo: CreateBackend = () => {
       process: "claude",
       state: "running",
       directory: "~/projects/studio",
-      plan: "auth",
     },
     {
       id: "02",
@@ -67,22 +66,22 @@ export const createContentDemo: CreateBackend = () => {
       ]
     }),
   )
-  // The agents' own prompts answer approval in their terminals; the plan preview
-  // follows what each plan's terminal is told.
-  const plans = new Map(
-    terminals.flatMap((terminal) => (terminal.plan ? [[terminal.id, terminal.plan]] : [])),
-  )
-  const base = createDemoEngine()
+  // The sample agents run in the first two terminals: they open with their own
+  // transcripts, answer what they're told, and report their plans and what they show.
+  const agents = { "01": studioAgent, "03": authAgent }
+  const showcase = createShowcase(agents)
+  const agentOf = (terminal: TerminalMetadata) => agents[terminal.id as keyof typeof agents]
+  const base = createDemoEngine((command, terminal) => agentOf(terminal)?.reply(command.trim()))
   const engine: DemoEngine = {
     ...base,
     run: (key, command) => {
       base.run(key, command)
-      const plan = plans.get(key.terminalId)
-      if (plan && command.trim()) planTerminal.update(() => ({ plan, input: command }))
+      if (command.trim()) showcase.told(key.terminalId, command)
     },
   }
   return {
-    ...demoBackend(engine),
+    ...demoBackend(engine, false, (terminal) => agentOf(terminal)?.transcript),
+    companions: showcase,
     seed: {
       projects: [
         {

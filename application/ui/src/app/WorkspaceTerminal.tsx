@@ -2,7 +2,7 @@ import { useCallback, useMemo, type ReactNode } from "react"
 
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
-import { TerminalPlan } from "../terminals/previews/TerminalPlan"
+import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
 import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
 import {
@@ -109,16 +109,17 @@ export const WorkspaceTerminal = ({
   // One shell element whatever runs, so only the body around the content changes.
   const renderWindow = (content: ReactNode): ReactNode => (
     <WindowShell {...frame}>
-      {terminal.plan ? (
-        <TerminalPlan
-          planId={terminal.plan}
+      {backend.companions?.terminals[terminal.id] ? (
+        <TerminalCompanion
+          companions={backend.companions}
+          terminalId={terminal.id}
           view={view}
           onReveal={onReveal}
           minimized={minimize?.minimized}
           clipContent={minimize?.clipContent}
         >
           {Body ? <Body>{content}</Body> : content}
-        </TerminalPlan>
+        </TerminalCompanion>
       ) : Body ? (
         <Body>{content}</Body>
       ) : (

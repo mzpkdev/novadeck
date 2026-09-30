@@ -1,5 +1,5 @@
 import { context, describe, expect, it } from "../../../test"
-import { samplePlans, toMarkdown } from "../plan-content"
+import planV1 from "./fixtures/plan-v1.md?raw"
 import {
   addColumn,
   addRow,
@@ -11,7 +11,7 @@ import {
   setRowNote,
 } from "./tables"
 
-const plan = toMarkdown(samplePlans["studio"]!.revisions[0]!)
+const plan = planV1
 const edit = (text: string, from: number, to: number, insert: string): string =>
   text.slice(0, from) + insert + text.slice(to)
 
@@ -36,7 +36,7 @@ describe("plan tables", () => {
     it("changes only that cell when one is edited", () => {
       const cell = table!.rows[1]![0]!
       const edited = edit(plan, cell.from, cell.to, cellSource("Landing"))
-      expect(edited).toBe(plan.replace("| Home |", "| Landing |"))
+      expect(edited).toBe(plan.replace("| Home    |", "| Landing    |"))
     })
   })
 

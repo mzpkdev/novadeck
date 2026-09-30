@@ -1,18 +1,17 @@
 import { lazy, Suspense, useRef } from "react"
 
+import { notePattern, notesIn } from "../../model/companion"
 import { ArtifactViewer } from "./ArtifactViewer"
-import { headingsOf, notePattern, notesIn, samplePlans } from "./plan-content"
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
+import { headingsOf } from "./plan-text"
 import {
   closePlan,
   currentMarks,
-  edit,
-  planActions,
   toggleChanges,
-  usePlan,
+  type CompanionHandle,
   type PlanPresentation,
   type PlanState,
-} from "./plan-state"
+} from "./state"
 
 // The editor loads when a plan first opens, so the workspace never pays for it.
 const PlanEditor = lazy(() =>
@@ -61,15 +60,14 @@ const PlanOutline = ({
 
 // A terminal's companion pane, wherever it is presented: its plan, edited where it's
 // read, or one of the other things its agent showed the user.
-export const PlanReader = ({
-  planId,
+export const CompanionPane = ({
+  companion,
   presentation,
 }: {
-  planId: string
+  companion: CompanionHandle
   presentation: PlanPresentation
 }): React.JSX.Element => {
-  const file = samplePlans[planId]!
-  const plan = usePlan(planId)
+  const { state: plan, plan: file } = companion
   const editor = useRef<PlanEditorHandle | null>(null)
   const marks = currentMarks(plan)
   const artifact = plan.artifacts.find((shown) => shown.id === plan.tab)
@@ -82,7 +80,7 @@ export const PlanReader = ({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation()
-          planActions.update(planId, closePlan)
+          companion.update(closePlan)
         }
       }}
     >
@@ -101,7 +99,7 @@ export const PlanReader = ({
                 <button
                   className="plan-changes-toggle"
                   aria-pressed={plan.showChanges}
-                  onClick={() => planActions.update(planId, toggleChanges)}
+                  onClick={() => companion.update(toggleChanges)}
                 >
                   <i aria-hidden="true" />
                   {plural(plan.changes, "change")} since you last read
@@ -124,7 +122,7 @@ export const PlanReader = ({
               <PlanEditor
                 text={plan.text}
                 marks={marks}
-                onChange={(text) => planActions.update(planId, (state) => edit(state, text))}
+                onChange={companion.edit}
                 onReady={(handle) => {
                   editor.current = handle
                 }}

@@ -11,48 +11,6 @@ export const TerminalOutput = ({
 }): React.JSX.Element => {
   const { directory } = terminal
   const agent = demoAgent(terminal)
-  if (terminal.plan === "studio")
-    return (
-      <>
-        <p className="text-muted">~/projects/studio · codex</p>
-        <p className="output-gap">
-          <strong>❯ Plan a small portfolio for Studio before we start building.</strong>
-        </p>
-        <div className="output-gap text-muted">
-          <p>✓ Reviewed the project structure</p>
-          <p>✓ Wrote plans/studio.md</p>
-        </div>
-        <p className="output-gap">The plan is ready.</p>
-        <p className="output-gap">
-          <strong>Implement this plan?</strong>{" "}
-          <span className="text-muted">y to approve · anything else to keep planning</span>
-        </p>
-        <p className="output-gap text-muted">
-          Demo: type show to have Codex show you something, or open to ask it to open it.
-        </p>
-      </>
-    )
-  if (terminal.plan === "auth")
-    return (
-      <>
-        <p className="text-muted">~/projects/studio · claude</p>
-        <p className="output-gap">
-          <strong>❯ Why does the mobile app log people out early? Plan a fix first.</strong>
-        </p>
-        <div className="output-gap text-muted">
-          <p>● Read server/auth.ts</p>
-          <p>● Read 3 route files</p>
-          <p>● Wrote ~/.claude/plans/refactor-auth.md</p>
-        </div>
-        <p className="output-gap">
-          Expiry is checked three different ways. I’ve written up a plan to consolidate it.
-        </p>
-        <p className="output-gap">
-          <strong>Would you like to proceed?</strong>{" "}
-          <span className="text-muted">y to approve · or tell Claude what to change</span>
-        </p>
-      </>
-    )
   if (agent)
     return (
       <AgentOutput

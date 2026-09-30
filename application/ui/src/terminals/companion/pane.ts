@@ -1,15 +1,7 @@
-// What an agent shows the user beside its terminal, besides its plan: an image, a file
-// from the project, a page in the preview browser. A terminal's companion pane keeps them
-// in the order they came, after the plan. The design study mocks their content.
+import type { Artifact } from "../../model/companion"
 
-export type ArtifactKind = "image" | "file" | "page"
-
-export type Artifact = {
-  readonly id: string
-  readonly kind: ArtifactKind
-  readonly name: string
-  readonly detail: string
-}
+// What a terminal's companion pane holds besides the plan: what its agent showed, in the
+// order it came, and which of it is open.
 
 // An artifact as the pane holds it: new until the user looks at it.
 export type Shown = Artifact & { readonly fresh: boolean; readonly at: string }
@@ -79,58 +71,3 @@ export const pickFromGroup = (companion: Companion, group: readonly Shown[]): Sh
 
 export const freshCount = (companion: Companion): number =>
   companion.artifacts.filter((shown) => shown.fresh).length
-
-// The design study's samples: what each sample agent has shown, and will show next.
-export const sampleArtifacts: Readonly<
-  Record<string, { readonly shown: readonly Artifact[]; readonly next: readonly Artifact[] }>
-> = {
-  studio: {
-    shown: [
-      { id: "hero", kind: "image", name: "hero.png", detail: "1600 × 900 PNG" },
-      { id: "about", kind: "image", name: "about.png", detail: "1600 × 900 PNG" },
-    ],
-    next: [
-      {
-        id: "home",
-        kind: "file",
-        name: "Home.tsx",
-        detail: "src/pages/Home.tsx · lines 12–24",
-      },
-      { id: "preview", kind: "page", name: "localhost:5173", detail: "Dev server preview" },
-      { id: "mobile", kind: "image", name: "home-mobile.png", detail: "390 × 844 PNG" },
-    ],
-  },
-  auth: { shown: [], next: [] },
-}
-
-export const nextArtifact = (planId: string, companion: Companion): Artifact | undefined =>
-  sampleArtifacts[planId]?.next.find(
-    (artifact) => !companion.artifacts.some((shown) => shown.id === artifact.id),
-  )
-
-// The mocked file: `src/pages/Home.tsx`, with the lines the agent pointed at.
-export const sampleFile = {
-  path: "src/pages/Home.tsx",
-  from: 12,
-  to: 24,
-  lines: [
-    'import { ProjectCard } from "../components/ProjectCard"',
-    'import { projects } from "../content/projects"',
-    "",
-    "export default function Home() {",
-    "  const featured = projects.slice(0, 3)",
-    "  return (",
-    "    <main>",
-    '      <Intro title="Careful work, made slowly." />',
-    '      <section aria-label="Selected work">',
-    "        {featured.map((project) => (",
-    "          <ProjectCard key={project.slug} project={project} />",
-    "        ))}",
-    "      </section>",
-    "      <Contact />",
-    "    </main>",
-    "  )",
-    "}",
-  ],
-  firstLine: 9,
-}
