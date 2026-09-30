@@ -25,7 +25,7 @@ import(workerData.entry)
 // A title a terminal program sets (OSC 0, 1 or 2), which the screen never draws; one
 // still arriving runs to the end of what came so far.
 // eslint-disable-next-line no-control-regex -- Terminal escape sequences.
-const title = /\u001b\][012];[^\u0007\u001b]*(?:\u0007|\u001b\\|$)/g
+const title = /\u001b\][012];[^\u0007\u001b]*(?:\u0007|\u001b\\|\u001b?$)/g
 
 const start = (database: string) => {
   const worker = new Worker(utility, {
@@ -85,8 +85,8 @@ describe("compiled desktop runner", () => {
           }
         })()
         // The typed echo differs from the output, so only the shell's answer matches. On
-        // Windows, cmd's title names the running command as it parses it, which ConPTY
-        // sends ahead of the drawn output; only drawn output counts.
+        // Windows, cmd's title likely names the running command as it parses it, which
+        // ConPTY may send ahead of the drawn output; only drawn output counts.
         await terminal.write(
           process.platform === "win32" ? "echo DESKTOP_4^2\r" : 'echo DESKTOP_4""2\r',
         )
