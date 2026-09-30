@@ -45,9 +45,12 @@ export const agy = {
         novadeck: {
           PreInvocation: [{ type: "command", command: hook(platform, "PreInvocation") }],
           Stop: [{ type: "command", command: hook(platform, "Stop") }],
-          // Tool events take matcher groups; an empty matcher matches every tool.
+          // Tool events take matcher groups: only the tool that writes artifacts.
           PostToolUse: [
-            { matcher: "", hooks: [{ type: "command", command: hook(platform, "PostToolUse") }] },
+            {
+              matcher: "write_to_file",
+              hooks: [{ type: "command", command: hook(platform, "PostToolUse") }],
+            },
           ],
         },
       }),

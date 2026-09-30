@@ -96,6 +96,21 @@ describe("Antigravity's plans, as captured", () => {
     ])
   })
 
+  it("are none when the write failed, or went outside the conversation's own folder", () => {
+    const plan = hooks.find(
+      ({ payload }) =>
+        (payload.toolCall as { args?: { ArtifactMetadata?: { RequestFeedback?: boolean } } })?.args
+          ?.ArtifactMetadata?.RequestFeedback === true,
+    )
+    const planned = (payload: Report["payload"]) =>
+      decode(report(payload)).filter((event) => event.type === "plan-observed")
+    expect(planned(plan!.payload)).toHaveLength(1)
+    expect(planned({ ...plan!.payload, error: "permission denied" })).toEqual([])
+    const call = plan!.payload.toolCall as { name: string; args: Record<string, unknown> }
+    const outside = { ...call, args: { ...call.args, TargetFile: "/home/user/elsewhere/plan.md" } }
+    expect(planned({ ...plan!.payload, toolCall: outside })).toEqual([])
+  })
+
   it("name the transcript on every hook", () => {
     expect(decode(report(hooks[0]!.payload))[0]).toMatchObject({
       type: "session-observed",

@@ -1,7 +1,8 @@
 import type { AgentTelemetry } from "@novadeck/protocol"
 
 import type { HarnessEvent } from "../events.js"
-import { bounded, type Run } from "../harness.js"
+import { followLines } from "../follow.js"
+import { bounded, type Harness, type Run } from "../harness.js"
 
 type Limit = AgentTelemetry["limits"][number]
 
@@ -100,4 +101,33 @@ const telemetry = (
     }),
     ...(limits !== undefined && limits !== null && { limits: known }),
   }
+}
+
+/**
+ * Follows a bound session's rollout. Codex writes a turn's mode before the hook that
+ * binds the session starts, so what the rollout already holds counts too: its latest
+ * mode, plan and token count, as of now, then each record appended.
+ */
+export const followRollout: NonNullable<Harness["watch"]> = (run, signal, emit) => {
+  // The latest of each kind the backlog held, until it has all been read.
+  let backlog: Map<string, HarnessEvent> | undefined = new Map()
+  return followLines(
+    run.transcript,
+    signal,
+    (line) => {
+      for (const event of rolloutEvents(line, run))
+        if (backlog) backlog.set(event.type, event)
+        else emit(event)
+    },
+    {
+      fromStart: true,
+      onIdle: () => {
+        if (!backlog) return
+        const now = Date.now()
+        for (const event of backlog.values())
+          emit({ ...event, startedAt: Math.max(event.startedAt, now) })
+        backlog = undefined
+      },
+    },
+  )
 }

@@ -1,4 +1,4 @@
-import { extname } from "node:path"
+import { extname, isAbsolute, relative } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
 import type { HarnessEvent } from "../events.js"
@@ -37,22 +37,30 @@ export const decode = ({ event, seq, instance, payload }: Report): readonly Harn
         { type: "turn-ended", ...base, outcome: text(payload.error) ? "failed" : "completed" },
       ]
     case "PostToolUse":
-      return [observed, ...artifact(base, payload.toolCall)]
+      return [observed, ...artifact(base, payload)]
     default:
       return [observed]
   }
 }
 
-// A plan: Markdown the agent writes as an artifact asking for the person's review.
+// A plan: Markdown the agent writes, in the conversation's own folder, as an artifact
+// asking for the person's review; one it failed to write is none.
 const artifact = (
   base: { agent: "agy"; sessionId: string; instance: string | null; startedAt: number },
-  call: unknown,
+  payload: Report["payload"],
 ): HarnessEvent[] => {
-  const { name, args } = (call ?? {}) as { name?: unknown; args?: Record<string, unknown> }
+  const { name, args } = (payload.toolCall ?? {}) as {
+    name?: unknown
+    args?: Record<string, unknown>
+  }
   const metadata = args?.ArtifactMetadata as { RequestFeedback?: unknown } | undefined
+  if (name !== "write_to_file" || metadata?.RequestFeedback !== true || text(payload.error))
+    return []
   const path = absolute(args?.TargetFile)
-  if (name !== "write_to_file" || metadata?.RequestFeedback !== true) return []
-  if (!path || extname(path) !== ".md") return []
+  const folder = absolute(payload.artifactDirectoryPath)
+  if (!path || !folder || extname(path) !== ".md") return []
+  const inside = relative(folder, path)
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) return []
   return [{ type: "plan-observed", ...base, actor: null, plan: { kind: "file", path } }]
 }
 

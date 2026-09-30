@@ -1,8 +1,11 @@
-import { readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { describe, expect, it } from "../../test.js"
-import { rolloutEvents } from "./rollout.js"
+import { apply, started } from "../activity.js"
+import type { HarnessEvent } from "../events.js"
+import { followRollout, rolloutEvents } from "./rollout.js"
 
 type Record_ = {
   type: string
@@ -51,10 +54,10 @@ describe("Codex's rollout, as captured", () => {
   })
 
   it("says whether a turn plans, from the mode it starts in", () => {
-    const started = records.find(
+    const starting = records.find(
       (record) => (record.payload as { type?: string }).type === "task_started",
     )!
-    expect(rolloutEvents(JSON.stringify(started), session)).toMatchObject([
+    expect(rolloutEvents(JSON.stringify(starting), session)).toMatchObject([
       { type: "mode-observed", planning: false },
     ])
   })
@@ -88,5 +91,37 @@ describe("Codex in Plan Mode, as captured", () => {
         plan: expect.objectContaining({ kind: "text", text: expect.stringMatching(/^# /) }),
       }),
     )
+  })
+})
+
+describe("following a Codex rollout", () => {
+  it("counts the mode a turn began in before the session was bound", async ({ resources }) => {
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-rollout-"))
+    resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+    const path = join(directory, "rollout.jsonl")
+    // As captured: Codex writes the turn's start in Plan Mode, then its SessionStart hook
+    // binds the session.
+    const plan = JSON.parse(
+      readFileSync(join(import.meta.dirname, "fixtures", "plan.probe.json"), "utf8"),
+    ) as { records: { timestamp: string }[] }
+    writeFileSync(path, plan.records.map((record) => `${JSON.stringify(record)}\n`).join(""))
+    const bound = Date.parse(plan.records[0]!.timestamp) + 380
+    const controller = new AbortController()
+    resources.defer(() => controller.abort())
+    const events: HarnessEvent[] = []
+    void followRollout({ ...session, transcript: path }, controller.signal, (event) =>
+      events.push(event),
+    )
+    await expect.poll(() => events.map(({ type }) => type)).toContain("mode-observed")
+    const binding = { agent: "codex", sessionId: session.sessionId, instance: null } as const
+    const activity = events.reduce(
+      (state, event) =>
+        event.type === "session-observed" || event.type === "telemetry-observed"
+          ? state
+          : (apply(state, binding, event) ?? state),
+      started(bound),
+    )
+    expect(activity.planning).toBe(true)
+    expect(activity.plans).toHaveLength(1)
   })
 })
