@@ -86,17 +86,18 @@ describe("a Claude Code plan", () => {
   })
 })
 
-describe("an agent's plans", () => {
-  const text = (actor: string | null, words: string, startedAt: number): ActivityEvent => ({
-    agent: "claude",
-    sessionId: "s",
-    instance: null,
-    startedAt,
-    type: "plan-observed",
-    actor,
-    plan: { kind: "text", text: words, truncated: false },
-  })
+// A plan an actor presented as text.
+const text = (actor: string | null, words: string, startedAt: number): ActivityEvent => ({
+  agent: "claude",
+  sessionId: "s",
+  instance: null,
+  startedAt,
+  type: "plan-observed",
+  actor,
+  plan: { kind: "text", text: words, truncated: false },
+})
 
+describe("an agent's plans", () => {
   const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
   const base = { agent: "claude", sessionId: "s", instance: null } as const
   const observe = (actor: string | null, path: string, startedAt: number): ActivityEvent => ({
