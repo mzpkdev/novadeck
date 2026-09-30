@@ -3,7 +3,14 @@ import { EventEmitter } from "node:events"
 import type { Session, WebContents, WebPreferences } from "electron"
 
 import { describe, expect, it } from "../test"
-import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages"
+import {
+  attachPage,
+  gestureMs,
+  guardPage,
+  lockPagesSession,
+  pagesPartition,
+  webAddress,
+} from "./pages"
 
 describe("a live page's address", () => {
   it("is http or https only", () => {
@@ -68,13 +75,46 @@ const navigates = (contents: FakeContents, event: string, url: string): boolean 
 }
 
 describe("a page view", () => {
-  it("opens windows in the person's browser, and only http(s) ones", () => {
+  // A guarded page view, on a clock the test sets.
+  const guarded = () => {
     const contents = new FakeContents()
     const opened: string[] = []
-    guardPage(contents as unknown as WebContents, (url) => opened.push(url))
-    expect(contents.opener?.({ url: "https://example.com/" })).toEqual({ action: "deny" })
-    expect(contents.opener?.({ url: "file:///etc/passwd" })).toEqual({ action: "deny" })
-    expect(opened).toEqual(["https://example.com/"])
+    let time = 10_000
+    guardPage(
+      contents as unknown as WebContents,
+      (url) => opened.push(url),
+      () => time,
+    )
+    return {
+      opened,
+      open: (url: string) => contents.opener?.({ url }),
+      input: (type: string) => contents.emit("input-event", {}, { type }),
+      wait: (ms: number) => (time += ms),
+    }
+  }
+
+  it("opens no window by itself, not even in the person's browser", () => {
+    const page = guarded()
+    for (let i = 0; i < 5; i++)
+      expect(page.open("https://example.com/")).toEqual({ action: "deny" })
+    page.input("mouseMove")
+    page.open("https://example.com/")
+    expect(page.opened).toEqual([])
+  })
+
+  it("opens one http(s) window in the browser for each click or key, right after it", () => {
+    const page = guarded()
+    page.input("mouseDown")
+    expect(page.open("https://example.com/one")).toEqual({ action: "deny" })
+    page.open("https://example.com/again")
+    page.input("keyDown")
+    page.open("file:///etc/passwd")
+    // A refused address doesn't use up the key.
+    page.open("https://example.com/two")
+    page.input("mouseDown")
+    page.wait(gestureMs + 1)
+    page.open("https://example.com/late")
+    expect(page.opened).toEqual(["https://example.com/one", "https://example.com/two"])
   })
 
   it("goes only to http(s) addresses, by a link or a redirect", () => {
@@ -88,8 +128,12 @@ describe("a page view", () => {
 })
 
 describe("the pages' session", () => {
-  it("refuses every permission and every download", () => {
+  it("refuses every permission, every download and every file", async () => {
     const session = Object.assign(new EventEmitter(), {
+      schemes: new Map<string, () => Response>(),
+      protocol: {
+        handle: (scheme: string, handler: () => Response) => session.schemes.set(scheme, handler),
+      },
       check: undefined as undefined | (() => boolean),
       request: undefined as undefined | ((c: unknown, p: string, r: (ok: boolean) => void) => void),
       device: undefined as undefined | (() => boolean),
@@ -114,5 +158,8 @@ describe("the pages' session", () => {
     let prevented = false
     session.emit("will-download", { preventDefault: () => (prevented = true) })
     expect(prevented).toBe(true)
+    const file = session.schemes.get("file")?.()
+    expect(file?.status).toBe(403)
+    await expect(file?.text()).resolves.toBe("")
   })
 })

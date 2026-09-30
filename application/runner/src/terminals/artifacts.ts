@@ -24,8 +24,11 @@ export const fileRequest = z.strictObject({
   ...shared,
 })
 
+// What the protocol takes of a page's address.
+const maxUrlChars = 8192
+
 /** A page to show, by its http(s) address. */
-export const pageRequest = z.strictObject({ url: z.string().min(1).max(8192), ...shared })
+export const pageRequest = z.strictObject({ url: z.string().min(1).max(maxUrlChars), ...shared })
 
 export type FileRequest = z.infer<typeof fileRequest>
 export type PageRequest = z.infer<typeof pageRequest>
@@ -118,6 +121,8 @@ export const readRequest = (
   // A page by its url, otherwise a file; each read strictly, so it names what's wrong.
   const page = typeof value === "object" && value !== null && "url" in value
   if (page && "path" in value) return failure("Give a path or a url, not both.")
+  if (typeof value === "object" && value !== null && !page && !("path" in value))
+    return failure("Give a path or a url.")
   const parsed = (page ? pageRequest : fileRequest).safeParse(value)
   if (parsed.success) return { ok: true, request: parsed.data }
   const [issue] = parsed.error.issues
@@ -194,6 +199,8 @@ const capturePage = (request: PageRequest): Captured | PresentFailure => {
     return failure("NovaDeck shows only http and https pages.")
   if (url.username || url.password)
     return failure("NovaDeck won't show an address with a user name or password in it.")
+  // Encoding can lengthen it past what the protocol carries.
+  if (url.href.length > maxUrlChars) return failure("That address is too long.")
   return {
     ok: true,
     id: idOf(url.href),

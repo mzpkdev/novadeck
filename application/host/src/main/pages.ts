@@ -3,8 +3,9 @@ import type { Session, WebContents, WebPreferences } from "electron"
 // Web pages an agent shows load live in the companion pane, in a <webview>: a browser
 // view apart from NovaDeck's page. Whatever the element asks for, each gets no preload,
 // no Node, a sandbox, and its own session in memory, where every permission and
-// download is refused. It goes only to http(s) addresses; a page opening a window opens
-// it in the person's own browser instead.
+// download is refused and no file loads. It goes only to http(s) addresses by its own
+// links and redirects. A window it opens right after the person clicked or typed in it
+// opens in their own browser, one per click or key; any other opens nowhere.
 
 /** The session live pages load in: in memory, apart from NovaDeck's own. */
 export const pagesPartition = "novadeck-pages"
@@ -45,10 +46,31 @@ export const attachPage = (
 
 type Opener = (url: string) => unknown
 
-/** Keeps a page view to http(s) addresses, sending the windows it opens to the browser. */
-export const guardPage = (contents: WebContents, openExternal: Opener): void => {
+// How soon after the person's click or key a page's new window still counts as theirs.
+// `allowpopups` lifts Chromium's own need for one, and the handler has no gesture flag.
+export const gestureMs = 1_000
+const gestures = new Set(["mouseDown", "keyDown", "rawKeyDown", "touchStart"])
+
+/**
+ * Keeps a page view to http(s) addresses by its own links and redirects, and sends a
+ * window it opens to the browser only right after the person's click or key, one each,
+ * so a page can't open tabs on its own.
+ */
+export const guardPage = (
+  contents: WebContents,
+  openExternal: Opener,
+  now: () => number = Date.now,
+): void => {
+  let gesture: number | undefined
+  contents.on("input-event", (_event, input) => {
+    if (gestures.has(input.type)) gesture = now()
+  })
   contents.setWindowOpenHandler(({ url }) => {
-    if (webAddress(url)) void openExternal(url)
+    const theirs = gesture !== undefined && now() - gesture <= gestureMs
+    if (theirs && webAddress(url)) {
+      gesture = undefined
+      void openExternal(url)
+    }
     return { action: "deny" }
   })
   contents.on("will-navigate", (event, url) => {
@@ -59,8 +81,12 @@ export const guardPage = (contents: WebContents, openExternal: Opener): void => 
   })
 }
 
-/** Refuses the pages' session every permission, and every download. */
+/**
+ * Refuses the pages' session every permission, every download, and every file, which
+ * NovaDeck's own page could otherwise point a view at.
+ */
 export const lockPagesSession = (pages: Session): void => {
+  pages.protocol.handle("file", () => new Response("", { status: 403 }))
   pages.setPermissionCheckHandler(() => false)
   pages.setPermissionRequestHandler((_contents, _permission, respond) => respond(false))
   pages.setDevicePermissionHandler(() => false)

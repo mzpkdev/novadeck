@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ArtifactContent, ArtifactKind } from "../../model/companion"
 import type { Shown } from "./pane"
 import type { ArtifactLoad } from "./state"
+import { createWebview, type WebviewElement } from "./webview"
 
 type ImageContent = Extract<ArtifactContent, { kind: "image" }>
 type FileContent = Extract<ArtifactContent, { kind: "file" }>
@@ -25,7 +26,8 @@ export const kindIcons: Record<ArtifactKind, typeof Image> = {
 
 // Viewers for what an agent shows beside its terminal. Files show without highlighting.
 // A page loads live where the backend's host allows, in Electron's <webview>, which the
-// desktop app locks down (no Node, its own session, http(s) only); elsewhere it's a link
+// desktop app locks down (no Node, its own session, http(s) only; see ./webview.ts);
+// elsewhere it's a link
 // to open in the browser, with a snapshot when the backend has one.
 
 const ImageViewer = ({
@@ -84,16 +86,6 @@ const FileViewer = ({ content: artifact }: { content: FileContent }): React.JSX.
   </>
 )
 
-// Electron's <webview>, as the pane uses it: its methods work once it's attached.
-type WebviewElement = HTMLWebViewElement & {
-  canGoBack(): boolean
-  canGoForward(): boolean
-  goBack(): void
-  goForward(): void
-  reload(): void
-  getURL(): string
-}
-
 // Where the page is, and where it can go.
 type Place = { readonly url: string; readonly back: boolean; readonly forward: boolean }
 
@@ -104,19 +96,6 @@ const OpenInBrowser = ({ url }: { url: string }): React.JSX.Element => (
     Open in browser
   </a>
 )
-
-// Made here rather than by React, which leaves `allowpopups` off the element; Electron
-// reads its attributes once, as it attaches. With it, a page's new windows reach the
-// desktop app, which opens them in the browser instead. The app gives it the pages'
-// session whatever it asks; it's named to match.
-const createWebview = (url: string): WebviewElement => {
-  const element = document.createElement("webview") as WebviewElement
-  element.className = "artifact-webview"
-  element.setAttribute("partition", "novadeck-pages")
-  element.setAttribute("allowpopups", "")
-  element.setAttribute("src", url)
-  return element
-}
 
 const LivePage = ({ url }: { url: string }): React.JSX.Element => {
   const frame = useRef<HTMLDivElement>(null)

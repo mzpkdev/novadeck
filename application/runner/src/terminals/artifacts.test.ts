@@ -226,6 +226,7 @@ describe("a present request", () => {
       ok: false,
     })
     expect(readRequest({ url: "" })).toMatchObject({ ok: false })
+    expect(readRequest({})).toEqual({ ok: false, reason: "Give a path or a url." })
   })
 })
 
@@ -273,6 +274,16 @@ describe("a page an agent shows", () => {
     await expect(capture({ url: "not an address" }, place)).resolves.toEqual({
       ok: false,
       reason: "That isn't a valid address.",
+    })
+  })
+
+  it("is never longer, once encoded, than the protocol carries", async () => {
+    // Each ł takes six characters once encoded.
+    const long = `https://example.com/?q=${"ł".repeat(1500)}`
+    expect(long.length).toBeLessThan(8192)
+    await expect(capture({ url: long }, place)).resolves.toEqual({
+      ok: false,
+      reason: "That address is too long.",
     })
   })
 })

@@ -318,9 +318,10 @@ from what this document describes:
   which lays out with the pane, keeps NovaDeck's menus and cards above it, and lets a
   later highlight mode reach into the page. Whatever the element asks for, the host
   gives each one no preload or Node, a sandbox, and the `novadeck-pages` session, in
-  memory, where every permission and download is refused; it goes only to http(s)
-  addresses, and a window it opens goes to the person's browser instead
-  (`application/host/src/main/pages.ts`). Where the host can't, as the web version,
+  memory, where every permission and download is refused and no file loads. Its own
+  links and redirects go only to http(s) addresses. A window it opens goes to the
+  person's browser only right after they clicked or typed in it, one each, so a page
+  can't open tabs on its own (`application/host/src/main/pages.ts`). Where the host can't, as the web version,
   a page is a link to open in the browser.
 - **Saving** is a new authorized plan-write operation with the revision check above,
   scoped like `present`: the caller may write only the plan the terminal's agent keeps.
