@@ -19,6 +19,8 @@ export type DialogProps = {
   // allowed here. Set the first focus with initialFocusEl.
   role?: "dialog" | "alertdialog"
   closeOnInteractOutside?: boolean
+  // Called before Escape closes the dialog; preventing the event keeps it open.
+  onEscapeKeyDown?: (event: KeyboardEvent) => void
 }
 
 // Parts that name and describe a dialog; Ark wires their ids.
@@ -40,11 +42,13 @@ export const Dialog = ({
   modal = true,
   role = "dialog",
   closeOnInteractOutside,
+  onEscapeKeyDown,
 }: DialogProps): React.JSX.Element => (
   <ArkDialog.Root
     open={open}
     role={role}
     {...(closeOnInteractOutside === undefined ? {} : { closeOnInteractOutside })}
+    {...(onEscapeKeyDown ? { onEscapeKeyDown } : {})}
     onOpenChange={(details) => onOpenChange(details.open)}
     aria-label={label}
     onExitComplete={onExitComplete}

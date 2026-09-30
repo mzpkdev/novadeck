@@ -265,6 +265,54 @@ and hands the same token to the UI dev server. For UI-only work, use
 `pnpm --filter @novadeck/ui dev` with `VITE_NOVADECK_RUNNER_URL` and
 `VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
+### Plan review design preview
+
+Run `pnpm dev:previews` and open <http://127.0.0.1:5181> for a UI-only study of
+how an agent's plan is reviewed in each view. NovaDeck hosts other agents, so it
+neither dictates how a plan is written nor answers the agent's approval prompt.
+The reader shows the Markdown as written, and the plan file is the only channel
+back: notes you leave are written into it, and a small NovaDeck skill tells the
+agent to re-read the plan before acting on it, apply the notes, and remove each.
+
+Two samples show the range. “Build Studio” runs Codex with a structured plan
+(headings, a task list, file paths) and the skill installed. “Refactor auth” runs
+Claude Code with plain prose and no skill. Each terminal asks its own question:
+answer `y` to approve or type anything else to keep planning.
+
+A strip under each terminal names the plan and its state. Review opens it where
+the current view suits it best:
+
+- **Focus** splits the window: terminal on the left, plan on the right, with a
+  draggable divider.
+- **Grid** opens an overlay across the workspace, the terminal at 25% and the
+  plan at 75%.
+- **Canvas** attaches the plan as a sheet beside the node, which pans and zooms
+  with it; the canvas frames both as it opens.
+
+An expand button in the reader's header toggles between the plan in place and the
+overlay, remembered per view. The plan is always editable: it's the file's
+Markdown in a CodeMirror 6 live-preview editor. Markdown syntax shows, dimmed,
+only on the line being edited, so typing Markdown is how you format the plan;
+there are no formatting controls. A heading's `#` marks hang in the margin so its
+text doesn't move. Note wrappers never show. The note icon in the margin adds a
+note under a line, written into the file as an HTML comment; Backspace in an empty
+note removes it. Tables always render as tables: click a cell to edit it, Tab and
+Shift+Tab move between cells, Enter moves down, Escape cancels, and only that
+cell's text changes in the file. While a cell is being edited, a toolbar adds a
+row below or a column to the right and deletes the current row or column; Tab past
+the last cell starts a new row. Every row has its own note button: a row's note is
+written inside the row, at the end of its last cell, and shows under it; the
+header's note is on the whole table and goes after it. When the agent writes a new
+version, its changes merge into yours line by line, the lines it wrote are
+highlighted, and the notes it applied are gone. Without the skill, as in “Refactor
+auth”, notes wait until you ask the agent in its terminal to re-read the plan.
+Escape closes the plan. Plans never create sidebar tabs or separate windows.
+
+The plans, their revisions, the skill's effect, terminal output and timing are
+hardcoded; no runner, filesystem, or real skill is connected. The editor and its
+merge code load when a plan first opens.
+Normal development and packaged builds keep their runner behavior.
+
 ### Debug panel
 
 A small panel for reaching the app's runner states on demand. Press

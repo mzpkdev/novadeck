@@ -198,6 +198,16 @@ export const mockReply = (command: string, terminal: TerminalMetadata): string =
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
+  if (terminal.plan === "studio")
+    return /^(y|yes)$/i.test(input)
+      ? "Approved. Re-reading plans/studio.md for your notes, then starting."
+      : "Keeping the plan open. Re-reading plans/studio.md for your notes and revising."
+  if (terminal.plan === "auth")
+    return /re-?read/i.test(input)
+      ? "Re-reading ~/.claude/plans/refactor-auth.md. Applying the note you left and removing it."
+      : /^(y|yes)$/i.test(input)
+        ? "Approved. Starting on the plan."
+        : "Revising the plan with what you said."
   if (demoAgent(terminal))
     return "This is a mock AI session. Your message is saved here, but no model is connected."
   return `Preview shell: “${input}” isn't connected to a process. Type help to explore.`

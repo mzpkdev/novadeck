@@ -41,6 +41,9 @@ export type TerminalStatus =
 
 export type TerminalMetadata = {
   id: string
+  // Local design demo only, naming the sample plan this terminal shows; no runner or
+  // persistence contract yet.
+  plan?: string
   name: string
   directory: string
   command: string

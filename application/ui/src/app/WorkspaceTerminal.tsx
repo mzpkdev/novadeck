@@ -2,6 +2,7 @@ import { useCallback, useMemo, type ReactNode } from "react"
 
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
+import { TerminalPlan } from "../terminals/previews/TerminalPlan"
 import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
 import {
@@ -23,7 +24,7 @@ import {
 // mounted while the shared window, and the body its program calls for, wrap its content.
 export const WorkspaceTerminal = ({
   terminal,
-  controls: { minimize, onFlyTo, onResizePreset },
+  controls: { minimize, onFlyTo, onResizePreset, onReveal },
 }: {
   readonly terminal: TerminalMetadata
   readonly controls: TerminalLayoutControls
@@ -107,7 +108,24 @@ export const WorkspaceTerminal = ({
   }
   // One shell element whatever runs, so only the body around the content changes.
   const renderWindow = (content: ReactNode): ReactNode => (
-    <WindowShell {...frame}>{Body ? <Body>{content}</Body> : content}</WindowShell>
+    <WindowShell {...frame}>
+      {terminal.plan ? (
+        <TerminalPlan
+          planId={terminal.plan}
+          terminalName={terminal.name}
+          view={view}
+          onReveal={onReveal}
+          minimized={minimize?.minimized}
+          clipContent={minimize?.clipContent}
+        >
+          {Body ? <Body>{content}</Body> : content}
+        </TerminalPlan>
+      ) : Body ? (
+        <Body>{content}</Body>
+      ) : (
+        content
+      )}
+    </WindowShell>
   )
   return (
     <backend.TerminalSurface
