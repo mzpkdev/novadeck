@@ -159,10 +159,15 @@ export const apply = (
     case "attention-requested": {
       if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
       const { requestId, actor, toolName, kind } = event
+      // An actor shows one plan for review at a time: a revised one replaces it.
+      const kept =
+        kind === "plan"
+          ? activity.pending.filter((each) => each.kind !== "plan" || each.actor !== actor)
+          : activity.pending
       return {
         ...activity,
         state: "working",
-        pending: [...activity.pending, { requestId, actor, toolName, kind }],
+        pending: [...kept, { requestId, actor, toolName, kind }],
       }
     }
     case "attention-resolved": {

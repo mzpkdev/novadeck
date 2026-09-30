@@ -286,6 +286,22 @@ describe("applying activity", () => {
     expect(apply(twice, binding, subagent("subagent-started", "late", 20))).toBeUndefined()
   })
 
+  it("keeps one plan per actor waiting, and settles it though edited in review", () => {
+    const plan = (requestId: string, startedAt: number) =>
+      fact({
+        type: "attention-requested",
+        requestId,
+        actor: null,
+        toolName: "ExitPlanMode",
+        kind: "plan",
+        startedAt,
+      })
+    const revised = apply(apply(started(0), binding, plan("p1", 5))!, binding, plan("p2", 6))!
+    expect(summary(revised).attention).toEqual({ pending: 1, kind: "plan" })
+    const approved = apply(revised, binding, result("p3", null, "ExitPlanMode", true))!
+    expect(summary(approved).attention).toEqual({ pending: 0, kind: null })
+  })
+
   it("plans as the latest hook to name the mode said, whatever order they arrive in", () => {
     const mode = (planning: boolean, startedAt: number) =>
       fact({ type: "mode-observed", planning, startedAt })

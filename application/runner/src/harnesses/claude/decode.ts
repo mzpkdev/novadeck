@@ -12,7 +12,8 @@ import { absolute, callId, sessionId, sessionStart, text, withMode } from "../ha
  * about a tool call, AskUserQuestion's as a question and ExitPlanMode's as a plan to
  * review, for the root agent or a subagent;
  * the call's PostToolUse or PostToolUseFailure from that actor means it was allowed. An
- * answered question's call gains its answers, so its result matches loosely. A denial or
+ * answered question's call gains its answers, and a plan may be edited in review, so
+ * their results match loosely. A denial or
  * an Esc fires nothing: the next turn settles them.
  */
 export const decode = (report: Report): readonly HarnessEvent[] =>
@@ -84,7 +85,9 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
           requestId: callId(actor, tool, payload.tool_input),
           actor,
           toolName: tool,
-          loose: tool === "AskUserQuestion",
+          // An answered question's call gains its answers, and a plan may be edited
+          // in review.
+          loose: tool === "AskUserQuestion" || tool === "ExitPlanMode",
           outcome: "allowed",
         },
       ]
