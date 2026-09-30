@@ -17,6 +17,7 @@ type Subagent = { readonly id: string; readonly type: string | null; readonly st
 // More than any agent runs at once; a runaway harness cannot grow the summary.
 const maxSubagents = 32
 // How many ended subagents are remembered, so a start arriving after its end is ignored.
+// A resumed one keeps its id, and starts after that end.
 const maxEnded = 64
 // What the protocol carries of an id or a kind.
 const maxText = 256
@@ -26,14 +27,14 @@ const maxText = 256
  * latest turn start or end started: a fact from a hook that started before it belongs to
  * a turn already over, however late it arrives. Requests of one turn arrive in any order.
  * Subagents outlive turns, as a background one does, so no turn fences them; `ended`
- * names those that stopped, and `interrupted` spans the latest interrupted turn, whose
- * subagents stopped with it, so a start that arrives late is not taken for a new one.
+ * says when each stopped, and `interrupted` spans the latest interrupted turn, whose
+ * subagents stopped with it, so a start that arrives late is not taken for a new run.
  */
 export type Activity = {
   readonly state: "working" | "idle"
   readonly pending: readonly Request[]
   readonly subagents: readonly Subagent[]
-  readonly ended: readonly string[]
+  readonly ended: readonly { readonly id: string; readonly at: number }[]
   readonly interrupted: { readonly from: number; readonly to: number } | null
   readonly turnAt: number
 }
@@ -48,8 +49,14 @@ export const started = (at: number): Activity => ({
   turnAt: at,
 })
 
-const end = (ended: readonly string[], ids: readonly string[]): readonly string[] =>
-  [...ended, ...ids].slice(-maxEnded)
+const end = (ended: Activity["ended"], ids: readonly string[], at: number): Activity["ended"] =>
+  [...ended.filter(({ id }) => !ids.includes(id)), ...ids.map((id) => ({ id, at }))].slice(
+    -maxEnded,
+  )
+
+// When the subagent last stopped, if it did.
+const endOf = (ended: Activity["ended"], actor: string): number | undefined =>
+  ended.find(({ id }) => id === actor)?.at
 
 /** Whether an event belongs to the bound session, from its own process where known. */
 export const bound = (
@@ -93,7 +100,7 @@ export const apply = (
         id.length > maxText ||
         subagents.length >= maxSubagents ||
         subagents.some((subagent) => subagent.id === id) ||
-        ended.includes(id) ||
+        startedAt < (endOf(ended, id) ?? Number.NEGATIVE_INFINITY) ||
         (interrupted && startedAt >= interrupted.from && startedAt < interrupted.to)
       )
         return undefined
@@ -102,12 +109,15 @@ export const apply = (
     }
     case "subagent-stopped": {
       const { subagents, ended } = activity
-      if (event.actor.length > maxText || ended.includes(event.actor)) return undefined
-      // A stop may arrive before its start: remembered, it keeps the start out.
+      const { actor, startedAt } = event
+      const running = subagents.some(({ id }) => id === actor)
+      if (actor.length > maxText || (!running && startedAt <= (endOf(ended, actor) ?? -1)))
+        return undefined
+      // A stop may arrive before its start: remembered, it keeps that start out.
       return {
         ...activity,
-        subagents: subagents.filter(({ id }) => id !== event.actor),
-        ended: end(ended, [event.actor]),
+        subagents: subagents.filter(({ id }) => id !== actor),
+        ended: end(ended, [actor], startedAt),
       }
     }
   }
@@ -125,8 +135,16 @@ export const apply = (
         ended: end(
           activity.ended,
           stopped.map(({ id }) => id),
+          event.startedAt,
         ),
-        interrupted: { from: activity.turnAt, to: event.startedAt },
+        // A second interrupt of the same turn widens the span rather than replacing it.
+        interrupted: {
+          from:
+            activity.interrupted?.to === activity.turnAt
+              ? activity.interrupted.from
+              : activity.turnAt,
+          to: event.startedAt,
+        },
       }
     }
     case "attention-requested": {

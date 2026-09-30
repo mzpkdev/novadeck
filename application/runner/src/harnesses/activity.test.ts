@@ -242,6 +242,33 @@ describe("applying activity", () => {
     expect(apply(gone, binding, subagent("subagent-started", "a", 11))).toBeUndefined()
   })
 
+  it("counts a resumed subagent again, under the id it kept", () => {
+    const first = apply(started(0), binding, subagent("subagent-started", "r", 11))!
+    const done = apply(first, binding, subagent("subagent-stopped", "r", 20))!
+    const resumed = apply(done, binding, subagent("subagent-started", "r", 31))!
+    expect(summary(resumed).subagents).toEqual([{ id: "r", type: "explorer" }])
+    expect(
+      summary(apply(resumed, binding, subagent("subagent-stopped", "r", 40))!).subagents,
+    ).toEqual([])
+    // The first run's stop, arriving again, changes nothing.
+    expect(apply(done, binding, subagent("subagent-stopped", "r", 20))).toBeUndefined()
+  })
+
+  it("keeps a late start out after a turn is interrupted twice", () => {
+    const turn = apply(started(0), binding, fact({ type: "turn-started", startedAt: 10 }))!
+    const once = apply(
+      turn,
+      binding,
+      fact({ type: "turn-ended", outcome: "interrupted", startedAt: 25 }),
+    )!
+    const twice = apply(
+      once,
+      binding,
+      fact({ type: "turn-ended", outcome: "interrupted", startedAt: 26 }),
+    )!
+    expect(apply(twice, binding, subagent("subagent-started", "late", 20))).toBeUndefined()
+  })
+
   it("carries no id or kind longer than the protocol takes", () => {
     const long = "x".repeat(300)
     expect(apply(started(0), binding, subagent("subagent-started", long))).toBeUndefined()
@@ -258,6 +285,25 @@ describe("applying activity", () => {
     for (let index = 0; index < 40; index += 1)
       activity = apply(activity, binding, subagent("subagent-started", `a${index}`)) ?? activity
     expect(activity.subagents).toHaveLength(32)
+  })
+})
+
+describe("a Codex subagent's interrupt", () => {
+  it("ends its own work, not the turn", () => {
+    const report = (payload: Report["payload"]): Report => ({
+      terminalId: "t",
+      token: "0".repeat(48),
+      agent: "codex",
+      event: "Interrupt",
+      seq: 1,
+      instance: null,
+      env: { cursor: false },
+      payload,
+    })
+    expect(harnesses.codex.decode(report({ session_id: "s", agent_id: "a" }))).toEqual([])
+    expect(harnesses.codex.decode(report({ session_id: "s" }))).toMatchObject([
+      { type: "turn-ended", outcome: "interrupted" },
+    ])
   })
 })
 
