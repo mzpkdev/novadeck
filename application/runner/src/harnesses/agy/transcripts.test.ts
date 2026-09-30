@@ -1,0 +1,83 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
+import type { Report } from "../../shell/reports.js"
+import { describe, expect, it } from "../../test.js"
+import { decode } from "./decode.js"
+import { transcripts } from "./transcripts.js"
+
+const { transcript, hooks } = JSON.parse(
+  readFileSync(join(import.meta.dirname, "fixtures", "transcript.probe.json"), "utf8"),
+) as { transcript: object[]; hooks: { event: string; payload: Report["payload"] }[] }
+const items = transcript.flatMap((step) => transcripts.items(JSON.stringify(step)))
+
+describe("Antigravity's transcript, as captured", () => {
+  it("gives the person's request, the agent's words, and each tool's call and result", () => {
+    expect(items[0]).toMatchObject({
+      role: "user",
+      kind: "text",
+      text: expect.stringMatching(/^\/plan The folder is empty/),
+    })
+    expect(items[0]?.text).not.toContain("ADDITIONAL_METADATA")
+    const kinds = items.map(({ role, kind, tool }) => `${role} ${kind}${tool ? ` ${tool}` : ""}`)
+    expect(kinds).toEqual([
+      "user text",
+      "assistant tool-call write_to_file",
+      "tool tool-result",
+      "assistant text",
+      "assistant tool-call write_to_file",
+      "tool tool-result",
+      "assistant tool-call view_file",
+      "tool tool-result",
+      "assistant tool-call write_to_file",
+      "tool tool-result",
+      "assistant text",
+    ])
+  })
+
+  it("pairs each result with its call, by the step it came in", () => {
+    const calls = items.filter(({ kind }) => kind === "tool-call")
+    const results = items.filter(({ kind }) => kind === "tool-result")
+    expect(results.map(({ call }) => call)).toEqual(calls.map(({ call }) => call))
+    expect(new Set(calls.map(({ call }) => call)).size).toBe(calls.length)
+  })
+
+  it("is the one its hooks name, with no subagents", async () => {
+    const root = "/home/user/t.jsonl"
+    await expect(transcripts.locate(root, "c", null)).resolves.toBe(root)
+    await expect(transcripts.locate(root, "c", "a")).resolves.toBeUndefined()
+  })
+})
+
+// A PostToolUse report of Antigravity's.
+const report = (payload: Report["payload"]): Report => ({
+  terminalId: "t",
+  token: "0".repeat(48),
+  agent: "agy",
+  event: "PostToolUse",
+  seq: 1,
+  instance: null,
+  env: { cursor: false },
+  payload,
+})
+
+describe("Antigravity's plans, as captured", () => {
+  it("are the artifacts it writes asking for review, not its walkthrough", () => {
+    const plans = hooks.flatMap(({ payload }) =>
+      decode(report(payload)).filter((event) => event.type === "plan-observed"),
+    )
+    expect(plans).toMatchObject([
+      {
+        actor: null,
+        plan: { kind: "file", path: expect.stringMatching(/implementation_plan\.md$/) },
+      },
+    ])
+  })
+
+  it("name the transcript on every hook", () => {
+    expect(decode(report(hooks[0]!.payload))[0]).toMatchObject({
+      type: "session-observed",
+      transcript: expect.stringMatching(/transcript_full\.jsonl$/),
+    })
+  })
+})
