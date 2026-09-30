@@ -106,7 +106,8 @@ const telemetry = (
 /**
  * Follows a bound session's rollout. Codex writes a turn's mode before the hook that
  * binds the session starts, so what the rollout already holds counts too: its latest
- * mode, plan and token count, as of now, then each record appended.
+ * mode, as of now, and its latest plan and token count, as of when they were written;
+ * then each record appended.
  */
 export const followRollout: NonNullable<Harness["watch"]> = (run, signal, emit) => {
   // The latest of each kind the backlog held, until it has all been read.
@@ -123,9 +124,15 @@ export const followRollout: NonNullable<Harness["watch"]> = (run, signal, emit) 
       fromStart: true,
       onIdle: () => {
         if (!backlog) return
+        // The mode holds until the next turn says otherwise, so it holds now, when the
+        // binding that would otherwise predate it began; the rest keep their age.
         const now = Date.now()
         for (const event of backlog.values())
-          emit({ ...event, startedAt: Math.max(event.startedAt, now) })
+          emit(
+            event.type === "mode-observed"
+              ? { ...event, startedAt: Math.max(event.startedAt, now) }
+              : event,
+          )
         backlog = undefined
       },
     },

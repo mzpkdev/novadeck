@@ -123,5 +123,8 @@ describe("following a Codex rollout", () => {
     )
     expect(activity.planning).toBe(true)
     expect(activity.plans).toHaveLength(1)
+    // What the rollout said before keeps its own time.
+    const planned = events.find(({ type }) => type === "plan-observed")
+    expect(planned?.startedAt).toBeLessThan(bound)
   })
 })
