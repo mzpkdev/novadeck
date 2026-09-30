@@ -65,6 +65,18 @@ describe("a Claude Code plan", () => {
       plan: { text: "x".repeat(maxPlan) },
     })
     expect(present({})).toEqual([])
+    // Claude Code names the file wherever its plans folder is set.
+    expect(present({ plan: "# P", planFilePath: at("/p/docs/specs/p.md") })).toMatchObject([
+      { plan: { kind: "file", path: at("/p/docs/specs/p.md") } },
+    ])
+  })
+
+  it("cut short, says so, and leaves a character whole", () => {
+    const present = (plan: string) =>
+      plans(hook("PermissionRequest", { tool_name: "ExitPlanMode", tool_input: { plan } }))[0]
+    expect(present("# P")).toMatchObject({ plan: { truncated: false } })
+    const cut = present(`${"x".repeat(maxPlan - 1)}😀 more`)
+    expect(cut).toMatchObject({ plan: { text: "x".repeat(maxPlan - 1), truncated: true } })
   })
 
   it("lives only in a plans folder, as Markdown", () => {
@@ -75,6 +87,16 @@ describe("a Claude Code plan", () => {
 })
 
 describe("an agent's plans", () => {
+  const text = (actor: string | null, words: string, startedAt: number): ActivityEvent => ({
+    agent: "claude",
+    sessionId: "s",
+    instance: null,
+    startedAt,
+    type: "plan-observed",
+    actor,
+    plan: { kind: "text", text: words, truncated: false },
+  })
+
   const binding: Binding = { agent: "claude", sessionId: "s", instance: null }
   const base = { agent: "claude", sessionId: "s", instance: null } as const
   const observe = (actor: string | null, path: string, startedAt: number): ActivityEvent => ({
@@ -115,5 +137,28 @@ describe("an agent's plans", () => {
     const first = apply(started(0), binding, observe(null, at("/h/plans/a.md"), 1))!
     const earlier = agentDetail("t", binding, first, null).plans[0]!.ref
     expect(planOf(binding, activity, earlier)).toBeUndefined()
+  })
+
+  it("give a revised plan its own ref, and keep each actor's place", () => {
+    const first = apply(started(0), binding, text(null, "# One", 1))!
+    const both = apply(first, binding, observe("sub", "/h/plans/c.md", 2))!
+    const revised = apply(both, binding, text(null, "# Two", 3))!
+    const before = agentDetail("t", binding, both, null).plans
+    const after = agentDetail("t", binding, revised, null).plans
+    expect(after.map(({ actor }) => actor)).toEqual(before.map(({ actor }) => actor))
+    expect(after[0]?.ref).not.toBe(before[0]?.ref)
+    expect(after[1]?.ref).toBe(before[1]?.ref)
+  })
+
+  it("make room for a new actor's plan by the oldest subagent's", () => {
+    const full = Array.from({ length: 33 }, (_, index) =>
+      observe(index === 0 ? null : `a${index}`, `/h/plans/${index}.md`, index + 1),
+    ).reduce((state, event) => apply(state, binding, event) ?? state, started(0))
+    const more = apply(full, binding, observe("late", "/h/plans/late.md", 50))!
+    const actors = more.plans.map(({ actor }) => actor)
+    expect(actors).toHaveLength(33)
+    expect(actors).toContain(null)
+    expect(actors).not.toContain("a1")
+    expect(actors.at(-1)).toBe("late")
   })
 })

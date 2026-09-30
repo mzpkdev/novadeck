@@ -919,9 +919,10 @@ export class Terminals {
         // eslint-disable-next-line no-await-in-loop -- Each look follows the one before.
         const now = await planStamp(current.source)
         if (now !== undefined && now !== stamp) {
-          stamp = now
           // eslint-disable-next-line no-await-in-loop -- As above.
           const content = await planContent(plan, current.source)
+          // A read that failed is tried again on the next look.
+          if (content) stamp = now
           const key = JSON.stringify(content)
           if (content && key !== sent && !reader.signal.aborted) {
             sent = key

@@ -478,10 +478,12 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
 - `agents.detail` snapshots also list each actor's latest plan (`plans`: its ref, the
   actor's ref, whether it is a file or presented text, and the file's name). Claude Code's
   plans are the Markdown files plan mode writes in a `plans` folder, and what
-  `ExitPlanMode` presents; Codex's and Antigravity's are not read yet.
+  `ExitPlanMode` presents: the file Claude Code names, wherever its plans folder is set,
+  or the plan's text, each presentation its own plan. Codex's and Antigravity's are not
+  read yet.
   `agents.plan({ terminalId, plan })` streams one: its text as it stands (cut short past
   256 KiB, marked `truncated`) with when its file last changed, then again on each
-  change. Only a Markdown file in a `plans` folder is ever read. A plan no longer an
+  change. Only a plain Markdown file one of those names is ever read. A plan no longer an
   actor's latest is `NOT_FOUND`; the stream ends once another replaces it or the agent
   leaves its session. The client's `agents.plan(terminalId, plan)` follows it across
   reconnections.

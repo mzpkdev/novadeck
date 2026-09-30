@@ -95,9 +95,17 @@ export const agentDetail = (
   }
 }
 
-/** The reference clients know a plan by: its actor's, in its file or presented as text. */
+/**
+ * The reference clients know a plan by: its actor's, in its file, or presented as text,
+ * each presentation its own.
+ */
 export const planRef = (binding: Binding, actor: string | null, source: PlanSource): string =>
-  ref("plan", binding.sessionId, actor ?? "", source.kind === "file" ? source.path : "")
+  ref(
+    "plan",
+    binding.sessionId,
+    actor ?? "",
+    source.kind === "file" ? source.path : `text\0${ref("text", source.text)}`,
+  )
 
 /** The plan a ref names among the bound session's, if it is still an actor's latest. */
 export const planOf = (binding: Binding, activity: Activity | null, plan: string) =>

@@ -117,11 +117,27 @@ export const apply = (
   switch (event.type) {
     case "plan-observed": {
       const { actor, plan: source, startedAt: at } = event
-      const earlier = activity.plans.find((plan) => plan.actor === actor)
-      if (earlier && earlier.at > at) return undefined
-      const others = activity.plans.filter((plan) => plan !== earlier)
-      if (!earlier && others.length >= maxPlans) return undefined
-      return { ...activity, plans: [...others, { actor, source, at }] }
+      const index = activity.plans.findIndex((plan) => plan.actor === actor)
+      const next = { actor, source, at }
+      // An actor's plan keeps its place.
+      if (index >= 0)
+        return activity.plans[index]!.at > at
+          ? undefined
+          : { ...activity, plans: activity.plans.toSpliced(index, 1, next) }
+      // Full, the oldest subagent's plan makes room.
+      const evicted =
+        activity.plans.length < maxPlans
+          ? -1
+          : activity.plans.reduce(
+              (oldest, plan, position, plans) =>
+                plan.actor !== null && (oldest < 0 || plan.at < plans[oldest]!.at)
+                  ? position
+                  : oldest,
+              -1,
+            )
+      if (activity.plans.length >= maxPlans && evicted < 0) return undefined
+      const kept = evicted < 0 ? activity.plans : activity.plans.toSpliced(evicted, 1)
+      return { ...activity, plans: [...kept, next] }
     }
     case "mode-observed":
       if (event.startedAt < activity.planningAt) return undefined

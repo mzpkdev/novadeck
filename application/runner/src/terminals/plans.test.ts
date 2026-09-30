@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -40,11 +41,23 @@ describe("a plan's content", () => {
     const missing = { kind: "file", path: join(directory, "none.md") } as const
     await expect(planContent("r", missing)).resolves.toBeUndefined()
     await expect(planStamp(missing)).resolves.toBeUndefined()
-    await expect(planContent("r", { kind: "text", text: "# P" })).resolves.toEqual({
+    await expect(
+      planContent("r", { kind: "text", text: "# P", truncated: false }),
+    ).resolves.toEqual({
       ref: "r",
       text: "# P",
       truncated: false,
       changedAt: null,
     })
   })
+
+  it.skipIf(process.platform === "win32")(
+    "is nothing but a plain file, so a pipe in its place never blocks",
+    async ({ directory }) => {
+      const path = join(directory, "p.md")
+      spawnSync("mkfifo", [path])
+      await expect(planStamp({ kind: "file", path })).resolves.toBeUndefined()
+      await expect(planContent("r", { kind: "file", path })).resolves.toBeUndefined()
+    },
+  )
 })

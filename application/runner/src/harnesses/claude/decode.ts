@@ -159,13 +159,20 @@ const statusLine = (
 // Tools that write a file, and what their input names it by.
 const writers = new Set(["Write", "Edit", "MultiEdit"])
 
+/** A Markdown file named by an absolute path. */
+const markdown = (value: unknown): string | undefined => {
+  const path = absolute(value)
+  return path && extname(path) === ".md" ? path : undefined
+}
+
 /**
- * A file Claude Code keeps a plan in: Markdown in a `plans` folder, where plan mode
- * writes its draft (`~/.claude/plans`, or the config folder's).
+ * A file plan mode drafts a plan in: Markdown in a `plans` folder, as Claude Code keeps
+ * them (`~/.claude/plans`, or the config folder's). A plans folder set elsewhere shows
+ * when the plan is presented, which names its file whatever the folder.
  */
 export const planFile = (value: unknown): string | undefined => {
-  const path = absolute(value)
-  return path && extname(path) === ".md" && basename(dirname(path)) === "plans" ? path : undefined
+  const path = markdown(value)
+  return path && basename(dirname(path)) === "plans" ? path : undefined
 }
 
 // A plan drafted in plan mode: the file its writer wrote.
@@ -189,18 +196,22 @@ const presented = (
 ): HarnessEvent[] => {
   if (tool !== "ExitPlanMode") return []
   const { plan, planFilePath } = (input ?? {}) as { plan?: unknown; planFilePath?: unknown }
-  const path = planFile(planFilePath)
+  // Claude Code names the file itself, replacing whatever the model passed.
+  const path = markdown(planFilePath)
   if (path) return [{ type: "plan-observed", ...base, actor, plan: { kind: "file", path } }]
-  return typeof plan === "string" && plan
-    ? [
-        {
-          type: "plan-observed",
-          ...base,
-          actor,
-          plan: { kind: "text", text: plan.slice(0, maxPlan) },
-        },
-      ]
-    : []
+  if (typeof plan !== "string" || !plan) return []
+  // Cut short, a character is left whole.
+  let end = Math.min(plan.length, maxPlan)
+  const last = plan.charCodeAt(end - 1)
+  if (end < plan.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+  return [
+    {
+      type: "plan-observed",
+      ...base,
+      actor,
+      plan: { kind: "text", text: plan.slice(0, end), truncated: end < plan.length },
+    },
+  ]
 }
 
 // The longest plan text kept, as the protocol takes it.

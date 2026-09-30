@@ -85,7 +85,7 @@ export type TelemetryObserved = {
 /** Where a plan is: a file the harness wrote it to, or its text when it named no file. */
 export type PlanSource =
   | { readonly kind: "file"; readonly path: string }
-  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "text"; readonly text: string; readonly truncated: boolean }
 
 /** A normalized fact a harness reported. */
 export type HarnessEvent = SessionObserved | ActivityEvent | TelemetryObserved
