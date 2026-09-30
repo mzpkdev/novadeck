@@ -136,7 +136,8 @@ export const apply = (
         pending: activity.pending.filter(
           (request) => request.actor !== actor || request.askedAt > startedAt,
         ),
-        subagents: subagents.filter(({ id }) => id !== actor),
+        // A resumed run that started after this stop runs on.
+        subagents: subagents.filter((each) => each.id !== actor || each.startedAt > startedAt),
         ended: end(ended, [actor], startedAt),
       }
     }

@@ -259,6 +259,11 @@ describe("an agent's detail", () => {
         null,
       ).requests.length
     expect(waiting([start(1), start(20), ask(21), stop(10)])).toBe(1)
+    const resumed = [start(1), stop(10), start(20), stop(10)].reduce(
+      (state, event) => apply(state, binding, event) ?? state,
+      started(0),
+    )
+    expect(agentDetail("t", binding, resumed, null).actors[1]).toMatchObject({ type: "Explore" })
     expect(waiting([start(2), stop(5), ask(3)])).toBe(0)
     expect(waiting([start(2), stop(5), start(9), ask(10)])).toBe(1)
   })
