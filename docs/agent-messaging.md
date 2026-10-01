@@ -276,11 +276,23 @@ server itself, before it reaches the runner.
   person submitted. A turn ending alone resolves nothing.
 - **The person's input** is any input a client sends to the terminal except the
   terminal's automatic replies (the `terminalReply` filter the manager already uses):
-  keys, pastes and mouse clicks, since a click can open a menu too. While a request is
-  pending, the keys up to and including its first answering key (Enter, Escape, or one
-  key that types, as a hotkey) answer it, and the moves before it (arrows, Home, End,
-  Tab) navigate; whatever follows while the request is still pending is a draft. A
-  question answered over several keys so ends Drafting, which only delays a ring.
+  keys, pastes and mouse clicks, since a click can open a menu too. While a request
+  (a permission or a question) is pending, whether or not a dialog shows:
+  1. its keys are never a submission: they neither count as a prompt the person
+     submitted nor as one they queued, so a Stop after them is continued as without
+     them;
+  2. the box counts as empty only if no content key came since the person's last bare
+     Enter, or since the request began. Content keys are all but bare Enter, Escape,
+     Left, Right, Home, End and Tab: a paste, Up or Down (which recall history), a key
+     that types (a hotkey too) or Backspace. A bare Enter either answers the dialog or
+     submits whatever was in the box, so the box is empty after it either way;
+  3. once the request clears, a content key since the last bare Enter makes the prompt
+     a draft, and the usual rules go on from there.
+
+  A form answered with arrows and Enter for each question so ends Settled; one
+  answered with a single hotkey (Claude Code's "1", Codex's "y") ends Drafting, which
+  only delays a ring.
+
 - **A bare Enter** is a carriage return of its own: not Alt or Shift+Enter (`\x1b\r`,
   a newline in the box), nor one inside a bracketed paste. Nothing else submits, but
   Codex's Tab, its profile's queue key.
@@ -291,9 +303,9 @@ server itself, before it reaches the runner.
   or a hook's continuation. Antigravity's hooks name no prompt, so every turn of its is
   harness-started; its adapter (`confirmsSubmission`) turns one into the person's only
   when, after their bare Enter with nothing typed since, its transcript holds a new
-  typed entry (`USER_EXPLICIT` `USER_INPUT`: more of them than at its last turn, or,
-  before any turn was read, one timed no earlier than the Enter's second) that is no
-  doorbell line. Its transcript records a subagent's message, a Stop hook's
+  typed entry (`USER_EXPLICIT` `USER_INPUT` whose `step_index` comes after the one
+  seen at its last turn in that same transcript, or, before any was read, one timed no
+  earlier than the Enter's second) that is no doorbell line. Its transcript records a subagent's message, a Stop hook's
   continuation and its own notices as `SYSTEM_MESSAGE` steps, so they never count. A
   prompt Codex queued during a
   turn, which it submits as the turn ends, counts too, when the person typed nothing

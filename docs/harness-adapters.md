@@ -458,6 +458,8 @@ type MessagingProfile = {
    * Where its hooks name no prompt, whether its transcript's last typed entry shows the
    * person submitted with their bare Enter; else a turn it started is never theirs.
    */
+  /** Where its hooks name no prompt, what a transcript line records as typed, with its step. */
+  readonly typedEntry?: (line: string) => UserEntry | undefined
   readonly confirmsSubmission?: (
     entry: UserEntry | undefined,
     since: { readonly enteredAt: number; readonly seen: number | undefined },
