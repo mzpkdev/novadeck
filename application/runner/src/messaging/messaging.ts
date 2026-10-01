@@ -751,7 +751,10 @@ export class Messaging {
         !this.exists(message.to.terminalId) &&
         now - Math.max(message.sentAt, message.deliveredAt ?? 0) >= retentionMs,
     )
-    for (const { id } of old) this.messages.delete(id)
+    for (const { id } of old) {
+      this.messages.delete(id)
+      this.everLeased.delete(id)
+    }
     if (old.length > 0) this.write(() => this.records.removeMessages(old.map(({ id }) => id)))
     const kept = new Set([...this.messages.values()].map(({ thread }) => thread))
     const threads = [...this.threads.keys()].filter((id) => !kept.has(id))

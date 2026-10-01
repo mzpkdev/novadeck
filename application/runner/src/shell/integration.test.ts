@@ -2368,7 +2368,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const answer = JSON.parse(
           await step(opener.id, {
             call: "open",
-            request: { command: `claude s-opened ${steps} fix-the-build` },
+            // Its program quoted, as a shell takes it all the same.
+            request: { command: `'claude' s-opened ${steps} fix-the-build` },
           }),
         ) as { ok: boolean; terminalId: string }
         expect(answer.ok).toBe(true)

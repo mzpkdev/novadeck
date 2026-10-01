@@ -1,10 +1,9 @@
-import { basename, isAbsolute, relative } from "node:path"
+import { isAbsolute, relative } from "node:path"
 
-import type { AgentName, TerminalMessages, TerminalSummary } from "@novadeck/protocol"
+import type { TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
 import type { Activity } from "../harnesses/activity.js"
-import { agents } from "../harnesses/registry.js"
 import type { AgentsAnswer, Messaging, SendAnswer } from "../messaging/messaging.js"
 import type { Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
@@ -36,20 +35,6 @@ export type PeersOptions = {
   readonly projectFolder: (sessionId: string) => string | undefined
   /** Whether the runner is stopping. */
   readonly stopping: () => boolean
-}
-
-/**
- * The agent a new terminal expects to bind, which messages may be sent to before it has:
- * the one it resumes, or whose program its command runs; null for a plain shell or
- * another program.
- */
-export const expectedAgent = (
-  command: string | undefined,
-  resume: AgentName | undefined,
-): AgentName | null => {
-  if (resume) return resume
-  const program = basename(command?.trim().split(/\s+/)[0] ?? "").replace(/\.(?:exe|cmd)$/i, "")
-  return agents.find((agent) => agent === program) ?? null
 }
 
 /** How long a folder's git branch is trusted once read, in milliseconds. */
@@ -161,6 +146,23 @@ export class TerminalPeers {
       }),
     )
     return new Map(entries)
+  }
+
+  /**
+   * What other agents' words reached a terminal's agent, as a title it says the person
+   * asked for must not come from: the messages that reached its root session, and the
+   * titles and summaries of the session's other terminals.
+   */
+  seenBy(terminal: PeerTerminal): readonly string[] {
+    const { id, sessionId } = terminal.summary
+    return [
+      ...this.options.messaging.receivedTexts(id),
+      ...this.options
+        .running(sessionId)
+        .flatMap((other) =>
+          other.summary.id === id ? [] : [other.summary.title, other.naming.summary ?? ""],
+        ),
+    ]
   }
 
   /**

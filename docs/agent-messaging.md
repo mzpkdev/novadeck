@@ -707,9 +707,9 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   argument of the command, split and unquoted as a shell does (the prompt of
   `claude "…"`, `codex "…"` or `agy -i "…"`), never a part of one. Until told, it counts
   as the opener's command. Only a session the opener's command started counts: one whose
-  first word is a harness NovaDeck knows; after a command that starts no agent, as
-  `npm test`, the session the person then starts is theirs. The opener can name the terminal through
-  `open_terminal`'s `title`. So a terminal opened with a task still takes its title from
+  first word, unquoted, is a harness NovaDeck knows (`terminals/commands.ts`); after a
+  command that starts no agent, as `npm test`, the session the person then starts is
+  theirs. The opener can name the terminal through `open_terminal`'s `title`. So a terminal opened with a task still takes its title from
   the person's first prompt there. The work is tallied from the prompts as attributed,
   so Antigravity's first typed prompt, read from its transcript, counts too.
 - **Nudges.** The prompt-time hook (`UserPromptSubmit`, Antigravity's `PreInvocation`)

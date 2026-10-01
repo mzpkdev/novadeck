@@ -65,6 +65,7 @@ import {
   type Reports,
 } from "../shell/reports.js"
 import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
+import { expectedAgent, promptIn } from "./commands.js"
 import { readDescribeRequest, type DescribeAnswer } from "./describe.js"
 import { Doorbell, screenText, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
 import {
@@ -96,7 +97,7 @@ import {
   type Asked,
   type OpenAnswer,
 } from "./opens.js"
-import { expectedAgent, TerminalPeers } from "./peers.js"
+import { TerminalPeers } from "./peers.js"
 import { planContent, planStamp } from "./plans.js"
 import type {
   AgentReport,
@@ -111,7 +112,7 @@ import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
 import { transcriptChanges } from "./transcripts.js"
 import { Watcher } from "./watcher.js"
-import { judgedFirst, promptIn, workAfter, type Work } from "./work.js"
+import { judgedFirst, workAfter, type Work } from "./work.js"
 
 const { Terminal } = headless
 const OUTPUT_CHARS = 4096
@@ -1514,17 +1515,10 @@ export class Terminals {
     const summary = cleanSummary(read.request.summary)
     const refusal = descriptionRefusal(title, summary)
     if (refusal) return refused(refusal)
-    // The person's prompt of the turn this call came in, and what else reached its agent
-    // (messages this root session, its peers' titles and summaries), before anything waits.
+    // The person's prompt of the turn this call came in, and what other agents' words
+    // reached its agent, before anything waits.
     const prompt = this.messaging.personPrompt(call.terminalId)
-    const elsewhere = [
-      ...this.messaging.receivedTexts(call.terminalId),
-      ...[...this.records.values()].flatMap((peer) =>
-        peer !== record && peer.summary.sessionId === record.summary.sessionId
-          ? [peer.summary.title, peer.naming.summary ?? ""]
-          : [],
-      ),
-    ]
+    const elsewhere = this.peers.seenBy(record)
     // Drift is measured from where its work is now.
     const facts = await this.peers.facts(record)
     if (this.stopping || this.records.get(call.terminalId) !== record)

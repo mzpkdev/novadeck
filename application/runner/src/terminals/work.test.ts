@@ -3,13 +3,11 @@ import type { Root } from "../harnesses/roots.js"
 import { describe, expect, it } from "../test.js"
 import {
   busiestFolders,
-  commandWords,
   firstFrom,
   freshWork,
   judgedFirst,
   keptFolders,
   promptChars,
-  promptIn,
   shorten,
   tallied,
   workAfter,
@@ -144,28 +142,5 @@ describe("whose a root session's first prompt is", () => {
     expect(judgedFirst(first(), true).firstByPerson).toBe(true)
     expect(judgedFirst(first({ firstByPerson: false }), true).firstByPerson).toBe(false)
     expect(judgedFirst(freshWork("claude:s1"), true)).toEqual(freshWork("claude:s1"))
-  })
-
-  it("tells the prompt in an opener's command: one whole argument, on one line and in one case", () => {
-    expect(promptIn('claude "Fix the  build"', "fix the build")).toBe(true)
-    expect(promptIn("agy -i 'fix the build'", "Fix the build")).toBe(true)
-    expect(promptIn('claude "Fix the build"', "and now the docs")).toBe(false)
-    expect(promptIn("claude", "  ")).toBe(false)
-    // The critic's probes: never a part of an argument, nor the program itself.
-    expect(promptIn("claude --review", "review")).toBe(false)
-    expect(promptIn("claude ./src/me/fix.ts", "me")).toBe(false)
-    expect(promptIn("claude 'fix the build'", "fix")).toBe(false)
-    expect(promptIn("claude 'fix the build'", "claude")).toBe(false)
-  })
-
-  it("splits a command into words as a shell unquotes them", () => {
-    expect(commandWords(`claude "fix \\"it\\" now" 'a b' c\\ d '' e`)).toEqual([
-      "claude",
-      'fix "it" now',
-      "a b",
-      "c d",
-      "",
-      "e",
-    ])
   })
 })

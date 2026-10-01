@@ -975,6 +975,35 @@ describe("retention", () => {
     expect(records.messages()).toEqual([])
     expect(records.threads()).toEqual([])
   })
+
+  it("forgets that a message was leased once it is deleted", () => {
+    const kept = new Set(["A", "B"])
+    const {
+      messaging,
+      send,
+      prompt,
+      stop,
+      codex,
+      clock: time,
+    } = create(
+      memoryMailbox(),
+      { now: 1_000_000 },
+      { exists: (terminalId) => kept.has(terminalId) },
+    )
+    // What the runner remembers of leases, which only the sweep keeps from growing.
+    const leased = () => (messaging as unknown as { everLeased: Set<string> }).everLeased
+    prompt("B", codex)
+    const { id } = sent(send("A", "t2", "hello"))
+    expect(stop("B", codex).leaseId).toEqual(expect.any(String))
+    expect([...leased()]).toEqual([id])
+    messaging.unregister("A")
+    messaging.unregister("B")
+    kept.clear()
+    time.now += retentionMs
+    messaging.sweep()
+    expect(leased().size).toBe(0)
+    messaging.close()
+  })
 })
 
 const doorbellStarted = (bound: Binding, nonce: string): HarnessEvent => ({
