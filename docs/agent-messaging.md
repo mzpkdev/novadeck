@@ -615,6 +615,36 @@ that Enter would answer. So `open_terminal(agent, message)`:
 The task is never typed and never the person's prompt. Until the UI shows messages, the
 person sees the task only through the runner API.
 
+## Self-description (later)
+
+Decided, not built. An agent names its own terminal and says what it works on, so
+others can pick it in `agents()`.
+
+- **`describe(title, summary)`** describes the caller's own terminal only: it takes no
+  target, and the runner knows the caller from its terminal token. `summary` is one or
+  two lines (about 200 characters) that `agents()` lists; the UI doesn't show it. A
+  title the person gave stays, and only the summary changes; the answer says so.
+- **Before any `describe`**, the terminal's title is the person's first prompt of the
+  root session, shortened. `describe` replaces it, and a new root session starts over.
+- **Nudges.** The prompt-time hook (`UserPromptSubmit`, Antigravity's `PreInvocation`)
+  adds one line, worded as an automatic NovaDeck notice, only when a trigger fired
+  since the last `describe`; otherwise it adds nothing. Never at Stop, and never in
+  the same answer as messages. The triggers:
+  1. a new root session (start, `/clear`, restart) with nothing described yet;
+  2. a compaction, where the harness reports one (Claude Code's `SessionStart` with
+     `compact`; Codex and Antigravity to probe);
+  3. drift: the plan title, the main folder it works in or its branch changed since
+     the last `describe`;
+  4. as a backstop, about 15 of the person's prompts since the last `describe`.
+
+  After the first one, a nudge shows the current description and asks for an update
+  only if it no longer fits. Each trigger nudges once; an ignored nudge waits for the
+  next trigger.
+
+- **Who wins the title:** the person, then whoever set it last among `describe` and
+  `open_terminal`'s opener, then the first-prompt fallback. "Reset to automatic" in the
+  UI hands a person's title back.
+
 ## Runner API and UI
 
 Step one ships the runner API only, for the UI to follow: list a terminal's threads and
@@ -633,6 +663,8 @@ pause switch. The person doesn't send as themselves; they type in the terminal.
    `application/runner/src/terminals/ring.ts`, the ring in `terminals/doorbell.ts`,
    and the Ringing state in `messaging/delivery.ts`.
 3. **UI:** badges, the Messages view and the pause switch.
+4. **Self-description:** `describe(title, summary)`, the first-prompt title and the
+   nudges.
 
 Harness accelerators (Claude Code channels, `codex queue`) stay out unless a later probe
 shows them strictly better, and then only behind a flag, never as the only path.
