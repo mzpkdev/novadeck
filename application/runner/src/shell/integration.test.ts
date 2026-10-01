@@ -20,6 +20,7 @@ import type {
   AgentName,
   AgentShown,
   TerminalChange,
+  TerminalRequest,
   TerminalSummary,
 } from "@novadeck/protocol"
 import { vi } from "vitest"
@@ -29,6 +30,7 @@ import type { TerminalRecords } from "../terminals/records.js"
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
 import { installShellFiles } from "./install.js"
+import { unansweredCalls } from "./reports.js"
 
 const bash = "/bin/bash"
 
@@ -132,7 +134,13 @@ const it = base.extend<{ shell: Fixture }>({
 const create = (
   manager: Terminals,
   fixture: Fixture,
-  input: { id?: string; cwd?: string; restore?: boolean; resume?: AgentName } = {},
+  input: {
+    id?: string
+    cwd?: string
+    restore?: boolean
+    resume?: AgentName
+    command?: string
+  } = {},
 ) =>
   manager.create(
     {
@@ -143,6 +151,7 @@ const create = (
       rows: 20,
       ...(input.restore !== undefined && { restore: input.restore }),
       ...(input.resume !== undefined && { resume: input.resume }),
+      ...(input.command !== undefined && { command: input.command }),
     },
     "owner",
   )
@@ -195,7 +204,7 @@ const reporter = (
 
 // A stand-in for NovaDeck's MCP server: `present <name>` sends the calls in `<name>.json`
 // as a tool call would, one after another, keeps the answers in `<name>.answers.json`,
-// then says so.
+// then says so. Each call is a `present` unless it names its type.
 const presenter = (home: string): string => {
   const bin = join(home, "bin")
   mkdirSync(bin, { recursive: true })
@@ -222,8 +231,8 @@ const presenter = (home: string): string => {
       "    answers.push(text ? JSON.parse(text) : null)",
       "    send(index + 1)",
       "  })",
-      "  const { request, token: given } = calls[index]",
-      '  socket.end(JSON.stringify({ type: "present", terminalId, token: given ?? token, request }) + "\\n")',
+      '  const { request, token: given, type = "present" } = calls[index]',
+      '  socket.end(JSON.stringify({ type, terminalId, token: given ?? token, request }) + "\\n")',
       "}",
       "send(0)",
     ].join("\n"),
@@ -318,6 +327,48 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     manager.write({ terminalId: id, data: "\rhistory\r" }, "owner")
     const after = await shell.until(manager, id, /history\r?\n[\s\S]*\$ /)
     expect(after).not.toMatch(/\d+ +claude/)
+  })
+
+  it("starts a new terminal's command at the first prompt, as if typed there", async ({
+    shell,
+  }) => {
+    writeFileSync(
+      join(shell.home, ".bashrc"),
+      [
+        'export PATH="$HOME/bin:$PATH"',
+        "PROMPT_COMMAND='export FROM_PROMPT=yes'",
+        "HISTFILE=~/.bash_history",
+      ].join("\n"),
+    )
+    fakeAgent(shell.home, "claude")
+    const manager = shell.manager()
+    const terminal = await create(manager, shell, { command: "claude --model 'big one'" })
+    const shown = await shell.until(
+      manager,
+      terminal.id,
+      "claude args: --model big one prompt=[yes] resume=[]",
+    )
+    expect(shown).not.toContain("$ claude")
+    expect(readdirSync(join(dirname(shell.plugins), "resume"))).toEqual([])
+    // Nothing was typed, so the history keeps nothing of it.
+    manager.write({ terminalId: terminal.id, data: "\rhistory\r" }, "owner")
+    const after = await shell.until(manager, terminal.id, /history\r?\n[\s\S]*\$ /)
+    expect(after).not.toMatch(/\d+ +claude/)
+  })
+
+  it("refuses to start a terminal whose shell can't run its command", async ({ shell }) => {
+    const refused = expect.objectContaining({ code: "SPAWN_FAILED" })
+    // Configured arguments, a shell NovaDeck doesn't integrate, and no integration at all.
+    for (const options of [
+      { shellArgs: [] },
+      { shell: "/bin/sh" },
+      { shellFiles: Promise.resolve(undefined) },
+    ]) {
+      const manager = shell.manager(options)
+      // eslint-disable-next-line no-await-in-loop -- Each manager is tried in turn.
+      await expect(create(manager, shell, { command: "claude" })).rejects.toEqual(refused)
+      expect(manager.list()).toEqual([])
+    }
   })
 
   it("resumes nothing for an agent that reported no session there", async ({ shell }) => {
@@ -1182,13 +1233,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
   })
 })
 
-// macOS's default shell, where it is installed.
 /** Sends the calls from the terminal, as NovaDeck's MCP server would, and reads the answers. */
 const present = async (
   shell: Fixture,
   manager: Terminals,
   terminalId: string,
-  calls: { request: object; token?: string }[],
+  calls: { request: object; token?: string; type?: "present" | "open" }[],
 ): Promise<unknown[]> => {
   const name = `calls-${randomUUID().slice(0, 8)}`
   const path = join(shell.home, name)
@@ -1346,6 +1396,106 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         expect.objectContaining({ code: "NOT_FOUND" }),
       )
       expect(manager.artifact(terminal.id, answers[64]!.id)).toMatchObject({ lines: ["f64.txt"] })
+    })
+  },
+)
+
+// A call to open a terminal, as NovaDeck's MCP server sends it.
+const open = (request: object, token?: string) => ({
+  type: "open" as const,
+  request,
+  ...(token !== undefined && { token }),
+})
+
+describe.skipIf(process.platform === "win32" || !existsSync(bash))(
+  "what agents open from a bash terminal",
+  () => {
+    it("asks the client for a new terminal, which starts the command where the agent said", async ({
+      shell,
+    }) => {
+      const bin = presenter(shell.home)
+      fakeAgent(shell.home, "claude")
+      const manager = shell.manager({
+        env: {
+          HOME: shell.home,
+          PS1: "$ ",
+          PATH: `${bin}:${join(shell.home, "bin")}:${process.env.PATH}`,
+        },
+      })
+      const project = join(shell.home, "project")
+      mkdirSync(project)
+      const terminal = await create(manager, shell)
+      // Without a client to lay it out, nothing opens.
+      await expect(present(shell, manager, terminal.id, [open({})])).resolves.toEqual([
+        { ok: false, reason: "NovaDeck isn't open to show a new terminal." },
+      ])
+      // A client opens what it is asked to, as its "+" would, or says why not.
+      const controller = new AbortController()
+      const requests: TerminalRequest[] = []
+      const client = (async () => {
+        for await (const request of manager.requests("client", controller.signal)) {
+          requests.push(request)
+          const { requestId, sessionId, cwd, command } = request
+          if (request.title === "Refused") {
+            manager.answerRequest({ requestId, reason: "Not now." }, "client")
+            continue
+          }
+          const id = randomUUID()
+          // eslint-disable-next-line no-await-in-loop -- Requests are opened in turn.
+          await manager.create(
+            { id, sessionId, cwd, cols: 100, rows: 20, ...(command && { command }) },
+            "client",
+          )
+          manager.answerRequest({ requestId, terminalId: id }, "client")
+        }
+      })()
+      try {
+        const answers = await present(shell, manager, terminal.id, [
+          open({ command: "claude --fresh", cwd: "project", title: "Agent", focus: true }),
+          open({ title: "Refused" }),
+          open({ cwd: "nowhere" }),
+          open({ command: "claude\nrm -rf ~" }),
+          open({}, "0".repeat(48)),
+        ])
+        expect(answers).toEqual([
+          { ok: true, terminalId: expect.any(String), cwd: project, command: "claude --fresh" },
+          { ok: false, reason: "Not now." },
+          { ok: false, reason: "nowhere isn't a folder a terminal can open in." },
+          { ok: false, reason: "The command must be one line, without control characters." },
+          unansweredCalls.open,
+        ])
+        const asked = {
+          requestId: expect.any(String),
+          from: terminal.id,
+          sessionId: shell.sessionId,
+        }
+        expect(requests).toEqual([
+          { ...asked, cwd: project, command: "claude --fresh", title: "Agent", focus: true },
+          { ...asked, cwd: shell.home, title: "Refused", focus: false },
+        ])
+        const [opened] = answers as { terminalId: string }[]
+        expect(manager.get(opened!.terminalId)).toMatchObject({ cwd: project })
+        await shell.until(manager, opened!.terminalId, "claude args: --fresh")
+        // Five a minute, counting each request that was asked, opened or not: two more,
+        // and the next waits.
+        const more = await present(
+          shell,
+          manager,
+          terminal.id,
+          Array.from({ length: 3 }, () => open({ title: "Refused" })),
+        )
+        expect(more).toEqual([
+          ...Array.from({ length: 2 }, () => ({ ok: false, reason: "Not now." })),
+          {
+            ok: false,
+            reason:
+              "This terminal opened as many terminals as it may in the last minute; try again shortly.",
+          },
+        ])
+      } finally {
+        controller.abort()
+        await client
+      }
     })
   },
 )

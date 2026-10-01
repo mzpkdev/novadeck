@@ -14,6 +14,8 @@ import type {
   TerminalAttached,
   TerminalChange,
   TerminalEvent,
+  TerminalRequest,
+  TerminalRequestAnswer,
   TerminalSummary,
   PlanContent,
   TranscriptChange,
@@ -38,11 +40,12 @@ import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
 import { harnesses } from "../harnesses/registry.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import type { InstalledShell } from "../shell/install.js"
-import { shellLaunch, type ShellLaunch } from "../shell/integration.js"
+import { shellLaunch, startsCommands, type ShellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
 import {
   listenForReports,
   unanswered,
+  unansweredCalls,
   type Call,
   type Report,
   type Reports,
@@ -55,6 +58,14 @@ import {
   type Foreground,
 } from "./foreground.js"
 import { Latest } from "./latest.js"
+import {
+  allowOpen,
+  OpenRequests,
+  readOpenRequest,
+  refused,
+  type Asked,
+  type OpenAnswer,
+} from "./opens.js"
 import { planContent, planStamp } from "./plans.js"
 import type { AgentReport, SavedTerminal, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
@@ -104,6 +115,8 @@ export type TerminalOptions = {
   planPollMs?: number
   /** The folder of the project a session belongs to, which names the files its agents show. */
   projectFolder?: (sessionId: string) => string | undefined
+  /** How long an agent's request for a new terminal waits for the client's answer, in milliseconds. */
+  openMs?: number
 }
 
 type Create = {
@@ -114,6 +127,8 @@ type Create = {
   rows: number
   restore?: boolean | undefined
   resume?: AgentName | undefined
+  /** Runs once at the shell's first prompt; never with `restore` or `resume`. */
+  command?: string | undefined
 }
 type Size = { cols: number; rows: number }
 type Attach = { terminalId: string; afterSequence?: number; mode?: "control" | "observe" }
@@ -176,8 +191,8 @@ type Record = {
 
 /**
  * A spawned shell with its own headless screen, before it belongs to a record: the token
- * its agents report with, whether it resumes an agent, and the file holding the command
- * that does, until the shell takes it or it is cancelled.
+ * its agents report with, whether it runs a startup command, as one that resumes an
+ * agent, and the file holding that command, until the shell takes it or it is cancelled.
  */
 type Started = {
   process: pty.IPty
@@ -239,6 +254,13 @@ const terminalReply =
   // eslint-disable-next-line no-control-regex -- These replies are control sequences.
   /^(?:\x1b\[[IO]|\x1b\[\??[\d;]*[Rcn]|\x1b\[>[\d;]*c|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/
 
+// Why a request for a new terminal went unanswered.
+const unopened = {
+  nobody: "NovaDeck isn't open to show a new terminal.",
+  gone: "NovaDeck's window went away before it opened the terminal.",
+  late: "NovaDeck didn't open the terminal in time.",
+}
+
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 
@@ -288,6 +310,10 @@ export class Terminals {
   private readonly details = new Map<string, Set<Latest<AgentDetail>>>()
   /** Each terminal's `agents.shown` readers. */
   private readonly showings = new Map<string, Set<Latest<AgentShown>>>()
+  /** Agents' requests for a new terminal, on their way to the client. */
+  private readonly opens = new OpenRequests()
+  /** When each terminal's agents opened terminals lately, for `openLimit`. */
+  private readonly opened = new Map<string, readonly number[]>()
   private sampler: ReturnType<typeof setInterval> | undefined
   private saver: ReturnType<typeof setInterval> | undefined
   private readonly options: Required<
@@ -349,6 +375,7 @@ export class Terminals {
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
       planPollMs: positive(options.planPollMs, 500),
       projectFolder: options.projectFolder,
+      openMs: positive(options.openMs, 6_000),
     }
     // Child programs do not need the runner's network capability, nor the identity of a
     // NovaDeck terminal the runner itself was started from.
@@ -366,7 +393,7 @@ export class Terminals {
       if (!paths) return undefined
       const reports = await listenForReports(
         (report) => this.queueReport(report),
-        (call) => this.present(call),
+        (call) => (call.type === "open" ? this.open(call) : this.present(call)),
       )
       if (!this.stopping) return { paths, reports }
       await reports.close()
@@ -379,7 +406,9 @@ export class Terminals {
   /**
    * Starts a terminal. With `restore`, it continues the saved terminal of that id: in its
    * last directory, with its saved agent sessions, and its transcript shown first unless
-   * the shell resumes the session `resume` last reported there (see `claim`).
+   * the shell resumes the session `resume` last reported there (see `claim`). With
+   * `command`, the shell runs it at its first prompt; a shell that can't, as without the
+   * integration, does not start.
    */
   async create(input: Create, ownerId: string): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
@@ -402,9 +431,14 @@ export class Terminals {
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
       const resume =
+        input.command === undefined &&
         input.resume &&
         this.resumable(input.id, input.resume, saved?.agents[input.resume]?.sessionId, connected)
-      const started = this.spawn(shell, cwd, input, integration, resume?.argv)
+      const startup =
+        input.command !== undefined
+          ? { command: input.command, required: true }
+          : resume && { command: resume.argv.join(" ") }
+      const started = this.spawn(shell, cwd, input, integration, startup || undefined)
       if (resume && started.resumes) {
         this.claims.set(resume.key, input.id)
         started.resumeClaim = resume.key
@@ -547,7 +581,13 @@ export class Terminals {
             record.agents[input.resume]?.sessionId,
             connected,
           )
-        const started = this.spawn(shell, cwd, input, integration, resume?.argv)
+        const started = this.spawn(
+          shell,
+          cwd,
+          input,
+          integration,
+          resume ? { command: resume.argv.join(" ") } : undefined,
+        )
         if (resume && started.resumes) {
           this.claims.set(resume.key, record.summary.id)
           started.resumeClaim = resume.key
@@ -623,6 +663,7 @@ export class Terminals {
   /** Forgets what restores the terminal, and the sessions it claimed. */
   private forget(terminalId: string): void {
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
+    this.opened.delete(terminalId)
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
   }
 
@@ -920,6 +961,90 @@ export class Terminals {
     }
   }
 
+  /**
+   * Opens a new terminal beside the caller's, as an agent asked through NovaDeck's MCP
+   * server in one of the terminal's shells: in a folder, from the terminal's directory,
+   * optionally starting a command at its first prompt. The client that lays terminals
+   * out opens it (see `requests`), so without one nothing opens. A terminal's agents
+   * open a few at most each minute. A call without the shell's own token learns nothing
+   * more.
+   */
+  async open(call: Call): Promise<OpenAnswer> {
+    const record = this.records.get(call.terminalId)
+    if (!record || record.exitQueued || !sameToken(record.token, call.token))
+      return unansweredCalls.open
+    const read = readOpenRequest(call.request)
+    if (!read.ok) return read
+    const { request } = read
+    if (request.command !== undefined && !(await this.startsCommands()))
+      return refused(
+        "NovaDeck's shells can't start a command as they open here, as its shell integration " +
+          "isn't loaded, so no terminal opened.",
+      )
+    const folder = request.cwd ?? "."
+    const cwd = await this.directory(resolvePath(record.summary.cwd, folder)).catch(() => undefined)
+    if (cwd === undefined) return refused(`${folder} isn't a folder a terminal can open in.`)
+    // Closed, or the runner stopped, while the folder was looked at.
+    if (this.stopping || this.records.get(call.terminalId) !== record) return unansweredCalls.open
+    const times = allowOpen(this.opened.get(call.terminalId) ?? [], Date.now())
+    if (!times)
+      return refused(
+        "This terminal opened as many terminals as it may in the last minute; try again shortly.",
+      )
+    this.opened.set(call.terminalId, times)
+    const asked = await this.opens.ask(
+      {
+        from: call.terminalId,
+        sessionId: record.summary.sessionId,
+        cwd,
+        ...(request.command !== undefined && { command: request.command }),
+        ...(request.title !== undefined && { title: request.title }),
+        focus: request.focus === true,
+      },
+      this.options.openMs,
+    )
+    return this.opening(asked, cwd, request.command)
+  }
+
+  /** What the agent learns of the client's answer. */
+  private opening(asked: Asked, cwd: string, command: string | undefined): OpenAnswer {
+    if (asked.type !== "answered") return refused(unopened[asked.type])
+    const { answer } = asked
+    if ("reason" in answer) return refused(answer.reason)
+    if (!this.records.has(answer.terminalId)) return unansweredCalls.open
+    return {
+      ok: true,
+      terminalId: answer.terminalId,
+      cwd,
+      ...(command !== undefined && { command }),
+    }
+  }
+
+  /** Whether a terminal created now could start a command; see `spawn`. */
+  private async startsCommands(): Promise<boolean> {
+    const integration = await this.integration
+    return (
+      integration !== undefined &&
+      this.options.shellArgs === undefined &&
+      startsCommands(this.options.shell)
+    )
+  }
+
+  /**
+   * Agents' requests for a new terminal, for the client to open where it lays terminals
+   * out: each request goes to the newest of these streams, until `signal` aborts, the
+   * owner is released, or the runner shuts down.
+   */
+  requests(ownerId: string, signal?: AbortSignal): AsyncGenerator<TerminalRequest> {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    return this.opens.follow(ownerId, signal)
+  }
+
+  /** The client's answer to a request; NOT_FOUND once nothing waits for it. */
+  answerRequest(answer: TerminalRequestAnswer, ownerId: string): void {
+    this.opens.answer(answer, ownerId)
+  }
+
   /** The folder of the session's project; undefined when that cannot be told. */
   private projectFolder(sessionId: string): string | undefined {
     try {
@@ -1063,6 +1188,7 @@ export class Terminals {
       this.settle(record)
     }
     for (const [watcher, owner] of this.watchers) if (owner === ownerId) watcher.finish()
+    this.opens.release(ownerId)
   }
 
   shutdown(): Promise<void> {
@@ -1076,6 +1202,7 @@ export class Terminals {
     clearInterval(this.saver)
     this.saver = undefined
     for (const watcher of this.watchers.keys()) watcher.finish()
+    this.opens.finish()
     for (const streams of [this.details, this.showings])
       for (const readers of streams.values()) for (const reader of readers) reader.finish()
     for (const record of this.records.values()) this.unwatch(record)
@@ -1286,27 +1413,31 @@ export class Terminals {
   /**
    * Spawns a shell with a fresh screen; the caller attaches it to a record. Every shell
    * knows its terminal's id; with the integration it also loads it, and gets the hook's
-   * launcher and the endpoint and token its connected agents report with. A `resume`
-   * command runs as the integration starts; configured shell arguments leave it out.
+   * launcher and the endpoint and token its connected agents report with. A `startup`
+   * command runs as the integration starts; configured shell arguments leave it out,
+   * unless it is `required`, when the shell does not start without it.
    */
   private spawn(
     shell: string,
     cwd: string,
     input: Size & { id?: string; terminalId?: string },
     integration: (Integration & { shims: readonly AgentName[] }) | undefined,
-    resume?: readonly string[],
+    startup?: { readonly command: string; readonly required?: boolean },
   ): Started {
     const { cols, rows } = input
     const id = input.id ?? input.terminalId ?? ""
     const token = randomBytes(24).toString("hex")
-    const launch = (withResume: boolean): ShellLaunch =>
+    const launch = (withStartup: boolean): ShellLaunch =>
       integration
         ? shellLaunch(shell, integration.paths, this.options.env, {
             shims: integration.shims,
-            ...(withResume &&
-              resume &&
+            ...(withStartup &&
+              startup &&
               this.options.shellArgs === undefined && {
-                resume: { argv: resume, file: join(integration.paths.resume, randomUUID()) },
+                startup: {
+                  command: startup.command,
+                  file: join(integration.paths.resume, randomUUID()),
+                },
               }),
           })
         : { args: [], env: this.options.env, integrated: false, resumes: false }
@@ -1314,10 +1445,12 @@ export class Terminals {
     // The shell reads the command from a file only it and the runner can read.
     if (launched.resumeFile)
       try {
-        writeFileSync(launched.resumeFile, resume!.join(" "), { mode: 0o600, flag: "wx" })
+        writeFileSync(launched.resumeFile, startup!.command, { mode: 0o600, flag: "wx" })
       } catch {
         launched = launch(false)
       }
+    if (startup?.required && !launched.resumes)
+      throw new DomainError("SPAWN_FAILED", "This terminal's shell can't start a command.")
     const { resumeFile } = launched
     const env: NodeJS.ProcessEnv = {
       ...launched.env,
