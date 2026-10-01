@@ -281,17 +281,23 @@ server itself, before it reaches the runner.
   1. its keys are never a submission: they neither count as a prompt the person
      submitted nor as one they queued, so a Stop after them is continued as without
      them;
-  2. the box counts as empty only if no content key came since the person's last bare
-     Enter, or since the request began. Content keys are all but bare Enter, Escape,
-     Left, Right, Home, End and Tab: a paste, Up or Down (which recall history), a key
-     that types (a hotkey too) or Backspace. A bare Enter either answers the dialog or
-     submits whatever was in the box, so the box is empty after it either way;
-  3. once the request clears, a content key since the last bare Enter makes the prompt
-     a draft, and the usual rules go on from there.
+  2. a content key typed while it is pending leaves a draft that sticks: a bare Enter
+     meanwhile doesn't clear it, as nothing confirms that Enter emptied the box. It may
+     answer the dialog, but also insert a newline (after a `\` in Claude Code), take an
+     @file or slash-command suggestion, or approve a second request while a draft typed
+     during the first tool waits in the box. Only a confirmed submission clears it: a
+     bare Enter followed by a root prompt turn within about 2 s, nothing typed since.
+     Content keys are all but bare Enter, Escape, Left, Right, Home, End and Tab: a
+     paste, Up and Down, a key that types (a hotkey too) or Backspace. Down stays
+     content: no probe showed that Down in an empty prompt box changes nothing in all
+     three harnesses (the probes only pressed it in startup menus);
+  3. once the request clears, a draft left by (2) makes the prompt a draft, and the
+     usual rules go on from there.
 
-  A form answered with arrows and Enter for each question so ends Settled; one
-  answered with a single hotkey (Claude Code's "1", Codex's "y") ends Drafting, which
-  only delays a ring.
+  A request answered with Enter alone leaves the box as it was. One navigated with
+  any other key (an arrow, a hotkey such as Claude Code's "1" or Codex's "y"), and any
+  multi-question form, ends Drafting: its messages wait for the person's next prompt,
+  which only delays a ring.
 
 - **A bare Enter** is a carriage return of its own: not Alt or Shift+Enter (`\x1b\r`,
   a newline in the box), nor one inside a bracketed paste. Nothing else submits, but
@@ -304,8 +310,9 @@ server itself, before it reaches the runner.
   harness-started; its adapter (`confirmsSubmission`) turns one into the person's only
   when, after their bare Enter with nothing typed since, its transcript holds a new
   typed entry (`USER_EXPLICIT` `USER_INPUT` whose `step_index` comes after the one
-  seen at its last turn in that same transcript, or, before any was read, one timed no
-  earlier than the Enter's second) that is no doorbell line. Its transcript records a subagent's message, a Stop hook's
+  seen at its last turn in that same transcript, where a transcript with no typed entry
+  yet counts as seen; or, before any was read, one timed in a later second than the
+  Enter's, so a prompt in the Enter's own second fails safe) that is no doorbell line. Its transcript records a subagent's message, a Stop hook's
   continuation and its own notices as `SYSTEM_MESSAGE` steps, so they never count. A
   prompt Codex queued during a
   turn, which it submits as the turn ends, counts too, when the person typed nothing
@@ -495,7 +502,8 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
 5. **Test paste.** With the person's input to the terminal held for the whole ring,
    until after its Enter (a safety cap releases it after 3 s whatever happened): snapshot
    the screen text, write the line as one bracketed paste, and poll the screen for up to
-   500 ms. It is accepted only when:
+   1.5 s, which leaves room in the cap for the last looks and the Enter. It is accepted
+   only when:
    - the line, joined across the rows it wraps over (whitespace aside), appears on the
      screen exactly once, and did not before; and
    - every row that changed is one the line occupies or within 3 rows of them, which
