@@ -16,30 +16,36 @@ export type Key =
 // A CSI or SS3 sequence's final byte, after its parameters.
 // eslint-disable-next-line no-control-regex -- Escape sequences are what it reads.
 const csi = /^\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|O[\x40-\x7e])/
-// Mouse reports, SGR (`ESC [ < b;x;y M` or `m`), urxvt (`ESC [ b;x;y M`) and X10 (`ESC [ M`
-// and three bytes), and focus reports. A fullscreen TUI turns mouse reporting on, so each
-// scroll, move or click over it sends one.
-// eslint-disable-next-line no-control-regex -- As above.
-const report = /^\x1b\[(?:<(\d+);\d+;\d+[Mm]|(\d+);\d+;\d+M|M([\s\S])[\s\S]{2}|[IO])/
+// What the terminal itself sends. Its answers to queries: cursor-position and device-status
+// reports, device attributes, and OSC answers such as a colour's. Mouse reports, SGR
+// (`ESC [ < b;x;y M` or `m`) and X10 (`ESC [ M` and three bytes), and focus reports, which
+// a fullscreen TUI asks for, so each scroll, move or click over it sends one. xterm's F3
+// with a modifier (`CSI 1;5 R`) reads as a cursor-position report and is left out too;
+// harmless, as F3 types nothing.
+const report =
+  // eslint-disable-next-line no-control-regex -- As above.
+  /^\x1b(?:\[(?:<(?<sgr>\d+);\d+;\d+[Mm]|M(?<x10>[\s\S])[\s\S]{2}|(?<focus>[IO])|\??[\d;]*[Rcn]|>[\d;]*c)|\][^\x07\x1b]*(?:\x07|\x1b\\))/
 
 /**
- * Whether a report is the terminal's own, no input of the person's: focus in and out, and
- * the mouse's scroll and motion, which never change the box. A click stays input, as it
- * can open a menu.
+ * Which reports the TUI asked its terminal for, as the runner's own screen of it shows:
+ * the mouse's, and the focus's. Until it asks, what looks like one is the person's keys.
  */
-const passive = (match: RegExpExecArray): boolean => {
-  const [, sgr, urxvt, x10] = match
-  // The button code: SGR's as it is, urxvt's and X10's offset by 32.
-  const button =
-    sgr !== undefined
-      ? Number(sgr)
-      : urxvt !== undefined
-        ? Number(urxvt) - 32
-        : x10 !== undefined
-          ? x10.charCodeAt(0) - 32
-          : undefined
-  // Focus; or a wheel (64) or a motion (32) report.
-  return button === undefined || (button & (64 | 32)) !== 0
+export type Reporting = { readonly mouse: boolean; readonly focus: boolean }
+
+/**
+ * What a report is to the box: none of the person's keys; content, as a click, which can
+ * open a menu; or no report at all, as the TUI never asked for it, so keys.
+ */
+const reportOf = (match: RegExpExecArray, reporting: Reporting): "none" | "content" | "keys" => {
+  const { sgr, x10, focus } = match.groups ?? {}
+  if (focus !== undefined) return reporting.focus ? "none" : "keys"
+  // Answers to queries, whatever the TUI asked for.
+  if (sgr === undefined && x10 === undefined) return "none"
+  if (!reporting.mouse) return "keys"
+  // The button code: SGR's as it is, X10's offset by 32, where a byte below is no button.
+  const button = sgr !== undefined ? Number(sgr) : x10!.charCodeAt(0) - 32
+  // A wheel (64) or a motion (32) report.
+  return button >= 0 && (button & (64 | 32)) !== 0 ? "none" : "content"
 }
 
 // Left, Right, Home and End, and the keypad's: they move within the box without typing.
@@ -48,10 +54,14 @@ const passive = (match: RegExpExecArray): boolean => {
 const moves = /^\x1b(?:\[[\d;]*[CDFH]|O[CDFH]|\[[1478]~)$/
 
 /**
- * The keys in one write. A bracketed paste is one key, whatever it holds, so its carriage
- * returns never submit.
+ * The keys in one write: everything but the terminal's own reports. A bracketed paste is
+ * one key, whatever it holds, so its carriage returns never submit.
  */
-export const keysOf = (data: string, queueKey?: string): readonly Key[] => {
+export const keysOf = (
+  data: string,
+  queueKey?: string,
+  reporting: Reporting = { mouse: false, focus: false },
+): readonly Key[] => {
   const keys: Key[] = []
   let at = 0
   while (at < data.length) {
@@ -64,9 +74,9 @@ export const keysOf = (data: string, queueKey?: string): readonly Key[] => {
       continue
     }
     const reported = report.exec(rest)
-    if (reported) {
-      // The terminal's own reports are no keys at all; a click may change what shows.
-      if (!passive(reported)) keys.push({ kind: "content", text: reported[0] })
+    const kind = reported ? reportOf(reported, reporting) : "keys"
+    if (reported && kind !== "keys") {
+      if (kind === "content") keys.push({ kind, text: reported[0] })
       at += reported[0].length
       continue
     }

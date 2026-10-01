@@ -283,11 +283,16 @@ the opener's, and `describe` names the caller's own terminal (see
   `Interrupt`, Claude Code's transcript recording the call as interrupted or denied,
   Antigravity's status line no longer showing a confirmation, or a root prompt the
   person submitted. A turn ending alone resolves nothing.
-- **The person's input** is any input a client sends to the terminal except the
-  terminal's automatic replies (the `terminalReply` filter the manager already uses):
-  keys, pastes and mouse clicks, since a click can open a menu too. The mouse's scroll
-  and motion reports and focus reports are the terminal's, never input: a fullscreen TUI
-  turns mouse reporting on, so they come from merely scrolling or moving over it. While a request
+- **The person's input** is everything a client sends to the terminal except the
+  terminal's own reports (`keysOf` in the runner's `terminals/keys.ts` is the one rule):
+  focus reports, and the mouse's scroll and motion reports, while the TUI has turned
+  that reporting on, as the runner's own screen of the terminal shows; cursor-position
+  and device reports; and OSC answers, such as a colour's. A fullscreen TUI turns mouse
+  reporting on, so those come from merely scrolling or moving over it. Keys, pastes and
+  mouse clicks are input, since a click can open a menu too, and so is whatever looks
+  like a mouse or focus report while the TUI hasn't asked for one: it may be Alt+[ and
+  typing. One known gap errs safe: in an alternate screen without mouse tracking,
+  xterm.js turns the wheel into Up and Down keys, which stay content. While a request
   (a permission or a question) is pending, whether or not a dialog shows:
   1. its keys are never a submission: they neither count as a prompt the person
      submitted nor as one they queued, so a Stop after them is continued as without
