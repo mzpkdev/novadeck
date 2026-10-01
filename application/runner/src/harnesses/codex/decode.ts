@@ -2,7 +2,15 @@ import { isAbsolute, resolve } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
 import type { HarnessEvent } from "../events.js"
-import { absolute, callId, sessionId, sessionStart, subjectOf, text } from "../harness.js"
+import {
+  absolute,
+  callId,
+  continuationPrompt,
+  sessionId,
+  sessionStart,
+  subjectOf,
+  text,
+} from "../harness.js"
 
 /**
  * Codex's hooks, as normalized facts.
@@ -46,6 +54,9 @@ export const decode = ({ event, seq, instance, env, payload }: Report): readonly
       // A subagent's prompt is its own work, not the root's turn.
       if (actor) return []
       const prompt = text(payload.prompt)
+      // A Stop hook's reason it submits to continue the turn is no prompt of the person's.
+      if (prompt && continuationPrompt(prompt))
+        return [{ type: "turn-started", ...base, cause: "harness" }]
       return [{ type: "turn-started", ...base, cause: "prompt", ...(prompt && { prompt }) }]
     }
     case "Stop":

@@ -206,6 +206,14 @@ export const callId = (actor: string | null, toolName: string, input: unknown): 
   return `${actor ?? ""}:${toolName}:${digest.slice(0, 16)}`
 }
 
+/**
+ * Whether a prompt is a hook's continuation rather than the person's: a Stop hook's
+ * reason the harness submits as a prompt (Codex wraps it in `<hook_prompt>`), or a
+ * delivery of agents' messages.
+ */
+export const continuationPrompt = (prompt: string): boolean =>
+  /^\s*<hook_prompt\b/.test(prompt) || prompt.includes("<novadeck-messages")
+
 /** A payload's string field, or undefined. */
 export const text = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined

@@ -27,6 +27,8 @@ const enter = { type: "input", submits: true, answers: false } as const
 const answer = { type: "input", submits: true, answers: true } as const
 
 const working = run(bound, person)
+// A Stop as the runner settles it: continued while NovaDeck still may.
+const continuous = (delivery: Delivery): DeliveryEvent => (continues(delivery) ? continued : stop)
 const settled = run(working, stop)
 const busy = run(settled, typing)
 const unknown = run(working, ended)
@@ -118,7 +120,7 @@ describe("a terminal's delivery state", () => {
 
   it("starts a new turn's count at the person's prompt after a turn that never stopped", () => {
     // As after a failed Codex turn, which sends nothing: the person's Enter, then prompt.
-    const failed = run(working, continued, call)
+    const failed = run(working, continued, harness, call)
     const next = run(failed, enter, person)
     expect(next).toMatchObject({ submitted: false, continued: 0 })
     expect(continues(next)).toBe(true)
@@ -133,12 +135,24 @@ describe("a terminal's delivery state", () => {
   })
 
   it("takes an idle status line before the turn's Stop as an end, without losing its counts", () => {
-    const limit = run(working, continued, call, continued, call)
+    const limit = run(working, continued, harness, continued, harness)
     const idled = transition(limit, idle)
     expect(idled).toMatchObject({ state: "unknown", continued: maxContinuations })
     // The Stop that follows is still that turn's: it may not be continued again.
     expect(continues(idled)).toBe(false)
     expect(transition(idled, stop).state).toBe("settled")
+  })
+
+  it("keeps a continued Stop's count when the status line says working before its continuation", () => {
+    // As Antigravity's status line, which reports working as the continuation begins.
+    let delivery = working
+    for (let index = 0; index < 5; index += 1) {
+      delivery = run(delivery, continuous(delivery), call, harness, call)
+    }
+    expect(delivery.continued).toBe(maxContinuations)
+    expect(continues(delivery)).toBe(false)
+    expect(run(working, continued, call)).toMatchObject({ stopped: true, continued: 1 })
+    expect(run(working, continued, call, harness)).toMatchObject({ stopped: false, continued: 1 })
   })
 
   it("takes an idle status line after the turn's Stop as nothing new", () => {

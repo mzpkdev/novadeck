@@ -6,6 +6,7 @@ import {
   absolute,
   bounded,
   callId,
+  continuationPrompt,
   sessionId,
   sessionStart,
   subjectOf,
@@ -59,7 +60,7 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
       // result starts a turn by itself, as a task notification.
       if (actor) return []
       const prompt = text(payload.prompt) ?? ""
-      return notification.test(prompt)
+      return notification.test(prompt) || continuationPrompt(prompt)
         ? [{ type: "turn-started", ...base, cause: "harness" }]
         : [{ type: "turn-started", ...base, cause: "prompt", ...(prompt && { prompt }) }]
     case "Stop":

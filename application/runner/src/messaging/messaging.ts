@@ -96,6 +96,8 @@ type Lease = {
  */
 export type Whereabouts = {
   readonly title: string | null
+  /** The handle of the terminal whose agent gave the title; null when the person did. */
+  readonly titledBy: string | null
   readonly folder: string | null
   readonly branch: string | null
   readonly plan: string | null
@@ -161,6 +163,22 @@ export type MessagingOptions = {
    * runs again.
    */
   readonly restoreMs?: number
+}
+
+/** How many folders' edits a session's work keeps. */
+export const keptFolders = 20
+
+/**
+ * The tally with one more edit in `folder`, kept to the `keptFolders` written in most,
+ * and always the one just written in, so a new folder gets its chance.
+ */
+export const tallied = (folders: Work["folders"], folder: string): Work["folders"] => {
+  const edits = (folders[folder] ?? 0) + 1
+  const others = Object.entries(folders)
+    .filter(([name]) => name !== folder)
+    .toSorted(([a, x], [b, y]) => y - x || a.localeCompare(b))
+    .slice(0, keptFolders - 1)
+  return Object.fromEntries([...others, [folder, edits]])
 }
 
 /** A lease is given only with this long left before its hook's deadline, in milliseconds. */
@@ -511,6 +529,21 @@ export class Messaging {
   }
 
   /**
+   * Whether `send` would answer this request by describing the terminals there, as its
+   * `to` names none of them, or more than one; only then does it need their whereabouts.
+   */
+  describes(terminalId: string, request: unknown): boolean {
+    const live = this.live.get(terminalId)
+    const parsed = sendRequest.safeParse(request)
+    if (!live || !parsed.success) return false
+    return !resolvePeer(
+      parsed.data.to,
+      this.peers(live, () => undefined),
+      live.handle,
+    ).ok
+  }
+
+  /**
    * The other terminals in the caller's project and session, each described by what
    * NovaDeck knows of it, and the caller's own role and messages not yet delivered or gone.
    */
@@ -696,6 +729,7 @@ export class Messaging {
           handle: peer.handle,
           agent: peer.root?.agent ?? null,
           title: where?.title ?? null,
+          titledBy: where?.title ? (where.titledBy ?? null) : null,
           folder: where?.folder ?? null,
           branch: where?.branch ?? null,
           startedWith: work?.first ?? null,
@@ -703,7 +737,8 @@ export class Messaging {
           plan: peer.root ? (where?.plan ?? null) : null,
           worksIn: work
             ? busiestFolders(work.folders).map(({ folder, edits }) => ({
-                folder: `${place(folder).replace(/\/$/, "")}/`,
+                // One separator wherever the runner runs, as agents read it.
+                folder: `${place(folder).replaceAll("\\", "/").replace(/\/$/, "")}/`,
                 edits,
               }))
             : [],
@@ -975,7 +1010,7 @@ export class Messaging {
         const folder = dirname(event.path)
         this.worked(live, (work) => ({
           ...work,
-          folders: { ...work.folders, [folder]: (work.folders[folder] ?? 0) + 1 },
+          folders: tallied(work.folders, folder),
         }))
         return
       }

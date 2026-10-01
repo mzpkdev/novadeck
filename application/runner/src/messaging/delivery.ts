@@ -84,8 +84,10 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
   if (delivery.state === "unbound") return delivery
   switch (event.type) {
     case "prompt": {
-      // A later call of the running turn changes nothing.
-      if (event.by === "call" && delivery.running && !delivery.stopped) return delivery
+      // A later call of the running turn changes nothing, nor ends the wait for the
+      // continuation of a Stop NovaDeck continued: a status line saying working can come
+      // before the continuation's first model call.
+      if (event.by === "call" && delivery.running) return delivery
       // A prompt right after a Stop NovaDeck continued is that continuation: the same
       // turn, with its count, as Antigravity starts its model calls again from the first.
       const continuation = delivery.running && delivery.stopped

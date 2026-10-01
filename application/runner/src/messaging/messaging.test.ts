@@ -5,7 +5,7 @@ import type { Binding } from "../harnesses/bindings.js"
 import type { HarnessEvent } from "../harnesses/events.js"
 import { describe, expect, it } from "../test.js"
 import { retentionMs, threadMs } from "./mailbox.js"
-import { Messaging, type SendAnswer, type Whereabouts } from "./messaging.js"
+import { keptFolders, Messaging, tallied, type SendAnswer, type Whereabouts } from "./messaging.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
 
 const binding = (agent: AgentName, sessionId: string, instance: string | null = "10"): Binding => ({
@@ -80,6 +80,7 @@ const peersOf = (messaging: Messaging) => {
     terminalId === "B"
       ? {
           title: "API author",
+          titledBy: null,
           folder: "src/api",
           branch: "feat/paging",
           plan: "Pagination",
@@ -661,8 +662,8 @@ describe("Antigravity's root conversation", () => {
       decision: "continue",
       reason: expect.stringContaining("hello"),
     })
-    messaging.observe("G", { binding: root, events: [started(root, "call")] })
-    // Esc or a denial: idle, with no Stop.
+    // The continuation's first model call, then Esc or a denial: idle, with no Stop.
+    messaging.observe("G", { binding: root, events: [started(root, "harness")] })
     const idle: HarnessEvent = { type: "turn-idle", ...fact(root), background: false }
     messaging.observe("G", { binding: root, events: [idle], statusLine: true })
     expect(messaging.delivery("G")?.state).toBe("unknown")
@@ -686,13 +687,21 @@ const about = (terminalId: string): Whereabouts | undefined =>
   terminalId === "B"
     ? {
         title: "API author",
+        titledBy: null,
         folder: "src/api",
         branch: "feat/paging",
         plan: "Pagination",
         place: (path: string) => path.replace(/^\/w\//, ""),
       }
     : terminalId === "D"
-      ? { title: "Web client", folder: null, branch: null, plan: null, place: (path) => path }
+      ? {
+          title: "Web client",
+          titledBy: "claude-1",
+          folder: null,
+          branch: null,
+          plan: null,
+          place: (path) => path,
+        }
       : undefined
 
 const prompted = (text: string, cause: "prompt" | "harness" = "prompt"): HarnessEvent => ({
@@ -737,6 +746,7 @@ describe("listing", () => {
           handle: "codex-1",
           agent: "codex",
           title: "API author",
+          titledBy: null,
           folder: "src/api",
           branch: "feat/paging",
           startedWith: expect.stringMatching(/^Add pagination to \/users and more .*…$/),
@@ -760,6 +770,7 @@ describe("listing", () => {
           handle: "term-1",
           agent: null,
           title: null,
+          titledBy: null,
           folder: null,
           branch: null,
           startedWith: null,
@@ -831,6 +842,16 @@ describe("listing", () => {
     })
   })
 
+  it("needs descriptions only when the name it was given fits none, or several", () => {
+    const { messaging } = create()
+    expect(messaging.describes("A", { to: "codex", text: "hi" })).toBe(false)
+    expect(messaging.describes("A", { to: "codex-1", text: "hi" })).toBe(false)
+    expect(messaging.describes("A", { to: "reviewer", text: "hi" })).toBe(true)
+    messaging.register("D", here, "codex")
+    messaging.observe("D", { binding: binding("codex", "s-d", "4"), events: [] })
+    expect(messaging.describes("A", { to: "codex", text: "hi" })).toBe(true)
+  })
+
   it("describes the candidates in one line each when the name it was given fits several", () => {
     const { messaging, send, ask, codex } = create()
     messaging.register("D", here, "codex")
@@ -844,7 +865,8 @@ describe("listing", () => {
           "and work, and send to it by its handle; if you can't tell, ask the person.",
         '- codex-1 (Codex); titled "API author"; in src/api on feat/paging; started with ' +
           '"Build the users API"; plan "Pagination"',
-        '- codex-2 (Codex); titled "Web client"',
+        // An agent named that one: never taken for the person's word.
+        '- codex-2 (Codex); titled "Web client" (set by claude-1)',
       ].join("\n"),
     })
     expect(send("A", "reviewer", "hi")).toMatchObject({
@@ -920,5 +942,19 @@ describe("retention", () => {
     expect(records.messages()).toEqual([])
     expect(records.threads()).toEqual([])
     expect(records.handles()).toEqual([])
+  })
+})
+
+describe("a session's folder tally", () => {
+  it("keeps the folders written in most, and always the one just written in", () => {
+    let folders: Record<string, number> = {}
+    for (let index = 0; index < 30; index += 1)
+      for (let edit = 0; edit <= index; edit += 1) folders = { ...tallied(folders, `/f${index}`) }
+    expect(Object.keys(folders)).toHaveLength(keptFolders)
+    expect(folders["/f29"]).toBe(30)
+    expect(folders["/f0"]).toBeUndefined()
+    const fresh = tallied(folders, "/new")
+    expect(fresh["/new"]).toBe(1)
+    expect(Object.keys(fresh)).toHaveLength(keptFolders)
   })
 })

@@ -254,6 +254,7 @@ describe.skipIf(windows)("resuming an agent's saved session", () => {
         agents: { claude: { sessionId, seq: 1 } },
         promptedAt: null,
         title: null,
+        titledBy: null,
         command: null,
         lastProgram: null,
       })

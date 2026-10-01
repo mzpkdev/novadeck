@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
 import type { AgentName } from "@novadeck/protocol"
 
@@ -188,6 +188,24 @@ describe("root turns, as each harness reports them", () => {
     expect(stop(undefined)).toMatchObject([{ background: false }])
   })
 
+  it("never take a Stop hook's continuation for the person's prompt", () => {
+    for (const agent of ["claude", "codex"] as const)
+      for (const prompt of [
+        "<hook_prompt>Stop hook feedback</hook_prompt>",
+        '<novadeck-messages note="…">\n<message id="m-1">hi</message>\n</novadeck-messages>',
+      ])
+        expect(turns(decode(agent, "UserPromptSubmit", { session_id: "s", prompt }))).toEqual([
+          {
+            type: "turn-started",
+            agent,
+            sessionId: "s",
+            instance: "7",
+            startedAt: 1,
+            cause: "harness",
+          },
+        ])
+  })
+
   it("leave a subagent's prompt out of the root's turns", () => {
     for (const agent of ["claude", "codex"] as const)
       expect(
@@ -232,7 +250,7 @@ describe("files an agent wrote, as each harness reports them", () => {
         tool_name: "apply_patch",
         tool_input: { command: patch },
       }).map((event) => event.type === "file-touched" && event.path),
-    ).toEqual(["/w/src/a.ts", "/abs/b.ts"])
+    ).toEqual([resolve("/w", "src/a.ts"), "/abs/b.ts"])
   })
 
   it("come from Antigravity's write_to_file", () => {

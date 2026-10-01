@@ -230,6 +230,8 @@ export type Peer = {
   readonly handle: string
   readonly agent: AgentName | null
   readonly title: string | null
+  /** The handle of the terminal whose agent gave the title; null when the person did. */
+  readonly titledBy: string | null
   readonly folder: string | null
   readonly branch: string | null
   readonly startedWith: string | null
@@ -266,7 +268,7 @@ export const worksIn = (peer: Pick<Peer, "worksIn">): string =>
 export const describePeer = (peer: Peer): string => {
   const parts = [
     `${peer.handle} (${peer.agent ? agentLabel(peer.agent) : "no agent"})`,
-    peer.title && `titled "${peer.title}"`,
+    peer.title && `titled "${peer.title}"${peer.titledBy ? ` (set by ${peer.titledBy})` : ""}`,
     peer.folder && `in ${peer.folder}${peer.branch ? ` on ${peer.branch}` : ""}`,
     peer.startedWith && `started with "${peer.startedWith}"`,
     peer.latest && `latest "${peer.latest}"`,

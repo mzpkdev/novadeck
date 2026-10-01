@@ -80,6 +80,7 @@ describe("a message's text", () => {
 const peer = (fields: Partial<Peer> & Pick<Peer, "terminalId" | "handle">): Peer => ({
   agent: null,
   title: null,
+  titledBy: null,
   folder: null,
   branch: null,
   startedWith: null,
