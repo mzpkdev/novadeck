@@ -415,8 +415,15 @@ describe("Antigravity's confirmation of the person's submission", () => {
     expect(confirms(typed(doorbellLine("k3f9q2"), 3), { enteredAt, seen: 2 })).toBe(false)
   })
 
-  it("falls back on the entry's time, to the second, before any turn was read", () => {
-    expect(confirms(typed("fix it", 1), { enteredAt, seen: undefined })).toBe(true)
+  it("falls back on the entry's time before any turn was read, a second after the Enter's", () => {
+    expect(
+      confirms(typed("fix it", 1, Date.parse("2026-10-01T12:00:06Z")), {
+        enteredAt,
+        seen: undefined,
+      }),
+    ).toBe(true)
+    // In the Enter's own second it may be older than the Enter: it fails safe.
+    expect(confirms(typed("fix it", 1), { enteredAt, seen: undefined })).toBe(false)
     expect(
       confirms(typed("fix it", 1, Date.parse("2026-10-01T12:00:04Z")), {
         enteredAt,

@@ -2134,6 +2134,7 @@ const hook = (event, payload, done) => {
 }
 let box = ""
 let last = ""
+let dialog = null
 let busy = true
 let menu = false
 let turns = 0
@@ -2168,6 +2169,25 @@ const turn = (prompt, typed = true) => {
         draw()
       })
     }
+    if (mode === "perm2" && turns === 2) {
+      // One tool runs, approved, while a second asks: a dialog Enter answers.
+      const a = { command: "npm test" }
+      const b = { command: "npm run lint" }
+      return hook("PermissionRequest", { tool_name: "Bash", tool_input: a }, () => {
+        process.stdout.write("\r\x1b[2Kapproved; running npm test\r\n")
+        setTimeout(() =>
+          hook("PermissionRequest", { tool_name: "Bash", tool_input: b }, () => {
+            dialog = () => {
+              process.stdout.write("\r\x1b[2Klint approved\r\n")
+              hook("PostToolUse", { tool_name: "Bash", tool_input: b, tool_response: {} }, () =>
+                hook("PostToolUse", { tool_name: "Bash", tool_input: a, tool_response: {} }, finish),
+              )
+            }
+            process.stdout.write("\r\x1b[2K[dialog] allow npm run lint? (Enter)\r\n")
+          }),
+        1200)
+      })
+    }
     if (!perm) return finish()
     const input = { command: "npm test" }
     hook("PermissionRequest", { tool_name: "Bash", tool_input: input }, () => {
@@ -2188,6 +2208,16 @@ if (mode !== "bg") {
     }
     if (data.startsWith("\x1b[200~")) box += data.slice(6, -6)
     else if (data === "\r") {
+      // A dialog takes Enter; a backslash before it makes it a newline in the box.
+      if (dialog) {
+        const answer = dialog
+        dialog = null
+        return answer()
+      }
+      if (box.endsWith("\\")) {
+        box = box.slice(0, -1) + "\n"
+        return draw()
+      }
       // Busy, or an empty box: Enter submits nothing.
       if (busy || !box) return
       const prompt = box
@@ -2246,8 +2276,7 @@ const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentN
   standInTui(shell.home)
   const manager = shell.manager({
     env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
-    // A loaded machine draws slowly: the test paste gets longer to show.
-    doorbell: { calmMs: 200, settleMs: 300, pasteMs: 2_000 },
+    doorbell: { calmMs: 200, settleMs: 300 },
   })
   const sender = await create(manager, shell)
   const idle = await create(manager, shell)
@@ -2282,6 +2311,16 @@ const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentN
       await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
     },
   }
+}
+
+/**
+ * Antigravity's first turn, one it started by itself: NovaDeck reads its transcript there,
+ * so the person's next typed entry is told new by its step, not by its time.
+ */
+const agyStarted = async (tui: Awaited<ReturnType<typeof ringing>>) => {
+  tui.kick()
+  await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
+  await expect.poll(tui.delivery).toBe("settled")
 }
 
 const pastes = (raw: readonly string[]) => raw.filter((data) => data.startsWith("\x1b[200~"))
@@ -2442,6 +2481,43 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         expect(tui.received()).toHaveLength(2)
       })
 
+    it("keeps a draft typed while a tool runs, after Enter approves another request", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "perm2")
+      await tui.first()
+      tui.type("run the tests")
+      await shell.until(tui.manager, tui.idle.id, "> run the tests")
+      tui.type("\r")
+      await shell.until(tui.manager, tui.idle.id, "running npm test")
+      tui.type("next: fix lint")
+      await shell.until(tui.manager, tui.idle.id, "[dialog]")
+      // Enter approves the second request; the draft stays in the box.
+      tui.type("\r")
+      await shell.until(tui.manager, tui.idle.id, "lint approved")
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw()).filter((data) => data.includes("automatic notice"))).toEqual([])
+    })
+
+    it("keeps a draft whose Enter made a newline while a request waits", async ({ shell }) => {
+      const tui = await ringing(shell, "perm")
+      await tui.first()
+      tui.type("run the tests")
+      await shell.until(tui.manager, tui.idle.id, "> run the tests")
+      tui.type("\r")
+      await shell.until(tui.manager, tui.idle.id, "running npm test")
+      // A backslash, then Enter: a newline in the box, as Claude Code takes it.
+      tui.type("next: fix lint\\")
+      tui.type("\r")
+      await vi.waitFor(() => expect(tui.raw().join("")).toContain("lint\\\r"))
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw()).filter((data) => data.includes("automatic notice"))).toEqual([])
+    })
+
     it("takes Shift+Enter as a newline in the draft, never a submission", async ({ shell }) => {
       const tui = await ringing(shell)
       await tui.first()
@@ -2471,18 +2547,20 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       shell,
     }) => {
       const tui = await ringing(shell, "", "tui", "agy")
+      await agyStarted(tui)
       // Its hooks name no prompt: the transcript's new typed entry tells it was theirs.
       await tui.first()
       await tui.send("Review a.ts")
-      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
-      expect(tui.received()[1]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
-      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(3), { timeout: 10_000 })
+      expect(tui.received()[2]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
+      expect(tui.received()[2]!.printed).toContain(">Review a.ts</message>")
     })
 
     it("keeps Antigravity Drafting when a turn after the Enter brought no typed input", async ({
       shell,
     }) => {
       const tui = await ringing(shell, "", "tui", "agy")
+      await agyStarted(tui)
       await tui.first()
       tui.type("draft")
       await shell.until(tui.manager, tui.idle.id, "> draft")
@@ -2491,7 +2569,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       tui.type("\x15")
       tui.type("\r")
       tui.kick()
-      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(3), { timeout: 10_000 })
       await expect.poll(tui.delivery).toBe("drafting")
       await tui.send("Review a.ts")
       await quiet()
@@ -2500,12 +2578,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
 
     it("keeps Antigravity Drafting when the person typed after their Enter", async ({ shell }) => {
       const tui = await ringing(shell, "", "tui", "agy")
+      await agyStarted(tui)
       await tui.first()
       tui.type("next")
       await shell.until(tui.manager, tui.idle.id, "> next")
       tui.type("\r")
       tui.type("and more")
-      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(3), { timeout: 10_000 })
       await expect.poll(tui.delivery).toBe("drafting")
       await tui.send("Review a.ts")
       await quiet()

@@ -1242,7 +1242,7 @@ describe("a task's checks", () => {
 describe("keys while a request waits on the person", () => {
   const enter = { submits: true, answers: false }
 
-  it("answer a two-question form without a draft, and its turn's Stop still continues", () => {
+  it("are never a submission, so its turn's Stop still continues", () => {
     const { messaging, prompt, stop, send, codex } = create()
     messaging.input("B", enter)
     prompt("B", codex)
@@ -1251,31 +1251,46 @@ describe("keys while a request waits on the person", () => {
       messaging.pendingInput("B", key)
     messaging.requestCleared("B")
     sent(send("A", "t2", "hello"))
-    // Never a submission: the Stop is continued with the message, as before any request.
     expect(stop("B", codex).leaseId).toEqual(expect.any(String))
+    // Down may have changed the box, and no submission since confirmed it empty.
     prompt("B", codex, "harness")
     stop("B", codex)
-    expect(messaging.delivery("B")?.state).toBe("settled")
+    expect(messaging.delivery("B")?.state).toBe("drafting")
   })
 
-  it("leave a draft for a key that may change the box, until a bare Enter follows", () => {
+  it("leave a sticky draft for a key that may change the box, whatever Enter follows", () => {
     const { messaging, prompt, stop, codex } = create()
     messaging.input("B", enter)
     prompt("B", codex)
-    // A lone hotkey, or a paste or Up where no dialog shows: it may be in the box.
+    // A hotkey, then Enter: it may have answered the dialog, or put a newline in the box.
     messaging.pendingInput("B", "content")
+    messaging.pendingInput("B", "enter")
     messaging.requestCleared("B")
     stop("B", codex)
     expect(messaging.delivery("B")?.state).toBe("drafting")
   })
 
-  it("count nothing typed once the person's bare Enter took it", () => {
+  it("leave the box empty when only Enter answered", () => {
     const { messaging, prompt, stop, codex } = create()
     messaging.input("B", enter)
     prompt("B", codex)
-    messaging.pendingInput("B", "content")
     messaging.pendingInput("B", "enter")
     messaging.requestCleared("B")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("settled")
+  })
+
+  it("take the person's confirmed submission as emptying the box again", () => {
+    const { messaging, prompt, stop, codex, clock: time } = create()
+    messaging.input("B", enter)
+    prompt("B", codex)
+    messaging.pendingInput("B", "content")
+    messaging.requestCleared("B")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+    messaging.input("B", enter)
+    time.now += 500
+    prompt("B", codex)
     stop("B", codex)
     expect(messaging.delivery("B")?.state).toBe("settled")
   })

@@ -2190,9 +2190,13 @@ export class Terminals {
       const entry = await lastUserInput(transcript, typed)
       const rung = nonce === undefined ? undefined : confirmRing(events, root, nonce, entry?.text)
       const theirs =
-        !rung && enteredAt !== undefined && confirms?.(entry, { enteredAt, seen }) === true
+        !rung &&
+        enteredAt !== undefined &&
+        confirms?.(entry ?? undefined, { enteredAt, seen }) === true
       if (rung || theirs || look === looks) {
-        if (entry?.id != null) record.seenEntry = { transcript, id: entry.id }
+        // Nothing typed yet is seen too: any typed entry from now on is new.
+        if (entry === null) record.seenEntry = { transcript, id: -1 }
+        else if (entry?.id != null) record.seenEntry = { transcript, id: entry.id }
         if (rung) return rung
         if (!theirs) return events
         return events.map((event, at) =>

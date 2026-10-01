@@ -72,7 +72,7 @@ type Live = Scope & {
   settledAt: number | null
   /**
    * While a request waits on the person: whether a key that may change the box came
-   * since their last bare Enter, or since the request began.
+   * since their last confirmed submission, or since the request began.
    */
   pendingDraft: boolean
   /** The epoch the doorbell last rang in, so a Settled period is rung once. */
@@ -423,13 +423,14 @@ export class Messaging {
   }
 
   /**
-   * The person's key while a request waits on them, which is never a submission: a bare
-   * Enter either answers it or submits the box, so the box is empty after it; any `content`
-   * key since may have left something in the box.
+   * The person's key while a request waits on them, which is never a submission. A
+   * `content` key may have left something in the box, and the draft sticks: a bare Enter
+   * meanwhile may answer the dialog, but also insert a newline or take a suggestion, so
+   * nothing but a confirmed submission clears it.
    */
   pendingInput(terminalId: string, key: "enter" | "content"): void {
     const live = this.live.get(terminalId)
-    if (live) live.pendingDraft = key === "content"
+    if (live && key === "content") live.pendingDraft = true
   }
 
   /**
@@ -1025,6 +1026,8 @@ export class Messaging {
         const person = (at !== null && this.now() - at <= this.submitWindowMs) || live.queued
         live.submittedAt = null
         live.queued = false
+        // Their confirmed submission took whatever was in the box.
+        if (person) live.pendingDraft = false
         this.step(live, { type: "prompt", by: person ? "person" : "harness" })
         return
       }

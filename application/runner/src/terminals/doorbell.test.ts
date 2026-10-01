@@ -252,10 +252,10 @@ describe("a ring's confirmation where hooks name no prompt", () => {
       // eslint-disable-next-line no-await-in-loop -- Each turn reads what the last left.
       const entry = await lastUserInput(transcript, typed)
       expect(entry).toMatchObject({ text: `person prompt ${turn}`, id: 21 + turn * 2 })
-      expect(confirms(entry, { enteredAt: Date.parse("2026-10-01T12:00:05Z"), seen })).toBe(true)
+      expect(confirms(entry!, { enteredAt: Date.parse("2026-10-01T12:00:05Z"), seen })).toBe(true)
       // The same entry, read again at a turn nobody typed for, is nothing new.
       expect(
-        confirms(entry, { enteredAt: Date.parse("2026-10-01T12:00:05Z"), seen: entry!.id! }),
+        confirms(entry!, { enteredAt: Date.parse("2026-10-01T12:00:05Z"), seen: entry!.id! }),
       ).toBe(false)
       seen = entry!.id!
     }

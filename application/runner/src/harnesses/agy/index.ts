@@ -49,12 +49,13 @@ const messaging: MessagingProfile = {
   // its transcript reader takes as the user's) from what woke it: a subagent's message,
   // a Stop hook's continuation or a notice are SYSTEM_MESSAGE steps, and injected
   // messages EPHEMERAL_MESSAGE ones. A typed entry is new once its step comes after the
-  // one seen at the last turn; before any was seen, by its time, which is to the second.
+  // one seen at the last turn; before any was seen, by its time, which is to the second,
+  // so only one a second after the Enter's counts, and one in the same second fails safe.
   typedEntry,
   confirmsSubmission: (entry, { enteredAt, seen }) =>
     entry !== undefined &&
     (seen === undefined
-      ? entry.at !== null && entry.at >= Math.floor(enteredAt / 1_000) * 1_000
+      ? entry.at !== null && entry.at >= (Math.floor(enteredAt / 1_000) + 1) * 1_000
       : entry.id !== null && entry.id > seen) &&
     !hasDoorbell(entry.text),
 }

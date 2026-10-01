@@ -16,12 +16,13 @@ const tailBytes = 256 * 1024
 
 /**
  * The last thing the person, or the doorbell, submitted, as a transcript records it:
- * where a harness's hooks don't name a prompt's text, this tells a doorbell prompt.
+ * where a harness's hooks don't name a prompt's text, this tells a doorbell prompt. Null
+ * when the transcript holds no typed entry yet; undefined when it can't be read.
  */
 export const lastUserInput = async (
   path: string,
   typed: (line: string) => UserEntry | undefined,
-): Promise<UserEntry | undefined> => {
+): Promise<UserEntry | null | undefined> => {
   let text: string
   try {
     const file = await open(path, "r")
@@ -38,7 +39,7 @@ export const lastUserInput = async (
     return undefined
   }
   // Only the tail is read, its first line maybe cut, which reads as nothing.
-  let last: UserEntry | undefined
+  let last: UserEntry | null = null
   for (const line of text.split("\n")) last = typed(line) ?? last
   return last
 }
@@ -148,7 +149,7 @@ export class Doorbell {
   ) {
     this.now = options.now ?? Date.now
     this.pollMs = options.pollMs ?? 50
-    this.pasteMs = options.pasteMs ?? 500
+    this.pasteMs = options.pasteMs ?? 1_500
     this.confirmMs = options.confirmMs ?? 5_000
     this.calmMs = options.calmMs ?? calmMs
   }
