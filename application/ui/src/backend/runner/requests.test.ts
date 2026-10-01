@@ -17,7 +17,8 @@ vi.setConfig({ testTimeout: 20_000 })
 
 // A real runner, whose shells start with configured arguments, so they run no command.
 const runner = await startTestRunner()
-const folder = realpathSync(mkdtempSync(join(tmpdir(), "novadeck-requests-")))
+// Native, as the runner resolves folders: on Windows it also expands short names.
+const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-requests-")))
 afterAll(async () => {
   await runner.close()
   rmSync(folder, { recursive: true, force: true })
