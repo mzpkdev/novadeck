@@ -273,6 +273,14 @@ and hands the same token to the UI dev server. For UI-only work, use
 `pnpm --filter @novadeck/ui dev` with `VITE_NOVADECK_RUNNER_URL` and
 `VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
+NovaDeck has no database migrations before its first release. A runner that opens a
+`workspace.sqlite` an earlier build wrote, whose tables differ from its own, refuses to
+start and names the file: delete it (it holds your projects, sessions and kept
+terminals) and start again. A standalone runner keeps it at
+`~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set; the
+desktop app keeps it in its user-data folder. NovaDeck never deletes or rewrites it
+for you.
+
 ### Plan review design preview
 
 Run `pnpm dev:previews` and open <http://127.0.0.1:5181> for a UI-only study of

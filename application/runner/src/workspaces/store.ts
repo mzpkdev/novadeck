@@ -127,8 +127,70 @@ const prepareFile = (path: string): void => {
   }
 }
 
-/** Creates the schema in a new database and refuses one written by a newer runner. */
-const prepareSchema = (database: DatabaseSync): void => {
+type Column = { readonly name: string; readonly type: string; readonly notnull: number }
+
+/** Every table's columns, by table, as `PRAGMA table_info` gives them. */
+const columnsOf = (database: DatabaseSync): Map<string, readonly Column[]> => {
+  const tables = database
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
+    .all() as { name: string }[]
+  return new Map(
+    tables.map(({ name }) => [
+      name,
+      database
+        .prepare('SELECT name, type, "notnull" FROM pragma_table_info(?)')
+        .all(name) as Column[],
+    ]),
+  )
+}
+
+/** The tables and columns this runner writes, from a database it creates. */
+const expectedColumns = (() => {
+  let expected: Map<string, readonly Column[]> | undefined
+  return () => {
+    if (expected) return expected
+    const reference = new DatabaseSync(":memory:")
+    try {
+      reference.exec(`${schema}${extras}`)
+      expected = columnsOf(reference)
+    } finally {
+      reference.close()
+    }
+    return expected
+  }
+})()
+
+const describeColumn = ({ name, type, notnull }: Column): string =>
+  `${name} ${type}${notnull ? " NOT NULL" : ""}`
+
+/**
+ * How a database's tables differ from those this runner writes, as an earlier build's
+ * would; undefined when they don't. Tables it doesn't know are left alone.
+ */
+const schemaDifference = (database: DatabaseSync): string | undefined => {
+  const actual = columnsOf(database)
+  for (const [table, columns] of expectedColumns()) {
+    const found = actual.get(table)
+    if (!found) return `it has no ${table} table`
+    const want = columns.map(describeColumn).toSorted()
+    const have = found.map(describeColumn).toSorted()
+    const missing = want.filter((column) => !have.includes(column))
+    const extra = have.filter((column) => !want.includes(column))
+    if (missing.length > 0 || extra.length > 0)
+      return `its ${table} table differs (${[
+        ...missing.map((column) => `expects ${column}`),
+        ...extra.map((column) => `has ${column}`),
+      ].join(", ")})`
+  }
+  return undefined
+}
+
+/**
+ * Creates the schema in a new database, and refuses one written by a newer runner, or by
+ * an earlier build whose tables differ: NovaDeck has no migrations before its first
+ * release, so such a database is to be deleted, never changed here.
+ */
+const prepareSchema = (database: DatabaseSync, path: string): void => {
   database.exec("BEGIN IMMEDIATE")
   try {
     const version = database.prepare("PRAGMA user_version").get()?.user_version
@@ -137,6 +199,13 @@ const prepareSchema = (database: DatabaseSync): void => {
     }
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec(extras)
+    const difference = schemaDifference(database)
+    if (difference)
+      throw new Error(
+        `NovaDeck's workspace database at ${path} was written by an earlier build: ` +
+          `${difference}. NovaDeck has no migrations before its first release, so delete ` +
+          "that file (it holds your projects, sessions and kept terminals) and start again.",
+      )
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")
@@ -259,7 +328,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
       timeout: 5_000,
     })
     try {
-      prepareSchema(this.database)
+      prepareSchema(this.database, path)
     } catch (error) {
       this.database.close()
       throw error

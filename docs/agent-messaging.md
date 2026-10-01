@@ -165,7 +165,10 @@ agent session; never a name the model passes.
   be messaged, except one opened or restarted to run an agent (its command's program,
   or the agent it resumes) that hasn't bound yet: its message is for the first session
   of that agent to bind there. It outlasts the runner's restore; it is `gone` if a
-  different agent binds there, or the terminal closes first.
+  different agent binds there, or the terminal closes first. The expectation ends once
+  any session binds there: from then on only a bound session takes messages, and one
+  that waited is never handed to a later session. `agents()` shows such a terminal as
+  "expecting Codex, not started yet".
 - **Threads.** A message continues the thread of the latest message between the same
   two handles, in either direction, within the last ten minutes; otherwise it starts
   one. Agents never name threads.

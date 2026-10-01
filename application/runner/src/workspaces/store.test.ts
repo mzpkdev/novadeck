@@ -223,6 +223,59 @@ describe("workspace metadata", () => {
     }
   })
 
+  it("refuses a database an earlier build wrote, naming it and saying to delete it", ({
+    directory,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    // The terminals table as main's runner writes it, before handles and titles.
+    const old = new DatabaseSync(path)
+    old.exec(`
+      CREATE TABLE terminals (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, cwd TEXT NOT NULL,
+        agents TEXT NOT NULL, prompted_at REAL, transcript TEXT, updated_at REAL NOT NULL) STRICT;
+      INSERT INTO terminals VALUES ('a', 's', '/', '{}', NULL, NULL, 1);
+    `)
+    old.close()
+    let refusal: unknown
+    try {
+      new WorkspaceStore(path).close()
+    } catch (error) {
+      refusal = error
+    }
+    expect(refusal).toBeInstanceOf(Error)
+    const { message } = refusal as Error
+    expect(message).toContain(path)
+    expect(message).toContain("expects handle TEXT NOT NULL")
+    expect(message).toContain("delete that file")
+    // Nothing was changed: the old terminal is there, and nothing was added.
+    const database = new DatabaseSync(path)
+    try {
+      expect(database.prepare("SELECT id FROM terminals").all()).toEqual([{ id: "a" }])
+      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(0)
+      expect(
+        database.prepare("SELECT name FROM sqlite_schema WHERE name = 'messages'").get(),
+      ).toBeUndefined()
+    } finally {
+      database.close()
+    }
+  })
+
+  it("refuses a messages table whose recipient session can't be null", ({ directory, store }) => {
+    const path = join(directory(), "workspace.sqlite")
+    store(path).close()
+    const database = new DatabaseSync(path)
+    database.exec(`
+      DROP TABLE messages;
+      CREATE TABLE messages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL, hop INTEGER NOT NULL, from_terminal TEXT NOT NULL,
+        from_handle TEXT NOT NULL, from_agent TEXT, from_session TEXT,
+        to_terminal TEXT NOT NULL, to_handle TEXT NOT NULL, to_agent TEXT NOT NULL,
+        to_session TEXT NOT NULL, text TEXT NOT NULL, sent_at REAL NOT NULL,
+        state TEXT NOT NULL, delivered_at REAL, notified INTEGER NOT NULL) STRICT;
+    `)
+    database.close()
+    expect(() => new WorkspaceStore(path)).toThrow(/messages table differs .*to_session/)
+  })
+
   it.skipIf(process.platform === "win32")(
     "creates private storage without changing existing parent permissions",
     ({ directory, store }) => {
