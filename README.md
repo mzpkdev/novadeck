@@ -278,9 +278,10 @@ NovaDeck has no database migrations before its first release. A runner that open
 start and names the file: delete it (it holds your projects, sessions and kept
 terminals) and start again. A standalone runner keeps it at
 `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set; the
-desktop app keeps it in its user-data folder: `~/.config/novadeck./workspace.sqlite` on
-Linux, `~/Library/Application Support/novadeck./workspace.sqlite` on macOS and
-`%APPDATA%\novadeck.\workspace.sqlite` on Windows. NovaDeck never deletes or rewrites it
+desktop app keeps it in its data folder, `NovaDeck` on every platform:
+`~/.config/NovaDeck/workspace.sqlite` on Linux, `~/Library/Application
+Support/NovaDeck/workspace.sqlite` on macOS and `%APPDATA%\NovaDeck\workspace.sqlite` on
+Windows. NovaDeck never deletes or rewrites it
 for you.
 
 ### Plan review design preview
