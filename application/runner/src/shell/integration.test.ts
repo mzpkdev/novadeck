@@ -2174,6 +2174,9 @@ const turn = (prompt, typed = true) => {
   const perm = mode === "perm" && turns === 2
   // With "slowhook", its second turn's hook reports after the doorbell's confirmation lapsed.
   const slow = mode === "slowhook" && turns === 2
+  // With "slowkick", a turn it starts by itself reports a while after it began, as a
+  // loaded machine's hook does: it is busy, and ignores Enter, before NovaDeck knows.
+  const late = mode === "slowkick" && !typed
   setTimeout(() => started(prompt, typed, (printed) => {
     fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + "\n")
     const finish = () => {
@@ -2209,7 +2212,7 @@ const turn = (prompt, typed = true) => {
       process.stdout.write("\r\x1b[2Kapproved; running npm test\r\n")
       setTimeout(() => hook("PostToolUse", { tool_name: "Bash", tool_input: input, tool_response: {} }, finish), 1500)
     })
-  }), slow ? 6_000 : 0)
+  }), slow ? 6_000 : late ? 800 : 0)
 }
 process.on("SIGUSR1", () => turn("background result", false))
 if (mode !== "bg") {
@@ -2454,22 +2457,33 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(pastes(tui.raw())).toHaveLength(1)
     })
 
-    it("abandons a ring a turn cuts short, and never submits its line later", async ({ shell }) => {
-      const tui = await ringing(shell)
-      await tui.first()
-      await tui.send("one")
-      await vi.waitFor(
-        async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
-        { timeout: 10_000, interval: 5 },
-      )
-      tui.kick()
-      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
-      await expect.poll(tui.delivery).toBe("drafting")
-      await tui.send("two")
-      await quiet()
-      expect(tui.received().map(({ prompt }) => prompt)).toEqual(["hello", "background result"])
-      expect(tui.raw().filter((data) => data === "\r")).toHaveLength(1)
-    })
+    // The turn the TUI starts by itself may reach NovaDeck before the doorbell's Enter, or
+    // after it, as on a loaded machine (macOS CI): either way the doorbell writes one
+    // Enter at most, and its line is never submitted.
+    for (const mode of ["", "slowkick"] as const)
+      it(`abandons a ring a turn cuts short, and never submits its line later${mode ? ", the turn reported late" : ""}`, async ({
+        shell,
+      }) => {
+        const tui = await ringing(shell, mode)
+        await tui.first()
+        const before = tui.raw().length
+        await tui.send("one")
+        await vi.waitFor(
+          async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
+          { timeout: 10_000, interval: 5 },
+        )
+        tui.kick()
+        await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+        await expect.poll(tui.delivery).toBe("drafting")
+        await tui.send("two")
+        await quiet()
+        expect(tui.received().map(({ prompt }) => prompt)).toEqual(["hello", "background result"])
+        // Since the person's first prompt: one paste, and at most its one Enter.
+        const ring = tui.raw().slice(before)
+        expect(pastes(ring)).toHaveLength(1)
+        expect(ring.join("").split("\r").length - 1).toBeLessThanOrEqual(1)
+        if (mode === "slowkick") expect(ring.join("").split("\r").length - 1).toBe(1)
+      })
 
     it("takes typing while an approved tool runs as a draft, not an answer", async ({ shell }) => {
       const tui = await ringing(shell, "perm")
