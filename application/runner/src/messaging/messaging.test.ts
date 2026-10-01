@@ -1367,24 +1367,37 @@ describe("a new agent session at its own prompt", () => {
     expect(answer.stdout).toContain(">hello</message>")
   })
 
-  it("never rings a resumed session, as every terminal the runner restores, before its first turn", () => {
+  it("rings a Claude Code the runner restored, resumed at its prompt, and its doorbell prompt delivers", () => {
     const records = memoryMailbox()
     const first = create(records)
     sent(first.send("B", "t1", "hello"))
     first.messaging.close()
-    // The runner restarts: the terminal's new shell resumes its session.
-    const { messaging, follow, observe, prompt, send, claude, clock: time } = create(records)
+    // The runner restarts: the terminal's new shell runs `claude --resume <id>`.
+    const { messaging, follow, observe, ask, send, claude, clock: time } = create(records)
     follow("A", null)
     observe("A", claude, sessionStarted(claude, "resume"))
+    expect(messaging.delivery("A")).toMatchObject({ state: "ready", since: time.now })
+    expect(messaging.ringable("A")).toBe(true)
+    expect(sent(send("B", "t1", "again"))).toMatchObject({ route: "ringing it now" })
+    expect(messaging.ring("A", "n1")).toBe(true)
+    const answer = ask("A", claude, "UserPromptSubmit", [doorbellStarted(claude, "n1")])
+    expect(answer.stdout).toContain(">hello</message>")
+    expect(answer.stdout).toContain(">again</message>")
+  })
+
+  it("never rings a forked Claude Code session, its readiness unproven, before its first turn", () => {
+    const { messaging, observe, prompt, send, clock: time } = create()
+    const forked = binding("claude", "s-forked", "1")
+    observe("A", forked, sessionStarted(forked, "fork"))
     expect(messaging.delivery("A")?.state).toBe("fresh")
+    expect(sent(send("B", "t1", "hello"))).toMatchObject({
+      route: "when the person first submits a prompt there",
+    })
     time.now += 60_000
     expect(messaging.ringable("A")).toBe(false)
     expect(messaging.settledSince("A")).toBeUndefined()
-    expect(sent(send("B", "t1", "again"))).toMatchObject({
-      route: "when the person first submits a prompt there",
-    })
     // Its first turn event delivers what waited.
-    expect(prompt("A", claude).stdout).toContain(">hello</message>")
+    expect(prompt("A", forked).stdout).toContain(">hello</message>")
   })
 
   it("turns Drafting as the person types there, ringing nothing", () => {

@@ -382,7 +382,7 @@ describe("a new session at its own prompt", () => {
   it("is Ready once its harness announces it at its input prompt, rung since it bound", () => {
     expect(ready).toMatchObject({ state: "ready", since: at, box: { empty: true } })
     expect(ringableSince(ready)).toBe(at)
-    // One bound with nothing showing its prompt is up, as a resumed one, is never rung.
+    // One bound with nothing showing its prompt is up, as a forked one, is never rung.
     expect(ringableSince(bound)).toBeUndefined()
     expect(transition(bound, { type: "ring", nonce: "k3f9" })).toBe(bound)
   })

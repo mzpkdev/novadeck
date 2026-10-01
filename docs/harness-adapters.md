@@ -431,7 +431,8 @@ Besides the facts shared with the agent model, decoders give
   [Self-description](agent-messaging.md#self-description)).
 - `session-observed` has `atPrompt` when the harness announced the session as its own
   input prompt came up, past any trust, onboarding or login screen: only Claude Code's
-  `SessionStart` with source `startup` or `clear` (probed 2026-10-01). Such a session is
+  `SessionStart` with source `startup`, `clear` or `resume` (probed 2026-10-01; `fork`
+  wasn't). Such a session is
   Ready, and may be rung before its first turn (see
   [States](agent-messaging.md#states)). Codex's `SessionStart` comes only with the first
   prompt, and Antigravity has none, so neither sets it.

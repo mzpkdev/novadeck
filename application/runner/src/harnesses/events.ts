@@ -33,7 +33,7 @@ export type SessionObserved = {
   /**
    * Whether the harness announced this new session as its own input prompt came up, past
    * any trust, onboarding or login screen, as probed for Claude Code's SessionStart at a
-   * `startup` or a `clear`. Only such a session may be
+   * `startup`, a `clear` or a `resume`. Only such a session may be
    * rung before its first turn (see docs/agent-messaging.md, "States").
    */
   readonly atPrompt?: boolean

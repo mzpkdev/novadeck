@@ -87,7 +87,7 @@ All three harnesses get every path. Where one falls short, the design accepts it
 | Antigravity   | `PreInvocation` has no prompt text, runs before every model call, and its injected message lasts one call | A ring is confirmed by a root prompt starting after its Enter; messages are leased at a turn's first invocation and injected again on each later one; the transcript's last user input tells a doorbell                                                                         |
 | Antigravity   | Server instructions don't reach the model                                                                 | Rules live in each tool's description and in the delivery wrapper                                                                                                                                                                                                               |
 | Antigravity   | No permission hook                                                                                        | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it                                                                                                                                                                    |
-| Claude Code   | A `resume` or `fork` isn't taken as a session at its prompt                                               | Fresh until its first turn, as is every terminal the runner restores; the probe saw a `resume` reach its prompt as a start does, so this is a choice, open to revisiting                                                                                                        |
+| Claude Code   | A `fork` isn't taken as a session at its prompt                                                           | Fresh until its first turn, never rung: its start wasn't probed                                                                                                                                                                                                                 |
 | Codex         | Its `SessionStart` fires only with the first prompt, so a session idle at its prompt isn't bound          | Never Ready: started plain, it binds at the person's first prompt, whose hook delivers                                                                                                                                                                                          |
 | Antigravity   | No `SessionStart`: it binds from its hooks and status line, which say nothing of its screen               | Fresh until its first turn, never rung                                                                                                                                                                                                                                          |
 | Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                                                                                            |
@@ -380,13 +380,15 @@ Every terminal with an agent is in one of these states at all times, derived fro
 facts above, so the prompt's emptiness is known before any message arrives:
 
 - **Fresh**: an agent session is bound but has had no root turn yet, and nothing shows
-  its own input prompt is up: a resumed or forked session, including every terminal
-  resumed after a runner restart; Antigravity's, which binds from its hooks and status
-  line; and Codex's, which binds only with its first prompt. Never rung: its screen may
+  its own input prompt is up: a forked Claude Code session; Antigravity's, which binds
+  from its hooks and status line, also when resumed after a runner restart; and Codex's,
+  which binds only with its first prompt. Never rung: its screen may
   still be a trust, update or login prompt. Its first root prompt's hook delivers.
 - **Ready**: its harness announced a new session as its own input prompt came up, past
-  any trust, onboarding or login screen (Claude Code's `SessionStart` at a `startup` or a
-  `/clear`; see [Per harness](#per-harness) and [Before building](#before-building)); it
+  any trust, onboarding or login screen (Claude Code's `SessionStart` at a `startup`, a
+  `/clear` or a `resume`, which includes every Claude Code terminal the runner restores
+  with `claude --resume <id>`; see [Per harness](#per-harness) and
+  [Before building](#before-building)); it
   has had no root turn yet, and the prompt is known empty. Rung as Settled is, its settle
   window counted from the binding. A session announced while the person had typed after
   their last Enter is Drafting instead.
@@ -644,7 +646,7 @@ output, not that the model acted on it.
 ## Starting a task
 
 An agent is rung before its first turn only once Ready, which only Claude Code announces,
-at a start or a `/clear`: Codex binds with its first prompt, and Antigravity's binding says nothing of
+at a start, a `/clear` or a resume: Codex binds with its first prompt, and Antigravity's binding says nothing of
 its screen, which may still be a trust, update or login prompt that Enter would answer.
 A terminal opened with a plain command (`open_terminal(command: "claude")`) gets its
 messages so: rung once Claude Code is Ready, with the person's first prompt for the
@@ -820,7 +822,8 @@ later.
 5. **Ringing a new session at its prompt:** the Ready state. Built: `atPrompt` in Claude
    Code's decoder (`harnesses/claude/decode.ts`), `ready` on a new root
    (`harnesses/roots.ts`), and the state and its untouched rule in
-   `messaging/delivery.ts`.
+   `messaging/delivery.ts`. A `resume` counts too, so a Claude Code the runner restores
+   is rung like one started anew; a `fork`, not probed, doesn't.
 
 Harness accelerators (Claude Code channels, `codex queue`) stay out unless a later probe
 shows them strictly better, and then only behind a flag, never as the only path.
@@ -859,6 +862,10 @@ model call:
   onboarding showed, nor when Esc left the trust dialog. In a trusted folder it fired at
   a `startup` within about 150 ms of the empty prompt drawing (before or after it), at a
   `/clear` with the new empty prompt already up, and at a `resume` as at a start.
+  `claude --resume` without an id showed its session picker first, with no
+  `SessionStart` for 8 s, and Esc left the picker and Claude Code with none; the
+  `SessionStart` after a session is picked there wasn't probed, as that takes Enter in
+  the picker. A `fork` wasn't probed either.
   Onboarded but logged out, it showed its own prompt, not a login screen. A command-line
   prompt's `UserPromptSubmit` came about 150 ms after its `SessionStart`, well inside the
   settle window.
@@ -895,7 +902,8 @@ model call:
 | Codex's first prompt after a runner restart                     | Fresh until then; that prompt's hook delivers; never rung before                         |
 | Claude Code opened plain, idle at its prompt, gets a message    | Ready once its `SessionStart` binds it; rung once its screen settles; its hook delivers  |
 | The person runs `/clear` in Claude Code, then a message arrives | Ready again, a new session; rung; the new session's hook delivers                        |
-| Claude Code resumed after a runner restart, messages waiting    | Fresh; never rung; its first root prompt's hook delivers                                 |
+| Claude Code resumed after a runner restart, messages waiting    | Ready at its resume's `SessionStart`; rung once its screen settles; its hook delivers    |
+| A forked Claude Code session, messages waiting                  | Fresh; never rung; its first root prompt's hook delivers                                 |
 | The person types in a Ready terminal                            | Drafting; no ring; their prompt carries the messages                                     |
 | The person types while Claude Code starts, before it binds      | Drafting at its binding; no ring                                                         |
 | Codex or Antigravity started plain, idle at its prompt          | Not rung: Codex binds with the person's first prompt, Antigravity stays Fresh            |
