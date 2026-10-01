@@ -277,11 +277,11 @@ export class Messaging {
   shown(terminalId: string, agent: AgentName, prefix: string | null, replaces = false): void {
     const live = this.live.get(terminalId)
     if (!live || (live.root && !replaces)) return
-    const changed = live.shown?.agent !== agent || live.shown.prefix !== prefix
+    const learned = live.shown?.agent !== agent || live.shown.prefix !== prefix
     live.shown = { agent, prefix }
     this.step(live, { type: "shown", at: this.now(), replaces })
     // A prefix it learns later may make other messages its own.
-    if (changed) this.onChange(terminalId)
+    if (learned) this.changed(terminalId)
   }
 
   /** The agent whose prompt shows there with no session bound, if any. */

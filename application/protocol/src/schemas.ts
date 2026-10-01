@@ -393,9 +393,9 @@ export const threadId = z.string().regex(/^t-[a-z0-9]{1,32}$/)
 // ended (`gone`), until that same session runs there again.
 export const messageState = z.enum(["queued", "leased", "delivered", "held", "gone"])
 
-// How a terminal's agent can take a message now: no agent session bound (`unbound`), one
-// bound that has had no turn yet (`fresh`), or one its harness announced at its own empty
-// input prompt with no turn yet (`ready`), a turn running (`working`), a turn that ended
+// How a terminal's agent can take a message now: no agent there (`unbound`), a session
+// bound that has had no turn yet (`fresh`), the agent's own empty input prompt showing with
+// no turn yet, its session bound or about to bind (`ready`), a turn running (`working`), a turn that ended
 // normally with the prompt known empty (`settled`), the doorbell waking it (`ringing`),
 // the person busy at the prompt (`drafting`), or a turn that ended without a normal stop
 // (`unknown`).
