@@ -906,6 +906,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     ])
     const manager = shell.manager({
       env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      // Each report waits, as macOS's slower foreground lookup makes it, so the report that
+      // names the transcript is still queued when the status line has bound the session.
+      connected: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        return true
+      },
     })
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
@@ -919,9 +925,25 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     }
     await details.return(undefined)
     const texts: string[] = []
+    // The transcript is not found until the later report is handled, so the reader asks again.
     const reading = (async () => {
-      for await (const change of manager.transcript(terminal.id, root))
-        if (change.type === "items") texts.push(...change.items.map(({ text }) => text))
+      for (let tries = 0; ; tries++) {
+        try {
+          // eslint-disable-next-line no-await-in-loop -- Reads the transcript once it is attached.
+          for await (const change of manager.transcript(terminal.id, root))
+            if (change.type === "items") texts.push(...change.items.map(({ text }) => text))
+          return
+        } catch (error) {
+          if (
+            tries === 100 ||
+            texts.length > 0 ||
+            (error as { code?: string }).code !== "NOT_FOUND"
+          )
+            throw error
+        }
+        // eslint-disable-next-line no-await-in-loop -- Waits before asking again.
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
     })()
     await expect.poll(() => texts).toEqual(["hi"])
     manager.forgetAgent("agy")
