@@ -408,8 +408,8 @@ operation and failed terminal identity rather than spawning another one on retry
 
 The initial task is a message: the new agent starts with NovaDeck's doorbell as its
 command-line prompt, and its prompt-time hook delivers the task, wrapped as from its
-opener, once; see [Starting a task](agent-messaging.md#starting-a-task). If the
-harness has no command-line prompt, report that rather than delivering it another way.
+opener, once; see [Starting a task](agent-messaging.md#starting-a-task), which also
+covers a harness without a command-line prompt.
 
 ## Architecture acceptance scenarios
 
