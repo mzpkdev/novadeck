@@ -403,6 +403,8 @@ export class Terminals {
   private readonly details = new Map<string, Set<Latest<AgentDetail>>>()
   /** Each terminal's `agents.shown` readers. */
   private readonly showings = new Map<string, Set<Latest<AgentShown>>>()
+  /** Each terminal's `messages.watch` readers. */
+  private readonly mail = new Map<string, Set<Latest<TerminalMessages>>>()
   /** Agents' requests for a new terminal, on their way to the client. */
   private readonly opens = new OpenRequests()
   /** When each terminal's agents opened terminals lately, for `openLimit`. */
@@ -500,10 +502,19 @@ export class Terminals {
       // A message is kept while either of its terminals is, running or saved.
       exists: (terminalId) =>
         this.records.has(terminalId) || this.identity(terminalId) !== undefined,
-      onChange: (terminalId) => this.doorbell?.changed(terminalId),
     })
     this.doorbell =
       options.doorbell === false ? undefined : new Doorbell(this.ringHost(), options.doorbell)
+    const doorbell = this.doorbell
+    if (doorbell)
+      this.messaging.subscribe((change) => {
+        if (change.kind === "terminal") doorbell.changed(change.terminalId)
+      })
+    // The pause shows in every terminal's listing; anything else only in the terminal's.
+    this.messaging.subscribe((change) => {
+      if (change.kind === "terminal") this.mailChanged(change.terminalId)
+      else for (const terminalId of this.mail.keys()) this.mailChanged(terminalId)
+    })
     this.peers = new TerminalPeers({
       messaging: this.messaging,
       caller: (terminalId, token) => {
@@ -1559,6 +1570,24 @@ export class Terminals {
     return this.peers.messages(terminalId)
   }
 
+  /**
+   * A terminal's threads and messages, as `messages` lists them, then again on each change
+   * to them, to its delivery state or to the pause, until the terminal is gone or `signal`
+   * aborts.
+   */
+  async *watchMessages(terminalId: string, signal?: AbortSignal): AsyncGenerator<TerminalMessages> {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    yield* this.snapshots(this.mail, terminalId, this.messages(terminalId), signal)
+  }
+
+  /** Tells the terminal's message watchers what its listing says now. */
+  private mailChanged(terminalId: string): void {
+    const readers = this.mail.get(terminalId)
+    if (!readers?.size || this.stopping || !this.records.has(terminalId)) return
+    const listing = this.messages(terminalId)
+    for (const reader of readers) reader.push(listing)
+  }
+
   /** Pauses messaging across the whole runner, or resumes it. */
   pauseMessages(paused: boolean): void {
     this.peers.pause(paused)
@@ -1761,7 +1790,7 @@ export class Terminals {
     this.saver = undefined
     for (const watcher of this.watchers.keys()) watcher.finish()
     this.opens.finish()
-    for (const streams of [this.details, this.showings])
+    for (const streams of [this.details, this.showings, this.mail])
       for (const readers of streams.values()) for (const reader of readers) reader.finish()
     for (const record of this.records.values()) this.unwatch(record)
     this.doorbell?.close()
@@ -1815,9 +1844,9 @@ export class Terminals {
     for (const reader of readers) reader.push(detail)
   }
 
-  /** Ends the terminal's detail and shown streams, as it is closed. */
+  /** Ends the terminal's detail, shown and messages streams, as it is closed. */
   private undetail(id: string): void {
-    for (const streams of [this.details, this.showings]) {
+    for (const streams of [this.details, this.showings, this.mail]) {
       for (const reader of streams.get(id) ?? []) reader.finish()
       streams.delete(id)
     }
