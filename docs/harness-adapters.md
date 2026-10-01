@@ -456,9 +456,10 @@ The terminal manager follows each terminal's root session as its profile's `root
 says (`harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
 session that bound, then that of the first model call after it bound, or of one
 messages wait for) until the status line names the root conversation, which alone
-names another. Messaging reads the root from there. The doorbell's step will add the
-harness's empty-prompt pattern (`emptyPrompt`) and how it starts with a first prompt
-(`initialPrompt(argv)`) to the profile.
+names another. Messaging reads the root from there. The doorbell knows nothing of how a
+harness draws its screen, so the profile holds no screen pattern; it adds only how the
+harness starts with a first prompt (`initialPrompt`) and whether its hooks see a
+prompt's text (see [Agent messaging](agent-messaging.md#the-doorbell)).
 
 ## Where sources merge
 
@@ -927,7 +928,8 @@ input. Cancellation, unsupported, stale binding and unknown-after-transport-loss
 are distinct results. Never blindly retry after reconnect, and never synthesize
 an action by typing guessed keys into a terminal. Agent messaging's doorbell is the
 one exception, and a narrow one: a fixed line, typed only into an idle agent whose
-prompt is untouched, confirmed by its hook, never retried; see
+prompt is untouched, onto a quiet screen where a test paste shows it landed and changed
+nothing else, confirmed by its hook, never retried; see
 [Agent messaging](agent-messaging.md#the-doorbell).
 
 ## Implementation sequence
