@@ -393,14 +393,16 @@ describe("Claude Code's and Codex's decoders", () => {
   })
 })
 
+// A typed entry of a transcript, timed at 12:00:05 by default.
+const typed = (text: string, count: number, at = Date.parse("2026-10-01T12:00:05Z")) => ({
+  text,
+  at,
+  count,
+})
+
 describe("Antigravity's confirmation of the person's submission", () => {
   const confirms = harnesses.agy.messaging.confirmsSubmission!
   const enteredAt = Date.parse("2026-10-01T12:00:05.700Z")
-  const typed = (text: string, count: number, at = Date.parse("2026-10-01T12:00:05Z")) => ({
-    text,
-    at,
-    count,
-  })
 
   it("takes a typed entry new since the last turn, never a doorbell line", () => {
     expect(confirms(typed("fix the build", 3), { enteredAt, seen: 2 })).toBe(true)
