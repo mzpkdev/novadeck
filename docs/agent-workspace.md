@@ -406,10 +406,10 @@ receive an initial task depends on the selected supported delivery mechanism;
 it does not follow solely from PTY creation. A startup failure returns the existing
 operation and failed terminal identity rather than spawning another one on retry.
 
-The initial task travels as launch input, the agent's own command-line prompt, so
-it is submitted once; later messages use [Agent messaging](agent-messaging.md),
-including how a fresh agent receives them. If the harness has no launch input for a
-task, report that rather than delivering it another way.
+The initial task is a message: the new agent starts with NovaDeck's doorbell as its
+command-line prompt, and its prompt-time hook delivers the task, wrapped as from its
+opener, once; see [Starting a task](agent-messaging.md#starting-a-task). If the
+harness has no command-line prompt, report that rather than delivering it another way.
 
 ## Architecture acceptance scenarios
 
