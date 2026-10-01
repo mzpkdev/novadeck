@@ -8,7 +8,7 @@ import {
   mcpServer,
   mcpVariables,
   plugin,
-  type Answers,
+  type MessagingProfile,
   type Harness,
   type Install,
 } from "../harness.js"
@@ -40,7 +40,7 @@ const hook = (platform: NodeJS.Platform, event: string): string =>
 
 // A Stop's reason continues the turn as a user-role hook prompt, which the delivery's
 // wrapper still attributes to its sender; a prompt's context is a developer message.
-const answers: Answers = {
+const messaging: MessagingProfile = {
   asks: { Stop: "stop", UserPromptSubmit: "prompt" },
   silent: () => "",
   stop: (delivery) => `${JSON.stringify({ decision: "block", reason: delivery })}\n`,
@@ -48,6 +48,10 @@ const answers: Answers = {
     `${JSON.stringify({
       hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: delivery },
     })}\n`,
+  reinjectPerCall: false,
+  root: "binding",
+  queueKey: "\t",
+  silentOnFailure: true,
 }
 
 export const codex = {
@@ -122,7 +126,7 @@ export const codex = {
     context: "partial",
   },
   decode,
-  answers,
+  messaging,
   // The rollout records the session's tokens and the account's rate-limit windows, each
   // turn's mode and the plans it proposes.
   watch: followRollout,

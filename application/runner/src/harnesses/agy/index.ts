@@ -6,7 +6,7 @@ import {
   json,
   mcpServer,
   plugin,
-  type Answers,
+  type MessagingProfile,
   type Harness,
   type Install,
 } from "../harness.js"
@@ -29,11 +29,14 @@ const hook = (platform: NodeJS.Platform, event: string): string =>
 // A Stop continued with a reason gets it as a lasting system step. A message injected at
 // a model call lasts only for that call, so a turn's delivery is injected again on each
 // of its later calls. Every other answer is an empty object.
-const answers: Answers = {
+const messaging: MessagingProfile = {
   asks: { Stop: "stop", PreInvocation: "prompt" },
   silent: (event) => (event === "PreToolUse" ? '{"decision":"ask"}\n' : "{}\n"),
   stop: (delivery) => `${JSON.stringify({ decision: "continue", reason: delivery })}\n`,
   prompt: (delivery) => `${JSON.stringify({ injectSteps: [{ ephemeralMessage: delivery }] })}\n`,
+  reinjectPerCall: true,
+  root: "status-line",
+  silentOnFailure: false,
 }
 
 // A handler for one of its events, with the time it may take.
@@ -100,5 +103,5 @@ export const agy = {
     context: "partial",
   },
   decode,
-  answers,
+  messaging,
 } satisfies Harness

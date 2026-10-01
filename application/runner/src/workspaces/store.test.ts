@@ -251,10 +251,18 @@ describe("saved terminals", () => {
       cwd: "/work",
       agents: { claude: { sessionId: "abc", seq: 2 } },
       promptedAt: 1_000,
+      handle: "t3",
       title: "API author",
-      titledBy: null,
+      titledBy: "t1",
       command: "claude",
       lastProgram: "claude",
+      work: {
+        session: "claude:abc",
+        first: "Build the users API",
+        latest: "Now add paging",
+        folders: { "/work/src": 4 },
+        activeAt: 2_000,
+      },
     }
     first.saveTerminal({ ...terminal, transcript: "screen" })
     // Saving without a transcript leaves the saved one as it is.
@@ -266,6 +274,11 @@ describe("saved terminals", () => {
       cwd: "/work/sub",
       transcript: "screen",
       savedAt: expect.any(Number),
+    })
+    expect(reopened.terminalIdentity(terminal.id)).toEqual({
+      handle: "t3",
+      title: "API author",
+      titledBy: "t1",
     })
     if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600)
     reopened.clearTranscripts()
@@ -283,10 +296,12 @@ describe("saved terminals", () => {
       cwd: "/",
       agents: {},
       promptedAt: null,
-      title: null,
+      handle: "t1",
+      title: "Terminal 01",
       titledBy: null,
       command: null,
       lastProgram: null,
+      work: null,
     }
     workspace.saveTerminal({ ...terminal, transcript: "SECRET_TRANSCRIPT_TEXT" })
     workspace.clearTranscripts()
@@ -306,10 +321,12 @@ describe("saved terminals", () => {
         cwd: "/",
         agents: {},
         promptedAt: null,
+        handle: `t${index + 1}`,
         title: `Terminal ${index}`,
         titledBy: null,
         command: null,
         lastProgram: null,
+        work: null,
       })
     expect(workspace.terminal(ids[0]!)).toBeDefined()
     expect(workspace.terminals()).toHaveLength(130)
@@ -332,10 +349,12 @@ describe("saved terminals", () => {
       cwd: "/",
       agents: {},
       promptedAt: null,
+      handle: "t1",
       title: "Terminal 01",
       titledBy: null,
       command: null,
       lastProgram: null,
+      work: null,
     })
     expect(first.renameTerminal("a", "API author")).toBe(true)
     expect(first.renameTerminal("missing", "x")).toBe(false)
@@ -343,18 +362,6 @@ describe("saved terminals", () => {
     const reopened = store(path)
     expect(reopened.terminal("a")?.title).toBe("API author")
     expect(reopened.nextTerminalNumber("s")).toBe(3)
-  })
-
-  it("open a database from before titles, adding what it lacks", ({ directory, store }) => {
-    const path = join(directory(), "workspace.sqlite")
-    const old = new DatabaseSync(path)
-    old.exec(`
-      CREATE TABLE terminals (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, cwd TEXT NOT NULL,
-        agents TEXT NOT NULL, prompted_at REAL, transcript TEXT, updated_at REAL NOT NULL) STRICT;
-      INSERT INTO terminals VALUES ('a', 's', '/', '{}', NULL, NULL, 1);
-    `)
-    old.close()
-    expect(store(path).terminal("a")).toMatchObject({ id: "a", title: null, lastProgram: null })
   })
 
   it("keep transcripts until they are turned off", ({ store }) => {
@@ -371,8 +378,8 @@ const message = (id: string, state: Message["state"]): Message => ({
   projectId: "p",
   thread: "t-1",
   hop: 1,
-  from: { terminalId: "a", handle: "term-1", agent: null, sessionId: null },
-  to: { terminalId: "b", handle: "codex-1", agent: "codex", sessionId: "s" },
+  from: { terminalId: "a", handle: "t1", agent: null, sessionId: null },
+  to: { terminalId: "b", handle: "t2", agent: "codex", sessionId: "s" },
   text: "Review a.ts\n\twith care",
   sentAt: 1.5,
   state,
@@ -381,30 +388,6 @@ const message = (id: string, state: Message["state"]): Message => ({
 })
 
 describe("the mailbox", () => {
-  it("keeps handles, never giving one twice in a project, across reopen", ({
-    directory,
-    store,
-  }) => {
-    const path = join(directory(), "workspace.sqlite")
-    const original = store(path)
-    expect(original.assignHandle("a", "p", "codex")).toBe("codex-1")
-    expect(original.assignHandle("a", "p", "term")).toBe("codex-1")
-    expect(original.assignHandle("b", "p", "codex")).toBe("codex-2")
-    expect(original.assignHandle("c", "q", "codex")).toBe("codex-1")
-    original.markRemoved("b", 5)
-    original.removeHandles(["b"])
-    original.close()
-    const reopened = store(path)
-    expect(reopened.assignHandle("d", "p", "codex")).toBe("codex-3")
-    expect(reopened.handles().toSorted((x, y) => x.terminalId.localeCompare(y.terminalId))).toEqual(
-      [
-        { terminalId: "a", projectId: "p", handle: "codex-1", removedAt: null },
-        { terminalId: "c", projectId: "q", handle: "codex-1", removedAt: null },
-        { terminalId: "d", projectId: "p", handle: "codex-3", removedAt: null },
-      ],
-    )
-  })
-
   it("keeps messages, threads and the pause across reopen, until removed", ({
     directory,
     store,
@@ -413,6 +396,9 @@ describe("the mailbox", () => {
     const original = store(path)
     original.saveMessage(message("m-1", "queued"))
     original.saveMessage(message("m-2", "held"))
+    // One for a terminal's first session, which no agent there has bound yet.
+    const waiting = message("m-3", "queued")
+    original.saveMessage({ ...waiting, to: { ...waiting.to, sessionId: null } })
     original.saveMessage({
       ...message("m-1", "delivered"),
       to: { ...message("m-1", "queued").to, sessionId: "s2" },
@@ -436,10 +422,12 @@ describe("the mailbox", () => {
       cwd: "/",
       agents: {},
       promptedAt: null,
-      title: null,
+      handle: "t1",
+      title: "Terminal 01",
       titledBy: null,
       command: null,
       lastProgram: null,
+      work: null,
     })
     original.close()
     const reopened = store(path)
@@ -451,17 +439,18 @@ describe("the mailbox", () => {
         notified: true,
       },
       message("m-2", "held"),
+      { ...waiting, to: { ...waiting.to, sessionId: null } },
     ])
     expect(reopened.threads()).toEqual([{ ...thread, allowed: 14 }])
     expect(reopened.messagingPaused()).toBe(true)
     // The pause is the runner's own, not one of the client's settings.
     expect(reopened.settings()).toEqual({ transcripts: true, welcomed: false })
-    expect(reopened.terminalSaved("a")).toBe(true)
-    expect(reopened.terminalSaved("b")).toBe(false)
+    expect(reopened.terminalIdentity("a")).toMatchObject({ handle: "t1" })
+    expect(reopened.terminalIdentity("b")).toBeUndefined()
     reopened.removeMessages(["m-1"])
     reopened.removeThreads(["t-1"])
     reopened.pauseMessaging(false)
-    expect(reopened.messages().map(({ id }) => id)).toEqual(["m-2"])
+    expect(reopened.messages().map(({ id }) => id)).toEqual(["m-2", "m-3"])
     expect(reopened.threads()).toEqual([])
     expect(reopened.messagingPaused()).toBe(false)
   })

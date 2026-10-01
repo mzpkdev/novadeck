@@ -150,7 +150,7 @@ describe("NovaDeck's MCP server", () => {
       answer = {
         ok: true,
         terminalId: "t",
-        handle: "claude-2",
+        handle: "t2",
         cwd: "/work/app",
         command: "claude",
       }
@@ -175,7 +175,7 @@ describe("NovaDeck's MCP server", () => {
       ])
       expect(opened?.result).toEqual({
         content: [
-          { type: "text", text: "Opened a new terminal, claude-2, running claude in /work/app." },
+          { type: "text", text: "Opened a new terminal, t2, running claude in /work/app." },
         ],
         isError: false,
       })
@@ -309,7 +309,7 @@ describe("NovaDeck's MCP server", () => {
 
     it("sends a message through the terminal's runner, and says where it is", async () => {
       calls.length = 0
-      const said = async (runner: unknown, args: object = { to: "codex", text: "Review a.ts" }) => {
+      const said = async (runner: unknown, args: object = { to: "t2", text: "Review a.ts" }) => {
         answer = runner
         const [, sent] = await session(terminal(), [
           initialize,
@@ -320,41 +320,41 @@ describe("NovaDeck's MCP server", () => {
       const queued = await said(
         {
           ok: true,
-          to: "codex-2",
+          to: "t2",
           id: "m-1",
           state: "queued",
           route: "when its current turn ends",
         },
-        { to: "codex", text: "Review a.ts", from: "the person" },
+        { to: "t2", text: "Review a.ts", from: "the person" },
       )
       expect(calls).toEqual([
         {
           type: "send",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { to: "codex", text: "Review a.ts" },
+          request: { to: "t2", text: "Review a.ts" },
         },
       ])
       expect(queued.isError).toBe(false)
       expect(queued.content[0]?.text).toContain(
-        "Message m-1 to codex-2 is queued: it reaches them when its current turn ends.",
+        "Message m-1 to t2 is queued: it reaches them when its current turn ends.",
       )
       expect(queued.content[0]?.text).toContain("End your turn rather than wait")
       const held = await said({
         ok: true,
-        to: "codex-2",
+        to: "t2",
         id: "m-2",
         state: "held",
         held: "release",
-        gone: [{ id: "m-0", to: "agy-1" }],
+        gone: [{ id: "m-0", to: "t3" }],
         unbound: true,
       })
       expect(held.content[0]?.text).toContain("waits for the user to release it")
-      expect(held.content[0]?.text).toContain("m-0 to agy-1 won't arrive")
+      expect(held.content[0]?.text).toContain("m-0 to t3 won't arrive")
       expect(held.content[0]?.text).toContain("/hooks")
-      const refused = await said({ ok: false, reason: "No terminal here runs Codex." })
+      const refused = await said({ ok: false, reason: '"codex" is no terminal\'s handle here.' })
       expect(refused).toEqual({
-        content: [{ type: "text", text: "No terminal here runs Codex." }],
+        content: [{ type: "text", text: '"codex" is no terminal\'s handle here.' }],
         isError: true,
       })
     })
@@ -383,71 +383,17 @@ describe("NovaDeck's MCP server", () => {
       expect(calls).toEqual([])
     })
 
-    it("lists the project's other terminals and the caller's messages yet to arrive", async () => {
+    it("lists the project's other terminals as the runner renders them", async () => {
       calls.length = 0
-      answer = {
-        ok: true,
-        handle: "claude-1",
-        agents: [
-          {
-            handle: "codex-2",
-            agent: "codex",
-            title: "API author",
-            folder: "src/api",
-            branch: "main",
-            startedWith: "Build the users API",
-            latest: "Add paging",
-            plan: "Pagination",
-            worksIn: [
-              { folder: "src/api/", edits: 14 },
-              { folder: "tests/", edits: 3 },
-            ],
-            withYou: { from: "codex-2", text: "Done.", at: Date.now() },
-            state: "busy",
-            activeAt: Date.now(),
-          },
-          {
-            handle: "term-3",
-            agent: null,
-            title: null,
-            folder: null,
-            branch: null,
-            startedWith: null,
-            latest: null,
-            plan: null,
-            worksIn: [],
-            withYou: null,
-            state: null,
-            activeAt: null,
-          },
-        ],
-        messages: [{ id: "m-1", to: "codex-2", state: "held", held: "paused", sentAt: 0 }],
-      }
+      const text =
+        "You are t1 in NovaDeck.\nThere are no other terminals in this project and session."
+      answer = { ok: true, text }
       const [, listed] = await session(terminal(), [
         initialize,
         { id: 3, method: "tools/call", params: { name: "agents", arguments: { extra: 1 } } },
       ])
       expect(calls).toMatchObject([{ type: "agents", request: {} }])
-      const { content, isError } = listed!.result as {
-        content: { text: string }[]
-        isError: boolean
-      }
-      expect(isError).toBe(false)
-      expect(content[0]?.text.split("\n")).toEqual([
-        "You are claude-1 in NovaDeck.",
-        "Other terminals in this project and session:",
-        "- codex-2: Codex, busy, last active just now",
-        "  title: API author",
-        "  folder: src/api, branch main",
-        "  started with: Build the users API",
-        "  latest: Add paging",
-        "  plan: Pagination",
-        "  works in: src/api/ (14), tests/ (3)",
-        "  with you: codex-2, just now: Done.",
-        "- term-3: no agent NovaDeck can deliver to",
-        "Your messages not yet delivered:",
-        `- m-1 to codex-2, sent ${new Date(0).toTimeString().slice(0, 5)}: held while the user has messaging paused`,
-      ])
+      expect(listed?.result).toEqual({ content: [{ type: "text", text }], isError: false })
     })
 
     it("carries the messaging rules in each messaging tool's description", async () => {
@@ -455,12 +401,16 @@ describe("NovaDeck's MCP server", () => {
       const described = tools?.result?.tools as { name: string; description: string }[]
       for (const name of ["send", "agents"]) {
         const { description } = described.find((tool) => tool.name === name)!
+        expect(description).toContain("Replying to a message you received is fine")
         expect(description).toContain("only when the user asked you to")
         expect(description).toContain("never an approval")
         expect(description).toContain("call agents again")
         expect(description).toContain("ask the user rather than guess")
         expect(description).toContain("end your turn rather than wait or poll")
       }
+      const send = described.find((tool) => tool.name === "send")!
+      expect(send.description).toContain("exact handle")
+      expect(send.description).not.toMatch(/agent's name/)
     })
 
     it("still answers a call under way when the agent closes its side", async () => {

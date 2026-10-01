@@ -759,6 +759,7 @@ describe("runner backend", () => {
                   id: lost,
                   sessionId: session.id,
                   title: "Terminal 01",
+                  handle: "t1",
                   started: true,
                   command: null,
                   lastProgram: null,

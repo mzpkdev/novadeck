@@ -132,10 +132,12 @@ const it = base.extend<{ shell: Fixture }>({
         id,
         sessionId: session.id,
         cwd: store.terminal(id)?.cwd ?? home,
-        title: null,
+        handle: store.terminal(id)?.handle ?? "t1",
+        title: store.terminal(id)?.title ?? "Terminal 01",
         titledBy: null,
         command: null,
         lastProgram: null,
+        work: null,
         agents: { [agent]: { sessionId, seq: 1 } },
         promptedAt: null,
       })
@@ -1202,7 +1204,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       terminals: (sessionId) => shell.store.terminals(sessionId),
       nextTerminalNumber: (sessionId) => shell.store.nextTerminalNumber(sessionId),
       renameTerminal: (terminalId, title) => shell.store.renameTerminal(terminalId, title),
-      terminalTitle: (terminalId) => shell.store.terminalTitle(terminalId),
+      terminalIdentity: (terminalId) => shell.store.terminalIdentity(terminalId),
       saveTerminal: (terminal) => {
         if (refuse && terminal.transcript !== undefined) {
           refuse = false
@@ -1291,13 +1293,15 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       },
       "owner",
     )
-    expect(titled).toMatchObject({ title: "Docs", started: true, command: null })
+    expect([first.handle, second.handle]).toEqual(["t1", "t2"])
+    // A terminal given its own title still draws its number, for its handle.
+    expect(titled).toMatchObject({ title: "Docs", handle: "t3", started: true, command: null })
     manager.rename({ terminalId: first.id, title: "API author" })
     await next((summary) => summary.id === first.id && summary.title === "API author")
-    expect(shell.store.terminal(first.id)?.title).toBe("API author")
+    expect(shell.store.terminal(first.id)).toMatchObject({ title: "API author", handle: "t1" })
     // Numbers aren't given twice, even once a terminal closes.
     await manager.close({ terminalId: second.id }, "owner")
-    expect((await create(manager, shell)).title).toBe("Terminal 03")
+    expect(await create(manager, shell)).toMatchObject({ title: "Terminal 04", handle: "t4" })
   })
 })
 
@@ -1540,8 +1544,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           {
             ok: true,
             terminalId: expect.any(String),
-            // Its handle, which agents message it by: the agent it was opened for.
-            handle: "claude-1",
+            // Its handle, which agents message it by.
+            handle: "t2",
             cwd: project,
             command: "claude --fresh",
           },
@@ -1562,7 +1566,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const [opened] = answers as { terminalId: string }[]
         expect(manager.get(opened!.terminalId)).toMatchObject({ cwd: project, title: "Agent" })
         // The agent chose that title, and the record says which terminal's did.
-        expect(shell.store.terminal(opened!.terminalId)?.titledBy).toBe("term-1")
+        expect(shell.store.terminal(opened!.terminalId)?.titledBy).toBe("t1")
         await shell.until(manager, opened!.terminalId, "claude args: --fresh")
         // Five a minute, counting each request that was asked, opened or not: two more,
         // and the next waits.
@@ -1715,10 +1719,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         }
 
       // Claude sends Codex a message while Codex has had no prompt yet.
-      const sent = await send(claude.id, "codex", "Review a.ts, please.")
+      const sent = await send(claude.id, "t2", "Review a.ts, please.")
       expect(sent).toEqual({
         ok: true,
-        to: "term-2",
+        to: "t2",
         id: expect.stringMatching(/^m-/),
         state: "queued",
         route: "when its agent first prompts",
@@ -1730,7 +1734,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(prompted.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit")
       expect(prompted.hookSpecificOutput.additionalContext).toMatch(
         new RegExp(
-          `<message id="${sent.id}" from="term-1" agent="Claude Code" thread="t-[a-z0-9]+" ` +
+          `<message id="${sent.id}" from="t1" agent="Claude Code" thread="t-[a-z0-9]+" ` +
             `sent="\\d\\d:\\d\\d">Review a.ts, please.</message>`,
         ),
       )
@@ -1743,14 +1747,14 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect(
         step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "ask codex" } }),
       ).resolves.toBe("")
-      const reply = await send(codex.id, "term-1", "Looks good & ships.")
+      const reply = await send(codex.id, "t1", "Looks good & ships.")
       expect(reply).toMatchObject({ ok: true, route: "when its current turn ends" })
       const stopped = JSON.parse(await step(claude.id, { hook: "Stop", payload: {} })) as {
         decision: string
         reason: string
       }
       expect(stopped.decision).toBe("block")
-      expect(stopped.reason).toContain('from="term-2" agent="Codex"')
+      expect(stopped.reason).toContain('from="t2" agent="Codex"')
       expect(stopped.reason).toContain(">Looks good &amp; ships.</message>")
       await expect
         .poll(() => manager.messages(claude.id).threads[0]?.messages.map(({ state }) => state))
@@ -1767,25 +1771,16 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         .poll(async () => JSON.parse(await step(codex.id, { call: "agents", request: {} })))
         .toEqual({
           ok: true,
-          handle: "term-2",
-          agents: [
-            {
-              handle: "term-1",
-              agent: "claude",
-              title: "API author",
-              titledBy: null,
-              folder: ".",
-              branch: "main",
-              startedWith: "ask codex",
-              latest: null,
-              plan: null,
-              worksIn: [{ folder: "src/", edits: 1 }],
-              withYou: { from: "you", text: "Looks good & ships.", at: expect.any(Number) },
-              state: "busy",
-              activeAt: expect.any(Number),
-            },
-          ],
-          messages: [],
+          text: [
+            "You are t2 in NovaDeck.",
+            "Other terminals in this project and session:",
+            "- t1: Claude Code, busy, last active just now",
+            "  title: API author",
+            "  folder: ., branch main",
+            "  started with: ask codex",
+            "  works in: src/ (1)",
+            "  with you: you, just now: Looks good & ships.",
+          ].join("\n"),
         })
       // Nothing more waits: the next Stop ends Claude's turn.
       await expect(step(claude.id, { hook: "Stop", payload: {} })).resolves.toBe("")
@@ -1794,9 +1789,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       // leaves the message to that prompt's hook.
       await step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "next" } })
       manager.write({ terminalId: claude.id, data: "and then this\r" }, "owner")
-      await send(codex.id, "claude", "One more thing.")
+      await send(codex.id, "t1", "One more thing.")
       await expect(step(claude.id, { hook: "Stop", payload: {} })).resolves.toBe("")
-      expect(manager.messages(claude.id).delivery).toBe("busy")
+      expect(manager.messages(claude.id).delivery).toBe("drafting")
       const queued = JSON.parse(
         await step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "and then this" } }),
       ) as { hookSpecificOutput: { additionalContext: string } }

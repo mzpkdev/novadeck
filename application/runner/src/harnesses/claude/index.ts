@@ -8,7 +8,7 @@ import {
   marketplace,
   mcpServer,
   plugin,
-  type Answers,
+  type MessagingProfile,
   type Harness,
   type Install,
 } from "../harness.js"
@@ -43,7 +43,7 @@ const hook = (platform: NodeJS.Platform, event: string): string =>
 
 // A Stop's reason continues the turn, and reaches the model as the Stop hook's feedback;
 // a prompt's context is an attachment beside the prompt, never the prompt itself.
-const answers: Answers = {
+const messaging: MessagingProfile = {
   asks: { Stop: "stop", UserPromptSubmit: "prompt" },
   silent: () => "",
   stop: (delivery) => `${JSON.stringify({ decision: "block", reason: delivery })}\n`,
@@ -51,6 +51,9 @@ const answers: Answers = {
     `${JSON.stringify({
       hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: delivery },
     })}\n`,
+  reinjectPerCall: false,
+  root: "binding",
+  silentOnFailure: false,
 }
 
 export const claude = {
@@ -145,7 +148,7 @@ export const claude = {
     context: "partial",
   },
   decode,
-  answers,
+  messaging,
   // The transcript records what no hook reports: an interrupted turn.
   watch: (run, signal, emit) =>
     followLines(run.transcript, signal, (line) => {

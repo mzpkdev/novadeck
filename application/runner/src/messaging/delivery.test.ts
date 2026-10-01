@@ -30,14 +30,13 @@ const working = run(bound, person)
 // A Stop as the runner settles it: continued while NovaDeck still may.
 const continuous = (delivery: Delivery): DeliveryEvent => (continues(delivery) ? continued : stop)
 const settled = run(working, stop)
-const busy = run(settled, typing)
+const drafting = run(settled, typing)
 const unknown = run(working, ended)
 
 describe("a terminal's delivery state", () => {
   it("is Fresh once a session binds, with its prompt known empty", () => {
     expect(bound).toMatchObject({
       state: "fresh",
-      running: false,
       empty: true,
       submitted: false,
       continued: 0,
@@ -45,12 +44,12 @@ describe("a terminal's delivery state", () => {
   })
 
   it("is Unbound in every bound state once the binding ends", () => {
-    for (const from of [bound, working, settled, busy, unknown])
+    for (const from of [bound, working, settled, drafting, unknown])
       expect(transition(from, { type: "unbound" }).state).toBe("unbound")
   })
 
   it("is Fresh again in every bound state once its harness announces a new session", () => {
-    for (const from of [working, settled, busy, unknown])
+    for (const from of [working, settled, drafting, unknown])
       expect(transition(from, { type: "bound" })).toMatchObject({
         state: "fresh",
         empty: true,
@@ -58,48 +57,48 @@ describe("a terminal's delivery state", () => {
       })
   })
 
-  it("works from Fresh, Settled, Person busy and Unknown once a root prompt starts a turn", () => {
-    for (const from of [bound, settled, busy, unknown])
+  it("works from Fresh, Settled, Drafting and Unknown once a root prompt starts a turn", () => {
+    for (const from of [bound, settled, drafting, unknown])
       expect(transition(from, person)).toMatchObject({
         state: "working",
-        running: true,
+        phase: "turn",
         continued: 0,
-        turn: from.turn + 1,
+        epoch: from.epoch + 1,
       })
   })
 
   it("settles at a normal root Stop not continued, the prompt known empty", () => {
-    expect(settled).toMatchObject({ state: "settled", running: false, empty: true, continued: 0 })
+    expect(settled).toMatchObject({ state: "settled", empty: true, continued: 0 })
   })
 
-  it("leaves the person busy at a Stop when the prompt isn't known empty", () => {
-    expect(run(working, typing, stop).state).toBe("busy")
+  it("leaves the person drafting at a Stop when the prompt isn't known empty", () => {
+    expect(run(working, typing, stop).state).toBe("drafting")
     // A turn the harness started by itself proves nothing about the prompt.
-    expect(run(busy, harness, stop).state).toBe("busy")
+    expect(run(drafting, harness, stop).state).toBe("drafting")
   })
 
-  it("leaves the person busy at a Stop once they submitted during the turn", () => {
+  it("leaves the person drafting at a Stop once they submitted during the turn", () => {
     const queued = run(working, enter)
     expect(queued).toMatchObject({ state: "working", submitted: true })
     expect(continues(queued)).toBe(false)
-    expect(transition(queued, stop).state).toBe("busy")
+    expect(transition(queued, stop).state).toBe("drafting")
   })
 
   it("keeps working through a Stop NovaDeck continued, counting it, up to its limit", () => {
     const once = transition(working, continued)
-    expect(once).toMatchObject({ state: "working", running: true, continued: 1 })
+    expect(once).toMatchObject({ state: "working", phase: "continuing", continued: 1 })
     expect(continues(once)).toBe(true)
     const limit = run(working, ...Array.from({ length: maxContinuations }, () => continued))
     expect(continues(limit)).toBe(false)
     // Its continuation, even from the turn's first model call again, is the same turn.
     expect(run(limit, harness, call).continued).toBe(maxContinuations)
-    expect(run(limit, harness).turn).toBe(working.turn)
+    expect(run(limit, harness).epoch).toBe(working.epoch)
     expect(transition(limit, stop).state).toBe("settled")
   })
 
   it("keeps working while what the turn started still runs, until it ends", () => {
     const waiting = transition(working, background)
-    expect(waiting).toMatchObject({ state: "working", running: false, continued: 0 })
+    expect(waiting).toMatchObject({ state: "working", phase: "background", continued: 0 })
     // A background task's result starts a turn by itself, whose Stop ends it.
     expect(run(waiting, harness, stop).state).toBe("settled")
     // Antigravity's subagents finishing, as its idle status line says, ends it too.
@@ -113,8 +112,8 @@ describe("a terminal's delivery state", () => {
     expect(submitted).toMatchObject({ state: "working", submitted: false })
     // Their prompt starts a new turn, with nothing queued and no continuations yet.
     const turn = transition(submitted, person)
-    expect(turn).toMatchObject({ running: true, submitted: false, continued: 0 })
-    expect(turn.turn).toBe(waiting.turn + 1)
+    expect(turn).toMatchObject({ phase: "turn", submitted: false, continued: 0 })
+    expect(turn.epoch).toBe(waiting.epoch + 1)
     expect(continues(turn)).toBe(true)
   })
 
@@ -127,7 +126,7 @@ describe("a terminal's delivery state", () => {
   })
 
   it("is Unknown after an abnormal end, keeping the turn's counts for a Stop that raced it", () => {
-    expect(unknown).toMatchObject({ state: "unknown", running: false })
+    expect(unknown).toMatchObject({ state: "unknown" })
     const queued = run(working, continued, call, enter, ended)
     expect(queued).toMatchObject({ continued: 1, submitted: true })
     expect(continues(queued)).toBe(false)
@@ -151,8 +150,8 @@ describe("a terminal's delivery state", () => {
     }
     expect(delivery.continued).toBe(maxContinuations)
     expect(continues(delivery)).toBe(false)
-    expect(run(working, continued, call)).toMatchObject({ stopped: true, continued: 1 })
-    expect(run(working, continued, call, harness)).toMatchObject({ stopped: false, continued: 1 })
+    expect(run(working, continued, call)).toMatchObject({ phase: "continuing", continued: 1 })
+    expect(run(working, continued, call, harness)).toMatchObject({ phase: "turn", continued: 1 })
   })
 
   it("takes an idle status line after the turn's Stop as nothing new", () => {
@@ -163,17 +162,17 @@ describe("a terminal's delivery state", () => {
     expect(transition(settled, idle)).toEqual(settled)
   })
 
-  it("leaves Settled for Person busy at the person's input, but not at an answer", () => {
-    expect(busy).toMatchObject({ state: "busy", empty: false })
+  it("leaves Settled for Drafting at the person's input, but not at an answer", () => {
+    expect(drafting).toMatchObject({ state: "drafting", empty: false })
     expect(transition(settled, answer)).toEqual(settled)
     // An answer to a request during the turn is no submission either.
     expect(run(working, answer, stop).state).toBe("settled")
   })
 
   it("makes the prompt known empty again at the person's own prompt only", () => {
-    expect(run(busy, person).empty).toBe(true)
-    expect(run(busy, harness).empty).toBe(false)
-    expect(run(busy, call).empty).toBe(false)
+    expect(run(drafting, person).empty).toBe(true)
+    expect(run(drafting, harness).empty).toBe(false)
+    expect(run(drafting, call).empty).toBe(false)
   })
 
   it("ignores everything but a binding while Unbound", () => {
@@ -183,7 +182,7 @@ describe("a terminal's delivery state", () => {
 
   it("ignores a Stop with no turn to end", () => {
     expect(transition(settled, stop)).toEqual(settled)
-    expect(transition(busy, continued)).toEqual(busy)
+    expect(transition(drafting, continued)).toEqual(drafting)
   })
 })
 
@@ -194,7 +193,7 @@ describe("when a message would reach an agent", () => {
     // Codex sends nothing when a turn fails.
     expect(route(working, true)).toBe("at its turn's end or its next prompt")
     expect(route(transition(working, background), false)).toBe("when its next turn starts")
-    for (const state of [settled, busy, unknown])
+    for (const state of [settled, drafting, unknown])
       expect(route(state, false)).toBe("when the person next submits a prompt there")
   })
 })

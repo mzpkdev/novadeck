@@ -3,9 +3,12 @@ import { afterEach, beforeEach, vi } from "vitest"
 
 import type { Binding } from "../harnesses/bindings.js"
 import type { HarnessEvent } from "../harnesses/events.js"
+import { harnesses } from "../harnesses/registry.js"
+import { followRoot, type Root } from "../harnesses/roots.js"
 import { describe, expect, it } from "../test.js"
-import { retentionMs, threadMs } from "./mailbox.js"
-import { keptFolders, Messaging, tallied, type SendAnswer, type Whereabouts } from "./messaging.js"
+import { clock, retentionMs, threadMs } from "./mailbox.js"
+import { Messaging, type MessagingOptions, type SendAnswer } from "./messaging.js"
+import type { Whereabouts } from "./peers.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
 
 const binding = (agent: AgentName, sessionId: string, instance: string | null = "10"): Binding => ({
@@ -46,24 +49,66 @@ type Clock = { now: number }
 const here = { projectId: "p", sessionId: "s" }
 const elsewhere = { projectId: "q", sessionId: "s2" }
 
-const create = (records: MailboxRecords = memoryMailbox(), clock: Clock = { now: 1_000_000 }) => {
-  const messaging = new Messaging({ records, now: () => clock.now, sweepMs: 0, restoreMs: 0 })
+const create = (
+  records: MailboxRecords = memoryMailbox(),
+  time: Clock = { now: 1_000_000 },
+  options: MessagingOptions = {},
+) => {
+  const changed: string[] = []
+  const messaging = new Messaging({
+    records,
+    now: () => time.now,
+    sweepMs: 0,
+    restoreMs: 0,
+    onChange: (terminalId) => changed.push(terminalId),
+    ...options,
+  })
+  // Each terminal's root, followed as the terminal manager follows it.
+  const roots = new Map<string, Root | null>()
+  const follow = (
+    terminalId: string,
+    bound: Binding | null,
+    events: readonly HarnessEvent[] = [],
+    statusLine = false,
+  ) => {
+    const current = roots.get(terminalId) ?? null
+    const agent = bound?.agent ?? current?.agent
+    const { root, changes } = followRoot(current, bound, events, {
+      mode: agent ? harnesses[agent].messaging.root : "binding",
+      statusLine,
+      awaited: (sessionId) => messaging.awaits(terminalId, sessionId),
+    })
+    roots.set(terminalId, root)
+    messaging.rooted(terminalId, changes)
+  }
+  // A report the terminal's hooks made, with the binding it left.
+  const observe = (
+    terminalId: string,
+    bound: Binding | null,
+    events: readonly HarnessEvent[],
+    statusLine = false,
+  ) => {
+    follow(terminalId, bound, events, statusLine)
+    messaging.observe(terminalId, events)
+  }
   // Two running terminals in one project, each with its agent bound.
   const claude = binding("claude", "s-claude", "1")
   const codex = binding("codex", "s-codex", "2")
-  messaging.register("A", here, "claude")
-  messaging.register("B", here, "codex")
-  messaging.observe("A", { binding: claude, events: [] })
-  messaging.observe("B", { binding: codex, events: [] })
+  messaging.register("A", here, "t1")
+  messaging.register("B", here, "t2")
+  follow("A", claude)
+  follow("B", codex)
   // What a hook of the terminal's agent asks, with plenty of time left.
-  const ask = (terminalId: string, bound: Binding, event: string, events: HarnessEvent[]) =>
-    messaging.ask(terminalId, {
-      agent: bound.agent,
-      event,
-      binding: bound,
-      events,
-      deadline: clock.now + 3_000,
-    })
+  const ask = (
+    terminalId: string,
+    bound: Binding,
+    event: string,
+    events: HarnessEvent[],
+    deadline = time.now + 3_000,
+  ) => {
+    follow(terminalId, bound, events)
+    return messaging.ask(terminalId, { agent: bound.agent, event, events, deadline })
+  }
   const prompt = (terminalId: string, bound: Binding, cause?: "prompt" | "harness" | "call") =>
     ask(terminalId, bound, bound.agent === "agy" ? "PreInvocation" : "UserPromptSubmit", [
       started(bound, cause),
@@ -71,25 +116,20 @@ const create = (records: MailboxRecords = memoryMailbox(), clock: Clock = { now:
   const stop = (terminalId: string, bound: Binding, background = false) =>
     ask(terminalId, bound, "Stop", [stopped(bound, background)])
   const send = (from: string, to: string, text: string) => messaging.send(from, { to, text })
-  return { messaging, records, clock, claude, codex, ask, prompt, stop, send }
-}
-
-/** The terminals `agents` describes to A, as B's whereabouts say. */
-const peersOf = (messaging: Messaging) => {
-  const answer = messaging.agents("A", (terminalId) =>
-    terminalId === "B"
-      ? {
-          title: "API author",
-          titledBy: null,
-          folder: "src/api",
-          branch: "feat/paging",
-          plan: "Pagination",
-          place: (path: string) => path.replace(/^\/w\//, ""),
-        }
-      : undefined,
-  )
-  if (!answer.ok) throw new Error(answer.reason)
-  return answer.agents
+  return {
+    messaging,
+    records,
+    clock: time,
+    changed,
+    claude,
+    codex,
+    follow,
+    observe,
+    ask,
+    prompt,
+    stop,
+    send,
+  }
 }
 
 const sent = (answer: SendAnswer) => {
@@ -98,84 +138,99 @@ const sent = (answer: SendAnswer) => {
 }
 
 const messages = (messaging: Messaging, terminalId: string) =>
-  messaging.list(terminalId).threads.flatMap((thread) => thread.messages)
-
-describe("handles", () => {
-  it("are given once per terminal, kept across its shells, and never reused in a project", () => {
-    const messaging = new Messaging({ sweepMs: 0, restoreMs: 0 })
-    expect(messaging.register("A", here, "claude")).toBe("claude-1")
-    expect(messaging.register("B", here, "term")).toBe("term-1")
-    expect(messaging.register("C", here, "claude")).toBe("claude-2")
-    expect(messaging.register("D", elsewhere, "claude")).toBe("claude-1")
-    messaging.unregister("A")
-    expect(messaging.handle("A")).toBeUndefined()
-    // Restarted or restored, it is the same terminal.
-    expect(messaging.register("A", here, "term")).toBe("claude-1")
-    expect(messaging.register("E", here, "claude")).toBe("claude-3")
-  })
-})
+  messaging.list(terminalId, "t?").threads.flatMap((thread) => thread.messages)
 
 describe("sending", () => {
-  it("addresses a terminal by handle or by its agent's name, never one without an agent", () => {
+  it("addresses a terminal by its exact handle, never one without an agent", () => {
     const { messaging, send } = create()
-    messaging.register("C", here, "term")
-    expect(sent(send("A", "codex", "hi"))).toMatchObject({ to: "codex-1", state: "queued" })
-    expect(sent(send("A", "codex-1", "again"))).toMatchObject({ to: "codex-1" })
-    expect(send("A", "term-1", "hi")).toEqual({
+    messaging.register("C", here, "t3")
+    expect(sent(send("A", "t2", "hi"))).toMatchObject({ to: "t2", state: "queued" })
+    expect(send("A", "t3", "hi")).toEqual({
       ok: false,
-      reason: "term-1 has no agent running there that NovaDeck can deliver to.",
+      reason: "t3 has no agent running there that NovaDeck can deliver to.",
     })
     // Terminals of other projects are not there to address.
-    messaging.register("Z", elsewhere, "agy")
-    messaging.observe("Z", { binding: binding("agy", "s-agy"), events: [] })
-    expect(send("A", "agy-1", "hi")).toMatchObject({ ok: false })
+    messaging.register("Z", elsewhere, "t1")
+    expect(send("Z", "t2", "hi")).toMatchObject({ ok: false })
+  })
+
+  it("refuses anything but a current handle, describing every terminal there", () => {
+    const { messaging, send } = create()
+    for (const to of ["codex", "T2", " t2", "t9"])
+      expect(send("A", to, "hi")).toEqual({
+        ok: false,
+        reason: [
+          `"${to}" is no terminal's handle here. Send to one of these by its exact handle, ` +
+            "picking by its title, folder and work; if more than one could be meant, ask the " +
+            "user rather than guess.",
+          "Other terminals in this project and session:",
+          "- t2: Codex, idle",
+        ].join("\n"),
+      })
+    expect(send("A", "t1", "hi")).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/^t1 is this terminal\.\n/),
+    })
+    // A handle stays its terminal's: a closed one's is refused, never another's.
+    messaging.unregister("B")
+    expect(send("A", "t2", "hi")).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("There are no other terminals in this project and session."),
+    })
   })
 
   it("says where a message goes, never that it was delivered", () => {
-    const { send, prompt, codex } = create()
-    expect(sent(send("A", "codex", "one"))).toMatchObject({
+    const { messaging, send, prompt, stop, claude, codex } = create()
+    expect(sent(send("A", "t2", "one"))).toMatchObject({
       state: "queued",
       route: "when its agent first prompts",
     })
     prompt("B", codex)
-    expect(sent(send("A", "codex", "two"))).toMatchObject({
+    expect(sent(send("A", "t2", "two"))).toMatchObject({
       route: "at its turn's end or its next prompt",
     })
+    prompt("A", claude)
+    expect(sent(send("B", "t1", "three"))).toMatchObject({ route: "when its current turn ends" })
+    // Its Stop takes the message; the turn it continues ends with background work running.
+    messaging.acknowledge("A", stop("A", claude).leaseId!)
+    prompt("A", claude, "harness")
+    stop("A", claude, true)
+    expect(sent(send("B", "t1", "four"))).toMatchObject({ route: "when its next turn starts" })
   })
 
   it("keeps the text as sent, without control characters, up to 4 KB", () => {
     const { messaging, send } = create()
-    sent(send("A", "codex", "line\r\n\u001b[1mbold\ttab"))
+    sent(send("A", "t2", "line\r\n\u001b[1mbold\ttab"))
     expect(messages(messaging, "A")[0]?.text).toBe("line\n[1mbold\ttab")
-    expect(send("A", "codex", "é".repeat(2_049))).toMatchObject({
+    expect(send("A", "t2", "é".repeat(2_049))).toMatchObject({
       ok: false,
       reason: expect.stringContaining("4098 bytes, over the 4096 a message may hold"),
     })
-    expect(sent(send("A", "codex", "é".repeat(2_048)))).toMatchObject({ state: "queued" })
-    expect(send("A", "codex", " \n\u0007")).toEqual({ ok: false, reason: "The message is empty." })
-    expect(messaging.send("A", { to: "codex" })).toMatchObject({ ok: false })
-    expect(messaging.send("A", { to: "codex", text: "x", as: "the person" })).toMatchObject({
+    expect(sent(send("A", "t2", "é".repeat(2_048)))).toMatchObject({ state: "queued" })
+    expect(send("A", "t2", " \n\u0007")).toEqual({ ok: false, reason: "The message is empty." })
+    expect(messaging.send("A", { to: "t2" })).toMatchObject({ ok: false })
+    expect(messaging.send("A", { to: "t2", text: "x", as: "the person" })).toMatchObject({
       ok: false,
     })
   })
 
   it("answers the same text to the same recipient within ten seconds as the same message", () => {
-    const { send, clock } = create()
-    const first = sent(send("A", "codex", "same"))
-    clock.now += 10_000
-    expect(sent(send("A", "codex", "same")).id).toBe(first.id)
-    clock.now += 1
-    expect(sent(send("A", "codex", "same")).id).not.toBe(first.id)
+    const { send, clock: time } = create()
+    const first = sent(send("A", "t2", "same"))
+    time.now += 10_000
+    expect(sent(send("A", "t2", "same")).id).toBe(first.id)
+    time.now += 1
+    expect(sent(send("A", "t2", "same")).id).not.toBe(first.id)
   })
 
   it("threads messages between the same two terminals within ten minutes, either way", () => {
-    const { messaging, send, clock } = create()
-    const first = sent(send("A", "codex", "one"))
-    clock.now += threadMs
-    sent(send("B", "claude", "two"))
-    clock.now += threadMs + 1
-    sent(send("A", "codex", "three"))
-    const threads = messaging.list("A").threads
+    const { messaging, send, clock: time } = create()
+    const first = sent(send("A", "t2", "one"))
+    time.now += threadMs
+    sent(send("B", "t1", "two"))
+    time.now += threadMs + 1
+    sent(send("A", "t2", "three"))
+    const { threads } = messaging.list("A", "t1")
     expect(threads.map((thread) => thread.messages.map(({ text, hop }) => [text, hop]))).toEqual([
       [["three", 1]],
       [
@@ -183,39 +238,39 @@ describe("sending", () => {
         ["two", 2],
       ],
     ])
-    expect(threads[1]).toMatchObject({ peer: "codex-1", hops: 2, allowed: 12, held: false })
+    expect(threads[1]).toMatchObject({ peer: "t2", hops: 2, allowed: 12, held: false })
     expect(threads[1]?.messages[0]?.id).toBe(first.id)
   })
 
   it("limits a sender to 10 a minute, 3 of them to any one terminal", () => {
-    const { messaging, send, clock } = create()
-    for (const id of ["C", "D", "E", "F"]) {
-      messaging.register(id, here, "term")
-      messaging.observe(id, { binding: binding("codex", `s-${id}`, id), events: [] })
+    const { messaging, send, follow, clock: time } = create()
+    for (const [index, id] of ["C", "D", "E", "F"].entries()) {
+      messaging.register(id, here, `t${index + 3}`)
+      follow(id, binding("codex", `s-${id}`, id))
     }
-    for (let index = 0; index < 3; index += 1) sent(send("A", "codex-1", `to B ${index}`))
-    expect(send("A", "codex-1", "fourth")).toMatchObject({
+    for (let index = 0; index < 3; index += 1) sent(send("A", "t2", `to B ${index}`))
+    expect(send("A", "t2", "fourth")).toMatchObject({
       ok: false,
       reason: expect.stringContaining("3 of them to any one terminal"),
     })
-    for (const to of ["term-1", "term-2"])
+    for (const to of ["t3", "t4"])
       for (let index = 0; index < 3; index += 1) sent(send("A", to, `to ${to} ${index}`))
-    sent(send("A", "term-3", "tenth"))
-    expect(send("A", "term-4", "eleventh")).toMatchObject({ ok: false })
-    clock.now += 60_000
-    expect(sent(send("A", "term-4", "a minute on"))).toMatchObject({ state: "queued" })
+    sent(send("A", "t5", "tenth"))
+    expect(send("A", "t6", "eleventh")).toMatchObject({ ok: false })
+    time.now += 60_000
+    expect(sent(send("A", "t6", "a minute on"))).toMatchObject({ state: "queued" })
   })
 
   it("limits every agent together to 60 a minute", () => {
-    const { messaging, send } = create()
-    const recipients = ["R1", "R2", "R3"].map((id) => {
-      messaging.register(id, here, "term")
-      messaging.observe(id, { binding: binding("codex", `s-${id}`, id), events: [] })
-      return messaging.handle(id)!
+    const { messaging, send, follow } = create()
+    const recipients = ["R1", "R2", "R3"].map((id, index) => {
+      messaging.register(id, here, `t${index + 10}`)
+      follow(id, binding("codex", `s-${id}`, id))
+      return `t${index + 10}`
     })
     const senders = Array.from({ length: 7 }, (_, index) => {
       const id = `S${index}`
-      messaging.register(id, here, "term")
+      messaging.register(id, here, `t${index + 20}`)
       return id
     })
     const answers = senders.flatMap((from) =>
@@ -229,39 +284,84 @@ describe("sending", () => {
   })
 
   it("refuses more once a recipient has 50 waiting", () => {
-    const { messaging, send, clock } = create()
+    const { messaging, send, clock: time } = create()
     for (let index = 0; index < 50; index += 1) {
-      if (index % 3 === 0) clock.now += 60_000
-      sent(send("A", "codex", `message ${index}`))
+      if (index % 3 === 0) time.now += 60_000
+      sent(send("A", "t2", `message ${index}`))
     }
-    clock.now += 60_000
-    expect(send("A", "codex", "one more")).toMatchObject({
+    time.now += 60_000
+    expect(send("A", "t2", "one more")).toMatchObject({
       ok: false,
-      reason:
-        "codex-1 already has 50 messages waiting; wait for it to take them before sending more.",
+      reason: "t2 already has 50 messages waiting; wait for it to take them before sending more.",
     })
     expect(messages(messaging, "B")).toHaveLength(50)
+  })
+
+  it("needs descriptions only when `to` is no handle there", () => {
+    const { messaging } = create()
+    expect(messaging.describes("A", { to: "t2", text: "hi" })).toBe(false)
+    expect(messaging.describes("A", { to: "codex", text: "hi" })).toBe(true)
+    expect(messaging.describes("A", { to: "t1", text: "hi" })).toBe(true)
+    expect(messaging.describes("A", { text: "hi" })).toBe(false)
+  })
+})
+
+describe("an addressee with no session yet", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("waits for the first session of the agent its terminal expects", () => {
+    const { messaging, send, follow, prompt } = create()
+    messaging.register("N", here, "t3")
+    messaging.expect("N", "codex")
+    expect(sent(send("A", "t3", "hello"))).toMatchObject({
+      state: "queued",
+      route: "when its agent first prompts",
+    })
+    expect(messages(messaging, "N")[0]).toMatchObject({ toAgent: "codex", state: "queued" })
+    const first = binding("codex", "s-first", "3")
+    follow("N", first)
+    expect(prompt("N", first).stdout).toContain("hello")
+  })
+
+  it("outlasts the restore, and is gone once another agent binds there or the terminal closes", () => {
+    const records = memoryMailbox()
+    const setup = create(records, { now: 1_000_000 }, { restoreMs: 60_000 })
+    setup.messaging.register("N", here, "t3")
+    setup.messaging.expect("N", "codex")
+    setup.messaging.register("M", here, "t4")
+    setup.messaging.expect("M", "agy")
+    sent(setup.send("A", "t3", "for codex"))
+    sent(setup.send("A", "t4", "for agy"))
+    vi.advanceTimersByTime(60_000)
+    expect(records.messages().map(({ state }) => state)).toEqual(["queued", "queued"])
+    setup.follow("N", binding("claude", "s-claude-2", "3"))
+    setup.messaging.unregister("M")
+    expect(records.messages().map(({ state }) => state)).toEqual(["gone", "gone"])
+    setup.messaging.close()
   })
 })
 
 describe("guards", () => {
   it("hold a thread's 13th message until the person releases it, then allow 12 more", () => {
-    const { messaging, send, clock } = create()
+    const { messaging, send, clock: time } = create()
     const answers = Array.from({ length: 14 }, (_, index) => {
-      clock.now += 30_000
-      return sent(
-        index % 2 === 0 ? send("A", "codex", `${index}`) : send("B", "claude", `${index}`),
-      )
+      time.now += 30_000
+      return sent(index % 2 === 0 ? send("A", "t2", `${index}`) : send("B", "t1", `${index}`))
     })
     expect(answers.slice(0, 12).every(({ state }) => state === "queued")).toBe(true)
     expect(answers.slice(12)).toMatchObject([
       { state: "held", held: "release" },
       { state: "held", held: "release" },
     ])
-    const [thread] = messaging.list("A").threads
+    const [thread] = messaging.list("A", "t1").threads
     expect(thread).toMatchObject({ hops: 14, allowed: 12, held: true })
     messaging.release(thread!.id)
-    expect(messaging.list("A").threads[0]).toMatchObject({ allowed: 26, held: false })
+    expect(messaging.list("A", "t1").threads[0]).toMatchObject({ allowed: 26, held: false })
     expect(messages(messaging, "A").every(({ state }) => state === "queued")).toBe(true)
     expect(() => messaging.release("t-unknown")).toThrow(
       expect.objectContaining({ code: "NOT_FOUND" }),
@@ -271,9 +371,9 @@ describe("guards", () => {
   it("hold every message while paused, across restarts, and deliver in order once resumed", () => {
     const records = memoryMailbox()
     const first = create(records)
-    sent(first.send("A", "codex", "before"))
+    sent(first.send("A", "t2", "before"))
     first.messaging.pause(true)
-    expect(sent(first.send("A", "codex", "during"))).toMatchObject({
+    expect(sent(first.send("A", "t2", "during"))).toMatchObject({
       state: "held",
       held: "paused",
     })
@@ -299,7 +399,7 @@ describe("delivery through hooks", () => {
 
   it("leases waiting messages at the recipient's prompt, delivered once acknowledged", () => {
     const { messaging, send, prompt, codex } = create()
-    const { id } = sent(send("A", "codex", "Review a.ts"))
+    const { id } = sent(send("A", "t2", "Review a.ts"))
     const answer = prompt("B", codex)
     expect(answer.leaseId).toEqual(expect.any(String))
     const { hookSpecificOutput } = JSON.parse(answer.stdout!) as {
@@ -307,7 +407,7 @@ describe("delivery through hooks", () => {
     }
     expect(hookSpecificOutput.hookEventName).toBe("UserPromptSubmit")
     expect(hookSpecificOutput.additionalContext).toContain(
-      `<message id="${id}" from="claude-1" agent="Claude Code"`,
+      `<message id="${id}" from="t1" agent="Claude Code"`,
     )
     expect(hookSpecificOutput.additionalContext).toContain(">Review a.ts</message>")
     expect(messages(messaging, "B")[0]).toMatchObject({ state: "leased" })
@@ -321,11 +421,11 @@ describe("delivery through hooks", () => {
   })
 
   it("continues a working agent's Stop with its messages, at most twice a turn", () => {
-    const { messaging, send, prompt, stop, codex, clock } = create()
+    const { messaging, send, prompt, stop, codex, clock: time } = create()
     prompt("B", codex)
     const stops = [1, 2, 3].map((index) => {
-      clock.now += 60_000
-      sent(send("A", "codex", `message ${index}`))
+      time.now += 60_000
+      sent(send("A", "t2", `message ${index}`))
       const answer = stop("B", codex)
       if (answer.leaseId) messaging.acknowledge("B", answer.leaseId)
       return answer
@@ -347,9 +447,9 @@ describe("delivery through hooks", () => {
     const { messaging, send, prompt, stop, codex } = create()
     prompt("B", codex)
     messaging.input("B", { submits: true, answers: false })
-    sent(send("A", "codex", "hello"))
+    sent(send("A", "t2", "hello"))
     expect(stop("B", codex)).toEqual({ leaseId: null, stdout: "" })
-    expect(messaging.delivery("B")?.state).toBe("busy")
+    expect(messaging.delivery("B")?.state).toBe("drafting")
     expect(prompt("B", codex).leaseId).toEqual(expect.any(String))
   })
 
@@ -357,20 +457,14 @@ describe("delivery through hooks", () => {
     const { messaging, send, prompt, stop, codex } = create()
     prompt("B", codex)
     messaging.input("B", { submits: true, answers: true })
-    sent(send("A", "codex", "hello"))
+    sent(send("A", "t2", "hello"))
     expect(stop("B", codex).leaseId).toEqual(expect.any(String))
   })
 
   it("leases only with time left before the hook's deadline to print and acknowledge", () => {
-    const { messaging, send, codex, clock } = create()
-    sent(send("A", "codex", "hello"))
-    const late = messaging.ask("B", {
-      agent: "codex",
-      event: "UserPromptSubmit",
-      binding: codex,
-      events: [started(codex)],
-      deadline: clock.now + 299,
-    })
+    const { messaging, send, ask, codex, clock: time } = create()
+    sent(send("A", "t2", "hello"))
+    const late = ask("B", codex, "UserPromptSubmit", [started(codex)], time.now + 299)
     expect(late).toEqual({ leaseId: null, stdout: "" })
     expect(messages(messaging, "B")[0]?.state).toBe("queued")
   })
@@ -378,10 +472,10 @@ describe("delivery through hooks", () => {
   it("returns a lapsed lease's messages to queued, its Stop taken as not continued", () => {
     const { messaging, send, prompt, stop, codex } = create()
     prompt("B", codex)
-    sent(send("A", "codex", "hello"))
+    sent(send("A", "t2", "hello"))
     const answer = stop("B", codex)
     expect(answer.leaseId).toEqual(expect.any(String))
-    expect(messaging.delivery("B")?.state).toBe("working")
+    expect(messaging.delivery("B")).toMatchObject({ state: "working", phase: "continuing" })
     vi.advanceTimersByTime(4_999)
     expect(messages(messaging, "B")[0]?.state).toBe("leased")
     vi.advanceTimersByTime(1)
@@ -395,7 +489,7 @@ describe("delivery through hooks", () => {
 
   it("ignores an acknowledgement for another terminal's lease", () => {
     const { messaging, send, prompt, codex } = create()
-    sent(send("A", "codex", "hello"))
+    sent(send("A", "t2", "hello"))
     const { leaseId } = prompt("B", codex)
     messaging.acknowledge("A", leaseId!)
     messaging.acknowledge("B", "not-a-lease-at-all-here")
@@ -405,7 +499,7 @@ describe("delivery through hooks", () => {
   it("puts every lease held when the runner stops back to queued", () => {
     const records = memoryMailbox()
     const first = create(records)
-    sent(first.send("A", "codex", "hello"))
+    sent(first.send("A", "t2", "hello"))
     expect(first.prompt("B", first.codex).leaseId).toEqual(expect.any(String))
     first.messaging.close()
     const second = create(records)
@@ -416,8 +510,8 @@ describe("delivery through hooks", () => {
 
   it("delivers several messages together, up to 8 KB as printed, the rest at the next hook", () => {
     const { messaging, send, prompt, codex } = create()
-    sent(send("A", "codex", "a".repeat(4_000)))
-    sent(send("A", "codex", "b".repeat(4_000)))
+    sent(send("A", "t2", "a".repeat(4_000)))
+    sent(send("A", "t2", "b".repeat(4_000)))
     const first = prompt("B", codex)
     messaging.acknowledge("B", first.leaseId!)
     expect(first.stdout).not.toContain("bbb")
@@ -425,8 +519,8 @@ describe("delivery through hooks", () => {
   })
 
   it("gives nested agents' and other sessions' hooks nothing", () => {
-    const { send, codex, messaging, clock } = create()
-    sent(send("A", "codex", "hello"))
+    const { send, messaging, clock: time } = create()
+    sent(send("A", "t2", "hello"))
     // A codex exec inside Codex: another process, another session, while Codex stays bound.
     const nested = binding("codex", "s-nested", "99")
     for (const event of ["UserPromptSubmit", "Stop"])
@@ -434,9 +528,8 @@ describe("delivery through hooks", () => {
         messaging.ask("B", {
           agent: "codex",
           event,
-          binding: codex,
           events: [event === "Stop" ? stopped(nested) : started(nested)],
-          deadline: clock.now + 3_000,
+          deadline: time.now + 3_000,
         }),
       ).toEqual({ leaseId: null, stdout: "" })
     expect(messages(messaging, "B")[0]?.state).toBe("queued")
@@ -447,138 +540,106 @@ describe("delivery through hooks", () => {
     const { messaging, prompt, stop, claude } = create()
     prompt("A", claude)
     stop("A", claude, true)
-    expect(messaging.delivery("A")?.state).toBe("working")
+    expect(messaging.delivery("A")).toMatchObject({ state: "working", phase: "background" })
     prompt("A", claude, "harness")
     stop("A", claude)
     expect(messaging.delivery("A")?.state).toBe("settled")
-  })
-})
-
-describe("critic's cases", () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-  })
-  afterEach(() => {
-    vi.useRealTimers()
   })
 
   it("delivers at a Stop after background work, once the person prompts again", () => {
     const { messaging, send, prompt, stop, claude } = create()
     prompt("A", claude)
-    // The turn ends with a background task still running: Working, no root turn.
+    // The turn ends with a background task still running.
     stop("A", claude, true)
-    expect(messaging.delivery("A")).toMatchObject({ state: "working", running: false })
     // The person's Enter starts their next prompt at once: nothing is queued.
     messaging.input("A", { submits: true, answers: false })
     prompt("A", claude)
-    sent(send("B", "claude", "Review it"))
+    sent(send("B", "t1", "Review it"))
     expect(stop("A", claude).leaseId).toEqual(expect.any(String))
   })
 
   it("leaves a turn that began since alone when an older Stop's lease lapses", () => {
     const { messaging, send, prompt, stop, codex } = create()
     prompt("B", codex)
-    sent(send("A", "codex", "one"))
+    sent(send("A", "t2", "one"))
     expect(stop("B", codex).leaseId).toEqual(expect.any(String))
     // Its acknowledgement was lost, but the harness continued, and the person prompted.
     prompt("B", codex)
     vi.advanceTimersByTime(5_000)
-    expect(messaging.delivery("B")).toMatchObject({ state: "working", running: true })
+    expect(messaging.delivery("B")).toMatchObject({ state: "working", phase: "turn" })
   })
 
   it("refuses a message too large to deliver, saying how large it may be", () => {
     const { send } = create()
-    expect(send("A", "codex", "&".repeat(4_000))).toEqual({
+    expect(send("A", "t2", "&".repeat(4_000))).toEqual({
       ok: false,
       reason: expect.stringMatching(
         /^Delivered, this message would take \d+ bytes, over the 8192 a delivery may/,
       ),
     })
-    expect(sent(send("A", "codex", "a".repeat(4_096)))).toMatchObject({ state: "queued" })
-  })
-
-  it("never makes the root's messages gone when Antigravity restarts during a subagent's work", () => {
-    const records = memoryMailbox()
-    const first = create(records)
-    const root = binding("agy", "c-root", "7")
-    first.messaging.register("G", here, "agy")
-    first.messaging.observe("G", {
-      binding: root,
-      events: [observed(root, true)],
-      statusLine: true,
-    })
-    sent(first.send("A", "agy", "hello"))
-    first.messaging.close()
-    const second = create(records)
-    second.messaging.register("G", here, "agy")
-    // The first report after the restart is a subagent's model call.
-    const subagent = binding("agy", "c-sub", "8")
-    second.messaging.observe("G", {
-      binding: subagent,
-      events: [observed(subagent), started(subagent, "call")],
-    })
-    expect(messages(second.messaging, "G")[0]?.state).toBe("queued")
-    // The root's own call, which a message waits for, corrects the guess.
-    const rooted = binding("agy", "c-root", "8")
-    const answer = second.ask("G", rooted, "PreInvocation", [
-      observed(rooted),
-      started(rooted, "harness"),
-    ])
-    expect(answer.stdout).toContain("hello")
+    expect(sent(send("A", "t2", "a".repeat(4_096)))).toMatchObject({ state: "queued" })
   })
 
   it("makes messages gone once restoring is over for a terminal never restored, until it is", () => {
     const records = memoryMailbox()
     const first = create(records)
-    sent(first.send("A", "codex", "hello"))
+    sent(first.send("A", "t2", "hello"))
     first.messaging.close()
-    const second = new Messaging({ records, sweepMs: 0, restoreMs: 60_000 })
-    second.register("A", here, "claude")
+    const second = new Messaging({ records, sweepMs: 0, restoreMs: 60_000, exists: () => true })
+    second.register("A", here, "t1")
     vi.advanceTimersByTime(60_000)
     expect(records.messages()[0]?.state).toBe("gone")
-    second.register("B", here, "codex")
-    second.observe("B", { binding: binding("codex", "s-codex", "2"), events: [] })
+    second.register("B", here, "t2")
+    const root = { ...first.codex, source: "binding" } as const
+    second.rooted("B", [{ type: "new", root, guess: false }])
     expect(records.messages()[0]?.state).toBe("queued")
     second.close()
   })
+})
 
-  it("gives a valid handle no record holds when the records can't give one", () => {
-    const records = {
-      ...memoryMailbox(),
-      assignHandle: () => {
-        throw new Error("disk full")
-      },
-    }
-    const error = vi.spyOn(console, "error").mockImplementation(() => {})
-    const messaging = new Messaging({ records, sweepMs: 0, restoreMs: 0 })
-    const one = messaging.register("A", here, "codex")
-    const two = messaging.register("B", here, "codex")
-    error.mockRestore()
-    for (const handle of [one, two]) expect(handle).toMatch(/^codex-9\d{8}$/)
-    expect(one).not.toBe(two)
+describe("change notices", () => {
+  it("tell of each change to a terminal's messages and delivery state", () => {
+    const { messaging, send, prompt, codex, changed } = create()
+    changed.length = 0
+    sent(send("A", "t2", "hello"))
+    expect(changed).toEqual(["B", "A"])
+    changed.length = 0
+    const { leaseId } = prompt("B", codex)
+    // The turn began, then its message was leased.
+    expect(changed).toEqual(["B", "B", "A"])
+    changed.length = 0
+    messaging.acknowledge("B", leaseId!)
+    expect(changed).toEqual(["B", "A"])
+    changed.length = 0
+    // A call within the turn changes nothing.
+    prompt("B", codex, "call")
+    expect(changed).toEqual([])
   })
 })
 
 describe("gone messages", () => {
   it("are gone once the recipient's session ends, its sender told once, and wait again if it returns", () => {
-    const { messaging, send, codex } = create()
-    const { id } = sent(send("A", "codex", "hello"))
-    messaging.observe("B", { binding: null, events: [] })
+    const { messaging, send, follow, codex } = create()
+    const { id } = sent(send("A", "t2", "hello"))
+    follow("B", null)
     expect(messages(messaging, "B")[0]?.state).toBe("gone")
-    expect(send("A", "codex-1", "again")).toMatchObject({ ok: false })
-    messaging.register("C", here, "term")
-    messaging.observe("C", { binding: binding("agy", "s-agy", "5"), events: [] })
-    const told = sent(send("A", "agy", "first"))
-    expect(told.gone).toEqual([{ id, to: "codex-1" }])
-    expect(sent(send("A", "agy", "second")).gone).toBeUndefined()
-    messaging.observe("B", { binding: codex, events: [] })
+    expect(send("A", "t2", "again")).toEqual({
+      ok: false,
+      reason: "t2 has no agent running there that NovaDeck can deliver to.",
+    })
+    messaging.register("C", here, "t3")
+    follow("C", binding("agy", "s-agy", "5"))
+    const told = sent(send("A", "t3", "first"))
+    expect(told.gone).toEqual([{ id, to: "t2" }])
+    expect(sent(send("A", "t3", "second")).gone).toBeUndefined()
+    follow("B", codex)
     expect(messages(messaging, "B")[0]?.state).toBe("queued")
   })
 
   it("are gone once the harness announces a new session there, as after /clear", () => {
-    const { messaging, send } = create()
-    sent(send("A", "codex", "hello"))
-    messaging.observe("B", { binding: binding("codex", "s-cleared", "2"), events: [] })
+    const { messaging, send, follow } = create()
+    sent(send("A", "t2", "hello"))
+    follow("B", binding("codex", "s-cleared", "2"))
     expect(messages(messaging, "B")[0]?.state).toBe("gone")
     expect(messaging.delivery("B")?.state).toBe("fresh")
   })
@@ -592,10 +653,10 @@ describe("Antigravity's root conversation", () => {
     vi.useRealTimers()
   })
 
-  const agyTerminal = () => {
-    const setup = create()
+  const agyTerminal = (records?: MailboxRecords) => {
+    const setup = create(records)
     const root = binding("agy", "c-root", "7")
-    setup.messaging.register("G", here, "agy")
+    setup.messaging.register("G", here, "t3")
     return { ...setup, root }
   }
 
@@ -606,12 +667,10 @@ describe("Antigravity's root conversation", () => {
 
   it("is the conversation of the first model call after it binds, until its status line names one", () => {
     const { messaging, ask, send, root } = agyTerminal()
-    const answer = (bound: Binding, number: number) => {
-      messaging.observe("G", { binding: bound, events: [] })
-      return ask("G", bound, "PreInvocation", invocation(bound, number))
-    }
+    const answer = (bound: Binding, number: number) =>
+      ask("G", bound, "PreInvocation", invocation(bound, number))
     expect(answer(root, 0)).toEqual({ leaseId: null, stdout: "{}\n" })
-    sent(send("A", "agy", "hello"))
+    sent(send("A", "t3", "hello"))
     // A subagent's calls are in its own conversation: they get nothing, and the binding
     // following them is no new session.
     const subagent = binding("agy", "c-sub", "7")
@@ -627,62 +686,78 @@ describe("Antigravity's root conversation", () => {
     expect(later).toEqual({ leaseId: null, stdout: first.stdout })
     expect(answer(root, 2).stdout).toBe(first.stdout)
     // The next turn starts afresh.
-    messaging.observe("G", { binding: root, events: [stopped(root)] })
+    ask("G", root, "Stop", [stopped(root)])
     expect(answer(root, 1)).toEqual({ leaseId: null, stdout: "{}\n" })
   })
 
   it("is the conversation its status line names, which alone names a new one", () => {
-    const { messaging, ask, send, root } = agyTerminal()
+    const { messaging, ask, observe, send, root } = agyTerminal()
     const subagent = binding("agy", "c-sub", "7")
     // Bound by a subagent's call: a guess its status line corrects.
-    messaging.observe("G", { binding: subagent, events: invocation(subagent, 0) })
-    sent(send("A", "agy", "hello"))
-    messaging.observe("G", { binding: root, events: [observed(root, true)], statusLine: true })
+    observe("G", subagent, invocation(subagent, 0))
+    sent(send("A", "t3", "hello"))
+    observe("G", root, [observed(root, true)], true)
     const answer = ask("G", root, "PreInvocation", invocation(root, 0))
     expect(answer.stdout).toContain("hello")
     messaging.acknowledge("G", answer.leaseId!)
-    sent(send("A", "agy", "later"))
+    sent(send("A", "t3", "later"))
     // A /clear: its status line names another conversation.
     const cleared = binding("agy", "c-new", "7")
-    messaging.observe("G", {
-      binding: cleared,
-      events: [observed(cleared, true)],
-      statusLine: true,
-    })
+    observe("G", cleared, [observed(cleared, true)], true)
     expect(messages(messaging, "G").map(({ state }) => state)).toEqual(["delivered", "gone"])
     expect(messaging.delivery("G")?.state).toBe("fresh")
   })
 
+  it("never makes the root's messages gone when Antigravity restarts during a subagent's work", () => {
+    const records = memoryMailbox()
+    const first = agyTerminal(records)
+    first.observe("G", first.root, [observed(first.root, true)], true)
+    sent(first.send("A", "t3", "hello"))
+    first.messaging.close()
+    const second = agyTerminal(records)
+    // The first report after the restart is a subagent's model call.
+    const subagent = binding("agy", "c-sub", "8")
+    second.observe("G", subagent, [observed(subagent), started(subagent, "call")])
+    expect(messages(second.messaging, "G")[0]?.state).toBe("queued")
+    // The root's own call, which a message waits for, corrects the guess.
+    const rooted = binding("agy", "c-root", "8")
+    const answer = second.ask("G", rooted, "PreInvocation", [
+      observed(rooted),
+      started(rooted, "harness"),
+    ])
+    expect(answer.stdout).toContain("hello")
+  })
+
   it("continues a Stop with a lasting reason, and an idle status line with no Stop is no completion", () => {
-    const { messaging, ask, send, root } = agyTerminal()
-    messaging.observe("G", { binding: root, events: invocation(root, 0) })
-    sent(send("A", "agy", "hello"))
+    const { messaging, ask, observe, send, root } = agyTerminal()
+    observe("G", root, invocation(root, 0))
+    sent(send("A", "t3", "hello"))
     const answer = ask("G", root, "Stop", [observed(root), stopped(root)])
     expect(JSON.parse(answer.stdout!)).toEqual({
       decision: "continue",
       reason: expect.stringContaining("hello"),
     })
     // The continuation's first model call, then Esc or a denial: idle, with no Stop.
-    messaging.observe("G", { binding: root, events: [started(root, "harness")] })
+    observe("G", root, [started(root, "harness")])
     const idle: HarnessEvent = { type: "turn-idle", ...fact(root), background: false }
-    messaging.observe("G", { binding: root, events: [idle], statusLine: true })
+    observe("G", root, [idle], true)
     expect(messaging.delivery("G")?.state).toBe("unknown")
     // After a Stop, idle says nothing new.
-    messaging.observe("G", { binding: root, events: invocation(root, 0) })
+    observe("G", root, invocation(root, 0))
     ask("G", root, "Stop", [observed(root), stopped(root)])
-    messaging.observe("G", { binding: root, events: [idle], statusLine: true })
+    observe("G", root, [idle], true)
     expect(messaging.delivery("G")?.state).toBe("settled")
   })
 
   it("stays working at a Stop while a subagent still runs", () => {
-    const { messaging, ask, root } = agyTerminal()
-    messaging.observe("G", { binding: root, events: invocation(root, 0) })
+    const { messaging, ask, observe, root } = agyTerminal()
+    observe("G", root, invocation(root, 0))
     ask("G", root, "Stop", [observed(root), stopped(root, true)])
-    expect(messaging.delivery("G")?.state).toBe("working")
+    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
   })
 })
 
-// What the terminal manager knows of B: its title and where it works.
+// What the terminal manager knows of B: its title, where it works, and what it worked on.
 const about = (terminalId: string): Whereabouts | undefined =>
   terminalId === "B"
     ? {
@@ -691,201 +766,83 @@ const about = (terminalId: string): Whereabouts | undefined =>
         folder: "src/api",
         branch: "feat/paging",
         plan: "Pagination",
+        work: {
+          session: "codex:s-codex",
+          first: "Build the users API",
+          latest: "Now add paging",
+          folders: { "/w/src/api": 3, "/w/tests": 2, "/w/docs": 1, "/w/web": 1 },
+          activeAt: 1_000_000,
+        },
         place: (path: string) => path.replace(/^\/w\//, ""),
       }
     : terminalId === "D"
       ? {
           title: "Web client",
-          titledBy: "claude-1",
+          titledBy: "t1",
           folder: null,
           branch: null,
           plan: null,
+          work: null,
           place: (path) => path,
         }
       : undefined
 
-const prompted = (text: string, cause: "prompt" | "harness" = "prompt"): HarnessEvent => ({
-  type: "turn-started",
-  ...fact(binding("codex", "s-codex", "2")),
-  cause,
-  prompt: text,
-})
-
-const touched = (path: string): HarnessEvent => ({
-  type: "file-touched",
-  ...fact(binding("codex", "s-codex", "2")),
-  actor: null,
-  path,
-})
-
 describe("listing", () => {
   it("describes each other terminal by what NovaDeck knows, and the caller's messages yet to arrive", () => {
-    const { messaging, send, ask, codex, clock } = create()
-    messaging.register("C", here, "term")
-    ask("B", codex, "UserPromptSubmit", [
-      prompted(`Add pagination to /users ${"and more ".repeat(20)}`),
-    ])
-    clock.now += 1_000
-    for (const path of [
-      "/w/src/api/a.ts",
-      "/w/src/api/b.ts",
-      "/w/tests/a.ts",
-      "/w/src/api/a.ts",
-      "/w/docs/x.md",
-      "/w/tests/b.ts",
-      "/w/web/c.ts",
-    ])
-      messaging.observe("B", { binding: codex, events: [touched(path)] })
-    clock.now += 1_000
-    const { id } = sent(send("A", "codex", "Please accommodate x, y and z in the users route."))
+    const { messaging, send, prompt, codex, clock: time } = create()
+    messaging.register("C", here, "t3")
+    messaging.register("D", here, "t4")
+    prompt("B", codex)
+    time.now += 60_000
+    const { id } = sent(send("A", "t2", "Please accommodate x, y and z in the users route."))
     expect(messaging.agents("A", about)).toEqual({
       ok: true,
-      handle: "claude-1",
-      agents: [
-        {
-          handle: "codex-1",
-          agent: "codex",
-          title: "API author",
-          titledBy: null,
-          folder: "src/api",
-          branch: "feat/paging",
-          startedWith: expect.stringMatching(/^Add pagination to \/users and more .*…$/),
-          // The same as it started with: left out.
-          latest: null,
-          plan: "Pagination",
-          worksIn: [
-            { folder: "src/api/", edits: 3 },
-            { folder: "tests/", edits: 2 },
-            { folder: "docs/", edits: 1 },
-          ],
-          withYou: {
-            from: "you",
-            text: "Please accommodate x, y and z in the users route.",
-            at: 1_002_000,
-          },
-          state: "busy",
-          activeAt: 1_001_000,
-        },
-        {
-          handle: "term-1",
-          agent: null,
-          title: null,
-          titledBy: null,
-          folder: null,
-          branch: null,
-          startedWith: null,
-          latest: null,
-          plan: null,
-          worksIn: [],
-          withYou: null,
-          state: null,
-          activeAt: null,
-        },
-      ],
-      messages: [{ id, to: "codex-1", state: "queued", sentAt: 1_002_000 }],
+      text: [
+        "You are t1 in NovaDeck.",
+        "Other terminals in this project and session:",
+        "- t2: Codex, busy, last active 1 min ago",
+        "  title: API author",
+        "  folder: src/api, branch feat/paging",
+        "  started with: Build the users API",
+        "  latest: Now add paging",
+        "  plan: Pagination",
+        "  works in: src/api/ (3), tests/ (2), docs/ (1)",
+        "  with you: you, just now: Please accommodate x, y and z in the users route.",
+        "- t3: no agent NovaDeck can deliver to",
+        "- t4: no agent NovaDeck can deliver to",
+        // An agent named that one: never taken for the person's word.
+        "  title: Web client (set by t1, not the user)",
+        "Your messages not yet delivered:",
+        `- ${id} to t2, sent ${clock(time.now)}: queued`,
+      ].join("\n"),
     })
-    const [peer] = peersOf(messaging)
-    expect(peer!.startedWith!.length).toBeLessThanOrEqual(120)
-    expect(messaging.agents("C")).toMatchObject({ handle: "term-1", unbound: true })
-  })
-
-  it("tells the person's first and latest prompts, never a turn the harness started", () => {
-    const { messaging, ask, codex } = create()
-    ask("B", codex, "UserPromptSubmit", [prompted("Build the users API")])
-    ask("B", codex, "UserPromptSubmit", [prompted("<task-notification>done", "harness")])
-    const peer = () => peersOf(messaging)[0]
-    expect(peer()).toMatchObject({ startedWith: "Build the users API", latest: null })
-    ask("B", codex, "UserPromptSubmit", [prompted("Now add paging")])
-    expect(peer()).toMatchObject({ startedWith: "Build the users API", latest: "Now add paging" })
-  })
-
-  it("keeps what a session worked on across a restart, and starts afresh for a new session", () => {
-    const records = memoryMailbox()
-    const first = create(records)
-    first.ask("B", first.codex, "UserPromptSubmit", [prompted("Build the users API")])
-    first.messaging.observe("B", { binding: first.codex, events: [touched("/w/src/api/a.ts")] })
-    first.messaging.close()
-    const second = create(records)
-    const peer = (messaging: Messaging) => peersOf(messaging)[0]
-    expect(peer(second.messaging)).toMatchObject({
-      startedWith: "Build the users API",
-      worksIn: [{ folder: "src/api/", edits: 1 }],
-    })
-    // Another session there, as after /clear, has done nothing yet.
-    second.messaging.observe("B", { binding: binding("codex", "s-new", "2"), events: [] })
-    expect(peer(second.messaging)).toMatchObject({ startedWith: null, worksIn: [] })
-  })
-
-  it("tells the latest message between the caller and each terminal, either way", () => {
-    const { messaging, send, clock } = create()
-    sent(send("A", "codex", "first"))
-    clock.now += 1_000
-    sent(send("B", "claude", `Done; ${"details ".repeat(20)}`))
-    const [peer] = peersOf(messaging)
-    expect(peer!.withYou).toEqual({
-      from: "codex-1",
-      text: expect.stringMatching(/^Done; details .*…$/),
-      at: 1_001_000,
+    expect(messaging.agents("C")).toEqual({
+      ok: true,
+      text: expect.stringMatching(/^You are t3 in NovaDeck\.\n[\s\S]*replies can't reach you/),
     })
   })
 
   it("lets only terminals of one project and NovaDeck session see each other", () => {
-    const { messaging, send } = create()
-    messaging.register("O", { projectId: "p", sessionId: "other" }, "codex")
-    messaging.observe("O", { binding: binding("codex", "s-o", "9"), events: [] })
-    expect(messaging.agents("A")).toMatchObject({ agents: [{ handle: "codex-1" }] })
-    // The only Codex here is B's: O is in another session.
-    expect(sent(send("A", "codex", "hi")).to).toBe("codex-1")
-    expect(send("A", "codex-2", "hi")).toMatchObject({
-      ok: false,
-      reason: expect.stringContaining('No terminal here is called "codex-2"'),
-    })
-  })
-
-  it("needs descriptions only when the name it was given fits none, or several", () => {
-    const { messaging } = create()
-    expect(messaging.describes("A", { to: "codex", text: "hi" })).toBe(false)
-    expect(messaging.describes("A", { to: "codex-1", text: "hi" })).toBe(false)
-    expect(messaging.describes("A", { to: "reviewer", text: "hi" })).toBe(true)
-    messaging.register("D", here, "codex")
-    messaging.observe("D", { binding: binding("codex", "s-d", "4"), events: [] })
-    expect(messaging.describes("A", { to: "codex", text: "hi" })).toBe(true)
-  })
-
-  it("describes the candidates in one line each when the name it was given fits several", () => {
-    const { messaging, send, ask, codex } = create()
-    messaging.register("D", here, "codex")
-    messaging.observe("D", { binding: binding("codex", "s-d", "4"), events: [] })
-    ask("B", codex, "UserPromptSubmit", [prompted("Build the users API")])
-    const refused = messaging.send("A", { to: "codex", text: "hi" }, about)
-    expect(refused).toEqual({
-      ok: false,
-      reason: [
-        "More than one terminal here runs Codex. Pick the one you mean by its title, folder " +
-          "and work, and send to it by its handle; if you can't tell, ask the person.",
-        '- codex-1 (Codex); titled "API author"; in src/api on feat/paging; started with ' +
-          '"Build the users API"; plan "Pagination"',
-        // An agent named that one: never taken for the person's word.
-        '- codex-2 (Codex); titled "Web client" (set by claude-1)',
-      ].join("\n"),
-    })
-    expect(send("A", "reviewer", "hi")).toMatchObject({
-      reason: expect.stringContaining('No terminal here is called "reviewer"'),
-    })
+    const { messaging, follow, send } = create()
+    messaging.register("O", { projectId: "p", sessionId: "other" }, "t1")
+    follow("O", binding("codex", "s-o", "9"))
+    const listed = messaging.agents("A")
+    expect(listed.ok && listed.text.match(/^- t\d+/gm)).toEqual(["- t2"])
+    expect(send("O", "t2", "hi")).toMatchObject({ ok: false })
   })
 
   it("gives the runner API a terminal's threads, messages and states", () => {
     const { messaging, send } = create()
-    sent(send("A", "codex", "hello"))
-    expect(messaging.list("B")).toEqual({
+    sent(send("A", "t2", "hello"))
+    expect(messaging.list("B", "t2")).toEqual({
       terminalId: "B",
-      handle: "codex-1",
+      handle: "t2",
       delivery: "fresh",
       paused: false,
       threads: [
         {
           id: expect.stringMatching(/^t-/),
-          peer: "claude-1",
+          peer: "t1",
           hops: 1,
           allowed: 12,
           held: false,
@@ -894,9 +851,9 @@ describe("listing", () => {
               id: expect.stringMatching(/^m-/),
               thread: expect.stringMatching(/^t-/),
               hop: 1,
-              from: "claude-1",
+              from: "t1",
               fromAgent: "claude",
-              to: "codex-1",
+              to: "t2",
               toAgent: "codex",
               text: "hello",
               sentAt: 1_000_000,
@@ -908,53 +865,37 @@ describe("listing", () => {
         },
       ],
     })
-    // An exited terminal's messages are there while its handle is kept.
+    // An exited terminal's messages are there while they are kept.
     messaging.unregister("B")
-    expect(messaging.list("B")).toMatchObject({ handle: "codex-1", delivery: "unbound" })
-    expect(messaging.list("B").threads[0]?.messages[0]?.state).toBe("gone")
-    expect(() => messaging.list("nowhere")).toThrow(
-      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
-    )
+    expect(messaging.list("B", "t2")).toMatchObject({ handle: "t2", delivery: "unbound" })
+    expect(messaging.list("B", "t2").threads[0]?.messages[0]?.state).toBe("gone")
   })
 })
 
 describe("retention", () => {
-  it("keeps messages while either terminal runs or is saved, and for a day after", () => {
-    const saved = new Set<string>()
-    const records = { ...memoryMailbox(), terminalSaved: (id: string) => saved.has(id) }
-    const { messaging, send, clock } = create(records)
-    sent(send("A", "codex", "hello"))
-    saved.add("A")
+  it("keeps messages while either terminal exists, and for a day after their latest activity", () => {
+    const kept = new Set(["A", "B"])
+    const records = memoryMailbox()
+    const {
+      messaging,
+      send,
+      clock: time,
+    } = create(records, { now: 1_000_000 }, { exists: (terminalId) => kept.has(terminalId) })
+    sent(send("A", "t2", "hello"))
     messaging.unregister("A")
     messaging.unregister("B")
+    time.now += retentionMs
+    kept.delete("B")
     messaging.sweep()
-    clock.now += retentionMs
-    messaging.sweep()
-    // A's saved record keeps them.
+    // A, kept though not running, keeps them.
     expect(records.messages()).toHaveLength(1)
-    saved.delete("A")
-    messaging.sweep()
-    clock.now += retentionMs - 1
+    kept.delete("A")
+    time.now -= 1
     messaging.sweep()
     expect(records.messages()).toHaveLength(1)
-    clock.now += 1
+    time.now += 1
     messaging.sweep()
     expect(records.messages()).toEqual([])
     expect(records.threads()).toEqual([])
-    expect(records.handles()).toEqual([])
-  })
-})
-
-describe("a session's folder tally", () => {
-  it("keeps the folders written in most, and always the one just written in", () => {
-    let folders: Record<string, number> = {}
-    for (let index = 0; index < 30; index += 1)
-      for (let edit = 0; edit <= index; edit += 1) folders = { ...tallied(folders, `/f${index}`) }
-    expect(Object.keys(folders)).toHaveLength(keptFolders)
-    expect(folders["/f29"]).toBe(30)
-    expect(folders["/f0"]).toBeUndefined()
-    const fresh = tallied(folders, "/new")
-    expect(fresh["/new"]).toBe(1)
-    expect(Object.keys(fresh)).toHaveLength(keptFolders)
   })
 })

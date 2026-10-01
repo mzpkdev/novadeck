@@ -247,6 +247,11 @@ export const terminalTitle = name.regex(
   "A title must be one line, without control characters.",
 )
 
+// A terminal's handle: `t` and a number its NovaDeck session gives it as it is created,
+// never twice, from the same count as its default title ("Terminal 03" is `t3`). It
+// stays as the terminal is renamed, and agents address each other by it.
+export const handle = z.string().regex(/^t[1-9][0-9]{0,8}$/)
+
 // The runner owns every terminal's identity and facts: which terminals a session has, their
 // titles, directories, what they run and ran. Clients keep only how they show them.
 export const terminalSummary = z.strictObject({
@@ -255,6 +260,8 @@ export const terminalSummary = z.strictObject({
   // The title the person gave the terminal, or the runner's default for its session
   // ("Terminal 01", "Terminal 02", … in the order they were created).
   title: terminalTitle,
+  // Its handle, which never changes.
+  handle,
   // Whether the runner started a shell for it in this lifetime. A terminal it keeps only
   // as saved, as after the runner restarted, has none until a client restores it, with
   // `create` and `restore`.
@@ -358,11 +365,6 @@ export const runnerSettings = z.strictObject({
   welcomed: z.boolean(),
 })
 
-// Agent messaging (see docs/agent-messaging.md). A terminal's handle is the short name
-// the runner gives it when it is created, never reused in its project, such as
-// `codex-2`: the agent it was opened for, else `term`, and a number. Agents address
-// each other by it, and the UI shows it beside the terminal's title.
-export const handle = z.string().regex(/^[a-z]{1,16}-[1-9][0-9]{0,8}$/)
 export const messageId = z.string().regex(/^m-[a-z0-9]{1,32}$/)
 export const threadId = z.string().regex(/^t-[a-z0-9]{1,32}$/)
 
@@ -376,8 +378,15 @@ export const messageState = z.enum(["queued", "leased", "delivered", "held", "go
 // How a terminal's agent can take a message now: no agent session bound (`unbound`), one
 // bound that has had no turn yet (`fresh`), a turn running (`working`), a turn that
 // ended normally with the prompt known empty (`settled`), the person busy at the prompt
-// (`busy`), or a turn that ended without a normal stop (`unknown`).
-export const deliveryState = z.enum(["unbound", "fresh", "working", "settled", "busy", "unknown"])
+// (`drafting`), or a turn that ended without a normal stop (`unknown`).
+export const deliveryState = z.enum([
+  "unbound",
+  "fresh",
+  "working",
+  "settled",
+  "drafting",
+  "unknown",
+])
 
 // One message between two terminals' agents, as sent: its text up to 4 KB, its place in
 // its thread, and where it is on its way. `held` says why a held message waits: messaging
@@ -413,7 +422,7 @@ export const messageThread = z.strictObject({
 // messaging is paused, and every thread it is in, latest first.
 export const terminalMessages = z.strictObject({
   terminalId: id,
-  handle: handle.nullable(),
+  handle,
   delivery: deliveryState,
   paused: z.boolean(),
   threads: z.array(messageThread).max(1000),

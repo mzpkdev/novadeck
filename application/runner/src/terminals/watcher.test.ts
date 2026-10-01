@@ -7,6 +7,7 @@ const terminal = (id: string, changes: Partial<TerminalSummary> = {}): TerminalS
   id,
   sessionId: "session",
   title: "Terminal 01",
+  handle: "t1",
   started: true,
   command: null,
   lastProgram: null,

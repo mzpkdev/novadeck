@@ -204,8 +204,9 @@ export const contract = {
     // A terminal's threads and messages with their states. An unknown terminal is
     // TERMINAL_NOT_FOUND.
     list: procedure.input(z.strictObject({ terminalId: id })).output(terminalMessages),
-    // Pauses all delivery, or resumes it. The switch is stored, so it survives restarts;
-    // while paused, agents' messages are held.
+    // Pauses messaging across the whole runner, every project and session, or resumes it.
+    // The switch is stored, so it survives restarts; while paused, agents' messages are
+    // held.
     pause: procedure.input(z.strictObject({ paused: z.boolean() })).output(z.void()),
     // Releases a thread held for going back and forth too often: its held messages are
     // delivered, and it may have 12 more. One the runner does not keep is NOT_FOUND.

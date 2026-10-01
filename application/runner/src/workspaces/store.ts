@@ -6,9 +6,15 @@ import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import type { Message, Thread, Work } from "../messaging/mailbox.js"
-import type { HandleRecord, MailboxRecords } from "../messaging/records.js"
-import type { ListedTerminal, SavedTerminal, TerminalRecords } from "../terminals/records.js"
+import type { Message, Thread } from "../messaging/mailbox.js"
+import type { MailboxRecords } from "../messaging/records.js"
+import type {
+  ListedTerminal,
+  SavedTerminal,
+  TerminalIdentity,
+  TerminalRecords,
+} from "../terminals/records.js"
+import type { Work } from "../terminals/work.js"
 
 /** Settings to change; those left out, or undefined, stay as they are. */
 export type SettingsChange = {
@@ -36,11 +42,13 @@ const schema = `
 // Tables added before the first release are created where missing instead of through
 // a schema version: the app is unreleased, so nothing needs migrating.
 const extras = `
-  -- What restores a terminal after its shell is gone: kept as it changes, so a runner
-  -- that is killed still leaves it behind.
+  -- Every terminal, until it is closed, and what restores it after its shell is gone:
+  -- kept as it changes, so a runner that is killed still leaves it behind.
   CREATE TABLE IF NOT EXISTS terminals (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
+    -- Its handle in its session, t3, from the same count as its default title.
+    handle TEXT NOT NULL,
     -- The shell's last reported directory.
     cwd TEXT NOT NULL,
     -- The latest session each agent reported, as JSON: { "claude": { sessionId, seq } }.
@@ -51,17 +59,17 @@ const extras = `
     transcript TEXT,
     updated_at REAL NOT NULL,
     -- The title the person gave it, or its session's default.
-    title TEXT,
+    title TEXT NOT NULL,
     -- The handle of the terminal whose agent titled it; null when the person did.
     titled_by TEXT,
     -- The command it was opened to run at its first prompt.
     command TEXT,
     -- The program in its foreground when its shell was last seen.
     last_program TEXT,
-    -- What its bound agent session worked on, for agents messaging each other, as JSON.
+    -- What its root agent session worked on, for agents messaging each other, as JSON.
     work TEXT
   ) STRICT;
-  -- The last default number given to a session's terminals ("Terminal 03").
+  -- The last number given to a session's terminals, for their handles and default titles.
   CREATE TABLE IF NOT EXISTS terminal_numbers (
     session_id TEXT PRIMARY KEY,
     last INTEGER NOT NULL
@@ -70,23 +78,7 @@ const extras = `
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   ) STRICT;
-  -- Agent messaging (docs/agent-messaging.md). Each terminal's handle in its project,
-  -- such as codex-2, kept while its messages are; removed_at says since when neither the
-  -- terminal nor its saved record exists.
-  CREATE TABLE IF NOT EXISTS handles (
-    terminal_id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
-    handle TEXT NOT NULL,
-    removed_at REAL,
-    UNIQUE (project_id, handle)
-  ) STRICT;
-  -- The last number given to each prefix in each project, so no handle is used twice.
-  CREATE TABLE IF NOT EXISTS handle_counters (
-    project_id TEXT NOT NULL,
-    prefix TEXT NOT NULL,
-    last INTEGER NOT NULL,
-    PRIMARY KEY (project_id, prefix)
-  ) STRICT;
+  -- Agent messaging (docs/agent-messaging.md).
   CREATE TABLE IF NOT EXISTS message_threads (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -110,7 +102,8 @@ const extras = `
     to_terminal TEXT NOT NULL,
     to_handle TEXT NOT NULL,
     to_agent TEXT NOT NULL,
-    to_session TEXT NOT NULL,
+    -- Null while it waits for the first session of its agent to bind there.
+    to_session TEXT,
     text TEXT NOT NULL,
     sent_at REAL NOT NULL,
     state TEXT NOT NULL,
@@ -119,15 +112,6 @@ const extras = `
     notified INTEGER NOT NULL
   ) STRICT;
 `
-// Columns `extras` added to its tables since they were first created.
-const added = [
-  ["terminals", "title"],
-  ["terminals", "titled_by"],
-  ["terminals", "command"],
-  ["terminals", "last_program"],
-  ["terminals", "work"],
-] as const
-
 const prepareFile = (path: string): void => {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   try {
@@ -153,12 +137,6 @@ const prepareSchema = (database: DatabaseSync): void => {
     }
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec(extras)
-    // Columns added to a table that already exists, as in a database from before them.
-    for (const [table, column] of added) {
-      const columns = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
-      if (!columns.some(({ name }) => name === column))
-        database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`)
-    }
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")
@@ -174,16 +152,29 @@ type TerminalRow = {
   prompted_at: number | null
   transcript: string | null
   updated_at: number
-  title: string | null
+  handle: string
+  title: string
   titled_by: string | null
   command: string | null
   last_program: string | null
+  work: string | null
 }
 
-const listed = (row: Omit<TerminalRow, "transcript">) => ({
+const workOf = (text: string | null): Work | null => {
+  if (text === null) return null
+  try {
+    return JSON.parse(text) as Work
+  } catch {
+    return null
+  }
+}
+
+const listed = (row: Omit<TerminalRow, "transcript">): ListedTerminal => ({
   id: row.id,
   sessionId: row.session_id,
+  handle: row.handle,
   title: row.title,
+  work: workOf(row.work),
   titledBy: row.titled_by,
   command: row.command,
   lastProgram: row.last_program,
@@ -214,7 +205,7 @@ type MessageRow = {
   to_terminal: string
   to_handle: string
   to_agent: string
-  to_session: string
+  to_session: string | null
   text: string
   sent_at: number
   state: string
@@ -359,8 +350,8 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
 
   terminal(terminalId: string): SavedTerminal | undefined {
     const row = this.queries.get`
-      SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at, title, titled_by,
-        command, last_program
+      SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at, handle, title,
+        titled_by, command, last_program, work
       FROM terminals WHERE id = ${terminalId}
     ` as TerminalRow | undefined
     return row && { ...listed(row), transcript: row.transcript }
@@ -370,12 +361,12 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
     const rows = (
       sessionId === undefined
         ? this.queries.all`
-          SELECT id, session_id, cwd, agents, prompted_at, updated_at, title, titled_by,
-            command, last_program
+          SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle, title,
+            titled_by, command, last_program, work
           FROM terminals ORDER BY rowid`
         : this.queries.all`
-          SELECT id, session_id, cwd, agents, prompted_at, updated_at, title, titled_by,
-            command, last_program
+          SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle, title,
+            titled_by, command, last_program, work
           FROM terminals WHERE session_id = ${sessionId} ORDER BY rowid`
     ) as Omit<TerminalRow, "transcript">[]
     return rows.map(listed)
@@ -396,11 +387,11 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
     return result.changes > 0
   }
 
-  terminalTitle(terminalId: string): { title: string | null; titledBy: string | null } | undefined {
+  terminalIdentity(terminalId: string): TerminalIdentity | undefined {
     const row = this.queries.get`
-      SELECT title, titled_by AS titledBy FROM terminals WHERE id = ${terminalId}
-    ` as { title: string | null; titledBy: string | null } | undefined
-    return row && { title: row.title, titledBy: row.titledBy }
+      SELECT handle, title, titled_by AS titledBy FROM terminals WHERE id = ${terminalId}
+    ` as TerminalIdentity | undefined
+    return row && { handle: row.handle, title: row.title, titledBy: row.titledBy }
   }
 
   /** Saves what restores the terminal; `transcript` is left as it is when omitted. */
@@ -411,31 +402,34 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
     // Strictly increasing, so saves in the same millisecond still sort by recency.
     const now = Math.max(Date.now(), this.lastSave + 0.001)
     this.lastSave = now
-    const { title, titledBy, command, lastProgram } = terminal
+    const { handle, title, titledBy, command, lastProgram } = terminal
+    const work = terminal.work === null ? null : JSON.stringify(terminal.work)
     if (terminal.transcript === undefined)
       void this.queries.run`
-        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at, title,
-          titled_by, command, last_program)
+        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at, handle,
+          title, titled_by, command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
-          ${terminal.promptedAt}, ${now}, ${title}, ${titledBy}, ${command}, ${lastProgram})
+          ${terminal.promptedAt}, ${now}, ${handle}, ${title}, ${titledBy}, ${command},
+          ${lastProgram}, ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
-          updated_at = excluded.updated_at, title = excluded.title,
+          updated_at = excluded.updated_at, handle = excluded.handle, title = excluded.title,
           titled_by = excluded.titled_by, command = excluded.command,
-          last_program = excluded.last_program
+          last_program = excluded.last_program, work = excluded.work
       `
     else
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at,
-          title, titled_by, command, last_program)
+          handle, title, titled_by, command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
-          ${terminal.promptedAt}, ${terminal.transcript}, ${now}, ${title}, ${titledBy},
-          ${command}, ${lastProgram})
+          ${terminal.promptedAt}, ${terminal.transcript}, ${now}, ${handle}, ${title},
+          ${titledBy}, ${command}, ${lastProgram}, ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           transcript = excluded.transcript, updated_at = excluded.updated_at,
-          title = excluded.title, titled_by = excluded.titled_by,
-          command = excluded.command, last_program = excluded.last_program
+          handle = excluded.handle, title = excluded.title, titled_by = excluded.titled_by,
+          command = excluded.command, last_program = excluded.last_program,
+          work = excluded.work
       `
   }
 
@@ -458,56 +452,6 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
 
   clearTranscripts(): void {
     void this.queries.run`UPDATE terminals SET transcript = NULL`
-  }
-
-  handles(): HandleRecord[] {
-    return this.queries.all`
-      SELECT terminal_id AS terminalId, project_id AS projectId, handle, removed_at AS removedAt
-      FROM handles
-    ` as HandleRecord[]
-  }
-
-  assignHandle(terminalId: string, projectId: string, prefix: string): string {
-    this.database.exec("BEGIN IMMEDIATE")
-    try {
-      const known = this.queries
-        .get`SELECT handle FROM handles WHERE terminal_id = ${terminalId}` as
-        | { handle: string }
-        | undefined
-      let handle = known?.handle
-      if (handle === undefined) {
-        const counter = this.queries.get`
-          SELECT last FROM handle_counters WHERE project_id = ${projectId} AND prefix = ${prefix}
-        ` as { last: number } | undefined
-        const next = (counter?.last ?? 0) + 1
-        void this.queries.run`
-          INSERT INTO handle_counters (project_id, prefix, last) VALUES (${projectId}, ${prefix}, ${next})
-          ON CONFLICT (project_id, prefix) DO UPDATE SET last = excluded.last
-        `
-        handle = `${prefix}-${next}`
-        void this.queries.run`
-          INSERT INTO handles (terminal_id, project_id, handle) VALUES (${terminalId}, ${projectId}, ${handle})
-        `
-      }
-      this.database.exec("COMMIT")
-      return handle
-    } catch (error) {
-      this.database.exec("ROLLBACK")
-      throw error
-    }
-  }
-
-  terminalSaved(terminalId: string): boolean {
-    return this.queries.get`SELECT 1 AS saved FROM terminals WHERE id = ${terminalId}` !== undefined
-  }
-
-  markRemoved(terminalId: string, at: number | null): void {
-    void this.queries.run`UPDATE handles SET removed_at = ${at} WHERE terminal_id = ${terminalId}`
-  }
-
-  removeHandles(terminalIds: readonly string[]): void {
-    for (const id of terminalIds)
-      void this.queries.run`DELETE FROM handles WHERE terminal_id = ${id}`
   }
 
   messages(): Message[] {
@@ -559,24 +503,6 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
 
   removeThreads(ids: readonly string[]): void {
     for (const id of ids) void this.queries.run`DELETE FROM message_threads WHERE id = ${id}`
-  }
-
-  works(): { terminalId: string; work: Work }[] {
-    const rows = this.queries.all`
-      SELECT id, work FROM terminals WHERE work IS NOT NULL
-    ` as { id: string; work: string }[]
-    return rows.flatMap(({ id, work }) => {
-      try {
-        return [{ terminalId: id, work: JSON.parse(work) as Work }]
-      } catch {
-        return []
-      }
-    })
-  }
-
-  saveWork(terminalId: string, work: Work): void {
-    void this.queries
-      .run`UPDATE terminals SET work = ${JSON.stringify(work)} WHERE id = ${terminalId}`
   }
 
   messagingPaused(): boolean {

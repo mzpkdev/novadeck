@@ -86,8 +86,8 @@ export type Harness = {
   }
   /** How much of each feature NovaDeck tells of it, from the sources its adapter reads. */
   readonly coverage: AgentCoverage
-  /** How its hooks hear back from NovaDeck, as they deliver agents' messages. */
-  readonly answers: Answers
+  /** How it takes part in agents' messaging: what its hooks print, and how it behaves. */
+  readonly messaging: MessagingProfile
   /** The normalized facts in one of its hooks' reports; none for one it ignores. */
   readonly decode: (report: Report) => readonly HarnessEvent[]
   /**
@@ -102,10 +102,13 @@ export type Harness = {
 }
 
 /**
- * What a harness's hooks print when they ask NovaDeck (see docs/agent-messaging.md, "Hook
- * answers"), each a whole line of the JSON the harness reads.
+ * What a harness knows of agents' messaging (see docs/agent-messaging.md): what its hooks
+ * print when they ask NovaDeck, each a whole line of the JSON it reads, and how it
+ * behaves, so shared code never asks which harness it is. Step 2 adds its empty-prompt
+ * pattern (`emptyPrompt`) and how it starts an agent with a first prompt
+ * (`initialPrompt(argv)`) here.
  */
-export type Answers = {
+export type MessagingProfile = {
   /** The hook events that ask, and when each fires: as a turn ends, or as a prompt starts it. */
   readonly asks: { readonly [event: string]: "stop" | "prompt" }
   /** What a hook prints with nothing to deliver, as it does without NovaDeck. */
@@ -114,6 +117,20 @@ export type Answers = {
   readonly stop: (delivery: string) => string
   /** A prompt's answer that adds a delivery to what the model sees, apart from the prompt. */
   readonly prompt: (delivery: string) => string
+  /**
+   * Whether a prompt-time delivery lasts only for the model call it was printed for, so
+   * each later call of the turn gets it again, as in Antigravity.
+   */
+  readonly reinjectPerCall: boolean
+  /**
+   * Which session its messages are for: the one bound (`binding`), or, where its hooks
+   * name subagents' sessions alike, the one its status line names (`status-line`).
+   */
+  readonly root: "binding" | "status-line"
+  /** The key that queues the person's prompt for after the turn, as Codex's Tab. */
+  readonly queueKey?: string
+  /** Whether a failed turn fires nothing, so its turn may only end with its next prompt. */
+  readonly silentOnFailure: boolean
 }
 
 /**
@@ -206,13 +223,18 @@ export const callId = (actor: string | null, toolName: string, input: unknown): 
   return `${actor ?? ""}:${toolName}:${digest.slice(0, 16)}`
 }
 
+/** The line NovaDeck's doorbell types, with its nonce (see docs/agent-messaging.md). */
+export const doorbell = /\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]/
+
 /**
- * Whether a prompt is a hook's continuation rather than the person's: a Stop hook's
- * reason the harness submits as a prompt (Codex wraps it in `<hook_prompt>`), or a
- * delivery of agents' messages.
+ * Whether a prompt is NovaDeck's or a hook's rather than the person's: a Stop hook's
+ * reason the harness submits as a prompt (Codex wraps it in `<hook_prompt>`), a delivery
+ * of agents' messages, or the doorbell's line.
  */
 export const continuationPrompt = (prompt: string): boolean =>
-  /^\s*<hook_prompt\b/.test(prompt) || prompt.includes("<novadeck-messages")
+  /^\s*<hook_prompt\b/.test(prompt) ||
+  prompt.includes("<novadeck-messages") ||
+  doorbell.test(prompt)
 
 /** A payload's string field, or undefined. */
 export const text = (value: unknown): string | undefined =>

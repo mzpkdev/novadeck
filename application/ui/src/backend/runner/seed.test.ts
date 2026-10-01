@@ -20,6 +20,7 @@ const summary = (
   id: uuid(n),
   sessionId: uuid(session),
   title: `Terminal ${n}`,
+  handle: `t${n}`,
   started: true,
   command: null,
   lastProgram: null,

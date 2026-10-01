@@ -482,7 +482,7 @@ describe("runner client messages", () => {
     const terminal = await client.terminals.create(shell(sessionId))
     await expect(client.messages.list(terminal.id)).resolves.toEqual({
       terminalId: terminal.id,
-      handle: "term-1",
+      handle: "t1",
       delivery: "unbound",
       paused: false,
       threads: [],
@@ -501,7 +501,7 @@ describe("runner client messages", () => {
     const again = await later.connect()
     const restored = await again.terminals.create(shell(sessionId))
     await expect(again.messages.list(restored.id)).resolves.toMatchObject({
-      handle: "term-2",
+      handle: "t2",
       paused: true,
     })
   })

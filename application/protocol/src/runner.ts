@@ -232,7 +232,10 @@ export type Runner = {
   readonly messages: {
     /** A terminal's threads and messages with their states; `TERMINAL_NOT_FOUND` when unknown. */
     list(terminalId: string): Promise<TerminalMessages>
-    /** Pauses all delivery between agents, or resumes it; the runner keeps the switch. */
+    /**
+     * Pauses messaging across the whole runner, every project and session, or resumes it;
+     * the runner keeps the switch.
+     */
     pause(paused: boolean): Promise<void>
     /** Releases a held thread: its messages go on, and it may have 12 more. */
     release(thread: string): Promise<void>

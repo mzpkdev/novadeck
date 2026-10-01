@@ -2,7 +2,7 @@ import { agents, harnesses } from "../harnesses/registry.js"
 
 // The hook events that ask the runner what to print, by agent.
 const asking = Object.fromEntries(
-  agents.map((agent) => [agent, Object.keys(harnesses[agent].answers.asks)]),
+  agents.map((agent) => [agent, Object.keys(harnesses[agent].messaging.asks)]),
 )
 
 /**

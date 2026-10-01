@@ -6,7 +6,7 @@ import type { AgentName } from "@novadeck/protocol"
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
 import type { HarnessEvent } from "./events.js"
-import { hookSeconds, type Launchers } from "./harness.js"
+import { continuationPrompt, hookSeconds, type Launchers } from "./harness.js"
 import { harnesses } from "./registry.js"
 
 const delivery =
@@ -22,7 +22,7 @@ const line = (text: string): unknown => {
 describe("each harness's hook answers", () => {
   it("continue a Claude Code or Codex Stop with a block, and add prompt-time context", () => {
     for (const agent of ["claude", "codex"] as const) {
-      const { answers } = harnesses[agent]
+      const answers = harnesses[agent].messaging
       expect(answers.asks).toEqual({ Stop: "stop", UserPromptSubmit: "prompt" })
       expect(line(answers.stop(delivery))).toEqual({ decision: "block", reason: delivery })
       expect(line(answers.prompt(delivery))).toEqual({
@@ -35,7 +35,7 @@ describe("each harness's hook answers", () => {
   })
 
   it("continue an Antigravity Stop, inject at its model calls, and always print JSON", () => {
-    const { answers } = harnesses.agy
+    const answers = harnesses.agy.messaging
     expect(answers.asks).toEqual({ Stop: "stop", PreInvocation: "prompt" })
     expect(line(answers.stop(delivery))).toEqual({ decision: "continue", reason: delivery })
     expect(line(answers.prompt(delivery))).toEqual({
@@ -45,6 +45,40 @@ describe("each harness's hook answers", () => {
     expect(line(answers.silent("PreInvocation"))).toEqual({})
     // An answer without a decision denies the tool.
     expect(line(answers.silent("PreToolUse"))).toEqual({ decision: "ask" })
+  })
+})
+
+describe("each harness's messaging profile", () => {
+  it("says how each harness's root, queued prompts and per-call injections behave", () => {
+    expect(harnesses.claude.messaging).toMatchObject({
+      reinjectPerCall: false,
+      root: "binding",
+      silentOnFailure: false,
+    })
+    expect(harnesses.claude.messaging.queueKey).toBeUndefined()
+    expect(harnesses.codex.messaging).toMatchObject({
+      reinjectPerCall: false,
+      root: "binding",
+      queueKey: "\t",
+      silentOnFailure: true,
+    })
+    expect(harnesses.agy.messaging).toMatchObject({
+      reinjectPerCall: true,
+      root: "status-line",
+      silentOnFailure: false,
+    })
+  })
+})
+
+describe("a continuation's prompt", () => {
+  it("is a Stop hook's, a delivery's, or the doorbell's, never the person's", () => {
+    expect(continuationPrompt("<hook_prompt>go on</hook_prompt>")).toBe(true)
+    expect(continuationPrompt(`text\n${delivery}`)).toBe(true)
+    expect(continuationPrompt("[NovaDeck: automatic notice, agent messages waiting, k3f9q2]")).toBe(
+      true,
+    )
+    expect(continuationPrompt("[NovaDeck: automatic notice, agent messages waiting]")).toBe(false)
+    expect(continuationPrompt("Review the NovaDeck notice")).toBe(false)
   })
 })
 
@@ -76,13 +110,13 @@ describe("each harness's hook registrations", () => {
 
   it("register every event that asks", () => {
     expect(Object.keys(file("claude", join("novadeck", "hooks", "hooks.json")).hooks!)).toEqual(
-      expect.arrayContaining(Object.keys(harnesses.claude.answers.asks)),
+      expect.arrayContaining(Object.keys(harnesses.claude.messaging.asks)),
     )
     expect(Object.keys(file("codex", join("novadeck", "hooks", "hooks.json")).hooks!)).toEqual(
-      expect.arrayContaining(Object.keys(harnesses.codex.answers.asks)),
+      expect.arrayContaining(Object.keys(harnesses.codex.messaging.asks)),
     )
     expect(Object.keys(file("agy", "hooks.json").novadeck!)).toEqual(
-      expect.arrayContaining(Object.keys(harnesses.agy.answers.asks)),
+      expect.arrayContaining(Object.keys(harnesses.agy.messaging.asks)),
     )
   })
 })
