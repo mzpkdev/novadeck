@@ -16,6 +16,32 @@ export type Key =
 // A CSI or SS3 sequence's final byte, after its parameters.
 // eslint-disable-next-line no-control-regex -- Escape sequences are what it reads.
 const csi = /^\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|O[\x40-\x7e])/
+// Mouse reports, SGR (`ESC [ < b;x;y M` or `m`), urxvt (`ESC [ b;x;y M`) and X10 (`ESC [ M`
+// and three bytes), and focus reports. A fullscreen TUI turns mouse reporting on, so each
+// scroll, move or click over it sends one.
+// eslint-disable-next-line no-control-regex -- As above.
+const report = /^\x1b\[(?:<(\d+);\d+;\d+[Mm]|(\d+);\d+;\d+M|M([\s\S])[\s\S]{2}|[IO])/
+
+/**
+ * Whether a report is the terminal's own, no input of the person's: focus in and out, and
+ * the mouse's scroll and motion, which never change the box. A click stays input, as it
+ * can open a menu.
+ */
+const passive = (match: RegExpExecArray): boolean => {
+  const [, sgr, urxvt, x10] = match
+  // The button code: SGR's as it is, urxvt's and X10's offset by 32.
+  const button =
+    sgr !== undefined
+      ? Number(sgr)
+      : urxvt !== undefined
+        ? Number(urxvt) - 32
+        : x10 !== undefined
+          ? x10.charCodeAt(0) - 32
+          : undefined
+  // Focus; or a wheel (64) or a motion (32) report.
+  return button === undefined || (button & (64 | 32)) !== 0
+}
+
 // Left, Right, Home and End, and the keypad's: they move within the box without typing.
 // Up and Down recall history in a prompt, so they are content.
 // eslint-disable-next-line no-control-regex -- As above.
@@ -35,6 +61,13 @@ export const keysOf = (data: string, queueKey?: string): readonly Key[] => {
       const length = end < 0 ? rest.length : end + 6
       keys.push({ kind: "content", text: rest.slice(0, length) })
       at += length
+      continue
+    }
+    const reported = report.exec(rest)
+    if (reported) {
+      // The terminal's own reports are no keys at all; a click may change what shows.
+      if (!passive(reported)) keys.push({ kind: "content", text: reported[0] })
+      at += reported[0].length
       continue
     }
     const sequence = csi.exec(rest)?.[0]

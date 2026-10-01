@@ -3111,6 +3111,24 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
     })
 
+    it("rings an agent whose terminal only reported the mouse's scroll and motion and its focus since the turn", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "", "named")
+      await tui.first()
+      await expect.poll(tui.delivery).toBe("settled")
+      // A fullscreen TUI's scroll and the pointer moving over it, then the focus leaving:
+      // none of them types.
+      tui.type("\x1b[<64;40;10M\x1b[<65;40;10M")
+      tui.type("\x1b[<35;12;7M")
+      tui.type("\x1b[O")
+      await quiet()
+      await expect.poll(tui.delivery).toBe("settled")
+      await tui.send("Review a.ts")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+    })
+
     it("takes Antigravity's turn after the person's Enter as theirs once its transcript shows the input", async ({
       shell,
     }) => {

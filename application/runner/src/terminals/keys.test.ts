@@ -26,4 +26,20 @@ describe("the person's keys", () => {
     // Alt with a key types.
     expect(kinds("\x1bx")).toEqual(["content"])
   })
+
+  it("leave out the mouse's scroll and motion and the focus, but take a click", () => {
+    // A fullscreen TUI's scroll, as SGR, urxvt and X10 report it, and a move over it.
+    expect(kinds("\x1b[<64;40;10M\x1b[<65;40;10M")).toEqual([])
+    expect(kinds("\x1b[96;40;10M")).toEqual([])
+    expect(kinds("\x1b[M`!!")).toEqual([])
+    expect(kinds("\x1b[<35;12;7M")).toEqual([])
+    // Focus out and in, among keys.
+    expect(kinds("\x1b[Oa\x1b[I")).toEqual(["content"])
+    // A click, pressed and released, may open a menu: input.
+    expect(kinds("\x1b[<0;10;5M\x1b[<0;10;5m")).toEqual(["content", "content"])
+    expect(kinds("\x1b[32;10;5M")).toEqual(["content"])
+    expect(kinds("\x1b[M !!")).toEqual(["content"])
+    // A key after a report is still a key.
+    expect(kinds("\x1b[<65;10;5Mx\r")).toEqual(["content", "enter"])
+  })
 })
