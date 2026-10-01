@@ -569,17 +569,24 @@ export const runnerBackend = (
       },
     ]
   }
-  // Tells the runner the name the person gave a terminal, once it has the terminal.
+  // Tells the runner the name the person gave a terminal, whether or not it has a
+  // shell. One the runner doesn't have yet, as while it is created, gets it once it does.
+  // The pending name goes once the runner took it, or refused it.
   const renameOnRunner = async (key: TerminalKey, name: string): Promise<void> => {
-    renamed.set(key.terminalId, name)
-    const entry = entries.get(key.terminalId)
-    if (entry && !(await entry.ready)) return
-    await untilAnswered(() => runner.terminals.rename(key.terminalId, name), {
-      done: ["TERMINAL_NOT_FOUND"],
-      cancelled: () => renamed.get(key.terminalId) !== name,
-    }).catch(() => {
-      if (renamed.get(key.terminalId) === name) renamed.delete(key.terminalId)
-    })
+    const { terminalId } = key
+    renamed.set(terminalId, name)
+    const rename = () =>
+      untilAnswered(() => runner.terminals.rename(terminalId, name), {
+        cancelled: () => renamed.get(terminalId) !== name,
+      })
+    try {
+      await rename()
+    } catch (error) {
+      const entry = entries.get(terminalId)
+      if (hasCode(error, "TERMINAL_NOT_FOUND") && entry && (await entry.ready))
+        await rename().catch(() => {})
+    }
+    if (renamed.get(terminalId) === name) renamed.delete(terminalId)
   }
   // A terminal the runner has that this window didn't ask for joins its session, unless
   // the workspace doesn't hold that session or its shell already ended cleanly.

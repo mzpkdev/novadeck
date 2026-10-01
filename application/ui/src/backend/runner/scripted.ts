@@ -137,6 +137,7 @@ export const scripted = ({
       // Never answers: a fresh shell stays starting.
       create: note("create", () => new Promise(() => {})),
       close: async () => {},
+      rename: note("rename", async () => {}),
       restart: note("restart", restart),
       attach: () => new Promise(() => {}),
     },
