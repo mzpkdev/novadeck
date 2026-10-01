@@ -54,7 +54,7 @@ const peer = peerOf({
 })
 
 // A terminal t1's agent opened, whose first prompt the person submitted or not.
-const opened = (firstByPerson: boolean) =>
+const opened = (firstByPerson: boolean, first = true) =>
   peerOf({
     terminalId: "E",
     handle: "t5",
@@ -72,7 +72,7 @@ const opened = (firstByPerson: boolean) =>
         session: "claude:s",
         first: "fix the build",
         firstByPerson,
-        opened: true,
+        ...(first && { opened: true as const }),
         latest: "fix the build",
         folders: {},
         activeAt: null,
@@ -224,6 +224,8 @@ describe("a peer as agents read it", () => {
   it("says a terminal another agent opened started with its command, unless the user prompted it", () => {
     expect(renderPeer(opened(false), now)).toContain("  started with (t1's command): fix the build")
     expect(renderPeer(opened(true), now)).toContain("  started with: fix the build")
+    // Only its first root session after the open: a later one is the person's.
+    expect(renderPeer(opened(false, false), now)).toContain("  started with: fix the build")
   })
 })
 

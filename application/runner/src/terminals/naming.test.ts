@@ -72,6 +72,14 @@ describe("a terminal's title", () => {
       title: "Fix the login bug",
       source: { kind: "fallback" },
     })
+    // A later root session there is the person's, however its first prompt came.
+    expect(
+      titleOf(unnamed, {
+        work: { ...work("Write the docs"), firstByPerson: false },
+        handle: "t3",
+        openedBy: "t1",
+      }),
+    ).toEqual({ title: "Write the docs", source: { kind: "fallback" } })
     // In a terminal the person opened, the first prompt is theirs however it came.
     expect(titleOf(unnamed, terminal("Fix the login bug", null, false)).source).toEqual({
       kind: "fallback",
