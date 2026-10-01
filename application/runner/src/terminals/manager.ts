@@ -77,7 +77,7 @@ import {
 } from "./foreground.js"
 import { keysOf } from "./keys.js"
 import { Latest } from "./latest.js"
-import { type MouseEncoding, watchMouseEncoding } from "./mouse.js"
+import { type MouseEncoding, mouseReporting, watchMouseEncoding } from "./mouse.js"
 import {
   cleanSummary,
   describedAs,
@@ -829,12 +829,7 @@ export class Terminals {
     const queueKey = record.binding ? harnesses[record.binding.agent].messaging.queueKey : undefined
     const { modes } = record.screen
     const keys = keysOf(input.data, queueKey, {
-      mouse:
-        modes.mouseTrackingMode === "none"
-          ? null
-          : record.mouseEncoding() === "default"
-            ? "x10"
-            : "sgr",
+      mouse: mouseReporting(modes.mouseTrackingMode, record.mouseEncoding()),
       focus: modes.sendFocusMode,
     })
     if (keys.length > 0) {
