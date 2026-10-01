@@ -2232,6 +2232,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         await write("docs")
       await expect(prompt("and the docs")).resolves.toContain('described as "Build fix"')
       await expect(prompt("more docs")).resolves.toBe("")
+      // Back and forth between the two folders: that drift already nudged once.
+      await write("src")
+      await write("src")
+      await expect(prompt("back to the code")).resolves.toBe("")
+      await write("docs")
+      await write("docs")
+      await expect(prompt("and the docs again")).resolves.toBe("")
     })
 
     it("never takes the title from a prompt the person queued after a doorbell's turn", async ({
