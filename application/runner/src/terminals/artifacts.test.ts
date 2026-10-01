@@ -34,7 +34,7 @@ const it = base.extend<{ fixture: Fixture }>({
     await use({
       project,
       outside,
-      place: { cwd: project, project, home: join(root, "home"), folders: [project] },
+      place: { cwd: project, project },
     })
   },
 })
@@ -49,7 +49,7 @@ const png = Buffer.from(
 )
 
 describe("what an agent may show", () => {
-  it("is a file inside one of the terminal's folders, by a path from its directory", async ({
+  it("is a file, by a path from the terminal's directory or an absolute one", async ({
     fixture,
   }) => {
     writeFileSync(join(fixture.project, "src", "a.ts"), "const a = 1\n")
@@ -65,28 +65,32 @@ describe("what an agent may show", () => {
     ).resolves.toMatchObject({ ok: true })
   })
 
-  it("is nothing outside them, even through a symlink inside", async ({ fixture }) => {
+  it("is any file the person can read, outside the project too, as a viewer would", async ({
+    fixture,
+  }) => {
     writeFileSync(join(fixture.outside, "notes.txt"), "notes\n")
     symlinkSync(join(fixture.outside, "notes.txt"), join(fixture.project, "link.txt"))
-    const outside = { ok: false, reason: "That file is outside this project." }
-    await expect(capture({ path: "../outside/notes.txt" }, fixture.place)).resolves.toEqual(outside)
-    await expect(capture({ path: "link.txt" }, fixture.place)).resolves.toEqual(outside)
-    // Another folder the terminal may show from, as where it started.
+    await expect(capture({ path: "../outside/notes.txt" }, fixture.place)).resolves.toMatchObject({
+      ok: true,
+      content: { kind: "file", path: join(fixture.outside, "notes.txt") },
+    })
+    // Through a symlink, named as given.
+    await expect(capture({ path: "link.txt" }, fixture.place)).resolves.toMatchObject({
+      ok: true,
+      detail: "link.txt · whole file",
+    })
+    // With no project at all.
     await expect(
-      capture(
-        { path: "link.txt" },
-        { ...fixture.place, folders: [fixture.project, fixture.outside] },
-      ),
-    ).resolves.toMatchObject({ ok: true, detail: "link.txt · whole file" })
+      capture({ path: "link.txt" }, { cwd: fixture.project, project: undefined }),
+    ).resolves.toMatchObject({ ok: true })
   })
 
   it("is named as given where it is not in the project, and by its title when it has one", async ({
     fixture,
   }) => {
     writeFileSync(join(fixture.outside, "notes.md"), "# Notes\n")
-    const place = { ...fixture.place, folders: [fixture.project, fixture.outside] }
     const path = join(fixture.outside, "notes.md")
-    await expect(capture({ path, title: "My notes" }, place)).resolves.toMatchObject({
+    await expect(capture({ path, title: "My notes" }, fixture.place)).resolves.toMatchObject({
       ok: true,
       name: "My notes",
       detail: `${path} · whole file`,
@@ -231,7 +235,7 @@ describe("a present request", () => {
 })
 
 describe("a page an agent shows", () => {
-  const place: Place = { cwd: "/p", project: "/p", home: "/h", folders: ["/p"] }
+  const place: Place = { cwd: "/p", project: "/p" }
 
   it("is any http or https address, named by its host or its title", async () => {
     const page = await capture({ url: "http://localhost:5173/app?x=1#top" }, place)
@@ -350,32 +354,8 @@ describe("what a terminal shows", () => {
   })
 })
 
-describe("what an agent may not show", () => {
-  it("is anything, when the terminal's project is the home folder itself", async ({ fixture }) => {
-    writeFileSync(join(fixture.project, "a.ts"), "a\n")
-    const place: Place = { ...fixture.place, home: fixture.project }
-    await expect(capture({ path: "a.ts" }, place)).resolves.toEqual({
-      ok: false,
-      reason:
-        "This terminal's project holds the whole home folder; NovaDeck shows files only from a project folder.",
-    })
-  })
-
-  it("is anything, when the project is a folder holding the home folder", async ({ fixture }) => {
-    writeFileSync(join(fixture.project, "a.ts"), "a\n")
-    mkdirSync(join(fixture.project, "home"))
-    const place: Place = { ...fixture.place, home: join(fixture.project, "home") }
-    await expect(capture({ path: "a.ts" }, place)).resolves.toMatchObject({ ok: false })
-  })
-
-  it("is not code that merely mentions secrets", async ({ fixture }) => {
-    writeFileSync(join(fixture.project, "secrets.ts"), "export {}\n")
-    await expect(capture({ path: "secrets.ts" }, fixture.place)).resolves.toMatchObject({
-      ok: true,
-    })
-  })
-
-  it("is a file that often holds secrets, anywhere in the project", async ({ fixture }) => {
+describe("a file that may hold secrets", () => {
+  it("is shown, but held: it never opens by itself", async ({ fixture }) => {
     mkdirSync(join(fixture.project, ".ssh"))
     const secrets = [
       ".env",
@@ -388,14 +368,27 @@ describe("what an agent may not show", () => {
     for (const path of secrets) writeFileSync(join(fixture.project, path), "secret\n")
     for (const path of secrets)
       // eslint-disable-next-line no-await-in-loop -- One file after another.
-      await expect(capture({ path }, fixture.place)).resolves.toEqual({
-        ok: false,
-        reason: "That file may hold secrets, so NovaDeck won't show it.",
+      await expect(capture({ path }, fixture.place)).resolves.toMatchObject({
+        ok: true,
+        held: true,
       })
   })
 
-  it("is the folder itself, which is a folder, not outside", async ({ fixture }) => {
+  it("is not code that merely mentions secrets, which isn't held", async ({ fixture }) => {
+    writeFileSync(join(fixture.project, "secrets.ts"), "export {}\n")
+    const code = await capture({ path: "secrets.ts" }, fixture.place)
+    expect(code).toMatchObject({ ok: true })
+    expect(code).not.toHaveProperty("held")
+  })
+})
+
+describe("what an agent may not show", () => {
+  it("is a folder, the terminal's own one too", async ({ fixture }) => {
     await expect(capture({ path: "." }, fixture.place)).resolves.toEqual({
+      ok: false,
+      reason: "That's a folder; only files can be shown.",
+    })
+    await expect(capture({ path: fixture.outside }, fixture.place)).resolves.toEqual({
       ok: false,
       reason: "That's a folder; only files can be shown.",
     })

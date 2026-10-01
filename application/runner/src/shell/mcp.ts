@@ -37,7 +37,7 @@ const tool = {
         type: "string",
         description:
           "The file: an image (PNG, JPEG, GIF, WebP, SVG) or a text file, absolute or relative " +
-          "to the terminal's current directory. It must be inside this project.",
+          "to the terminal's current directory.",
       },
       url: {
         type: "string",
@@ -122,9 +122,13 @@ const call = async (id, params) => {
   const request = requestOf(params.arguments)
   const answer = await present(request)
   const text = answer?.ok
-    ? request.open
+    ? answer.opened
       ? "Showing " + answer.name + " to the user in NovaDeck."
-      : answer.name + " is waiting for the user in NovaDeck, marked new."
+      : answer.held
+        ? answer.name +
+          " may hold secrets, so it doesn't open by itself: it's waiting for the user in " +
+          "NovaDeck, marked new, to open if they choose."
+        : answer.name + " is waiting for the user in NovaDeck, marked new."
     : answer?.reason || "NovaDeck couldn't show it."
   send({ id, result: { content: [{ type: "text", text }], isError: !answer?.ok } })
 }

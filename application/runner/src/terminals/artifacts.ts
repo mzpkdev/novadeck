@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { constants } from "node:fs"
-import { open, realpath } from "node:fs/promises"
+import { open, realpath, stat } from "node:fs/promises"
 import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path"
 
 import type { ArtifactContent, ShownArtifact } from "@novadeck/protocol"
@@ -37,13 +37,18 @@ export type PresentRequest = FileRequest | PageRequest
 /** Why it was not shown, in a sentence the agent can act on. */
 export type PresentFailure = { readonly ok: false; readonly reason: string }
 
-/** The MCP server's answer: what the person now sees, or why not. */
+/**
+ * The MCP server's answer: what the person now sees, or why not. `opened` when it opened
+ * at once; `held` when it may hold secrets, so it waits for the person to open it.
+ */
 export type PresentAnswer =
   | {
       readonly ok: true
       readonly id: string
       readonly kind: ShownArtifact["kind"]
       readonly name: string
+      readonly opened: boolean
+      readonly held?: true
     }
   | PresentFailure
 
@@ -57,15 +62,14 @@ export type Captured = {
   readonly name: string
   readonly detail: string
   readonly content: ArtifactContent
+  /** A file that may hold secrets: it never opens by itself, only when the person opens it. */
+  readonly held?: true
 }
 
-/** Where a present happens: the terminal's directory, its project, and every folder it may show from. */
+/** Where a present happens: the terminal's directory, and its project, which names files. */
 export type Place = {
   readonly cwd: string
   readonly project: string | undefined
-  /** The person's home folder, which is never a folder to show from as a whole. */
-  readonly home: string
-  readonly folders: readonly (string | undefined)[]
 }
 
 // What is shown as an image, by extension.
@@ -92,8 +96,9 @@ export const maxShown = 64
 /** The most a terminal keeps of what it showed, in bytes of content; the oldest go first. */
 export const maxShownBytes = 48 * 1024 * 1024
 
-// Files that often hold secrets: a key, credentials, an environment file. An agent can
-// read them, but NovaDeck won't put them on screen, as while the person shares it.
+// Files that often hold secrets: a key, credentials, an environment file. NovaDeck shows
+// them, as any file the person can read, but never opens one by itself, so none appears
+// on screen unasked, as while the person shares it.
 const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"])
 const secretNames = [
   /^\.env(\..*)?$/i,
@@ -228,31 +233,15 @@ const captureFile = async (
   const given = resolve(place.cwd, request.path)
   const path = await real(given)
   if (!path) return failure("That file doesn't exist.")
-  const home = await real(place.home)
-  const resolved = await Promise.all(
-    place.folders.map((folder) => (folder === undefined ? undefined : real(folder))),
-  )
-  // A project in the home folder itself, or in a folder holding it, would make all of
-  // it showable.
-  const holdsHome = (folder: string): boolean =>
-    home !== undefined && (folder === home || inside(folder, home))
-  const folders = resolved.filter(
-    (folder): folder is string => folder !== undefined && !holdsHome(folder),
-  )
-  if (resolved.includes(path)) return failure("That's a folder; only files can be shown.")
-  if (!folders.some((folder) => inside(folder, path)))
-    return failure(
-      resolved.some((folder) => folder !== undefined && holdsHome(folder))
-        ? "This terminal's project holds the whole home folder; NovaDeck shows files only from a project folder."
-        : "That file is outside this project.",
-    )
-  if (secret(path)) return failure("That file may hold secrets, so NovaDeck won't show it.")
+  // Before opening it, which Windows can't do for a folder.
+  if ((await stat(path).catch(() => undefined))?.isDirectory())
+    return failure("That's a folder; only files can be shown.")
   const mime = images[extname(path).toLowerCase()]
   const limit = mime ? maxImageBytes : maxTextBytes
   let bytes: Buffer
   try {
     // A pipe or device put in a file's place never blocks the reader, and a symlink put
-    // there since the check above isn't followed.
+    // there since it was resolved isn't followed.
     const handle = await open(
       path,
       constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0),
@@ -274,6 +263,7 @@ const captureFile = async (
   }
   const name = clip(request.title ?? basename(given), 256)
   const id = idOf(path)
+  const held = secret(path) ? ({ held: true } as const) : {}
   if (mime) {
     const format = extname(path).slice(1).toUpperCase().replace("JPG", "JPEG")
     return {
@@ -282,6 +272,7 @@ const captureFile = async (
       content: { kind: "image", src: `data:${mime};base64,${bytes.toString("base64")}` },
       detail: `${size(bytes.length)} ${format}`,
       name,
+      ...held,
     }
   }
   if (bytes.subarray(0, sniffBytes).includes(0))
@@ -310,6 +301,7 @@ const captureFile = async (
     },
     detail: `${clip(shownPath, 512 - range.length - 3)} · ${range}`,
     name,
+    ...held,
   }
 }
 
