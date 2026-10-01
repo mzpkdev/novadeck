@@ -42,6 +42,9 @@ broadcast rooms; and agents starting conversations nobody asked for.
    an empty prompt; it counts once the agent's hook confirms it.
 5. **The mailbox is the record.** Every message is stored and visible in NovaDeck, with
    its delivery state; the person can pause all traffic.
+6. **Every harness is supported.** Claude Code, Codex and Antigravity all send and
+   receive. Where one falls short of the ideal, the rule bends for it, as
+   [Per harness](#per-harness) records, rather than leaving it out.
 
 ## Evidence
 
@@ -67,6 +70,19 @@ empty prompt. Codex's hooks run only once the person trusts them in its "Hooks n
 review" screen; NovaDeck already depends on that, and this design changes no hook
 command, so no new trust is asked for. What the probes did not establish is listed in
 [Before building](#before-building).
+
+## Per harness
+
+All three harnesses get every path. Where one falls short, the design accepts it:
+
+| Harness     | Falls short                                                           | Accepted as                                                                                                  |
+| ----------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Claude Code | Stop delivery shows in the chat as "Stop hook error: …"               | A cosmetic label; the content is still wrapped and attributed                                                |
+| Codex       | A Stop hook's reason reaches the model as a user-role `<hook_prompt>` | Still never the person's prompt: wrapped and attributed, per principle 1                                     |
+| Codex       | Server instructions only arrive as a tool namespace's description     | Rules live in each tool's description and in the delivery wrapper                                            |
+| Antigravity | `PreInvocation` has no prompt text, and runs before every model call  | The doorbell is confirmed from the transcript's last user input; messages ride a turn's first invocation     |
+| Antigravity | Server instructions don't reach the model                             | Rules live in each tool's description and in the delivery wrapper                                            |
+| Antigravity | No permission hook                                                    | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it |
 
 ## How it fits
 
@@ -322,7 +338,8 @@ Probe before step 1:
 
 - whether Antigravity's `ephemeralMessage` stays in context after its model call, and
   whether `PreInvocation`'s input tells a turn's first invocation (`invocationNum`);
-- Antigravity subagents' hooks; until probed, Antigravity gets no delivery from them;
+- Antigravity subagents' hooks, to tell a root turn from a subagent's; it is supported
+  like the others, and the probe only settles how its root turns are recognised;
 - the role the model sees for Claude Code's Stop block reason;
 - each harness's limit on hook output size;
 - Codex with a real model.
