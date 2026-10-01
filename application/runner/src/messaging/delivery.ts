@@ -190,13 +190,20 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         // typed while it rang. Another nonce's while ringing is no confirmation.
         if (delivery.state === "ringing" && event.nonce !== delivery.nonce)
           return transition(delivery, { ...event, by: "harness" })
-        const empty = delivery.state === "ringing" ? !delivery.touched : true
-        // Elsewhere it is a line submitted alone, as an agent started with it: the box
-        // holds nothing after it.
+        // Outside a ring it proves nothing of the box (a late hook of a failed ring, or
+        // an agent's first prompt after the person typed), unless the person's own bare
+        // Enter submitted it, a stale line alone: then the box is empty.
+        const own = delivery.state !== "ringing" && pendingEnter(delivery, event.at) !== undefined
+        const empty = delivery.state === "ringing" ? !delivery.touched : own || box.empty
         return working(delivery, "turn", {
           epoch: delivery.epoch + 1,
           continued: 0,
-          box: { ...box, empty, queuing: false },
+          box: {
+            ...box,
+            empty,
+            queuing: false,
+            ...(own && { enteredAt: null, queued: false, draftWhileAsked: false }),
+          },
         })
       }
       // A later call of the running turn changes nothing, nor ends the wait for the
@@ -210,7 +217,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       const person =
         event.by === "prompt" &&
         delivery.state !== "ringing" &&
-        ((box.enteredAt !== null && event.at - box.enteredAt <= submitWindowMs) || box.queued)
+        (pendingEnter(delivery, event.at) !== undefined || box.queued)
       // Only a prompt uses up the person's Enter, or the prompt they queued.
       const after: Box =
         event.by === "prompt"
@@ -290,6 +297,15 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         ? keyed({ ...delivery, box: { ...box, draftWhileAsked: false } }, false, null)
         : delivery
   }
+}
+
+/**
+ * When the person's bare Enter came, if a root turn starting `now` would be their
+ * submission: within the window, with nothing typed since. The one check of the window.
+ */
+export const pendingEnter = (delivery: Delivery, now: number): number | undefined => {
+  const at = delivery.box.enteredAt
+  return at !== null && now - at <= submitWindowMs ? at : undefined
 }
 
 /** The delivery after the person's key outside a request: a bare Enter `submits`. */

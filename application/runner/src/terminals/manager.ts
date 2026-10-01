@@ -229,6 +229,8 @@ type Record = {
   held: string[] | null
   /** The handle of the terminal whose agent opened this one with a task; null otherwise. */
   openedBy: string | null
+  /** The nonce of the doorbell line its agent was started with, as a task, if it was. */
+  startedWith?: string
   /**
    * The last typed entry its agent's transcript held at a root turn, by its id, where
    * its hooks name no prompt; undefined before one was read.
@@ -1321,7 +1323,7 @@ export class Terminals {
     const folder = request.cwd ?? "."
     const cwd = await this.directory(resolvePath(record.summary.cwd, folder)).catch(() => undefined)
     if (cwd === undefined) return refused(`${folder} isn't a folder a terminal can open in.`)
-    const started =
+    const started: { command?: string | undefined; prompted: boolean; nonce?: string } =
       request.agent === undefined
         ? { command: request.command, prompted: true }
         : await this.taskCommand(request.agent, cwd)
@@ -1361,6 +1363,8 @@ export class Terminals {
       // The task goes to the first session of the agent it starts there, from the opener.
       if (opened && request.message !== undefined) {
         opened.openedBy = record.summary.handle
+        // Its first typed entry is this line, where a transcript tells its prompts.
+        if (started.prompted && started.nonce) opened.startedWith = started.nonce
         this.save(opened, false)
         task = this.messaging.send(call.terminalId, {
           to: opened.summary.handle,
@@ -1374,26 +1378,27 @@ export class Terminals {
   }
 
   /**
-   * The command that starts `agent` with a task: the doorbell's line as its command-line
-   * prompt, which it submits once past its startup screens; plain where it may not take
-   * one (Antigravity in a folder it doesn't trust), when the task rings once it is first
-   * Settled.
+   * The command that starts `agent` with a task: the doorbell's line, with its `nonce`, as
+   * its command-line prompt, which it submits once past its startup screens; plain where
+   * it may not take one (Antigravity in a folder it doesn't trust), when the task arrives
+   * with the person's first prompt there.
    */
   private async taskCommand(
     agent: AgentName,
     cwd: string,
-  ): Promise<{ readonly command: string; readonly prompted: boolean }> {
+  ): Promise<{ readonly command: string; readonly prompted: boolean; readonly nonce: string }> {
     const { messaging } = harnesses[agent]
     const install = await this.options.install(agent).catch(() => undefined)
+    const nonce = freshNonce()
     const prompted = await messaging
-      .initialPrompt(doorbellLine(freshNonce()), { install, cwd })
+      .initialPrompt(doorbellLine(nonce), { install, cwd })
       .catch(() => undefined)
     const argv = prompted ?? messaging.start
     // Every word but the line is a plain word; the line holds nothing a shell expands.
     const command = argv
       .map((word) => (/^[\w./-]+$/.test(word) ? word : quotedLine(word)))
       .join(" ")
-    return { command, prompted: prompted !== undefined }
+    return { command, prompted: prompted !== undefined, nonce }
   }
 
   /** What the agent learns of the client's answer. */
@@ -2073,6 +2078,11 @@ export class Terminals {
       platform: process.platform,
     }
     const cwd = record.summary.cwd
+    // Every fact applies before messaging sees the report: a turn's start clears the
+    // requests waiting on the person, and `askedCleared` must reach messaging before that
+    // turn's prompt does, so a draft typed while asked counts before the person's Enter
+    // could take the prompt as theirs (pinned by the integration test "applies a draft
+    // typed while asked before the prompt that clears the request").
     for (const event of events) {
       if (event.type !== "session-observed") {
         this.applyFact(record, event)
@@ -2168,6 +2178,7 @@ export class Terminals {
       seen: record.seenEntry?.transcript === transcript ? record.seenEntry.id : undefined,
       enteredAt: this.messaging.pendingSubmission(id),
       waiting: this.messaging.ringing(id) !== undefined,
+      startedWith: record.startedWith,
     })
     if (told.seen !== undefined) record.seenEntry = { transcript, id: told.seen }
     return told.events
@@ -2208,7 +2219,8 @@ export class Terminals {
   private applyFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): boolean {
     const waited = (record.activity?.pending.length ?? 0) > 0
     const applied = this.appliedFact(record, fact)
-    // A request no longer waits on the person: what they typed meanwhile counts now.
+    // A request no longer waits on the person: what they typed meanwhile counts now, at
+    // once, before the report's prompt reaches messaging.
     if (waited && (record.activity?.pending.length ?? 0) === 0)
       this.messaging.askedCleared(record.summary.id)
     return applied

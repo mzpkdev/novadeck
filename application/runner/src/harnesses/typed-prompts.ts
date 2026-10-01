@@ -52,18 +52,24 @@ export type TypedPrompts = {
   readonly enteredAt: number | undefined
   /** Whether a ring waits on the prompt: the transcript is looked at a few times. */
   readonly waiting: boolean
+  /** The nonce of the doorbell line the agent was started with, as a task, if it was. */
+  readonly startedWith?: string | undefined
 }
 
 /**
  * Whether a typed entry is new: its step after the one last seen in that transcript; or,
  * before any was read, its time after the person's Enter (rounded down where the
  * transcript is coarser, so one in the Enter's own second fails safe); or, before any read
- * and with no Enter, a doorbell line, which a ring or a start with a task typed.
+ * and with no Enter, the very doorbell line the agent was started with, as a task, never
+ * a stale one a resumed session's transcript still ends with.
  */
-const fresh = (entry: UserEntry, seen: number | undefined, enteredAt: number | undefined) => {
+const fresh = (
+  entry: UserEntry,
+  { seen, enteredAt, startedWith }: Pick<TypedPrompts, "seen" | "enteredAt" | "startedWith">,
+) => {
   if (seen !== undefined) return entry.id !== null && entry.id > seen
   if (enteredAt !== undefined) return entry.at !== null && entry.at > enteredAt
-  return doorbellNonce(entry.text) !== undefined
+  return startedWith !== undefined && doorbellNonce(entry.text) === startedWith
 }
 
 /**
@@ -76,7 +82,7 @@ const fresh = (entry: UserEntry, seen: number | undefined, enteredAt: number | u
  */
 export const typedPromptStart = async (
   events: readonly HarnessEvent[],
-  { root, typedEntry, transcript, seen, enteredAt, waiting }: TypedPrompts,
+  { root, typedEntry, transcript, seen, enteredAt, waiting, startedWith }: TypedPrompts,
   read: typeof lastUserInput = lastUserInput,
 ): Promise<{ readonly events: readonly HarnessEvent[]; readonly seen: number | undefined }> => {
   const index = events.findIndex(
@@ -90,7 +96,7 @@ export const typedPromptStart = async (
     // eslint-disable-next-line no-await-in-loop -- Each look waits for the last.
     const entry = await read(transcript, typedEntry)
     const known = entry === null ? (seen ?? -1) : (entry?.id ?? seen)
-    const typed = entry ? fresh(entry, seen, enteredAt) : false
+    const typed = entry ? fresh(entry, { seen, enteredAt, startedWith }) : false
     if (typed || look === looks) {
       if (!typed || !entry) return { events, seen: known }
       const started = events[index]!

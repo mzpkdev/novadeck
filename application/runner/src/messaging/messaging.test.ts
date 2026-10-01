@@ -1321,7 +1321,11 @@ describe("Antigravity's prompts, told from its transcript", () => {
   const root = { ...agy, source: "status-line" } as const
   const harnessTurn: HarnessEvent = { type: "turn-started", ...fact(agy), cause: "harness" }
   // The turn's facts as the terminal manager tells them from the transcript's last typed entry.
-  const told = (text: string, id: number, given: { seen?: number; enteredAt?: number }) =>
+  const told = (
+    text: string,
+    id: number,
+    given: { seen?: number; enteredAt?: number; startedWith?: string },
+  ) =>
     typedPromptStart(
       [harnessTurn],
       {
@@ -1331,6 +1335,7 @@ describe("Antigravity's prompts, told from its transcript", () => {
         seen: given.seen,
         enteredAt: given.enteredAt,
         waiting: false,
+        startedWith: given.startedWith,
       },
       () => Promise.resolve({ text, at: null, id }),
     )
@@ -1343,7 +1348,7 @@ describe("Antigravity's prompts, told from its transcript", () => {
     messaging.pause(true)
     follow("G", agy)
     // `agy -i "<line>"`: its first turn, the line its transcript records as typed.
-    const { events } = await told(doorbellLine("k3f9q2"), 0, {})
+    const { events } = await told(doorbellLine("k3f9q2"), 0, { startedWith: "k3f9q2" })
     expect(events).toMatchObject([{ cause: "doorbell", nonce: "k3f9q2" }])
     const answer = ask("G", agy, "PreInvocation", [...events])
     expect(answer.leaseId).toBeNull()

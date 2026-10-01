@@ -2168,10 +2168,13 @@ const started = (prompt, typed, done) => {
   hook("PreInvocation", { ...agy, invocationNum: 0 }, done)
 }
 const turn = (prompt, typed = true) => {
+  dialog = null
   busy = true
   turns += 1
   const perm = mode === "perm" && turns === 2
-  started(prompt, typed, (printed) => {
+  // With "slowhook", its second turn's hook reports after the doorbell's confirmation lapsed.
+  const slow = mode === "slowhook" && turns === 2
+  setTimeout(() => started(prompt, typed, (printed) => {
     fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + "\n")
     const finish = () => {
       process.stdout.write("\r\x1b[2Kworked on it\r\n")
@@ -2206,7 +2209,7 @@ const turn = (prompt, typed = true) => {
       process.stdout.write("\r\x1b[2Kapproved; running npm test\r\n")
       setTimeout(() => hook("PostToolUse", { tool_name: "Bash", tool_input: input, tool_response: {} }, finish), 1500)
     })
-  })
+  }), slow ? 6_000 : 0)
 }
 process.on("SIGUSR1", () => turn("background result", false))
 if (mode !== "bg") {
@@ -2217,6 +2220,12 @@ if (mode !== "bg") {
     if (menu) {
       if (data === "\r") fs.appendFileSync(received, JSON.stringify({ picked: true }) + "\n")
       return
+    }
+    // With "askfirst", a key answers its dialog, as a hotkey does.
+    if (dialog && mode === "askfirst") {
+      const answer = dialog
+      dialog = null
+      return answer()
     }
     if (data.startsWith("\x1b[200~")) box += data.slice(6, -6)
     else if (data === "\r") {
@@ -2236,6 +2245,15 @@ if (mode !== "bg") {
       last = box
       box = ""
       process.stdout.write("\r\n")
+      // With "askfirst", its second prompt asks a permission before its turn starts, and
+      // the person's answer lets it start: the request clears with the turn.
+      if (mode === "askfirst" && turns === 1) {
+        busy = true
+        return hook("PermissionRequest", { tool_name: "Bash", tool_input: { command: "ls" } }, () => {
+          dialog = () => turn(prompt)
+          process.stdout.write("\r\x1b[2K[dialog] allow ls? (1/2)\r\n")
+        })
+      }
       return turn(prompt)
     } else if (data === "\x1b\r") box += "\n"
     else if (data === "\x15") box = ""
@@ -2528,6 +2546,40 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await tui.send("Review a.ts")
       await quiet()
       expect(pastes(tui.raw()).filter((data) => data.includes("automatic notice"))).toEqual([])
+    })
+
+    it("applies a draft typed while asked before the prompt that clears the request", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "askfirst")
+      await tui.first()
+      tui.type("run the tests")
+      await shell.until(tui.manager, tui.idle.id, "> run the tests")
+      // The person's Enter, a request before the turn starts, and a hotkey answering it:
+      // the turn's prompt comes within the Enter's window, as the request clears.
+      tui.type("\r")
+      await shell.until(tui.manager, tui.idle.id, "[dialog]")
+      tui.type("1")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      // Had the prompt come before the clear, the Enter would have counted, the hotkey not.
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
+    })
+
+    it("keeps a draft typed before a late hook of a failed ring", async ({ shell }) => {
+      const tui = await ringing(shell, "slowhook")
+      await tui.first()
+      await tui.send("one")
+      // The doorbell's Enter goes in; its hook comes after the 5 s confirmation lapsed.
+      await vi.waitFor(() => expect(tui.raw().join("").split("\r").length).toBeGreaterThan(2), {
+        timeout: 10_000,
+      })
+      await expect.poll(tui.delivery, { timeout: 8_000 }).toBe("unknown")
+      tui.type("my draft")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
+      await tui.send("two")
+      await quiet()
+      expect(tui.received().map(({ prompt }) => prompt)).toHaveLength(2)
     })
 
     it("takes Shift+Enter as a newline in the draft, never a submission", async ({ shell }) => {

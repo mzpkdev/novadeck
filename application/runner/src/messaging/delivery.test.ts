@@ -2,6 +2,7 @@ import { describe, expect, it } from "../test.js"
 import {
   continues,
   maxContinuations,
+  pendingEnter,
   route,
   submitWindowMs,
   transition,
@@ -330,8 +331,33 @@ describe("a ring", () => {
     for (const event of [stop, idle]) expect(transition(ringing, event)).toBe(ringing)
   })
 
-  it("makes the prompt known empty at a command-line doorbell prompt too", () => {
+  it("outside a ring, proves nothing of the box but what the person did", () => {
+    // An agent started with the line, nothing typed since it bound: the box stays empty.
     expect(transition(bound, doorbell)).toMatchObject({ state: "working", box: { empty: true } })
-    expect(run(drafting, doorbell)).toMatchObject({ state: "working", box: { empty: true } })
+    // The person typed before the start's first hook: their draft stays.
+    expect(run(bound, typing, doorbell)).toMatchObject({ state: "working", box: { empty: false } })
+    // A late hook of a failed ring, after the person typed: their draft stays.
+    const failed = run(ringing, { type: "ring-failed", nonce: "k3f9" }, typing)
+    expect(transition(failed, doorbell)).toMatchObject({ state: "working", box: { empty: false } })
+    expect(run(failed, doorbell, stop).state).toBe("drafting")
+    // Their own bare Enter submitted a stale line alone: the box is empty after it.
+    expect(run(drafting, key("enter"), { ...doorbell, at: at + 100 })).toMatchObject({
+      box: { empty: true, enteredAt: null },
+    })
+    expect(run(drafting, key("enter"), { ...doorbell, at: at + submitWindowMs + 1 })).toMatchObject(
+      {
+        box: { empty: false },
+      },
+    )
+  })
+})
+
+describe("the person's Enter window", () => {
+  it("is open for a while after a bare Enter, closed once they typed again", () => {
+    const entered = run(drafting, key("enter"))
+    expect(pendingEnter(entered, at + submitWindowMs)).toBe(at)
+    expect(pendingEnter(entered, at + submitWindowMs + 1)).toBeUndefined()
+    expect(pendingEnter(run(entered, typing), at + 1)).toBeUndefined()
+    expect(pendingEnter(drafting, at)).toBeUndefined()
   })
 })

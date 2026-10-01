@@ -14,7 +14,7 @@ import {
   transition,
   unbound,
   type Delivery,
-  submitWindowMs,
+  pendingEnter,
   type DeliveryEvent,
   type KeyKind,
 } from "./delivery.js"
@@ -409,8 +409,8 @@ export class Messaging {
    * submission: within the window, with nothing typed since.
    */
   pendingSubmission(terminalId: string): number | undefined {
-    const at = this.live.get(terminalId)?.delivery.box.enteredAt
-    return at != null && this.now() - at <= submitWindowMs ? at : undefined
+    const delivery = this.live.get(terminalId)?.delivery
+    return delivery && pendingEnter(delivery, this.now())
   }
 
   /** The doorbell starts ringing the terminal with its nonce; false when it may not now. */

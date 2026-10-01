@@ -105,10 +105,21 @@ describe("a typed prompt where hooks name none", () => {
     await expect(
       told(entry("fix it", 1, Date.parse("2026-10-01T12:00:05Z")), { seen: undefined }),
     ).resolves.toMatchObject({ events: [{ cause: "harness" }] })
-    // With no Enter, only a doorbell line typed for it, as `agy -i "<line>"` starts with.
+    // With no Enter, only the very line it was started with, as `agy -i "<line>"`.
+    await expect(
+      told(entry(line, 0), { seen: undefined, enteredAt: undefined, startedWith: "k3f9q2" }),
+    ).resolves.toMatchObject({ events: [{ cause: "doorbell", nonce: "k3f9q2" }] })
+    // A stale line a resumed session's transcript still ends with: not its start's.
+    await expect(
+      told(entry(doorbellLine("OLD"), 4), {
+        seen: undefined,
+        enteredAt: undefined,
+        startedWith: "k3f9q2",
+      }),
+    ).resolves.toMatchObject({ events: [{ cause: "harness" }] })
     await expect(
       told(entry(line, 0), { seen: undefined, enteredAt: undefined }),
-    ).resolves.toMatchObject({ events: [{ cause: "doorbell", nonce: "k3f9q2" }] })
+    ).resolves.toMatchObject({ events: [{ cause: "harness" }] })
     await expect(
       told(entry("fix it", 0), { seen: undefined, enteredAt: undefined }),
     ).resolves.toMatchObject({ events: [{ cause: "harness" }] })
