@@ -241,6 +241,18 @@ describe("NovaDeck's MCP server", () => {
       expect((unsent!.result as { content: { text: string }[] }).content[0]?.text).toMatch(
         /Its task wasn't sent: Too many messages\.$/,
       )
+      answer = { ...(answer as object), task: { ok: true, id: "m-1" }, taskWaits: true }
+      const [, waits] = await session(terminal(), [
+        initialize,
+        {
+          id: 5,
+          method: "tools/call",
+          params: { name: "open_terminal", arguments: { agent: "agy", message: "Review a.ts" } },
+        },
+      ])
+      expect((waits!.result as { content: { text: string }[] }).content[0]?.text).toMatch(
+        /doesn't trust this folder yet, so it started without its task: message m-1 reaches it with the user's first prompt there\./,
+      )
     })
 
     it("forwards a call to the terminal's runner with its token, and says what happened", async () => {

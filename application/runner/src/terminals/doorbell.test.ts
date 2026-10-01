@@ -1,15 +1,9 @@
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
 import { vi } from "vitest"
 
-import type { HarnessEvent } from "../harnesses/events.js"
-import { doorbellLine } from "../harnesses/harness.js"
-import { harnesses } from "../harnesses/registry.js"
 import { describe, expect, it } from "../test.js"
-import { confirmRing, Doorbell, lastUserInput, type DoorbellHost } from "./doorbell.js"
+import { Doorbell, type DoorbellHost } from "./doorbell.js"
 
 /**
  * A terminal as the doorbell sees it: a screen that a paste changes as `takes` says,
@@ -25,8 +19,8 @@ const terminal = (
     holdMs?: number
     /** How long reading the screen takes, in milliseconds. */
     screenMs?: number
-    /** When its screen has had time to settle since its turn ended, in epoch milliseconds. */
-    settledBy?: number
+    /** When it became Settled, its turn ended, in epoch milliseconds. */
+    settledAt?: number
   } = {},
 ) => {
   const rows = ["header", "", "", "", "", "", "> ", "", "footer"]
@@ -38,7 +32,7 @@ const terminal = (
   let held = false
   const host: DoorbellHost = {
     ringable: () => ringable && ringing === undefined,
-    settling: () => Math.max(0, (options.settledBy ?? 0) - Date.now()),
+    settledSince: () => options.settledAt,
     ring: (_, nonce) => {
       if (!ringable) return false
       ringable = false
@@ -123,8 +117,8 @@ describe("the doorbell", () => {
   })
 
   it("waits for its screen to settle after its turn before it looks", async () => {
-    const { host, written } = terminal({ settledBy: Date.now() + 300 })
-    const doorbell = new Doorbell(host, fast)
+    const { host, written } = terminal({ settledAt: Date.now() })
+    const doorbell = new Doorbell(host, { ...fast, settleMs: 300 })
     doorbell.changed("t")
     await sleep(200)
     expect(written).toEqual([])
@@ -190,84 +184,5 @@ describe("the doorbell", () => {
     doorbell.changed("t")
     await vi.waitFor(() => expect(enters(written)).toBe(1))
     doorbell.close()
-  })
-})
-
-// A user input step of Antigravity's transcript, as it wraps the person's text.
-const input = (text: string, step: number) =>
-  JSON.stringify({
-    step_index: step,
-    created_at: "2026-10-01T12:00:05Z",
-    source: "USER_EXPLICIT",
-    type: "USER_INPUT",
-    content: `<USER_REQUEST>\n${text}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\n</ADDITIONAL_METADATA>`,
-  })
-
-// A step of the agent's output, 300 KB of it.
-const output = (step: number) =>
-  JSON.stringify({
-    step_index: step,
-    source: "MODEL",
-    type: "PLANNER_RESPONSE",
-    content: "x".repeat(300 * 1024),
-  })
-
-describe("a ring's confirmation where hooks name no prompt", () => {
-  const root = { agent: "agy", sessionId: "c-root", instance: "7", source: "status-line" } as const
-  const base = { agent: "agy", sessionId: "c-root", instance: "7", startedAt: 1 } as const
-  const started: HarnessEvent = { type: "turn-started", ...base, cause: "harness" }
-  const line = doorbellLine("k3f9q2")
-
-  it("reads Antigravity's last user input from its transcript, wrapped as it wraps it", async ({
-    resources,
-  }) => {
-    const folder = mkdtempSync(join(tmpdir(), "novadeck-doorbell-"))
-    resources.defer(() => rmSync(folder, { recursive: true, force: true }))
-    const transcript = join(folder, "transcript.jsonl")
-    writeFileSync(transcript, `${input("hello", 0)}\n${input(line, 4)}\n`)
-    const typed = harnesses.agy.messaging.typedEntry!
-    await expect(lastUserInput(transcript, typed)).resolves.toEqual({
-      text: line,
-      at: Date.parse("2026-10-01T12:00:05Z"),
-      id: 4,
-    })
-    await expect(lastUserInput(join(folder, "missing"), typed)).resolves.toBeUndefined()
-  })
-
-  it("tells the person's new entry by its step after hundreds of kilobytes of the agent's output", async ({
-    resources,
-  }) => {
-    const folder = mkdtempSync(join(tmpdir(), "novadeck-doorbell-"))
-    resources.defer(() => rmSync(folder, { recursive: true, force: true }))
-    const transcript = join(folder, "transcript.jsonl")
-    // Many small turns, then bulky ones: the tail holds fewer typed entries than before.
-    const small = Array.from({ length: 5 }, (_, index) => input(`p${index}`, index * 2))
-    writeFileSync(transcript, `${small.join("\n")}\n`)
-    const typed = harnesses.agy.messaging.typedEntry!
-    const confirms = harnesses.agy.messaging.confirmsSubmission!
-    let seen = (await lastUserInput(transcript, typed))!.id!
-    for (let turn = 0; turn < 3; turn += 1) {
-      appendFileSync(transcript, `${output(20 + turn * 2)}\n`)
-      appendFileSync(transcript, `${input(`person prompt ${turn}`, 21 + turn * 2)}\n`)
-      // eslint-disable-next-line no-await-in-loop -- Each turn reads what the last left.
-      const entry = await lastUserInput(transcript, typed)
-      expect(entry).toMatchObject({ text: `person prompt ${turn}`, id: 21 + turn * 2 })
-      expect(confirms(entry!, { enteredAt: Date.parse("2026-10-01T12:00:05Z"), seen })).toBe(true)
-      // The same entry, read again at a turn nobody typed for, is nothing new.
-      expect(
-        confirms(entry!, { enteredAt: Date.parse("2026-10-01T12:00:05Z"), seen: entry!.id! }),
-      ).toBe(false)
-      seen = entry!.id!
-    }
-  })
-
-  it("takes the root's turn as the doorbell's only when its input holds the line", () => {
-    expect(confirmRing([started], root, "k3f9q2", `<USER_REQUEST>${line}`)).toEqual([
-      { ...started, cause: "doorbell", nonce: "k3f9q2" },
-    ])
-    expect(confirmRing([started], root, "k3f9q2", "hello")).toBeUndefined()
-    expect(confirmRing([started], root, "other", line)).toBeUndefined()
-    // A subagent's turn, in its own conversation, is never the ring's.
-    expect(confirmRing([{ ...started, sessionId: "c-sub" }], root, "k3f9q2", line)).toBeUndefined()
   })
 })

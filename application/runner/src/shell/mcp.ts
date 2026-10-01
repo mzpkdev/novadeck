@@ -149,10 +149,14 @@ const openTerminal = {
     "." +
     (answer.task === undefined
       ? ""
-      : answer.task.ok
-        ? " Its task, message " + answer.task.id + ", waits for the agent's first session " +
-          "there; end your turn rather than wait, as its replies arrive by themselves."
-        : " Its task wasn't sent: " + answer.task.reason),
+      : !answer.task.ok
+        ? " Its task wasn't sent: " + answer.task.reason
+        : (answer.taskWaits
+            ? " The agent there doesn't trust this folder yet, so it started without its " +
+              "task: message " + answer.task.id + " reaches it with the user's first prompt there."
+            : " Its task, message " + answer.task.id + ", waits for the agent's first session " +
+              "there.") +
+          " End your turn rather than wait, as its replies arrive by themselves."),
   failed: "NovaDeck couldn't open the terminal.",
 }
 

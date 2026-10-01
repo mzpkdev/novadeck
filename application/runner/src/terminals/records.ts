@@ -18,6 +18,8 @@ export type SavedTerminal = {
   readonly title: string
   /** The handle of the terminal whose agent gave it its title; null when the person did, or by default. */
   readonly titledBy: string | null
+  /** The handle of the terminal whose agent opened it with a task; null otherwise. */
+  readonly openedBy: string | null
   /** The command it was opened to run; null for a plain shell. */
   readonly command: string | null
   /** The program in its foreground when its shell was last seen. */
@@ -38,8 +40,8 @@ export type SavedTerminal = {
 /** A terminal as listed: all but its transcript. */
 export type ListedTerminal = Omit<SavedTerminal, "transcript">
 
-/** A terminal's handle, its title and who gave it. */
-export type TerminalIdentity = Pick<SavedTerminal, "handle" | "title" | "titledBy">
+/** A terminal's handle, its title and who gave it, and who opened it with a task. */
+export type TerminalIdentity = Pick<SavedTerminal, "handle" | "title" | "titledBy" | "openedBy">
 
 /** Where the runner saves terminals: its metadata store. */
 export type TerminalRecords = {

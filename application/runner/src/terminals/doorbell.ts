@@ -1,72 +1,12 @@
-import { open } from "node:fs/promises"
 import { setTimeout as sleep } from "node:timers/promises"
 
 import type { Terminal as Screen } from "@xterm/headless"
 
-import type { HarnessEvent } from "../harnesses/events.js"
-import { doorbellLine, type UserEntry } from "../harnesses/harness.js"
-import { rootedIn, type Root } from "../harnesses/roots.js"
+import { doorbellLine } from "../harnesses/harness.js"
 import { bracketedPaste, calmMs, checkPaste, freshNonce, gate } from "./ring.js"
 
 /** A terminal's screen as the doorbell reads it: its rows' text, and its paste mode. */
 export type ScreenText = { readonly rows: readonly string[]; readonly bracketedPaste: boolean }
-
-/** How much of a transcript's end is read for its last user input, in bytes. */
-const tailBytes = 256 * 1024
-
-/**
- * The last thing the person, or the doorbell, submitted, as a transcript records it:
- * where a harness's hooks don't name a prompt's text, this tells a doorbell prompt. Null
- * when the transcript holds no typed entry yet; undefined when it can't be read.
- */
-export const lastUserInput = async (
-  path: string,
-  typed: (line: string) => UserEntry | undefined,
-): Promise<UserEntry | null | undefined> => {
-  let text: string
-  try {
-    const file = await open(path, "r")
-    try {
-      const { size } = await file.stat()
-      const start = Math.max(0, size - tailBytes)
-      const buffer = Buffer.alloc(size - start)
-      await file.read(buffer, 0, buffer.length, start)
-      text = buffer.toString("utf8")
-    } finally {
-      await file.close()
-    }
-  } catch {
-    return undefined
-  }
-  // Only the tail is read, its first line maybe cut, which reads as nothing.
-  let last: UserEntry | null = null
-  for (const line of text.split("\n")) last = typed(line) ?? last
-  return last
-}
-
-/**
- * The facts with the ring confirmed, where a harness's hooks name no prompt: a root
- * turn it started by itself is the doorbell's when the last user `input` its transcript
- * recorded holds the ring's line. Undefined when no such turn is there, or, given an
- * input, it doesn't hold the line.
- */
-export const confirmRing = (
-  events: readonly HarnessEvent[],
-  root: Root,
-  nonce: string,
-  input: string | undefined,
-): readonly HarnessEvent[] | undefined => {
-  const index = events.findIndex(
-    (event) => event.type === "turn-started" && event.cause === "harness" && rootedIn(root, event),
-  )
-  if (index < 0) return undefined
-  // Probing whether a turn is there, before the transcript is read.
-  if (input === undefined) return events
-  if (!input.includes(doorbellLine(nonce))) return undefined
-  return events.map((event, at) =>
-    at === index && event.type === "turn-started" ? { ...event, cause: "doorbell", nonce } : event,
-  )
-}
 
 /** The screen's visible rows as text, and whether it takes pastes bracketed. */
 export const screenText = (screen: Screen): ScreenText => {
@@ -81,8 +21,8 @@ export const screenText = (screen: Screen): ScreenText => {
 export type DoorbellHost = {
   /** Whether messaging lets it ring: Settled, untouched, with messages waiting. */
   readonly ringable: (terminalId: string) => boolean
-  /** How long until its screen has had time to settle since its turn ended, in milliseconds. */
-  readonly settling: (terminalId: string) => number
+  /** When it last became Settled, its turn ended, if it is Settled. */
+  readonly settledSince: (terminalId: string) => number | undefined
   /** Starts the ring with its nonce: the terminal is Ringing; false when it may not now. */
   readonly ring: (terminalId: string, nonce: string) => boolean
   /** The nonce of the ring under way there, if any. */
@@ -108,8 +48,8 @@ export type DoorbellHost = {
 export type DoorbellOptions = {
   readonly now?: () => number
   /**
-   * How long after a root turn ends no ring starts, so any harness's screen settles
-   * first, in milliseconds; messaging keeps it.
+   * How long after a root turn ends no ring starts, so any harness's screen settles first
+   * (Claude Code's clears a row about 5 s after a turn), in milliseconds.
    */
   readonly settleMs?: number
   /** How long a screen must be still before a ring, in milliseconds. */
@@ -136,6 +76,7 @@ export class Doorbell {
   private readonly pasteMs: number
   private readonly confirmMs: number
   private readonly calmMs: number
+  private readonly settleMs: number
   /** Each terminal's screen text as last seen, and since when. */
   private readonly still = new Map<string, { readonly text: string; readonly since: number }>()
   private readonly scheduled = new Set<string>()
@@ -152,6 +93,7 @@ export class Doorbell {
     this.pasteMs = options.pasteMs ?? 1_500
     this.confirmMs = options.confirmMs ?? 5_000
     this.calmMs = options.calmMs ?? calmMs
+    this.settleMs = options.settleMs ?? 6_000
   }
 
   /** The terminal's screen or messages changed: it is looked at again, once this tick. */
@@ -191,7 +133,9 @@ export class Doorbell {
 
   private async check(terminalId: string): Promise<void> {
     if (this.closed || this.checking.has(terminalId)) return
-    const settling = this.host.settling(terminalId)
+    // Any harness's screen changes for a while after a turn: no ring before it settles.
+    const since = this.host.settledSince(terminalId)
+    const settling = since === undefined ? 0 : since + this.settleMs - this.now()
     if (settling > 0) return this.later(terminalId, settling)
     if (!this.host.ringable(terminalId)) return
     this.checking.add(terminalId)

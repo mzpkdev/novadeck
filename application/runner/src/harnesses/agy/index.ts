@@ -2,7 +2,6 @@ import { access } from "node:fs/promises"
 import { join } from "node:path"
 
 import {
-  hasDoorbell,
   hookSeconds,
   json,
   mcpServer,
@@ -38,26 +37,15 @@ const messaging: MessagingProfile = {
   reinjectPerCall: true,
   root: "status-line",
   silentOnFailure: false,
-  // Its hooks name no prompt; its transcript's last user input holds it.
-  promptVisible: false,
   // `-i` submits its prompt about 0.9 s after it starts, even while its "Do you trust
   // this folder?" dialog is up, so only in a folder it already trusts.
   initialPrompt: async (line, { install, cwd }) =>
     install && (await trustsFolder(cli(install), cwd)) ? ["agy", "-i", line] : undefined,
   start: ["agy"],
-  // Its transcript tells what was typed (a USER_EXPLICIT USER_INPUT step, the only kind
-  // its transcript reader takes as the user's) from what woke it: a subagent's message,
-  // a Stop hook's continuation or a notice are SYSTEM_MESSAGE steps, and injected
-  // messages EPHEMERAL_MESSAGE ones. A typed entry is new once its step comes after the
-  // one seen at the last turn; before any was seen, by its time, which is to the second,
-  // so only one a second after the Enter's counts, and one in the same second fails safe.
+  // Its hooks name no prompt, but its transcript tells what was typed (a USER_EXPLICIT
+  // USER_INPUT step) from what woke it: a subagent's message, a Stop hook's continuation
+  // or a notice are SYSTEM_MESSAGE steps, and injected messages EPHEMERAL_MESSAGE ones.
   typedEntry,
-  confirmsSubmission: (entry, { enteredAt, seen }) =>
-    entry !== undefined &&
-    (seen === undefined
-      ? entry.at !== null && entry.at >= (Math.floor(enteredAt / 1_000) + 1) * 1_000
-      : entry.id !== null && entry.id > seen) &&
-    !hasDoorbell(entry.text),
 }
 
 // A handler for one of its events, with the time it may take.

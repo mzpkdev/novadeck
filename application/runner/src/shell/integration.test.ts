@@ -135,6 +135,7 @@ const it = base.extend<{ shell: Fixture }>({
         handle: store.terminal(id)?.handle ?? "t1",
         title: store.terminal(id)?.title ?? "Terminal 01",
         titledBy: null,
+        openedBy: null,
         command: null,
         lastProgram: null,
         work: null,
@@ -1708,6 +1709,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             }),
           ),
         )
+        // Only Antigravity in a folder it doesn't trust started without its task.
+        expect(answers.slice(0, 4).map((answer) => "taskWaits" in answer)).toEqual([
+          false,
+          false,
+          false,
+          true,
+        ])
         expect(answers.slice(4)).toEqual([
           { ok: false, reason: "An agent and its message come together." },
           { ok: false, reason: "A command can't be combined with an agent and its message." },
@@ -1727,6 +1735,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         expect(listed!.text).toContain(
           "- t2: expecting Claude Code, not started yet\n  title: Terminal 02\n  folder: .\n  opened by t1 with a task",
         )
+        // Who opened it with a task is kept with the terminal, for a runner that restores it.
+        expect(shell.store.terminalIdentity(answers[0]!.terminalId)).toMatchObject({
+          openedBy: "t1",
+        })
         // The task waits for the first session of that agent there.
         expect(manager.messages(answers[0]!.terminalId).threads[0]?.messages[0]).toMatchObject({
           from: "t1",

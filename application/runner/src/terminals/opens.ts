@@ -57,6 +57,11 @@ export type OpenAnswer =
       readonly command?: string
       /** Where the task sent to an agent it started is, as `send` would answer. */
       readonly task?: SendAnswer
+      /**
+       * The agent started without its task as its first prompt, as Antigravity in a folder
+       * it doesn't trust yet: the task reaches it with the person's first prompt there.
+       */
+      readonly taskWaits?: true
     }
   | OpenFailure
 

@@ -131,11 +131,6 @@ export type MessagingProfile = {
   /** Whether a failed turn fires nothing, so its turn may only end with its next prompt. */
   readonly silentOnFailure: boolean
   /**
-   * Whether its prompt-time hook names the prompt's text. Where it doesn't, as
-   * Antigravity's, a ring is confirmed from its transcript's last user input.
-   */
-  readonly promptVisible: boolean
-  /**
    * How it starts with `line` as its first prompt, which it submits only once past its
    * startup screens; undefined where it may not here, as Antigravity in a folder it
    * doesn't trust yet, whose trust dialog its prompt doesn't wait for.
@@ -147,27 +142,17 @@ export type MessagingProfile = {
   /** How it starts without a prompt. */
   readonly start: readonly string[]
   /**
-   * Where its hooks name no prompt (`promptVisible` false), what one line of its
-   * transcript records as typed into its box, if that is what it records: how a ring is
-   * confirmed, and the person's submission told.
+   * Where its hooks name no prompt (as Antigravity's, whose every turn decodes as
+   * harness-started), what one line of its transcript records as typed into its box, if
+   * that is what it records: from it `typed-prompts.ts` tells a root turn's prompt.
    */
   readonly typedEntry?: (line: string) => UserEntry | undefined
-  /**
-   * Where its hooks can't tell the person's prompt from a turn it started by itself,
-   * whether the last typed entry its transcript recorded shows the person submitted with
-   * their bare Enter at `enteredAt`, nothing typed after: a typed entry newer than the
-   * one `seen` at its last turn (its id; unknown before any was read), that is no
-   * doorbell line. Without it, a turn the harness started is never the person's.
-   */
-  readonly confirmsSubmission?: (
-    entry: UserEntry | undefined,
-    since: { readonly enteredAt: number; readonly seen: number | undefined },
-  ) => boolean
 }
 
 /**
- * Something a transcript recorded as typed into the agent's box: its text, when, and its
- * place in the transcript (`id`, growing with each step), where the transcript gives one.
+ * Something a transcript recorded as typed into the agent's box: its text; when, rounded
+ * down where the transcript is coarser (Antigravity's is to the second); and its place in
+ * the transcript (`id`, growing with each step), where the transcript gives one.
  */
 export type UserEntry = {
   readonly text: string
@@ -268,10 +253,6 @@ export const callId = (actor: string | null, toolName: string, input: unknown): 
 /** The line NovaDeck's doorbell types, with its nonce (see docs/agent-messaging.md). */
 export const doorbellLine = (nonce: string): string =>
   `[NovaDeck: automatic notice, agent messages waiting, ${nonce}]`
-
-/** Whether text holds a doorbell line anywhere. */
-export const hasDoorbell = (text: string): boolean =>
-  /\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]/.test(text)
 
 /** Any doorbell line, wherever it is. */
 export const doorbell = /\[NovaDeck: automatic notice, agent messages waiting, ([A-Za-z0-9]+)\]/g

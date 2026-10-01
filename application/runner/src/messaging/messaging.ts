@@ -14,7 +14,9 @@ import {
   transition,
   unbound,
   type Delivery,
+  submitWindowMs,
   type DeliveryEvent,
+  type KeyKind,
 } from "./delivery.js"
 import { Leases, type Lease } from "./leases.js"
 import {
@@ -56,27 +58,6 @@ type Live = Scope & {
    * none once a root session has, when only a bound session takes messages.
    */
   expecting: AgentName | null
-  /**
-   * When the person last submitted there (a bare Enter, or a queue key), apart from
-   * answers; null once they typed anything since.
-   */
-  submittedAt: number | null
-  /** Whether the person typed since their last submission. */
-  typedSince: boolean
-  /**
-   * Whether the person queued a prompt during the turn that last ended, which its harness
-   * submits, and typed nothing after it.
-   */
-  queued: boolean
-  /** When it last became Settled, for screens to settle before a ring. */
-  settledAt: number | null
-  /**
-   * While a request waits on the person: whether a key that may change the box came
-   * since their last confirmed submission, or since the request began.
-   */
-  pendingDraft: boolean
-  /** The epoch the doorbell last rang in, so a Settled period is rung once. */
-  rungEpoch: number | null
 }
 
 /** What `send` answers: where the message is, or why it was refused. */
@@ -123,16 +104,6 @@ export type MessagingOptions = {
    * watch that follows them would.
    */
   readonly onChange?: (terminalId: string) => void
-  /**
-   * How soon after the person's Enter a root turn must start to be their submission, in
-   * milliseconds.
-   */
-  readonly submitWindowMs?: number
-  /**
-   * How long after a root turn ends no ring starts, so any harness's screen settles first
-   * (Claude Code's clears a row about 5 s after a turn), in milliseconds.
-   */
-  readonly settleMs?: number
 }
 
 /** What a doorbell prompt's hook adds when its messages couldn't come now. */
@@ -190,8 +161,6 @@ export class Messaging {
   private readonly now: () => number
   private readonly exists: (terminalId: string) => boolean
   private readonly onChange: (terminalId: string) => void
-  private readonly submitWindowMs: number
-  private readonly settleMs: number
   private readonly live = new Map<string, Live>()
   private readonly messages = new Map<string, Message>()
   private readonly threads = new Map<string, Thread>()
@@ -209,8 +178,6 @@ export class Messaging {
     this.now = options.now ?? Date.now
     this.exists = options.exists ?? ((terminalId) => this.live.has(terminalId))
     this.onChange = options.onChange ?? (() => {})
-    this.submitWindowMs = options.submitWindowMs ?? 2_000
-    this.settleMs = options.settleMs ?? 6_000
     this.leases = new Leases(options.leaseMs ?? 5_000, (lease) => this.lapse(lease))
     this.paused = this.read(() => this.records.messagingPaused(), false)
     for (const thread of this.read(() => this.records.threads(), []))
@@ -252,12 +219,6 @@ export class Messaging {
       root: null,
       delivery: unbound,
       expecting: null,
-      submittedAt: null,
-      typedSince: false,
-      queued: false,
-      settledAt: null,
-      pendingDraft: false,
-      rungEpoch: null,
     })
   }
 
@@ -354,7 +315,7 @@ export class Messaging {
     if (stop) {
       const background = stop.background === true
       const lease = time && continues(live.delivery) && this.lease(live, root, "stop", background)
-      this.step(live, { type: "stop", continued: Boolean(lease), background })
+      this.step(live, { type: "stop", continued: Boolean(lease), background, at: this.now() })
       return lease ? { leaseId: lease.id, stdout: profile.stop(lease.text) } : silent
     }
     if (kind !== "prompt") return silent
@@ -402,57 +363,30 @@ export class Messaging {
   }
 
   /**
-   * The person's input to the terminal, apart from its automatic replies: a prompt they
-   * `submit`, unless it `answers` a request waiting on them.
+   * The person's keys to the terminal, apart from its automatic replies, while a request
+   * waits on them (`asked`) or not. Delivery alone decides what they did to the box.
    */
-  input(terminalId: string, input: { readonly submits: boolean; readonly answers: boolean }): void {
+  keys(terminalId: string, kinds: readonly KeyKind[], asked: boolean): void {
     const live = this.live.get(terminalId)
     if (!live) return
-    if (!input.answers) {
-      if (input.submits) {
-        live.submittedAt = this.now()
-        live.typedSince = false
-      } else {
-        // Typed after an Enter: what that Enter submitted isn't all there is.
-        live.submittedAt = null
-        live.typedSince = true
-        live.queued = false
-      }
-    }
-    this.step(live, { type: "input", ...input })
+    const at = this.now()
+    for (const key of kinds) this.step(live, { type: "key", key, asked, at })
   }
 
-  /**
-   * The person's key while a request waits on them, which is never a submission. A
-   * `content` key may have left something in the box, and the draft sticks: a bare Enter
-   * meanwhile may answer the dialog, but also insert a newline or take a suggestion, so
-   * nothing but a confirmed submission clears it.
-   */
-  pendingInput(terminalId: string, key: "enter" | "content"): void {
+  /** No request waits on the person any more: what they typed meanwhile counts now. */
+  askedCleared(terminalId: string): void {
     const live = this.live.get(terminalId)
-    if (live && key === "content") live.pendingDraft = true
+    if (live) this.step(live, { type: "asked-cleared" })
   }
 
   /**
-   * No request waits on the person any more: a key that may have changed the box since
-   * their last Enter makes the prompt a draft, as any input outside a request does.
-   */
-  requestCleared(terminalId: string): void {
-    const live = this.live.get(terminalId)
-    if (!live?.pendingDraft) return
-    live.pendingDraft = false
-    this.input(terminalId, { submits: false, answers: false })
-  }
-
-  /**
-   * Whether the doorbell may ring the terminal: Settled, not yet rung in this Settled
-   * period, with messages waiting for its root session. The terminal manager checks the
-   * screen before it rings.
+   * Whether the doorbell may ring the terminal: Settled, with messages waiting for its
+   * root session. The doorbell waits for the screen to settle, and checks it, before it
+   * rings.
    */
   ringable(terminalId: string): boolean {
     const live = this.live.get(terminalId)
     if (!live?.root || live.delivery.state !== "settled") return false
-    if (live.rungEpoch === live.delivery.epoch || this.settling(terminalId) > 0) return false
     const root = live.root
     for (const message of this.messages.values())
       if (
@@ -464,14 +398,10 @@ export class Messaging {
     return false
   }
 
-  /**
-   * How long until a Settled terminal's screen has had its time to settle since its turn
-   * ended, in milliseconds; 0 once it has, or when it isn't Settled.
-   */
-  settling(terminalId: string): number {
-    const live = this.live.get(terminalId)
-    if (live?.delivery.state !== "settled" || live.settledAt === null) return 0
-    return Math.max(0, live.settledAt + this.settleMs - this.now())
+  /** When the terminal last became Settled, if it is. */
+  settledSince(terminalId: string): number | undefined {
+    const delivery = this.live.get(terminalId)?.delivery
+    return delivery?.state === "settled" ? delivery.since : undefined
   }
 
   /**
@@ -479,15 +409,14 @@ export class Messaging {
    * submission: within the window, with nothing typed since.
    */
   pendingSubmission(terminalId: string): number | undefined {
-    const at = this.live.get(terminalId)?.submittedAt
-    return at != null && this.now() - at <= this.submitWindowMs ? at : undefined
+    const at = this.live.get(terminalId)?.delivery.box.enteredAt
+    return at != null && this.now() - at <= submitWindowMs ? at : undefined
   }
 
   /** The doorbell starts ringing the terminal with its nonce; false when it may not now. */
   ring(terminalId: string, nonce: string): boolean {
     const live = this.live.get(terminalId)
     if (!live || !this.ringable(terminalId)) return false
-    live.rungEpoch = live.delivery.epoch
     this.step(live, { type: "ring", nonce })
     return live.delivery.state === "ringing"
   }
@@ -929,7 +858,12 @@ export class Messaging {
     if (!live || lease.kind !== "stop") return
     const { delivery } = live
     if (delivery.epoch === lease.epoch && phaseOf(delivery) === "continuing")
-      this.step(live, { type: "stop", continued: false, background: lease.background })
+      this.step(live, {
+        type: "stop",
+        continued: false,
+        background: lease.background,
+        at: this.now(),
+      })
   }
 
   /** Applies the root's changes to the terminal's messages and delivery, in order. */
@@ -938,7 +872,6 @@ export class Messaging {
       if (change.type === "ended") {
         if (!live.root) continue
         live.root = null
-        live.pendingDraft = false
         this.step(live, { type: "unbound" })
         // Messages for the session that ended are gone; those for the first session the
         // terminal expects wait on, until it closes.
@@ -962,7 +895,6 @@ export class Messaging {
    */
   private rootAt(live: Live, root: Root, guess: boolean): void {
     live.root = root
-    live.pendingDraft = false
     // Its first session came: from now on, only a bound session takes messages.
     live.expecting = null
     this.step(live, { type: "bound" })
@@ -1005,39 +937,27 @@ export class Messaging {
   private turn(live: Live, event: HarnessEvent): void {
     if (!rootedIn(live.root, event)) return
     switch (event.type) {
-      case "turn-started": {
-        if (event.cause === "call" || event.cause === "doorbell") {
-          this.step(live, {
-            type: "prompt",
-            by: event.cause,
-            ...(event.nonce !== undefined && { nonce: event.nonce }),
-          })
-          return
-        }
-        // A turn its harness started is never the person's, whatever they typed before.
-        if (event.cause === "harness") {
-          this.step(live, { type: "prompt", by: "harness" })
-          return
-        }
-        // The person's submission: their bare Enter shortly before, with nothing typed
-        // since, or a prompt they queued during the turn that just ended and typed nothing
-        // after. Any doubt leaves the prompt a draft.
-        const at = live.submittedAt
-        const person = (at !== null && this.now() - at <= this.submitWindowMs) || live.queued
-        live.submittedAt = null
-        live.queued = false
-        // Their confirmed submission took whatever was in the box.
-        if (person) live.pendingDraft = false
-        this.step(live, { type: "prompt", by: person ? "person" : "harness" })
+      case "turn-started":
+        // Whose turn it is, and what it did to the box, delivery alone decides.
+        this.step(live, {
+          type: "prompt",
+          by: event.cause,
+          ...(event.nonce !== undefined && { nonce: event.nonce }),
+          at: this.now(),
+        })
         return
-      }
       case "turn-ended":
         if (event.outcome === "completed")
-          this.step(live, { type: "stop", continued: false, background: event.background === true })
+          this.step(live, {
+            type: "stop",
+            continued: false,
+            background: event.background === true,
+            at: this.now(),
+          })
         else this.step(live, { type: "ended" })
         return
       case "turn-idle":
-        this.step(live, { type: "idle", background: event.background })
+        this.step(live, { type: "idle", background: event.background, at: this.now() })
         return
       default:
         return
@@ -1046,11 +966,7 @@ export class Messaging {
 
   private step(live: Live, event: DeliveryEvent): void {
     const before = live.delivery
-    // A turn that ends with the person's queued prompt: its harness submits it next.
-    if (event.type === "stop" && !event.continued && running(before))
-      live.queued = before.submitted && !live.typedSince
     live.delivery = transition(before, event)
-    if (live.delivery.state === "settled" && before.state !== "settled") live.settledAt = this.now()
     if (live.delivery === before) return
     // A turn that ended, or a new one, leaves the last one's delivery behind.
     if ((running(before) && !running(live.delivery)) || live.delivery.epoch !== before.epoch)
