@@ -581,7 +581,9 @@ pause switch. The person doesn't send as themselves; they type in the terminal.
    runner API. Built: `application/runner/src/messaging/`, with the runner API as
    `messages.list`, `messages.pause` and `messages.release`.
 2. **Doorbell and starting a task:** the Settled path, the ring with its generic
-   checks, and `open_terminal(agent, message)`. Touches no UI.
+   checks, and `open_terminal(agent, message)`. Touches no UI. Built: the checks in
+   `application/runner/src/terminals/ring.ts`, the ring in `terminals/doorbell.ts`,
+   and the Ringing state in `messaging/delivery.ts`.
 3. **UI:** badges, the Messages view and the pause switch.
 
 Harness accelerators (Claude Code channels, `codex queue`) stay out unless a later probe

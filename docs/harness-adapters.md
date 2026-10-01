@@ -404,13 +404,15 @@ Code and Codex. For Antigravity it prints `{}`, or `{"decision": "ask"}` for
 Besides the facts shared with the agent model, decoders give
 [Agent messaging](agent-messaging.md) what it needs of a turn:
 
-- `turn-started` has a `cause`: `prompt`, submitted at the root (the person's, as far as
-  anything tells, with its text as `prompt` where the hook names it); `harness`, a turn
-  the harness started by itself, as a background task's result (Claude Code's
-  `<task-notification>`), a hook's continuation (Codex's `<hook_prompt>`), a delivery
-  of messages or the doorbell's line, and every Antigravity turn, whose hooks can't
-  tell the person's prompt from a subagent's message; or `call`, a later model call of
-  a turn already running (Antigravity's `PreInvocation` past its first).
+- `turn-started` has a `cause`: `prompt`, a prompt submitted at the root, with its text
+  as `prompt` where the hook names it (any doorbell line left in it removed); `harness`,
+  a turn the harness started by itself, as a background task's result (Claude Code's
+  `<task-notification>`), a hook's continuation (Codex's `<hook_prompt>`) or a delivery
+  of messages, and every Antigravity turn, whose hooks name no prompt; `doorbell`, a
+  prompt that is exactly the doorbell's line, with its `nonce`; or `call`, a later model
+  call of a turn already running (Antigravity's `PreInvocation` past its first).
+  Whether a turn is the person's submission is messaging's own reckoning: their Enter,
+  then a root turn within about 2 s.
 - `turn-ended` with `outcome: "completed"` is a root Stop; `background` says work the
   turn started still runs and may start another turn by itself (Claude Code's
   `background_tasks` still running, Antigravity's Stop without `fullyIdle`).
@@ -443,14 +445,23 @@ type MessagingProfile = {
   readonly queueKey?: string
   /** Whether a failed turn fires nothing, so its turn may only end with its next prompt. */
   readonly silentOnFailure: boolean
+  /** Whether its prompt-time hook names the prompt's text; else its transcript tells a ring. */
+  readonly promptVisible: boolean
+  /** How it starts with `line` as its first prompt; undefined where it may not here. */
+  readonly initialPrompt: (
+    line: string,
+    place: { readonly install: Install | undefined; readonly cwd: string },
+  ) => Promise<readonly string[] | undefined>
+  /** How it starts without a prompt. */
+  readonly start: readonly string[]
 }
 ```
 
-| Harness     | `asks`                     | `reinjectPerCall` | `root`        | `queueKey` | `silentOnFailure` |
-| ----------- | -------------------------- | ----------------- | ------------- | ---------- | ----------------- |
-| Claude Code | `Stop`, `UserPromptSubmit` | no                | `binding`     | none       | no                |
-| Codex       | `Stop`, `UserPromptSubmit` | no                | `binding`     | Tab        | yes               |
-| Antigravity | `Stop`, `PreInvocation`    | yes               | `status-line` | none       | no                |
+| Harness     | `asks`                     | `reinjectPerCall` | `root`        | `queueKey` | `silentOnFailure` | `promptVisible` | `initialPrompt`                        |
+| ----------- | -------------------------- | ----------------- | ------------- | ---------- | ----------------- | --------------- | -------------------------------------- |
+| Claude Code | `Stop`, `UserPromptSubmit` | no                | `binding`     | none       | no                | yes             | `claude "<line>"`                      |
+| Codex       | `Stop`, `UserPromptSubmit` | no                | `binding`     | Tab        | yes               | yes             | `codex "<line>"`                       |
+| Antigravity | `Stop`, `PreInvocation`    | yes               | `status-line` | none       | no                | no              | `agy -i "<line>"`, in a trusted folder |
 
 The terminal manager follows each terminal's root session as its profile's `root`
 says (`harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
