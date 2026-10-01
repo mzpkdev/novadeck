@@ -154,13 +154,13 @@ describe("the runner's messages", () => {
       push(held(true))
       await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
       messages.release("t-1")
-      expect(messages.state.getSnapshot().releasing).toEqual(["t-1"])
+      expect(messages.state.getSnapshot().releasing).toEqual({ "t-1": "asked" })
       // Answered first: a listing from before still holds it.
       answer()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(messages.state.getSnapshot().releasing).toEqual(["t-1"])
+      expect(messages.state.getSnapshot().releasing).toEqual({ "t-1": "accepted" })
       push(held(false))
-      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual({}))
     })
 
     it("is under way until the runner answers, when the listing came first", async () => {
@@ -173,9 +173,9 @@ describe("the runner's messages", () => {
       await vi.waitFor(() =>
         expect(messages.state.getSnapshot().terminals[id]?.threads[0]?.held).toBe(false),
       )
-      expect(messages.state.getSnapshot().releasing).toEqual(["t-1"])
+      expect(messages.state.getSnapshot().releasing).toEqual({ "t-1": "asked" })
       answer()
-      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual({}))
     })
 
     it("forgets a failure once a listing shows the thread go on, and records none then", async () => {
@@ -197,7 +197,7 @@ describe("the runner's messages", () => {
       // A refusal for a thread already shown going on says nothing.
       messages.release("t-1")
       refuse?.(new Error("late"))
-      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual({}))
       expect(messages.state.getSnapshot().failed).toEqual({})
     })
 
@@ -209,10 +209,10 @@ describe("the runner's messages", () => {
       messages.release("t-1")
       // The only terminal that lists the thread goes.
       messages.unfollow(key)
-      expect(messages.state.getSnapshot().releasing).toEqual([])
+      expect(messages.state.getSnapshot().releasing).toEqual({})
       answer()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(messages.state.getSnapshot().releasing).toEqual([])
+      expect(messages.state.getSnapshot().releasing).toEqual({})
     })
 
     it("lets go of a release accepted for a thread no longer listed", async () => {
@@ -227,7 +227,7 @@ describe("the runner's messages", () => {
         expect(messages.state.getSnapshot().terminals[id]?.threads).toEqual([]),
       )
       answer()
-      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual({}))
     })
 
     it("says why on that thread when the runner refused", async () => {
@@ -235,7 +235,7 @@ describe("the runner's messages", () => {
       messages.release("t-1")
       await vi.waitFor(() =>
         expect(messages.state.getSnapshot()).toMatchObject({
-          releasing: [],
+          releasing: {},
           failed: { "t-1": "Couldn't release it: Not found" },
           error: null,
         }),

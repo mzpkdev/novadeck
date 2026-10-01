@@ -54,14 +54,14 @@ export const useMail = (messages: Messages | undefined, key: CompanionKey): Mail
   const mail = useMailPart(messages, (state) => state.terminals[id])
   const paused = useMailPart(messages, (state) => state.paused)
   const pending = useMailPart(messages, (state) => state.pending)
-  const releasing = useMailPart(messages, (state) => state.releasing)
+  const releases = useMailPart(messages, (state) => state.releasing)
   const error = useMailPart(messages, (state) => state.error)
   const failed = useMailPart(messages, (state) => state.failed)
   return {
     mail,
     paused,
     pending,
-    releasing,
+    releasing: Object.keys(releases),
     error,
     failed,
     present: hasMail(mail),

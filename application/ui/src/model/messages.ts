@@ -51,13 +51,14 @@ export type TerminalMail = {
 // Every followed terminal's messages, by `companionKeyId`, and the one pause switch,
 // which holds every message waiting, across every project and session. `pending` while a
 // pause or resume is on its way to the backend, and `error` why the last one didn't take.
-// `releasing` the threads whose release is on its way, until a listing shows them going
+// `releasing` the threads whose release is on its way, by whether the backend has only
+// been asked or has accepted it, until a listing shows them going
 // on, and `failed` why a thread's last release didn't take: only that thread says so.
 export type MailState = {
   readonly paused: boolean
   readonly pending: boolean
   readonly error: string | null
-  readonly releasing: readonly string[]
+  readonly releasing: Readonly<Record<string, "asked" | "accepted">>
   readonly failed: Readonly<Record<string, string>>
   readonly terminals: Readonly<Record<string, TerminalMail>>
 }
@@ -66,7 +67,7 @@ export const noMail: MailState = {
   paused: false,
   pending: false,
   error: null,
-  releasing: [],
+  releasing: {},
   failed: {},
   terminals: {},
 }

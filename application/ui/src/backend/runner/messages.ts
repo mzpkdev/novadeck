@@ -58,6 +58,27 @@ const goesOn = (current: MailState, thread: string): boolean =>
 const listed = (current: MailState, thread: string): boolean =>
   Object.values(current.terminals).some((mail) => mail.threads.some((each) => each.id === thread))
 
+// What the listings now say of releases: a thread shown going on is released once the
+// runner accepted it, and any failure it showed is over. With `gone`, as once a terminal's
+// listing goes or a release was accepted, a thread no listing has any more can't be shown
+// released, so it's let go.
+export const reconcile = (current: MailState, gone = false): MailState => {
+  const entries = Object.entries(current.releasing)
+  const releasing = Object.fromEntries(
+    entries.filter(
+      ([thread, step]) =>
+        !(step === "accepted" && goesOn(current, thread)) && !(gone && !listed(current, thread)),
+    ),
+  )
+  const failed = Object.fromEntries(
+    Object.entries(current.failed).filter(([thread]) => !goesOn(current, thread)),
+  )
+  const same =
+    Object.keys(releasing).length === entries.length &&
+    Object.keys(failed).length === Object.keys(current.failed).length
+  return same ? current : { ...current, releasing, failed }
+}
+
 const reason = (error: unknown): string =>
   error instanceof Error && error.message ? error.message : String(error)
 
@@ -67,24 +88,6 @@ export const createRunnerMessages = (
   track: <T>(work: Promise<T>) => Promise<T> = (work) => work,
 ): RunnerMessages => {
   const state = createStore<MailState>(noMail)
-  // Releases the runner accepted, waiting for a listing to show their threads go on.
-  const accepted = new Set<string>()
-  // What the listings now say of releases: a thread shown going on is released, and any
-  // failure it showed is over. With `gone`, as once a terminal's listing goes or a release
-  // was accepted, a thread no listing has any more can't be shown released, so it's let go.
-  const reconcile = (current: MailState, gone = false): MailState => {
-    const over = (thread: string): boolean =>
-      (accepted.has(thread) && goesOn(current, thread)) || (gone && !listed(current, thread))
-    const releasing = current.releasing.filter((thread) => !over(thread))
-    for (const thread of accepted) if (!releasing.includes(thread)) accepted.delete(thread)
-    const failed = Object.fromEntries(
-      Object.entries(current.failed).filter(([thread]) => !goesOn(current, thread)),
-    )
-    const same =
-      releasing.length === current.releasing.length &&
-      Object.keys(failed).length === Object.keys(current.failed).length
-    return same ? current : { ...current, releasing, failed }
-  }
   const followed = new Map<string, AsyncIterableIterator<TerminalMessages, undefined>>()
 
   const forget = (id: string): void =>
@@ -151,24 +154,27 @@ export const createRunnerMessages = (
       )
     },
     release: (thread) => {
-      accepted.delete(thread)
       state.update((current) => {
         const { [thread]: _before, ...failed } = current.failed
-        return {
-          ...current,
-          releasing: [...current.releasing.filter((each) => each !== thread), thread],
-          failed,
-        }
+        return { ...current, releasing: { ...current.releasing, [thread]: "asked" }, failed }
       })
       track(streams.release(thread)).then(
         () => {
-          accepted.add(thread)
-          state.update((current) => reconcile(current, true))
+          state.update((current) =>
+            thread in current.releasing
+              ? reconcile(
+                  { ...current, releasing: { ...current.releasing, [thread]: "accepted" } },
+                  true,
+                )
+              : current,
+          )
         },
         (error: unknown) =>
           state.update((current) => ({
             ...current,
-            releasing: current.releasing.filter((each) => each !== thread),
+            releasing: Object.fromEntries(
+              Object.entries(current.releasing).filter(([each]) => each !== thread),
+            ),
             // A thread a listing already shows going on was released all the same.
             failed: goesOn(current, thread)
               ? current.failed
