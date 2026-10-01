@@ -1290,6 +1290,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             detail: ".env · whole file",
             version: 1,
             asked: false,
+            held: true,
           },
         ])
       const [first] = answers as { id: string }[]

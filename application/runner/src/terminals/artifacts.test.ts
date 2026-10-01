@@ -336,6 +336,12 @@ describe("what a terminal shows", () => {
     expect(shown.get("a")?.content).toMatchObject({ lines: ["changed"] })
   })
 
+  it("lists a held one as held", () => {
+    const shown = remember(new Map(), { ...captured("env"), held: true }, false)
+    expect(shown.get("env")?.shown).toMatchObject({ held: true, asked: false })
+    expect(remember(new Map(), captured("a"), false).get("a")?.shown).not.toHaveProperty("held")
+  })
+
   it("keeps the latest 64", () => {
     let shown: ReadonlyMap<string, Artifact> = new Map()
     for (let index = 0; index < 65; index += 1)
@@ -374,6 +380,48 @@ describe("a file that may hold secrets", () => {
       })
   })
 
+  it("is held as well under a name, or behind a link, that hides it", async ({ fixture }) => {
+    mkdirSync(join(fixture.outside, ".ssh"))
+    writeFileSync(join(fixture.outside, ".ssh", "id_rsa"), "KEY\n")
+    writeFileSync(join(fixture.outside, ".ssh", "photo.png"), png)
+    symlinkSync(join(fixture.outside, ".ssh", "id_rsa"), join(fixture.project, "innocent.txt"))
+    // Held, and by its own name, not the link's or the agent's title.
+    await expect(
+      capture({ path: "innocent.txt", title: "Screenshot" }, fixture.place),
+    ).resolves.toMatchObject({ ok: true, held: true, name: "id_rsa" })
+    // An image in a folder of keys too.
+    await expect(
+      capture({ path: join(fixture.outside, ".ssh", "photo.png") }, fixture.place),
+    ).resolves.toMatchObject({ ok: true, held: true, content: { kind: "image" } })
+  })
+
+  it("is held for agents' and tools' logins, environments and shell history", async ({
+    fixture,
+  }) => {
+    const logins = [
+      join(".claude", ".credentials.json"),
+      join(".codex", "auth.json"),
+      join(".config", "gh", "hosts.yml"),
+      join(".config", "gcloud", "application_default_credentials.json"),
+      join(".cargo", "credentials.toml"),
+      join(".gemini", "oauth_creds.json"),
+      ".envrc",
+      "prod.env",
+      ".bash_history",
+      ".zsh_history",
+      ".vault-token",
+    ]
+    for (const path of logins) {
+      mkdirSync(join(fixture.outside, path, ".."), { recursive: true })
+      writeFileSync(join(fixture.outside, path), "x\n")
+    }
+    for (const path of logins)
+      // eslint-disable-next-line no-await-in-loop -- One file after another.
+      await expect(
+        capture({ path: join(fixture.outside, path) }, fixture.place),
+      ).resolves.toMatchObject({ ok: true, held: true })
+  })
+
   it("is not code that merely mentions secrets, which isn't held", async ({ fixture }) => {
     writeFileSync(join(fixture.project, "secrets.ts"), "export {}\n")
     const code = await capture({ path: "secrets.ts" }, fixture.place)
@@ -392,6 +440,15 @@ describe("what an agent may not show", () => {
       ok: false,
       reason: "That's a folder; only files can be shown.",
     })
+  })
+})
+
+describe("a file that reports no size", () => {
+  it.runIf(process.platform === "linux")("is read to its end, as a file in /proc", async () => {
+    const status = await capture({ path: "/proc/self/status" }, { cwd: "/", project: undefined })
+    expect(status).toMatchObject({ ok: true, content: { kind: "file" } })
+    const lines = status.ok && status.content.kind === "file" ? status.content.lines : []
+    expect(lines.some((line) => line.startsWith("Name:"))).toBe(true)
   })
 })
 

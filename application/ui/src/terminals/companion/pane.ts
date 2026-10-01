@@ -51,13 +51,15 @@ export const selectTab = <C extends Companion>(companion: C, tab: string): C => 
   ),
 })
 
-// Opening the pane without choosing a tab goes to what's new, if anything is.
+// Opening the pane without choosing a tab goes to what's new, if anything is, but never
+// to something held, which waits to be picked.
 export const openCompanion = <C extends Companion>(companion: C): C => {
-  const fresh = companion.artifacts.findLast((shown) => shown.fresh)
+  const fresh = companion.artifacts.findLast((shown) => shown.fresh && !shown.held)
   return fresh ? selectTab(companion, fresh.id) : { ...companion, open: true }
 }
 
-// The user is done with it: it leaves the pane, and the pane falls back to the plan.
+// The user is done with it: it leaves the pane, and the pane falls back to the plan, or
+// as `shownTab` does.
 export const dismiss = <C extends Companion>(companion: C, id: string): C => ({
   ...companion,
   tab: companion.tab === id ? companion.home : companion.tab,

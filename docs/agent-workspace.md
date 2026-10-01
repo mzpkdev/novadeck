@@ -314,8 +314,10 @@ from what this document describes:
   on their screen and sends it nowhere, and the agent could read it anyway. Limits are
   technical only: images up to 8 MB, text up to 1 MB (a long file around the lines
   pointed at), and never a folder, pipe or device. A file that often holds secrets
-  (`.env`, keys, credentials) is shown but held: it never opens by itself, even when the
-  agent says the person asked, so none appears unasked while they share their screen.
+  (`.env`, keys, credentials, agents' and tools' logins, shell history) is shown but
+  held: it never opens by itself, even when the agent says the person asked; the pane
+  never falls back to it, its taskbar peek shows no preview, and it goes by its own
+  name, not the agent's title. So none appears unasked while they share their screen.
   The UI reads them through `agents.shown` and fetches each with `agents.artifact`,
   never by path.
 - **Pages** are any http(s) address; an address with a user name or password is

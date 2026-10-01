@@ -96,26 +96,37 @@ export const maxShown = 64
 /** The most a terminal keeps of what it showed, in bytes of content; the oldest go first. */
 export const maxShownBytes = 48 * 1024 * 1024
 
-// Files that often hold secrets: a key, credentials, an environment file. NovaDeck shows
-// them, as any file the person can read, but never opens one by itself, so none appears
-// on screen unasked, as while the person shares it.
-const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"])
+// Files that often hold secrets: a key, credentials, an environment file, an agent's or a
+// tool's login, a shell's history. NovaDeck shows them, as any file the person can
+// read, but never puts one on screen by itself, as while the person shares it.
+const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", "gcloud"])
 const secretNames = [
   /^\.env(\..*)?$/i,
+  /\.env$/i,
+  /^\.envrc$/i,
+  /^\.?credentials(\.(json|toml|ya?ml|ini))?$/i,
+  /^auth\.json$/i,
+  /^oauth_creds\.json$/i,
+  /^\.vault-token$/i,
+  /^\.dockercfg$/i,
+  /^kubeconfig$/i,
+  /^\.[\w-]*_history$/i,
   /^\.netrc$/i,
   /^\.git-credentials$/i,
   /^\.npmrc$/i,
   /^\.pypirc$/i,
   /^\.pgpass$/i,
-  /^credentials(\.json)?$/i,
   /^secrets?\.(json|ya?ml|toml|ini|env|txt|properties)$/i,
   /^service-account.*\.json$/i,
   /^id_(rsa|dsa|ecdsa|ed25519)(_[^.]*)?$/i,
   /\.(pem|key|p12|pfx|keystore|jks|tfstate)$/i,
 ]
+// The GitHub CLI keeps its tokens in hosts.yml.
+const secretPaths = [/[\\/]gh[\\/]hosts\.ya?ml$/i]
 const secret = (path: string): boolean =>
   path.split(sep).some((part) => secretFolders.has(part)) ||
-  secretNames.some((name) => name.test(basename(path)))
+  secretNames.some((name) => name.test(basename(path))) ||
+  secretPaths.some((pattern) => pattern.test(path))
 
 const failure = (reason: string): PresentFailure => ({ ok: false, reason })
 
@@ -216,9 +227,9 @@ const capturePage = (request: PageRequest): Captured | PresentFailure => {
 }
 
 /**
- * Reads what a request points at, when it may be shown: a page by its address, or a
- * file inside one of the place's folders once symlinks are resolved, as an image or a
- * text file within their limits.
+ * Reads what a request points at, when it may be shown: a page by its address, or any
+ * file the person can read, symlinks resolved, as an image or a text file within their
+ * limits; one that may hold secrets is held.
  */
 export const capture = async (
   request: PresentRequest,
@@ -250,20 +261,31 @@ const captureFile = async (
       const stats = await handle.stat()
       if (stats.isDirectory()) return failure("That's a folder; only files can be shown.")
       if (!stats.isFile()) return failure("Only images and text files can be shown.")
-      if (stats.size > limit)
-        return failure(`It's too large to show (limit ${limit / 1024 / 1024} MB).`)
-      const buffer = Buffer.alloc(stats.size)
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-      bytes = buffer.subarray(0, bytesRead)
+      const tooLarge = failure(`It's too large to show (limit ${limit / 1024 / 1024} MB).`)
+      if (stats.size > limit) return tooLarge
+      // To its end, not only its reported size, which a file in /proc gives as 0; one
+      // byte past the limit tells it's too large.
+      const buffer = Buffer.alloc(stats.size > 0 ? stats.size + 1 : limit + 1)
+      let read = 0
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- One chunk after another.
+        const { bytesRead } = await handle.read(buffer, read, buffer.length - read, read)
+        read += bytesRead
+        if (read > limit) return tooLarge
+        // Its end, or as much as it reported and a byte more, should it have grown.
+        if (bytesRead === 0 || read === buffer.length) break
+      }
+      bytes = buffer.subarray(0, read)
     } finally {
       await handle.close()
     }
   } catch {
     return failure("NovaDeck couldn't read that file.")
   }
-  const name = clip(request.title ?? basename(given), 256)
   const id = idOf(path)
   const held = secret(path) ? ({ held: true } as const) : {}
+  // A held file goes by its own name, so the person sees what they would open.
+  const name = clip(held.held ? basename(path) : (request.title ?? basename(given)), 256)
   if (mime) {
     const format = extname(path).slice(1).toUpperCase().replace("JPG", "JPEG")
     return {
@@ -319,7 +341,11 @@ export const remember = (
   const version = (shown.get(id)?.shown.version ?? 0) + 1
   const next = new Map(shown)
   next.delete(id)
-  next.set(id, { shown: { id, kind: content.kind, name, detail, version, asked }, content })
+  const held = captured.held && { held: true }
+  next.set(id, {
+    shown: { id, kind: content.kind, name, detail, version, asked, ...held },
+    content,
+  })
   let bytes = 0
   for (const each of next.values()) bytes += bytesOf(each.content)
   // The newest always stays.

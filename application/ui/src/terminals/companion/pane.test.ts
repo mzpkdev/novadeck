@@ -11,6 +11,7 @@ import {
   slotsOf,
   type Companion,
 } from "./pane"
+import { shownTab } from "./state"
 
 const ref = (id: string, kind: ArtifactRef["kind"], name = `${id}.png`): ArtifactRef => ({
   id,
@@ -107,6 +108,32 @@ describe("companion pane", () => {
       const listed = show(companion, home, true, true)
       expect(listed).toMatchObject({ open: false, artifacts: [{ id: "home", fresh: false }] })
       expect(listed.tab).toBe(companion.tab)
+    })
+  })
+
+  context("when what it shows may hold secrets", () => {
+    const env: ArtifactRef = { ...ref("env", "file", ".env"), held: true }
+    const key = { projectId: "p", workspaceSessionId: "s", terminalId: "t" }
+
+    it("isn't what opening the pane goes to, though it's new", () => {
+      const opened = openCompanion(show(show(companion, home, false), env, false))
+      expect(opened.tab).toBe("home")
+      expect(openCompanion(show(companion, env, false)).tab).toBe(root)
+    })
+
+    it("isn't what the pane falls back to when its plan or what it showed goes", () => {
+      // The plan is gone, and the user dismissed what they read.
+      const left = dismiss(
+        selectTab(show(show(companion, env, false), home, false), "home"),
+        "home",
+      )
+      expect(shownTab({ ...left, key, plans: [] })).toBe("")
+      expect(shownTab({ ...show(left, preview, false), key, plans: [] })).toBe("preview")
+    })
+
+    it("shows when the user picks it", () => {
+      const picked = selectTab(show(companion, env, false), "env")
+      expect(shownTab({ ...picked, key, plans: [] })).toBe("env")
     })
   })
 })

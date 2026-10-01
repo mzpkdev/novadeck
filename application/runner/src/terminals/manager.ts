@@ -102,7 +102,7 @@ export type TerminalOptions = {
   transcriptChars?: number
   /** How often a followed plan's file is looked at for changes, in milliseconds. */
   planPollMs?: number
-  /** The folder of the project a session belongs to, which its terminals' agents may show from. */
+  /** The folder of the project a session belongs to, which names the files its agents show. */
   projectFolder?: (sessionId: string) => string | undefined
 }
 

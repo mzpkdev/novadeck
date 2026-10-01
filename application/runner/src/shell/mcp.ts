@@ -1,8 +1,8 @@
 /**
  * NovaDeck's MCP server, run by a connected agent's plugin through the launcher on
  * NovaDeck's own runtime, so it needs no dependencies. It speaks MCP over stdio, one
- * JSON message per line, just enough for one tool: `show`, which puts an image or a text
- * file from the project in front of the user, beside the terminal the agent runs in. It
+ * JSON message per line, just enough for one tool: `show`, which puts an image, a text
+ * file or a web page in front of the user, beside the terminal the agent runs in. It
  * forwards the call to that terminal's runner over the endpoint the agent's hooks
  * report to, with the terminal's own token, and returns the runner's answer. Outside
  * NovaDeck's terminals it offers no tools, so agents there aren't pointed at it.
@@ -25,7 +25,7 @@ const inTerminal = Boolean(terminalId && endpoint && token)
 const tool = {
   name: "show",
   description:
-    "Show the user an image or a text file from this project, or a web page, in NovaDeck, " +
+    "Show the user an image or a text file, or a web page, in NovaDeck, " +
     "beside the terminal they're talking to you in. Give either path or url. Use it when they " +
     "ask to see something, or when a screenshot, mockup, diagram, the lines you mean or the " +
     "running app (as a local dev server's address) would help them follow. Set open to true " +
