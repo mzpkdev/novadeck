@@ -99,14 +99,17 @@ export const maxShownBytes = 48 * 1024 * 1024
 // Files that often hold secrets: a key, credentials, an environment file, an agent's or a
 // tool's login, a shell's history. NovaDeck shows them, as any file the person can
 // read, but never puts one on screen by itself, as while the person shares it.
-const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", "gcloud"])
+const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"])
 const secretNames = [
   /^\.env(\..*)?$/i,
   /\.env$/i,
   /^\.envrc$/i,
-  /^\.?credentials(\.(json|toml|ya?ml|ini))?$/i,
-  /^auth\.json$/i,
+  /^\.?credentials(\.[\w.]+)?$/i,
   /^oauth_creds\.json$/i,
+  /^\.yarnrc\.yml$/i,
+  /^\.s3cfg$/i,
+  /^rclone\.conf$/i,
+  /^fish_history$/i,
   /^\.vault-token$/i,
   /^\.dockercfg$/i,
   /^kubeconfig$/i,
@@ -121,8 +124,13 @@ const secretNames = [
   /^id_(rsa|dsa|ecdsa|ed25519)(_[^.]*)?$/i,
   /\.(pem|key|p12|pfx|keystore|jks|tfstate)$/i,
 ]
-// The GitHub CLI keeps its tokens in hosts.yml.
-const secretPaths = [/[\\/]gh[\\/]hosts\.ya?ml$/i]
+// Where tools keep their logins under names too plain to hold everywhere: the GitHub
+// CLI's hosts.yml (in "GitHub CLI" on Windows), Codex's auth.json, and gcloud's folder.
+const secretPaths = [
+  /[\\/](gh|GitHub CLI)[\\/]hosts\.ya?ml$/i,
+  /[\\/]\.codex[\\/]auth\.json$/i,
+  /[\\/](\.config|AppData[\\/]Roaming)[\\/]gcloud[\\/]/i,
+]
 const secret = (path: string): boolean =>
   path.split(sep).some((part) => secretFolders.has(part)) ||
   secretNames.some((name) => name.test(basename(path))) ||

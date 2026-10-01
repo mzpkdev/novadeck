@@ -131,6 +131,15 @@ describe("companion pane", () => {
       expect(shownTab({ ...show(left, preview, false), key, plans: [] })).toBe("preview")
     })
 
+    it("isn't what a group of images opens, unless the group holds nothing else", () => {
+      const qr: ArtifactRef = { ...image("qr"), held: true }
+      const shots = show(show(companion, image("shot"), false), qr, false)
+      const group = shots.artifacts.filter((shown) => shown.kind === "image")
+      expect(pickFromGroup(shots, group).id).toBe("shot")
+      const onlyHeld = show(companion, qr, false)
+      expect(pickFromGroup(onlyHeld, onlyHeld.artifacts).id).toBe("qr")
+    })
+
     it("shows when the user picks it", () => {
       const picked = selectTab(show(companion, env, false), "env")
       expect(shownTab({ ...picked, key, plans: [] })).toBe("env")

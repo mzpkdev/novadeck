@@ -410,6 +410,12 @@ describe("a file that may hold secrets", () => {
       ".bash_history",
       ".zsh_history",
       ".vault-token",
+      join(".terraform.d", "credentials.tfrc.json"),
+      join(".local", "share", "fish", "fish_history"),
+      ".yarnrc.yml",
+      join(".config", "rclone", "rclone.conf"),
+      ".s3cfg",
+      join("AppData", "Roaming", "GitHub CLI", "hosts.yml"),
     ]
     for (const path of logins) {
       mkdirSync(join(fixture.outside, path, ".."), { recursive: true })
@@ -420,6 +426,20 @@ describe("a file that may hold secrets", () => {
       await expect(
         capture({ path: join(fixture.outside, path) }, fixture.place),
       ).resolves.toMatchObject({ ok: true, held: true })
+  })
+
+  it("is not a file a tool's login is merely named like, elsewhere", async ({ fixture }) => {
+    const plain = [join("src", "i18n", "en", "auth.json"), join("deploy", "gcloud", "README.md")]
+    for (const path of plain) {
+      mkdirSync(join(fixture.project, path, ".."), { recursive: true })
+      writeFileSync(join(fixture.project, path), "{}\n")
+    }
+    for (const path of plain) {
+      // eslint-disable-next-line no-await-in-loop -- One file after another.
+      const plainFile = await capture({ path }, fixture.place)
+      expect(plainFile).toMatchObject({ ok: true })
+      expect(plainFile).not.toHaveProperty("held")
+    }
   })
 
   it("is not code that merely mentions secrets, which isn't held", async ({ fixture }) => {

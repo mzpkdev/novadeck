@@ -80,10 +80,12 @@ export const slotsOf = (artifacts: readonly Shown[]): readonly Slot[] => {
   })
 }
 
-// Which of a group a click opens: what's new, else the one already open, else the latest.
+// Which of a group a click opens: what's new, else the one already open, else the latest;
+// a held one only when the group holds nothing else, as the click then picks it.
 export const pickFromGroup = (companion: Companion, group: readonly Shown[]): Shown =>
-  group.findLast((shown) => shown.fresh) ??
+  group.findLast((shown) => shown.fresh && !shown.held) ??
   group.find((shown) => shown.id === companion.tab) ??
+  group.findLast((shown) => !shown.held) ??
   group.at(-1)!
 
 export const freshCount = (companion: Companion): number =>
