@@ -77,20 +77,21 @@ command, so no new trust is asked for. What the probes did not establish is list
 
 All three harnesses get every path. Where one falls short, the design accepts it:
 
-| Harness       | Falls short                                                                                               | Accepted as                                                                                                                                                                                             |
-| ------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code   | Stop delivery shows in the chat as "Stop hook error: …"                                                   | A cosmetic label; the content is still wrapped and attributed                                                                                                                                           |
-| Codex         | A Stop hook's reason reaches the model as a user-role `<hook_prompt>`                                     | Still never the person's prompt: wrapped and attributed, per principle 1                                                                                                                                |
-| Codex         | Server instructions only arrive as a tool namespace's description                                         | Rules live in each tool's description and in the delivery wrapper                                                                                                                                       |
-| Antigravity   | `PreInvocation` has no prompt text, runs before every model call, and its injected message lasts one call | A ring is confirmed by a root prompt starting after its Enter; messages are leased at a turn's first invocation and injected again on each later one; the transcript's last user input tells a doorbell |
-| Antigravity   | Server instructions don't reach the model                                                                 | Rules live in each tool's description and in the delivery wrapper                                                                                                                                       |
-| Antigravity   | No permission hook                                                                                        | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it                                                                                            |
-| Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                    |
-| Codex         | A failed turn sends nothing                                                                               | Stays Working until its next turn event; `send`'s route says so                                                                                                                                         |
-| Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                  |
-| Antigravity   | Esc and denials show only as an idle status line                                                          | Its decoder tells them from completion; they leave it Unknown                                                                                                                                           |
-| Antigravity   | An interactive start with an initial prompt is unconfirmed                                                | If it has none, one ring into a Fresh agent once its status line says idle (see Starting a task)                                                                                                        |
-| Windows (all) | The hook reports no instance, and the foreground process group can't be read                              | Nested agents are told apart by the decoders alone; the doorbell's gate relies on the screen checks                                                                                                     |
+| Harness       | Falls short                                                                                               | Accepted as                                                                                                                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code   | Stop delivery shows in the chat as "Stop hook error: …"                                                   | A cosmetic label; the content is still wrapped and attributed                                                                                                                                             |
+| Codex         | A Stop hook's reason reaches the model as a user-role `<hook_prompt>`                                     | Still never the person's prompt: wrapped and attributed, per principle 1                                                                                                                                  |
+| Codex         | Server instructions only arrive as a tool namespace's description                                         | Rules live in each tool's description and in the delivery wrapper                                                                                                                                         |
+| Antigravity   | `PreInvocation` has no prompt text, runs before every model call, and its injected message lasts one call | A ring is confirmed by a root prompt starting after its Enter; messages are leased at a turn's first invocation and injected again on each later one; the transcript's last user input tells a doorbell   |
+| Antigravity   | Server instructions don't reach the model                                                                 | Rules live in each tool's description and in the delivery wrapper                                                                                                                                         |
+| Antigravity   | No permission hook                                                                                        | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it                                                                                              |
+| Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                      |
+| Codex         | A failed turn sends nothing                                                                               | Stays Working until its next turn event; `send`'s route says so                                                                                                                                           |
+| Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                    |
+| Antigravity   | Its hooks can't tell the person's prompt from a subagent's message waking it                              | Every turn counts as harness-started, so the prompt is never known empty again after the first keystroke: it stays Person busy until step 2's empty-prompt pattern and 10 s of quiet return it to Settled |
+| Antigravity   | Esc and denials show only as an idle status line                                                          | Its decoder tells them from completion; they leave it Unknown                                                                                                                                             |
+| Antigravity   | An interactive start with an initial prompt is unconfirmed                                                | If it has none, one ring into a Fresh agent once its status line says idle (see Starting a task)                                                                                                          |
+| Windows (all) | The hook reports no instance, and the foreground process group can't be read                              | Nested agents are told apart by the decoders alone; the doorbell's gate relies on the screen checks                                                                                                       |
 
 ## How it fits
 
@@ -129,7 +130,11 @@ agent it was opened for, else `term`, and a number). Handles exist because a tit
 text a person, or an agent through `open_terminal`'s `title`, can set, and must never
 reach a prompt. The terminal's **title** is the runner's too: it keeps it in the
 terminal's record (`terminals.rename`, or its session's default "Terminal 01"), every
-client shows it from there, and `agents()` reads it from the same record.
+client shows it from there, and `agents()` reads it from the same record. The record
+also says who gave it: the person (renaming, or creating it), or an agent, through
+`open_terminal`'s `title`, by its terminal's handle; `agents()` shows an agent's title
+as that agent's, never as the person's. Terminals are kept until closed, with no
+pruning, so a close that never reached the runner brings the terminal back.
 
 **Recipients** are the terminals of the caller's own project and NovaDeck session; the
 others are never listed, resolved or reached.
@@ -203,8 +208,16 @@ terminals.
      it, about 80 characters of it, and when;
   10. busy or idle, and when it was last active.
 
-  The prompts and the folder counts are kept with the terminal's record, so they
-  outlive the agent compacting its context and the runner restarting. It also lists the
+  The prompts and the folder counts (the 20 folders written in most) are kept with the
+  terminal's record, so they outlive the agent compacting its context and the runner
+  restarting. A prompt that is a hook's continuation (Codex's `<hook_prompt>`, or a
+  delivery of messages) is never taken for the person's.
+
+  The prompts are visible to peers: "started with" and "latest" show up to 120
+  characters of the person's prompts to every agent in the same project and session, so
+  something pasted at the start of a prompt is visible to them. `send` reads branches
+  and plans only when it has to describe the terminals, as its `to` named none or
+  several. It also lists the
   caller's own messages not yet delivered, or gone. Nothing needs it first, but it is
   always current, so an agent unsure which terminal is meant calls it again.
 
