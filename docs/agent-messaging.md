@@ -156,13 +156,19 @@ agent session; never a name the model passes.
 Two tools join `show` and `open_terminal`, listed, like them, only inside NovaDeck's
 terminals.
 
-- **`send(to, text)`** answers with the recipient's handle, the message id, `queued`,
-  and the route it will take: "when its current turn ends", "ringing it now", "when the
-  person next submits a prompt there", or why it can't be delivered (no agent there,
-  paused, the thread hit its limit). It never claims delivery.
+- **`send(to, text)`** answers with the recipient's handle, the message id and one of:
+  - `queued`, with the route it will take: "when its current turn ends", "ringing it
+    now", "when the person next submits a prompt there", or "when its agent first
+    prompts";
+  - `held`, when messaging is paused;
+  - `refused`, with why: no such handle (listing the handles), no agent there, the
+    thread at its limit, a rate or size limit.
+
+  It never claims delivery.
+
 - **`agents()`** lists the other terminals in the project: handle, title, agent, busy or
-  idle; and the caller's own messages not yet delivered or gone. Nothing needs it first;
-  `send`'s errors carry the handles.
+  idle; and the caller's own messages not yet delivered, gone or expired. Nothing needs
+  it first; `send`'s errors carry the handles.
 
 Each tool's description carries the rules, because only Claude Code reads a server's
 connection instructions: use `send` only when the person asked, or the task explicitly
@@ -178,58 +184,80 @@ sending, end your turn rather than wait or poll, since replies arrive by themsel
 ### What counts
 
 - **The agent's activity** is the decoded activity the harness adapters already keep:
-  a turn running or ended, how it ended, and any pending permission or question.
-  StatusLine reports and other hook events that are not turn events don't move it.
-- **The person's input** is any input a client sends to the terminal except the
-  terminal's automatic replies (the `terminalReply` filter the manager already uses).
-  Keys, pastes and mouse clicks all count, since a click can open a menu too.
+  a root turn running or ended, how it ended, and any pending permission or question.
+  A turn ends normally only on a root Stop whose harness says it completed; a status
+  line saying idle (Antigravity's decoder reads one as `completed`) does not count.
+  StatusLine reports and other events that are not turn events don't move it.
 - **A root turn event** is a hook report decoded as a turn event of the terminal's bound
   agent instance and session, not of a nested agent run inside it (`claude -p`, `codex
 exec`) or a subagent; the hook already reports which process ran it.
+- **The person's input** is any input a client sends to the terminal except the
+  terminal's automatic replies (the `terminalReply` filter the manager already uses):
+  keys, pastes and mouse clicks, since a click can open a menu too. Keys sent while a
+  permission or question is pending are answers to it, not a draft.
+- **The prompt is known empty** only from the moment a root prompt was submitted, and
+  only while the person has sent no input since, apart from such answers. Typing a draft
+  while the agent works counts, and Esc restoring an interrupted prompt is covered,
+  because both come after the last submission.
+- **The person submitted during a turn** when they sent Enter (or Codex's Tab, which
+  queues) while no request was pending.
 
 ### States
 
-Each recipient terminal with messages waiting is in one of these states:
+Each recipient terminal with messages waiting is in one state:
 
-- **Working**: a root turn is running. On its Stop, unless the person submitted a prompt
-  during the turn, its Stop hook's ask gets a lease (below) and the turn continues;
-  that continuation keeps the terminal Working. NovaDeck continues a turn at most once
-  per Stop, by its own count, not the harness's flag. If the person submitted during
-  the turn, their prompt's hook delivers instead.
-- **Settled**: the last root turn ended normally (`completed`), nothing is pending, and
-  the person has sent no input since. After the PTY has been quiet for 750 ms, the
-  doorbell may ring.
-- **Person busy**: the person has sent input since the turn ended. No doorbell. Their
-  next submitted prompt's hook gets the lease.
-- **Unknown**: the last turn ended without a normal Stop (interrupted with Esc, a
-  denial, `StopFailure`, or a failed turn), or a ring failed. No doorbell. The next root
-  turn event, from the person or the harness, moves it on.
-- **Unbound**: no agent bound, or a different session now. Messages for the old session
-  become `gone`.
+- **Fresh**: an agent session is bound but has had no root turn yet, including every
+  terminal resumed after a runner restart. Never rung. Its first root prompt's hook
+  delivers.
+- **Working**: a root turn is running. At its Stop, if the person didn't submit during
+  the turn, the Stop hook's ask gets a lease (below) and the turn continues, still
+  Working. NovaDeck continues a root turn at most twice, by its own count, then lets it
+  end. If the person did submit during the turn, their prompt's hook delivers instead.
+  Codex sends nothing when a turn fails, so such a turn stays Working until the next
+  root turn event.
+- **Settled**: the last root turn ended normally, no request is pending, and the prompt
+  is known empty. The doorbell may ring once the screen is quiet.
+- **Ringing**: the doorbell is being rung (below). Ends Delivered-to-prompt or Unknown.
+- **Person busy**: the prompt isn't known empty. No doorbell; their next submitted
+  prompt's hook delivers.
+- **Unknown**: the last turn ended without a normal Stop (Esc, a denial, `StopFailure`),
+  or a ring failed. No doorbell; the next root turn event moves it on.
+- **Unbound**: no agent session bound.
 
-A background subagent finishing can start a root turn by itself (see
-[Harness coverage](harness-coverage.md)); that is a turn like any other: Working, then
-its Stop.
+Transitions: a root prompt makes it Working; a normal root Stop makes it Settled if the
+prompt is known empty, else Person busy; an abnormal end makes it Unknown; the person's
+input makes Settled into Person busy; a session binding makes Unbound into Fresh. A
+background subagent finishing can start a root turn by itself (see
+[Harness coverage](harness-coverage.md)); that is a turn like any other.
 
 ### Hook answers
 
 Today the hook only reports. For messaging, the Stop and prompt-time hooks also **ask**
 the runner, over the same endpoint and token `show` uses, and print what it returns.
 
-1. The ask goes on a fast path, not through the report queue, so a slow report can't
-   hold it up; the runner answers within 1 s.
-2. If the report is a root turn event and messages wait for that session, the runner
-   **leases** them to this ask (at most 16 KB per delivery; the rest wait for the next)
-   and returns the exact stdout the harness expects, built by that harness's adapter.
-   Otherwise it returns what the hook prints today (nothing, or Antigravity's `{}`).
-3. The hook prints it, then acknowledges the lease. An acknowledged lease marks its
-   messages `delivered`. A lease not acknowledged within 5 s, or held when the runner
-   restarts, goes back to `queued`.
+1. **One connection.** The hook sends its report as an ask, with its own deadline (the
+   hook may already have spent time finding its process). The runner answers
+   `{leaseId, stdout}`, keeps reading, and the hook answers `{ack: leaseId}` once it has
+   printed `stdout`, then closes. The connection stays open both ways throughout, as
+   Windows' pipes can't be half-closed.
+2. **Ordering.** The ask's report still goes through the report queue, but each
+   terminal has its own queue, so an ask waits only for its own terminal's earlier
+   reports (a `SessionStart` just before it, say), and the runner answers within 1 s.
+3. **Leasing.** If the report is a root turn event and messages wait for that session,
+   the runner leases them (at most 16 KB per delivery; the rest wait for the next) and
+   returns the exact stdout that harness expects, built by its adapter. It leases only
+   if its answer is written before the hook's deadline. Otherwise it returns what the
+   hook prints today (nothing, or Antigravity's `{}`), and Antigravity gets `{}` or its
+   `ask` answer on any failure.
+4. **Acknowledging.** An acknowledged lease marks its messages `delivered`. A
+   connection that closes without one, a lease unacknowledged after 5 s, and every lease
+   held when the runner restarts go straight back to `queued`.
 
-Delivery is at least once: a message whose lease expired after the harness did read it
-can arrive twice. Each carries its id, and the wrapper says repeats can be ignored.
+Delivery is at least once: a message whose acknowledgement was lost after the harness
+read it can arrive twice. Each carries its id, and the wrapper says repeats can be
+ignored.
 
-| Harness     | Working: Stop                        | Settled or person's prompt: prompt time                                                     |
+| Harness     | Working: Stop                        | Fresh, Settled or person's prompt: prompt time                                              |
 | ----------- | ------------------------------------ | ------------------------------------------------------------------------------------------- |
 | Claude Code | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                        |
 | Codex       | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                        |
@@ -253,65 +281,90 @@ In the Settled state, NovaDeck wakes the agent by typing one line into its termi
 
 Only the nonce varies. It names no sender and holds none of `@ / ! # $`, which
 harnesses treat specially (Claude Code attaches an `@path`, Codex opens a file picker on
-`@`). Ringing is two-phase, while the terminal manager holds the person's input to that
-terminal (at most a second):
+`@`).
 
-1. Check once more: still Settled; bracketed paste on in the terminal's screen now
-   (`record.screen`'s mode, not as once advertised); the PTY's foreground process is the
-   bound agent instance.
-2. Write the line as one bracketed paste.
-3. Look at the screen: the nonce must be drawn on the cursor's row. If not (a modal, a
-   popup or anything else took the paste), press nothing: the ring failed.
-4. Press Enter.
-5. Confirmed when the prompt-time hook's root turn event sees the line with its nonce
-   (Antigravity: the transcript's last user input), within 5 s. Its lease delivers the
-   messages.
+The ring relies on one piece of data per harness, kept in its adapter and probed, the
+way hook encodings are: an **empty-prompt pattern**, saying how that TUI draws an empty
+input box on screen and where the typed text appears in it. The mechanism stays the
+same for every harness; only that pattern differs.
+
+Ringing, with the person's input to that terminal held (at most a second, then
+released whatever happened):
+
+1. **Gate.** Still Settled. The screen text has been unchanged for 750 ms (screen text,
+   not PTY bytes, since TUIs redraw carets and clocks while idle). Bracketed paste is on
+   in `record.screen` now. The terminal's foreground process group is the bound
+   instance's process group. The screen matches the harness's empty-prompt pattern.
+2. **Paste.** Snapshot the screen, write the line as one bracketed paste, and wait for
+   the screen to change (up to 500 ms).
+3. **Check.** The input box, per the pattern, now holds exactly the doorbell, joined
+   across wrapped rows, appearing once and newly. Anything else (a modal or popup took
+   it, a dialog's text field, an unseen draft) fails the ring before any key is
+   pressed.
+4. **Enter.**
+5. **Confirm.** The prompt-time hook's root turn event sees the line with its nonce
+   (Antigravity: the transcript's last user input) within 5 s, and its lease delivers.
 
 A failed ring presses no further key, ever, and leaves the terminal Unknown; the
-messages wait for the next root turn event, and the person sees them as undelivered.
-A doorbell line that stayed in a prompt and that the person later submits is harmless:
-its hook recognises the nonce and delivers. A terminal is rung at most once per Settled
-period, however many messages wait.
+messages wait for the next root turn event, and the person sees them as undelivered. A
+doorbell line left in a prompt that the person later submits is harmless: its hook
+recognises the nonce and delivers. A terminal is rung at most once per Settled period.
+There is no doorbell where the platform can't tell the foreground process group
+(Windows) or the instance is unknown; there, delivery waits for the next root turn
+event.
 
 ### Message states
 
-`queued` → `leased` → `delivered`, or back to `queued` when a lease lapses. `gone` when
-the recipient session ended or changed. `held` when its thread reached its limit or
-messaging is paused. Delivered means the harness received it in a hook's output, not
-that the model acted on it.
+`queued` → `leased` → `delivered`, or back to `queued` when a lease lapses. `held` while
+messaging is paused. `gone` when the recipient's instance ended or its harness announced
+a new session (a clear or a new start), and back to `queued` should that same session
+bind again within retention; a rebind alone (Antigravity observing another
+conversation) doesn't make it gone. Delivered means the harness received it in a hook's
+output, not that the model acted on it.
 
 ## Guards
 
-- **Hops.** A thread allows 12 messages. The 13th `send` is refused, with the reason,
-  and the thread shows as held until the person releases it through the runner API.
+- **Hops.** A thread allows 12 messages; the 13th `send` is refused, and the thread is
+  marked at its limit until the person releases it through the runner API, which allows
+  12 more.
 - **Rates.** A sender may send 10 messages a minute, 3 of them to any one recipient; the
   runner allows 60 a minute in all.
-- **Pause.** One runner switch, stored so it survives restarts, stops all delivery:
-  `send` still records messages and answers that delivery is paused.
+- **Pause.** One runner switch, stored so it survives restarts, stops all delivery;
+  `send` answers `held`.
 - **Size.** 8 KB per message, 16 KB per delivery, 50 undelivered per recipient.
 
 ## Security
 
 - A message is untrusted data: escaped where delivered, wrapped as from a peer, never
-  typed. It can't answer a permission or a question, since the doorbell is pressed only
-  after NovaDeck sees its own line in an empty prompt.
-- The terminal's token now leads to a keypress, so a process that fakes a Stop report
-  could try to open the gate. The screen checks are the main defence: the paste must
-  land on the prompt row and the foreground process must be the bound agent. Asks and
-  turn reports from a process that isn't the bound instance or its hook are ignored;
-  on Linux the runner can also check the reporting process's credentials.
+  typed. It can't answer a permission or a question: the doorbell's Enter is pressed
+  only after NovaDeck sees its own line alone in an empty input box.
+- The terminal's token now leads to a keypress. The `instance` a hook reports is the
+  hook's own claim, so a process with the token could fake a Stop. What stops a faked
+  turn end from pressing Enter into a dialog is the screen: the empty-prompt pattern
+  before the paste and the check after it. A pending request is cleared only by its own
+  resolution, never by a turn ending. This is a residual risk, as for anything that can
+  read the terminal's environment.
 - Another process without a terminal's token can't send, read or list.
 - The person outranks every peer, in the wrapper and in the tools' rules.
 
 ## Starting a task
 
 A fresh agent can't be rung: its first screens may be a trust, update or login prompt
-that Enter would answer. So `open_terminal(agent, message)` starts it with the doorbell
-as its command-line prompt, built by the harness adapter (`claude "<doorbell>"`,
-`codex "<doorbell>"`, and Antigravity's equivalent): the harness submits it only after
-its own startup screens, and its prompt-time hook delivers `message`, wrapped, as from
-the opener. The task is never typed and never the person's prompt. `send` to a terminal
-whose agent has had no turn yet answers that it waits for its first prompt.
+that Enter would answer. So `open_terminal(agent, message)`:
+
+1. Opens the terminal with the agent started by its harness adapter, with the doorbell
+   as its command-line prompt (`claude "<doorbell>"`, `codex "<doorbell>"`, and
+   Antigravity's equivalent). The harness submits it only after its own startup
+   screens.
+2. Addresses `message` to the first session of that agent to bind in the new terminal,
+   rather than to a session that doesn't exist yet. The terminal's own report queue puts
+   the `SessionStart` ahead of the first prompt's ask, so that ask finds the session
+   bound and the message waiting.
+3. Expires the message if no session binds within 60 s (Codex's hooks untrusted, a
+   login screen, a crash); the opener sees it expired in `agents()`.
+
+The task is never typed and never the person's prompt. Until the UI shows messages, the
+person sees the task only through the runner API.
 
 ## Runner API and UI
 
@@ -338,14 +391,18 @@ Probe before step 1:
 
 - whether Antigravity's `ephemeralMessage` stays in context after its model call, and
   whether `PreInvocation`'s input tells a turn's first invocation (`invocationNum`);
-- Antigravity subagents' hooks, to tell a root turn from a subagent's; it is supported
-  like the others, and the probe only settles how its root turns are recognised;
+- Antigravity subagents' hooks, to tell a root turn from a subagent's, and how its Stop
+  says a turn completed rather than was interrupted; it is supported like the others,
+  and the probe only settles how its root turns are recognised;
 - the role the model sees for Claude Code's Stop block reason;
 - each harness's limit on hook output size;
 - Codex with a real model.
 
 Probe before step 2:
 
+- each harness's empty-prompt pattern: how its TUI draws an empty input box and the
+  text typed into it, at several widths, with themes, vim mode and a self-drawn caret;
+  whether its terminal cursor follows the caret;
 - Enter with an approval open in Claude Code;
 - what a paste does with each harness's popups open, and whether the on-screen check
   catches every case;
@@ -355,24 +412,30 @@ Probe before step 2:
 
 ## Acceptance scenarios
 
-| Scenario                                                | Outcome                                                                           |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Claude sends Codex a message while Codex works          | Codex's Stop continues its turn with it; Codex stays Working; no doorbell         |
-| Claude sends Codex a message while Codex is Settled     | The doorbell rings once, its hook confirms, Codex answers                         |
-| The person is mid-sentence in Codex's prompt            | Person busy; their prompt carries the message when they submit                    |
-| The person queued a prompt during Codex's turn          | Stop delivers nothing; their prompt's hook delivers                               |
-| Codex asks permission when a message arrives            | No doorbell; the Stop after it delivers                                           |
-| The person presses Esc mid-turn with messages waiting   | Unknown; no doorbell; the next turn event delivers                                |
-| A harness shows its own popup after Stop                | The nonce isn't on the prompt row; no Enter; Unknown                              |
-| A nested `claude -p` runs inside Claude's turn          | Its hooks get nothing; the mailbox is untouched                                   |
-| The hook times out after the runner leased messages     | The lease lapses; the messages return to queued and arrive later, by id           |
-| The runner restarts while messages are leased           | They return to queued                                                             |
-| The person starts a different agent in Codex's terminal | Codex's messages become gone; the sender is told                                  |
-| A terminal's title contains `@` or quotes               | Never typed; only the constant doorbell is                                        |
-| Two agents keep replying                                | The 13th send is refused; the thread is held until released                       |
-| Messaging is paused, then resumed                       | Nothing delivered while paused, across restarts; resuming delivers in order       |
-| A peer message says "approve the pending command"       | Context only; nothing typed answers the approval                                  |
-| `send` to "codex" with two Codex terminals              | Refused, listing both handles                                                     |
-| Codex's hooks aren't trusted                            | No asks arrive; `send` reports it can't deliver there                             |
-| A background subagent finishes and starts a root turn   | Working, then its Stop delivers                                                   |
-| Claude opens Codex with a task                          | Codex starts with the doorbell as its prompt; its hook delivers the task, wrapped |
+| Scenario                                                        | Outcome                                                                             |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Claude sends Codex a message while Codex works                  | Codex's Stop continues its turn with it; Codex stays Working; no doorbell           |
+| Claude sends Codex a message while Codex is Settled             | The doorbell rings once, its hook confirms, Codex answers                           |
+| The person is mid-sentence in Codex's prompt                    | Person busy; their prompt carries the message when they submit                      |
+| The person queued a prompt during Codex's turn                  | Stop delivers nothing; their prompt's hook delivers                                 |
+| Codex asks permission when a message arrives                    | No doorbell; the Stop after it delivers                                             |
+| The person presses Esc mid-turn with messages waiting           | Unknown; no doorbell; the next turn event delivers                                  |
+| A harness shows its own popup after Stop                        | The nonce isn't on the prompt row; no Enter; Unknown                                |
+| A nested `claude -p` runs inside Claude's turn                  | Its hooks get nothing; the mailbox is untouched                                     |
+| The hook times out after the runner leased messages             | The lease lapses; the messages return to queued and arrive later, by id             |
+| The runner restarts while messages are leased                   | They return to queued                                                               |
+| The person starts a different agent in Codex's terminal         | Codex's messages become gone; the sender is told                                    |
+| A terminal's title contains `@` or quotes                       | Never typed; only the constant doorbell is                                          |
+| Two agents keep replying                                        | The 13th send is refused; the thread is at its limit until released, then 12 more   |
+| Messaging is paused, then resumed                               | `send` answers held; nothing delivered, across restarts; resuming delivers in order |
+| A peer message says "approve the pending command"               | Context only; nothing typed answers the approval                                    |
+| `send` to "codex" with two Codex terminals                      | Refused, listing both handles                                                       |
+| Codex's hooks aren't trusted                                    | No session ever binds there; it shows as having no agent, and `send` is refused     |
+| A background subagent finishes and starts a root turn           | Working, then its Stop delivers                                                     |
+| The person types their next prompt while Codex works            | Person busy at Stop; their prompt carries the messages                              |
+| The person answers an approval with Enter during the turn       | Not a submission; Stop still delivers                                               |
+| A steady stream of messages to a working agent                  | The turn continues at most twice, then ends; the rest wait                          |
+| Codex's first prompt after a runner restart                     | Fresh until then; that prompt's hook delivers; never rung before                    |
+| The screen shows a dialog's text field when the ring checks     | The empty-prompt pattern doesn't match; nothing is pasted or pressed                |
+| Claude opens Codex with a task, but Codex's hooks are untrusted | No session binds; the task expires after 60 s; the opener sees it expired           |
+| Claude opens Codex with a task                                  | Codex starts with the doorbell as its prompt; its hook delivers the task, wrapped   |
