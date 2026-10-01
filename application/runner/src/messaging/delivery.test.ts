@@ -418,6 +418,16 @@ describe("a new session at its own prompt", () => {
     )
   })
 
+  it("keeps a prompt the person queued during a turn when a session replaces it", () => {
+    // Their Enter during the turn queued a prompt, just before the new session bound.
+    const queuing = run(working, typing, enter)
+    expect(queuing.box).toMatchObject({ queuing: true, enteredAt: at })
+    expect(transition(queuing, announced)).toMatchObject({
+      state: "drafting",
+      box: { empty: false },
+    })
+  })
+
   it("takes a first binding after the shell started it by the last Enter alone, however long ago", () => {
     const late = { ...announced, at: at + 60_000 }
     expect(run(unbound, typing, enter, late).state).toBe("ready")

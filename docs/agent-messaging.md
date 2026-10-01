@@ -360,8 +360,9 @@ the opener's, and `describe` names the caller's own terminal (see
   nothing after their last Enter before it. Keys typed as an agent starts were dropped in
   the probe while it had yet to draw its prompt (see
   [Harness coverage](harness-coverage.md)), but those typed once it reads input, before
-  NovaDeck has taken its binding (`SessionStart` came up to about 50 ms after the prompt
-  drew, and its report is applied later still), would be in its box, so any key after
+  NovaDeck has taken its binding (Claude Code's `SessionStart` came within about 150 ms of
+  the prompt drawing, before or after it, and its report is applied later still), would
+  be in its box, so any key after
   that Enter errs toward a draft. What the person typed after their last Enter outlasts
   the binding's end, which in a nested shell is noticed only as the next agent binds. A
   binding that replaces a session already bound there (a `/clear`, an in-app resume, a
@@ -620,6 +621,17 @@ the picker; and no dialog Claude Code may show after its `SessionStart` (an MCP 
 approval, accepting bypass permissions, a detected API key) was probed. The test paste is
 the backstop there, as after a turn: a menu swallows the line, but a dialog with a text
 field could take it alone and let Enter through.
+
+Two known gaps in telling the box empty at a binding:
+
+- A newline Enter, or one taking a suggestion, typed into a new Claude Code in the
+  0.1 to 0.5 s between its prompt drawing and NovaDeck applying its `SessionStart`, after
+  a late unbind (a nested shell's agent whose end is noticed only then), still leaves it
+  Ready: that binding follows Unbound, where only the last Enter counts, not the
+  replacement rule. A ring would then append the line to that text and submit both.
+- A `/clear` whose binding is applied more than the submission window (about 2 s) after
+  its Enter, as when another plugin's slow `SessionEnd` or `SessionStart` hook delays it,
+  goes Drafting: a missed ring, never a wrong one.
 
 ### Message states
 

@@ -217,11 +217,12 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
     if (!event.ready) return { ...next, state: "fresh" }
     // One that replaced a session bound here (a /clear, an in-app resume) keeps that box,
     // unless it was known empty or the person's bare Enter just submitted it: an Enter
-    // that made a newline or took a suggestion left their text there.
+    // that made a newline or took a suggestion left their text there, and one during a
+    // turn queued a prompt the harness may still hold.
+    const { box } = delivery
     const kept =
       delivery.state !== "unbound" &&
-      !delivery.box.empty &&
-      pendingEnter(delivery, event.at) === undefined
+      (box.queuing || box.queued || (!box.empty && pendingEnter(delivery, event.at) === undefined))
     return draft || kept
       ? { ...next, box: typed(emptyBox), state: "drafting" }
       : { ...next, state: "ready", since: event.at }
