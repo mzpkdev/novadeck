@@ -60,6 +60,7 @@ import {
 import { Latest } from "./latest.js"
 import {
   allowOpen,
+  runnerOpenLimit,
   OpenRequests,
   readOpenRequest,
   refused,
@@ -257,8 +258,9 @@ const terminalReply =
 // Why a request for a new terminal went unanswered.
 const unopened = {
   nobody: "NovaDeck isn't open to show a new terminal.",
-  gone: "NovaDeck's window went away before it opened the terminal.",
-  late: "NovaDeck didn't open the terminal in time.",
+  // Its window may still open it, so the agent should look before asking again.
+  gone: "NovaDeck's window went away while opening the terminal; it may still open, so check before asking again.",
+  late: "NovaDeck didn't confirm the new terminal in time; it may still open, so check before asking again.",
 }
 
 const sameToken = (a: string, b: string): boolean =>
@@ -314,6 +316,11 @@ export class Terminals {
   private readonly opens = new OpenRequests()
   /** When each terminal's agents opened terminals lately, for `openLimit`. */
   private readonly opened = new Map<string, readonly number[]>()
+  // Which terminal a terminal opened on request is charged to: the one that began the
+  // chain, so terminals opening terminals share one budget rather than each get theirs.
+  private readonly openers = new Map<string, string>()
+  // Every request's time, for the runner's own limit across all chains.
+  private allOpened: readonly number[] = []
   private sampler: ReturnType<typeof setInterval> | undefined
   private saver: ReturnType<typeof setInterval> | undefined
   private readonly options: Required<
@@ -664,6 +671,7 @@ export class Terminals {
   private forget(terminalId: string): void {
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
     this.opened.delete(terminalId)
+    this.openers.delete(terminalId)
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
   }
 
@@ -986,12 +994,16 @@ export class Terminals {
     if (cwd === undefined) return refused(`${folder} isn't a folder a terminal can open in.`)
     // Closed, or the runner stopped, while the folder was looked at.
     if (this.stopping || this.records.get(call.terminalId) !== record) return unansweredCalls.open
-    const times = allowOpen(this.opened.get(call.terminalId) ?? [], Date.now())
-    if (!times)
+    const now = Date.now()
+    const charged = this.openers.get(call.terminalId) ?? call.terminalId
+    const times = allowOpen(this.opened.get(charged) ?? [], now)
+    const all = allowOpen(this.allOpened, now, runnerOpenLimit)
+    if (!times || !all)
       return refused(
-        "This terminal opened as many terminals as it may in the last minute; try again shortly.",
+        "Agents opened as many terminals as they may in the last minute; try again shortly.",
       )
-    this.opened.set(call.terminalId, times)
+    this.opened.set(charged, times)
+    this.allOpened = all
     const asked = await this.opens.ask(
       {
         from: call.terminalId,
@@ -1003,6 +1015,8 @@ export class Terminals {
       },
       this.options.openMs,
     )
+    if (asked.type === "answered" && "terminalId" in asked.answer)
+      this.openers.set(asked.answer.terminalId, charged)
     return this.opening(asked, cwd, request.command)
   }
 

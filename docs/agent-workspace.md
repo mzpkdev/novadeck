@@ -326,7 +326,10 @@ from what this document describes:
   `title`, and can start `command` at the new shell's first prompt, one line as the
   person would type it, such as `claude` or `npm run dev`; `focus` brings it into view
   only when the person asked to see it. The runner checks the token, reads the request
-  strictly, checks the folder, and lets a terminal's agents open five a minute. The UI
+  strictly, checks the folder, and lets a terminal's agents open five a minute, a
+  terminal opened on request sharing the budget of the one that began the chain, and
+  all agents twenty a minute across the runner, so terminals opening terminals can't
+  multiply. The UI
   owns layout, so the runner hands the request to the client that subscribed last to
   `terminals.requests`, which adds the terminal as its "+" would, in the asking
   terminal's session and beside it, creates it through `terminals.create` with

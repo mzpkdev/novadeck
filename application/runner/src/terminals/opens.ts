@@ -56,6 +56,12 @@ export const readOpenRequest = (
 export const openLimit = { count: 5, windowMs: 60_000 } as const
 
 /**
+ * How many terminals agents may open across the runner within a window: a backstop for
+ * a chain whose new terminal asks before its opener is known.
+ */
+export const runnerOpenLimit = { count: 20, windowMs: 60_000 } as const
+
+/**
  * The times a terminal's agents opened terminals, with one more at `now`, when that
  * stays within `limit`; undefined when it would not. Times past the window drop out.
  */

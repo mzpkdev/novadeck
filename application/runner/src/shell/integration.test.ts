@@ -78,7 +78,12 @@ const it = base.extend<{ shell: Fixture }>({
       const terminals = new Terminals({
         shell: bash,
         env: { HOME: home, PS1: "$ ", PATH: process.env.PATH },
-        shellFiles: installShellFiles(join(root, "data", "shell")),
+        // Only when the test has none of its own: an install nobody waits for would fail
+        // unseen once the folder goes.
+        shellFiles:
+          "shellFiles" in options
+            ? options.shellFiles
+            : installShellFiles(join(root, "data", "shell")),
         records: store,
         ...options,
       })
@@ -338,15 +343,19 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         'export PATH="$HOME/bin:$PATH"',
         "PROMPT_COMMAND='export FROM_PROMPT=yes'",
         "HISTFILE=~/.bash_history",
+        // The user's own, which the command sees as typed, not shadowed by NovaDeck's.
+        "file=USERFILE resume=USERRESUME",
       ].join("\n"),
     )
     fakeAgent(shell.home, "claude")
     const manager = shell.manager()
-    const terminal = await create(manager, shell, { command: "claude --model 'big one'" })
+    const terminal = await create(manager, shell, {
+      command: `claude --model 'big one' "$file" "$resume"`,
+    })
     const shown = await shell.until(
       manager,
       terminal.id,
-      "claude args: --model big one prompt=[yes] resume=[]",
+      "claude args: --model big one USERFILE USERRESUME prompt=[yes] resume=[]",
     )
     expect(shown).not.toContain("$ claude")
     expect(readdirSync(join(dirname(shell.plugins), "resume"))).toEqual([])
@@ -1239,11 +1248,13 @@ const present = async (
   manager: Terminals,
   terminalId: string,
   calls: { request: object; token?: string; type?: "present" | "open" }[],
+  // Who controls the terminal's input.
+  owner = "owner",
 ): Promise<unknown[]> => {
   const name = `calls-${randomUUID().slice(0, 8)}`
   const path = join(shell.home, name)
   writeFileSync(`${path}.json`, JSON.stringify(calls))
-  manager.write({ terminalId, data: `present ${path}\r` }, "owner")
+  manager.write({ terminalId, data: `present ${path}\r` }, owner)
   await shell.until(manager, terminalId, `answered ${name}`)
   return JSON.parse(readFileSync(`${path}.answers.json`, "utf8")) as unknown[]
 }
@@ -1484,14 +1495,21 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           terminal.id,
           Array.from({ length: 3 }, () => open({ title: "Refused" })),
         )
+        const spent = {
+          ok: false,
+          reason:
+            "Agents opened as many terminals as they may in the last minute; try again shortly.",
+        }
         expect(more).toEqual([
           ...Array.from({ length: 2 }, () => ({ ok: false, reason: "Not now." })),
-          {
-            ok: false,
-            reason:
-              "This terminal opened as many terminals as it may in the last minute; try again shortly.",
-          },
+          spent,
         ])
+        // The terminal it opened shares its budget, so a chain can't open more.
+        // Enter ends the stand-in agent; what's typed next goes to the shell.
+        manager.write({ terminalId: opened!.terminalId, data: "\r" }, "client")
+        await expect(
+          present(shell, manager, opened!.terminalId, [open({ title: "Refused" })], "client"),
+        ).resolves.toEqual([spent])
       } finally {
         controller.abort()
         await client
