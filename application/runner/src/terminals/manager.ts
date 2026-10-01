@@ -534,6 +534,9 @@ export class Terminals {
     this.creating += 1
     const pending = this.pending(ownerId)
     try {
+      // A new terminal's number is drawn as it is asked for, before anything waits, so
+      // terminals asked for together are numbered, and listed, in the order they were.
+      const drawn = input.restore ? undefined : this.nextNumber(input.sessionId)
       const saved = input.restore ? this.saved(input.id, input.sessionId) : undefined
       const origin = await this.directory(input.cwd)
       // A saved directory that is gone falls back to the one asked for.
@@ -550,7 +553,7 @@ export class Terminals {
       const kept = input.restore ? this.identity(input.id) : undefined
       // Every new terminal draws its session's next number, for its handle, `t3`, and its
       // default title, "Terminal 03", even one given its own title.
-      const number = kept ? undefined : this.nextNumber(input.sessionId)
+      const number = kept ? undefined : (drawn ?? this.nextNumber(input.sessionId))
       const handle = kept?.handle ?? `t${number}`
       const title = input.title ?? kept?.title ?? `Terminal ${String(number).padStart(2, "0")}`
       const titledBy = input.title === undefined ? (kept?.titledBy ?? null) : null
@@ -655,7 +658,7 @@ export class Terminals {
     this.persisting(() => {
       kept = this.options.records?.terminals(sessionId) ?? []
     })
-    // In the order they were created, as the records keep them; a running one they don't
+    // In the order they were asked for, as the records keep them; a running one they don't
     // keep, as without records, follows.
     const listed = kept.flatMap((terminal) => {
       const running = live.get(terminal.id)
@@ -663,7 +666,11 @@ export class Terminals {
       return this.draining.has(terminal.id) ? [] : [this.savedSummary(terminal)]
     })
     const recorded = new Set(kept.map(({ id }) => id))
-    return [...listed, ...[...live.values()].filter(({ id }) => !recorded.has(id))]
+    // Those the records don't keep, in the order they were asked for too.
+    const unrecorded = [...live.values()]
+      .filter(({ id }) => !recorded.has(id))
+      .toSorted((a, b) => Number(a.handle.slice(1)) - Number(b.handle.slice(1)))
+    return [...listed, ...unrecorded]
   }
 
   /** A terminal kept only as saved, as clients see it: no shell, its last facts. */

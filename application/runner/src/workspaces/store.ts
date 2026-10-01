@@ -432,11 +432,12 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
         ? this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle, title,
             titled_by, command, last_program, work
-          FROM terminals ORDER BY rowid`
+          FROM terminals ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
         : this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle, title,
             titled_by, command, last_program, work
-          FROM terminals WHERE session_id = ${sessionId} ORDER BY rowid`
+          FROM terminals WHERE session_id = ${sessionId}
+          ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
     ) as Omit<TerminalRow, "transcript">[]
     return rows.map(listed)
   }

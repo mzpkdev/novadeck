@@ -44,7 +44,7 @@ export type TerminalIdentity = Pick<SavedTerminal, "handle" | "title" | "titledB
 /** Where the runner saves terminals: its metadata store. */
 export type TerminalRecords = {
   terminal(terminalId: string): SavedTerminal | undefined
-  /** Every terminal kept, of one session or all, oldest first, without transcripts. */
+  /** Every terminal kept, of one session or all, in the order they were asked for (by number), without transcripts. */
   terminals(sessionId?: string): readonly ListedTerminal[]
   /** The next number of a session's terminals, for a handle and a default title, never given twice. */
   nextTerminalNumber(sessionId: string): number
