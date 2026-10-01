@@ -28,6 +28,7 @@ import type {
 import { vi } from "vitest"
 
 import { Terminals, type TerminalOptions } from "../terminals/index.js"
+import { Latest } from "../terminals/latest.js"
 import type { TerminalRecords } from "../terminals/records.js"
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
@@ -2020,6 +2021,32 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         await step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "and then this" } }),
       ) as { hookSpecificOutput: { additionalContext: string } }
       expect(queued.hookSpecificOutput.additionalContext).toContain("One more thing.")
+    })
+
+    it("tells a terminal's watchers nothing of messages between two others", async ({ shell }) => {
+      const bin = standIn(shell.home)
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const claude = await create(manager, shell)
+      const codex = await create(manager, shell)
+      const third = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(claude.id, "claude", "s-claude")
+      await start(codex.id, "codex", "s-codex")
+      await expect.poll(() => manager.messages(codex.id).delivery).toBe("fresh")
+      const watch = manager.watchMessages(third.id)
+      await watch.next()
+      const pushes = vi.spyOn(Latest.prototype, "push")
+      await step(claude.id, { call: "send", request: { to: "t2", text: "Review a.ts." } })
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(pushes).not.toHaveBeenCalled()
+      pushes.mockRestore()
+      // The pause is every terminal's news.
+      manager.pauseMessages(true)
+      await expect(watch.next()).resolves.toMatchObject({ value: { paused: true, threads: [] } })
+      manager.pauseMessages(false)
+      await watch.return(undefined)
     })
 
     it("follows a terminal's messages as they change, for each of its watchers", async ({

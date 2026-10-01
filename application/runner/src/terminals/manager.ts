@@ -65,6 +65,7 @@ import {
   type Reports,
 } from "../shell/reports.js"
 import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
+import { coalesced } from "./coalesce.js"
 import { expectedAgent, promptIn } from "./commands.js"
 import { readDescribeRequest, type DescribeAnswer } from "./describe.js"
 import { Doorbell, screenText, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
@@ -511,9 +512,11 @@ export class Terminals {
         if (change.kind === "terminal") doorbell.changed(change.terminalId)
       })
     // The pause shows in every terminal's listing; anything else only in the terminal's.
+    // A burst of changes makes one listing, once this tick.
+    const mailChanged = coalesced((terminalId) => this.mailChanged(terminalId))
     this.messaging.subscribe((change) => {
-      if (change.kind === "terminal") this.mailChanged(change.terminalId)
-      else for (const terminalId of this.mail.keys()) this.mailChanged(terminalId)
+      if (change.kind === "terminal") mailChanged(change.terminalId)
+      else for (const terminalId of this.mail.keys()) mailChanged(terminalId)
     })
     this.peers = new TerminalPeers({
       messaging: this.messaging,
@@ -1577,6 +1580,8 @@ export class Terminals {
    */
   async *watchMessages(terminalId: string, signal?: AbortSignal): AsyncGenerator<TerminalMessages> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    // Only for a terminal the runner holds: closing or evicting it ends the stream.
+    this.record(terminalId)
     yield* this.snapshots(this.mail, terminalId, this.messages(terminalId), signal)
   }
 
@@ -1585,7 +1590,8 @@ export class Terminals {
     const readers = this.mail.get(terminalId)
     if (!readers?.size || this.stopping || !this.records.has(terminalId)) return
     const listing = this.messages(terminalId)
-    for (const reader of readers) reader.push(listing)
+    const key = JSON.stringify(listing)
+    for (const reader of readers) reader.push(listing, key)
   }
 
   /** Pauses messaging across the whole runner, or resumes it. */
