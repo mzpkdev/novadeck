@@ -451,9 +451,10 @@ Besides the facts shared with the agent model, decoders give
   a minute. A Codex that can't answer gets nothing before its first prompt. A title
   naming another thread than the bound one ends that binding only when the adapter's
   `startedSession` confirms a new root (Codex's writer lock for that thread, made around
-  the title and held in the terminal's foreground group, its id's start at least 23
-  characters), with no root turn running as the title came; else
-  the session's own `SessionStart` tells at its first prompt.
+  the title, its id's start at least 23 characters, and held in the terminal's
+  foreground group where the platform tells, as Linux and macOS do; elsewhere the lock's
+  time and the prefix's length alone tell), with no root turn running as the title came;
+  else the session's own `SessionStart` tells at its first prompt.
 
 ### Messaging profile
 

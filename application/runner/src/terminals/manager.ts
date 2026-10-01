@@ -2514,7 +2514,10 @@ export class Terminals {
       // As it came: the session it may replace, and whether a turn ran, as a spawned
       // agent's thread is made only within one.
       const replaced = binding?.agent === agent ? binding.sessionId : undefined
-      const turning = this.messaging.delivery(record.summary.id)?.state === "working"
+      const delivery = this.messaging.delivery(record.summary.id)
+      const turning = delivery?.state === "working"
+      // A session bound, a binding ended or a root turn started since makes it stale.
+      const epoch = delivery?.epoch
       // Asked before it joins the terminal's queue, so a slow answer from the harness
       // never holds the terminal's reports up.
       void (async () => {
@@ -2535,7 +2538,12 @@ export class Terminals {
         await this.queue(
           record.summary.id,
           () => {
-            if (record.titles === seq && record.process === child && !record.exitQueued)
+            if (
+              record.titles === seq &&
+              record.process === child &&
+              !record.exitQueued &&
+              this.messaging.delivery(record.summary.id)?.epoch === epoch
+            )
               this.showPrompt(record, shown, replaced)
             return Promise.resolve()
           },

@@ -412,7 +412,8 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
  */
 export const pendingEnter = (delivery: Delivery, now: number): number | undefined => {
   const at = delivery.box.enteredAt
-  return at !== null && now - at <= submitWindowMs ? at : undefined
+  // An Enter after `now`, as one after a title judged as it came, submitted nothing then.
+  return at !== null && at <= now && now - at <= submitWindowMs ? at : undefined
 }
 
 /** The delivery after the person's key outside a request: a bare Enter `submits`. */

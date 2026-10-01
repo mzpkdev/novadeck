@@ -537,6 +537,8 @@ describe("an agent's prompt shown before any session binds", () => {
     expect(run(settled, typing, enter, replacing(at + submitWindowMs)).state).toBe("ready")
     // An Enter that started no turn, as a newline's, longer ago than the window.
     expect(run(settled, typing, enter, replacing(at + submitWindowMs + 1)).state).toBe("drafting")
+    // An Enter after the title, judged as it came, submitted nothing then.
+    expect(run(settled, typing, key("enter", at + 500), replacing(at)).state).toBe("drafting")
     // A prompt the person queued during the turn, which the harness may still hold.
     const queuing = run(working, typing, enter)
     expect(transition(queuing, replacing(at))).toMatchObject({ state: "drafting" })

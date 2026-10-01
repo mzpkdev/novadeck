@@ -116,8 +116,8 @@ export type Harness = {
    * started as a new root (Codex's /clear), not another it only shows, as a forked side
    * conversation or a spawned agent: only then does a title naming another session end
    * the bound one's binding. `holds` tells whether a process of the terminal's
-   * foreground group, where the harness runs, holds a file open, where the platform tells. Where omitted, nothing but the
-   * session's own hooks ends it.
+   * foreground group, where the harness runs, holds a file open, where the platform
+   * tells. Where omitted, nothing but the session's own hooks ends it.
    */
   readonly startedSession?: (
     where: Install,

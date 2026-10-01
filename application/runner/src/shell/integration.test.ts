@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import {
   appendFileSync,
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -2945,20 +2946,23 @@ else hook("SessionStart", { source: "startup" }, ready)
   )
   writeFileSync(join(bin, "tui"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`)
   chmodSync(join(bin, "tui"), 0o755)
-  // The same TUI under Codex's name, the program its hooks look for: a script that runs
-  // it as a child, since Node renames its own process.
+  // The same TUI under Codex's name, the program its hooks look for, and Antigravity's.
   const named = join(home, "named")
   mkdirSync(named, { recursive: true })
-  writeFileSync(join(named, "codex"), `#!/bin/sh\n"${process.execPath}" "$@"\n`, { mode: 0o755 })
-  writeFileSync(join(bin, "named"), `#!/bin/sh\nexec "${join(named, "codex")}" "${script}" "$@"\n`)
-  chmodSync(join(bin, "named"), 0o755)
-  // And under Antigravity's.
-  writeFileSync(join(named, "agy"), `#!/bin/sh\n"${process.execPath}" "$@"\n`, { mode: 0o755 })
-  writeFileSync(
-    join(bin, "named-agy"),
-    `#!/bin/sh\nexec "${join(named, "agy")}" "${script}" "$@"\n`,
-  )
-  chmodSync(join(bin, "named-agy"), 0o755)
+  // A real program of the harness's name, as Codex's native one under its npm wrapper and
+  // Antigravity's are, running the TUI as its child: a copy of bash, named so, as a script
+  // shows under its interpreter's name on macOS and Node renames its own process. Its
+  // command doesn't end the line, so bash runs it as a child rather than exec it.
+  for (const agent of ["codex", "agy"]) {
+    copyFileSync(bash, join(named, agent))
+    chmodSync(join(named, agent), 0o755)
+    const launcher = join(bin, agent === "codex" ? "named" : "named-agy")
+    writeFileSync(
+      launcher,
+      `#!/bin/sh\nexec "${join(named, agent)}" -c '"$0" "$@"; exit $?' "${process.execPath}" "${script}" "$@"\n`,
+    )
+    chmodSync(launcher, 0o755)
+  }
   return bin
 }
 
