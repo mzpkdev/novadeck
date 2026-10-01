@@ -203,8 +203,9 @@ const typed = (box: Box): Box => ({
 /** The delivery after an event; the same delivery when it changes nothing. */
 export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery => {
   if (event.type === "bound") {
-    // Keys the person typed after their last Enter reach the new session's box once it
-    // reads them, as typing while an agent starts does: a draft.
+    // Keys typed after the last Enter may be in the new session's box: those typed once
+    // its TUI reads input, before NovaDeck has taken its binding (the probe's earlier
+    // ones were dropped). Any doubt is a draft.
     const draft = delivery.box.typedSinceEnter || delivery.box.draftWhileAsked
     const next: Counts = {
       epoch: delivery.epoch + 1,
@@ -214,15 +215,37 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
     }
     // Only a session announced at its own prompt may be rung before its first turn.
     if (!event.ready) return { ...next, state: "fresh" }
-    return draft ? { ...next, state: "drafting" } : { ...next, state: "ready", since: event.at }
+    // One that replaced a session bound here (a /clear, an in-app resume) keeps that box,
+    // unless it was known empty or the person's bare Enter just submitted it: an Enter
+    // that made a newline or took a suggestion left their text there.
+    const kept =
+      delivery.state !== "unbound" &&
+      !delivery.box.empty &&
+      pendingEnter(delivery, event.at) === undefined
+    return draft || kept
+      ? { ...next, box: typed(emptyBox), state: "drafting" }
+      : { ...next, state: "ready", since: event.at }
   }
-  if (event.type === "unbound") return { ...unbound, epoch: delivery.epoch + 1 }
+  // What the person typed after their last Enter outlasts the binding's end, which may be
+  // noticed only as the next agent binds.
+  if (event.type === "unbound")
+    return {
+      ...unbound,
+      epoch: delivery.epoch + 1,
+      box: {
+        ...unbound.box,
+        typedSinceEnter: delivery.box.typedSinceEnter,
+        draftWhileAsked: delivery.box.draftWhileAsked,
+      },
+    }
   // With no agent bound, only whether the person typed after their last Enter counts, for
-  // the session that binds next.
-  if (delivery.state === "unbound")
-    return event.type === "key" && !event.asked
-      ? keyed(delivery, event.key === "enter" || event.key === "queue", event.at)
-      : delivery
+  // the session that binds next. Starting an agent takes an Enter, which clears it all.
+  if (delivery.state === "unbound") {
+    if (event.type !== "key" || event.asked) return delivery
+    const submits = event.key === "enter" || event.key === "queue"
+    const after = keyed(delivery, submits, event.at)
+    return submits ? { ...after, box: { ...after.box, draftWhileAsked: false } } : after
+  }
   const phase = phaseOf(delivery)
   const { box } = delivery
   switch (event.type) {
@@ -379,7 +402,7 @@ export const continues = (delivery: Delivery): boolean =>
 export const route = (delivery: Delivery, silentOnFailure: boolean): string => {
   switch (delivery.state) {
     case "fresh":
-      return "when the person first submits a prompt there"
+      return "when its agent's first turn starts"
     case "ready":
     case "settled":
     case "ringing":

@@ -283,7 +283,7 @@ describe("keys while a request waits on the person", () => {
 
 describe("when a message would reach an agent", () => {
   it("says so in send's words for each state", () => {
-    expect(route(bound, false)).toBe("when the person first submits a prompt there")
+    expect(route(bound, false)).toBe("when its agent's first turn starts")
     expect(route(transition(unbound, announced), false)).toBe("ringing it now")
     expect(route(working, false)).toBe("when its current turn ends")
     // Codex sends nothing when a turn fails.
@@ -400,6 +400,47 @@ describe("a new session at its own prompt", () => {
     expect(run(unbound, typing, enter, announced).state).toBe("ready")
     // A draft left while a request waited stays too.
     expect(run(working, key("content", at, true), announced).state).toBe("drafting")
+  })
+
+  it("replaces a session only from a box known empty, or one the person's Enter just submitted", () => {
+    // Nothing typed since its turn: a plan's "clear context", say.
+    expect(transition(settled, announced).state).toBe("ready")
+    // `\` then Enter makes a newline, an Enter may take a suggestion: no turn followed, so
+    // their text may still be in the box when the new session binds.
+    const late = { ...announced, at: at + submitWindowMs + 1 }
+    expect(run(settled, typing, enter, late)).toMatchObject({
+      state: "drafting",
+      box: { empty: false },
+    })
+    // Their /clear and its Enter, just before the binding: submitted.
+    expect(run(settled, typing, enter, { ...announced, at: at + submitWindowMs }).state).toBe(
+      "ready",
+    )
+  })
+
+  it("takes a first binding after the shell started it by the last Enter alone, however long ago", () => {
+    const late = { ...announced, at: at + 60_000 }
+    expect(run(unbound, typing, enter, late).state).toBe("ready")
+    expect(run(unbound, typing, enter, typing, late).state).toBe("drafting")
+  })
+
+  it("keeps what the person typed after their last Enter through the binding's end", () => {
+    // The next agent's keys, before its SessionStart, while the last one's end goes unseen.
+    const typedAhead = run(settled, typing, enter, typing, { type: "unbound" })
+    expect(typedAhead).toMatchObject({ state: "unbound", box: { typedSinceEnter: true } })
+    expect(transition(typedAhead, announced).state).toBe("drafting")
+    // A draft left while asked too, until the Enter that starts an agent.
+    const asked = run(working, key("content", at, true), { type: "unbound" })
+    expect(transition(asked, announced).state).toBe("drafting")
+    expect(run(asked, typing, enter, announced).state).toBe("ready")
+  })
+
+  it("goes to Working at its own command-line doorbell prompt, with no ring", () => {
+    // `claude "<line>"`, as `open_terminal(claude, message)` starts it.
+    const started = transition(ready, doorbell)
+    expect(started).toMatchObject({ state: "working", phase: "turn", box: { empty: true } })
+    expect(ringableSince(started)).toBeUndefined()
+    expect(run(started, stop).state).toBe("settled")
   })
 
   it("turns Drafting at the person's input, but not at keys while asked", () => {

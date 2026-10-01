@@ -1947,7 +1947,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         to: "t2",
         id: expect.stringMatching(/^m-/),
         state: "queued",
-        route: "when the person first submits a prompt there",
+        route: "when its agent's first turn starts",
       })
       // Codex's next prompt carries it, wrapped and attributed, never as the person.
       const prompted = JSON.parse(
@@ -2946,7 +2946,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const tui = await ringing(shell)
       await expect.poll(tui.delivery).toBe("fresh")
       expect(await tui.send("Review a.ts")).toMatchObject({
-        route: "when the person first submits a prompt there",
+        route: "when its agent's first turn starts",
       })
       await quiet()
       expect(pastes(tui.raw())).toEqual([])

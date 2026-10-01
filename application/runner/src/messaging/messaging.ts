@@ -819,7 +819,7 @@ export class Messaging {
       ...base,
       route: agent
         ? route(recipient.delivery, harnesses[agent].messaging.silentOnFailure)
-        : "when its agent starts, or with the person's first prompt there",
+        : "when its agent starts: rung once NovaDeck sees it at its prompt, else at its first turn",
     }
   }
 

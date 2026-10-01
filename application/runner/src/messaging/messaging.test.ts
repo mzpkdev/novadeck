@@ -199,7 +199,7 @@ describe("sending", () => {
     const { messaging, send, prompt, stop, claude, codex } = create()
     expect(sent(send("A", "t2", "one"))).toMatchObject({
       state: "queued",
-      route: "when the person first submits a prompt there",
+      route: "when its agent's first turn starts",
     })
     prompt("B", codex)
     expect(sent(send("A", "t2", "two"))).toMatchObject({
@@ -336,7 +336,8 @@ describe("an addressee with no session yet", () => {
     messaging.expect("N", "codex")
     expect(sent(send("A", "t3", "hello"))).toMatchObject({
       state: "queued",
-      route: "when its agent starts, or with the person's first prompt there",
+      route:
+        "when its agent starts: rung once NovaDeck sees it at its prompt, else at its first turn",
     })
     expect(messages(messaging, "N")[0]).toMatchObject({ toAgent: "codex", state: "queued" })
     const first = binding("codex", "s-first", "3")
@@ -1333,7 +1334,8 @@ describe("a new agent session at its own prompt", () => {
     const { messaging, send, observe, ask, launched, clock: time } = openedClaude()
     expect(sent(send("A", "t3", "Review a.ts"))).toMatchObject({
       state: "queued",
-      route: "when its agent starts, or with the person's first prompt there",
+      route:
+        "when its agent starts: rung once NovaDeck sees it at its prompt, else at its first turn",
     })
     observe("N", launched, sessionStarted(launched, "startup"))
     // Ready since it bound: the doorbell lets its screen settle from then.
@@ -1391,7 +1393,7 @@ describe("a new agent session at its own prompt", () => {
     observe("A", forked, sessionStarted(forked, "fork"))
     expect(messaging.delivery("A")?.state).toBe("fresh")
     expect(sent(send("B", "t1", "hello"))).toMatchObject({
-      route: "when the person first submits a prompt there",
+      route: "when its agent's first turn starts",
     })
     time.now += 60_000
     expect(messaging.ringable("A")).toBe(false)
@@ -1433,6 +1435,35 @@ describe("a new agent session at its own prompt", () => {
     sent(send("A", "t3", "hello"))
     expect(messaging.delivery("N")?.state).toBe("drafting")
     expect(messaging.ringable("N")).toBe(false)
+  })
+
+  it("keeps a draft typed into a nested agent when the last one's end is noticed only as it binds", () => {
+    const { messaging, prompt, stop, follow, observe, send, claude } = create()
+    messaging.keys("A", ["enter"], false)
+    prompt("A", claude)
+    stop("A", claude)
+    // In a nested shell: `claude` and Enter, then the start of a prompt in the new one,
+    // all while the last Claude Code still counts as bound.
+    messaging.keys("A", ["content", "enter", "content"], false)
+    // Its next report finds the last one gone, and the new one's SessionStart binds.
+    follow("A", null)
+    const nested = binding("claude", "s-nested", "9")
+    observe("A", nested, sessionStarted(nested, "startup"))
+    sent(send("B", "t1", "hello"))
+    expect(messaging.delivery("A")?.state).toBe("drafting")
+    expect(messaging.ringable("A")).toBe(false)
+  })
+
+  it("takes a nested agent started with nothing typed after its Enter as Ready", () => {
+    const { messaging, prompt, stop, follow, observe, claude } = create()
+    messaging.keys("A", ["enter"], false)
+    prompt("A", claude)
+    stop("A", claude)
+    messaging.keys("A", ["content", "enter"], false)
+    follow("A", null)
+    const nested = binding("claude", "s-nested", "9")
+    observe("A", nested, sessionStarted(nested, "startup"))
+    expect(messaging.delivery("A")?.state).toBe("ready")
   })
 
   it("leaves Codex and Antigravity Fresh until their first turn, nothing showing their prompt is up", () => {
