@@ -311,7 +311,8 @@ server itself, before it reaches the runner.
   `USER_INPUT` whose `step_index` comes after the one seen at its last turn in that same
   transcript, where a transcript with no typed entry yet counts as seen; or, before any
   was read, one timed after the Enter, its time rounded down to the second so one in the
-  Enter's own second fails safe; or, with no Enter, a doorbell line), that turn becomes a
+  Enter's own second fails safe; or, with no Enter, the very doorbell line NovaDeck
+  started it with as a task, never a stale one a resumed session ends with), that turn becomes a
   prompt of its text (`typed-prompts.ts`), classified as Claude Code's and Codex's are:
   a doorbell prompt, or the person's text with any stale line removed. The same rule as
   for them then says whether it is the person's. Its transcript records a subagent's message, a Stop hook's
@@ -320,8 +321,12 @@ server itself, before it reaches the runner.
   turn, which it submits as the turn ends, counts too, when the person typed nothing
   after queuing it: the next root prompt after that Stop is theirs.
 - **The prompt is known empty** after one of these, with no input from the person
-  since (apart from answers to a request): the person's submission; a confirmed ring;
-  the command-line prompt an agent was started with; or the session binding. NovaDeck
+  since (apart from answers to a request): the person's submission (a stale doorbell
+  line their own bare Enter submitted alone counts too); a confirmed ring, its doorbell
+  prompt carrying the ring's own nonce; or the session binding. An agent started with
+  the line as its command-line prompt stays as empty as its binding left it: a doorbell
+  prompt outside a ring, as that start's or a failed ring's late one, empties nothing
+  the person typed. NovaDeck
   sees every input the person sends, so the box is empty when they sent nothing since.
   Untouched errs toward Drafting: any doubt (keys after an Enter, a turn nobody can
   attribute, a ring that didn't finish) counts as a draft. That costs a ring until the
