@@ -2851,7 +2851,10 @@ const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentN
       type("hello")
       await shell.until(manager, idle.id, "> hello")
       type("\r")
-      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
+      // The turn's hooks may take a while on a loaded machine (macOS CI).
+      await expect
+        .poll(() => manager.messages(idle.id).delivery, { timeout: 10_000 })
+        .toBe("settled")
     },
   }
 }
