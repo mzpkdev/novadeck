@@ -676,8 +676,8 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
      words, between Unicode word boundaries (`Messaging.personPrompt`, from the same
      prompt text the hooks or Antigravity's transcript give `promptStart`), read as the
      call arrives;
-  3. it is in no other text that reached the agent: no message delivered (or leased) to
-     its root session, and no title or summary of a peer in its project and session. So
+  3. it is in no other text that reached the agent: no message delivered, or ever leased
+     (a lapsed lease may still have been printed), to its root session, and no title or summary of a peer in its project and session. So
      a person pasting a peer's output, or quoting a peer's suggestion to refuse it, never
      grants it.
 
@@ -685,7 +685,10 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   changes, and, where the person's title stays, the answer says "Not renamed: the user
   named this terminal. Suggest the title to them." This doesn't stop a coached agent
   from picking a whole word or phrase the person typed themselves as the title; that
-  risk is accepted, as all it changes is a title. A subagent or a nested agent holding
+  risk is accepted, as all it changes is a title. So are these, each reducing to the
+  same: a peer that re-describes itself after the check, a forked or resumed session
+  counted as new, what other `agents()` lines carry, and a peer's summary refusing a
+  title the person did mean. A subagent or a nested agent holding
   the terminal's token can still describe the terminal without `asked`, setting the
   agent's layer and the summary: accepted too, as that layer never outranks the
   person's. The tool's description says when to set `asked`; the nudges never mention it.
@@ -700,8 +703,12 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   of a terminal another agent opened (`openedBy`). In that first session it is the
   user's only when the person's own submission started its turn (`byPerson`, recorded
   with it, `judgedFirst`) and its text isn't the prompt in the opener's command, which
-  the runner keeps in memory with the open, whatever Enter came before; until told, it
-  counts as the opener's command. The opener can name the terminal through
+  the runner keeps in memory with the open, whatever Enter came before: one whole
+  argument of the command, split and unquoted as a shell does (the prompt of
+  `claude "…"`, `codex "…"` or `agy -i "…"`), never a part of one. Until told, it counts
+  as the opener's command. Only a session the opener's command started counts: one whose
+  first word is a harness NovaDeck knows; after a command that starts no agent, as
+  `npm test`, the session the person then starts is theirs. The opener can name the terminal through
   `open_terminal`'s `title`. So a terminal opened with a task still takes its title from
   the person's first prompt there. The work is tallied from the prompts as attributed,
   so Antigravity's first typed prompt, read from its transcript, counts too.

@@ -2335,6 +2335,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const manager = shell.manager({
         env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
       })
+      // `claude` there is the stand-in, as the opener's command names it.
+      writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec agent claude "$@"\n')
+      chmodSync(join(bin, "claude"), 0o755)
       const opener = await create(manager, shell)
       const { start, step } = driver(shell, manager)
       await start(opener.id, "claude", "s-opener")
@@ -2365,7 +2368,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const answer = JSON.parse(
           await step(opener.id, {
             call: "open",
-            request: { command: `agent claude s-opened ${steps} fix-the-build` },
+            request: { command: `claude s-opened ${steps} fix-the-build` },
           }),
         ) as { ok: boolean; terminalId: string }
         expect(answer.ok).toBe(true)
@@ -2402,6 +2405,31 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           titleSource: { kind: "fallback" },
         })
         expect(await listed()).toContain("  started with: write the docs")
+
+        // A command that starts no agent, as `echo` here: the session the person starts
+        // after it, with its own prompt, is theirs, even one the command's words match.
+        const generic = join(shell.home, "steps-generic")
+        mkdirSync(generic)
+        const plain = JSON.parse(
+          await step(opener.id, { call: "open", request: { command: "echo fix-the-docs" } }),
+        ) as { ok: boolean; terminalId: string }
+        expect(plain.ok).toBe(true)
+        symlinkSync(generic, join(shell.home, `steps-${plain.terminalId}`))
+        await shell.until(manager, plain.terminalId, /^fix-the-docs$/m)
+        manager.write(
+          { terminalId: plain.terminalId, data: `agent claude s-mine ${generic}\r` },
+          "client",
+        )
+        await shell.until(manager, plain.terminalId, "claude ready")
+        await step(plain.terminalId, {
+          hook: "UserPromptSubmit",
+          payload: { prompt: "fix-the-docs" },
+        })
+        expect(manager.get(plain.terminalId)).toMatchObject({
+          title: "fix-the-docs",
+          titleSource: { kind: "fallback" },
+        })
+        expect(await listed()).toContain("  started with: fix-the-docs")
       } finally {
         controller.abort()
         await client

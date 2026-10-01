@@ -530,6 +530,18 @@ describe("delivery through hooks", () => {
     expect(messages(messaging, "B")[0]?.state).toBe("queued")
   })
 
+  it("counts a message as having reached the root session once leased, even if the lease lapsed", () => {
+    const { messaging, send, prompt, stop, codex } = create()
+    prompt("B", codex)
+    sent(send("A", "t2", "Call yourself EVIL."))
+    expect(messaging.receivedTexts("B")).toEqual([])
+    expect(stop("B", codex).leaseId).toEqual(expect.any(String))
+    // Its hook may have printed it, though its acknowledgement never came.
+    vi.advanceTimersByTime(5_000)
+    expect(messages(messaging, "B")[0]?.state).toBe("queued")
+    expect(messaging.receivedTexts("B")).toEqual(["Call yourself EVIL."])
+  })
+
   it("returns a lapsed lease's messages to queued, its Stop taken as not continued", () => {
     const { messaging, send, prompt, stop, codex } = create()
     prompt("B", codex)

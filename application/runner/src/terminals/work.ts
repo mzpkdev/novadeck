@@ -56,12 +56,59 @@ const oneLine = (text: string): string =>
   text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim()
 
 /**
+ * A command line's words, as a POSIX shell splits and unquotes them: single quotes keep
+ * everything, double quotes keep all but a backslash before `"`, `\\`, `$` or a backtick,
+ * and a backslash elsewhere keeps the next character.
+ */
+export const commandWords = (command: string): readonly string[] => {
+  const words: string[] = []
+  let word = ""
+  // Whether a word started, as `''` starts an empty one.
+  let started = false
+  let quote: "'" | '"' | undefined
+  const chars = [...command]
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index]!
+    const next = chars[index + 1] ?? ""
+    if (quote === "'") {
+      if (char === "'") quote = undefined
+      else word += char
+    } else if (quote === '"') {
+      if (char === '"') quote = undefined
+      else if (char === "\\" && /["\\$`]/.test(next)) {
+        word += next
+        index += 1
+      } else word += char
+    } else if (/\s/.test(char)) {
+      if (started) words.push(word)
+      word = ""
+      started = false
+    } else {
+      started = true
+      if (char === "'" || char === '"') quote = char
+      else if (char === "\\") {
+        word += next
+        index += 1
+      } else word += char
+    }
+  }
+  if (started) words.push(word)
+  return words
+}
+
+/**
  * Whether a prompt is the one in a command that started an agent with it, as an opener's
- * `claude "…"`: the prompt, on one line and in one case, is in the command.
+ * `claude "…"`, `codex "…"` or `agy -i "…"`: the prompt, on one line and in one case, is
+ * one whole argument of the command, never a part of one.
  */
 export const promptIn = (command: string, prompt: string): boolean => {
   const wanted = oneLine(prompt)
-  return wanted.length > 0 && oneLine(command).includes(wanted)
+  return (
+    wanted.length > 0 &&
+    commandWords(command)
+      .slice(1)
+      .some((word) => oneLine(word) === wanted)
+  )
 }
 
 /** Text on one line, cut to `max` characters (code points, never half of one) with an ellipsis. */

@@ -168,6 +168,8 @@ export class Messaging {
   private readonly threads = new Map<string, Thread>()
   private readonly leases: Leases
   private paused: boolean
+  /** Every message leased in this runner's lifetime, as one its hook may have printed. */
+  private readonly everLeased = new Set<string>()
   // Send times, for the rates: by sender, by sender and recipient, and all.
   private readonly sent = new Map<string, readonly number[]>()
   private readonly pairs = new Map<string, readonly number[]>()
@@ -416,8 +418,8 @@ export class Messaging {
   }
 
   /**
-   * The texts of the messages that reached the terminal's root session: delivered, or
-   * leased to its hooks.
+   * The texts of the messages that may have reached the terminal's root session: delivered,
+   * or ever leased to its hooks, as a lease that lapsed may still have been printed.
    */
   receivedTexts(terminalId: string): readonly string[] {
     const root = this.live.get(terminalId)?.root
@@ -426,7 +428,7 @@ export class Messaging {
       .filter(
         (message) =>
           message.to.terminalId === terminalId &&
-          (message.state === "delivered" || message.state === "leased") &&
+          (message.state === "delivered" || this.everLeased.has(message.id)) &&
           this.addressed(message, root),
       )
       .map(({ text }) => text)
@@ -867,7 +869,10 @@ export class Messaging {
       (taken) => byteLength(encode(wrap(taken))) <= maxDeliveryBytes,
     )
     if (messages.length === 0) return undefined
-    for (const message of messages) this.put({ ...message, state: "leased" })
+    for (const message of messages) {
+      this.everLeased.add(message.id)
+      this.put({ ...message, state: "leased" })
+    }
     return this.leases.grant({
       terminalId: live.terminalId,
       messages: messages.map((message) => message.id),

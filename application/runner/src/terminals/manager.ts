@@ -664,7 +664,9 @@ export class Terminals {
         held: null,
         openedBy,
         openerCommand: opener?.command ?? null,
-        awaitsOpened: opener !== undefined && !kept,
+        // Only a session the opener's command started, running an agent, is the opener's.
+        awaitsOpened:
+          opener !== undefined && !kept && expectedAgent(opener.command, undefined) !== null,
         seenEntry: undefined,
       }
       this.records.set(record.summary.id, record)
