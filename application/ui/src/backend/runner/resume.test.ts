@@ -10,6 +10,10 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 20))
 const exited = (terminalId: string): TerminalSummary => ({
   id: terminalId,
   sessionId: id(8),
+  title: "Terminal 01",
+  started: true,
+  command: null,
+  lastProgram: "claude",
   cwd: "/tmp",
   cols: 80,
   rows: 24,
