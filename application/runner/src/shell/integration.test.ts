@@ -2133,6 +2133,7 @@ const hook = (event, payload, done) => {
   child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: session, cwd: process.cwd(), ...payload }))
 }
 let box = ""
+let last = ""
 let busy = true
 let menu = false
 let turns = 0
@@ -2140,8 +2141,12 @@ const draw = () => process.stdout.write(menu ? "\r\x1b[2K  [menu] pick an item" 
 // Antigravity's hooks name no prompt: it records what was typed in its transcript, as a
 // USER_EXPLICIT USER_INPUT step, and what woke it by itself as a SYSTEM_MESSAGE one.
 const transcript = received + ".transcript.jsonl"
+let steps = 0
 const step = (fields) =>
-  fs.appendFileSync(transcript, JSON.stringify({ ...fields, created_at: new Date().toISOString() }) + "\n")
+  fs.appendFileSync(
+    transcript,
+    JSON.stringify({ ...fields, step_index: steps++, created_at: new Date().toISOString() }) + "\n",
+  )
 const agy = { conversationId: session, transcriptPath: transcript, workspacePaths: [process.cwd()] }
 const started = (prompt, typed, done) => {
   if (agent !== "agy") return hook("UserPromptSubmit", { prompt }, done)
@@ -2175,25 +2180,31 @@ process.on("SIGUSR1", () => turn("background result", false))
 if (mode !== "bg") {
   process.stdin.setRawMode(true)
   process.stdin.setEncoding("utf8")
-  process.stdin.on("data", (data) => {
-    fs.appendFileSync(raw, JSON.stringify({ data, busy }) + "\n")
+  // One key at a time, as a terminal may hand over several in one read.
+  const key = (data) => {
     if (menu) {
       if (data === "\r") fs.appendFileSync(received, JSON.stringify({ picked: true }) + "\n")
       return
     }
-    const paste = /\x1b\[200~([\s\S]*?)\x1b\[201~/.exec(data)
-    if (paste) box += paste[1]
+    if (data.startsWith("\x1b[200~")) box += data.slice(6, -6)
     else if (data === "\r") {
       // Busy, or an empty box: Enter submits nothing.
       if (busy || !box) return
       const prompt = box
+      last = box
       box = ""
       process.stdout.write("\r\n")
       return turn(prompt)
     } else if (data === "\x1b\r") box += "\n"
     else if (data === "\x15") box = ""
+    // Up recalls the last prompt, as a prompt's history does.
+    else if (data === "\x1b[A") box = last
     else box += data
     draw()
+  }
+  process.stdin.on("data", (data) => {
+    fs.appendFileSync(raw, JSON.stringify({ data, busy }) + "\n")
+    for (const each of data.match(/\x1b\[200~[\s\S]*?\x1b\[201~|\x1b\r|\x1b\[A|[\s\S]/g) ?? []) key(each)
   })
 }
 process.stdout.write("\x1b[?2004h" + agent + " tui\r\n\r\n")
@@ -2235,7 +2246,8 @@ const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentN
   standInTui(shell.home)
   const manager = shell.manager({
     env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
-    doorbell: { calmMs: 200, settleMs: 300 },
+    // A loaded machine draws slowly: the test paste gets longer to show.
+    doorbell: { calmMs: 200, settleMs: 300, pasteMs: 2_000 },
   })
   const sender = await create(manager, shell)
   const idle = await create(manager, shell)
@@ -2343,8 +2355,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       )
       tui.type("xyz")
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
-      await vi.waitFor(() => expect(tui.raw()).toContain("xyz"))
-      const raw = tui.raw()
+      await vi.waitFor(() => expect(tui.raw().join("")).toContain("xyz"))
+      const raw = tui.raw().join("")
       // Their keys come after the doorbell's Enter, never into its line.
       expect(raw.indexOf("xyz")).toBeGreaterThan(raw.lastIndexOf("\r"))
       expect(tui.received()[1]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
@@ -2399,12 +2411,36 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await shell.until(tui.manager, tui.idle.id, "running npm test")
       // While the approved command runs, the person types their next request.
       tui.type("next: also fix the lint")
-      await vi.waitFor(() => expect(tui.raw()).toContain("next: also fix the lint"))
+      await vi.waitFor(() => expect(tui.raw().join("")).toContain("next: also fix the lint"))
       await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
       await tui.send("Review a.ts")
       await quiet()
       expect(pastes(tui.raw())).toEqual([])
     })
+
+    for (const [name, keys] of [
+      ["a paste", "\x1b[200~next: also fix the lint\x1b[201~"],
+      ["Up, recalling the last prompt", "\x1b[A"],
+      ["one hotkey", "y"],
+    ] as const)
+      it(`takes ${name} while a request waits but shows no dialog as a draft`, async ({
+        shell,
+      }) => {
+        const tui = await ringing(shell, "perm")
+        await tui.first()
+        tui.type("run the tests")
+        await shell.until(tui.manager, tui.idle.id, "> run the tests")
+        tui.type("\r")
+        await shell.until(tui.manager, tui.idle.id, "running npm test")
+        // The request still waits while its tool runs; nothing shows a dialog.
+        tui.type(keys)
+        await vi.waitFor(() => expect(tui.raw().join("")).toContain(keys))
+        await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
+        await tui.send("Review a.ts")
+        await quiet()
+        expect(pastes(tui.raw()).filter((data) => data.includes("automatic notice"))).toEqual([])
+        expect(tui.received()).toHaveLength(2)
+      })
 
     it("takes Shift+Enter as a newline in the draft, never a submission", async ({ shell }) => {
       const tui = await ringing(shell)
@@ -2412,7 +2448,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       tui.type("first line")
       tui.type("\x1b\r")
       tui.type("second line")
-      await vi.waitFor(() => expect(tui.raw()).toContain("second line"))
+      await vi.waitFor(() => expect(tui.raw().join("")).toContain("second line"))
       // A turn the TUI starts by itself just after: not the person's submission.
       tui.kick()
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })

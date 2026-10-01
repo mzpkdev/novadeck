@@ -394,18 +394,21 @@ describe("Claude Code's and Codex's decoders", () => {
 })
 
 // A typed entry of a transcript, timed at 12:00:05 by default.
-const typed = (text: string, count: number, at = Date.parse("2026-10-01T12:00:05Z")) => ({
+const typed = (text: string, id: number, at = Date.parse("2026-10-01T12:00:05Z")) => ({
   text,
   at,
-  count,
+  id,
 })
 
 describe("Antigravity's confirmation of the person's submission", () => {
   const confirms = harnesses.agy.messaging.confirmsSubmission!
   const enteredAt = Date.parse("2026-10-01T12:00:05.700Z")
 
-  it("takes a typed entry new since the last turn, never a doorbell line", () => {
-    expect(confirms(typed("fix the build", 3), { enteredAt, seen: 2 })).toBe(true)
+  it("takes a typed entry whose step comes after the one last seen, never a doorbell line", () => {
+    expect(confirms(typed("fix the build", 12), { enteredAt, seen: 9 })).toBe(true)
+    expect(confirms({ ...typed("fix the build", 12), id: null }, { enteredAt, seen: 9 })).toBe(
+      false,
+    )
     // Nothing new was typed: the turn was something else waking it.
     expect(confirms(typed("fix the build", 2), { enteredAt, seen: 2 })).toBe(false)
     expect(confirms(undefined, { enteredAt, seen: 2 })).toBe(false)
@@ -420,7 +423,7 @@ describe("Antigravity's confirmation of the person's submission", () => {
         seen: undefined,
       }),
     ).toBe(false)
-    expect(confirms({ text: "fix it", at: null, count: 1 }, { enteredAt, seen: undefined })).toBe(
+    expect(confirms({ text: "fix it", at: null, id: 1 }, { enteredAt, seen: undefined })).toBe(
       false,
     )
   })

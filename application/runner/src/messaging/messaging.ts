@@ -70,6 +70,11 @@ type Live = Scope & {
   queued: boolean
   /** When it last became Settled, for screens to settle before a ring. */
   settledAt: number | null
+  /**
+   * While a request waits on the person: whether a key that may change the box came
+   * since their last bare Enter, or since the request began.
+   */
+  pendingDraft: boolean
   /** The epoch the doorbell last rang in, so a Settled period is rung once. */
   rungEpoch: number | null
 }
@@ -251,6 +256,7 @@ export class Messaging {
       typedSince: false,
       queued: false,
       settledAt: null,
+      pendingDraft: false,
       rungEpoch: null,
     })
   }
@@ -414,6 +420,27 @@ export class Messaging {
       }
     }
     this.step(live, { type: "input", ...input })
+  }
+
+  /**
+   * The person's key while a request waits on them, which is never a submission: a bare
+   * Enter either answers it or submits the box, so the box is empty after it; any `content`
+   * key since may have left something in the box.
+   */
+  pendingInput(terminalId: string, key: "enter" | "content"): void {
+    const live = this.live.get(terminalId)
+    if (live) live.pendingDraft = key === "content"
+  }
+
+  /**
+   * No request waits on the person any more: a key that may have changed the box since
+   * their last Enter makes the prompt a draft, as any input outside a request does.
+   */
+  requestCleared(terminalId: string): void {
+    const live = this.live.get(terminalId)
+    if (!live?.pendingDraft) return
+    live.pendingDraft = false
+    this.input(terminalId, { submits: false, answers: false })
   }
 
   /**
@@ -910,6 +937,7 @@ export class Messaging {
       if (change.type === "ended") {
         if (!live.root) continue
         live.root = null
+        live.pendingDraft = false
         this.step(live, { type: "unbound" })
         // Messages for the session that ended are gone; those for the first session the
         // terminal expects wait on, until it closes.
@@ -933,6 +961,7 @@ export class Messaging {
    */
   private rootAt(live: Live, root: Root, guess: boolean): void {
     live.root = root
+    live.pendingDraft = false
     // Its first session came: from now on, only a bound session takes messages.
     live.expecting = null
     this.step(live, { type: "bound" })

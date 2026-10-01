@@ -13,7 +13,7 @@ import {
 } from "../harness.js"
 import { decode } from "./decode.js"
 import { statusLineSettings, trustsFolder } from "./settings.js"
-import { transcripts } from "./transcripts.js"
+import { transcripts, typedEntry } from "./transcripts.js"
 
 // Antigravity keeps its own state beside other Google tools in ~/.gemini.
 const gemini = (home: string) => join(home, ".gemini")
@@ -48,13 +48,14 @@ const messaging: MessagingProfile = {
   // Its transcript tells what was typed (a USER_EXPLICIT USER_INPUT step, the only kind
   // its transcript reader takes as the user's) from what woke it: a subagent's message,
   // a Stop hook's continuation or a notice are SYSTEM_MESSAGE steps, and injected
-  // messages EPHEMERAL_MESSAGE ones. A typed entry is new once there are more than were
-  // seen at the last turn; before any was seen, by its time, which is to the second.
+  // messages EPHEMERAL_MESSAGE ones. A typed entry is new once its step comes after the
+  // one seen at the last turn; before any was seen, by its time, which is to the second.
+  typedEntry,
   confirmsSubmission: (entry, { enteredAt, seen }) =>
     entry !== undefined &&
     (seen === undefined
       ? entry.at !== null && entry.at >= Math.floor(enteredAt / 1_000) * 1_000
-      : entry.count > seen) &&
+      : entry.id !== null && entry.id > seen) &&
     !hasDoorbell(entry.text),
 }
 

@@ -74,7 +74,7 @@ import {
   terminalForeground,
   type Foreground,
 } from "./foreground.js"
-import { inputParts, keysOf } from "./keys.js"
+import { keysOf } from "./keys.js"
 import { Latest } from "./latest.js"
 import {
   allowOpen,
@@ -235,13 +235,11 @@ type Record = {
   held: string[] | null
   /** The handle of the terminal whose agent opened this one with a task; null otherwise. */
   openedBy: string | null
-  /** The requests waiting on the person that their keys already answered, by id. */
-  answered: string | null
   /**
-   * How many typed entries its agent's transcript held at its last root turn, where its
-   * hooks name no prompt; undefined before one was read.
+   * The last typed entry its agent's transcript held at a root turn, by its id, where
+   * its hooks name no prompt; undefined before one was read.
    */
-  userEntries: number | undefined
+  seenEntry: { readonly transcript: string; readonly id: number } | undefined
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -629,8 +627,7 @@ export class Terminals {
         work: saved?.work ?? null,
         held: null,
         openedBy: null,
-        answered: null,
-        userEntries: undefined,
+        seenEntry: undefined,
       }
       this.records.set(record.summary.id, record)
       this.register(record, expectedAgent(input.command, input.resume))
@@ -783,21 +780,22 @@ export class Terminals {
         this.claims.delete(claim)
       if (/[\r\n]/.test(input.data)) record.submitted = true
       // What reached the agent's box: a harness that queues a prompt with a key of its own
-      // submits it once its turn ends. Keys answering a request waiting on the person are
-      // no draft, up to the first that answers it; what follows is.
+      // submits it once its turn ends. While a request waits on the person, nothing is a
+      // submission; messaging keeps whether a key that may change the box came since the
+      // last bare Enter, and applies it once the request clears.
       const queueKey = record.binding
         ? harnesses[record.binding.agent].messaging.queueKey
         : undefined
-      const keys = keysOf(input.data, queueKey)
-      const pending = (record.activity?.pending ?? []).map(({ requestId }) => requestId).join("\n")
-      const parts = inputParts(keys, pending !== "" && record.answered !== pending)
-      if (
-        pending !== "" &&
-        parts.some(({ answers }) => answers) &&
-        keys.some(({ kind }) => kind !== "navigation")
-      )
-        record.answered = pending
-      for (const part of parts) this.messaging.input(input.terminalId, part)
+      const pending = (record.activity?.pending.length ?? 0) > 0
+      for (const key of keysOf(input.data, queueKey))
+        if (pending) {
+          if (key.kind === "enter" || key.kind === "content")
+            this.messaging.pendingInput(input.terminalId, key.kind)
+        } else
+          this.messaging.input(input.terminalId, {
+            submits: key.kind === "enter" || key.kind === "queue",
+            answers: false,
+          })
     }
     // While the doorbell's test paste is on screen, the person's input waits its turn.
     if (record.held) {
@@ -951,7 +949,7 @@ export class Terminals {
           binding: null,
           root: null,
           held: null,
-          userEntries: undefined,
+          seenEntry: undefined,
           activity: null,
           telemetry: null,
           watching: null,
@@ -2149,11 +2147,7 @@ export class Terminals {
       awaited: (sessionId) => this.messaging.awaits(id, sessionId),
     })
     record.root = root
-    if (changes.length > 0) {
-      this.messaging.rooted(id, changes)
-      // Another session, another transcript: what was seen of the last says nothing.
-      record.userEntries = undefined
-    }
+    if (changes.length > 0) this.messaging.rooted(id, changes)
     const work = workAfter(record.work, root, events, Date.now(), changes)
     if (work === record.work) return false
     record.work = work
@@ -2176,27 +2170,29 @@ export class Terminals {
     const root = record.root
     if (!root) return events
     const profile = harnesses[root.agent].messaging
-    const items = harnesses[root.agent].transcripts?.items
+    const typed = profile.typedEntry
     const index = events.findIndex(
       (event) =>
         event.type === "turn-started" && event.cause === "harness" && rootedIn(root, event),
     )
-    if (profile.promptVisible || !items || !record.transcript || index < 0) return events
+    const transcript = record.transcript
+    if (profile.promptVisible || !typed || !transcript || index < 0) return events
     const nonce = this.messaging.ringing(id)
     const enteredAt = this.messaging.pendingSubmission(id)
     const confirms = profile.confirmsSubmission
-    const seen = record.userEntries
+    // What was seen of this transcript, not another's.
+    const seen = record.seenEntry?.transcript === transcript ? record.seenEntry.id : undefined
     // Its transcript may record the input just after the hook runs: a few looks, briefly,
     // while a ring or the person's Enter waits on it; one otherwise, to know what is new.
     const looks = nonce !== undefined || (enteredAt !== undefined && confirms) ? 2 : 0
     for (let look = 0; ; look += 1) {
       // eslint-disable-next-line no-await-in-loop -- Each look waits for the last.
-      const entry = await lastUserInput(record.transcript, items)
+      const entry = await lastUserInput(transcript, typed)
       const rung = nonce === undefined ? undefined : confirmRing(events, root, nonce, entry?.text)
       const theirs =
         !rung && enteredAt !== undefined && confirms?.(entry, { enteredAt, seen }) === true
       if (rung || theirs || look === looks) {
-        if (entry) record.userEntries = entry.count
+        if (entry?.id != null) record.seenEntry = { transcript, id: entry.id }
         if (rung) return rung
         if (!theirs) return events
         return events.map((event, at) =>
@@ -2243,6 +2239,15 @@ export class Terminals {
 
   /** Applies what the bound session's hooks or records said; true when it changed. */
   private applyFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): boolean {
+    const waited = (record.activity?.pending.length ?? 0) > 0
+    const applied = this.appliedFact(record, fact)
+    // A request no longer waits on the person: what they typed meanwhile counts now.
+    if (waited && (record.activity?.pending.length ?? 0) === 0)
+      this.messaging.requestCleared(record.summary.id)
+    return applied
+  }
+
+  private appliedFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): boolean {
     if (!record.binding) return false
     if (fact.type === "telemetry-observed") {
       const next = observeTelemetry(record.telemetry, record.binding, fact)

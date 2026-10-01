@@ -147,12 +147,17 @@ export type MessagingProfile = {
   /** How it starts without a prompt. */
   readonly start: readonly string[]
   /**
-   * Where its hooks can't tell the person's prompt from a turn it started by itself
-   * (`promptVisible` false), whether the last user input its transcript recorded shows
-   * the person submitted with their bare Enter at `enteredAt`, nothing typed after: a
-   * typed entry, new since the transcript was last read at a turn (`seen` entries then,
-   * unknown before any), that is no doorbell line. Without it, a turn the harness
-   * started is never the person's.
+   * Where its hooks name no prompt (`promptVisible` false), what one line of its
+   * transcript records as typed into its box, if that is what it records: how a ring is
+   * confirmed, and the person's submission told.
+   */
+  readonly typedEntry?: (line: string) => UserEntry | undefined
+  /**
+   * Where its hooks can't tell the person's prompt from a turn it started by itself,
+   * whether the last typed entry its transcript recorded shows the person submitted with
+   * their bare Enter at `enteredAt`, nothing typed after: a typed entry newer than the
+   * one `seen` at its last turn (its id; unknown before any was read), that is no
+   * doorbell line. Without it, a turn the harness started is never the person's.
    */
   readonly confirmsSubmission?: (
     entry: UserEntry | undefined,
@@ -161,13 +166,13 @@ export type MessagingProfile = {
 }
 
 /**
- * The last thing a transcript recorded as typed into the agent's box, when, and how many
- * such entries it holds in all.
+ * Something a transcript recorded as typed into the agent's box: its text, when, and its
+ * place in the transcript (`id`, growing with each step), where the transcript gives one.
  */
 export type UserEntry = {
   readonly text: string
   readonly at: number | null
-  readonly count: number
+  readonly id: number | null
 }
 
 /**

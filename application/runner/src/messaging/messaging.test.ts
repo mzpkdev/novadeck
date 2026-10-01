@@ -1238,3 +1238,45 @@ describe("a task's checks", () => {
     expect(messaging.refusal("A", "one more", "codex")).toMatch(/^An agent may send 10 messages/)
   })
 })
+
+describe("keys while a request waits on the person", () => {
+  const enter = { submits: true, answers: false }
+
+  it("answer a two-question form without a draft, and its turn's Stop still continues", () => {
+    const { messaging, prompt, stop, send, codex } = create()
+    messaging.input("B", enter)
+    prompt("B", codex)
+    // Each question: Down to pick, Enter to take it; then Enter sends the form.
+    for (const key of ["content", "enter", "content", "enter", "enter"] as const)
+      messaging.pendingInput("B", key)
+    messaging.requestCleared("B")
+    sent(send("A", "t2", "hello"))
+    // Never a submission: the Stop is continued with the message, as before any request.
+    expect(stop("B", codex).leaseId).toEqual(expect.any(String))
+    prompt("B", codex, "harness")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("settled")
+  })
+
+  it("leave a draft for a key that may change the box, until a bare Enter follows", () => {
+    const { messaging, prompt, stop, codex } = create()
+    messaging.input("B", enter)
+    prompt("B", codex)
+    // A lone hotkey, or a paste or Up where no dialog shows: it may be in the box.
+    messaging.pendingInput("B", "content")
+    messaging.requestCleared("B")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+  })
+
+  it("count nothing typed once the person's bare Enter took it", () => {
+    const { messaging, prompt, stop, codex } = create()
+    messaging.input("B", enter)
+    prompt("B", codex)
+    messaging.pendingInput("B", "content")
+    messaging.pendingInput("B", "enter")
+    messaging.requestCleared("B")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("settled")
+  })
+})
