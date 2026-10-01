@@ -65,9 +65,12 @@ xterm and attachment from `backend/runner/screens.ts` instead of opening and att
 again. A terminal no view shows keeps them while its session is on screen and lets them
 go a moment after its session leaves the screen or the terminal closes.
 
-Saved sessions record one required program name per terminal (`lastProcess`, never
-its command line, which can hold secrets): the program running at the save, or else the
-one the terminal lost with its shell. A terminal has a `restoredProcess` only while it
+The runner owns every terminal: which terminals a session has, their names (the ones
+you give them, or its own "Terminal 01", "Terminal 02", … per session), directories, what
+they run and the program each last had in its foreground (only its name, never its
+command line, which can hold secrets). The UI shows them, renames through the runner,
+and saves only how it shows them: layouts, sidebar order, the view and the selection,
+by terminal id. A terminal has a `restoredProcess` only while it
 has no live shell: a program running when the runner lost the shell, the shell was
 killed, or the app closed becomes it, and it ends once a shell reaches its prompt or
 runs a program. Every replacement shell starts in the runner backend's `freshShell`,
@@ -372,8 +375,8 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 | `application/host`     | Electron host that starts the runner and loads the packaged UI. |
 | `scripts`              | Repository checks and automation.                               |
 
-The UI runs real shells through the runner. Projects and sessions live in the
-runner's SQLite metadata, and each session saves its terminal names, order, and
+The UI runs real shells through the runner. Projects, sessions and their terminals
+live in the runner's SQLite metadata, and each session saves its terminals' order and
 layouts there too; preferences and sidebar settings are stored locally. Unit tests
 and behaviour specs run on the demo adapter's sample data instead.
 
