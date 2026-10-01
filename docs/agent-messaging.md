@@ -468,7 +468,8 @@ pause switch. The person doesn't send as themselves; they type in the terminal.
 
 1. **Mailbox and hook delivery:** handles, the mailbox, `send` and `agents`, leases and
    asks for all three harnesses, the states except the doorbell, guards, pause and the
-   runner API.
+   runner API. Built: `application/runner/src/messaging/`, with the runner API as
+   `messages.list`, `messages.pause` and `messages.release`.
 2. **Doorbell and starting a task:** the Settled path, the two-phase ring, and
    `open_terminal(agent, message)`.
 3. **UI:** badges, the Messages view and the pause switch.

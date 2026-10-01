@@ -129,7 +129,9 @@ agent.
   `agy plugin`, from a local marketplace or folder in NovaDeck's data directory);
   turning it off uninstalls it. The plugin holds a single hook that tells the NovaDeck
   terminal it runs in which session it is, and does nothing when the agent runs
-  anywhere else. It adds nothing to the model's context. Without a connected agent
+  anywhere else. It adds nothing to the model's context but the messages other agents in
+  NovaDeck send it, wrapped as theirs (see [Agent messaging](docs/agent-messaging.md)).
+  Without a connected agent
   there is no resume, even for sessions it reported before: disconnecting forgets them,
   and the terminal comes back as a plain shell with its transcript.
 - **Resuming.** When a terminal lost a connected agent, its fresh shell comes back
@@ -151,8 +153,9 @@ agent.
   printed: they live in `workspace.sqlite`, readable by your account only, with up to
   256 KiB kept per terminal.
 
-Codex may ask you once to review NovaDeck's hook ("Hooks need review") and records the
-answer itself; the hook never changes between NovaDeck versions, so it asks only once.
+Codex may ask you to review NovaDeck's hook ("Hooks need review") and records the
+answer itself; it asks again only when NovaDeck changes how its hook is registered, as
+when the hook gained its time limit for agent messaging.
 Interactive Codex normally runs its sessions, hooks included, in a shared background
 server that cannot tell which terminal a session belongs to. So while Codex is
 connected, NovaDeck's shells run `codex` through a small shim that adds `--no-daemon`,
