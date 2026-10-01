@@ -806,7 +806,7 @@ const createIn = (manager: Terminals) =>
 const readers = (manager: Terminals, terminalId: string) =>
   (manager as unknown as { mail: Map<string, Set<unknown>> }).mail.get(terminalId)?.size ?? 0
 
-describe("terminal message watches", () => {
+describe.skipIf(process.platform === "win32")("terminal message watches", () => {
   it("lets go of each reader that stops, by return or by its signal", async ({ terminals }) => {
     const manager = terminals.manager()
     const { id } = await createIn(manager)
