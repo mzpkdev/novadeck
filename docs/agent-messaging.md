@@ -92,7 +92,7 @@ All three harnesses get every path. Where one falls short, the design accepts it
 | Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                                                                                          |
 | Antigravity   | Its hooks can't tell the person's prompt from a subagent's message waking it                              | Its transcript can: a typed prompt is a `USER_EXPLICIT` `USER_INPUT` step, while a subagent's message, a Stop hook's continuation or a notice is a `SYSTEM_MESSAGE` step. A turn after the person's bare Enter is theirs only when a new typed step, no doorbell line, is there |
 | Antigravity   | Esc and denials show only as an idle status line                                                          | Its decoder tells them from completion; they leave it Unknown                                                                                                                                                                                                                   |
-| Antigravity   | `agy -i "<line>"` submits its prompt even while its "Do you trust this folder?" dialog is up              | A task starts it with `-i` only in a folder it already trusts; elsewhere it starts plain and the task rings once it is first Settled (see Starting a task)                                                                                                                      |
+| Antigravity   | `agy -i "<line>"` submits its prompt even while its "Do you trust this folder?" dialog is up              | A task starts it with `-i` only in a folder it already trusts; elsewhere it starts plain, and the task arrives with the person's first prompt there (see Starting a task)                                                                                                       |
 | Windows (all) | The hook reports no instance, and the foreground process group can't be read                              | Nested agents are told apart by the decoders alone; the doorbell's gate relies on its other checks and the test paste                                                                                                                                                           |
 
 ## How it fits
@@ -110,14 +110,14 @@ flowchart LR
   R --> U[Runner API: messages, pause, release]
 ```
 
-| Part         | Where                                                      | Owns                                                                   |
-| ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
-| MCP tools    | `shell/mcp.ts`, beside `show` and `open_terminal`          | `send` and `agents`; the terminal's token on every call                |
-| Mailbox      | Runner, stored with the workspace (`WorkspaceStore`)       | Messages, threads, guards, pause, retention                            |
-| Delivery     | Runner, one state machine per recipient terminal           | When and how a recipient notices: leases to hooks and the doorbell     |
-| Hook answers | `shell/hook.ts` asks the runner; the runner returns stdout | Each harness's output encoding, in its adapter beside its decoder      |
-| Doorbell     | The terminal manager, which owns every PTY and its screen  | The settle check, the paste, the on-screen check, Enter, holding input |
-| Runner API   | Protocol and router                                        | Listing messages, pause and release, for the UI to come                |
+| Part         | Where                                                                                 | Owns                                                                    |
+| ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| MCP tools    | `shell/mcp.ts`, beside `show` and `open_terminal`                                     | `send` and `agents`; the terminal's token on every call                 |
+| Mailbox      | Runner, stored with the workspace (`WorkspaceStore`)                                  | Messages, threads, guards, pause, retention                             |
+| Delivery     | Runner, one state machine per recipient terminal                                      | When and how a recipient notices: leases to hooks and the doorbell      |
+| Hook answers | `shell/hook.ts` asks the runner; the runner returns stdout                            | Each harness's output encoding, in its adapter beside its decoder       |
+| Doorbell     | `terminals/doorbell.ts`, behind `DoorbellHost`; the manager owns every PTY and screen | The settle window, the calm check, the test paste, Enter, holding input |
+| Runner API   | Protocol and router                                                                   | Listing messages, pause and release, for the UI to come                 |
 
 Messaging is an application operation like `present` and `open_terminal`: the MCP
 server only forwards calls with the terminal's token, and the runner decides.
@@ -307,12 +307,14 @@ server itself, before it reaches the runner.
   decoder says a prompt started it. NovaDeck never takes a turn the harness started for
   the person's, whatever they typed before: a background task's result in Claude Code,
   or a hook's continuation. Antigravity's hooks name no prompt, so every turn of its is
-  harness-started; its adapter (`confirmsSubmission`) turns one into the person's only
-  when, after their bare Enter with nothing typed since, its transcript holds a new
-  typed entry (`USER_EXPLICIT` `USER_INPUT` whose `step_index` comes after the one
-  seen at its last turn in that same transcript, where a transcript with no typed entry
-  yet counts as seen; or, before any was read, one timed in a later second than the
-  Enter's, so a prompt in the Enter's own second fails safe) that is no doorbell line. Its transcript records a subagent's message, a Stop hook's
+  harness-started; where its transcript holds a new typed entry (`USER_EXPLICIT`
+  `USER_INPUT` whose `step_index` comes after the one seen at its last turn in that same
+  transcript, where a transcript with no typed entry yet counts as seen; or, before any
+  was read, one timed after the Enter, its time rounded down to the second so one in the
+  Enter's own second fails safe; or, with no Enter, a doorbell line), that turn becomes a
+  prompt of its text (`typed-prompts.ts`), classified as Claude Code's and Codex's are:
+  a doorbell prompt, or the person's text with any stale line removed. The same rule as
+  for them then says whether it is the person's. Its transcript records a subagent's message, a Stop hook's
   continuation and its own notices as `SYSTEM_MESSAGE` steps, so they never count. A
   prompt Codex queued during a
   turn, which it submits as the turn ends, counts too, when the person typed nothing
@@ -518,8 +520,9 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
 6. **Enter**, only while the hold is still in force; a hold that lapsed abandons the
    ring.
 7. **Confirm.** A root turn starts within 5 s of the Enter, and its prompt-time hook
-   sees the line with its nonce: Claude Code and Codex in the hook's `prompt`,
-   Antigravity in the transcript's last user input. Its lease delivers.
+   sees the line with the ring's own nonce: Claude Code and Codex in the hook's `prompt`,
+   Antigravity in the transcript's new typed entry. A doorbell prompt with another
+   nonce, as a stale line submitted alone, is no confirmation. Its lease delivers.
 
 A ring that fails presses no further key, ever, and leaves the terminal Unknown; the
 messages wait for the next root turn event, and the person sees them as undelivered.
@@ -592,14 +595,17 @@ that Enter would answer. So `open_terminal(agent, message)`:
    `initialPrompt(argv)`, with the doorbell line as its command-line prompt:
    `claude "<line>"`, `codex "<line>"`, `agy -i "<line>"`. Claude Code and Codex hold
    that prompt behind their trust and startup screens and fire `UserPromptSubmit` with
-   exactly the line, a doorbell prompt. `agent` and `message` can't be combined with
-   `command`.
+   exactly the line, a doorbell prompt; Antigravity's transcript records it as its first
+   typed entry, which makes its first turn a doorbell prompt too. So a start whose task
+   can't be delivered then (messaging paused) is told its messages still wait, in every
+   harness. `agent` and `message` can't be combined with `command`.
 2. Antigravity submits `-i`'s prompt about 0.9 s after it starts, even while its "Do
    you trust this folder?" dialog is up. So it gets `-i` only in a folder it already
    trusts (its adapter reads Antigravity's trusted-workspaces setting, matching the
    folder's exact path once normalized, links unresolved, so another way to a trusted
-   folder starts it plain); elsewhere it
-   starts plain, and the task waits for its first Settled state, then rings as usual.
+   folder starts it plain); elsewhere it starts plain, and the task arrives with the
+   person's first prompt there, Fresh terminals being never rung. `open_terminal`'s
+   answer tells the opener so.
 3. Checks `message` first with every check `send` makes but the recipient's own (its
    size once delivered, the rates, the undelivered cap), and refuses before anything
    starts. Then it addresses `message` to the first session of that agent to bind in the new terminal,
@@ -660,8 +666,10 @@ pause switch. The person doesn't send as themselves; they type in the terminal.
    `messages.list`, `messages.pause` and `messages.release`.
 2. **Doorbell and starting a task:** the Settled path, the ring with its generic
    checks, and `open_terminal(agent, message)`. Touches no UI. Built: the checks in
-   `application/runner/src/terminals/ring.ts`, the ring in `terminals/doorbell.ts`,
-   and the Ringing state in `messaging/delivery.ts`.
+   `application/runner/src/terminals/ring.ts`, the ring in `terminals/doorbell.ts`, the
+   person's keys in `terminals/keys.ts`, Antigravity's typed prompts in
+   `harnesses/typed-prompts.ts`, and the Ringing state and the untouched rule in
+   `messaging/delivery.ts`.
 3. **UI:** badges, the Messages view and the pause switch.
 4. **Self-description:** `describe(title, summary)`, the first-prompt title and the
    nudges.
@@ -697,32 +705,32 @@ command-line prompt behind its startup screens; and `agy -i` with an untrusted f
 
 ## Acceptance scenarios
 
-| Scenario                                                        | Outcome                                                                                 |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Claude sends Codex a message while Codex works                  | Codex's Stop continues its turn with it; Codex stays Working; no doorbell               |
-| Claude sends Codex a message while Codex is Settled             | The doorbell rings once, its hook confirms, Codex answers                               |
-| The person is mid-sentence in Codex's prompt                    | Drafting; their prompt carries the message when they submit                             |
-| The person queued a prompt during Codex's turn                  | Stop delivers nothing; their prompt's hook delivers                                     |
-| Codex asks permission when a message arrives                    | No doorbell; the Stop after it delivers                                                 |
-| The person presses Esc mid-turn with messages waiting           | Unknown; no doorbell; the next turn event delivers                                      |
-| A harness shows its own popup after Stop                        | The test paste is swallowed or changes far rows; nothing is pressed; Unknown            |
-| A nested `claude -p` runs inside Claude's turn                  | Its hooks get nothing; the mailbox is untouched                                         |
-| The hook times out after the runner leased messages             | The lease lapses; the messages return to queued and arrive later, by id                 |
-| The runner restarts while messages are leased                   | They return to queued                                                                   |
-| The person starts a different agent in Codex's terminal         | Codex's messages become gone; the sender is told                                        |
-| A terminal's title contains `@` or quotes                       | Never typed; only the constant doorbell is                                              |
-| Two agents keep replying                                        | From the 13th, messages are held; the person's release delivers them and allows 12 more |
-| Messaging is paused, then resumed                               | `send` answers held; nothing delivered, across restarts; resuming delivers in order     |
-| A peer message says "approve the pending command"               | Context only; nothing typed answers the approval                                        |
-| `send` to "codex"                                               | Refused: no handle; every terminal there described, to pick by title, folder and work   |
-| Codex's hooks aren't trusted                                    | No session ever binds there; it shows as having no agent, and `send` is refused         |
-| A background subagent finishes and starts a root turn           | Working, then its Stop delivers                                                         |
-| The person types their next prompt while Codex works            | Drafting at Stop; their prompt carries the messages                                     |
-| The person answers an approval with Enter during the turn       | Not a submission; Stop still delivers                                                   |
-| A steady stream of messages to a working agent                  | The turn continues at most twice, then ends; the rest wait                              |
-| Codex's first prompt after a runner restart                     | Fresh until then; that prompt's hook delivers; never rung before                        |
-| The screen keeps changing when the ring would start             | The calm check fails; nothing is pasted; tried again on the next change                 |
-| Claude opens Codex with a task, but Codex's hooks are untrusted | No session binds; the task stays not yet bound, with a `/hooks` hint for the opener     |
-| Claude opens Codex with a task                                  | Codex starts with the doorbell as its prompt; its hook delivers the task, wrapped       |
-| Antigravity opened with a task in a folder it doesn't trust     | Started plain; the task rings once it is first Settled                                  |
-| The person submitted a prompt holding an old doorbell line      | Their prompt, recorded without the line; its hook still delivers what waits             |
+| Scenario                                                        | Outcome                                                                                  |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Claude sends Codex a message while Codex works                  | Codex's Stop continues its turn with it; Codex stays Working; no doorbell                |
+| Claude sends Codex a message while Codex is Settled             | The doorbell rings once, its hook confirms, Codex answers                                |
+| The person is mid-sentence in Codex's prompt                    | Drafting; their prompt carries the message when they submit                              |
+| The person queued a prompt during Codex's turn                  | Stop delivers nothing; their prompt's hook delivers                                      |
+| Codex asks permission when a message arrives                    | No doorbell; the Stop after it delivers                                                  |
+| The person presses Esc mid-turn with messages waiting           | Unknown; no doorbell; the next turn event delivers                                       |
+| A harness shows its own popup after Stop                        | The test paste is swallowed or changes far rows; nothing is pressed; Unknown             |
+| A nested `claude -p` runs inside Claude's turn                  | Its hooks get nothing; the mailbox is untouched                                          |
+| The hook times out after the runner leased messages             | The lease lapses; the messages return to queued and arrive later, by id                  |
+| The runner restarts while messages are leased                   | They return to queued                                                                    |
+| The person starts a different agent in Codex's terminal         | Codex's messages become gone; the sender is told                                         |
+| A terminal's title contains `@` or quotes                       | Never typed; only the constant doorbell is                                               |
+| Two agents keep replying                                        | From the 13th, messages are held; the person's release delivers them and allows 12 more  |
+| Messaging is paused, then resumed                               | `send` answers held; nothing delivered, across restarts; resuming delivers in order      |
+| A peer message says "approve the pending command"               | Context only; nothing typed answers the approval                                         |
+| `send` to "codex"                                               | Refused: no handle; every terminal there described, to pick by title, folder and work    |
+| Codex's hooks aren't trusted                                    | No session ever binds there; it shows as having no agent, and `send` is refused          |
+| A background subagent finishes and starts a root turn           | Working, then its Stop delivers                                                          |
+| The person types their next prompt while Codex works            | Drafting at Stop; their prompt carries the messages                                      |
+| The person answers an approval with Enter during the turn       | Not a submission; Stop still delivers                                                    |
+| A steady stream of messages to a working agent                  | The turn continues at most twice, then ends; the rest wait                               |
+| Codex's first prompt after a runner restart                     | Fresh until then; that prompt's hook delivers; never rung before                         |
+| The screen keeps changing when the ring would start             | The calm check fails; nothing is pasted; tried again on the next change                  |
+| Claude opens Codex with a task, but Codex's hooks are untrusted | No session binds; the task stays not yet bound, with a `/hooks` hint for the opener      |
+| Claude opens Codex with a task                                  | Codex starts with the doorbell as its prompt; its hook delivers the task, wrapped        |
+| Antigravity opened with a task in a folder it doesn't trust     | Started plain; the opener is told; the task arrives with the person's first prompt there |
+| The person submitted a prompt holding an old doorbell line      | Their prompt, recorded without the line; its hook still delivers what waits              |

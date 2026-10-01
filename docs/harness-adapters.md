@@ -410,9 +410,13 @@ Besides the facts shared with the agent model, decoders give
   `<task-notification>`), a hook's continuation (Codex's `<hook_prompt>`) or a delivery
   of messages, and every Antigravity turn, whose hooks name no prompt; `doorbell`, a
   prompt that is exactly the doorbell's line, with its `nonce`; or `call`, a later model
-  call of a turn already running (Antigravity's `PreInvocation` past its first).
-  Whether a turn is the person's submission is messaging's own reckoning: their Enter,
-  then a root turn within about 2 s.
+  call of a turn already running (Antigravity's `PreInvocation` past its first). Where
+  hooks name no prompt, `typed-prompts.ts` tells the root's harness-started turn from
+  the transcript: a new typed entry makes it `promptStart` of that entry's text, so
+  Antigravity's turns go through the same doorbell, continuation and prompt classifier
+  as the others'. Whether a turn is the person's submission is messaging's own
+  reckoning, in `messaging/delivery.ts`: a `prompt` after their bare Enter within about
+  2 s, nothing typed since; a `doorbell` prompt confirms a ring only with its nonce.
 - `turn-ended` with `outcome: "completed"` is a root Stop; `background` says work the
   turn started still runs and may start another turn by itself (Claude Code's
   `background_tasks` still running, Antigravity's Stop without `fullyIdle`).
@@ -445,8 +449,6 @@ type MessagingProfile = {
   readonly queueKey?: string
   /** Whether a failed turn fires nothing, so its turn may only end with its next prompt. */
   readonly silentOnFailure: boolean
-  /** Whether its prompt-time hook names the prompt's text; else its transcript tells a ring. */
-  readonly promptVisible: boolean
   /** How it starts with `line` as its first prompt; undefined where it may not here. */
   readonly initialPrompt: (
     line: string,
@@ -455,23 +457,19 @@ type MessagingProfile = {
   /** How it starts without a prompt. */
   readonly start: readonly string[]
   /**
-   * Where its hooks name no prompt, whether its transcript's last typed entry shows the
-   * person submitted with their bare Enter; else a turn it started is never theirs.
+   * Where its hooks name no prompt (Antigravity's), what a line of its transcript
+   * records as typed into its box, with its time and step: from it `typed-prompts.ts`
+   * tells a root turn's prompt.
    */
-  /** Where its hooks name no prompt, what a transcript line records as typed, with its step. */
   readonly typedEntry?: (line: string) => UserEntry | undefined
-  readonly confirmsSubmission?: (
-    entry: UserEntry | undefined,
-    since: { readonly enteredAt: number; readonly seen: number | undefined },
-  ) => boolean
 }
 ```
 
-| Harness     | `asks`                     | `reinjectPerCall` | `root`        | `queueKey` | `silentOnFailure` | `promptVisible` | `initialPrompt`                        |
-| ----------- | -------------------------- | ----------------- | ------------- | ---------- | ----------------- | --------------- | -------------------------------------- |
-| Claude Code | `Stop`, `UserPromptSubmit` | no                | `binding`     | none       | no                | yes             | `claude "<line>"`                      |
-| Codex       | `Stop`, `UserPromptSubmit` | no                | `binding`     | Tab        | yes               | yes             | `codex "<line>"`                       |
-| Antigravity | `Stop`, `PreInvocation`    | yes               | `status-line` | none       | no                | no              | `agy -i "<line>"`, in a trusted folder |
+| Harness     | `asks`                     | `reinjectPerCall` | `root`        | `queueKey` | `silentOnFailure` | `typedEntry`             | `initialPrompt`                        |
+| ----------- | -------------------------- | ----------------- | ------------- | ---------- | ----------------- | ------------------------ | -------------------------------------- |
+| Claude Code | `Stop`, `UserPromptSubmit` | no                | `binding`     | none       | no                | none: hooks name prompts | `claude "<line>"`                      |
+| Codex       | `Stop`, `UserPromptSubmit` | no                | `binding`     | Tab        | yes               | none: hooks name prompts | `codex "<line>"`                       |
+| Antigravity | `Stop`, `PreInvocation`    | yes               | `status-line` | none       | no                | `USER_INPUT` steps       | `agy -i "<line>"`, in a trusted folder |
 
 The terminal manager follows each terminal's root session as its profile's `root`
 says (`harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
