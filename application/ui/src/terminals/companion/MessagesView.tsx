@@ -1,12 +1,22 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react"
-import { useId } from "react"
+import { useEffect, useId, useRef } from "react"
 
 import type { AgentMessage, MessageThread } from "../../model/messages"
 import { Switch } from "../../ui-toolkit/Switch"
 import type { MailHandle } from "./mail"
 
-const clock = (at: number): string =>
-  new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+// When a message was sent or delivered: the time, with the date when it wasn't today.
+const clock = (at: number): string => {
+  const when = new Date(at)
+  return when.toDateString() === new Date().toDateString()
+    ? when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : when.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+}
 
 // Where a message is on its way, in a word or two.
 const stateText = (message: AgentMessage): string => {
@@ -60,20 +70,34 @@ const ThreadItem = ({
   thread,
   handle,
   peerName,
+  releasing,
   onRelease,
 }: {
   thread: MessageThread
   handle: string
+  // Undefined for a terminal no longer in the session: its handle stands alone.
   peerName: string | undefined
+  releasing: boolean
   onRelease: () => void
 }): React.JSX.Element => {
-  const peer = peerName ?? "A closed terminal"
+  const peer = peerName ?? thread.peer
+  const label = peerName === undefined ? thread.peer : `${peerName} (${thread.peer})`
   const count = thread.messages.length
+  const heading = useRef<HTMLHeadingElement>(null)
+  const held = useRef(thread.held)
+  // Released, its button goes: focus that was on it moves to the thread.
+  useEffect(() => {
+    const lost = !document.activeElement || document.activeElement === document.body
+    if (held.current && !thread.held && lost) heading.current?.focus({ preventScroll: true })
+    held.current = thread.held
+  }, [thread.held])
   return (
-    <section className="mail-thread" aria-label={`Thread with ${peer} (${thread.peer})`}>
+    <section className="mail-thread" aria-label={`Thread with ${label}`}>
       <header className="mail-thread-head">
-        <b className="mail-thread-peer">{peer}</b>
-        <code>{thread.peer}</code>
+        <h3 ref={heading} tabIndex={-1} className="mail-thread-peer">
+          {peer}
+        </h3>
+        {peerName !== undefined && <code>{thread.peer}</code>}
         <span className="mail-thread-count">
           {count} message{count === 1 ? "" : "s"}
         </span>
@@ -82,9 +106,13 @@ const ThreadItem = ({
             type="button"
             className="small-button mail-release"
             aria-label={`Release the thread with ${peer}`}
-            onClick={onRelease}
+            // Kept focusable while it's on its way, so focus stays until the thread follows.
+            aria-disabled={releasing}
+            onClick={() => {
+              if (!releasing) onRelease()
+            }}
           >
-            Release
+            {releasing ? "Releasing…" : "Release"}
           </button>
         )}
       </header>
@@ -122,13 +150,25 @@ export const MessagesView = ({
         {mail.mail && <span>{mail.mail.handle}</span>}
         <span className="artifact-meta-push" />
         <span id={label} className="mail-pause-label">
-          Pause messaging
+          Pause all agents' messages
         </span>
         <span id={hint} className="sr-only">
-          Holds every agent's messages, in every project, until you resume.
+          In every project and session, until you resume.
         </span>
-        <Switch checked={mail.paused} onChange={mail.pause} labelledBy={label} describedBy={hint} />
+        <Switch
+          checked={mail.paused}
+          onChange={mail.pause}
+          labelledBy={label}
+          describedBy={hint}
+          disabled={mail.pending}
+          busy={mail.pending}
+        />
       </div>
+      {mail.error && (
+        <p className="mail-error" role="alert">
+          {mail.error}
+        </p>
+      )}
       {mail.paused && (
         <p className="mail-paused" role="status">
           Messaging is paused. Agents' messages wait, held, until you resume.
@@ -142,6 +182,7 @@ export const MessagesView = ({
               thread={thread}
               handle={mail.mail!.handle}
               peerName={peerName(thread.peer)}
+              releasing={mail.releasing.includes(thread.id)}
               onRelease={() => mail.release(thread.id)}
             />
           ))

@@ -1,7 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from "react"
 
-import type { Backend } from "../backend/port"
-import type { Companions } from "../model/companion"
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
 import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
@@ -21,22 +19,6 @@ import {
   shallowEqual,
   windowedDestination,
 } from "./selectors"
-
-// A backend with messages but no companions shows nothing else in the pane. Each backend
-// gets its own, as the pane's state is kept per companions.
-const noCompanions = new WeakMap<Backend, Companions>()
-const companionsOf = (backend: Backend): Companions => {
-  const own = backend.companions ?? noCompanions.get(backend)
-  if (own) return own
-  const none: Companions = {
-    snapshot: () => [],
-    subscribe: () => () => {},
-    load: () => Promise.reject(new Error("Nothing was shown")),
-    save: () => Promise.reject(new Error("There are no plans")),
-  }
-  noCompanions.set(backend, none)
-  return none
-}
 
 // One terminal in the current view: the backend's surface, which keeps its controller
 // mounted while the shared window, and the body its program calls for, wrap its content.
@@ -137,9 +119,9 @@ export const WorkspaceTerminal = ({
   // One shell element whatever runs, so only the body around the content changes.
   const renderWindow = (content: ReactNode): ReactNode => (
     <WindowShell {...frame}>
-      {backend.companions || backend.messages ? (
+      {backend.companions ? (
         <TerminalCompanion
-          companions={companionsOf(backend)}
+          companions={backend.companions}
           messages={backend.messages}
           peerName={(handle) => names[handle]}
           companionKey={terminalKey}

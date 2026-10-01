@@ -81,7 +81,7 @@ describe("a terminal's badge", () => {
       const held = message("held", { from: "t2", to: "t1", state: "held", held: "release" })
       const badge = mailBadge(mail([held]), true)
       expect(badge).toEqual({ count: 1, kind: "held" })
-      expect(mailBadgeLabel(badge!)).toBe("1 message waiting, held until you release them")
+      expect(mailBadgeLabel(badge!)).toBe("1 message waiting, held until you release it")
     })
   })
 })

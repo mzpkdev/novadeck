@@ -15,6 +15,7 @@ import {
 } from "@novadeck/protocol/client"
 
 import { createStore } from "../../model/store"
+import { sameTitleSource } from "../../model/title-source"
 import type { TerminalMetadata, TerminalStatus, TitleSource, Workspace } from "../../model/types"
 import type {
   AgentConnection,
@@ -181,10 +182,6 @@ const statusKey = (status: TerminalStatus): string => {
   return status.state
 }
 
-// Whether a terminal's name is still from whom the workspace says.
-const sameSource = (a: TitleSource | undefined, b: TitleSource): boolean =>
-  a?.kind === b.kind && (a.kind !== "agent" || (b.kind === "agent" && a.by === b.by))
-
 const connectionState = (status: RunnerStatus): BackendConnectionState => {
   if (status.state === "connected") return "connected"
   return status.state === "reconnecting" ? "reconnecting" : "unavailable"
@@ -340,8 +337,9 @@ export const runnerBackend = (
   const titles = new Map<string, string>()
   // The agent's request being opened, while the app adds its terminal.
   let opening: string | undefined
-  // Each terminal's title as the runner last reported it.
+  // Each terminal's title, and who it is from, as the runner last reported them.
   const runnerTitles = new Map<string, string>()
+  const runnerSources = new Map<string, TitleSource>()
   let sink: BackendSink | undefined
   let runnerId: string | undefined
   // The latest runner status; a simulated outage from the debug panel shows as
@@ -571,6 +569,7 @@ export const runnerBackend = (
     if (!current) return []
     const { terminalId } = entry.key
     runnerTitles.set(terminalId, summary.title)
+    runnerSources.set(terminalId, summary.titleSource)
     const unconfirmed = renamed.get(terminalId)
     if (unconfirmed === summary.title) renamed.delete(terminalId)
     // The person's title was taken away, as by a reset: it is never given again.
@@ -581,7 +580,7 @@ export const runnerBackend = (
     const handle = current.handle !== summary.handle ? summary.handle : undefined
     // While the person's name is on its way, it is theirs, whatever the runner said before.
     const titleSource =
-      unconfirmed === undefined && !sameSource(current.titleSource, summary.titleSource)
+      unconfirmed === undefined && !sameTitleSource(current.titleSource, summary.titleSource)
         ? summary.titleSource
         : undefined
     if ([name, directory, handle, titleSource].every((fact) => fact === undefined)) return []
@@ -623,8 +622,17 @@ export const runnerBackend = (
     if (renamed.get(terminalId) !== name) return
     renamed.delete(terminalId)
     const title = runnerTitles.get(terminalId)
-    if (refused && title !== undefined && title !== name)
-      dispatch([{ type: "terminal/update", target: target(key), terminalId, name: title }])
+    const titleSource = runnerSources.get(terminalId)
+    if (refused && title !== undefined)
+      dispatch([
+        {
+          type: "terminal/update",
+          target: target(key),
+          terminalId,
+          name: title,
+          ...(titleSource && { titleSource }),
+        },
+      ])
   }
   // A terminal the runner has that this window didn't ask for joins its session, unless
   // the workspace doesn't hold that session or its shell already ended cleanly.
@@ -868,11 +876,14 @@ export const runnerBackend = (
     { livePages: options.livePages === true },
   )
   // The messages between their agents, followed alongside.
-  const messages = createRunnerMessages({
-    watch: (terminalId) => runner.messages.watch(terminalId),
-    pause: (paused) => runner.messages.pause(paused),
-    release: (thread) => runner.messages.release(thread),
-  })
+  const messages = createRunnerMessages(
+    {
+      watch: (terminalId) => runner.messages.watch(terminalId),
+      pause: (paused) => runner.messages.pause(paused),
+      release: (thread) => runner.messages.release(thread),
+    },
+    track,
+  )
   let following = false
   // Follows a terminal's plans once the runner has it: its detail answers "not found"
   // before then. Called whenever a shell is created or started afresh.

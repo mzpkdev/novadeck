@@ -446,7 +446,10 @@ describe("runner backend", () => {
         },
       ])
       await app.idle()
-      await vi.waitFor(() => expect(named()).toMatchObject({ name: given }))
+      // Its name, and who it is from, are the runner's again.
+      await vi.waitFor(() =>
+        expect(named()).toMatchObject({ name: given, titleSource: { kind: "default" } }),
+      )
       app.stop()
     })
 
@@ -530,16 +533,13 @@ describe("runner backend", () => {
         }),
       )
       messages.pause(true)
-      // The switch shows it at once, and the runner keeps it.
-      expect(messages.state.getSnapshot().paused).toBe(true)
-      await vi.waitFor(async () =>
-        expect(await runner.client.messages.list(terminal.id)).toMatchObject({ paused: true }),
-      )
+      // The switch shows what the runner's listing says, once it says it.
+      await vi.waitFor(() => expect(messages.state.getSnapshot().paused).toBe(true))
+      expect(await runner.client.messages.list(terminal.id)).toMatchObject({ paused: true })
+      await vi.waitFor(() => expect(messages.state.getSnapshot().pending).toBe(false))
       messages.pause(false)
-      await vi.waitFor(async () =>
-        expect(await runner.client.messages.list(terminal.id)).toMatchObject({ paused: false }),
-      )
-      expect(messages.state.getSnapshot().paused).toBe(false)
+      await vi.waitFor(() => expect(messages.state.getSnapshot().paused).toBe(false))
+      expect(await runner.client.messages.list(terminal.id)).toMatchObject({ paused: false })
       app.commit([{ type: "terminal/close", target: app.target(), terminalId: terminal.id }])
       expect(messages.state.getSnapshot().terminals[id]).toBeUndefined()
       app.stop()

@@ -1,11 +1,12 @@
 import type { TerminalMessages } from "@novadeck/protocol"
 
 import { companionKeyId, type CompanionKey } from "../../model/companion"
-import type { MailState, Messages, TerminalMail } from "../../model/messages"
+import { noMail, type MailState, type Messages, type TerminalMail } from "../../model/messages"
 import { createStore } from "../../model/store"
 
 // The runner's messages between agents: each terminal's threads as `messages.watch`
-// streams them, and the one pause switch, which every listing reports.
+// streams them, and the one pause switch, which every listing reports. The runner tells
+// every watch of a pause or release before it answers, so the state shows what it says.
 
 export type MailStreams = {
   readonly watch: (terminalId: string) => AsyncIterableIterator<TerminalMessages, undefined>
@@ -46,11 +47,16 @@ export const mailOf = (listing: TerminalMessages): TerminalMail => ({
   })),
 })
 
-export const createRunnerMessages = (streams: MailStreams): RunnerMessages => {
-  const state = createStore<MailState>({ paused: false, terminals: {} })
+const reason = (error: unknown): string =>
+  error instanceof Error && error.message ? error.message : String(error)
+
+export const createRunnerMessages = (
+  streams: MailStreams,
+  // Keeps a call the backend waits for before it stops, as its other calls are.
+  track: <T>(work: Promise<T>) => Promise<T> = (work) => work,
+): RunnerMessages => {
+  const state = createStore<MailState>(noMail)
   const followed = new Map<string, AsyncIterableIterator<TerminalMessages, undefined>>()
-  // A pause asked for and not yet answered: listings from before it don't undo it.
-  let asked: boolean | undefined
 
   const forget = (id: string): void =>
     void state.update((current) => {
@@ -75,7 +81,8 @@ export const createRunnerMessages = (streams: MailStreams): RunnerMessages => {
         for await (const listing of stream) {
           if (followed.get(id) !== stream) return
           state.update((current) => ({
-            paused: asked ?? listing.paused,
+            ...current,
+            paused: listing.paused,
             terminals: { ...current.terminals, [id]: mailOf(listing) },
           }))
         }
@@ -100,24 +107,33 @@ export const createRunnerMessages = (streams: MailStreams): RunnerMessages => {
   return {
     state,
     pause: (paused) => {
-      const before = state.getSnapshot().paused
-      asked = paused
-      state.update((current) => (current.paused === paused ? current : { ...current, paused }))
-      streams.pause(paused).then(
-        () => {
-          if (asked === paused) asked = undefined
-        },
-        () => {
-          // Not paused after all: the switch shows what the runner still does.
-          if (asked !== paused) return
-          asked = undefined
-          state.update((current) => ({ ...current, paused: before }))
-        },
+      state.update((current) => ({ ...current, pending: true, error: null }))
+      track(streams.pause(paused)).then(
+        () => state.update((current) => ({ ...current, pending: false })),
+        (error: unknown) =>
+          state.update((current) => ({
+            ...current,
+            pending: false,
+            error: `Couldn't ${paused ? "pause" : "resume"} messaging: ${reason(error)}`,
+          })),
       )
     },
-    release: (_key, thread) => {
-      // The thread's listing tells once its messages go on; a failed release changes nothing.
-      streams.release(thread).catch(() => {})
+    release: (thread) => {
+      state.update((current) => ({
+        ...current,
+        releasing: [...current.releasing.filter((each) => each !== thread), thread],
+        error: null,
+      }))
+      const done = (error: string | null) =>
+        state.update((current) => ({
+          ...current,
+          releasing: current.releasing.filter((each) => each !== thread),
+          error: error ?? current.error,
+        }))
+      track(streams.release(thread)).then(
+        () => done(null),
+        (error: unknown) => done(`Couldn't release the thread: ${reason(error)}`),
+      )
     },
     follow,
     unfollow,
@@ -126,7 +142,7 @@ export const createRunnerMessages = (streams: MailStreams): RunnerMessages => {
         followed.delete(id)
         void stream.return?.()
       }
-      state.update(() => ({ paused: state.getSnapshot().paused, terminals: {} }))
+      state.update((current) => ({ ...current, terminals: {} }))
     },
   }
 }

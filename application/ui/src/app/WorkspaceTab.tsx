@@ -1,5 +1,5 @@
 import type { TerminalMetadata } from "../model/types"
-import { useMail } from "../terminals/companion/mail"
+import { useMailBadge } from "../terminals/companion/mail"
 import { renameView } from "../terminals/rename-state"
 import { TerminalTab } from "../terminals/TerminalTab"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
@@ -30,8 +30,7 @@ export const WorkspaceTab = ({
       state.rename?.context === context && state.rename.id === id ? renameView(state.rename) : null,
     shallowEqual,
   )
-  const { badge } = useMail(backend.messages, { ...target, terminalId: id })
-  const { resetTitle } = backend
+  const badge = useMailBadge(backend.messages, { ...target, terminalId: id })
   return (
     <TerminalTab
       terminal={terminal}
@@ -47,7 +46,7 @@ export const WorkspaceTab = ({
       onRenameSave={() => commands.saveRename(id)}
       onRenameCancel={() => commands.cancelRename(id)}
       onClose={() => commands.close(id)}
-      onResetTitle={resetTitle && (() => resetTitle({ ...target, terminalId: id }))}
+      {...(backend.resetTitle ? { onResetTitle: () => commands.resetTitle(id) } : {})}
     />
   )
 }

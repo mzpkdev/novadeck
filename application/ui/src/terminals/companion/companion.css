@@ -1149,7 +1149,9 @@
   font-size: 12px;
 }
 .mail-thread-peer {
+  margin: 0;
   overflow: hidden;
+  font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1171,7 +1173,19 @@
 .mail-thread-note {
   margin: 4px 0 0;
   font-size: 11px;
-  color: var(--color-warning-fg);
+  color: var(--color-muted);
+}
+.small-button.mail-release[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+.mail-error {
+  margin: 0;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-danger);
+  color: var(--color-danger-fg);
+  font-size: 11px;
 }
 .mail-list {
   display: flex;

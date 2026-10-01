@@ -6,7 +6,6 @@ import type { ViewMode } from "../../model/types"
 import type { TerminalLayoutControls } from "../WindowShell"
 import { CompanionPane } from "./CompanionPane"
 import { useMail, type MailHandle } from "./mail"
-import { mailTab } from "./pane"
 import { presentationOf, shownTab, useCompanion, type CompanionHandle } from "./state"
 import { Taskbar } from "./Taskbar"
 
@@ -136,9 +135,8 @@ export const TerminalCompanion = ({
   const trigger = useRef<HTMLButtonElement>(null)
   const presentation = presentationOf(view)
   const present = companion.present || mail.present
-  // The messages tab opens only while the terminal has messages to show.
-  const showing = shownTab(companion.pane) === mailTab ? mail.present : companion.present
-  const open = showing && companion.pane.open && !minimized
+  // Open while there's something to show, the messages among it.
+  const open = companion.pane.open && !minimized && shownTab(companion.pane, mail.present) !== ""
   const wasOpen = useRef(open)
   // Opening leaves focus on the taskbar. Hiding the pane from inside it (Escape) would
   // drop focus with the pane, so it goes back to the taskbar.

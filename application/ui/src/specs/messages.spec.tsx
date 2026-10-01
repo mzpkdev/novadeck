@@ -1,5 +1,5 @@
 import { describe as context, describe, expect, it } from "vitest"
-import { userEvent, type Locator } from "vitest/browser"
+import { page, userEvent, type Locator } from "vitest/browser"
 
 import {
   messageItems,
@@ -10,7 +10,7 @@ import {
   tabTooltip,
   thread,
 } from "./support/messages"
-import { sidebarRenameField } from "./support/terminals"
+import { confirmClose, sidebarRenameField, tabAction } from "./support/terminals"
 import { expectStaysAbsent, terminalTab } from "./support/workspace"
 
 const textOf = (locator: Locator) => locator.element().textContent
@@ -35,7 +35,7 @@ describe("Messages waiting for an agent", () => {
     await openMessagesDemo()
     await expect
       .poll(() => description("Checkout implementation"))
-      .toBe("Plan ready for review, 1 message waiting, held until you release them")
+      .toBe("Plan ready for review, 1 message waiting, held until you release it")
   })
 })
 
@@ -83,6 +83,23 @@ describe("A terminal's messages", () => {
     await expect.element(pane.getByText(/^No messages yet/)).toBeVisible()
   })
 
+  it("names a peer that's gone from the session by its handle alone", async () => {
+    await openMessagesDemo()
+    await terminalTab("Dev server").click()
+    await tabAction("Close Dev server").click()
+    await confirmClose()
+    const pane = await openMessages("Checkout implementation")
+    await expect.element(pane.getByRole("region", { name: "Thread with t2" })).toBeVisible()
+  })
+
+  it("dates a message that isn't from today", async () => {
+    await openMessagesDemo()
+    const pane = await openMessages("Checkout implementation")
+    await expect
+      .poll(() => textOf(messageItems(thread(pane, "Dev server", "t2")).first()))
+      .toMatch(/Sent to t2[A-Z][a-z]{2} \d+, \d\d:\d\d/)
+  })
+
   context("in a thread held after going back and forth", () => {
     it("lets the person release it, and the tab and thread follow", async () => {
       await openMessagesDemo()
@@ -91,6 +108,8 @@ describe("A terminal's messages", () => {
       await expect.poll(() => textOf(messageItems(tests).last())).toMatch(/Held for release/)
       await tests.getByRole("button", { name: "Release the thread with Tests" }).click()
       await expect.poll(() => textOf(messageItems(tests).last())).toMatch(/Waiting/)
+      // The button goes, and focus with it to the thread.
+      await expect.element(tests.getByRole("heading", { name: "Tests" })).toHaveFocus()
       await expect.element(tests.getByRole("button", { name: /^Release/ })).not.toBeInTheDocument()
       await expect
         .poll(() => description("Checkout implementation"))
@@ -142,6 +161,19 @@ describe("Who named a terminal", () => {
     const automatic = await tabMenu("Checkout flow")
     await expect.element(automatic.getByRole("menuitem", { name: "Rename" })).toBeVisible()
     await expectStaysAbsent(automatic.getByRole("menuitem", { name: "Reset to automatic" }))
+  })
+
+  it("leaves a rename in progress alone when the person right-clicks in its field", async () => {
+    await openMessagesDemo()
+    await tabAction("Rename Checkout review").click()
+    const field = sidebarRenameField("Checkout review")
+    await expect.element(field).toHaveFocus()
+    await userEvent.keyboard("Half")
+    await field.click({ button: "right" })
+    await expectStaysAbsent(page.getByRole("menu", { name: "Checkout review actions" }))
+    await expect.element(field).toHaveFocus()
+    await expect.element(field).toHaveValue("Half")
+    await expect.element(terminalTab("Half")).not.toBeInTheDocument()
   })
 
   it("is the person's once they rename it", async () => {

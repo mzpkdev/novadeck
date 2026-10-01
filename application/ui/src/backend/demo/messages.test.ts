@@ -37,7 +37,7 @@ describe("the demo's messages", () => {
 
   it("let a released thread go on, for both its terminals", () => {
     const messages = demo()
-    messages.release({ ...storefront, terminalId: "01" }, "t-flaky")
+    messages.release("t-flaky")
     const { terminals } = messages.state.getSnapshot()
     for (const terminal of ["01", "03"]) {
       const thread = terminals[at(terminal)]?.threads.find((each) => each.id === "t-flaky")

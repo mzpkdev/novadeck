@@ -1,4 +1,3 @@
-import type { CompanionKey } from "./companion"
 import type { Store } from "./store"
 
 // Messages between the agents in a session's terminals, as a backend reports them: each
@@ -50,19 +49,33 @@ export type TerminalMail = {
 }
 
 // Every followed terminal's messages, by `companionKeyId`, and the one pause switch,
-// which holds every message waiting, across every project and session.
+// which holds every message waiting, across every project and session. The switch shows
+// what the backend says; `pending` while a pause or resume is on its way there, and
+// `releasing` the threads whose release is. `error` says why the last of them didn't
+// take, for the person.
 export type MailState = {
   readonly paused: boolean
+  readonly pending: boolean
+  readonly releasing: readonly string[]
+  readonly error: string | null
   readonly terminals: Readonly<Record<string, TerminalMail>>
+}
+
+export const noMail: MailState = {
+  paused: false,
+  pending: false,
+  releasing: [],
+  error: null,
+  terminals: {},
 }
 
 export type Messages = {
   readonly state: Store<MailState>
-  // Pauses messaging, or resumes it; the state shows the change at once.
+  // Pauses messaging, or resumes it.
   readonly pause: (paused: boolean) => void
   // Lets a thread held for going back and forth too often go on: its held messages wait
   // to be delivered again, and it may have more.
-  readonly release: (key: CompanionKey, thread: string) => void
+  readonly release: (thread: string) => void
 }
 
 const waitingStates: ReadonlySet<MessageState> = new Set(["queued", "leased", "held"])
@@ -98,7 +111,7 @@ const messagesWord = (count: number): string => `${count} message${count === 1 ?
 
 export const mailBadgeLabel = ({ count, kind }: MailBadge): string =>
   kind === "held"
-    ? `${messagesWord(count)} waiting, held until you release them`
+    ? `${messagesWord(count)} waiting, held until you release ${count === 1 ? "it" : "them"}`
     : kind === "paused"
       ? `${messagesWord(count)} waiting, held while messaging is paused`
       : `${messagesWord(count)} waiting`

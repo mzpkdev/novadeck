@@ -110,8 +110,8 @@ release, and shows a pause mark while messaging is paused. A terminal with an ag
 one that has had messages, gets a **Messages** icon in its taskbar, which opens its
 threads in the companion pane: one per peer, latest first, each message with its
 direction, time, state and the agent's text exactly as written, never formatted. A held
-thread has **Release**, and the pane's header has **Pause messaging**, one switch for
-every project and session. It all updates as messages move. The content preview
+thread has **Release**, and the pane's header has **Pause all agents' messages**, one
+switch for every project and session. It all updates as messages move. The content preview
 (`pnpm dev:previews`) shows a thread between its two agents; the behaviour specs' demo
 (`?demo=messages`) has every state, a held thread and the pause.
 

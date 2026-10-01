@@ -1,10 +1,11 @@
-import { companionKeyId, type CompanionKey } from "../../model/companion"
-import type {
-  AgentMessage,
-  MailState,
-  MessageThread,
-  Messages,
-  TerminalMail,
+import { companionKeyId } from "../../model/companion"
+import {
+  noMail,
+  type AgentMessage,
+  type MailState,
+  type MessageThread,
+  type Messages,
+  type TerminalMail,
 } from "../../model/messages"
 import { createStore } from "../../model/store"
 import type { WorkspaceTarget } from "../../model/types"
@@ -75,6 +76,7 @@ const mailOf = (
 })
 
 const stateOf = (boxes: readonly DemoMailbox[], paused: boolean): MailState => ({
+  ...noMail,
   paused,
   terminals: Object.fromEntries(
     boxes.flatMap((box) =>
@@ -97,18 +99,14 @@ export const createDemoMessages = (initial: readonly DemoMailbox[], paused = fal
       isPaused = next
       publish()
     },
-    release: (key: CompanionKey, thread) => {
-      boxes = boxes.map((box) =>
-        box.target.projectId === key.projectId &&
-        box.target.workspaceSessionId === key.workspaceSessionId
-          ? {
-              ...box,
-              threads: box.threads.map((each) =>
-                each.id === thread ? { ...each, allowed: each.hops + hopsPerRelease } : each,
-              ),
-            }
-          : box,
-      )
+    // Thread ids are the demo's own, unique across its mailboxes.
+    release: (thread) => {
+      boxes = boxes.map((box) => ({
+        ...box,
+        threads: box.threads.map((each) =>
+          each.id === thread ? { ...each, allowed: each.hops + hopsPerRelease } : each,
+        ),
+      }))
       publish()
     },
   }
@@ -206,6 +204,28 @@ export const checkoutMailboxes = (
               hops: 13,
               allowed: hopsPerRelease,
               messages: [
+                // The ten before: the two going back and forth over the flaky test.
+                ...Array.from({ length: 10 }, (_, before) =>
+                  before % 2 === 0
+                    ? message(
+                        now,
+                        34 - before * 2,
+                        before + 1,
+                        "t3",
+                        "t1",
+                        "delivered",
+                        `Run ${before / 2 + 1}: cart.spec.ts failed on the coupon case.`,
+                      )
+                    : message(
+                        now,
+                        34 - before * 2,
+                        before + 1,
+                        "t1",
+                        "t3",
+                        "delivered",
+                        "Once more, with the seed logged.",
+                      ),
+                ),
                 message(
                   now,
                   14,
@@ -233,9 +253,10 @@ export const checkoutMailboxes = (
               hops: 1,
               allowed: hopsPerRelease,
               messages: [
+                // Yesterday's.
                 message(
                   now,
-                  20,
+                  26 * 60,
                   1,
                   "t1",
                   "t2",

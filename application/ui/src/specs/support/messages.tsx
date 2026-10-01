@@ -38,7 +38,7 @@ export const thread = (pane: Locator, peer: string, handle: string): Locator =>
 export const messageItems = (within: Locator): Locator => within.getByRole("listitem")
 
 export const pauseSwitch = (pane: Locator): Locator =>
-  pane.getByRole("switch", { name: "Pause messaging" })
+  pane.getByRole("switch", { name: "Pause all agents' messages" })
 
 /** Opens a terminal tab's menu, as a right-click does. */
 export const tabMenu = async (name: string): Promise<Locator> => {

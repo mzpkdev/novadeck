@@ -114,7 +114,7 @@ export const Taskbar = ({
   open: boolean
 }): React.JSX.Element => {
   const { pane } = companion
-  const current = shownTab(pane)
+  const current = shownTab(pane, mail.present)
   const showing = (tab: string): boolean => open && current === tab
   const state = (tab: string, fresh: boolean): Indicator =>
     fresh ? "new" : showing(tab) ? "open" : "seen"

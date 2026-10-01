@@ -1,4 +1,5 @@
 import { isShellProcess } from "./process"
+import { sameTitleSource } from "./title-source"
 import type { TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
 
 export const createRoster = (terminals: TerminalMetadata[]): TerminalRoster => ({
@@ -30,9 +31,6 @@ export const addTerminal = (
 
 type TerminalFacts = Pick<TerminalMetadata, "name" | "directory" | "handle" | "titleSource">
 
-const sameFact = (a: unknown, b: unknown): boolean =>
-  a === b || (typeof a === "object" && JSON.stringify(a) === JSON.stringify(b))
-
 // What the backend says of a terminal now: its name or directory, its handle, and who
 // its name is from.
 export const updateTerminal = (
@@ -42,12 +40,14 @@ export const updateTerminal = (
 ): TerminalRoster => {
   const current = roster.terminals.find((terminal) => terminal.id === terminalId)
   if (!current) return roster
-  const facts = Object.fromEntries(
-    Object.entries(change).filter(
-      ([key, value]) =>
-        value !== undefined && !sameFact(current[key as keyof TerminalFacts], value),
-    ),
-  )
+  const { name, directory, handle, titleSource } = change
+  const facts: Partial<TerminalFacts> = {
+    ...(name !== undefined && name !== current.name && { name }),
+    ...(directory !== undefined && directory !== current.directory && { directory }),
+    ...(handle !== undefined && handle !== current.handle && { handle }),
+    ...(titleSource !== undefined &&
+      !sameTitleSource(titleSource, current.titleSource) && { titleSource }),
+  }
   if (!Object.keys(facts).length) return roster
   return {
     ...roster,

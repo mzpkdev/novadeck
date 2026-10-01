@@ -150,8 +150,8 @@ export const CompanionPane = ({
   presentation: PlanPresentation
 }): React.JSX.Element => {
   const { pane } = companion
-  const tab = shownTab(pane)
-  const messages = tab === mailTab && mail.present
+  const tab = shownTab(pane, mail.present)
+  const messages = tab === mailTab
   const ref = planRefOf(tab)
   const plan = pane.plans.find((candidate) => candidate.ref === ref)
   const artifact = pane.artifacts.find((shown) => shown.id === tab)

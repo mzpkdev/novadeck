@@ -758,10 +758,11 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
 ## Runner API and UI
 
 Step one ships the runner API: list a terminal's threads and messages with their states,
-pause and resume, and release a held thread. `messages.watch` streams the same listing
-as it changes: each change to the terminal's messages, threads or delivery state, and
-the pause. Messaging tells any number of listeners of each change (`Messaging.subscribe`),
-the doorbell and every watch among them.
+pause and resume, and release a held thread. Step three adds `messages.watch`, which
+streams the same listing as it changes: each change to the terminal's messages, threads
+or delivery state, and the pause, a burst of them within one tick as one listing.
+Messaging tells any number of listeners of each change (`Messaging.subscribe`), the
+doorbell and every watch among them.
 
 The UI follows every terminal's listing with `messages.watch`, through the backend's
 optional `messages` capability (`model/messages.ts`):
@@ -773,11 +774,15 @@ optional `messages` capability (`model/messages.ts`):
 - **Messages view.** A terminal with an agent bound, or one that has had messages, gets
   a Messages icon in its companion pane's taskbar, with the same count. The view lists
   its threads, latest first, each with the peer's title and handle and its messages in
-  order: direction, time, state, and the agent's text as plain text, never formatted or
-  interpreted. A held thread has **Release** (`messages.release`). With no threads it
-  says so.
-- **Pause switch.** The view's header has **Pause messaging** (`messages.pause`), one
-  switch for the whole runner; while on, the view says so and every badge shows it.
+  order: direction, time (with the date when not today), state, and the agent's text as
+  plain text, never formatted or interpreted. A peer no longer in the session shows its
+  handle alone. A held thread has **Release** (`messages.release`), "Releasing…" until
+  the runner answers. With no threads it says so.
+- **Pause switch.** The view's header has **Pause all agents' messages**
+  (`messages.pause`), one switch for the whole runner. It shows what the runner's listings
+  say, which the runner sends every watch before it answers; it is disabled while a pause
+  or resume is on its way, and says why when the runner refuses one, as a release does.
+  While paused, the view says so and every badge shows it.
 
 The person doesn't send as themselves; they type in the terminal.
 
@@ -785,7 +790,8 @@ Self-description adds to it: every terminal summary says who its title is from
 (`titleSource`), `terminals.resetTitle` hands a title back to NovaDeck, and
 `terminals.create` takes the `requestId` of the agent's request it answers. A tab's
 tooltip says who its title is from: the person, the agent in `t2`, the first prompt, or
-the default. When it is the person's, the tab's menu has **Reset to automatic**, which
+the default. When it is the person's, the tab's menu has **Reset to automatic**
+(`commands.resetTitle`, which calls off any rename of that terminal in progress), which
 calls `terminals.resetTitle`; the UI forgets the person's title too, so it never sends it
 again.
 

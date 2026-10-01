@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 
+import { emptyCompanions } from "../../model/companion"
 import type { WorkspaceSeed } from "../../model/seed"
 import { createStore } from "../../model/store"
 import type { TerminalMetadata, TitleSource, Workspace } from "../../model/types"
@@ -110,6 +111,8 @@ export const withMessages = (backend: Backend, now: number): Backend => {
   return {
     ...backend,
     seed,
+    // Its terminals show nothing in the pane but their messages.
+    companions: emptyCompanions(),
     messages: createDemoMessages(checkoutMailboxes(now, targets)),
     resetTitle: ({ projectId, workspaceSessionId, terminalId }) =>
       sink?.dispatch([
