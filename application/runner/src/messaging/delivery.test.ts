@@ -221,23 +221,27 @@ describe("a ring", () => {
     expect(run(ringing, typing, doorbell)).toMatchObject({ state: "working", empty: false })
   })
 
-  it("fails into Unknown only for its own nonce", () => {
+  it("fails into Unknown only for its own nonce, its line taken as a draft", () => {
     expect(transition(ringing, { type: "ring-failed", nonce: "k3f9" })).toEqual({
       ...settled,
       state: "unknown",
+      empty: false,
     })
     expect(transition(ringing, { type: "ring-failed", nonce: "other" })).toBe(ringing)
     expect(transition(settled, { type: "ring-failed", nonce: "k3f9" })).toBe(settled)
   })
 
   it("gives way to any other root prompt, an abnormal end, or the binding ending", () => {
-    expect(transition(ringing, person)).toMatchObject({ state: "working", phase: "turn" })
-    expect(transition(ringing, harness)).toMatchObject({ state: "working", phase: "turn" })
-    expect(transition(ringing, ended).state).toBe("unknown")
+    // Its line may be left in the box: a draft, whoever started the turn.
+    for (const event of [person, harness, call])
+      expect(transition(ringing, event)).toMatchObject({
+        state: "working",
+        phase: "turn",
+        empty: false,
+      })
+    expect(transition(ringing, ended)).toMatchObject({ state: "unknown", empty: false })
     expect(transition(ringing, { type: "unbound" }).state).toBe("unbound")
     expect(transition(ringing, { type: "bound" }).state).toBe("fresh")
-    // A model call says a turn runs, its start unseen.
-    expect(transition(ringing, call)).toMatchObject({ state: "working", phase: "turn" })
     // No Stop or idle status line ends it.
     for (const event of [stop, idle]) expect(transition(ringing, event)).toBe(ringing)
   })

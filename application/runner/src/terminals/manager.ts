@@ -42,7 +42,7 @@ import { doorbellLine, quotedLine, type Install } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
 import { followRoot, type Root } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
-import { agentLabel, byteLength, cleanText, maxMessageBytes } from "../messaging/mailbox.js"
+import { agentLabel } from "../messaging/mailbox.js"
 import { Messaging, type AgentsAnswer, type SendAnswer } from "../messaging/messaging.js"
 import type { MailboxRecords } from "../messaging/records.js"
 import type { InstalledShell } from "../shell/install.js"
@@ -74,6 +74,7 @@ import {
   terminalForeground,
   type Foreground,
 } from "./foreground.js"
+import { inputParts, keysOf } from "./keys.js"
 import { Latest } from "./latest.js"
 import {
   allowOpen,
@@ -234,6 +235,8 @@ type Record = {
   held: string[] | null
   /** The handle of the terminal whose agent opened this one with a task; null otherwise. */
   openedBy: string | null
+  /** The requests waiting on the person that their keys already answered, by id. */
+  answered: string | null
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -320,6 +323,10 @@ const unopened = {
 
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+
+// The longest the doorbell holds the person's input, in milliseconds: a safety cap,
+// well beyond a ring's test paste.
+const holdCapMs = 3_000
 
 // How many changed terminals one periodic save handles.
 const savesPerTick = 4
@@ -465,6 +472,10 @@ export class Terminals {
       exists: (terminalId) =>
         this.records.has(terminalId) || this.identity(terminalId) !== undefined,
       onChange: (terminalId) => this.doorbell?.changed(terminalId),
+      ...(options.doorbell &&
+        options.doorbell.settleMs !== undefined && {
+          settleMs: options.doorbell.settleMs,
+        }),
     })
     this.doorbell =
       options.doorbell === false ? undefined : new Doorbell(this.ringHost(), options.doorbell)
@@ -610,6 +621,7 @@ export class Terminals {
         work: saved?.work ?? null,
         held: null,
         openedBy: null,
+        answered: null,
       }
       this.records.set(record.summary.id, record)
       this.register(record, expectedAgent(input.command, input.resume))
@@ -756,15 +768,23 @@ export class Terminals {
       const claim = record.resumeClaim
       if (this.cancelResume(record) && claim && this.claims.get(claim) === record.summary.id)
         this.claims.delete(claim)
-      const entered = /[\r\n]/.test(input.data)
-      if (entered) record.submitted = true
-      // A harness that queues a prompt with a key of its own submits it once its turn ends.
-      const key = record.binding && harnesses[record.binding.agent].messaging.queueKey
-      const queued = Boolean(key) && input.data.includes(key!)
-      this.messaging.input(input.terminalId, {
-        submits: entered || queued,
-        answers: (record.activity?.pending.length ?? 0) > 0,
-      })
+      if (/[\r\n]/.test(input.data)) record.submitted = true
+      // What reached the agent's box: a harness that queues a prompt with a key of its own
+      // submits it once its turn ends. Keys answering a request waiting on the person are
+      // no draft, up to the first that answers it; what follows is.
+      const queueKey = record.binding
+        ? harnesses[record.binding.agent].messaging.queueKey
+        : undefined
+      const keys = keysOf(input.data, queueKey)
+      const pending = (record.activity?.pending ?? []).map(({ requestId }) => requestId).join("\n")
+      const parts = inputParts(keys, pending !== "" && record.answered !== pending)
+      if (
+        pending !== "" &&
+        parts.some(({ answers }) => answers) &&
+        keys.some(({ kind }) => kind !== "navigation")
+      )
+        record.answered = pending
+      for (const part of parts) this.messaging.input(input.terminalId, part)
     }
     // While the doorbell's test paste is on screen, the person's input waits its turn.
     if (record.held) {
@@ -784,6 +804,7 @@ export class Terminals {
     return {
       ringable: (terminalId) =>
         live(terminalId) !== undefined && !this.stopping && this.messaging.ringable(terminalId),
+      settling: (terminalId) => this.messaging.settling(terminalId),
       ring: (terminalId, nonce) => this.messaging.ring(terminalId, nonce),
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       ringFailed: (terminalId, nonce) => this.messaging.ringFailed(terminalId, nonce),
@@ -807,7 +828,8 @@ export class Terminals {
       },
       hold: (terminalId) => {
         const record = live(terminalId)
-        if (!record || record.held) return () => {}
+        // A hold already in force is another ring's: this one has none.
+        if (!record || record.held) return { release: () => {}, holding: () => false }
         const held: string[] = []
         record.held = held
         const release = () => {
@@ -816,10 +838,10 @@ export class Terminals {
           record.held = null
           if (held.length > 0 && live(terminalId) === record) record.process.write(held.join(""))
         }
-        // At most a second, whatever happened.
-        const timer = setTimeout(release, 1_000)
+        // A ring takes well under this; should it not, the person's keys go on.
+        const timer = setTimeout(release, holdCapMs)
         timer.unref()
-        return release
+        return { release, holding: () => record.held === held && live(terminalId) === record }
       },
       write: (terminalId, data) => {
         const record = live(terminalId)
@@ -1286,14 +1308,10 @@ export class Terminals {
     if (!read.ok) return read
     const { request } = read
     const starts = request.command !== undefined || request.agent !== undefined
-    if (request.message !== undefined) {
-      const task = cleanText(request.message)
-      if (!task.trim()) return refused("The message is empty.")
-      if (byteLength(task) > maxMessageBytes)
-        return refused(
-          `The message is ${byteLength(task)} bytes, over the ${maxMessageBytes} a message may ` +
-            "hold; put longer content in a file the agent can open, and send its path.",
-        )
+    // Every check `send` would refuse the task for, before anything starts.
+    if (request.agent !== undefined && request.message !== undefined) {
+      const refusal = this.messaging.refusal(call.terminalId, request.message, request.agent)
+      if (refusal) return refused(refusal)
     }
     if (request.agent !== undefined && !(await this.connected(request.agent)))
       return refused(

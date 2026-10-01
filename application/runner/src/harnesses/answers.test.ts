@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
@@ -91,7 +91,7 @@ describe("a doorbell prompt", () => {
   const base = { agent: "codex", sessionId: "s", instance: "1", startedAt: 1 } as const
   const bell = doorbellLine("k3f9q2")
 
-  it("is a prompt that is exactly the doorbell bell, with its nonce", () => {
+  it("is a prompt that is exactly the doorbell line, with its nonce", () => {
     expect(doorbellNonce(bell)).toBe("k3f9q2")
     expect(doorbellNonce(` ${bell}\n`)).toBe("k3f9q2")
     expect(doorbellNonce(`fix it ${bell}`)).toBeUndefined()
@@ -104,7 +104,7 @@ describe("a doorbell prompt", () => {
     })
   })
 
-  it("keeps a prompt the person's when it only holds a stale bell, recorded without it", () => {
+  it("keeps a prompt the person's when it only holds a stale line, recorded without it", () => {
     expect(promptStart(base, `${bell}fix the build`)).toEqual({
       type: "turn-started",
       ...base,
@@ -118,7 +118,7 @@ describe("a doorbell prompt", () => {
     expect(promptStart(base, "anything", true)).toMatchObject({ cause: "harness" })
   })
 
-  it("starts each harness with the bell as its first prompt, Antigravity only where trusted", async ({
+  it("starts each harness with the doorbell line as its first prompt, Antigravity only where trusted", async ({
     resources,
   }) => {
     const place = { install: undefined, cwd: "/work" }
@@ -147,6 +147,14 @@ describe("a doorbell prompt", () => {
     ).resolves.toEqual(["agy", "-i", bell])
     await expect(
       harnesses.agy.messaging.initialPrompt(bell, { install, cwd: home }),
+    ).resolves.toBeUndefined()
+    // The same path, written another way, is trusted; a link to it isn't, failing safe.
+    await expect(
+      harnesses.agy.messaging.initialPrompt(bell, { install, cwd: `${trusted}/./` }),
+    ).resolves.toEqual(["agy", "-i", bell])
+    symlinkSync(trusted, join(home, "linked"))
+    await expect(
+      harnesses.agy.messaging.initialPrompt(bell, { install, cwd: join(home, "linked") }),
     ).resolves.toBeUndefined()
     expect(harnesses.agy.messaging.start).toEqual(["agy"])
   })

@@ -971,8 +971,8 @@ const doorbellStarted = (bound: Binding, nonce: string): HarnessEvent => ({
 describe("the person's submissions", () => {
   const enter = { submits: true, answers: false }
 
-  it("are their Enter followed by a root turn within about two seconds, in every harness", () => {
-    for (const agent of ["claude", "codex", "agy"] as const) {
+  it("are their Enter followed by a root prompt within about two seconds", () => {
+    for (const agent of ["claude", "codex"] as const) {
       const { messaging, follow, prompt, stop, clock: time } = create()
       const bound = binding(agent, `s-${agent}`, "7")
       messaging.register("C", here, "t3")
@@ -989,7 +989,7 @@ describe("the person's submissions", () => {
       // Their Enter, then the turn: what they drafted went with it.
       messaging.input("C", enter)
       time.now += 2_000
-      prompt("C", bound, agent === "agy" ? "harness" : "prompt")
+      prompt("C", bound, "prompt")
       stop("C", bound)
       expect(messaging.delivery("C")?.state).toBe("settled")
       // An Enter too long before is not the turn's.
@@ -1000,6 +1000,22 @@ describe("the person's submissions", () => {
       stop("C", bound)
       expect(messaging.delivery("C")?.state).toBe("drafting")
     }
+  })
+
+  it("are never a turn Antigravity's hooks start, as they name no prompt: its draft stays", () => {
+    const { messaging, follow, prompt, stop, clock: time } = create()
+    const agy = binding("agy", "c-root", "7")
+    messaging.register("C", here, "t3")
+    follow("C", agy)
+    prompt("C", agy, "harness")
+    stop("C", agy)
+    expect(messaging.delivery("C")?.state).toBe("settled")
+    messaging.input("C", { submits: false, answers: false })
+    messaging.input("C", enter)
+    time.now += 500
+    prompt("C", agy, "harness")
+    stop("C", agy)
+    expect(messaging.delivery("C")?.state).toBe("drafting")
   })
 
   it("count a prompt queued during the turn, which the harness submits as it ends", () => {
@@ -1038,13 +1054,16 @@ describe("ringing", () => {
     setup.prompt("B", setup.codex)
     setup.stop("B", setup.codex)
     sent(setup.send("A", "t2", "Review a.ts"))
+    // Past the time its screen has to settle.
+    setup.clock.now += 6_000
     return setup
   }
 
   it("is allowed once per Settled period, with messages waiting for the root session", () => {
-    const { messaging, prompt, stop, send, codex } = create()
+    const { messaging, prompt, stop, send, codex, clock: time } = create()
     prompt("B", codex)
     stop("B", codex)
+    time.now += 6_000
     expect(messaging.ringable("B")).toBe(false)
     sent(send("A", "t2", "hello"))
     expect(messaging.ringable("B")).toBe(true)
@@ -1093,5 +1112,129 @@ describe("ringing", () => {
     messaging.ring("B", "n1")
     messaging.ringFailed("B", "n1")
     expect(changed).toEqual(["B", "B"])
+  })
+})
+
+describe("untouched, erring toward Drafting", () => {
+  const typing = { submits: false, answers: false }
+  const enter = { submits: true, answers: false }
+  // Codex settled after the person's own turn.
+  const settledCodex = () => {
+    const setup = create()
+    setup.messaging.input("B", enter)
+    setup.prompt("B", setup.codex)
+    setup.stop("B", setup.codex)
+    expect(setup.messaging.delivery("B")?.state).toBe("settled")
+    return setup
+  }
+
+  it("keeps a draft typed after the Enter, before its prompt's hook", () => {
+    const { messaging, prompt, stop, codex, clock: time } = settledCodex()
+    messaging.input("B", typing)
+    messaging.input("B", enter)
+    time.now += 50
+    // The person types on before the hook reports: that stays in the box.
+    messaging.input("B", typing)
+    time.now += 400
+    prompt("B", codex)
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+  })
+
+  it("keeps a draft typed after an Enter queued during the turn", () => {
+    const { messaging, prompt, stop, codex, clock: time } = settledCodex()
+    messaging.input("B", enter)
+    prompt("B", codex)
+    messaging.input("B", typing)
+    messaging.input("B", enter)
+    time.now += 1_000
+    // The next thought, typed while the queued prompt waits.
+    messaging.input("B", typing)
+    time.now += 20_000
+    stop("B", codex)
+    time.now += 200
+    prompt("B", codex)
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+  })
+
+  it("never takes a turn its harness started for the person's, whatever was typed before", () => {
+    const { messaging, prompt, stop, codex, clock: time } = settledCodex()
+    messaging.input("B", typing)
+    messaging.input("B", enter)
+    time.now += 800
+    prompt("B", codex, "harness")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+  })
+
+  it("takes a failed ring's line as a draft, as it stays in the box", () => {
+    const { messaging, prompt, stop, send, codex, clock: time } = settledCodex()
+    sent(send("A", "t2", "hello"))
+    time.now += 6_000
+    messaging.ring("B", "n1")
+    messaging.ringFailed("B", "n1")
+    prompt("B", codex, "harness")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+    expect(messaging.ringable("B")).toBe(false)
+  })
+
+  it("takes a ring a turn cut short as a draft, its line left in the box", () => {
+    const { messaging, prompt, stop, send, codex, clock: time } = settledCodex()
+    sent(send("A", "t2", "hello"))
+    time.now += 6_000
+    messaging.ring("B", "n1")
+    prompt("B", codex, "harness")
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+  })
+
+  it("rings no sooner than six seconds after the turn ended, for every harness's screen to settle", () => {
+    const { messaging, send, clock: time } = settledCodex()
+    sent(send("A", "t2", "hello"))
+    expect(messaging.ringable("B")).toBe(false)
+    expect(messaging.settling("B")).toBe(6_000)
+    time.now += 5_999
+    expect(messaging.ringable("B")).toBe(false)
+    time.now += 1
+    expect(messaging.settling("B")).toBe(0)
+    expect(messaging.ringable("B")).toBe(true)
+  })
+
+  it("tells a doorbell whose messages it couldn't lease that they still wait", () => {
+    const { messaging, ask, send, codex } = settledCodex()
+    sent(send("A", "t2", "hello"))
+    messaging.pause(true)
+    const held = ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "n1")])
+    expect(held.stdout).toContain("still waiting")
+    expect(held.stdout).not.toContain("no agent messages are waiting")
+    messaging.pause(false)
+    const late = ask(
+      "B",
+      codex,
+      "UserPromptSubmit",
+      [doorbellStarted(codex, "n2")],
+      1_000_000 + 100,
+    )
+    expect(late.stdout).toContain("still waiting")
+  })
+})
+
+describe("a task's checks", () => {
+  it("are send's own: its size once delivered, and the rates", () => {
+    const { messaging, send, clock: time } = create()
+    expect(messaging.refusal("A", "Review a.ts", "codex")).toBeUndefined()
+    expect(messaging.refusal("A", " ", "codex")).toBe("The message is empty.")
+    expect(messaging.refusal("A", "&".repeat(4_000), "codex")).toMatch(
+      /^Delivered, this message would take \d+ bytes/,
+    )
+    for (let index = 0; index < 10; index += 1) {
+      if (index % 3 === 0) time.now += 1
+      messaging.register(`R${index}`, here, `t${index + 3}`)
+      messaging.expect(`R${index}`, "codex")
+      sent(send("A", `t${index + 3}`, `message ${index}`))
+    }
+    expect(messaging.refusal("A", "one more", "codex")).toMatch(/^An agent may send 10 messages/)
   })
 })

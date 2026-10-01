@@ -21,6 +21,12 @@ const terminal = (
     ringable?: boolean
     bracketedPaste?: boolean
     foreground?: boolean | undefined
+    /** How long a hold lasts before it lapses by itself, in milliseconds. */
+    holdMs?: number
+    /** How long reading the screen takes, in milliseconds. */
+    screenMs?: number
+    /** When its screen has had time to settle since its turn ended, in epoch milliseconds. */
+    settledBy?: number
   } = {},
 ) => {
   const rows = ["header", "", "", "", "", "", "> ", "", "footer"]
@@ -32,6 +38,7 @@ const terminal = (
   let held = false
   const host: DoorbellHost = {
     ringable: () => ringable && ringing === undefined,
+    settling: () => Math.max(0, (options.settledBy ?? 0) - Date.now()),
     ring: (_, nonce) => {
       if (!ringable) return false
       ringable = false
@@ -44,14 +51,23 @@ const terminal = (
       ringing = undefined
       failed.push(nonce)
     },
-    screen: () =>
-      Promise.resolve({ rows: [...rows], bracketedPaste: options.bracketedPaste ?? true }),
+    screen: async () => {
+      const text = { rows: [...rows], bracketedPaste: options.bracketedPaste ?? true }
+      if (options.screenMs) await sleep(options.screenMs)
+      return text
+    },
     foreground: () => Promise.resolve(options.foreground),
     hold: () => {
       holds += 1
       held = true
-      return () => {
-        held = false
+      const lapse =
+        options.holdMs === undefined ? undefined : setTimeout(() => (held = false), options.holdMs)
+      return {
+        release: () => {
+          clearTimeout(lapse)
+          held = false
+        },
+        holding: () => held,
       }
     },
     write: (_, data) => {
@@ -92,6 +108,27 @@ describe("the doorbell", () => {
     await sleep(150)
     expect(failed).toEqual([])
     expect(enters(written)).toBe(1)
+    doorbell.close()
+  })
+
+  it("abandons a ring whose hold lapsed before its Enter, pressing nothing", async () => {
+    const { host, written, failed, state } = terminal({ holdMs: 40, screenMs: 30 })
+    const doorbell = new Doorbell(host, fast)
+    doorbell.changed("t")
+    await vi.waitFor(() => expect(failed).toHaveLength(1))
+    expect(written).toHaveLength(1)
+    expect(enters(written)).toBe(0)
+    expect(state()).toMatchObject({ ringing: undefined, held: false })
+    doorbell.close()
+  })
+
+  it("waits for its screen to settle after its turn before it looks", async () => {
+    const { host, written } = terminal({ settledBy: Date.now() + 300 })
+    const doorbell = new Doorbell(host, fast)
+    doorbell.changed("t")
+    await sleep(200)
+    expect(written).toEqual([])
+    await vi.waitFor(() => expect(enters(written)).toBe(1), { timeout: 1_000 })
     doorbell.close()
   })
 

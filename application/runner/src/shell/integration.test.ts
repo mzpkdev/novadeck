@@ -1689,6 +1689,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           open({ agent: "agy", ...task }),
           open({ agent: "codex" }),
           open({ agent: "codex", command: "codex", ...task }),
+          // Too large once escaped where delivered: refused before anything starts.
+          open({ agent: "codex", message: "&".repeat(4_000) }),
         ])) as { ok: boolean; terminalId: string; command?: string; task?: object }[]
         const line = /^\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]{6}\]$/
         expect(requests.map(({ command }) => command)).toEqual([
@@ -1709,6 +1711,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         expect(answers.slice(4)).toEqual([
           { ok: false, reason: "An agent and its message come together." },
           { ok: false, reason: "A command can't be combined with an agent and its message." },
+          {
+            ok: false,
+            reason: expect.stringMatching(/^Delivered, this message would take \d+ bytes/),
+          },
         ])
         // Each started with the line as one argument, which its harness submits.
         await shell.until(manager, answers[0]!.terminalId, /claude args: \[NovaDeck: [^\n]*\]/)
@@ -2098,9 +2104,15 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
 })
 
 /**
- * A stand-in agent with a TUI of its own: an input box that takes bracketed pastes and
- * submits on Enter, firing its hooks as a harness does, and writing each prompt and what
- * its prompt-time hook printed to `received` (one JSON line each).
+ * A stand-in agent with a TUI of its own, run as `tui <agent> <session> <received> <raw>
+ * [mode]`: an input box that takes typing (even while it works, as real TUIs keep
+ * type-ahead) and bracketed pastes, submits on Enter when idle, and fires its hooks as a
+ * harness does. It writes each prompt and what its prompt-time hook printed to
+ * `received`, and every input it got to `raw` (one JSON line each). A signal starts a
+ * turn by itself, as a background task's result does. `menu` opens a menu after its
+ * first turn that swallows pastes; `perm` asks a permission in its second turn, then runs
+ * the tool for a while; `bg` runs it in the background, starting a turn by itself.
+ * `named` is the same TUI under its harness's name, so its hooks find its instance.
  */
 const standInTui = (home: string): string => {
   const bin = join(home, "bin")
@@ -2108,66 +2120,141 @@ const standInTui = (home: string): string => {
   const script = join(bin, "tui.cjs")
   writeFileSync(
     script,
-    [
-      'const { spawn } = require("node:child_process")',
-      'const fs = require("node:fs")',
-      // With `menu`, a menu is open after its first turn, which swallows pastes and
-      // takes Enter as picking its item.
-      "const [agent, session, received, mode] = process.argv.slice(2)",
-      "let menu = false",
-      "const hook = (event, payload, done) => {",
-      "  const child = spawn(process.env.NOVADECK_HOOK, [agent, event], { stdio: ['pipe', 'pipe', 'inherit'] })",
-      '  let printed = ""',
-      '  child.stdout.on("data", (chunk) => (printed += chunk))',
-      '  child.on("close", () => done(printed))',
-      "  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: session, cwd: process.cwd(), ...payload }))",
-      "}",
-      'let box = ""',
-      "const draw = () => process.stdout.write('\\r\\x1b[2K> ' + box)",
-      "let busy = true",
-      "const submit = () => {",
-      "  const prompt = box",
-      '  box = ""',
-      "  busy = true",
-      "  process.stdout.write('\\r\\n')",
-      "  hook('UserPromptSubmit', { prompt }, (printed) => {",
-      "    fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + '\\n')",
-      "    process.stdout.write('worked on it\\r\\n')",
-      "    hook('Stop', {}, () => {",
-      "      busy = false",
-      "      menu = mode === 'menu'",
-      "      if (menu) return process.stdout.write('\\r\\x1b[2K  [menu] pick an item')",
-      "      draw()",
-      "    })",
-      "  })",
-      "}",
-      "process.stdin.setRawMode(true)",
-      "process.stdin.setEncoding('utf8')",
-      "process.stdin.on('data', (data) => {",
-      "  if (busy) return",
-      "  if (menu) {",
-      "    if (data === '\\r') fs.appendFileSync(received, JSON.stringify({ picked: true }) + '\\n')",
-      "    return",
-      "  }",
-      "  const paste = /\\x1b\\[200~([\\s\\S]*?)\\x1b\\[201~/.exec(data)",
-      "  if (paste) box += paste[1]",
-      "  else if (data === '\\r') return submit()",
-      "  else box += data",
-      "  draw()",
-      "})",
-      // Bracketed paste on, as a TUI turns it on for its input box.
-      "process.stdout.write('\\x1b[?2004h' + agent + ' tui\\r\\n\\r\\n')",
-      "hook('SessionStart', { source: 'startup' }, () => {",
-      "  busy = false",
-      "  process.stdout.write(agent + ' ready\\r\\n')",
-      "  draw()",
-      "})",
-    ].join("\n"),
+    String.raw`
+const { spawn } = require("node:child_process")
+const fs = require("node:fs")
+const [agent, session, received, raw, mode] = process.argv.slice(2)
+fs.writeFileSync(raw + ".pid", String(process.pid))
+const hook = (event, payload, done) => {
+  const child = spawn(process.env.NOVADECK_HOOK, [agent, event], { stdio: ["pipe", "pipe", "inherit"] })
+  let printed = ""
+  child.stdout.on("data", (chunk) => (printed += chunk))
+  child.on("close", () => done(printed))
+  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: session, cwd: process.cwd(), ...payload }))
+}
+let box = ""
+let busy = true
+let menu = false
+let turns = 0
+const draw = () => process.stdout.write(menu ? "\r\x1b[2K  [menu] pick an item" : "\r\x1b[2K> " + box)
+const turn = (prompt) => {
+  busy = true
+  turns += 1
+  const perm = mode === "perm" && turns === 2
+  hook("UserPromptSubmit", { prompt }, (printed) => {
+    fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + "\n")
+    const finish = () => {
+      process.stdout.write("\r\x1b[2Kworked on it\r\n")
+      hook("Stop", {}, () => {
+        busy = false
+        menu = mode === "menu"
+        draw()
+      })
+    }
+    if (!perm) return finish()
+    const input = { command: "npm test" }
+    hook("PermissionRequest", { tool_name: "Bash", tool_input: input }, () => {
+      process.stdout.write("\r\x1b[2Kapproved; running npm test\r\n")
+      setTimeout(() => hook("PostToolUse", { tool_name: "Bash", tool_input: input, tool_response: {} }, finish), 1500)
+    })
+  })
+}
+process.on("SIGUSR1", () => turn("background result"))
+if (mode !== "bg") {
+  process.stdin.setRawMode(true)
+  process.stdin.setEncoding("utf8")
+  process.stdin.on("data", (data) => {
+    fs.appendFileSync(raw, JSON.stringify({ data, busy }) + "\n")
+    if (menu) {
+      if (data === "\r") fs.appendFileSync(received, JSON.stringify({ picked: true }) + "\n")
+      return
+    }
+    const paste = /\x1b\[200~([\s\S]*?)\x1b\[201~/.exec(data)
+    if (paste) box += paste[1]
+    else if (data === "\r") {
+      if (busy) return
+      const prompt = box
+      box = ""
+      process.stdout.write("\r\n")
+      return turn(prompt)
+    } else if (data === "\x1b\r") box += "\n"
+    else box += data
+    draw()
+  })
+}
+process.stdout.write("\x1b[?2004h" + agent + " tui\r\n\r\n")
+hook("SessionStart", { source: "startup" }, () => {
+  busy = false
+  process.stdout.write(agent + " ready\r\n")
+  draw()
+  if (mode === "bg") setTimeout(() => turn("self-started"), 300)
+})
+`,
   )
   writeFileSync(join(bin, "tui"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`)
   chmodSync(join(bin, "tui"), 0o755)
+  // The same TUI under Codex's name, the program its hooks look for: a script that runs
+  // it as a child, since Node renames its own process.
+  const named = join(home, "named")
+  mkdirSync(named, { recursive: true })
+  writeFileSync(join(named, "codex"), `#!/bin/sh\n"${process.execPath}" "$@"\n`, { mode: 0o755 })
+  writeFileSync(join(bin, "named"), `#!/bin/sh\nexec "${join(named, "codex")}" "${script}" "$@"\n`)
+  chmodSync(join(bin, "named"), 0o755)
   return bin
 }
+
+/** One JSON object per line of a file the stand-in TUI writes; none before it does. */
+const lines = <T>(file: string): T[] =>
+  existsSync(file)
+    ? readFileSync(file, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as T)
+    : []
+
+/** A sender and an idle stand-in TUI, in a manager whose doorbell rings soon. */
+const ringing = async (shell: Fixture, mode = "", program = "tui") => {
+  const bin = standIn(shell.home)
+  standInTui(shell.home)
+  const manager = shell.manager({
+    env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    doorbell: { calmMs: 200, settleMs: 300 },
+  })
+  const sender = await create(manager, shell)
+  const idle = await create(manager, shell)
+  const { start, step } = driver(shell, manager)
+  await start(sender.id, "claude", "s-claude")
+  const received = join(shell.home, "received.jsonl")
+  const raw = join(shell.home, "raw.jsonl")
+  const type = (data: string) => manager.write({ terminalId: idle.id, data }, "owner")
+  type(`${program} codex s-codex '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`)
+  await shell.until(manager, idle.id, "codex ready")
+  return {
+    manager,
+    idle,
+    type,
+    received: () => lines<{ prompt: string; printed: string; picked?: true }>(received),
+    // What the TUI got, after its first prompt.
+    raw: () => lines<{ data: string; busy: boolean }>(raw).map(({ data }) => data),
+    delivery: () => manager.messages(idle.id).delivery,
+    send: (text: string) =>
+      step(sender.id, { call: "send", request: { to: idle.handle, text } }).then(
+        (answer) => JSON.parse(answer) as { ok: boolean; route?: string },
+      ),
+    // Starts a turn by itself, as a background task's result does.
+    kick: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGUSR1"),
+    // The person's own first prompt, which settles it.
+    first: async () => {
+      type("hello")
+      await shell.until(manager, idle.id, "> hello")
+      type("\r")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
+    },
+  }
+}
+
+const pastes = (raw: readonly string[]) => raw.filter((data) => data.startsWith("\x1b[200~"))
+const quiet = () => new Promise((resolve) => setTimeout(resolve, 1_500))
 
 describe.skipIf(process.platform === "win32" || !existsSync(bash))(
   "the doorbell in bash terminals",
@@ -2175,83 +2262,167 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
     it("wakes an idle agent's TUI: the test paste, Enter, and its hook delivers", async ({
       shell,
     }) => {
-      const bin = standIn(shell.home)
-      standInTui(shell.home)
-      const manager = shell.manager({
-        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
-        doorbell: { calmMs: 200 },
-      })
-      const sender = await create(manager, shell)
-      const idle = await create(manager, shell)
-      const { start, step } = driver(shell, manager)
-      await start(sender.id, "claude", "s-claude")
-      const received = join(shell.home, "received.jsonl")
-      manager.write({ terminalId: idle.id, data: `tui codex s-codex '${received}'\r` }, "owner")
-      await shell.until(manager, idle.id, "codex ready")
-      expect(manager.messages(idle.id).delivery).toBe("fresh")
-      // The person's own first prompt: their Enter, then the turn, which settles.
-      manager.write({ terminalId: idle.id, data: "hello" }, "owner")
-      await shell.until(manager, idle.id, "> hello")
-      manager.write({ terminalId: idle.id, data: "\r" }, "owner")
-      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
-      const reads = () =>
-        existsSync(received)
-          ? readFileSync(received, "utf8")
-              .trim()
-              .split("\n")
-              .map((line) => JSON.parse(line) as { prompt: string; printed: string })
-          : []
-      expect(reads()).toMatchObject([{ prompt: "hello", printed: "" }])
-      // A message for it: the doorbell rings, and the line it submits is its prompt.
-      const sent = JSON.parse(
-        await step(sender.id, { call: "send", request: { to: idle.handle, text: "Review a.ts" } }),
-      ) as { ok: boolean; route: string }
-      expect(sent).toMatchObject({ ok: true, route: "ringing it now" })
-      await vi.waitFor(() => expect(reads()).toHaveLength(2), { timeout: 10_000 })
-      const [, rung] = reads()
+      const tui = await ringing(shell)
+      await tui.first()
+      expect(tui.received()).toMatchObject([{ prompt: "hello", printed: "" }])
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      const [, rung] = tui.received()
       expect(rung!.prompt).toMatch(
         /^\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]$/,
       )
       expect(rung!.printed).toContain(">Review a.ts</message>")
       await expect
-        .poll(() => manager.messages(idle.id).threads[0]?.messages[0]?.state)
+        .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
         .toBe("delivered")
-      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
+      await expect.poll(tui.delivery).toBe("settled")
       // Rung once: nothing more is typed.
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      expect(reads()).toHaveLength(2)
+      await quiet()
+      expect(tui.received()).toHaveLength(2)
     })
 
     it("presses nothing when the paste lands nowhere, as in an open menu", async ({ shell }) => {
-      const bin = standIn(shell.home)
-      standInTui(shell.home)
-      const manager = shell.manager({
-        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
-        doorbell: { calmMs: 200 },
-      })
-      const sender = await create(manager, shell)
-      const idle = await create(manager, shell)
-      const { start, step } = driver(shell, manager)
-      await start(sender.id, "claude", "s-claude")
-      const received = join(shell.home, "received.jsonl")
-      manager.write(
-        { terminalId: idle.id, data: `tui codex s-codex '${received}' menu\r` },
-        "owner",
-      )
-      await shell.until(manager, idle.id, "codex ready")
-      manager.write({ terminalId: idle.id, data: "hello" }, "owner")
-      await shell.until(manager, idle.id, "> hello")
-      manager.write({ terminalId: idle.id, data: "\r" }, "owner")
-      await shell.until(manager, idle.id, "[menu] pick an item")
-      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
-      await step(sender.id, { call: "send", request: { to: idle.handle, text: "Review a.ts" } })
+      const tui = await ringing(shell, "menu")
+      tui.type("hello")
+      await shell.until(tui.manager, tui.idle.id, "> hello")
+      tui.type("\r")
+      await shell.until(tui.manager, tui.idle.id, "[menu] pick an item")
+      await expect.poll(tui.delivery).toBe("settled")
+      await tui.send("Review a.ts")
       // The ring fails: Unknown, the message waits, and no Enter picked the menu's item.
-      await expect
-        .poll(() => manager.messages(idle.id).delivery, { timeout: 5_000 })
-        .toBe("unknown")
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      expect(readFileSync(received, "utf8")).not.toContain("picked")
-      expect(manager.messages(idle.id).threads[0]?.messages[0]?.state).toBe("queued")
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("unknown")
+      await quiet()
+      expect(tui.received().some(({ picked }) => picked)).toBe(false)
+      expect(tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state).toBe("queued")
     })
+
+    it("never submits what the person typed after their Enter, before its hook", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell)
+      tui.type("hello")
+      await shell.until(tui.manager, tui.idle.id, "> hello")
+      // The person keeps typing at once, before the prompt hook reports.
+      tui.type("\r")
+      tui.type("my half-typed next thought")
+      await expect.poll(tui.delivery).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+      expect(tui.received().map(({ prompt }) => prompt)).toEqual(["hello"])
+    })
+
+    it("holds what the person types during the ring, and gives it to the TUI after", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell)
+      await tui.first()
+      await tui.send("Review a.ts")
+      await vi.waitFor(
+        async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
+        { timeout: 10_000, interval: 5 },
+      )
+      tui.type("xyz")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await vi.waitFor(() => expect(tui.raw()).toContain("xyz"))
+      const raw = tui.raw()
+      // Their keys come after the doorbell's Enter, never into its line.
+      expect(raw.indexOf("xyz")).toBeGreaterThan(raw.lastIndexOf("\r"))
+      expect(tui.received()[1]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
+      // What they typed waits in the box.
+      await expect.poll(tui.delivery).toBe("drafting")
+    })
+
+    it("presses nothing when the terminal is resized mid-ring, and takes its line as a draft", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell)
+      await tui.first()
+      await tui.send("Review a.ts")
+      await vi.waitFor(
+        async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
+        { timeout: 10_000, interval: 5 },
+      )
+      tui.manager.resize({ terminalId: tui.idle.id, cols: 70, rows: 20 }, "owner")
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("unknown")
+      expect(tui.raw().filter((data) => data === "\r")).toHaveLength(1)
+      // A turn that starts by itself and ends: the line is still in the box, so no ring.
+      tui.kick()
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(tui.delivery).toBe("drafting")
+      await quiet()
+      expect(pastes(tui.raw())).toHaveLength(1)
+    })
+
+    it("abandons a ring a turn cuts short, and never submits its line later", async ({ shell }) => {
+      const tui = await ringing(shell)
+      await tui.first()
+      await tui.send("one")
+      await vi.waitFor(
+        async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
+        { timeout: 10_000, interval: 5 },
+      )
+      tui.kick()
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(tui.delivery).toBe("drafting")
+      await tui.send("two")
+      await quiet()
+      expect(tui.received().map(({ prompt }) => prompt)).toEqual(["hello", "background result"])
+      expect(tui.raw().filter((data) => data === "\r")).toHaveLength(1)
+    })
+
+    it("takes typing while an approved tool runs as a draft, not an answer", async ({ shell }) => {
+      const tui = await ringing(shell, "perm")
+      await tui.first()
+      tui.type("run the tests")
+      await shell.until(tui.manager, tui.idle.id, "> run the tests")
+      tui.type("\r")
+      await shell.until(tui.manager, tui.idle.id, "running npm test")
+      // While the approved command runs, the person types their next request.
+      tui.type("next: also fix the lint")
+      await vi.waitFor(() => expect(tui.raw()).toContain("next: also fix the lint"))
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+    })
+
+    it("takes Shift+Enter as a newline in the draft, never a submission", async ({ shell }) => {
+      const tui = await ringing(shell)
+      await tui.first()
+      tui.type("first line")
+      tui.type("\x1b\r")
+      tui.type("second line")
+      await vi.waitFor(() => expect(tui.raw()).toContain("second line"))
+      // A turn the TUI starts by itself just after: not the person's submission.
+      tui.kick()
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(tui.delivery).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+    })
+
+    it("rings an agent whose process group holds the terminal's foreground", async ({ shell }) => {
+      // Under its harness's name, so its hooks name its instance.
+      const tui = await ringing(shell, "", "named")
+      await tui.first()
+      await tui.send("Review a.ts")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+    })
+
+    it.skipIf(process.platform !== "linux")(
+      "never rings an agent whose process group doesn't hold the terminal's foreground",
+      async ({ shell }) => {
+        // In a session of its own: the terminal's foreground is setsid's, waiting for it.
+        const tui = await ringing(shell, "", "setsid -w named")
+        await tui.first()
+        await tui.send("Review a.ts")
+        await quiet()
+        expect(pastes(tui.raw())).toEqual([])
+        expect(tui.delivery()).toBe("settled")
+      },
+    )
   },
 )

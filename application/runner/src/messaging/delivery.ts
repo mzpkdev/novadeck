@@ -121,6 +121,20 @@ const working = (
 
 /** The delivery after an event; the same delivery when it changes nothing. */
 export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery => {
+  const next = step(delivery, event)
+  // A ring that ends any other way than its doorbell prompt may have left its line in the
+  // box: the prompt is a draft from then on, until the person submits.
+  return delivery.state === "ringing" &&
+    next !== delivery &&
+    next.state !== "ringing" &&
+    !(event.type === "prompt" && event.by === "doorbell") &&
+    event.type !== "bound" &&
+    event.type !== "unbound"
+    ? { ...next, empty: false }
+    : next
+}
+
+const step = (delivery: Delivery, event: DeliveryEvent): Delivery => {
   if (event.type === "bound")
     return {
       state: "fresh",

@@ -81,6 +81,8 @@ export const screenText = (screen: Screen): ScreenText => {
 export type DoorbellHost = {
   /** Whether messaging lets it ring: Settled, untouched, with messages waiting. */
   readonly ringable: (terminalId: string) => boolean
+  /** How long until its screen has had time to settle since its turn ended, in milliseconds. */
+  readonly settling: (terminalId: string) => number
   /** Starts the ring with its nonce: the terminal is Ringing; false when it may not now. */
   readonly ring: (terminalId: string, nonce: string) => boolean
   /** The nonce of the ring under way there, if any. */
@@ -91,14 +93,25 @@ export type DoorbellHost = {
   readonly screen: (terminalId: string) => Promise<ScreenText | undefined>
   /** Whether the bound instance holds the foreground; undefined where that can't be told. */
   readonly foreground: (terminalId: string) => Promise<boolean | undefined>
-  /** Holds the person's input to the terminal until the returned release, or a second. */
-  readonly hold: (terminalId: string) => () => void
+  /**
+   * Holds the person's input to the terminal until it is released, or a safety cap lapses
+   * it; `holding` says it is still in force.
+   */
+  readonly hold: (terminalId: string) => {
+    readonly release: () => void
+    readonly holding: () => boolean
+  }
   /** Writes to the terminal's shell; false once it is gone. */
   readonly write: (terminalId: string, data: string) => boolean
 }
 
 export type DoorbellOptions = {
   readonly now?: () => number
+  /**
+   * How long after a root turn ends no ring starts, so any harness's screen settles
+   * first, in milliseconds; messaging keeps it.
+   */
+  readonly settleMs?: number
   /** How long a screen must be still before a ring, in milliseconds. */
   readonly calmMs?: number
   /** How often the screen is looked at after the test paste, in milliseconds. */
@@ -177,7 +190,10 @@ export class Doorbell {
   }
 
   private async check(terminalId: string): Promise<void> {
-    if (this.closed || this.checking.has(terminalId) || !this.host.ringable(terminalId)) return
+    if (this.closed || this.checking.has(terminalId)) return
+    const settling = this.host.settling(terminalId)
+    if (settling > 0) return this.later(terminalId, settling)
+    if (!this.host.ringable(terminalId)) return
     this.checking.add(terminalId)
     try {
       const screen = await this.host.screen(terminalId)
@@ -208,14 +224,16 @@ export class Doorbell {
   }
 
   /**
-   * Rings once: the test paste, with the person's input held; Enter only once the line
-   * shows alone, twice running; then a wait for its doorbell prompt.
+   * Rings once: the test paste, with the person's input held for the whole ring; Enter
+   * only once the line shows alone, twice running, and while the hold is still in force;
+   * then a wait for its doorbell prompt. A ring abandoned on the way fails, leaving its
+   * line, if it landed, as the person's draft.
    */
   private async ring(terminalId: string): Promise<void> {
     const nonce = freshNonce()
     const line = doorbellLine(nonce)
     if (!this.host.ring(terminalId, nonce)) return
-    const release = this.host.hold(terminalId)
+    const hold = this.host.hold(terminalId)
     let pressed = false
     try {
       const before = await this.host.screen(terminalId)
@@ -232,7 +250,10 @@ export class Doorbell {
           const accepted = checkPaste(before.rows, after.rows, line).accepted
           // Accepted twice running on the same screen, so it isn't caught mid-draw.
           if (accepted && landed === text) {
-            pressed = this.host.ringing(terminalId) === nonce && this.host.write(terminalId, "\r")
+            pressed =
+              hold.holding() &&
+              this.host.ringing(terminalId) === nonce &&
+              this.host.write(terminalId, "\r")
             break
           }
           landed = accepted ? text : undefined
@@ -240,7 +261,7 @@ export class Doorbell {
         }
       }
     } finally {
-      release()
+      hold.release()
     }
     if (!pressed) {
       this.host.ringFailed(terminalId, nonce)
