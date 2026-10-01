@@ -40,7 +40,7 @@ import { resumeAvailability } from "../harnesses/eligibility.js"
 import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
 import { doorbellLine, quotedLine, type Install } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
-import { followRoot, type Root } from "../harnesses/roots.js"
+import { followRoot, rootedIn, type Root } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import { agentLabel } from "../messaging/mailbox.js"
 import { Messaging, type AgentsAnswer, type SendAnswer } from "../messaging/messaging.js"
@@ -237,6 +237,11 @@ type Record = {
   openedBy: string | null
   /** The requests waiting on the person that their keys already answered, by id. */
   answered: string | null
+  /**
+   * How many typed entries its agent's transcript held at its last root turn, where its
+   * hooks name no prompt; undefined before one was read.
+   */
+  userEntries: number | undefined
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -625,6 +630,7 @@ export class Terminals {
         held: null,
         openedBy: null,
         answered: null,
+        userEntries: undefined,
       }
       this.records.set(record.summary.id, record)
       this.register(record, expectedAgent(input.command, input.resume))
@@ -945,6 +951,7 @@ export class Terminals {
           binding: null,
           root: null,
           held: null,
+          userEntries: undefined,
           activity: null,
           telemetry: null,
           watching: null,
@@ -2115,7 +2122,7 @@ export class Terminals {
     this.publishAgent(record, record.summary.cwd !== cwd)
     if (this.trackRoot(record, events, report.event === "StatusLine") || changed)
       this.save(record, false)
-    const told = await this.doorbellPrompt(record, events)
+    const told = await this.attributed(record, events)
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
       return silent
@@ -2142,7 +2149,11 @@ export class Terminals {
       awaited: (sessionId) => this.messaging.awaits(id, sessionId),
     })
     record.root = root
-    if (changes.length > 0) this.messaging.rooted(id, changes)
+    if (changes.length > 0) {
+      this.messaging.rooted(id, changes)
+      // Another session, another transcript: what was seen of the last says nothing.
+      record.userEntries = undefined
+    }
     const work = workAfter(record.work, root, events, Date.now(), changes)
     if (work === record.work) return false
     record.work = work
@@ -2150,27 +2161,50 @@ export class Terminals {
   }
 
   /**
-   * The facts with a ring's confirmation where the harness's hooks can't show it: while
-   * the terminal rings, a root turn its hooks name no prompt for is the doorbell's when
-   * its transcript's last user input holds the line with its nonce, as Antigravity
-   * wraps it in `<USER_REQUEST>`.
+   * The facts with what a harness's hooks can't show, where they name no prompt (as
+   * Antigravity's), told from its transcript's last user input, read as the hook runs:
+   * a root turn started while the terminal rings is the doorbell's when that input holds
+   * the ring's line; one started just after the person's bare Enter is their prompt when
+   * the harness's profile confirms that input is theirs. Otherwise a turn the harness
+   * started stays its own.
    */
-  private async doorbellPrompt(
+  private async attributed(
     record: Record,
     events: readonly HarnessEvent[],
   ): Promise<readonly HarnessEvent[]> {
-    const nonce = this.messaging.ringing(record.summary.id)
+    const { id } = record.summary
     const root = record.root
-    if (!nonce || !root || harnesses[root.agent].messaging.promptVisible) return events
+    if (!root) return events
+    const profile = harnesses[root.agent].messaging
     const items = harnesses[root.agent].transcripts?.items
-    if (!record.transcript || !items || confirmRing(events, root, nonce, undefined) === undefined)
-      return events
-    // Its transcript may record the input just after the hook runs: a few looks, briefly.
+    const index = events.findIndex(
+      (event) =>
+        event.type === "turn-started" && event.cause === "harness" && rootedIn(root, event),
+    )
+    if (profile.promptVisible || !items || !record.transcript || index < 0) return events
+    const nonce = this.messaging.ringing(id)
+    const enteredAt = this.messaging.pendingSubmission(id)
+    const confirms = profile.confirmsSubmission
+    const seen = record.userEntries
+    // Its transcript may record the input just after the hook runs: a few looks, briefly,
+    // while a ring or the person's Enter waits on it; one otherwise, to know what is new.
+    const looks = nonce !== undefined || (enteredAt !== undefined && confirms) ? 2 : 0
     for (let look = 0; ; look += 1) {
       // eslint-disable-next-line no-await-in-loop -- Each look waits for the last.
-      const input = await lastUserInput(record.transcript, items)
-      const confirmed = confirmRing(events, root, nonce, input)
-      if (confirmed || look === 2) return confirmed ?? events
+      const entry = await lastUserInput(record.transcript, items)
+      const rung = nonce === undefined ? undefined : confirmRing(events, root, nonce, entry?.text)
+      const theirs =
+        !rung && enteredAt !== undefined && confirms?.(entry, { enteredAt, seen }) === true
+      if (rung || theirs || look === looks) {
+        if (entry) record.userEntries = entry.count
+        if (rung) return rung
+        if (!theirs) return events
+        return events.map((event, at) =>
+          at === index && event.type === "turn-started"
+            ? { ...event, cause: "prompt", ...(entry && { prompt: entry.text }) }
+            : event,
+        )
+      }
       // eslint-disable-next-line no-await-in-loop -- As above.
       await sleep(150)
     }

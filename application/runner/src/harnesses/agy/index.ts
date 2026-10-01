@@ -2,6 +2,7 @@ import { access } from "node:fs/promises"
 import { join } from "node:path"
 
 import {
+  hasDoorbell,
   hookSeconds,
   json,
   mcpServer,
@@ -44,6 +45,17 @@ const messaging: MessagingProfile = {
   initialPrompt: async (line, { install, cwd }) =>
     install && (await trustsFolder(cli(install), cwd)) ? ["agy", "-i", line] : undefined,
   start: ["agy"],
+  // Its transcript tells what was typed (a USER_EXPLICIT USER_INPUT step, the only kind
+  // its transcript reader takes as the user's) from what woke it: a subagent's message,
+  // a Stop hook's continuation or a notice are SYSTEM_MESSAGE steps, and injected
+  // messages EPHEMERAL_MESSAGE ones. A typed entry is new once there are more than were
+  // seen at the last turn; before any was seen, by its time, which is to the second.
+  confirmsSubmission: (entry, { enteredAt, seen }) =>
+    entry !== undefined &&
+    (seen === undefined
+      ? entry.at !== null && entry.at >= Math.floor(enteredAt / 1_000) * 1_000
+      : entry.count > seen) &&
+    !hasDoorbell(entry.text),
 }
 
 // A handler for one of its events, with the time it may take.

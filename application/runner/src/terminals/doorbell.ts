@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { Terminal as Screen } from "@xterm/headless"
 
 import type { HarnessEvent } from "../harnesses/events.js"
-import { doorbellLine, type TranscriptEntry } from "../harnesses/harness.js"
+import { doorbellLine, type TranscriptEntry, type UserEntry } from "../harnesses/harness.js"
 import { rootedIn, type Root } from "../harnesses/roots.js"
 import { bracketedPaste, calmMs, checkPaste, freshNonce, gate } from "./ring.js"
 
@@ -21,7 +21,7 @@ const tailBytes = 256 * 1024
 export const lastUserInput = async (
   path: string,
   items: (line: string) => readonly TranscriptEntry[],
-): Promise<string | undefined> => {
+): Promise<UserEntry | undefined> => {
   let text: string
   try {
     const file = await open(path, "r")
@@ -37,10 +37,16 @@ export const lastUserInput = async (
   } catch {
     return undefined
   }
-  let last: string | undefined
+  // Only the tail is read, so the count is of the entries in it; it still grows with
+  // each new one while the tail holds every entry since the last look.
+  let last: UserEntry | undefined
+  let count = 0
   for (const line of text.split("\n"))
     for (const item of items(line))
-      if (item.role === "user" && item.kind === "text") last = item.text
+      if (item.role === "user" && item.kind === "text") {
+        count += 1
+        last = { text: item.text, at: item.at, count }
+      }
   return last
 }
 

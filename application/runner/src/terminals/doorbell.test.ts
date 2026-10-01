@@ -215,7 +215,11 @@ describe("a ring's confirmation where hooks name no prompt", () => {
     const transcript = join(folder, "transcript.jsonl")
     writeFileSync(transcript, `${input("hello")}\n${input(line)}\n`)
     const items = harnesses.agy.transcripts!.items
-    await expect(lastUserInput(transcript, items)).resolves.toBe(line)
+    await expect(lastUserInput(transcript, items)).resolves.toEqual({
+      text: line,
+      at: null,
+      count: 2,
+    })
     await expect(lastUserInput(join(folder, "missing"), items)).resolves.toBeUndefined()
   })
 

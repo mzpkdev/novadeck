@@ -392,3 +392,39 @@ describe("Claude Code's and Codex's decoders", () => {
     }
   })
 })
+
+describe("Antigravity's confirmation of the person's submission", () => {
+  const confirms = harnesses.agy.messaging.confirmsSubmission!
+  const enteredAt = Date.parse("2026-10-01T12:00:05.700Z")
+  const typed = (text: string, count: number, at = Date.parse("2026-10-01T12:00:05Z")) => ({
+    text,
+    at,
+    count,
+  })
+
+  it("takes a typed entry new since the last turn, never a doorbell line", () => {
+    expect(confirms(typed("fix the build", 3), { enteredAt, seen: 2 })).toBe(true)
+    // Nothing new was typed: the turn was something else waking it.
+    expect(confirms(typed("fix the build", 2), { enteredAt, seen: 2 })).toBe(false)
+    expect(confirms(undefined, { enteredAt, seen: 2 })).toBe(false)
+    expect(confirms(typed(doorbellLine("k3f9q2"), 3), { enteredAt, seen: 2 })).toBe(false)
+  })
+
+  it("falls back on the entry's time, to the second, before any turn was read", () => {
+    expect(confirms(typed("fix it", 1), { enteredAt, seen: undefined })).toBe(true)
+    expect(
+      confirms(typed("fix it", 1, Date.parse("2026-10-01T12:00:04Z")), {
+        enteredAt,
+        seen: undefined,
+      }),
+    ).toBe(false)
+    expect(confirms({ text: "fix it", at: null, count: 1 }, { enteredAt, seen: undefined })).toBe(
+      false,
+    )
+  })
+
+  it("is Antigravity's alone: Claude Code and Codex never take a harness turn as the person's", () => {
+    expect(harnesses.claude.messaging.confirmsSubmission).toBeUndefined()
+    expect(harnesses.codex.messaging.confirmsSubmission).toBeUndefined()
+  })
+})

@@ -1002,7 +1002,7 @@ describe("the person's submissions", () => {
     }
   })
 
-  it("are never a turn Antigravity's hooks start, as they name no prompt: its draft stays", () => {
+  it("are never a turn a harness started, unless its adapter turned it into a prompt", () => {
     const { messaging, follow, prompt, stop, clock: time } = create()
     const agy = binding("agy", "c-root", "7")
     messaging.register("C", here, "t3")

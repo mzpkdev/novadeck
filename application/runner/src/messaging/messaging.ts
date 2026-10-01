@@ -446,6 +446,15 @@ export class Messaging {
     return Math.max(0, live.settledAt + this.settleMs - this.now())
   }
 
+  /**
+   * When the person's bare Enter came, if a root turn starting now would be their
+   * submission: within the window, with nothing typed since.
+   */
+  pendingSubmission(terminalId: string): number | undefined {
+    const at = this.live.get(terminalId)?.submittedAt
+    return at != null && this.now() - at <= this.submitWindowMs ? at : undefined
+  }
+
   /** The doorbell starts ringing the terminal with its nonce; false when it may not now. */
   ring(terminalId: string, nonce: string): boolean {
     const live = this.live.get(terminalId)

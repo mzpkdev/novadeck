@@ -146,6 +146,28 @@ export type MessagingProfile = {
   ) => Promise<readonly string[] | undefined>
   /** How it starts without a prompt. */
   readonly start: readonly string[]
+  /**
+   * Where its hooks can't tell the person's prompt from a turn it started by itself
+   * (`promptVisible` false), whether the last user input its transcript recorded shows
+   * the person submitted with their bare Enter at `enteredAt`, nothing typed after: a
+   * typed entry, new since the transcript was last read at a turn (`seen` entries then,
+   * unknown before any), that is no doorbell line. Without it, a turn the harness
+   * started is never the person's.
+   */
+  readonly confirmsSubmission?: (
+    entry: UserEntry | undefined,
+    since: { readonly enteredAt: number; readonly seen: number | undefined },
+  ) => boolean
+}
+
+/**
+ * The last thing a transcript recorded as typed into the agent's box, when, and how many
+ * such entries it holds in all.
+ */
+export type UserEntry = {
+  readonly text: string
+  readonly at: number | null
+  readonly count: number
 }
 
 /**
@@ -241,6 +263,10 @@ export const callId = (actor: string | null, toolName: string, input: unknown): 
 /** The line NovaDeck's doorbell types, with its nonce (see docs/agent-messaging.md). */
 export const doorbellLine = (nonce: string): string =>
   `[NovaDeck: automatic notice, agent messages waiting, ${nonce}]`
+
+/** Whether text holds a doorbell line anywhere. */
+export const hasDoorbell = (text: string): boolean =>
+  /\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]/.test(text)
 
 /** Any doorbell line, wherever it is. */
 export const doorbell = /\[NovaDeck: automatic notice, agent messages waiting, ([A-Za-z0-9]+)\]/g

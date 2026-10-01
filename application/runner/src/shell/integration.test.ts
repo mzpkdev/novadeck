@@ -2137,15 +2137,27 @@ let busy = true
 let menu = false
 let turns = 0
 const draw = () => process.stdout.write(menu ? "\r\x1b[2K  [menu] pick an item" : "\r\x1b[2K> " + box)
-const turn = (prompt) => {
+// Antigravity's hooks name no prompt: it records what was typed in its transcript, as a
+// USER_EXPLICIT USER_INPUT step, and what woke it by itself as a SYSTEM_MESSAGE one.
+const transcript = received + ".transcript.jsonl"
+const step = (fields) =>
+  fs.appendFileSync(transcript, JSON.stringify({ ...fields, created_at: new Date().toISOString() }) + "\n")
+const agy = { conversationId: session, transcriptPath: transcript, workspacePaths: [process.cwd()] }
+const started = (prompt, typed, done) => {
+  if (agent !== "agy") return hook("UserPromptSubmit", { prompt }, done)
+  if (typed) step({ source: "USER_EXPLICIT", type: "USER_INPUT", content: "<USER_REQUEST>\n" + prompt + "\n</USER_REQUEST>" })
+  else step({ source: "SYSTEM", type: "SYSTEM_MESSAGE", content: prompt })
+  hook("PreInvocation", { ...agy, invocationNum: 0 }, done)
+}
+const turn = (prompt, typed = true) => {
   busy = true
   turns += 1
   const perm = mode === "perm" && turns === 2
-  hook("UserPromptSubmit", { prompt }, (printed) => {
+  started(prompt, typed, (printed) => {
     fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + "\n")
     const finish = () => {
       process.stdout.write("\r\x1b[2Kworked on it\r\n")
-      hook("Stop", {}, () => {
+      hook("Stop", agent === "agy" ? { ...agy, fullyIdle: true } : {}, () => {
         busy = false
         menu = mode === "menu"
         draw()
@@ -2159,7 +2171,7 @@ const turn = (prompt) => {
     })
   })
 }
-process.on("SIGUSR1", () => turn("background result"))
+process.on("SIGUSR1", () => turn("background result", false))
 if (mode !== "bg") {
   process.stdin.setRawMode(true)
   process.stdin.setEncoding("utf8")
@@ -2172,23 +2184,28 @@ if (mode !== "bg") {
     const paste = /\x1b\[200~([\s\S]*?)\x1b\[201~/.exec(data)
     if (paste) box += paste[1]
     else if (data === "\r") {
-      if (busy) return
+      // Busy, or an empty box: Enter submits nothing.
+      if (busy || !box) return
       const prompt = box
       box = ""
       process.stdout.write("\r\n")
       return turn(prompt)
     } else if (data === "\x1b\r") box += "\n"
+    else if (data === "\x15") box = ""
     else box += data
     draw()
   })
 }
 process.stdout.write("\x1b[?2004h" + agent + " tui\r\n\r\n")
-hook("SessionStart", { source: "startup" }, () => {
+const ready = () => {
   busy = false
   process.stdout.write(agent + " ready\r\n")
   draw()
-  if (mode === "bg") setTimeout(() => turn("self-started"), 300)
-})
+  if (mode === "bg") setTimeout(() => turn("self-started", false), 300)
+}
+// Antigravity has no SessionStart hook: its first model call binds it.
+if (agent === "agy") ready()
+else hook("SessionStart", { source: "startup" }, ready)
 `,
   )
   writeFileSync(join(bin, "tui"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`)
@@ -2213,7 +2230,7 @@ const lines = <T>(file: string): T[] =>
     : []
 
 /** A sender and an idle stand-in TUI, in a manager whose doorbell rings soon. */
-const ringing = async (shell: Fixture, mode = "", program = "tui") => {
+const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentName = "codex") => {
   const bin = standIn(shell.home)
   standInTui(shell.home)
   const manager = shell.manager({
@@ -2227,8 +2244,10 @@ const ringing = async (shell: Fixture, mode = "", program = "tui") => {
   const received = join(shell.home, "received.jsonl")
   const raw = join(shell.home, "raw.jsonl")
   const type = (data: string) => manager.write({ terminalId: idle.id, data }, "owner")
-  type(`${program} codex s-codex '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`)
-  await shell.until(manager, idle.id, "codex ready")
+  type(
+    `${program} ${agent} s-${agent} '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`,
+  )
+  await shell.until(manager, idle.id, `${agent} ready`)
   return {
     manager,
     idle,
@@ -2410,6 +2429,51 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await tui.send("Review a.ts")
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
       expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+    })
+
+    it("takes Antigravity's turn after the person's Enter as theirs once its transcript shows the input", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "", "tui", "agy")
+      // Its hooks name no prompt: the transcript's new typed entry tells it was theirs.
+      await tui.first()
+      await tui.send("Review a.ts")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      expect(tui.received()[1]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
+      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+    })
+
+    it("keeps Antigravity Drafting when a turn after the Enter brought no typed input", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "", "tui", "agy")
+      await tui.first()
+      tui.type("draft")
+      await shell.until(tui.manager, tui.idle.id, "> draft")
+      await expect.poll(tui.delivery).toBe("drafting")
+      // Cleared, then Enter on the empty box submits nothing; a subagent wakes it at once.
+      tui.type("\x15")
+      tui.type("\r")
+      tui.kick()
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(tui.delivery).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+    })
+
+    it("keeps Antigravity Drafting when the person typed after their Enter", async ({ shell }) => {
+      const tui = await ringing(shell, "", "tui", "agy")
+      await tui.first()
+      tui.type("next")
+      await shell.until(tui.manager, tui.idle.id, "> next")
+      tui.type("\r")
+      tui.type("and more")
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(tui.delivery).toBe("drafting")
+      await tui.send("Review a.ts")
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
     })
 
     it.skipIf(process.platform !== "linux")(
