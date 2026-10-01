@@ -54,6 +54,10 @@ const goesOn = (current: MailState, thread: string): boolean =>
     mail.threads.some((each) => each.id === thread && !each.held),
   )
 
+// Whether some listing has the thread at all.
+const listed = (current: MailState, thread: string): boolean =>
+  Object.values(current.terminals).some((mail) => mail.threads.some((each) => each.id === thread))
+
 const reason = (error: unknown): string =>
   error instanceof Error && error.message ? error.message : String(error)
 
@@ -65,14 +69,21 @@ export const createRunnerMessages = (
   const state = createStore<MailState>(noMail)
   // Releases the runner accepted, waiting for a listing to show their threads go on.
   const accepted = new Set<string>()
-  // Threads accepted and shown going on are no longer releasing.
-  const settled = (current: MailState): MailState => {
-    const done = current.releasing.filter(
-      (thread) => accepted.has(thread) && goesOn(current, thread),
+  // What the listings now say of releases: a thread shown going on is released, and any
+  // failure it showed is over. With `gone`, as once a terminal's listing goes or a release
+  // was accepted, a thread no listing has any more can't be shown released, so it's let go.
+  const reconcile = (current: MailState, gone = false): MailState => {
+    const over = (thread: string): boolean =>
+      (accepted.has(thread) && goesOn(current, thread)) || (gone && !listed(current, thread))
+    const releasing = current.releasing.filter((thread) => !over(thread))
+    for (const thread of accepted) if (!releasing.includes(thread)) accepted.delete(thread)
+    const failed = Object.fromEntries(
+      Object.entries(current.failed).filter(([thread]) => !goesOn(current, thread)),
     )
-    if (!done.length) return current
-    for (const thread of done) accepted.delete(thread)
-    return { ...current, releasing: current.releasing.filter((thread) => !done.includes(thread)) }
+    const same =
+      releasing.length === current.releasing.length &&
+      Object.keys(failed).length === Object.keys(current.failed).length
+    return same ? current : { ...current, releasing, failed }
   }
   const followed = new Map<string, AsyncIterableIterator<TerminalMessages, undefined>>()
 
@@ -80,7 +91,7 @@ export const createRunnerMessages = (
     void state.update((current) => {
       if (!(id in current.terminals)) return current
       const { [id]: _gone, ...terminals } = current.terminals
-      return { ...current, terminals }
+      return reconcile({ ...current, terminals }, true)
     })
 
   const follow = (key: CompanionKey): void => {
@@ -99,7 +110,7 @@ export const createRunnerMessages = (
         for await (const listing of stream) {
           if (followed.get(id) !== stream) return
           state.update((current) =>
-            settled({
+            reconcile({
               ...current,
               paused: listing.paused,
               terminals: { ...current.terminals, [id]: mailOf(listing) },
@@ -152,13 +163,16 @@ export const createRunnerMessages = (
       track(streams.release(thread)).then(
         () => {
           accepted.add(thread)
-          state.update(settled)
+          state.update((current) => reconcile(current, true))
         },
         (error: unknown) =>
           state.update((current) => ({
             ...current,
             releasing: current.releasing.filter((each) => each !== thread),
-            failed: { ...current.failed, [thread]: `Couldn't release it: ${reason(error)}` },
+            // A thread a listing already shows going on was released all the same.
+            failed: goesOn(current, thread)
+              ? current.failed
+              : { ...current.failed, [thread]: `Couldn't release it: ${reason(error)}` },
           })),
       )
     },

@@ -178,6 +178,58 @@ describe("the runner's messages", () => {
       await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
     })
 
+    it("forgets a failure once a listing shows the thread go on, and records none then", async () => {
+      let refuse: ((error: Error) => void) | undefined
+      const { messages, push } = streams({
+        release: () => new Promise<void>((_, reject) => (refuse = reject)),
+      })
+      messages.follow(key)
+      push(held(true))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
+      messages.release("t-1")
+      refuse?.(new Error("lost"))
+      await vi.waitFor(() =>
+        expect(messages.state.getSnapshot().failed).toEqual({ "t-1": "Couldn't release it: lost" }),
+      )
+      // Released after all, as from another window.
+      push(held(false))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().failed).toEqual({}))
+      // A refusal for a thread already shown going on says nothing.
+      messages.release("t-1")
+      refuse?.(new Error("late"))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+      expect(messages.state.getSnapshot().failed).toEqual({})
+    })
+
+    it("lets go of a release no listing can show any more", async () => {
+      const { messages, push, answer } = answering()
+      messages.follow(key)
+      push(held(true))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
+      messages.release("t-1")
+      // The only terminal that lists the thread goes.
+      messages.unfollow(key)
+      expect(messages.state.getSnapshot().releasing).toEqual([])
+      answer()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(messages.state.getSnapshot().releasing).toEqual([])
+    })
+
+    it("lets go of a release accepted for a thread no longer listed", async () => {
+      const { messages, push, answer } = answering()
+      messages.follow(key)
+      push(held(true))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
+      messages.release("t-1")
+      // Its thread swept from the listing before the runner answered.
+      push(listing({ threads: [] }))
+      await vi.waitFor(() =>
+        expect(messages.state.getSnapshot().terminals[id]?.threads).toEqual([]),
+      )
+      answer()
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+    })
+
     it("says why on that thread when the runner refused", async () => {
       const { messages } = streams({ release: () => Promise.reject(new Error("Not found")) })
       messages.release("t-1")

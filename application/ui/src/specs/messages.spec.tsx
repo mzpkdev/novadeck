@@ -181,6 +181,30 @@ describe("Who named a terminal", () => {
     await expect.element(terminalTab("Half")).not.toBeInTheDocument()
   })
 
+  it("leaves a rename in progress alone when the person long-presses its field", async () => {
+    await openMessagesDemo()
+    await tabAction("Rename Checkout review").click()
+    const field = sidebarRenameField("Checkout review")
+    await expect.element(field).toHaveFocus()
+    await userEvent.keyboard("Draft")
+    // A touch held on the field, as a long-press starts.
+    const box = field.element().getBoundingClientRect()
+    field.element().dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "touch",
+        isPrimary: true,
+        clientX: box.x + 5,
+        clientY: box.y + 5,
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await expect
+      .element(page.getByRole("menu", { name: "Checkout review actions" }))
+      .not.toBeInTheDocument()
+    await expect.element(field).toHaveValue("Draft")
+  })
+
   it("keeps the tab itself through a rename", async () => {
     await openMessagesDemo()
     const before = terminalTab("Checkout review").element().closest("[data-terminal-tab-id]")
