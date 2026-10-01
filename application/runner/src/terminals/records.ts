@@ -12,6 +12,8 @@ export type SavedTerminal = {
   readonly sessionId: string
   /** The title the person gave it, or its session's default; null in a record from before titles. */
   readonly title: string | null
+  /** The handle of the terminal whose agent gave it its title; null when the person did, or by default. */
+  readonly titledBy: string | null
   /** The command it was opened to run; null for a plain shell. */
   readonly command: string | null
   /** The program in its foreground when its shell was last seen. */
@@ -37,8 +39,10 @@ export type TerminalRecords = {
   terminals(sessionId?: string): readonly ListedTerminal[]
   /** The next default number of a session's terminals, from 1, never given twice. */
   nextTerminalNumber(sessionId: string): number
-  /** Renames a kept terminal; false when none is kept by that id. */
+  /** Renames a kept terminal, as the person did; false when none is kept by that id. */
   renameTerminal(terminalId: string, title: string): boolean
+  /** A kept terminal's title and who gave it, read alone. */
+  terminalTitle(terminalId: string): Pick<SavedTerminal, "title" | "titledBy"> | undefined
   /** `transcript` is left as it is when omitted. */
   saveTerminal(
     terminal: Omit<SavedTerminal, "transcript" | "savedAt"> & { transcript?: string | null },

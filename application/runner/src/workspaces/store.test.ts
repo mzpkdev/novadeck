@@ -252,6 +252,7 @@ describe("saved terminals", () => {
       agents: { claude: { sessionId: "abc", seq: 2 } },
       promptedAt: 1_000,
       title: "API author",
+      titledBy: null,
       command: "claude",
       lastProgram: "claude",
     }
@@ -283,6 +284,7 @@ describe("saved terminals", () => {
       agents: {},
       promptedAt: null,
       title: null,
+      titledBy: null,
       command: null,
       lastProgram: null,
     }
@@ -305,6 +307,7 @@ describe("saved terminals", () => {
         agents: {},
         promptedAt: null,
         title: `Terminal ${index}`,
+        titledBy: null,
         command: null,
         lastProgram: null,
       })
@@ -330,6 +333,7 @@ describe("saved terminals", () => {
       agents: {},
       promptedAt: null,
       title: "Terminal 01",
+      titledBy: null,
       command: null,
       lastProgram: null,
     })
@@ -433,6 +437,7 @@ describe("the mailbox", () => {
       agents: {},
       promptedAt: null,
       title: null,
+      titledBy: null,
       command: null,
       lastProgram: null,
     })

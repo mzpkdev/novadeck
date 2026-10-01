@@ -242,7 +242,8 @@ const described = (peer) =>
           peer.state +
           (peer.activeAt ? ", last active " + ago(peer.activeAt) : "")
         : "no agent NovaDeck can deliver to"),
-    peer.title && "  title: " + peer.title,
+    peer.title &&
+      "  title: " + peer.title + (peer.titledBy ? " (set by " + peer.titledBy + ", not the user)" : ""),
     peer.folder && "  folder: " + peer.folder + (peer.branch ? ", branch " + peer.branch : ""),
     peer.startedWith && "  started with: " + peer.startedWith,
     peer.latest && "  latest: " + peer.latest,
@@ -273,9 +274,10 @@ const agents = {
   name: "agents",
   description:
     "List the other terminals in this NovaDeck project and session, each with what NovaDeck " +
-    "knows of it: its handle, its agent and whether that is busy, the title the user gave " +
-    "it, its folder and git branch, what the user last asked its agent and its plan, and " +
-    "the files it wrote lately; and your own messages not yet delivered. This is NovaDeck's " +
+    "knows of it: its handle, its agent and whether that is busy, its title (the user's, " +
+    "unless an agent set it, which it says), its folder and git branch, the user's first " +
+    "and latest prompts there, its plan, the folders it writes in most, and the latest " +
+    "message between you; and your own messages not yet delivered. This is NovaDeck's " +
     "knowledge, always current, so call it again rather than rely on what you remember. " +
     rules,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },

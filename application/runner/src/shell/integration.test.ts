@@ -133,6 +133,7 @@ const it = base.extend<{ shell: Fixture }>({
         sessionId: session.id,
         cwd: store.terminal(id)?.cwd ?? home,
         title: null,
+        titledBy: null,
         command: null,
         lastProgram: null,
         agents: { [agent]: { sessionId, seq: 1 } },
@@ -1201,6 +1202,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       terminals: (sessionId) => shell.store.terminals(sessionId),
       nextTerminalNumber: (sessionId) => shell.store.nextTerminalNumber(sessionId),
       renameTerminal: (terminalId, title) => shell.store.renameTerminal(terminalId, title),
+      terminalTitle: (terminalId) => shell.store.terminalTitle(terminalId),
       saveTerminal: (terminal) => {
         if (refuse && terminal.transcript !== undefined) {
           refuse = false
@@ -1256,6 +1258,11 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     ])
     second.rename({ terminalId: id, title: "API server" })
     expect(shell.store.terminal(id)?.title).toBe("API server")
+    // Renamed again while it restores, as from another window: the rename stands.
+    const restoring = create(second, shell, { id, restore: true })
+    second.rename({ terminalId: id, title: "API" })
+    await expect(restoring).resolves.toMatchObject({ title: "API" })
+    expect(shell.store.terminal(id)?.title).toBe("API")
     await second.close({ terminalId: id }, "owner")
     expect(shell.store.terminal(id)).toBeUndefined()
     expect(second.list(shell.sessionId)).toEqual([])
@@ -1506,7 +1513,16 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           const id = randomUUID()
           // eslint-disable-next-line no-await-in-loop -- Requests are opened in turn.
           await manager.create(
-            { id, sessionId, cwd, cols: 100, rows: 20, ...(command && { command }) },
+            {
+              id,
+              sessionId,
+              cwd,
+              cols: 100,
+              rows: 20,
+              ...(command && { command }),
+              // Named as the agent asked, as the UI names it.
+              ...(request.title && { title: request.title }),
+            },
             "client",
           )
           manager.answerRequest({ requestId, terminalId: id }, "client")
@@ -1544,7 +1560,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           { ...asked, cwd: shell.home, title: "Refused", focus: false },
         ])
         const [opened] = answers as { terminalId: string }[]
-        expect(manager.get(opened!.terminalId)).toMatchObject({ cwd: project })
+        expect(manager.get(opened!.terminalId)).toMatchObject({ cwd: project, title: "Agent" })
+        // The agent chose that title, and the record says which terminal's did.
+        expect(shell.store.terminal(opened!.terminalId)?.titledBy).toBe("term-1")
         await shell.until(manager, opened!.terminalId, "claude args: --fresh")
         // Five a minute, counting each request that was asked, opened or not: two more,
         // and the next waits.
@@ -1755,6 +1773,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
               handle: "term-1",
               agent: "claude",
               title: "API author",
+              titledBy: null,
               folder: ".",
               branch: "main",
               startedWith: "ask codex",

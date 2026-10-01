@@ -200,6 +200,8 @@ type Record = {
   promptedAt: number | null
   /** What its agents showed the person, oldest first, by id; kept across its shells, never saved. */
   shown: ReadonlyMap<string, Artifact>
+  /** The handle of the terminal whose agent titled it; null when the person did, or by default. */
+  titledBy: string | null
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -487,7 +489,11 @@ export class Terminals {
         this.claims.set(resume.key, input.id)
         started.resumeClaim = resume.key
       }
-      const title = input.title ?? saved?.title ?? this.defaultTitle(input.sessionId)
+      // Read again after every wait above: a rename meanwhile, as from another window,
+      // stands. Nothing waits between this and saving it.
+      const kept = input.restore ? this.keptTitle(input.id) : undefined
+      const title = input.title ?? kept?.title ?? this.defaultTitle(input.sessionId)
+      const titledBy = input.title === undefined ? (kept?.titledBy ?? null) : null
       const record: Record = {
         summary: {
           id: input.id,
@@ -536,6 +542,7 @@ export class Terminals {
         changed: false,
         savedAt: 0,
         submitted: started.resumes,
+        titledBy,
       }
       this.records.set(record.summary.id, record)
       this.messaging.register(
@@ -605,6 +612,15 @@ export class Terminals {
     }
   }
 
+  /** A kept terminal's title and who gave it, read alone. */
+  private keptTitle(terminalId: string): Pick<SavedTerminal, "title" | "titledBy"> | undefined {
+    let kept: Pick<SavedTerminal, "title" | "titledBy"> | undefined
+    this.persisting(() => {
+      kept = this.options.records?.terminalTitle(terminalId)
+    })
+    return kept
+  }
+
   /** The next default title of a session's terminals: "Terminal 01", "Terminal 02", … */
   private defaultTitle(sessionId: string): string {
     let number: number | undefined
@@ -627,6 +643,7 @@ export class Terminals {
     const record = this.records.get(input.terminalId)
     if (record) {
       record.summary = { ...record.summary, title: input.title }
+      record.titledBy = null
       this.announce(record)
       this.save(record, false)
       return
@@ -1157,8 +1174,15 @@ export class Terminals {
       },
       this.options.openMs,
     )
-    if (asked.type === "answered" && "terminalId" in asked.answer)
+    if (asked.type === "answered" && "terminalId" in asked.answer) {
       this.openers.set(asked.answer.terminalId, charged)
+      // A title the agent chose is its own, never the person's, and agents are told so.
+      const opened = this.records.get(asked.answer.terminalId)
+      if (request.title !== undefined && opened?.summary.title === request.title) {
+        opened.titledBy = this.messaging.handle(call.terminalId) ?? null
+        this.save(opened, false)
+      }
+    }
     return this.opening(asked, cwd, request.command)
   }
 
@@ -1201,6 +1225,9 @@ export class Terminals {
     const record = this.records.get(call.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, call.token))
       return unansweredCalls.send
+    // Where `to` names one terminal, nothing needs describing: no branches or plans read.
+    if (!this.messaging.describes(call.terminalId, call.request))
+      return this.messaging.send(call.terminalId, call.request)
     const about = await this.whereabouts(record.summary.sessionId)
     return this.messaging.send(call.terminalId, call.request, (id) => about.get(id))
   }
@@ -1247,6 +1274,7 @@ export class Terminals {
         }
         const where: Whereabouts = {
           title: record.summary.title,
+          titledBy: record.titledBy,
           folder: place(cwd),
           branch,
           plan: title === undefined ? null : shorten(title, 120),
@@ -2070,6 +2098,7 @@ export class Terminals {
         id: record.summary.id,
         sessionId: record.summary.sessionId,
         title: record.summary.title,
+        titledBy: record.titledBy,
         command: record.summary.command,
         lastProgram: record.summary.lastProgram,
         cwd: record.summary.cwd,
