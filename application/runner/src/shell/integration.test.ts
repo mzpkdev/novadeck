@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
@@ -85,6 +86,8 @@ const it = base.extend<{ shell: Fixture }>({
             ? options.shellFiles
             : installShellFiles(join(root, "data", "shell")),
         records: store,
+        mailbox: store,
+        projectOf: (sessionId) => store.session(sessionId).projectId,
         ...options,
       })
       resources.defer(() => terminals.shutdown())
@@ -1469,7 +1472,14 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           open({}, "0".repeat(48)),
         ])
         expect(answers).toEqual([
-          { ok: true, terminalId: expect.any(String), cwd: project, command: "claude --fresh" },
+          {
+            ok: true,
+            terminalId: expect.any(String),
+            // Its handle, which agents message it by: the agent it was opened for.
+            handle: "claude-1",
+            cwd: project,
+            command: "claude --fresh",
+          },
           { ok: false, reason: "Not now." },
           { ok: false, reason: "nowhere isn't a folder a terminal can open in." },
           { ok: false, reason: "The command must be one line, without control characters." },
@@ -1514,6 +1524,232 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         controller.abort()
         await client
       }
+    })
+  },
+)
+
+// A stand-in agent with NovaDeck's plugin connected: `agent <name> <session> <steps>` runs
+// the real hook for its SessionStart, says it is ready, then runs each step written to its
+// `steps` folder, in order: a hook, as its harness would run it, keeping what the hook
+// printed; or a tool call, as NovaDeck's MCP server would send it, keeping the answer.
+// Each says when it is done. Steps come through a folder, not the terminal, since what is
+// typed there is the person's input.
+const standIn = (home: string): string => {
+  const bin = join(home, "bin")
+  mkdirSync(bin, { recursive: true })
+  const script = join(bin, "agent.cjs")
+  writeFileSync(
+    script,
+    [
+      'const { spawn } = require("node:child_process")',
+      'const fs = require("node:fs")',
+      'const net = require("node:net")',
+      "const [agent, session, steps] = process.argv.slice(2)",
+      "const { NOVADECK_TERMINAL_ID: terminalId, NOVADECK_REPORT_TOKEN: token } = process.env",
+      "const hook = (event, payload, done) => {",
+      "  const child = spawn(process.env.NOVADECK_HOOK, [agent, event], { stdio: ['pipe', 'pipe', 'inherit'] })",
+      '  let printed = ""',
+      '  child.stdout.on("data", (chunk) => (printed += chunk))',
+      '  child.on("close", () => done(printed))',
+      "  child.stdin.end(JSON.stringify(payload))",
+      "}",
+      "const call = (type, request, done) => {",
+      "  const socket = net.connect(process.env.NOVADECK_REPORT)",
+      '  let text = ""',
+      '  socket.setEncoding("utf8")',
+      '  socket.on("data", (chunk) => (text += chunk))',
+      '  socket.on("close", () => done(text))',
+      '  socket.end(JSON.stringify({ type, terminalId, token, request }) + "\\n")',
+      "}",
+      "const start = { hook_event_name: 'SessionStart', source: 'startup', session_id: session, cwd: process.cwd() }",
+      "hook('SessionStart', start, () => {",
+      '  console.log(agent + " ready")',
+      "  next()",
+      "})",
+      "const next = () => {",
+      "  const [name] = fs.readdirSync(steps).filter((file) => file.endsWith('.json')).sort()",
+      "  if (!name) return setTimeout(next, 20)",
+      "  const step = JSON.parse(fs.readFileSync(steps + '/' + name, 'utf8'))",
+      "  fs.rmSync(steps + '/' + name)",
+      "  const finish = (output) => {",
+      "    fs.writeFileSync(step.out, output)",
+      '    console.log("done " + require("node:path").basename(step.out))',
+      "    next()",
+      "  }",
+      "  if (step.hook) hook(step.hook, { hook_event_name: step.hook, session_id: session, ...step.payload }, finish)",
+      "  else call(step.call, step.request, finish)",
+      "}",
+      "process.stdin.resume()",
+    ].join("\n"),
+  )
+  writeFileSync(join(bin, "agent"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`)
+  chmodSync(join(bin, "agent"), 0o755)
+  return bin
+}
+
+/**
+ * Drives stand-in agents in a manager's terminals: `start` runs one there, and `queue`
+ * gives it a step, whose output `step` also waits for and reads.
+ */
+const driver = (shell: Fixture, manager: Terminals) => {
+  const folder = (terminalId: string) => join(shell.home, `steps-${terminalId}`)
+  let taken = 0
+  const queue = (terminalId: string, fields: object): { name: string; out: string } => {
+    const name = `step-${randomUUID().slice(0, 8)}`
+    const out = join(shell.home, name)
+    taken += 1
+    const file = join(folder(terminalId), `${String(taken).padStart(4, "0")}.json`)
+    writeFileSync(`${file}.tmp`, JSON.stringify({ ...fields, out }))
+    renameSync(`${file}.tmp`, file)
+    return { name, out }
+  }
+  return {
+    queue,
+    prepare: (terminalId: string) => mkdirSync(folder(terminalId), { recursive: true }),
+    start: async (terminalId: string, agent: AgentName, session: string) => {
+      mkdirSync(folder(terminalId), { recursive: true })
+      manager.write(
+        { terminalId, data: `agent ${agent} ${session} '${folder(terminalId)}'\r` },
+        "owner",
+      )
+      await shell.until(manager, terminalId, `${agent} ready`)
+    },
+    step: async (terminalId: string, fields: object): Promise<string> => {
+      const { name, out } = queue(terminalId, fields)
+      await shell.until(manager, terminalId, `done ${name}`)
+      return readFileSync(out, "utf8")
+    },
+  }
+}
+
+describe.skipIf(process.platform === "win32" || !existsSync(bash))(
+  "agents messaging each other between bash terminals",
+  () => {
+    it("delivers a message through the recipient's hooks, and its reply through the sender's", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const claude = await create(manager, shell)
+      const codex = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(claude.id, "claude", "s-claude")
+      await start(codex.id, "codex", "s-codex")
+      await expect.poll(() => manager.messages(codex.id).delivery).toBe("fresh")
+      const send = async (from: string, to: string, text: string) =>
+        JSON.parse(await step(from, { call: "send", request: { to, text } })) as {
+          ok: boolean
+          id: string
+        }
+
+      // Claude sends Codex a message while Codex has had no prompt yet.
+      const sent = await send(claude.id, "codex", "Review a.ts, please.")
+      expect(sent).toEqual({
+        ok: true,
+        to: "term-2",
+        id: expect.stringMatching(/^m-/),
+        state: "queued",
+        route: "when its agent first prompts",
+      })
+      // Codex's next prompt carries it, wrapped and attributed, never as the person.
+      const prompted = JSON.parse(
+        await step(codex.id, { hook: "UserPromptSubmit", payload: { prompt: "go on" } }),
+      ) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } }
+      expect(prompted.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit")
+      expect(prompted.hookSpecificOutput.additionalContext).toMatch(
+        new RegExp(
+          `<message id="${sent.id}" from="term-1" agent="Claude Code" thread="t-[a-z0-9]+" ` +
+            `sent="\\d\\d:\\d\\d">Review a.ts, please.</message>`,
+        ),
+      )
+      // Its hook acknowledged what it printed.
+      await expect
+        .poll(() => manager.messages(codex.id).threads[0]?.messages[0]?.state)
+        .toBe("delivered")
+
+      // Claude is working when Codex answers: its Stop continues the turn with the reply.
+      await expect(
+        step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "ask codex" } }),
+      ).resolves.toBe("")
+      const reply = await send(codex.id, "term-1", "Looks good & ships.")
+      expect(reply).toMatchObject({ ok: true, route: "when its current turn ends" })
+      const stopped = JSON.parse(await step(claude.id, { hook: "Stop", payload: {} })) as {
+        decision: string
+        reason: string
+      }
+      expect(stopped.decision).toBe("block")
+      expect(stopped.reason).toContain('from="term-2" agent="Codex"')
+      expect(stopped.reason).toContain(">Looks good &amp; ships.</message>")
+      await expect
+        .poll(() => manager.messages(claude.id).threads[0]?.messages.map(({ state }) => state))
+        .toEqual(["delivered", "delivered"])
+      // The agent asked to list sees its peer, busy, and nothing of its own still waiting.
+      expect(JSON.parse(await step(codex.id, { call: "agents", request: {} }))).toEqual({
+        ok: true,
+        handle: "term-2",
+        agents: [{ handle: "term-1", agent: "claude", state: "busy" }],
+        messages: [],
+      })
+      // Nothing more waits: the next Stop ends Claude's turn.
+      await expect(step(claude.id, { hook: "Stop", payload: {} })).resolves.toBe("")
+      expect(manager.messages(claude.id).delivery).toBe("settled")
+      // The person submits a prompt of their own during Claude's next turn: its Stop
+      // leaves the message to that prompt's hook.
+      await step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "next" } })
+      manager.write({ terminalId: claude.id, data: "and then this\r" }, "owner")
+      await send(codex.id, "claude", "One more thing.")
+      await expect(step(claude.id, { hook: "Stop", payload: {} })).resolves.toBe("")
+      expect(manager.messages(claude.id).delivery).toBe("busy")
+      const queued = JSON.parse(
+        await step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "and then this" } }),
+      ) as { hookSpecificOutput: { additionalContext: string } }
+      expect(queued.hookSpecificOutput.additionalContext).toContain("One more thing.")
+    })
+
+    it("takes each terminal's reports and asks in order, never waiting on another terminal's", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      // Telling whether Codex is connected takes until the test says.
+      const waiting: (() => void)[] = []
+      let connecting = new Promise<void>((resolve) => waiting.push(resolve))
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+        connected: async (agent) => {
+          if (agent === "codex") await connecting
+          return true
+        },
+      })
+      const codex = await create(manager, shell)
+      const claude = await create(manager, shell)
+      const { start, prepare, queue, step } = driver(shell, manager)
+      // Codex's first prompt asks as soon as its SessionStart has reported.
+      prepare(codex.id)
+      const { name } = queue(codex.id, { hook: "UserPromptSubmit", payload: { prompt: "go" } })
+      await start(codex.id, "codex", "s-codex")
+      // Meanwhile Claude's terminal binds, though Codex's report still waits.
+      await start(claude.id, "claude", "s-claude")
+      await expect.poll(() => manager.messages(claude.id).delivery).toBe("fresh")
+      expect(manager.messages(codex.id).delivery).toBe("unbound")
+      for (const connect of waiting) connect()
+      await shell.until(manager, codex.id, `done ${name}`)
+      // The ask waited for its own terminal's SessionStart, so its prompt found it bound.
+      expect(manager.messages(codex.id).delivery).toBe("working")
+      // A report naming no session needs no such lookup: its Stop is answered at once.
+      connecting = new Promise(() => {})
+      await expect(step(codex.id, { hook: "Stop", payload: {} })).resolves.toBe("")
+      expect(manager.messages(codex.id).delivery).toBe("settled")
+      // A call without the terminal's own token learns nothing.
+      expect(
+        manager.send({
+          type: "send",
+          terminalId: claude.id,
+          token: "0".repeat(48),
+          request: { to: "codex", text: "x" },
+        }),
+      ).toEqual(unansweredCalls.send)
     })
   },
 )

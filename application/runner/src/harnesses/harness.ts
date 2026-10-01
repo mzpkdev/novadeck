@@ -86,6 +86,8 @@ export type Harness = {
   }
   /** How much of each feature NovaDeck tells of it, from the sources its adapter reads. */
   readonly coverage: AgentCoverage
+  /** How its hooks hear back from NovaDeck, as they deliver agents' messages. */
+  readonly answers: Answers
   /** The normalized facts in one of its hooks' reports; none for one it ignores. */
   readonly decode: (report: Report) => readonly HarnessEvent[]
   /**
@@ -98,6 +100,27 @@ export type Harness = {
     emit: (event: HarnessEvent) => void,
   ) => Promise<void>
 }
+
+/**
+ * What a harness's hooks print when they ask NovaDeck (see docs/agent-messaging.md, "Hook
+ * answers"), each a whole line of the JSON the harness reads.
+ */
+export type Answers = {
+  /** The hook events that ask, and when each fires: as a turn ends, or as a prompt starts it. */
+  readonly asks: { readonly [event: string]: "stop" | "prompt" }
+  /** What a hook prints with nothing to deliver, as it does without NovaDeck. */
+  readonly silent: (event: string) => string
+  /** A Stop's answer that continues the turn with a delivery. */
+  readonly stop: (delivery: string) => string
+  /** A prompt's answer that adds a delivery to what the model sees, apart from the prompt. */
+  readonly prompt: (delivery: string) => string
+}
+
+/**
+ * How long a harness lets one of NovaDeck's hooks run, in seconds; one slower is dropped
+ * silently. Well above the hook's own limit, so the hook always ends by itself.
+ */
+export const hookSeconds = 10
 
 export const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 
@@ -127,9 +150,9 @@ export const mcpVariables = [
 /** NovaDeck's plugin, as every harness's manifest names it. */
 export const plugin = {
   name: "novadeck",
-  version: "1.1.0",
+  version: "1.2.0",
   description:
-    "Tells NovaDeck which session runs in its terminal, so it can resume it, and lets the agent show you files beside it.",
+    "Tells NovaDeck which session runs in its terminal, so it can resume it, lets the agent show you files beside it, and lets agents in NovaDeck message each other.",
 }
 
 /** The local marketplace Claude Code and Codex both install NovaDeck's plugin from. */

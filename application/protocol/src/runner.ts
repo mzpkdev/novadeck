@@ -10,6 +10,7 @@ import {
   type TerminalAttached,
   type TerminalChange,
   type TerminalEvent,
+  type TerminalMessages,
   type TerminalRequest,
   type TerminalRequestAnswer,
   type TerminalSummary,
@@ -217,6 +218,14 @@ export type Runner = {
      * rejects with `AGENT_SETUP_FAILED` saying why when that did not work.
      */
     set(agent: AgentName, connected: boolean): Promise<AgentIntegration>
+  }
+  readonly messages: {
+    /** A terminal's threads and messages with their states; `TERMINAL_NOT_FOUND` when unknown. */
+    list(terminalId: string): Promise<TerminalMessages>
+    /** Pauses all delivery between agents, or resumes it; the runner keeps the switch. */
+    pause(paused: boolean): Promise<void>
+    /** Releases a held thread: its messages go on, and it may have 12 more. */
+    release(thread: string): Promise<void>
   }
   readonly settings: {
     get(): Promise<RunnerSettings>
@@ -979,6 +988,11 @@ export const connectRunner = async (
       artifact: (terminalId, artifact) =>
         call((wire) => wire.agents.artifact({ terminalId, artifact })),
       set: (agent, connected) => call((wire) => wire.agents.set({ agent, connected })),
+    },
+    messages: {
+      list: (terminalId) => call((wire) => wire.messages.list({ terminalId })),
+      pause: (paused) => call((wire) => wire.messages.pause({ paused })),
+      release: (thread) => call((wire) => wire.messages.release({ thread })),
     },
     settings: {
       get: () => call((wire) => wire.settings.get()),

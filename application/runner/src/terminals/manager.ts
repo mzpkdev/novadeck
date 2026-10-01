@@ -14,6 +14,7 @@ import type {
   TerminalAttached,
   TerminalChange,
   TerminalEvent,
+  TerminalMessages,
   TerminalRequest,
   TerminalRequestAnswer,
   TerminalSummary,
@@ -39,6 +40,9 @@ import { resumeAvailability } from "../harnesses/eligibility.js"
 import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
 import { harnesses } from "../harnesses/registry.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
+import { handlePrefix } from "../messaging/mailbox.js"
+import { Messaging, type AgentsAnswer, type SendAnswer } from "../messaging/messaging.js"
+import type { MailboxRecords } from "../messaging/records.js"
 import type { InstalledShell } from "../shell/install.js"
 import { shellLaunch, startsCommands, type ShellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
@@ -46,7 +50,9 @@ import {
   listenForReports,
   unanswered,
   unansweredCalls,
+  type Ack,
   type Call,
+  type HookAnswer,
   type Report,
   type Reports,
 } from "../shell/reports.js"
@@ -118,6 +124,13 @@ export type TerminalOptions = {
   projectFolder?: (sessionId: string) => string | undefined
   /** How long an agent's request for a new terminal waits for the client's answer, in milliseconds. */
   openMs?: number
+  /** Where agents' messages, terminals' handles and the messaging pause are kept; in memory when omitted. */
+  mailbox?: MailboxRecords
+  /**
+   * The project a session belongs to, whose terminals' agents message each other; each
+   * session counts as its own when omitted, or when that cannot be told.
+   */
+  projectOf?: (sessionId: string) => string | undefined
 }
 
 type Create = {
@@ -334,19 +347,24 @@ export class Terminals {
       | "connected"
       | "transcripts"
       | "projectFolder"
+      | "mailbox"
+      | "projectOf"
     >
   > & {
     env: NodeJS.ProcessEnv
     shellArgs: readonly string[] | undefined
     records: TerminalRecords | undefined
     projectFolder: ((sessionId: string) => string | undefined) | undefined
+    projectOf: ((sessionId: string) => string | undefined) | undefined
     shims: () => Promise<readonly AgentName[]>
     connected: (agent: AgentName) => Promise<boolean>
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
-  /** Agent reports waiting their turn. */
-  private reports = Promise.resolve()
+  /** Each terminal's agent reports and asks waiting their turn, in the order they came. */
+  private readonly reports = new Map<string, Promise<void>>()
+  /** Agents' messages to each other, and how each terminal's agent takes them. */
+  private readonly messaging: Messaging
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
   /** How many times each harness was disconnected, so a report that waited meanwhile is dropped. */
@@ -382,12 +400,14 @@ export class Terminals {
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
       planPollMs: positive(options.planPollMs, 500),
       projectFolder: options.projectFolder,
+      projectOf: options.projectOf,
       openMs: positive(options.openMs, 6_000),
     }
     // Child programs do not need the runner's network capability, nor the identity of a
     // NovaDeck terminal the runner itself was started from.
     for (const name of inherited) delete this.options.env[name]
     this.transcripts = options.transcripts ?? true
+    this.messaging = new Messaging(options.mailbox ? { records: options.mailbox } : {})
     this.integration = this.integrate(options.shellFiles)
   }
 
@@ -398,10 +418,12 @@ export class Terminals {
     try {
       const paths = await shellFiles
       if (!paths) return undefined
-      const reports = await listenForReports(
-        (report) => this.queueReport(report),
-        (call) => (call.type === "open" ? this.open(call) : this.present(call)),
-      )
+      const reports = await listenForReports({
+        report: (report) => this.queueReport(report),
+        ask: (report, deadline) => this.queueAsk(report, deadline),
+        ack: (ack) => this.acknowledge(ack),
+        call: (call) => this.call(call),
+      })
       if (!this.stopping) return { paths, reports }
       await reports.close()
     } catch (error) {
@@ -496,6 +518,11 @@ export class Terminals {
         submitted: started.resumes,
       }
       this.records.set(record.summary.id, record)
+      this.messaging.register(
+        record.summary.id,
+        this.projectOf(input.sessionId),
+        handlePrefix(input.command ?? input.resume),
+      )
       // The resumed agent shows its own history; a shell that resumes none, the transcript.
       const shown = saved?.transcript && !started.resumes && this.transcripts
       if (shown) this.show(record, saved.transcript!, new Date(saved.savedAt))
@@ -532,7 +559,14 @@ export class Terminals {
       const claim = record.resumeClaim
       if (this.cancelResume(record) && claim && this.claims.get(claim) === record.summary.id)
         this.claims.delete(claim)
-      if (/[\r\n]/.test(input.data)) record.submitted = true
+      const entered = /[\r\n]/.test(input.data)
+      if (entered) record.submitted = true
+      // Codex queues a prompt with Tab, to submit once its turn ends.
+      const queued = record.binding?.agent === "codex" && input.data.includes("\t")
+      this.messaging.input(input.terminalId, {
+        submits: entered || queued,
+        answers: (record.activity?.pending.length ?? 0) > 0,
+      })
     }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
     record.process.write(input.data)
@@ -637,6 +671,11 @@ export class Terminals {
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
+        this.messaging.register(
+          record.summary.id,
+          this.projectOf(record.summary.sessionId),
+          handlePrefix(input.resume),
+        )
         this.listen(record)
         this.announce(record)
         this.sampleProcesses()
@@ -669,6 +708,7 @@ export class Terminals {
 
   /** Forgets what restores the terminal, and the sessions it claimed. */
   private forget(terminalId: string): void {
+    this.messaging.unregister(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
     this.opened.delete(terminalId)
     this.openers.delete(terminalId)
@@ -748,6 +788,7 @@ export class Terminals {
         record.activity = null
         record.telemetry = null
         this.unwatch(record)
+        this.rebound(record)
         record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
         this.announce(record)
       }
@@ -1026,11 +1067,82 @@ export class Terminals {
     const { answer } = asked
     if ("reason" in answer) return refused(answer.reason)
     if (!this.records.has(answer.terminalId)) return unansweredCalls.open
+    const handle = this.messaging.handle(answer.terminalId)
     return {
       ok: true,
       terminalId: answer.terminalId,
+      ...(handle !== undefined && { handle }),
       cwd,
       ...(command !== undefined && { command }),
+    }
+  }
+
+  /** A tool call from NovaDeck's MCP server, to the operation it names. */
+  private call(call: Call): Promise<unknown> {
+    switch (call.type) {
+      case "present":
+        return this.present(call)
+      case "open":
+        return this.open(call)
+      case "send":
+        return Promise.resolve(this.send(call))
+      case "agents":
+        return Promise.resolve(this.agents(call))
+    }
+  }
+
+  /**
+   * Sends another terminal's agent a message, as an agent asked through NovaDeck's MCP
+   * server: from the terminal and its agent session, never a name the model passes. A
+   * call without the shell's own token learns nothing more.
+   */
+  send(call: Call): SendAnswer {
+    const record = this.records.get(call.terminalId)
+    if (!record || record.exitQueued || !sameToken(record.token, call.token))
+      return unansweredCalls.send
+    return this.messaging.send(call.terminalId, call.request)
+  }
+
+  /** The other terminals in the caller's project, and its messages yet to arrive. */
+  agents(call: Call): AgentsAnswer {
+    const record = this.records.get(call.terminalId)
+    if (!record || record.exitQueued || !sameToken(record.token, call.token))
+      return unansweredCalls.agents
+    return this.messaging.agents(call.terminalId)
+  }
+
+  /** A hook printed what a lease delivered; one without the shell's own token is ignored. */
+  private acknowledge(ack: Ack): void {
+    const record = this.records.get(ack.terminalId)
+    if (!record || !sameToken(record.token, ack.token)) return
+    this.messaging.acknowledge(ack.terminalId, ack.leaseId)
+  }
+
+  /** A terminal's threads and messages with their states. */
+  messages(terminalId: string): TerminalMessages {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    this.record(terminalId)
+    return this.messaging.list(terminalId)
+  }
+
+  /** Pauses all delivery between agents, or resumes it. */
+  pauseMessages(paused: boolean): void {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    this.messaging.pause(paused)
+  }
+
+  /** Releases a thread held for going back and forth too often. */
+  releaseThread(thread: string): void {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    this.messaging.release(thread)
+  }
+
+  /** The project a session belongs to, or the session itself when that cannot be told. */
+  private projectOf(sessionId: string): string {
+    try {
+      return this.options.projectOf?.(sessionId) ?? sessionId
+    } catch {
+      return sessionId
     }
   }
 
@@ -1220,6 +1332,7 @@ export class Terminals {
     for (const streams of [this.details, this.showings])
       for (const readers of streams.values()) for (const reader of readers) reader.finish()
     for (const record of this.records.values()) this.unwatch(record)
+    this.messaging.close()
     this.shutdownPromise = this.stop()
     return this.shutdownPromise
   }
@@ -1555,6 +1668,7 @@ export class Terminals {
     record.activity = null
     record.telemetry = null
     this.unwatch(record)
+    this.rebound(record)
     if (moved || record.summary.agent !== null) {
       record.summary = { ...record.summary, cwd, agent: null, activity: null, telemetry: null }
       this.announce(record)
@@ -1563,33 +1677,56 @@ export class Terminals {
   }
 
   /**
-   * Handles reports one at a time, in the order they arrived, as a report may wait for
-   * the platform to tell who holds the foreground.
+   * Runs a terminal's report or ask once its earlier ones are done, in the order they
+   * came, as a report may wait for the platform to tell who holds the foreground; other
+   * terminals' never hold it up. A failure gives `fallback`.
    */
+  private queue<T>(terminalId: string, work: () => Promise<T>, fallback: T): Promise<T> {
+    const result = (this.reports.get(terminalId) ?? Promise.resolve())
+      .then(work)
+      .catch((error: unknown) => {
+        console.error("NovaDeck could not take an agent report:", error)
+        return fallback
+      })
+    const tail = result.then(() => {})
+    this.reports.set(terminalId, tail)
+    void tail.then(() => {
+      if (this.reports.get(terminalId) === tail) this.reports.delete(terminalId)
+    })
+    return result
+  }
+
   private queueReport(report: Report): void {
-    this.reports = this.reports
-      .then(() => this.report(report))
-      .catch((error: unknown) => console.error("NovaDeck could not take an agent report:", error))
+    void this.queue(report.terminalId, () => this.report(report), undefined)
+  }
+
+  /** A Stop or prompt-time hook's ask: its report, then what it prints (see `Messaging.ask`). */
+  private queueAsk(report: Report, deadline: number): Promise<HookAnswer> {
+    const silent = { leaseId: null, stdout: harnesses[report.agent].answers.silent(report.event) }
+    return this.queue(report.terminalId, () => this.report(report, deadline), silent)
   }
 
   /**
    * A harness hook reported; its harness decodes it, and `observe` decides whether each
-   * session it names is this terminal's own and the latest, and what it changes.
+   * session it names is this terminal's own and the latest, and what it changes. A report
+   * that names no session needs neither the foreground nor the harness's connection. An
+   * ask, with its hook's `deadline`, then hears what its hook prints.
    */
-  private async report(report: Report): Promise<void> {
+  private async report(report: Report, deadline?: number): Promise<HookAnswer> {
+    const silent = { leaseId: null, stdout: harnesses[report.agent].answers.silent(report.event) }
     const record = this.records.get(report.terminalId)
-    if (!record || record.exitQueued || !sameToken(record.token, report.token)) return
+    if (!record || record.exitQueued || !sameToken(record.token, report.token)) return silent
     const events = harnesses[report.agent].decode(report)
-    if (events.length === 0) return
+    if (events.length === 0) return silent
     const { process: child } = record
     const disconnections = this.disconnections.get(report.agent)
-    const [foreground, connected] = await Promise.all([
-      shellInForeground(child.pid),
-      this.connected(report.agent),
-    ])
-    if (record.process !== child || record.exitQueued) return
+    const observes = events.some((event) => event.type === "session-observed")
+    const [foreground, connected] = observes
+      ? await Promise.all([shellInForeground(child.pid), this.connected(report.agent)])
+      : [undefined, true]
+    if (record.process !== child || record.exitQueued) return silent
     // A disconnection while this waited forgot what the report would bring back.
-    if (this.disconnections.get(report.agent) !== disconnections) return
+    if (this.disconnections.get(report.agent) !== disconnections) return silent
     // The bound agent process may have exited without the shell showing a prompt, as in
     // tmux or a nested shell: its binding ended with it, and a later process may bind.
     let changed = false
@@ -1598,6 +1735,7 @@ export class Terminals {
       record.activity = null
       record.telemetry = null
       this.unwatch(record)
+      this.rebound(record)
       if (record.summary.agent !== null) {
         record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
         this.announce(record)
@@ -1651,6 +1789,27 @@ export class Terminals {
     }
     this.publishAgent(record, record.summary.cwd !== cwd)
     if (changed) this.save(record, false)
+    const { binding } = record
+    if (deadline === undefined) {
+      this.messaging.observe(report.terminalId, {
+        binding,
+        events,
+        statusLine: report.event === "StatusLine",
+      })
+      return silent
+    }
+    return this.messaging.ask(report.terminalId, {
+      agent: report.agent,
+      event: report.event,
+      binding,
+      events,
+      deadline,
+    })
+  }
+
+  /** Tells messaging the terminal's binding changed outside its hooks' reports. */
+  private rebound(record: Record): void {
+    this.messaging.observe(record.summary.id, { binding: record.binding, events: [] })
   }
 
   /**
@@ -1790,6 +1949,8 @@ export class Terminals {
       record.activity = null
       record.telemetry = null
       this.unwatch(record)
+      // An exited terminal takes no messages; its agent's are gone until it runs again.
+      this.messaging.unregister(record.summary.id)
       record.summary = {
         ...record.summary,
         exit,
@@ -1877,6 +2038,7 @@ export class Terminals {
       excess -= 1
       this.dispose(record)
       this.records.delete(record.summary.id)
+      this.messaging.unregister(record.summary.id)
       for (const watcher of this.watchers.keys()) watcher.removed(record.summary)
       this.undetail(record.summary.id)
       // Its share of what agents opened, as `forget` drops it on close.

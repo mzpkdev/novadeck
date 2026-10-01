@@ -2,11 +2,13 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import {
+  hookSeconds,
   json,
   marketplace,
   mcpServer,
   mcpVariables,
   plugin,
+  type Answers,
   type Harness,
   type Install,
 } from "../harness.js"
@@ -35,6 +37,18 @@ const hook = (platform: NodeJS.Platform, event: string): string =>
   platform === "win32"
     ? `if defined NOVADECK_HOOK %NOVADECK_HOOK% codex ${event}`
     : `[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" codex ${event} || true`
+
+// A Stop's reason continues the turn as a user-role hook prompt, which the delivery's
+// wrapper still attributes to its sender; a prompt's context is a developer message.
+const answers: Answers = {
+  asks: { Stop: "stop", UserPromptSubmit: "prompt" },
+  silent: () => "",
+  stop: (delivery) => `${JSON.stringify({ decision: "block", reason: delivery })}\n`,
+  prompt: (delivery) =>
+    `${JSON.stringify({
+      hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: delivery },
+    })}\n`,
+}
 
 export const codex = {
   id: "codex",
@@ -79,7 +93,7 @@ export const codex = {
             [
               {
                 ...(event === "SessionStart" && { matcher: "startup|resume|clear|compact|fork" }),
-                hooks: [{ type: "command", command: hook(platform, event) }],
+                hooks: [{ type: "command", command: hook(platform, event), timeout: hookSeconds }],
               },
             ],
           ]),
@@ -108,6 +122,7 @@ export const codex = {
     context: "partial",
   },
   decode,
+  answers,
   // The rollout records the session's tokens and the account's rate-limit windows, each
   // turn's mode and the plans it proposes.
   watch: followRollout,

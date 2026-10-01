@@ -335,6 +335,67 @@ export const runnerSettings = z.strictObject({
   welcomed: z.boolean(),
 })
 
+// Agent messaging (see docs/agent-messaging.md). A terminal's handle is the short name
+// the runner gives it when it is created, never reused in its project, such as
+// `codex-2`: the agent it was opened for, else `term`, and a number. Agents address
+// each other by it, and the UI shows it beside the terminal's title.
+export const handle = z.string().regex(/^[a-z]{1,16}-[1-9][0-9]{0,8}$/)
+export const messageId = z.string().regex(/^m-[a-z0-9]{1,32}$/)
+export const threadId = z.string().regex(/^t-[a-z0-9]{1,32}$/)
+
+// Where a message is on its way: waiting for its recipient's next hook (`queued`), handed
+// to a hook that has yet to confirm it printed it (`leased`), printed to the recipient's
+// harness (`delivered`), held while messaging is paused or its thread awaits the
+// person's release (`held`), or no longer deliverable since its recipient's session
+// ended (`gone`), until that same session runs there again.
+export const messageState = z.enum(["queued", "leased", "delivered", "held", "gone"])
+
+// How a terminal's agent can take a message now: no agent session bound (`unbound`), one
+// bound that has had no turn yet (`fresh`), a turn running (`working`), a turn that
+// ended normally with the prompt known empty (`settled`), the person busy at the prompt
+// (`busy`), or a turn that ended without a normal stop (`unknown`).
+export const deliveryState = z.enum(["unbound", "fresh", "working", "settled", "busy", "unknown"])
+
+// One message between two terminals' agents, as sent: its text up to 4 KB, its place in
+// its thread, and where it is on its way. `held` says why a held message waits: messaging
+// is paused, or its thread awaits the person's `messages.release`.
+export const agentMessage = z.strictObject({
+  id: messageId,
+  thread: threadId,
+  hop: z.number().int().positive(),
+  from: handle,
+  fromAgent: agentName.nullable(),
+  to: handle,
+  toAgent: agentName,
+  text: z.string().max(4096),
+  sentAt: z.number(),
+  state: messageState,
+  held: z.enum(["paused", "release"]).nullable(),
+  deliveredAt: z.number().nullable(),
+})
+
+// A thread between a terminal and one other: the other's handle, how many messages it
+// has had and may have before the person releases it again, and its messages, oldest
+// first. `held` while some wait for that release.
+export const messageThread = z.strictObject({
+  id: threadId,
+  peer: handle,
+  hops: z.number().int().nonnegative(),
+  allowed: z.number().int().nonnegative(),
+  held: z.boolean(),
+  messages: z.array(agentMessage).max(1000),
+})
+
+// `messages.list`: a terminal's handle, how its agent can take messages now, whether
+// messaging is paused, and every thread it is in, latest first.
+export const terminalMessages = z.strictObject({
+  terminalId: id,
+  handle: handle.nullable(),
+  delivery: deliveryState,
+  paused: z.boolean(),
+  threads: z.array(messageThread).max(1000),
+})
+
 export type Project = z.infer<typeof project>
 export type WorkspaceSession = z.infer<typeof workspaceSession>
 export type TerminalExit = z.infer<typeof terminalExit>
@@ -358,3 +419,8 @@ export type TranscriptItem = z.infer<typeof transcriptItem>
 export type TranscriptChange = z.infer<typeof transcriptChange>
 export type AgentIntegration = z.infer<typeof agentIntegration>
 export type RunnerSettings = z.infer<typeof runnerSettings>
+export type MessageState = z.infer<typeof messageState>
+export type DeliveryState = z.infer<typeof deliveryState>
+export type AgentMessage = z.infer<typeof agentMessage>
+export type MessageThread = z.infer<typeof messageThread>
+export type TerminalMessages = z.infer<typeof terminalMessages>

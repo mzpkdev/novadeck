@@ -6,6 +6,8 @@ import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
+import type { Message, Thread } from "../messaging/mailbox.js"
+import type { HandleRecord, MailboxRecords } from "../messaging/records.js"
 import type { SavedTerminal, TerminalRecords } from "../terminals/records.js"
 
 /** Settings to change; those left out, or undefined, stay as they are. */
@@ -52,6 +54,54 @@ const extras = `
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+  ) STRICT;
+  -- Agent messaging (docs/agent-messaging.md). Each terminal's handle in its project,
+  -- such as codex-2, kept while its messages are; removed_at says since when neither the
+  -- terminal nor its saved record exists.
+  CREATE TABLE IF NOT EXISTS handles (
+    terminal_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    removed_at REAL,
+    UNIQUE (project_id, handle)
+  ) STRICT;
+  -- The last number given to each prefix in each project, so no handle is used twice.
+  CREATE TABLE IF NOT EXISTS handle_counters (
+    project_id TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    last INTEGER NOT NULL,
+    PRIMARY KEY (project_id, prefix)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS message_threads (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    -- Its two terminals, in the order its first message went.
+    first_terminal TEXT NOT NULL,
+    second_terminal TEXT NOT NULL,
+    hops INTEGER NOT NULL,
+    -- How many it may deliver before the person releases it again.
+    allowed INTEGER NOT NULL,
+    last_at REAL NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    hop INTEGER NOT NULL,
+    from_terminal TEXT NOT NULL,
+    from_handle TEXT NOT NULL,
+    from_agent TEXT,
+    from_session TEXT,
+    to_terminal TEXT NOT NULL,
+    to_handle TEXT NOT NULL,
+    to_agent TEXT NOT NULL,
+    to_session TEXT NOT NULL,
+    text TEXT NOT NULL,
+    sent_at REAL NOT NULL,
+    state TEXT NOT NULL,
+    delivered_at REAL,
+    -- Whether its sender was told it is gone.
+    notified INTEGER NOT NULL
   ) STRICT;
 `
 // Records of terminals that are gone, kept for restoring; the oldest beyond this go.
@@ -108,7 +158,61 @@ const agentsOf = (text: string): SavedTerminal["agents"] => {
   }
 }
 
-export class WorkspaceStore implements TerminalRecords {
+type MessageRow = {
+  id: string
+  project_id: string
+  thread_id: string
+  hop: number
+  from_terminal: string
+  from_handle: string
+  from_agent: string | null
+  from_session: string | null
+  to_terminal: string
+  to_handle: string
+  to_agent: string
+  to_session: string
+  text: string
+  sent_at: number
+  state: string
+  delivered_at: number | null
+  notified: number
+}
+
+type ThreadRow = {
+  id: string
+  project_id: string
+  first_terminal: string
+  second_terminal: string
+  hops: number
+  allowed: number
+  last_at: number
+}
+
+const messageOf = (row: MessageRow): Message => ({
+  id: row.id,
+  projectId: row.project_id,
+  thread: row.thread_id,
+  hop: row.hop,
+  from: {
+    terminalId: row.from_terminal,
+    handle: row.from_handle,
+    agent: row.from_agent as Message["from"]["agent"],
+    sessionId: row.from_session,
+  },
+  to: {
+    terminalId: row.to_terminal,
+    handle: row.to_handle,
+    agent: row.to_agent as Message["to"]["agent"],
+    sessionId: row.to_session,
+  },
+  text: row.text,
+  sentAt: row.sent_at,
+  state: row.state as Message["state"],
+  deliveredAt: row.delivered_at,
+  notified: row.notified === 1,
+})
+
+export class WorkspaceStore implements TerminalRecords, MailboxRecords {
   private readonly database: DatabaseSync
   private readonly queries: SQLTagStore
   private lastSave = 0
@@ -127,7 +231,7 @@ export class WorkspaceStore implements TerminalRecords {
     }
     // Transcripts may hold secrets: what is deleted is overwritten, not left in free pages.
     this.database.exec("PRAGMA secure_delete = ON")
-    this.queries = this.database.createTagStore(16)
+    this.queries = this.database.createTagStore(48)
   }
 
   projects(): Project[] {
@@ -278,6 +382,121 @@ export class WorkspaceStore implements TerminalRecords {
 
   clearTranscripts(): void {
     void this.queries.run`UPDATE terminals SET transcript = NULL`
+  }
+
+  handles(): HandleRecord[] {
+    return this.queries.all`
+      SELECT terminal_id AS terminalId, project_id AS projectId, handle, removed_at AS removedAt
+      FROM handles
+    ` as HandleRecord[]
+  }
+
+  assignHandle(terminalId: string, projectId: string, prefix: string): string {
+    this.database.exec("BEGIN IMMEDIATE")
+    try {
+      const known = this.queries
+        .get`SELECT handle FROM handles WHERE terminal_id = ${terminalId}` as
+        | { handle: string }
+        | undefined
+      let handle = known?.handle
+      if (handle === undefined) {
+        const counter = this.queries.get`
+          SELECT last FROM handle_counters WHERE project_id = ${projectId} AND prefix = ${prefix}
+        ` as { last: number } | undefined
+        const next = (counter?.last ?? 0) + 1
+        void this.queries.run`
+          INSERT INTO handle_counters (project_id, prefix, last) VALUES (${projectId}, ${prefix}, ${next})
+          ON CONFLICT (project_id, prefix) DO UPDATE SET last = excluded.last
+        `
+        handle = `${prefix}-${next}`
+        void this.queries.run`
+          INSERT INTO handles (terminal_id, project_id, handle) VALUES (${terminalId}, ${projectId}, ${handle})
+        `
+      }
+      this.database.exec("COMMIT")
+      return handle
+    } catch (error) {
+      this.database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  terminalSaved(terminalId: string): boolean {
+    return this.queries.get`SELECT 1 AS saved FROM terminals WHERE id = ${terminalId}` !== undefined
+  }
+
+  markRemoved(terminalId: string, at: number | null): void {
+    void this.queries.run`UPDATE handles SET removed_at = ${at} WHERE terminal_id = ${terminalId}`
+  }
+
+  removeHandles(terminalIds: readonly string[]): void {
+    for (const id of terminalIds)
+      void this.queries.run`DELETE FROM handles WHERE terminal_id = ${id}`
+  }
+
+  messages(): Message[] {
+    return (this.queries.all`SELECT * FROM messages ORDER BY sent_at` as MessageRow[]).map(
+      messageOf,
+    )
+  }
+
+  saveMessage(message: Message): void {
+    const { from, to } = message
+    void this.queries.run`
+      INSERT INTO messages (id, project_id, thread_id, hop, from_terminal, from_handle, from_agent,
+        from_session, to_terminal, to_handle, to_agent, to_session, text, sent_at, state,
+        delivered_at, notified)
+      VALUES (${message.id}, ${message.projectId}, ${message.thread}, ${message.hop},
+        ${from.terminalId}, ${from.handle}, ${from.agent}, ${from.sessionId}, ${to.terminalId},
+        ${to.handle}, ${to.agent}, ${to.sessionId}, ${message.text}, ${message.sentAt},
+        ${message.state}, ${message.deliveredAt}, ${message.notified ? 1 : 0})
+      ON CONFLICT (id) DO UPDATE SET to_session = excluded.to_session, state = excluded.state,
+        delivered_at = excluded.delivered_at, notified = excluded.notified
+    `
+  }
+
+  removeMessages(ids: readonly string[]): void {
+    for (const id of ids) void this.queries.run`DELETE FROM messages WHERE id = ${id}`
+  }
+
+  threads(): Thread[] {
+    return (this.queries.all`SELECT * FROM message_threads` as ThreadRow[]).map((row) => ({
+      id: row.id,
+      projectId: row.project_id,
+      between: [row.first_terminal, row.second_terminal],
+      hops: row.hops,
+      allowed: row.allowed,
+      lastAt: row.last_at,
+    }))
+  }
+
+  saveThread(thread: Thread): void {
+    const [first, second] = thread.between
+    void this.queries.run`
+      INSERT INTO message_threads (id, project_id, first_terminal, second_terminal, hops, allowed, last_at)
+      VALUES (${thread.id}, ${thread.projectId}, ${first}, ${second}, ${thread.hops},
+        ${thread.allowed}, ${thread.lastAt})
+      ON CONFLICT (id) DO UPDATE SET hops = excluded.hops, allowed = excluded.allowed,
+        last_at = excluded.last_at
+    `
+  }
+
+  removeThreads(ids: readonly string[]): void {
+    for (const id of ids) void this.queries.run`DELETE FROM message_threads WHERE id = ${id}`
+  }
+
+  messagingPaused(): boolean {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'messagingPaused'` as
+      | { value: string }
+      | undefined
+    return row?.value === "true"
+  }
+
+  pauseMessaging(paused: boolean): void {
+    void this.queries.run`
+      INSERT INTO settings (key, value) VALUES ('messagingPaused', ${String(paused)})
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `
   }
 
   settings(): RunnerSettings {

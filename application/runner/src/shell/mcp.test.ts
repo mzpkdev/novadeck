@@ -9,7 +9,7 @@ import { plugin } from "../harnesses/harness.js"
 import { describe, expect, it } from "../test.js"
 import { installShellFiles } from "./install.js"
 import { mcpScript } from "./mcp.js"
-import { listenForReports, type Call, type Reports } from "./reports.js"
+import { listenForReports, unheard, type Call, type Reports } from "./reports.js"
 import { shellFiles, shellPaths } from "./scripts.js"
 
 const token = "0123456789abcdef".repeat(3)
@@ -109,14 +109,16 @@ describe("NovaDeck's MCP server", () => {
     let delay = 0
 
     beforeAll(async () => {
-      reports = await listenForReports(
-        () => {},
-        async (call) => {
+      reports = await listenForReports({
+        report: () => {},
+        ask: () => Promise.resolve(unheard),
+        ack: () => {},
+        call: async (call) => {
           calls.push(call)
           await new Promise((resolve) => setTimeout(resolve, delay))
           return answer
         },
-      )
+      })
     })
 
     afterAll(async () => {
@@ -130,9 +132,14 @@ describe("NovaDeck's MCP server", () => {
       NOVADECK_REPORT_TOKEN: token,
     })
 
-    it("offers its tools: show, and open_terminal", async () => {
+    it("offers its tools: show, open_terminal, send and agents", async () => {
       const [, tools] = await session(terminal(), [initialize, list])
-      expect(tools?.result?.tools?.map((tool) => tool.name)).toEqual(["show", "open_terminal"])
+      expect(tools?.result?.tools?.map((tool) => tool.name)).toEqual([
+        "show",
+        "open_terminal",
+        "send",
+        "agents",
+      ])
       // Each as MCP lists a tool, without what the server keeps for itself.
       for (const tool of tools?.result?.tools ?? [])
         expect(Object.keys(tool).toSorted()).toEqual(["description", "inputSchema", "name"])
@@ -140,7 +147,13 @@ describe("NovaDeck's MCP server", () => {
 
     it("forwards a request for a new terminal, and says where it opened", async () => {
       calls.length = 0
-      answer = { ok: true, terminalId: "t", cwd: "/work/app", command: "claude" }
+      answer = {
+        ok: true,
+        terminalId: "t",
+        handle: "claude-2",
+        cwd: "/work/app",
+        command: "claude",
+      }
       const [, opened] = await session(terminal(), [
         initialize,
         {
@@ -161,7 +174,9 @@ describe("NovaDeck's MCP server", () => {
         },
       ])
       expect(opened?.result).toEqual({
-        content: [{ type: "text", text: "Opened a new terminal running claude in /work/app." }],
+        content: [
+          { type: "text", text: "Opened a new terminal, claude-2, running claude in /work/app." },
+        ],
         isError: false,
       })
       answer = { ok: true, terminalId: "t", cwd: "/work" }
@@ -274,16 +289,116 @@ describe("NovaDeck's MCP server", () => {
     it("offers nothing and calls nothing when one of the terminal's variables is missing", async () => {
       calls.length = 0
       const { NOVADECK_REPORT_TOKEN: _, ...partial } = terminal()
-      const [, tools, call, open] = await session(partial, [
+      const [, tools, call, open, sent, listed] = await session(partial, [
         initialize,
         list,
         { id: 3, method: "tools/call", params: { name: "show", arguments: { path: "a" } } },
         { id: 4, method: "tools/call", params: { name: "open_terminal", arguments: {} } },
+        {
+          id: 5,
+          method: "tools/call",
+          params: { name: "send", arguments: { to: "codex", text: "hi" } },
+        },
+        { id: 6, method: "tools/call", params: { name: "agents", arguments: {} } },
       ])
       expect(tools?.result?.tools).toEqual([])
-      expect(call?.error).toMatchObject({ code: -32602 })
-      expect(open?.error).toMatchObject({ code: -32602 })
+      for (const refused of [call, open, sent, listed])
+        expect(refused?.error).toMatchObject({ code: -32602 })
       expect(calls).toEqual([])
+    })
+
+    it("sends a message through the terminal's runner, and says where it is", async () => {
+      calls.length = 0
+      const said = async (runner: unknown, args: object = { to: "codex", text: "Review a.ts" }) => {
+        answer = runner
+        const [, sent] = await session(terminal(), [
+          initialize,
+          { id: 3, method: "tools/call", params: { name: "send", arguments: args } },
+        ])
+        return sent?.result as { content: { text: string }[]; isError: boolean }
+      }
+      const queued = await said(
+        {
+          ok: true,
+          to: "codex-2",
+          id: "m-1",
+          state: "queued",
+          route: "when its current turn ends",
+        },
+        { to: "codex", text: "Review a.ts", from: "the person" },
+      )
+      expect(calls).toEqual([
+        {
+          type: "send",
+          terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
+          token,
+          request: { to: "codex", text: "Review a.ts" },
+        },
+      ])
+      expect(queued.isError).toBe(false)
+      expect(queued.content[0]?.text).toContain(
+        "Message m-1 to codex-2 is queued: it reaches them when its current turn ends.",
+      )
+      expect(queued.content[0]?.text).toContain("End your turn rather than wait")
+      const held = await said({
+        ok: true,
+        to: "codex-2",
+        id: "m-2",
+        state: "held",
+        held: "release",
+        gone: [{ id: "m-0", to: "agy-1" }],
+        unbound: true,
+      })
+      expect(held.content[0]?.text).toContain("waits for the user to release it")
+      expect(held.content[0]?.text).toContain("m-0 to agy-1 won't arrive")
+      expect(held.content[0]?.text).toContain("/hooks")
+      const refused = await said({ ok: false, reason: "No terminal here runs Codex." })
+      expect(refused).toEqual({
+        content: [{ type: "text", text: "No terminal here runs Codex." }],
+        isError: true,
+      })
+    })
+
+    it("lists the project's other terminals and the caller's messages yet to arrive", async () => {
+      calls.length = 0
+      answer = {
+        ok: true,
+        handle: "claude-1",
+        agents: [
+          { handle: "codex-2", agent: "codex", state: "busy" },
+          { handle: "term-3", agent: null, state: null },
+        ],
+        messages: [{ id: "m-1", to: "codex-2", state: "held", held: "paused", sentAt: 0 }],
+      }
+      const [, listed] = await session(terminal(), [
+        initialize,
+        { id: 3, method: "tools/call", params: { name: "agents", arguments: { extra: 1 } } },
+      ])
+      expect(calls).toMatchObject([{ type: "agents", request: {} }])
+      const { content, isError } = listed!.result as {
+        content: { text: string }[]
+        isError: boolean
+      }
+      expect(isError).toBe(false)
+      expect(content[0]?.text.split("\n")).toEqual([
+        "You are claude-1 in NovaDeck.",
+        "Other terminals in this project:",
+        "- codex-2: codex, busy",
+        "- term-3: no agent NovaDeck can deliver to",
+        "Your messages not yet delivered:",
+        `- m-1 to codex-2, sent ${new Date(0).toTimeString().slice(0, 5)}: held while the user has messaging paused`,
+      ])
+    })
+
+    it("carries the messaging rules in each messaging tool's description", async () => {
+      const [, tools] = await session(terminal(), [initialize, list])
+      const described = tools?.result?.tools as { name: string; description: string }[]
+      for (const name of ["send", "agents"]) {
+        const { description } = described.find((tool) => tool.name === name)!
+        expect(description).toContain("only when the user asked you to")
+        expect(description).toContain("never an approval")
+        expect(description).toContain("end your turn rather than wait or poll")
+      }
     })
 
     it("still answers a call under way when the agent closes its side", async () => {
@@ -352,7 +467,12 @@ describe("NovaDeck's MCP server", () => {
           ],
           { start },
         )
-        expect(tools?.result?.tools?.map((tool) => tool.name)).toEqual(["show", "open_terminal"])
+        expect(tools?.result?.tools?.map((tool) => tool.name)).toEqual([
+          "show",
+          "open_terminal",
+          "send",
+          "agents",
+        ])
         expect(shown?.result).toMatchObject({ isError: false })
         expect(calls).toHaveLength(1)
       }, 30_000)

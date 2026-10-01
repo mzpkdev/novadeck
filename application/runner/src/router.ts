@@ -202,6 +202,15 @@ export const createRouter = (options: {
         return result
       }),
     },
+    messages: {
+      list: authorized.messages.list.handler(({ input }) => terminals.messages(input.terminalId)),
+      pause: authorized.messages.pause.handler(({ input }) =>
+        terminals.pauseMessages(input.paused),
+      ),
+      release: authorized.messages.release.handler(({ input }) =>
+        terminals.releaseThread(input.thread),
+      ),
+    },
     // The store keeps the settings; the terminals apply the transcript switch.
     settings: {
       get: authorized.settings.get.handler(() => store.settings()),

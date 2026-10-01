@@ -27,7 +27,9 @@ import {
   terminalEvent,
   terminalRequest,
   terminalRequestAnswer,
+  terminalMessages,
   terminalSummary,
+  threadId,
   workspaceSession,
 } from "./schemas.js"
 
@@ -184,6 +186,18 @@ export const contract = {
     set: procedure
       .input(z.strictObject({ agent: agentName, connected: z.boolean() }))
       .output(agentIntegration),
+  },
+  // Messages between agents in NovaDeck's terminals (see docs/agent-messaging.md).
+  messages: {
+    // A terminal's threads and messages with their states. An unknown terminal is
+    // TERMINAL_NOT_FOUND.
+    list: procedure.input(z.strictObject({ terminalId: id })).output(terminalMessages),
+    // Pauses all delivery, or resumes it. The switch is stored, so it survives restarts;
+    // while paused, agents' messages are held.
+    pause: procedure.input(z.strictObject({ paused: z.boolean() })).output(z.void()),
+    // Releases a thread held for going back and forth too often: its held messages are
+    // delivered, and it may have 12 more. One the runner does not keep is NOT_FOUND.
+    release: procedure.input(z.strictObject({ thread: threadId })).output(z.void()),
   },
   settings: {
     get: procedure.input(z.void()).output(runnerSettings),

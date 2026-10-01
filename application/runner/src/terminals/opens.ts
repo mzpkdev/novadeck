@@ -27,11 +27,15 @@ export type OpenRequest = z.infer<typeof openRequest>
 /** Why no terminal opened, in a sentence the agent can act on. */
 export type OpenFailure = { readonly ok: false; readonly reason: string }
 
-/** The MCP server's answer: the terminal that opened, where, and what it runs; or why not. */
+/**
+ * The MCP server's answer: the terminal that opened, its handle for messaging it, where,
+ * and what it runs; or why not.
+ */
 export type OpenAnswer =
   | {
       readonly ok: true
       readonly terminalId: string
+      readonly handle?: string
       readonly cwd: string
       readonly command?: string
     }

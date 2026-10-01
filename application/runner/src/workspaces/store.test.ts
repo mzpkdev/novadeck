@@ -15,6 +15,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { DomainError } from "../errors.js"
+import type { Message, Thread } from "../messaging/mailbox.js"
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "./store.js"
 
@@ -294,5 +295,96 @@ describe("saved terminals", () => {
     workspace.saveSettings({ transcripts: false })
     workspace.saveSettings({ welcomed: true })
     expect(workspace.settings()).toEqual({ transcripts: false, welcomed: true })
+  })
+})
+
+const message = (id: string, state: Message["state"]): Message => ({
+  id,
+  projectId: "p",
+  thread: "t-1",
+  hop: 1,
+  from: { terminalId: "a", handle: "term-1", agent: null, sessionId: null },
+  to: { terminalId: "b", handle: "codex-1", agent: "codex", sessionId: "s" },
+  text: "Review a.ts\n\twith care",
+  sentAt: 1.5,
+  state,
+  deliveredAt: null,
+  notified: false,
+})
+
+describe("the mailbox", () => {
+  it("keeps handles, never giving one twice in a project, across reopen", ({
+    directory,
+    store,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const original = store(path)
+    expect(original.assignHandle("a", "p", "codex")).toBe("codex-1")
+    expect(original.assignHandle("a", "p", "term")).toBe("codex-1")
+    expect(original.assignHandle("b", "p", "codex")).toBe("codex-2")
+    expect(original.assignHandle("c", "q", "codex")).toBe("codex-1")
+    original.markRemoved("b", 5)
+    original.removeHandles(["b"])
+    original.close()
+    const reopened = store(path)
+    expect(reopened.assignHandle("d", "p", "codex")).toBe("codex-3")
+    expect(reopened.handles().toSorted((x, y) => x.terminalId.localeCompare(y.terminalId))).toEqual(
+      [
+        { terminalId: "a", projectId: "p", handle: "codex-1", removedAt: null },
+        { terminalId: "c", projectId: "q", handle: "codex-1", removedAt: null },
+        { terminalId: "d", projectId: "p", handle: "codex-3", removedAt: null },
+      ],
+    )
+  })
+
+  it("keeps messages, threads and the pause across reopen, until removed", ({
+    directory,
+    store,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const original = store(path)
+    original.saveMessage(message("m-1", "queued"))
+    original.saveMessage(message("m-2", "held"))
+    original.saveMessage({
+      ...message("m-1", "delivered"),
+      to: { ...message("m-1", "queued").to, sessionId: "s2" },
+      deliveredAt: 9,
+      notified: true,
+    })
+    const thread: Thread = {
+      id: "t-1",
+      projectId: "p",
+      between: ["a", "b"],
+      hops: 2,
+      allowed: 12,
+      lastAt: 3,
+    }
+    original.saveThread(thread)
+    original.saveThread({ ...thread, allowed: 14 })
+    original.pauseMessaging(true)
+    original.saveTerminal({ id: "a", sessionId: "s", cwd: "/", agents: {}, promptedAt: null })
+    original.close()
+    const reopened = store(path)
+    expect(reopened.messages()).toEqual([
+      {
+        ...message("m-1", "delivered"),
+        to: { ...message("m-1", "queued").to, sessionId: "s2" },
+        deliveredAt: 9,
+        notified: true,
+      },
+      message("m-2", "held"),
+    ])
+    expect(reopened.threads()).toEqual([{ ...thread, allowed: 14 }])
+    expect(reopened.messagingPaused()).toBe(true)
+    // The pause is the runner's own, not one of the client's settings.
+    expect(reopened.settings()).toEqual({ transcripts: true, welcomed: false })
+    expect(reopened.terminalSaved("a")).toBe(true)
+    expect(reopened.terminalSaved("b")).toBe(false)
+    reopened.removeMessages(["m-1"])
+    reopened.removeThreads(["t-1"])
+    reopened.pauseMessaging(false)
+    expect(reopened.messages().map(({ id }) => id)).toEqual(["m-2"])
+    expect(reopened.threads()).toEqual([])
+    expect(reopened.messagingPaused()).toBe(false)
   })
 })
