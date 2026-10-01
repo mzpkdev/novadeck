@@ -58,6 +58,8 @@ type Live = Scope & {
    * none once a root session has, when only a bound session takes messages.
    */
   expecting: AgentName | null
+  /** The delivery epoch (its root turn) messages were last leased in; null before any. */
+  leasedIn: number | null
 }
 
 /** What `send` answers: where the message is, or why it was refused. */
@@ -219,6 +221,7 @@ export class Messaging {
       root: null,
       delivery: unbound,
       expecting: null,
+      leasedIn: null,
     })
   }
 
@@ -400,16 +403,18 @@ export class Messaging {
 
   /**
    * Whether the root turn running in the terminal is the person's: started by their own
-   * submission, and not continued since with messages. A turn the doorbell or the harness
-   * started, or one a Stop continued, is not.
+   * submission, with no messages delivered into it, at its prompt or by continuing it. A
+   * turn the doorbell or the harness started, or one that carried messages, is not.
    */
   personTurn(terminalId: string): boolean {
-    const delivery = this.live.get(terminalId)?.delivery
+    const live = this.live.get(terminalId)
+    if (!live) return false
+    const { delivery } = live
     return (
-      delivery !== undefined &&
       phaseOf(delivery) === "turn" &&
       delivery.byPerson &&
-      delivery.continued === 0
+      delivery.continued === 0 &&
+      live.leasedIn !== delivery.epoch
     )
   }
 
@@ -849,6 +854,7 @@ export class Messaging {
     )
     if (messages.length === 0) return undefined
     for (const message of messages) this.put({ ...message, state: "leased" })
+    live.leasedIn = live.delivery.epoch
     return this.leases.grant({
       terminalId: live.terminalId,
       messages: messages.map((message) => message.id),

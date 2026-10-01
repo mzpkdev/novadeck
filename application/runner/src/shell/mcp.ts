@@ -291,9 +291,9 @@ const describe = {
       ? "The user named this terminal " + JSON.stringify(answer.title) + ", so that title " +
         "stays; your summary is saved."
       : answer.kept === "unasked"
-        ? "This terminal's title stays " + JSON.stringify(answer.title) + ": a rename the " +
-          "user asked for is taken only in a turn their own prompt started, not one a " +
-          "message or NovaDeck started. Your summary is saved."
+        ? "The title wasn't taken as one the user asked for: that is only in a turn their " +
+          "own prompt started, with no messages from other agents in it. This terminal's " +
+          "title is " + JSON.stringify(answer.title) + "; your summary is saved."
         : "Described this terminal as " + JSON.stringify(answer.title) + ", with your summary.",
   failed: "NovaDeck couldn't describe the terminal.",
 }

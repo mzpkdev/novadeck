@@ -12,8 +12,10 @@ export const describeRequest = z.strictObject({
 })
 
 /**
- * Why a description kept the terminal's title: the person gave it (`person`), or `asked`
- * came outside a root turn the person's own prompt started (`unasked`).
+ * Why a description's title isn't the one shown, or not as the person's: the person
+ * gave the terminal its title (`person`), or `asked` came outside a root turn the
+ * person's own prompt started with no messages delivered in it, so the title was taken
+ * as the agent's own (`unasked`).
  */
 export type Kept = "person" | "unasked"
 

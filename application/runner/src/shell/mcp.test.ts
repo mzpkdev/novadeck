@@ -289,7 +289,7 @@ describe("NovaDeck's MCP server", () => {
         'The user named this terminal "Mine", so that title stays; your summary is saved.',
       )
       await expect(described({ ok: true, title: "Mine", kept: "unasked" })).resolves.toMatch(
-        /^This terminal's title stays "Mine": a rename the user asked for is taken only in a turn their own prompt started/,
+        /^The title wasn't taken as one the user asked for: that is only in a turn their own prompt started, with no messages from other agents in it\. This terminal's title is "Mine"/,
       )
     })
 

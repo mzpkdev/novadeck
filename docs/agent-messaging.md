@@ -650,17 +650,21 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   handle, then the person's first prompt of the root session, then the session's
   default "Terminal 03". Its source is part of the record (`titleSource`: `person`,
   `agent` with its handle, `fallback` or `default`). Nothing automatic ever replaces the
-  person's title: `describe` then changes only the summary, and its answer says the
-  user named the terminal. The runner API's `terminals.resetTitle` takes the person's
-  title away, so the title is automatic again, the agent's last one first.
+  person's title: `describe` still keeps its title as the agent's newest, hidden beneath
+  the person's, and its answer says the user named the terminal. The runner API's
+  `terminals.resetTitle` takes the person's title away, so the title is automatic
+  again: the newest an agent gave first.
 - **`asked`.** When the person asks the agent in their own words to rename the terminal,
   `describe` with `asked: true` makes the title the person's, so later descriptions and
   nudges never replace it. It is taken only in a root turn the person's own submission
-  started (messaging's delivery tells it: their bare Enter, then the prompt) that no
-  Stop continued with messages since; in a turn the doorbell or the harness started, or
-  a continued one, the title stays, the summary still changes, and the answer says why.
-  So a peer's message can't rename a terminal through it. The tool's description says
-  when to set it; the nudges never mention it.
+  started (messaging's delivery tells it: their bare Enter, then the prompt) into which
+  no messages were delivered, neither by its prompt-time answer nor by a Stop
+  continuing it. Otherwise (a turn the doorbell or the harness started, or one that
+  carried messages) the title is taken as the agent's own, as without `asked`, and the
+  answer says why. So a message in the turn can't rename a terminal through it. Messages
+  delivered in earlier turns stay in the agent's context, though, so a peer's earlier
+  request could still lead it to pass `asked`: a known gap of this heuristic. The tool's
+  description says when to set it; the nudges never mention it.
 - **The first-prompt title.** Before anything else names it, the terminal's title is the
   person's first prompt of its root session, shortened to one line of 48 characters: the
   "started with" of `agents()`, so a doorbell line, a delivery of messages and a task

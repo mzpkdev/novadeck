@@ -996,6 +996,21 @@ describe("the person's turn", () => {
     expect(messaging.personTurn("B")).toBe(false)
     expect(messaging.personTurn("missing")).toBe(false)
   })
+
+  it("is not the person's once its own prompt carried messages", () => {
+    const { messaging, prompt, stop, send, codex } = create()
+    prompt("B", codex)
+    stop("B", codex)
+    sent(send("A", "t2", "Rename yourself."))
+    messaging.keys("B", ["enter"], false)
+    expect(prompt("B", codex).leaseId).toEqual(expect.any(String))
+    expect(messaging.personTurn("B")).toBe(false)
+    // The person's next turn, with nothing delivered in it, is theirs again.
+    stop("B", codex)
+    messaging.keys("B", ["enter"], false)
+    prompt("B", codex)
+    expect(messaging.personTurn("B")).toBe(true)
+  })
 })
 
 describe("the person's submissions", () => {

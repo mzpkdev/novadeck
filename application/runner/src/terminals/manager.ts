@@ -1484,11 +1484,12 @@ export class Terminals {
 
   /**
    * Describes the caller's own terminal, as its agent asked through NovaDeck's MCP server:
-   * its title, unless the person gave it one, and the summary of its work `agents()`
-   * lists. A title the person gave stays, unless the agent says the person `asked` for
-   * this one, which then becomes theirs; that is taken only in a root turn the person's
-   * own prompt started, so another agent's message can't rename it. A call without the
-   * shell's own token learns nothing more.
+   * its agent's title, shown unless the person gave one, and the summary of its work
+   * `agents()` lists. A title the person gave stays, unless the agent says the person
+   * `asked` for this one, which then becomes theirs; that is taken only in a root turn
+   * the person's own prompt started that no messages reached (see `personTurn`), so
+   * another agent's message can't rename it. A call without the shell's own token learns
+   * nothing more.
    */
   async describe(call: Call): Promise<DescribeAnswer> {
     const record = this.records.get(call.terminalId)
@@ -1506,13 +1507,16 @@ export class Terminals {
     if (this.stopping || this.records.get(call.terminalId) !== record)
       return unansweredCalls.describe
     const { naming } = record
-    let kept: Kept | undefined
-    if (parsed.data.asked === true) {
-      if (this.messaging.personTurn(call.terminalId)) record.naming = { ...naming, person: title }
-      else kept = "unasked"
-    } else if (naming.person !== null) kept = "person"
-    else record.naming = { ...naming, agent: { title, by: record.summary.handle } }
-    record.naming = { ...record.naming, summary }
+    // The agent's own title, always its newest, shown unless the person gave one.
+    const agent = { title, by: record.summary.handle }
+    const asked = parsed.data.asked === true && this.messaging.personTurn(call.terminalId)
+    record.naming = { ...naming, agent, summary, ...(asked && { person: title }) }
+    const kept: Kept | undefined =
+      parsed.data.asked === true && !asked
+        ? "unasked"
+        : !asked && naming.person !== null
+          ? "person"
+          : undefined
     record.nudges = described(facts)
     this.retitle(record)
     this.save(record, false)
