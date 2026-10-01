@@ -114,10 +114,23 @@ export type Harness = {
   /**
    * Whether the session a title shows, whose id starts with `prefix`, is one it just
    * started as a new root (Codex's /clear), not another it only shows, as a forked side
-   * conversation: only then does a title naming another session end the bound one's
-   * binding. Where omitted, nothing but the session's own hooks ends it.
+   * conversation or a spawned agent: only then does a title naming another session end
+   * the bound one's binding. `holds` tells whether a process of the terminal's
+   * foreground group, where the harness runs, holds a file open, where the platform tells. Where omitted, nothing but the
+   * session's own hooks ends it.
    */
-  readonly startedSession?: (where: Install, prefix: string, since: number) => Promise<boolean>
+  readonly startedSession?: (
+    where: Install,
+    prefix: string,
+    since: number,
+    holds?: (path: string) => Promise<boolean | undefined>,
+  ) => Promise<boolean>
+  /**
+   * The variables of its process that say where it lives and which program it runs (as
+   * Codex's `CODEX_HOME`), read from the terminal's own process where the platform tells,
+   * for asking it about its hooks and sessions.
+   */
+  readonly environment?: readonly string[]
   /**
    * Follows a bound session's own sources beyond its hooks, as its transcript, emitting
    * what they say until `signal` aborts.

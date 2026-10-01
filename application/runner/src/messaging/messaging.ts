@@ -272,14 +272,21 @@ export class Messaging {
    * messages wait for the first session of that agent to bind there, or for the session
    * whose id starts with `prefix`. With a root session bound it changes nothing, unless it
    * `replaces` that session (the terminal manager then ends its binding), as Codex's
-   * /clear starts a thread that binds only with its first prompt.
+   * /clear starts a thread that binds only with its first prompt, judged `at` when it
+   * showed.
    */
-  shown(terminalId: string, agent: AgentName, prefix: string | null, replaces = false): void {
+  shown(
+    terminalId: string,
+    agent: AgentName,
+    prefix: string | null,
+    replaces = false,
+    at = this.now(),
+  ): void {
     const live = this.live.get(terminalId)
     if (!live || (live.root && !replaces)) return
     const learned = live.shown?.agent !== agent || live.shown.prefix !== prefix
     live.shown = { agent, prefix }
-    this.step(live, { type: "shown", at: this.now(), replaces })
+    this.step(live, { type: "shown", at, replaces })
     // A prefix it learns later may make other messages its own.
     if (learned) this.changed(terminalId)
   }

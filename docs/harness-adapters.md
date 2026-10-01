@@ -450,7 +450,9 @@ Besides the facts shared with the agent model, decoders give
   `config.toml` or NovaDeck's hook definitions in its plugin cache change, a failure kept
   a minute. A Codex that can't answer gets nothing before its first prompt. A title
   naming another thread than the bound one ends that binding only when the adapter's
-  `startedSession` confirms a new root (Codex's fresh writer lock for that thread); else
+  `startedSession` confirms a new root (Codex's writer lock for that thread, made around
+  the title and held in the terminal's foreground group, its id's start at least 23
+  characters), with no root turn running as the title came; else
   the session's own `SessionStart` tells at its first prompt.
 
 ### Messaging profile

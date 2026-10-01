@@ -6,6 +6,7 @@ const cmdline = (...args: string[]): Buffer => Buffer.from(`${args.join("\0")}\0
 describe("Linux foreground inspection", () => {
   it("parses the controlling terminal and foreground group after a parenthesized command", () => {
     expect(parseProcessStat("42 (node ) helper) S 1 42 42 34816 99 0")).toEqual({
+      ppid: 1,
       pgrp: 42,
       tty: 34816,
       tpgid: 99,

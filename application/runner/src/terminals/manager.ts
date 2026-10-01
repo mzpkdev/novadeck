@@ -72,6 +72,7 @@ import { Doorbell, screenText, type DoorbellHost, type DoorbellOptions } from ".
 import {
   foregroundProcess,
   foregroundRuns,
+  openFiles,
   processGroup,
   processSetting,
   sampleForeground,
@@ -2162,18 +2163,14 @@ export class Terminals {
     this.cancelResume(record)
     record.changed = true
     const moved = cwd !== record.summary.cwd
-    record.binding = null
-    record.activity = null
-    record.telemetry = null
-    this.unwatch(record)
-    this.rebound(record)
+    this.endBinding(record)
     // An agent whose prompt showed, with no session bound, left with it.
     this.messaging.unshown(record.summary.id)
-    if (moved || record.summary.agent !== null) {
-      record.summary = { ...record.summary, cwd, agent: null, activity: null, telemetry: null }
+    if (moved) {
+      record.summary = { ...record.summary, cwd }
       this.announce(record)
+      this.save(record, false)
     }
-    if (moved) this.save(record, false)
   }
 
   /**
@@ -2233,17 +2230,7 @@ export class Terminals {
     // The bound agent process may have exited without the shell showing a prompt, as in
     // tmux or a nested shell: its binding ended with it, and a later process may bind.
     let changed = false
-    if (record.binding?.instance && !alive(record.binding.instance)) {
-      record.binding = null
-      record.activity = null
-      record.telemetry = null
-      this.unwatch(record)
-      this.rebound(record)
-      if (record.summary.agent !== null) {
-        record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
-        this.announce(record)
-      }
-    }
+    if (record.binding?.instance && !alive(record.binding.instance)) this.endBinding(record)
     const facts = {
       promptedAt: record.promptedAt,
       shellInForeground: foreground,
@@ -2518,32 +2505,38 @@ export class Terminals {
       const { binding } = record
       const prefix = shown.sessionPrefix
       // Its bound session at its prompt again, as after each turn: nothing to ask.
-      if (
-        binding?.agent === agent &&
-        (prefix === undefined || binding.sessionId.startsWith(prefix))
-      )
+      if (binding?.agent === agent && prefix !== undefined && binding.sessionId.startsWith(prefix))
         continue
       // As for a report: Windows tells no foreground, so only once a line was entered.
       if (process.platform === "win32" && !record.submitted) continue
       // A later title makes this one's answer stale.
       const seq = (record.titles = (record.titles ?? 0) + 1)
+      // As it came: the session it may replace, and whether a turn ran, as a spawned
+      // agent's thread is made only within one.
+      const replaced = binding?.agent === agent ? binding.sessionId : undefined
+      const turning = this.messaging.delivery(record.summary.id)?.state === "working"
       // Asked before it joins the terminal's queue, so a slow answer from the harness
       // never holds the terminal's reports up.
       void (async () => {
-        const where = await this.harnessIn(record, child, agent)
-        if (!where || !(await this.promptCounts(record, agent, where))) return
+        const found = await this.harnessIn(record, child, agent)
+        if (!found || !(await this.promptCounts(record, agent, found.where))) return
         // Another session's id ends the bound one only once the harness says it started
         // it as a new root; otherwise that session's own hooks tell, at its first prompt.
-        const replaces =
-          binding?.agent === agent &&
-          prefix !== undefined &&
-          (await harnesses[agent].startedSession?.(where, prefix, shown.startedAt)) === true
-        if (binding && !replaces) return
+        if (binding) {
+          if (replaced === undefined || prefix === undefined || turning) return
+          const started = await harnesses[agent].startedSession?.(
+            found.where,
+            prefix,
+            shown.startedAt,
+            (path) => this.held(found.group, path),
+          )
+          if (started !== true) return
+        }
         await this.queue(
           record.summary.id,
           () => {
             if (record.titles === seq && record.process === child && !record.exitQueued)
-              this.showPrompt(record, shown, replaces)
+              this.showPrompt(record, shown, replaced)
             return Promise.resolve()
           },
           undefined,
@@ -2554,29 +2547,53 @@ export class Terminals {
 
   /**
    * Where the harness runs in the terminal, as its hooks would be asked about there: its
-   * own program and environment where the platform tells them (Linux), else the person's
-   * login's, else the shells'. Null when no process of its name holds the foreground, so
-   * nothing of it shows there.
+   * own program and the variables its adapter names, where the platform tells them
+   * (Linux), else the person's login's, else the shells'; and the processes of the
+   * foreground group it runs in (`group`). Null when none of its name holds the
+   * foreground, so nothing of it shows there.
    */
   private async harnessIn(
     record: Record,
     child: pty.IPty,
     agent: AgentName,
-  ): Promise<(Install & { readonly program?: string }) | null> {
+  ): Promise<{
+    readonly where: Install & { readonly program?: string }
+    readonly group: readonly number[]
+  } | null> {
     const found = await foregroundProcess(child.pid, agent)
     if (found === null || record.process !== child) return null
     const install = await this.options.install(agent)
-    const own = found ? processSetting(found.pid, ["PATH", "HOME", "CODEX_HOME"]) : undefined
+    const own = found ? processSetting(found.pid, harnesses[agent].environment ?? []) : undefined
     const env = { ...this.options.env, ...install?.env, ...own?.env }
     // Its own program, unless what holds that name is a script, as a wrapper may be.
     const program = own?.program && basename(own.program) === agent ? own.program : undefined
     return {
-      env,
-      home: env.HOME ?? install?.home ?? homedir(),
-      platform: process.platform,
-      plugin: install?.plugin ?? "",
-      ...(program !== undefined && { program }),
+      where: {
+        env,
+        home: env.HOME ?? install?.home ?? homedir(),
+        platform: process.platform,
+        plugin: install?.plugin ?? "",
+        ...(program !== undefined && { program }),
+      },
+      group: found?.group ?? [],
     }
+  }
+
+  /**
+   * Whether one of the processes holds the file open; undefined where the platform
+   * doesn't tell, or none of them could be read.
+   */
+  private async held(pids: readonly number[], path: string): Promise<boolean | undefined> {
+    const real = await realpath(path).catch(() => path)
+    let told = false
+    for (const pid of pids) {
+      // eslint-disable-next-line no-await-in-loop -- A foreground group holds few processes.
+      const files = await openFiles(pid)
+      if (!files) continue
+      told = true
+      if (files.includes(real)) return true
+    }
+    return told ? false : undefined
   }
 
   /**
@@ -2605,14 +2622,27 @@ export class Terminals {
    * a new root session (Codex's /clear), which binds only with its first prompt: the bound
    * one's binding ends, the state the new prompt gives staying.
    */
-  private showPrompt(record: Record, shown: PromptShown, replaces = false): void {
+  private showPrompt(record: Record, shown: PromptShown, replaced?: string): void {
     const { agent, sessionPrefix } = shown
     if (shown.startedAt <= (record.promptedAt ?? 0)) return
     const { binding } = record
     const id = record.summary.id
     if (!binding) return this.messaging.shown(id, agent, sessionPrefix ?? null)
-    if (!replaces || binding.agent !== agent) return
-    this.messaging.shown(id, agent, sessionPrefix ?? null, true)
+    // Only the session it was shown to replace, still bound: one bound since, as the new
+    // session's own first prompt binds it, stays.
+    if (replaced === undefined || binding.sessionId !== replaced) return
+    if (sessionPrefix !== undefined && binding.sessionId.startsWith(sessionPrefix)) return
+    // Judged as the title came, not after what was asked since.
+    this.messaging.shown(id, agent, sessionPrefix ?? null, true, shown.startedAt)
+    this.endBinding(record, replaced)
+  }
+
+  /**
+   * Ends the terminal's binding, with its activity and the sources that follow it; with
+   * `only`, only while that session is still the one bound. Whether it ended one.
+   */
+  private endBinding(record: Record, only?: string): boolean {
+    if (only !== undefined && record.binding?.sessionId !== only) return false
     record.binding = null
     record.activity = null
     record.telemetry = null
@@ -2622,6 +2652,7 @@ export class Terminals {
       record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
       this.announce(record)
     }
+    return true
   }
 
   /**

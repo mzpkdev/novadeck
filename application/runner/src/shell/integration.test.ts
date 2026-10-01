@@ -2727,6 +2727,8 @@ const fs = require("node:fs")
 const [agent, session, received, raw, mode] = process.argv.slice(2)
 // The session it runs, which /clear replaces with a new one.
 let current = session
+// The thread locks it holds open, as Codex does.
+const held = []
 fs.writeFileSync(raw + ".pid", String(process.pid))
 // Claude Code names itself to its hooks, whatever an outer one left in the environment.
 if (agent === "claude") process.env.CLAUDE_PID = String(process.pid)
@@ -2756,7 +2758,7 @@ const step = (fields) =>
 const agy = { transcriptPath: transcript, workspacePaths: [process.cwd()] }
 // With "shown" or "resumed", Codex announces its session only with its first prompt, as
 // it does; Claude Code at its start.
-const showing = mode === "shown" || mode === "resumed"
+const showing = mode === "shown" || mode === "shownbusy" || mode === "resumed"
 let announced = !showing || agent === "claude"
 const started = (prompt, typed, done) => {
   if (agent !== "agy" && !announced) {
@@ -2783,6 +2785,8 @@ const turn = (prompt, typed = true) => {
   const late = mode === "slowkick" && !typed
   setTimeout(() => started(prompt, typed, (printed) => {
     fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + "\n")
+    // With "shownbusy", each turn after its first keeps working.
+    if (mode === "shownbusy" && turns > 1) return
     const finish = () => {
       process.stdout.write("\r\x1b[2Kworked on it\r\n")
       hook("Stop", agent === "agy" ? { ...agy, conversationId: current, fullyIdle: true } : {}, () => {
@@ -2824,6 +2828,15 @@ const turn = (prompt, typed = true) => {
 process.on("SIGUSR1", () => turn("background result", false))
 // It exits by itself, as an agent that ends without a key from the person.
 process.on("SIGUSR2", () => process.exit(0))
+// It shows a thread it just started and locked other than its root, as a spawned agent's.
+process.on("SIGURG", () => {
+  const agent = "0a6e0700" + current.slice(8)
+  if (process.env.CODEX_HOME) {
+    fs.mkdirSync(process.env.CODEX_HOME + "/thread-writer-locks", { recursive: true })
+    held.push(fs.openSync(process.env.CODEX_HOME + "/thread-writer-locks/" + agent + ".lock", "w"))
+  }
+  process.stdout.write("\x1b]0;Ready | " + agent.slice(0, 29) + "...\x07")
+})
 if (mode !== "bg") {
   process.stdin.setRawMode(true)
   process.stdin.setEncoding("utf8")
@@ -2905,10 +2918,10 @@ const clear = () => {
   if (agent === "agy") return hook("StatusLine", { conversation_id: current, agent_state: "idle" }, () => {})
   if (agent === "codex" && showing) {
     announced = false
-    // Codex writes a lock for each thread it starts, as at /clear.
+    // Codex writes and holds a lock for each thread it starts, as at /clear.
     if (process.env.CODEX_HOME) {
       fs.mkdirSync(process.env.CODEX_HOME + "/thread-writer-locks", { recursive: true })
-      fs.writeFileSync(process.env.CODEX_HOME + "/thread-writer-locks/" + current + ".lock", "")
+      held.push(fs.openSync(process.env.CODEX_HOME + "/thread-writer-locks/" + current + ".lock", "w"))
     }
     return process.stdout.write("\x1b]0;Ready | " + current.slice(0, 29) + "...\x07")
   }
@@ -3010,6 +3023,8 @@ const ringing = async (
     kick: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGUSR1"),
     // It exits by itself.
     leave: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGUSR2"),
+    // It shows another thread it just started, as a spawned agent's.
+    spawn: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGURG"),
     // The person's own first prompt, which settles it.
     first: async () => {
       type("hello")
@@ -3195,6 +3210,55 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
           .toBe("delivered")
       })
+
+    it("keeps a session that bound while a title naming it was still being checked", async ({
+      shell,
+    }) => {
+      let checks = 0
+      let asked!: () => void
+      const checking = new Promise<void>((resolve) => (asked = resolve))
+      let answer!: (trusted: boolean) => void
+      // Its start's title is answered at once; the one after /clear only when the test says.
+      const trust = () => {
+        checks += 1
+        if (checks === 1) return Promise.resolve(true)
+        asked()
+        return new Promise<boolean>((resolve) => (answer = resolve))
+      }
+      const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
+      const tui = await ringing(shell, "shownbusy", "named", "codex", thread, trust)
+      await tui.first()
+      tui.type("/clear")
+      await shell.until(tui.manager, tui.idle.id, "> /clear")
+      tui.type("\r")
+      await checking
+      // The new thread's own first prompt binds it, and its turn runs, before the title's
+      // check answers.
+      tui.type("next")
+      await shell.until(tui.manager, tui.idle.id, "> next")
+      tui.type("\r")
+      await expect.poll(tui.delivery).toBe("working")
+      answer(true)
+      await quiet()
+      expect(tui.delivery()).toBe("working")
+      expect(tui.manager.get(tui.idle.id).agent).not.toBeNull()
+    })
+
+    it("keeps a Codex binding when its title names a thread started during its turn, as a spawned agent's", async ({
+      shell,
+    }) => {
+      const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
+      const tui = await ringing(shell, "shownbusy", "named", "codex", thread)
+      await tui.first()
+      tui.type("next")
+      await shell.until(tui.manager, tui.idle.id, "> next")
+      tui.type("\r")
+      await expect.poll(tui.delivery).toBe("working")
+      tui.spawn()
+      await quiet()
+      expect(tui.delivery()).toBe("working")
+      expect(tui.manager.get(tui.idle.id).agent).not.toBeNull()
+    })
 
     it("drops a prompt shown before the shell's prompt came back, however long its check took", async ({
       shell,

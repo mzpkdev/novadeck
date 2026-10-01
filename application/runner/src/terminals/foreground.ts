@@ -11,7 +11,7 @@ const nameChars = 256
 const argCount = 64
 const argChars = 4096
 
-type ProcessStat = { pgrp: number; tty: number; tpgid: number }
+type ProcessStat = { ppid: number; pgrp: number; tty: number; tpgid: number }
 
 // /proc/<pid>/stat puts the command in parentheses; it may itself contain spaces or ')'.
 export const parseProcessStat = (stat: string): ProcessStat | null => {
@@ -21,12 +21,12 @@ export const parseProcessStat = (stat: string): ProcessStat | null => {
     .slice(end + 2)
     .trim()
     .split(/\s+/)
+  const ppid = Number(fields[1])
   const pgrp = Number(fields[2])
   const tty = Number(fields[4])
   const tpgid = Number(fields[5])
-  if (!Number.isSafeInteger(pgrp) || !Number.isSafeInteger(tty) || !Number.isSafeInteger(tpgid))
-    return null
-  return { pgrp, tty, tpgid }
+  if (![ppid, pgrp, tty, tpgid].every(Number.isSafeInteger)) return null
+  return { ppid, pgrp, tty, tpgid }
 }
 
 // /proc/<pid>/cmdline ends each argument with a NUL. A process that retitles itself, as
@@ -114,19 +114,25 @@ export const statName = (stat: string): string | null => {
 }
 
 /**
- * A process named `name` in the terminal's foreground process group, as a harness's own
- * process is while its TUI holds the terminal: its pid; null when none is; undefined
- * where the platform doesn't tell, as on Windows. Anything can set a terminal's title, so
- * only this ties a title to the harness that would set it.
+ * The processes named `name` in the terminal's foreground process group, as a harness's
+ * own are while its TUI holds the terminal: the outermost (`pid`, the one whose parent is
+ * none of them, as a wrapper of the same name before the program it runs); and every
+ * process of that group (`group`), as a program a wrapper runs may hold its files. Null
+ * when none is named so; undefined where the platform doesn't tell, as on
+ * Windows. Anything can set a terminal's title, so only this ties a title to the harness
+ * that would set it.
  */
 export const foregroundProcess = async (
   shellPid: number,
   name: string,
-): Promise<{ readonly pid: number } | null | undefined> => {
+): Promise<{ readonly pid: number; readonly group: readonly number[] } | null | undefined> => {
   const group = await terminalForeground(shellPid)
   if (group === undefined) return undefined
+  // Each process of the group, with its parent and whether it is named so.
+  let members: { readonly pid: number; readonly ppid: number; readonly named: boolean }[]
   try {
     if (process.platform === "linux") {
+      members = []
       for (const entry of readdirSync("/proc")) {
         if (!/^\d+$/.test(entry)) continue
         let stat: string
@@ -135,23 +141,59 @@ export const foregroundProcess = async (
         } catch {
           continue
         }
-        if (statName(stat) === name && parseProcessStat(stat)?.pgrp === group)
-          return { pid: Number(entry) }
+        const parsed = parseProcessStat(stat)
+        if (parsed?.pgrp === group)
+          members.push({ pid: Number(entry), ppid: parsed.ppid, named: statName(stat) === name })
       }
-      return null
-    }
-    if (process.platform === "darwin") {
-      const found = await promisify(execFile)("pgrep", ["-g", String(group), "-x", name], {
+    } else if (process.platform === "darwin") {
+      const { stdout } = await promisify(execFile)("ps", ["-o", "pid=,ppid=,pgid=,comm=", "-A"], {
         encoding: "utf8",
         timeout: 2_000,
-      }).then(
-        ({ stdout }) => Number(stdout.trim().split("\n")[0]),
-        () => Number.NaN,
-      )
-      return Number.isSafeInteger(found) && found > 0 ? { pid: found } : null
-    }
+        maxBuffer: 16 * 1024 * 1024,
+      })
+      members = stdout.split("\n").flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+        if (!match || Number(match[3]) !== group) return []
+        return [
+          { pid: Number(match[1]), ppid: Number(match[2]), named: basename(match[4]!) === name },
+        ]
+      })
+    } else return undefined
   } catch {
     // The group may be gone.
+    return undefined
+  }
+  const named = members.filter((member) => member.named)
+  if (named.length === 0) return null
+  const pids = new Set(named.map(({ pid }) => pid))
+  const outermost = named.find(({ ppid }) => !pids.has(ppid)) ?? named[0]!
+  return { pid: outermost.pid, group: members.map(({ pid }) => pid) }
+}
+
+/**
+ * The files a process of the person's own holds open, by their paths, where the platform
+ * tells (Linux through /proc, macOS through lsof); undefined elsewhere, or when it can't
+ * be read.
+ */
+export const openFiles = async (pid: number): Promise<readonly string[] | undefined> => {
+  try {
+    if (process.platform === "linux")
+      return readdirSync(`/proc/${pid}/fd`).flatMap((fd) => {
+        try {
+          return [readlinkSync(`/proc/${pid}/fd/${fd}`)]
+        } catch {
+          return []
+        }
+      })
+    if (process.platform === "darwin") {
+      const { stdout } = await promisify(execFile)("lsof", ["-Fn", "-p", String(pid)], {
+        encoding: "utf8",
+        timeout: 2_000,
+      })
+      return stdout.split("\n").flatMap((line) => (line.startsWith("n") ? [line.slice(1)] : []))
+    }
+  } catch {
+    // Gone, or lsof unavailable.
   }
   return undefined
 }
