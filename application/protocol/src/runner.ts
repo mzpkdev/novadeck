@@ -133,10 +133,15 @@ export type Runner = {
        */
       readonly command?: string
       /**
-       * Its title; a restored terminal keeps its saved one, and a new one takes the
-       * session's next default, when left out.
+       * Its title, the person's; a restored terminal keeps its saved one, and a new one
+       * takes the session's next default, when left out.
        */
       readonly title?: string
+      /**
+       * The agent's request this terminal answers: it takes the title that agent asked
+       * for, as the agent's.
+       */
+      readonly requestId?: string
     }): Promise<TerminalSummary>
     /**
      * Follows agents' requests for a new terminal, made through NovaDeck's MCP server,

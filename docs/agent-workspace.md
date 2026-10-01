@@ -332,7 +332,9 @@ from what this document describes:
   owns layout, so the runner hands the request to the client that subscribed last to
   `terminals.requests`, which adds the terminal as its "+" would, in the asking
   terminal's session and beside it, creates it through `terminals.create` with
-  `command`, and replies with `terminals.answerRequest`: the new terminal, or why not.
+  `command` and the request's `requestId`, from which the runner names it as the agent
+  asked, as that agent's title, never the person's, and replies with
+  `terminals.answerRequest`: the new terminal, or why not.
   Without a client, or past the deadline, the agent hears so. The command runs once
   through the same file the shell integration resumes agents from, so it leaves no
   history entry; a shell without the integration, or with configured arguments, can't

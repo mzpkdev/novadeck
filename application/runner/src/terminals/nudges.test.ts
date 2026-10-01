@@ -1,5 +1,6 @@
 import { describe, expect, it } from "../test.js"
 import {
+  atPrompt,
   backstopPrompts,
   described,
   drifted,
@@ -11,6 +12,7 @@ import {
   type Facts,
   type Nudges,
 } from "./nudges.js"
+import { busiestFolders, tallied, type Work } from "./work.js"
 
 const facts: Facts = { plan: "Pagination", folder: "/w/src/api", branch: "feat/paging" }
 
@@ -46,7 +48,7 @@ describe("nudges to describe a terminal", () => {
 
   it("are cleared by a describe, which drift is then measured from", () => {
     const after = described(facts)
-    expect(after).toEqual({ pending: [], prompts: 0, baseline: facts })
+    expect(after).toEqual({ pending: [], prompts: 0, baseline: facts, driftedTo: null })
     expect(quietly(drifted(after, facts)).nudge).toBe(false)
   })
 
@@ -79,6 +81,47 @@ describe("nudges to describe a terminal", () => {
     for (let count = 1; count < backstopPrompts; count += 1) nudges = personPrompted(nudges)
     expect(quietly(nudges).nudge).toBe(false)
     expect(quietly(personPrompted(nudges)).nudge).toBe(true)
+  })
+})
+
+describe("drift", () => {
+  it("fires once when the work goes back and forth between two folders", () => {
+    // The critic's probe: red/green, a test folder then the code, uneven counts.
+    let folders: Work["folders"] = { "/r/src": 1 }
+    let nudges = described({ plan: null, folder: "/r/src", branch: "main" })
+    let nudged = 0
+    for (let prompt = 0; prompt < 20; prompt += 1) {
+      const folder = prompt % 2 ? "/r/src" : "/r/test"
+      folders = tallied(tallied(folders, folder), folder)
+      const [main] = busiestFolders(folders, 1)
+      const after = quietly(drifted(nudges, { plan: null, folder: main!.folder, branch: "main" }))
+      nudges = after.nudges
+      if (after.nudge) nudged += 1
+    }
+    expect(nudged).toBeLessThanOrEqual(1)
+  })
+
+  it("takes what isn't known, as a branch not read in time or no folder yet, for no change", () => {
+    const after = described(facts)
+    for (const unknown of [{ plan: null }, { folder: null }, { branch: null }])
+      expect(quietly(drifted(after, { ...facts, ...unknown })).nudge).toBe(false)
+    // Nor is something known now a change from nothing known at the describe.
+    expect(
+      quietly(drifted(described({ plan: null, folder: null, branch: null }), facts)).nudge,
+    ).toBe(false)
+  })
+})
+
+describe("a prompt's nudge", () => {
+  it("counts the prompt, looks at drift, and nudges only an answer with nothing else", () => {
+    const moved = { ...facts, branch: "main" }
+    const busy = atPrompt(described(facts), { quiet: false, facts: moved })
+    expect(busy.nudge).toBe(false)
+    expect(busy.nudges).toMatchObject({ prompts: 1, pending: ["drift"] })
+    expect(atPrompt(busy.nudges, { quiet: true })).toMatchObject({
+      nudge: true,
+      nudges: { prompts: 2, pending: [] },
+    })
   })
 })
 

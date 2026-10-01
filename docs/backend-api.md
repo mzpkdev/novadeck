@@ -210,6 +210,10 @@ name the person gave the terminal with `create` or `terminals.rename({ terminalI
 title })`; the one an agent gave it last (`describe`, or `open_terminal`'s `title`);
 the person's first prompt of its agent's root session, shortened; or the runner's
 default for its session ("Terminal 01", "Terminal 02", …, never given twice).
+`titleSource` says which: `{ kind: "person" }`, `{ kind: "agent", by: "t2" }`,
+`{ kind: "fallback" }` or `{ kind: "default" }`. A terminal the client creates for an
+agent's request (`terminals.requests`) passes that request's `requestId` to
+`terminals.create`, and takes the title the agent asked for as the agent's.
 `terminals.resetTitle({ terminalId })` takes the person's name away, so it is automatic
 again (see [Agent messaging](agent-messaging.md#self-description)). `handle` is its
 handle for agents' messages, `t3`, numbered from the same counter, so "Terminal 03" is

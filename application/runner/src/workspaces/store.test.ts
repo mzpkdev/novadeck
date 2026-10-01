@@ -345,16 +345,12 @@ describe("saved terminals", () => {
       ...terminal,
       cwd: "/work/sub",
       transcript: "screen",
-      title: "API author",
-      titleSource: { kind: "agent", by: "t1" },
       savedAt: expect.any(Number),
     })
     expect(reopened.terminalIdentity(terminal.id)).toEqual({
       handle: "t3",
-      // What names it, and who gave its title, survive a reload, as who opened it does.
+      // What names it, each layer and who gave it, survives a reload, as who opened it does.
       naming: terminal.naming,
-      title: "API author",
-      titleSource: { kind: "agent", by: "t1" },
       openedBy: "t2",
     })
     if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600)
@@ -452,17 +448,15 @@ describe("saved terminals", () => {
     expect(first.renameTerminal("missing", "x")).toBe(false)
     first.close()
     const reopened = store(path)
-    expect(reopened.terminal("a")).toMatchObject({
-      title: "API author",
-      titleSource: { kind: "person" },
+    expect(reopened.terminal("a")?.naming).toEqual({
+      person: "API author",
+      agent: null,
+      summary: null,
     })
     expect(reopened.nextTerminalNumber("s")).toBe(3)
-    // Taking the person's title away leaves it automatic: here, its default.
+    // Taking the person's title away leaves it automatic.
     expect(reopened.renameTerminal("a", null)).toBe(true)
-    expect(reopened.terminalIdentity("a")).toMatchObject({
-      title: "Terminal 01",
-      titleSource: { kind: "default" },
-    })
+    expect(reopened.terminalIdentity("a")?.naming.person).toBeNull()
   })
 
   it("keep transcripts until they are turned off", ({ store }) => {

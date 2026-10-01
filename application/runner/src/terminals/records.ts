@@ -1,6 +1,6 @@
 import type { AgentName } from "@novadeck/protocol"
 
-import type { Naming, TitleSource } from "./naming.js"
+import type { Naming } from "./naming.js"
 import type { Work } from "./work.js"
 
 /** An agent's latest reported session in a terminal; a larger `seq` is a later report. */
@@ -15,13 +15,12 @@ export type SavedTerminal = {
   readonly sessionId: string
   /** Its handle in its session, `t3`, which never changes. */
   readonly handle: string
-  /** What names it: the person's title, an agent's, and its agent's summary of its work. */
+  /**
+   * What names it: the person's title, an agent's, and its agent's summary of its work;
+   * its title follows from these (see `titleOf`).
+   */
   readonly naming: Naming
-  /** Its title, by `naming`'s precedence (see `titleOf`). */
-  readonly title: string
-  /** Who its title is from. */
-  readonly titleSource: TitleSource
-  /** The handle of the terminal whose agent opened it with a task; null otherwise. */
+  /** The handle of the terminal whose agent opened it; null otherwise. */
   readonly openedBy: string | null
   /** The command it was opened to run; null for a plain shell. */
   readonly command: string | null
@@ -43,11 +42,8 @@ export type SavedTerminal = {
 /** A terminal as listed: all but its transcript. */
 export type ListedTerminal = Omit<SavedTerminal, "transcript">
 
-/** A terminal's handle, what names it, its title and who it is from, and who opened it with a task. */
-export type TerminalIdentity = Pick<
-  SavedTerminal,
-  "handle" | "naming" | "title" | "titleSource" | "openedBy"
->
+/** A terminal's handle, what names it, and who opened it. */
+export type TerminalIdentity = Pick<SavedTerminal, "handle" | "naming" | "openedBy">
 
 /** Where the runner saves terminals: its metadata store. */
 export type TerminalRecords = {
@@ -61,7 +57,7 @@ export type TerminalRecords = {
    * is automatic again; false when none is kept by that id.
    */
   renameTerminal(terminalId: string, title: string | null): boolean
-  /** A kept terminal's handle, what names it and its title, read alone. */
+  /** A kept terminal's handle, what names it and who opened it, read alone. */
   terminalIdentity(terminalId: string): TerminalIdentity | undefined
   /** `transcript` is left as it is when omitted. */
   saveTerminal(terminal: TerminalToSave): void
@@ -71,10 +67,7 @@ export type TerminalRecords = {
   forgetAgent(agent: AgentName): void
 }
 
-/** What saving a terminal takes: its title follows from what names it. */
-export type TerminalToSave = Omit<
-  SavedTerminal,
-  "transcript" | "savedAt" | "title" | "titleSource"
-> & {
+/** What saving a terminal takes; `transcript` is left as it is when omitted. */
+export type TerminalToSave = Omit<SavedTerminal, "transcript" | "savedAt"> & {
   transcript?: string | null
 }

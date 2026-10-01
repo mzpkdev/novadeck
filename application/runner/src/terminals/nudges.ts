@@ -9,7 +9,11 @@ import { shorten } from "./work.js"
  */
 export type Trigger = "session" | "compaction" | "drift" | "prompts"
 
-/** What drift is told by: the terminal's plan title, its main "works in" folder, its branch. */
+/**
+ * What drift is told by: the root's plan title, its main "works in" folder, its branch.
+ * Null is no information (no plan, no folder written in yet, a branch not read in time),
+ * never a change.
+ */
 export type Facts = {
   readonly plan: string | null
   readonly folder: string | null
@@ -18,20 +22,20 @@ export type Facts = {
 
 /**
  * A terminal's nudges: the triggers that fired since the last `describe` or nudge, the
- * person's prompts counted toward the backstop, and the facts drift is measured from
- * (those at the last `describe`, or at the drift last nudged for); null before any
- * `describe`.
+ * person's prompts counted toward the backstop, the facts at the last `describe` (null
+ * before any), and those drift last fired for.
  */
 export type Nudges = {
   readonly pending: readonly Trigger[]
   readonly prompts: number
   readonly baseline: Facts | null
+  readonly driftedTo: Facts | null
 }
 
 /** How many of the person's prompts since the last `describe` nudge as a backstop. */
 export const backstopPrompts = 15
 
-export const noNudges: Nudges = { pending: [], prompts: 0, baseline: null }
+export const noNudges: Nudges = { pending: [], prompts: 0, baseline: null, driftedTo: null }
 
 /** A trigger fired; it nudges once, at the next prompt that carries nothing else. */
 export const fired = (nudges: Nudges, trigger: Trigger): Nudges =>
@@ -44,20 +48,31 @@ export const personPrompted = (nudges: Nudges): Nudges => {
   return fired({ ...nudges, prompts: 0 }, "prompts")
 }
 
-const same = (a: Facts, b: Facts): boolean =>
-  a.plan === b.plan && a.folder === b.folder && a.branch === b.branch
+// Whether facts differ where both say something: unknown on either side is no change.
+const differs = (a: Facts, b: Facts): boolean =>
+  (["plan", "folder", "branch"] as const).some(
+    (fact) => a[fact] !== null && b[fact] !== null && a[fact] !== b[fact],
+  )
 
 /**
- * The facts as they stand: drift fires once they differ from the baseline, which then
- * moves to them, so the same drift never fires again. Nothing drifts before a `describe`.
+ * The facts as they stand: drift fires once they differ from those at the last
+ * `describe` and from those it last fired for, so work going back and forth between two
+ * folders fires once, not at each turn. Nothing drifts before a `describe`.
  */
 export const drifted = (nudges: Nudges, facts: Facts): Nudges => {
-  if (!nudges.baseline || same(nudges.baseline, facts)) return nudges
-  return fired({ ...nudges, baseline: facts }, "drift")
+  const { baseline, driftedTo } = nudges
+  if (!baseline || !differs(baseline, facts)) return nudges
+  if (driftedTo && !differs(driftedTo, facts)) return nudges
+  return fired({ ...nudges, driftedTo: facts }, "drift")
 }
 
 /** The agent described its work: nothing is pending, and drift is measured from `facts`. */
-export const described = (facts: Facts): Nudges => ({ pending: [], prompts: 0, baseline: facts })
+export const described = (facts: Facts): Nudges => ({
+  pending: [],
+  prompts: 0,
+  baseline: facts,
+  driftedTo: null,
+})
 
 /**
  * Whether a prompt's answer nudges, and the nudges after it: only when a trigger fired,
@@ -70,6 +85,19 @@ export const take = (
   quiet && nudges.pending.length > 0
     ? { nudge: true, nudges: { ...nudges, pending: [] } }
     : { nudge: false, nudges }
+
+/**
+ * The person prompted: one more toward the backstop, drift looked at where `facts` were
+ * read, and whether the answer nudges, which it does only when it is `quiet`: it carries
+ * nothing else and will reach the hook in time. A trigger that can't nudge now waits.
+ */
+export const atPrompt = (
+  nudges: Nudges,
+  input: { readonly quiet: boolean; readonly facts?: Facts | undefined },
+): { readonly nudge: boolean; readonly nudges: Nudges } => {
+  const counted = personPrompted(nudges)
+  return take(input.facts ? drifted(counted, input.facts) : counted, input.quiet)
+}
 
 /**
  * The nudge, one line worded as NovaDeck's automatic notice: asking for a description

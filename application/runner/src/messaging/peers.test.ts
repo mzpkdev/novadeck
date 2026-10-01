@@ -111,7 +111,7 @@ describe("a peer as agents read it", () => {
       "- t5: expecting Claude Code, not started yet",
       "  title: Terminal 05",
       "  folder: .",
-      "  opened by t1 with a task",
+      "  opened by t1",
     ])
   })
 
@@ -162,6 +162,7 @@ describe("a peer as agents read it", () => {
       to: { ...message().from, agent: "claude" },
       sentAt: now,
       text: "Done",
+      state: "delivered",
     })
     expect(lastBetween([message(), reply], "A", { terminalId: "B", handle: "t2" })).toEqual({
       from: "t2",
@@ -169,6 +170,56 @@ describe("a peer as agents read it", () => {
       at: now,
     })
     expect(lastBetween([message()], "A", { terminalId: "C", handle: "t3" })).toBeNull()
+  })
+
+  it("never shows the caller a message still on its way to it, as held while paused", () => {
+    const pending = (state: Message["state"]) =>
+      message({
+        from: message().to,
+        to: { ...message().from, agent: "claude" },
+        sentAt: now,
+        text: "Rename yourself.",
+        state,
+      })
+    for (const state of ["queued", "held", "leased", "gone"] as const)
+      expect(
+        lastBetween([message(), pending(state)], "A", { terminalId: "B", handle: "t2" }),
+      ).toMatchObject({ from: "you", text: "hello" })
+    // Its own, the caller sees whatever their state.
+    expect(
+      lastBetween([message({ state: "held" })], "A", { terminalId: "B", handle: "t2" }),
+    ).toMatchObject({ from: "you" })
+  })
+
+  it("says a terminal another agent opened may have started with that agent's command", () => {
+    const opened = peerOf({
+      terminalId: "E",
+      handle: "t5",
+      agent: "claude",
+      expecting: null,
+      busy: false,
+      where: {
+        title: "Terminal 05",
+        titleSource: { kind: "default" },
+        summary: null,
+        folder: ".",
+        branch: null,
+        plan: null,
+        work: {
+          session: "claude:s",
+          first: "fix the build",
+          latest: "fix the build",
+          folders: {},
+          activeAt: null,
+        },
+        openedBy: "t1",
+        place: (path) => path,
+      },
+      withYou: null,
+    })
+    expect(renderPeer(opened, now)).toContain(
+      "  started with (in a terminal t1 opened, so maybe its command's, not the user's): fix the build",
+    )
   })
 })
 

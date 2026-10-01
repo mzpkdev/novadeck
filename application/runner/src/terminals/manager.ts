@@ -44,7 +44,12 @@ import { followRoot, rootedIn, type Root } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
 import { agentLabel } from "../messaging/mailbox.js"
-import { Messaging, type AgentsAnswer, type SendAnswer } from "../messaging/messaging.js"
+import {
+  leaseMargin,
+  Messaging,
+  type AgentsAnswer,
+  type SendAnswer,
+} from "../messaging/messaging.js"
 import type { MailboxRecords } from "../messaging/records.js"
 import type { InstalledShell } from "../shell/install.js"
 import { shellLaunch, startsCommands, type ShellLaunch } from "../shell/integration.js"
@@ -60,7 +65,7 @@ import {
   type Reports,
 } from "../shell/reports.js"
 import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
-import { describeRequest, type DescribeAnswer, type Kept } from "./describe.js"
+import { readDescribeRequest, type DescribeAnswer } from "./describe.js"
 import { Doorbell, screenText, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
 import {
   processGroup,
@@ -73,22 +78,15 @@ import { keysOf } from "./keys.js"
 import { Latest } from "./latest.js"
 import {
   cleanSummary,
+  describedAs,
   descriptionRefusal,
+  openedWith,
+  renamed as renamedTo,
   titleOf,
   unnamed,
   type Naming,
-  type TitleSource,
 } from "./naming.js"
-import {
-  described,
-  drifted,
-  fired,
-  noNudges,
-  nudgeText,
-  personPrompted,
-  take,
-  type Nudges,
-} from "./nudges.js"
+import { atPrompt, described, fired, noNudges, nudgeText, type Nudges } from "./nudges.js"
 import {
   allowOpen,
   runnerOpenLimit,
@@ -186,6 +184,8 @@ type Create = {
   command?: string | undefined
   /** Its title; a restored one keeps its saved title, and a new one takes its session's next default. */
   title?: string | undefined
+  /** The agent's request it answers, whose opener it is opened for, with the title asked for. */
+  requestId?: string | undefined
 }
 type Size = { cols: number; rows: number }
 type Attach = { terminalId: string; afterSequence?: number; mode?: "control" | "observe" }
@@ -237,8 +237,6 @@ type Record = {
   shown: ReadonlyMap<string, Artifact>
   /** What names it: the person's title, an agent's, and its agent's summary of its work. */
   naming: Naming
-  /** Who its title, in `summary`, is from, by `naming`'s precedence (see `titleOf`). */
-  titleSource: TitleSource
   /** When its agent is next nudged to describe its work; kept for this runner's lifetime. */
   nudges: Nudges
   /**
@@ -250,7 +248,7 @@ type Record = {
   work: Work | null
   /** The person's input waiting while the doorbell's test paste is on screen; null otherwise. */
   held: string[] | null
-  /** The handle of the terminal whose agent opened this one with a task; null otherwise. */
+  /** The handle of the terminal whose agent opened this one; null otherwise. */
   openedBy: string | null
   /** The nonce of the doorbell line its agent was started with, as a task, if it was. */
   startedWith?: string
@@ -349,6 +347,10 @@ const sameToken = (a: string, b: string): boolean =>
 // The longest the doorbell holds the person's input, in milliseconds: a safety cap,
 // well beyond a ring's test paste.
 const holdCapMs = 3_000
+
+// How much time a prompt's hook must have left for drift to be read, in milliseconds:
+// a git branch and a plan's file, each with its own short timeout.
+const driftReadMs = 1_500
 
 // How many changed terminals one periodic save handles.
 const savesPerTick = 4
@@ -551,6 +553,9 @@ export class Terminals {
       throw new DomainError("TERMINAL_LIMIT", "Terminal limit reached.")
     this.creating += 1
     const pending = this.pending(ownerId)
+    // An agent's request this answers: read now, as it may stop waiting meanwhile.
+    const opener =
+      input.requestId === undefined ? undefined : this.opens.opener(input.requestId, ownerId)
     try {
       // A new terminal's number is drawn as it is asked for, before anything waits, so
       // terminals asked for together are numbered, and listed, in the order they were.
@@ -573,13 +578,14 @@ export class Terminals {
       // default title, "Terminal 03", even one given its own title.
       const number = kept ? undefined : (drawn ?? this.nextNumber(input.sessionId))
       const handle = kept?.handle ?? `t${number}`
-      // A title it is created with is the person's, as the client's; an agent's request
-      // for one makes it the agent's once the terminal opens (see `open`).
-      const naming: Naming =
-        input.title === undefined
-          ? (kept?.naming ?? unnamed)
-          : { ...(kept?.naming ?? unnamed), person: input.title }
-      const { title, source: titleSource } = titleOf(naming, saved?.work ?? null, handle)
+      // A title it is created with is the person's, as the client's; the one an agent
+      // asked for, as it requested the terminal, is that agent's.
+      let naming: Naming = kept?.naming ?? unnamed
+      if (input.title !== undefined) naming = renamedTo(naming, input.title)
+      if (opener?.title !== undefined) naming = openedWith(naming, opener.title, opener.by)
+      const openedBy = kept?.openedBy ?? opener?.by ?? null
+      const work = saved?.work ?? null
+      const titled = this.titled(naming, { work, handle, openedBy })
       const resume =
         input.command === undefined &&
         input.resume &&
@@ -597,7 +603,7 @@ export class Terminals {
         summary: {
           id: input.id,
           sessionId: input.sessionId,
-          title,
+          ...titled,
           handle,
           started: true,
           command: input.command ?? saved?.command ?? null,
@@ -643,12 +649,11 @@ export class Terminals {
         savedAt: 0,
         submitted: started.resumes,
         naming,
-        titleSource,
         nudges: noNudges,
         root: null,
-        work: saved?.work ?? null,
+        work,
         held: null,
-        openedBy: kept?.openedBy ?? null,
+        openedBy,
         seenEntry: undefined,
       }
       this.records.set(record.summary.id, record)
@@ -703,7 +708,7 @@ export class Terminals {
     return {
       id: terminal.id,
       sessionId: terminal.sessionId,
-      title: terminal.title,
+      ...this.titled(terminal.naming, terminal),
       handle: terminal.handle,
       started: false,
       command: terminal.command,
@@ -785,7 +790,7 @@ export class Terminals {
   private name(terminalId: string, title: string | null): void {
     const record = this.records.get(terminalId)
     if (record) {
-      record.naming = { ...record.naming, person: title }
+      record.naming = renamedTo(record.naming, title)
       // Watchers hear of a rename even to the title it already had.
       if (!this.retitle(record)) this.announce(record)
       this.save(record, false)
@@ -1390,28 +1395,28 @@ export class Terminals {
         sessionId: record.summary.sessionId,
         cwd,
         ...(command !== undefined && { command }),
-        ...(request.title !== undefined && { title: request.title }),
         focus: request.focus === true,
       },
       this.options.openMs,
+      // The title it asked for is its own, never the person's: the terminal takes it as
+      // the client creates it for this request.
+      {
+        by: record.summary.handle,
+        ...(request.title !== undefined && { title: request.title }),
+      },
     )
     let task: SendAnswer | undefined
     if (asked.type === "answered" && "terminalId" in asked.answer) {
       this.openers.set(asked.answer.terminalId, charged)
-      // A title the agent chose is its own, never the person's, and agents are told so.
       const opened = this.records.get(asked.answer.terminalId)
-      if (request.title !== undefined && opened?.naming.person === request.title) {
-        opened.naming = {
-          ...opened.naming,
-          person: null,
-          agent: { title: request.title, by: record.summary.handle },
-        }
+      // Opened by this terminal's agent, as a client that created it for the request said.
+      if (opened && opened.openedBy === null) {
+        opened.openedBy = record.summary.handle
         this.retitle(opened)
         this.save(opened, false)
       }
       // The task goes to the first session of the agent it starts there, from the opener.
       if (opened && request.message !== undefined) {
-        opened.openedBy = record.summary.handle
         // Its first typed entry is this line, where a transcript tells its prompts.
         if (started.prompted && started.nonce) opened.startedWith = started.nonce
         this.save(opened, false)
@@ -1487,7 +1492,7 @@ export class Terminals {
    * its agent's title, shown unless the person gave one, and the summary of its work
    * `agents()` lists. A title the person gave stays, unless the agent says the person
    * `asked` for this one, which then becomes theirs; that is taken only in a root turn
-   * the person's own prompt started that no messages reached (see `personTurn`), so
+   * the person's own prompt started and whose prompt gives it (see `describedAs`), so
    * another agent's message can't rename it. A call without the shell's own token learns
    * nothing more.
    */
@@ -1495,28 +1500,26 @@ export class Terminals {
     const record = this.records.get(call.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, call.token))
       return unansweredCalls.describe
-    const parsed = describeRequest.safeParse(call.request)
-    if (!parsed.success)
-      return refused("A description needs a `title` and a `summary` of a line or two.")
-    const title = parsed.data.title.trim()
-    const summary = cleanSummary(parsed.data.summary)
+    const read = readDescribeRequest(call.request)
+    if (!read.ok) return read
+    const title = read.request.title.trim()
+    const summary = cleanSummary(read.request.summary)
     const refusal = descriptionRefusal(title, summary)
     if (refusal) return refused(refusal)
+    // The person's prompt of the turn this call came in, before anything waits.
+    const prompt = this.messaging.personPrompt(call.terminalId)
     // Drift is measured from where its work is now.
     const facts = await this.peers.facts(record)
     if (this.stopping || this.records.get(call.terminalId) !== record)
       return unansweredCalls.describe
-    const { naming } = record
-    // The agent's own title, always its newest, shown unless the person gave one.
-    const agent = { title, by: record.summary.handle }
-    const asked = parsed.data.asked === true && this.messaging.personTurn(call.terminalId)
-    record.naming = { ...naming, agent, summary, ...(asked && { person: title }) }
-    const kept: Kept | undefined =
-      parsed.data.asked === true && !asked
-        ? "unasked"
-        : !asked && naming.person !== null
-          ? "person"
-          : undefined
+    const { naming, kept } = describedAs(record.naming, {
+      title,
+      summary,
+      by: record.summary.handle,
+      asked: read.request.asked === true,
+      prompt,
+    })
+    record.naming = naming
     record.nudges = described(facts)
     this.retitle(record)
     this.save(record, false)
@@ -2235,7 +2238,7 @@ export class Terminals {
       events: told,
       deadline,
     })
-    return this.nudged(record, report, told, answer)
+    return this.nudged(record, report, told, answer, deadline)
   }
 
   /**
@@ -2250,6 +2253,7 @@ export class Terminals {
     report: Report,
     events: readonly HarnessEvent[],
     answer: HookAnswer,
+    deadline: number,
   ): Promise<HookAnswer> {
     const { messaging } = harnesses[report.agent]
     if (messaging.asks[report.event] !== "prompt") return answer
@@ -2258,14 +2262,16 @@ export class Terminals {
         event.type === "turn-started" && event.cause === "prompt" && rootedIn(record.root, event),
     )
     if (!prompt) return answer
-    record.nudges = personPrompted(record.nudges)
-    const quiet = answer.leaseId === null && answer.stdout === messaging.silent(report.event)
-    // Read only for an answer that has nothing else to say, so a delivery never waits on it.
-    if (quiet && record.nudges.baseline) {
-      const facts = await this.peers.facts(record)
-      record.nudges = drifted(record.nudges, facts)
-    }
-    const taken = take(record.nudges, quiet)
+    const silent = answer.leaseId === null && answer.stdout === messaging.silent(report.event)
+    const inTime = (ms: number) => deadline - Date.now() >= ms
+    // Read only for an answer that has nothing else to say, so a delivery never waits on
+    // it, and only with time to spare.
+    const facts =
+      silent && record.nudges.baseline && inTime(driftReadMs)
+        ? await this.peers.facts(record)
+        : undefined
+    // A nudge that may miss the hook's deadline is never spent: its trigger waits.
+    const taken = atPrompt(record.nudges, { quiet: silent && inTime(leaseMargin), facts })
     record.nudges = taken.nudges
     if (!taken.nudge) return answer
     const current = { title: record.summary.title, summary: record.naming.summary }
@@ -2303,12 +2309,29 @@ export class Terminals {
    * announced when it differs, as the answer says; the caller saves it.
    */
   private retitle(record: Record): boolean {
-    const { title, source } = titleOf(record.naming, record.work, record.summary.handle)
-    record.titleSource = source
-    if (title === record.summary.title) return false
-    record.summary = { ...record.summary, title }
+    const titled = this.titled(record.naming, {
+      work: record.work,
+      handle: record.summary.handle,
+      openedBy: record.openedBy,
+    })
+    const { title, titleSource } = record.summary
+    if (
+      titled.title === title &&
+      JSON.stringify(titled.titleSource) === JSON.stringify(titleSource)
+    )
+      return false
+    record.summary = { ...record.summary, ...titled }
     this.announce(record)
     return true
+  }
+
+  /** A terminal's title, and who it is from, as its summary shows them (see `titleOf`). */
+  private titled(
+    naming: Naming,
+    terminal: Pick<ListedTerminal, "work" | "handle" | "openedBy">,
+  ): Pick<TerminalSummary, "title" | "titleSource"> {
+    const { title, source } = titleOf(naming, terminal)
+    return { title, titleSource: source }
   }
 
   /**

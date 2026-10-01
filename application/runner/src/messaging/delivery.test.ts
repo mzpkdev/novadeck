@@ -244,6 +244,9 @@ describe("whose turn it is", () => {
     // It stays the person's turn through its later calls and continuations, until another.
     expect(run(working, call, continued, prompted()).byPerson).toBe(true)
     expect(run(working, stop, harness).byPerson).toBe(false)
+    // A call while no turn runs resumes one, but nothing says the person started it.
+    expect(run(working, stop, call).byPerson).toBe(false)
+    expect(run(working, ended, call).byPerson).toBe(false)
     expect(run(working, { type: "bound" }).byPerson).toBe(false)
   })
 })

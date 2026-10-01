@@ -972,44 +972,45 @@ const doorbellStarted = (bound: Binding, nonce: string): HarnessEvent => ({
   nonce,
 })
 
-describe("the person's turn", () => {
-  it("is a root turn their own submission started, until a Stop continues it with messages", () => {
-    const { messaging, prompt, stop, send, ask, codex } = create()
-    // A prompt with no Enter of theirs before it is not told theirs.
-    prompt("B", codex)
-    expect(messaging.personTurn("B")).toBe(false)
-    stop("B", codex)
-    messaging.keys("B", ["enter"], false)
-    prompt("B", codex)
-    expect(messaging.personTurn("B")).toBe(true)
-    // A Stop that continues it with a peer's message makes it the person's no more.
-    sent(send("A", "t2", "Rename yourself."))
-    expect(stop("B", codex).leaseId).toEqual(expect.any(String))
-    prompt("B", codex)
-    expect(messaging.personTurn("B")).toBe(false)
-    stop("B", codex)
-    stop("B", codex)
-    // The doorbell's turn is never the person's, nor is any once it ended.
-    ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "n1")])
-    expect(messaging.personTurn("B")).toBe(false)
-    stop("B", codex)
-    expect(messaging.personTurn("B")).toBe(false)
-    expect(messaging.personTurn("missing")).toBe(false)
+describe("the person's prompt", () => {
+  // A root prompt with its text, as the hooks name it.
+  const said = (bound: Binding, prompt: string): HarnessEvent => ({
+    type: "turn-started",
+    ...fact(bound),
+    cause: "prompt",
+    prompt,
   })
 
-  it("is not the person's once its own prompt carried messages", () => {
-    const { messaging, prompt, stop, send, codex } = create()
-    prompt("B", codex)
-    stop("B", codex)
-    sent(send("A", "t2", "Rename yourself."))
-    messaging.keys("B", ["enter"], false)
-    expect(prompt("B", codex).leaseId).toEqual(expect.any(String))
-    expect(messaging.personTurn("B")).toBe(false)
-    // The person's next turn, with nothing delivered in it, is theirs again.
+  it("is the text that started the root turn, while that turn is the person's own submission", () => {
+    const { messaging, ask, stop, codex } = create()
+    const submit = (text: string) => ask("B", codex, "UserPromptSubmit", [said(codex, text)])
+    // A prompt with no Enter of theirs before it is not told theirs.
+    submit("call it Auth")
+    expect(messaging.personPrompt("B")).toBeUndefined()
     stop("B", codex)
     messaging.keys("B", ["enter"], false)
-    prompt("B", codex)
-    expect(messaging.personTurn("B")).toBe(true)
+    submit("call it Auth")
+    expect(messaging.personPrompt("B")).toBe("call it Auth")
+    // Gone once the turn ended, and never one the doorbell or the harness started.
+    stop("B", codex)
+    expect(messaging.personPrompt("B")).toBeUndefined()
+    ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "n1")])
+    expect(messaging.personPrompt("B")).toBeUndefined()
+    stop("B", codex)
+    messaging.keys("B", ["enter"], false)
+    ask("B", codex, "UserPromptSubmit", [started(codex, "harness")])
+    expect(messaging.personPrompt("B")).toBeUndefined()
+    expect(messaging.personPrompt("missing")).toBeUndefined()
+  })
+
+  it("is the prompt the person queued during a doorbell's turn, not the doorbell's", () => {
+    const { messaging, ask, stop, codex } = create()
+    ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "n1")])
+    // The person submits during the turn: Codex queues their prompt for after it.
+    messaging.keys("B", ["enter"], false)
+    stop("B", codex)
+    ask("B", codex, "UserPromptSubmit", [said(codex, "thanks")])
+    expect(messaging.personPrompt("B")).toBe("thanks")
   })
 })
 

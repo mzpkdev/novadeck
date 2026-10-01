@@ -1,6 +1,5 @@
-import type { AgentName } from "@novadeck/protocol"
+import type { AgentName, TitleSource } from "@novadeck/protocol"
 
-import type { TitleSource } from "../terminals/naming.js"
 import { busiestFolders, shorten, type Work } from "../terminals/work.js"
 import { agentLabel, clock, holdOf, type Message } from "./mailbox.js"
 
@@ -18,7 +17,7 @@ export type Whereabouts = {
   readonly branch: string | null
   readonly plan: string | null
   readonly work: Work | null
-  /** The handle of the terminal whose agent opened it with a task, if one did. */
+  /** The handle of the terminal whose agent opened it, if one did. */
   readonly openedBy: string | null
   readonly place: (path: string) => string
 }
@@ -47,7 +46,7 @@ export type Peer = {
   readonly folder: string | null
   readonly branch: string | null
   readonly startedWith: string | null
-  /** Who opened it with a task, told where "started with" is unknown. */
+  /** Which terminal's agent opened it: "started with" may be its command's, not the person's. */
   readonly openedBy: string | null
   /** Left out when it is the prompt it started with. */
   readonly latest: string | null
@@ -62,7 +61,11 @@ export type Peer = {
 /** How long a message's excerpt shows, in characters. */
 export const excerptChars = 80
 
-/** The latest message between the caller and a peer, either way, shortened. */
+/**
+ * The latest message between the caller and a peer, either way, shortened: one the caller
+ * sent, or one delivered to it. A message still on its way to the caller (queued, held
+ * or leased) is never shown, so listing peers never gets past a pause or delivery.
+ */
 export const lastBetween = (
   messages: Iterable<Message>,
   self: string,
@@ -73,7 +76,9 @@ export const lastBetween = (
     const { from, to } = message
     const between =
       (from.terminalId === self && to.terminalId === peer.terminalId) ||
-      (from.terminalId === peer.terminalId && to.terminalId === self)
+      (from.terminalId === peer.terminalId &&
+        to.terminalId === self &&
+        message.state === "delivered")
     if (between && (!last || message.sentAt >= last.sentAt)) last = message
   }
   if (!last) return null
@@ -154,8 +159,8 @@ export const renderPeer = (peer: Peer, now: number): readonly string[] =>
     peer.summary && `  described by its agent: ${peer.summary.split("\n").join(" / ")}`,
     peer.folder && `  folder: ${peer.folder}${peer.branch ? `, branch ${peer.branch}` : ""}`,
     peer.startedWith
-      ? `  started with: ${peer.startedWith}`
-      : peer.openedBy && `  opened by ${peer.openedBy} with a task`,
+      ? `  started with${peer.openedBy ? ` (in a terminal ${peer.openedBy} opened, so maybe its command's, not the user's)` : ""}: ${peer.startedWith}`
+      : peer.openedBy && `  opened by ${peer.openedBy}`,
     peer.latest && `  latest: ${peer.latest}`,
     peer.plan && `  plan: ${peer.plan}`,
     peer.worksIn.length > 0 &&

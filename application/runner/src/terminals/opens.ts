@@ -103,6 +103,9 @@ export const allowOpen = (
   return recent.length < limit.count ? [...recent, now] : undefined
 }
 
+/** Who asked for a terminal: its terminal's handle, and the title it asked for, if any. */
+export type Opener = { readonly by: string; readonly title?: string }
+
 /**
  * How a request went: answered; sent to nobody, as no client follows; or left without an
  * answer, as its client went away or took too long.
@@ -157,10 +160,14 @@ class Follower {
 export class OpenRequests {
   /** Each client's stream, oldest first. */
   private readonly followers: Follower[] = []
-  /** Requests waiting for their answer, by id, with the client each went to. */
+  /** Requests waiting for their answer, by id, with the client each went to and who asked. */
   private readonly pending = new Map<
     string,
-    { readonly owner: string; readonly settle: (asked: Asked) => void }
+    {
+      readonly owner: string
+      readonly opener: Opener
+      readonly settle: (asked: Asked) => void
+    }
   >()
   private finished = false
 
@@ -190,8 +197,11 @@ export class OpenRequests {
     }
   }
 
-  /** Sends the request to the newest client and waits up to `ms` for its answer. */
-  ask(request: Omit<TerminalRequest, "requestId">, ms: number): Promise<Asked> {
+  /**
+   * Sends the request to the newest client and waits up to `ms` for its answer; the
+   * `opener`, with the title it asked for, waits for the terminal the client creates for it.
+   */
+  ask(request: Omit<TerminalRequest, "requestId">, ms: number, opener: Opener): Promise<Asked> {
     const follower = this.followers.findLast((each) => each.open)
     if (!follower) return Promise.resolve({ type: "nobody" })
     const requestId = randomUUID()
@@ -202,9 +212,15 @@ export class OpenRequests {
         this.pending.delete(requestId)
         resolve(asked)
       }
-      this.pending.set(requestId, { owner: follower.owner, settle })
+      this.pending.set(requestId, { owner: follower.owner, opener, settle })
       follower.push({ requestId, ...request })
     })
+  }
+
+  /** Who asked for the terminal `owner`'s client creates for a request still waiting; undefined otherwise. */
+  opener(requestId: string, owner: string): Opener | undefined {
+    const waiting = this.pending.get(requestId)
+    return waiting?.owner === owner ? waiting.opener : undefined
   }
 
   /** The client's answer; NOT_FOUND once nothing waits for it from this client. */

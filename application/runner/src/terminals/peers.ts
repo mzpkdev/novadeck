@@ -9,7 +9,7 @@ import type { AgentsAnswer, Messaging, SendAnswer } from "../messaging/messaging
 import type { Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
 import { gitBranch } from "./branch.js"
-import type { Naming, TitleSource } from "./naming.js"
+import type { Naming } from "./naming.js"
 import type { Facts } from "./nudges.js"
 import { planTitle } from "./plans.js"
 import { busiestFolders, shorten, type Work } from "./work.js"
@@ -18,11 +18,9 @@ import { busiestFolders, shorten, type Work } from "./work.js"
 export type PeerTerminal = {
   readonly summary: TerminalSummary
   readonly naming: Naming
-  /** Who its title, in `summary`, is from. */
-  readonly titleSource: TitleSource
   readonly work: Work | null
   readonly activity: Activity | null
-  /** The handle of the terminal whose agent opened it with a task; null otherwise. */
+  /** The handle of the terminal whose agent opened it; null otherwise. */
   readonly openedBy: string | null
 }
 
@@ -147,7 +145,7 @@ export class TerminalPeers {
         }
         const where: Whereabouts = {
           title: terminal.summary.title,
-          titleSource: terminal.titleSource,
+          titleSource: terminal.summary.titleSource,
           summary: terminal.naming.summary,
           folder: place(cwd),
           branch,
@@ -166,22 +164,25 @@ export class TerminalPeers {
   }
 
   /**
-   * What tells whether a terminal's work drifted from its description: its plan's title,
-   * the folder it writes in most, and its git branch.
+   * What tells whether a terminal's work drifted from its description: its root's own
+   * plan's title (never a subagent's), the folder it writes in most, and its git branch.
    */
   async facts(terminal: PeerTerminal): Promise<Facts> {
     const [branch, plan] = await Promise.all([
       this.branch(terminal.summary.cwd),
-      this.plan(terminal),
+      this.plan(terminal, true),
     ])
     const [main] = busiestFolders(terminal.work?.folders ?? {}, 1)
     return { plan, folder: main?.folder ?? null, branch }
   }
 
-  /** The title of the terminal's agent's current plan, the root's or else the latest; null without one. */
-  private async plan(terminal: PeerTerminal): Promise<string | null> {
+  /**
+   * The title of the terminal's agent's current plan, the root's or else, unless `own`,
+   * the latest; null without one.
+   */
+  private async plan(terminal: PeerTerminal, own = false): Promise<string | null> {
     const plans = terminal.activity?.plans ?? []
-    const plan = plans.find(({ actor }) => actor === null) ?? plans.at(-1)
+    const plan = plans.find(({ actor }) => actor === null) ?? (own ? undefined : plans.at(-1))
     const title = plan ? await planTitle(plan.source) : undefined
     return title === undefined ? null : shorten(title, 120)
   }

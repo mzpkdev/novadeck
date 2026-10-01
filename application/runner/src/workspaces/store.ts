@@ -8,7 +8,7 @@ import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@nova
 import { DomainError } from "../errors.js"
 import type { Message, Thread } from "../messaging/mailbox.js"
 import type { MailboxRecords } from "../messaging/records.js"
-import { titleOf, type Naming } from "../terminals/naming.js"
+import type { Naming } from "../terminals/naming.js"
 import type {
   ListedTerminal,
   SavedTerminal,
@@ -67,7 +67,7 @@ const extras = `
     agent_titled_by TEXT,
     -- What its own agent said it works on, through describe.
     summary TEXT,
-    -- The handle of the terminal whose agent opened it with a task; null otherwise.
+    -- The handle of the terminal whose agent opened it; null otherwise.
     opened_by TEXT,
     -- The command it was opened to run at its first prompt.
     command TEXT,
@@ -248,10 +248,7 @@ const workOf = (text: string | null): Work | null => {
   }
 }
 
-type NamingRow = Pick<
-  TerminalRow,
-  "handle" | "person_title" | "agent_title" | "agent_titled_by" | "summary" | "work"
->
+type NamingRow = Pick<TerminalRow, "person_title" | "agent_title" | "agent_titled_by" | "summary">
 
 const namingOf = (row: NamingRow): Naming => ({
   person: row.person_title,
@@ -262,18 +259,11 @@ const namingOf = (row: NamingRow): Naming => ({
   summary: row.summary,
 })
 
-/** What names a terminal, and the title that follows, from its row. */
-const named = (row: NamingRow, work = workOf(row.work)) => {
-  const naming = namingOf(row)
-  const { title, source } = titleOf(naming, work, row.handle)
-  return { naming, title, titleSource: source }
-}
-
 const listed = (row: Omit<TerminalRow, "transcript">): ListedTerminal => ({
   id: row.id,
   sessionId: row.session_id,
   handle: row.handle,
-  ...named(row),
+  naming: namingOf(row),
   work: workOf(row.work),
   openedBy: row.opened_by,
   command: row.command,
@@ -492,10 +482,10 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
 
   terminalIdentity(terminalId: string): TerminalIdentity | undefined {
     const row = this.queries.get`
-      SELECT handle, person_title, agent_title, agent_titled_by, summary, opened_by, work
+      SELECT handle, person_title, agent_title, agent_titled_by, summary, opened_by
       FROM terminals WHERE id = ${terminalId}
-    ` as (NamingRow & Pick<TerminalRow, "opened_by">) | undefined
-    return row && { handle: row.handle, ...named(row), openedBy: row.opened_by }
+    ` as (NamingRow & Pick<TerminalRow, "handle" | "opened_by">) | undefined
+    return row && { handle: row.handle, naming: namingOf(row), openedBy: row.opened_by }
   }
 
   /** Saves what restores the terminal; `transcript` is left as it is when omitted. */

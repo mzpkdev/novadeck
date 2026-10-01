@@ -25,10 +25,16 @@ export const promptChars = 120
 /** How many folders' edits are kept. */
 export const keptFolders = 20
 
-/** Text on one line, cut to `max` characters with an ellipsis. */
+/** Text on one line, cut to `max` characters (code points, never half of one) with an ellipsis. */
 export const shorten = (text: string, max: number): string => {
   const line = text.replace(/\s+/g, " ").trim()
-  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line
+  const characters = [...line]
+  return characters.length > max
+    ? `${characters
+        .slice(0, max - 1)
+        .join("")
+        .trimEnd()}…`
+    : line
 }
 
 const sessionOf = (root: Root): string => `${root.agent}:${root.sessionId}`

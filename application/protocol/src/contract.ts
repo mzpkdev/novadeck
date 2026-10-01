@@ -116,9 +116,12 @@ export const contract = {
             restore: z.boolean().optional(),
             resume: agentName.optional(),
             command: startupCommand.optional(),
-            // Its title; a restored terminal keeps its saved one, and a new one takes the
-            // session's next default, when left out.
+            // Its title, the person's; a restored terminal keeps its saved one, and a new
+            // one takes the session's next default, when left out.
             title: terminalTitle.optional(),
+            // The agent's request this terminal answers (`requests`): it takes the title
+            // that agent asked for, as the agent's.
+            requestId: id.optional(),
           })
           .refine(({ command, restore, resume }) => !command || (!restore && !resume), {
             message: "A terminal either starts a command or restores what it ran, not both.",
