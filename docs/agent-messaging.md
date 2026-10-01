@@ -90,7 +90,7 @@ All three harnesses get every path. Where one falls short, the design accepts it
 | Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                    |
 | Codex         | A failed turn sends nothing                                                                               | Stays Working until its next turn event; `send`'s route says so                                                                                                                                         |
 | Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                  |
-| Antigravity   | Its hooks can't tell the person's prompt from a subagent's message waking it                              | NovaDeck tells the person's submissions itself, as for every harness: their Enter followed by a root turn starting within about 2 s                                                                     |
+| Antigravity   | Its hooks can't tell the person's prompt from a subagent's message waking it                              | Every turn counts as harness-started, so once the person has typed it stays Drafting: it is never rung, and their next prompt's hook delivers                                                           |
 | Antigravity   | Esc and denials show only as an idle status line                                                          | Its decoder tells them from completion; they leave it Unknown                                                                                                                                           |
 | Antigravity   | `agy -i "<line>"` submits its prompt even while its "Do you trust this folder?" dialog is up              | A task starts it with `-i` only in a folder it already trusts; elsewhere it starts plain and the task rings once it is first Settled (see Starting a task)                                              |
 | Windows (all) | The hook reports no instance, and the foreground process group can't be read                              | Nested agents are told apart by the decoders alone; the doorbell's gate relies on its other checks and the test paste                                                                                   |
@@ -276,20 +276,29 @@ server itself, before it reaches the runner.
   person submitted. A turn ending alone resolves nothing.
 - **The person's input** is any input a client sends to the terminal except the
   terminal's automatic replies (the `terminalReply` filter the manager already uses):
-  keys, pastes and mouse clicks, since a click can open a menu too. Keys sent while a
-  request is pending are answers to it, not a draft.
-- **The person submits** when their Enter (or Codex's Tab, the queue key its profile
-  names), sent while no request was pending, is followed by a root turn starting within
-  about 2 s. NovaDeck tells this itself, the same way for every harness, rather than
-  from a hook's idea of who prompted: Antigravity's hooks can't tell the person's prompt
-  from a subagent's message waking it, and a background task's result in Claude Code
-  starts a turn nobody submitted. A prompt Codex queued during a turn, which it submits
-  as the turn ends, counts too: the next root turn after that Stop is the person's.
+  keys, pastes and mouse clicks, since a click can open a menu too. While a request is
+  pending, the keys up to and including its first answering key (Enter, Escape, or one
+  key that types, as a hotkey) answer it, and the moves before it (arrows, Home, End,
+  Tab) navigate; whatever follows while the request is still pending is a draft. A
+  question answered over several keys so ends Drafting, which only delays a ring.
+- **A bare Enter** is a carriage return of its own: not Alt or Shift+Enter (`\x1b\r`,
+  a newline in the box), nor one inside a bracketed paste. Nothing else submits, but
+  Codex's Tab, its profile's queue key.
+- **The person submits** when their bare Enter is followed by a root turn starting
+  within about 2 s, with no other input from them after that Enter, and the turn's
+  decoder says a prompt started it. NovaDeck never takes a turn the harness started for
+  the person's, whatever they typed before: a background task's result in Claude Code,
+  a hook's continuation, and every Antigravity turn, whose hooks can't tell the
+  person's prompt from a subagent's message waking it. A prompt Codex queued during a
+  turn, which it submits as the turn ends, counts too, when the person typed nothing
+  after queuing it: the next root prompt after that Stop is theirs.
 - **The prompt is known empty** after one of these, with no input from the person
   since (apart from answers to a request): the person's submission; a confirmed ring;
   the command-line prompt an agent was started with; or the session binding. NovaDeck
-  sees every input the person sends, so the box is empty exactly when they sent nothing
-  since. A turn the harness starts by itself proves nothing about the prompt.
+  sees every input the person sends, so the box is empty when they sent nothing since.
+  Untouched errs toward Drafting: any doubt (keys after an Enter, a turn nobody can
+  attribute, a ring that didn't finish) counts as a draft. That costs a ring until the
+  person next submits, never a wrong Enter.
 - **The person submitted during a turn** when they sent Enter while a root turn ran and
   no request was pending, or Codex's Tab, which queues a prompt Codex submits after the
   turn. While only background work runs after a Stop, Enter submits a prompt at once, so
@@ -457,15 +466,18 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    person sent no input since their last submission, a confirmed ring, the command-line
    prompt or the session binding. A draft can exist only if the person typed, so it
    never reaches the screen checks.
-3. **Calm.** The screen's text has been unchanged for 750 ms (its text, not the PTY's
+3. **Settled for a while.** At least 6 s have passed since the root turn ended, for
+   every harness: screens change for a while after a turn, as Claude Code's clears a
+   row about 5 s after it, and a ring meanwhile would fail on that change.
+4. **Calm.** The screen's text has been unchanged for 750 ms (its text, not the PTY's
    bytes, as TUIs redraw carets while idle). Bracketed paste is on now. Where the
-   platform tells (not Windows), the terminal's foreground process group is the bound
-   instance's. A gate that fails presses nothing and is tried again on the next change
-   to the screen or the terminal's messages. Claude Code's tip row clears about 5 s
-   after a turn, which only delays the ring.
-4. **Test paste.** With the person's input to the terminal held (at most 1 s, then
-   released whatever happened): snapshot the screen text, write the line as one
-   bracketed paste, and poll the screen for up to 500 ms. It is accepted only when:
+   platform tells (not Windows) and the bound instance is known, the terminal's
+   foreground process group is the instance's. A gate that fails presses nothing and is
+   tried again on the next change to the screen or the terminal's messages.
+5. **Test paste.** With the person's input to the terminal held for the whole ring,
+   until after its Enter (a safety cap releases it after 3 s whatever happened): snapshot
+   the screen text, write the line as one bracketed paste, and poll the screen for up to
+   500 ms. It is accepted only when:
    - the line, joined across the rows it wraps over (whitespace aside), appears on the
      screen exactly once, and did not before; and
    - every row that changed is one the line occupies or within 3 rows of them, which
@@ -477,13 +489,19 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    line never appears, or it appears while far rows changed. Nothing is pressed; a line
    left visible somewhere unexpected stays where it is.
 
-5. **Enter.**
-6. **Confirm.** A root turn starts within 5 s of the Enter, and its prompt-time hook
+6. **Enter**, only while the hold is still in force; a hold that lapsed abandons the
+   ring.
+7. **Confirm.** A root turn starts within 5 s of the Enter, and its prompt-time hook
    sees the line with its nonce: Claude Code and Codex in the hook's `prompt`,
    Antigravity in the transcript's last user input. Its lease delivers.
 
 A ring that fails presses no further key, ever, and leaves the terminal Unknown; the
 messages wait for the next root turn event, and the person sees them as undelivered.
+A ring that fails or is abandoned, as when a turn starts mid-ring, may have left its
+line in the box, so the prompt counts as a draft until the person next submits. A
+doorbell prompt whose messages can't be leased now (the hook's deadline is too near, or
+messaging is paused) is told they still wait and will come on a later turn; only one
+with nothing left waiting is told so.
 A doorbell line left in a prompt that the person later submits is harmless: its hook
 recognises the nonce, and the prompt stays the person's. A terminal is rung at most
 once per Settled period; a failed gate doesn't count.
@@ -552,9 +570,13 @@ that Enter would answer. So `open_terminal(agent, message)`:
    `command`.
 2. Antigravity submits `-i`'s prompt about 0.9 s after it starts, even while its "Do
    you trust this folder?" dialog is up. So it gets `-i` only in a folder it already
-   trusts (its adapter reads Antigravity's trusted-workspaces setting); elsewhere it
+   trusts (its adapter reads Antigravity's trusted-workspaces setting, matching the
+   folder's exact path once normalized, links unresolved, so another way to a trusted
+   folder starts it plain); elsewhere it
    starts plain, and the task waits for its first Settled state, then rings as usual.
-3. Addresses `message` to the first session of that agent to bind in the new terminal,
+3. Checks `message` first with every check `send` makes but the recipient's own (its
+   size once delivered, the rates, the undelivered cap), and refuses before anything
+   starts. Then it addresses `message` to the first session of that agent to bind in the new terminal,
    rather than to a session that doesn't exist yet. The terminal's own report queue puts
    the `SessionStart` ahead of the first prompt's ask, so that ask finds the session
    bound and the message waiting.
