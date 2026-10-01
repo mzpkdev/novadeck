@@ -129,7 +129,11 @@ export const TerminalTab = ({
         editing={editing}
         editor={
           rename ? (
-            <div className="terminal-tab-rename flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px]">
+            <div
+              className="terminal-tab-rename flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px] select-text"
+              // A right-click here belongs to the field, never the tab's menu.
+              onContextMenu={(event) => event.stopPropagation()}
+            >
               <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center text-muted">
                 {icon}
               </span>
@@ -226,7 +230,5 @@ export const TerminalTab = ({
       />
     </div>
   )
-  // While its name is edited, a right-click belongs to the field, never the tab's menu.
-  if (editing) return tab
   return <ContextMenu label={`${terminal.name} actions`} items={menu} trigger={tab} />
 }

@@ -138,48 +138,103 @@ describe("the runner's messages", () => {
   })
 
   context("when the person releases a thread", () => {
-    it("says it's under way until the runner answers", async () => {
+    // The runner's answer, which the test gives when it says.
+    const answering = () => {
       let answer: (() => void) | undefined
-      const { messages, api } = streams({
-        release: (thread) => {
-          expect(thread).toBe("t-1")
-          return new Promise<void>((resolve) => (answer = resolve))
-        },
+      const { messages, push, api } = streams({
+        release: () => new Promise<void>((resolve) => (answer = resolve)),
       })
+      return { messages, push, api, answer: () => answer?.() }
+    }
+    const held = (yes: boolean) => listing({ threads: [{ ...listing().threads[0]!, held: yes }] })
+
+    it("is under way until the runner took it and a listing shows the thread go on", async () => {
+      const { messages, push, answer } = answering()
+      messages.follow(key)
+      push(held(true))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
       messages.release("t-1")
       expect(messages.state.getSnapshot().releasing).toEqual(["t-1"])
-      answer?.()
+      // Answered first: a listing from before still holds it.
+      answer()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(messages.state.getSnapshot().releasing).toEqual(["t-1"])
+      push(held(false))
       await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
-      expect(messages.state.getSnapshot().error).toBeNull()
-      expect(api.watch).not.toHaveBeenCalled()
     })
 
-    it("says why when the runner refused", async () => {
+    it("is under way until the runner answers, when the listing came first", async () => {
+      const { messages, push, answer } = answering()
+      messages.follow(key)
+      push(held(true))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
+      messages.release("t-1")
+      push(held(false))
+      await vi.waitFor(() =>
+        expect(messages.state.getSnapshot().terminals[id]?.threads[0]?.held).toBe(false),
+      )
+      expect(messages.state.getSnapshot().releasing).toEqual(["t-1"])
+      answer()
+      await vi.waitFor(() => expect(messages.state.getSnapshot().releasing).toEqual([]))
+    })
+
+    it("says why on that thread when the runner refused", async () => {
       const { messages } = streams({ release: () => Promise.reject(new Error("Not found")) })
       messages.release("t-1")
       await vi.waitFor(() =>
         expect(messages.state.getSnapshot()).toMatchObject({
           releasing: [],
-          error: "Couldn't release the thread: Not found",
+          failed: { "t-1": "Couldn't release it: Not found" },
+          error: null,
         }),
       )
+      // Trying again clears it.
+      messages.release("t-1")
+      expect(messages.state.getSnapshot().failed).toEqual({})
     })
   })
 
   context("when the person pauses", () => {
-    it("shows the switch as the runner's listings say, pending until it answers", async () => {
+    it("is paused once the runner takes it, before any listing says so", async () => {
+      let answer: (() => void) | undefined
+      const { messages, push } = streams({
+        pause: () => new Promise<void>((resolve) => (answer = resolve)),
+      })
+      messages.follow(key)
+      push(listing({ paused: false }))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().terminals[id]).toBeDefined())
+      messages.pause(true)
+      expect(messages.state.getSnapshot()).toMatchObject({ pending: true, paused: false })
+      answer?.()
+      await vi.waitFor(() =>
+        expect(messages.state.getSnapshot()).toMatchObject({ pending: false, paused: true }),
+      )
+      // The listing that follows agrees.
+      push(listing({ paused: true }))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().paused).toBe(true))
+    })
+
+    it("follows the listing that came before the runner's answer", async () => {
       let answer: (() => void) | undefined
       const { messages, push } = streams({
         pause: () => new Promise<void>((resolve) => (answer = resolve)),
       })
       messages.follow(key)
       messages.pause(true)
-      expect(messages.state.getSnapshot()).toMatchObject({ pending: true, paused: false })
-      // The runner tells every watch before it answers.
       push(listing({ paused: true }))
       await vi.waitFor(() => expect(messages.state.getSnapshot().paused).toBe(true))
+      expect(messages.state.getSnapshot().pending).toBe(true)
       answer?.()
-      await vi.waitFor(() => expect(messages.state.getSnapshot().pending).toBe(false))
+      await vi.waitFor(() =>
+        expect(messages.state.getSnapshot()).toMatchObject({ pending: false, paused: true }),
+      )
+    })
+
+    it("follows another window's pause, as its listings tell", async () => {
+      const { messages, push } = streams()
+      messages.follow(key)
+      push(listing({ paused: true }))
+      await vi.waitFor(() => expect(messages.state.getSnapshot().paused).toBe(true))
     })
 
     it("says why when the runner refused, and the switch stays as it was", async () => {

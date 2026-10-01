@@ -5,8 +5,9 @@ import { noMail, type MailState, type Messages, type TerminalMail } from "../../
 import { createStore } from "../../model/store"
 
 // The runner's messages between agents: each terminal's threads as `messages.watch`
-// streams them, and the one pause switch, which every listing reports. The runner tells
-// every watch of a pause or release before it answers, so the state shows what it says.
+// streams them, and the one pause switch, which every listing reports. A pause the runner
+// accepted is so; a release goes on once a listing shows its thread no longer held, as a
+// listing may come before or after the runner's answer.
 
 export type MailStreams = {
   readonly watch: (terminalId: string) => AsyncIterableIterator<TerminalMessages, undefined>
@@ -47,6 +48,12 @@ export const mailOf = (listing: TerminalMessages): TerminalMail => ({
   })),
 })
 
+// Whether some listing has the thread, and not held.
+const goesOn = (current: MailState, thread: string): boolean =>
+  Object.values(current.terminals).some((mail) =>
+    mail.threads.some((each) => each.id === thread && !each.held),
+  )
+
 const reason = (error: unknown): string =>
   error instanceof Error && error.message ? error.message : String(error)
 
@@ -56,6 +63,17 @@ export const createRunnerMessages = (
   track: <T>(work: Promise<T>) => Promise<T> = (work) => work,
 ): RunnerMessages => {
   const state = createStore<MailState>(noMail)
+  // Releases the runner accepted, waiting for a listing to show their threads go on.
+  const accepted = new Set<string>()
+  // Threads accepted and shown going on are no longer releasing.
+  const settled = (current: MailState): MailState => {
+    const done = current.releasing.filter(
+      (thread) => accepted.has(thread) && goesOn(current, thread),
+    )
+    if (!done.length) return current
+    for (const thread of done) accepted.delete(thread)
+    return { ...current, releasing: current.releasing.filter((thread) => !done.includes(thread)) }
+  }
   const followed = new Map<string, AsyncIterableIterator<TerminalMessages, undefined>>()
 
   const forget = (id: string): void =>
@@ -80,11 +98,13 @@ export const createRunnerMessages = (
       try {
         for await (const listing of stream) {
           if (followed.get(id) !== stream) return
-          state.update((current) => ({
-            ...current,
-            paused: listing.paused,
-            terminals: { ...current.terminals, [id]: mailOf(listing) },
-          }))
+          state.update((current) =>
+            settled({
+              ...current,
+              paused: listing.paused,
+              terminals: { ...current.terminals, [id]: mailOf(listing) },
+            }),
+          )
         }
       } catch {
         // The runner closed or lost the terminal.
@@ -109,7 +129,8 @@ export const createRunnerMessages = (
     pause: (paused) => {
       state.update((current) => ({ ...current, pending: true, error: null }))
       track(streams.pause(paused)).then(
-        () => state.update((current) => ({ ...current, pending: false })),
+        // The runner took it: it is so, whichever comes first, this or the listings.
+        () => state.update((current) => ({ ...current, paused, pending: false })),
         (error: unknown) =>
           state.update((current) => ({
             ...current,
@@ -119,20 +140,26 @@ export const createRunnerMessages = (
       )
     },
     release: (thread) => {
-      state.update((current) => ({
-        ...current,
-        releasing: [...current.releasing.filter((each) => each !== thread), thread],
-        error: null,
-      }))
-      const done = (error: string | null) =>
-        state.update((current) => ({
+      accepted.delete(thread)
+      state.update((current) => {
+        const { [thread]: _before, ...failed } = current.failed
+        return {
           ...current,
-          releasing: current.releasing.filter((each) => each !== thread),
-          error: error ?? current.error,
-        }))
+          releasing: [...current.releasing.filter((each) => each !== thread), thread],
+          failed,
+        }
+      })
       track(streams.release(thread)).then(
-        () => done(null),
-        (error: unknown) => done(`Couldn't release the thread: ${reason(error)}`),
+        () => {
+          accepted.add(thread)
+          state.update(settled)
+        },
+        (error: unknown) =>
+          state.update((current) => ({
+            ...current,
+            releasing: current.releasing.filter((each) => each !== thread),
+            failed: { ...current.failed, [thread]: `Couldn't release it: ${reason(error)}` },
+          })),
       )
     },
     follow,

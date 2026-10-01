@@ -71,6 +71,7 @@ const ThreadItem = ({
   handle,
   peerName,
   releasing,
+  failure,
   onRelease,
 }: {
   thread: MessageThread
@@ -78,6 +79,8 @@ const ThreadItem = ({
   // Undefined for a terminal no longer in the session: its handle stands alone.
   peerName: string | undefined
   releasing: boolean
+  // Why its last release didn't take.
+  failure: string | undefined
   onRelease: () => void
 }): React.JSX.Element => {
   const peer = peerName ?? thread.peer
@@ -116,6 +119,11 @@ const ThreadItem = ({
           </button>
         )}
       </header>
+      {failure && (
+        <p className="mail-thread-error" role="alert">
+          {failure}
+        </p>
+      )}
       {thread.held && (
         <p className="mail-thread-note">
           Held after {thread.allowed} messages back and forth. Release it to let them go on.
@@ -160,8 +168,7 @@ export const MessagesView = ({
           onChange={mail.pause}
           labelledBy={label}
           describedBy={hint}
-          disabled={mail.pending}
-          busy={mail.pending}
+          pending={mail.pending}
         />
       </div>
       {mail.error && (
@@ -183,6 +190,7 @@ export const MessagesView = ({
               handle={mail.mail!.handle}
               peerName={peerName(thread.peer)}
               releasing={mail.releasing.includes(thread.id)}
+              failure={mail.failed[thread.id]}
               onRelease={() => mail.release(thread.id)}
             />
           ))

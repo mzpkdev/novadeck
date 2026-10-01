@@ -777,11 +777,12 @@ optional `messages` capability (`model/messages.ts`):
   order: direction, time (with the date when not today), state, and the agent's text as
   plain text, never formatted or interpreted. A peer no longer in the session shows its
   handle alone. A held thread has **Release** (`messages.release`), "Releasing…" until
-  the runner answers. With no threads it says so.
+  the runner took it and a listing shows the thread go on; a refused release says why on
+  that thread. With no threads it says so.
 - **Pause switch.** The view's header has **Pause all agents' messages**
   (`messages.pause`), one switch for the whole runner. It shows what the runner's listings
-  say, which the runner sends every watch before it answers; it is disabled while a pause
-  or resume is on its way, and says why when the runner refuses one, as a release does.
+  say, and a pause or resume the runner accepted, whichever comes first; it takes no
+  clicks while one is on its way, and says why when the runner refuses one.
   While paused, the view says so and every badge shows it.
 
 The person doesn't send as themselves; they type in the terminal.

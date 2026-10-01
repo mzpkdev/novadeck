@@ -125,7 +125,12 @@ describe("Pausing messaging", () => {
     const pause = pauseSwitch(pane)
     await expect.element(pause).toHaveAttribute("aria-checked", "false")
     await pause.click()
+    // On its way, it takes no clicks, and keeps focus.
+    await expect.element(pause).toHaveAttribute("aria-disabled", "true")
+    await expect.element(pause).toHaveFocus()
     await expect.element(pause).toHaveAttribute("aria-checked", "true")
+    await expect.element(pause).not.toHaveAttribute("aria-disabled")
+    await expect.element(pause).toHaveFocus()
     await expect.poll(() => textOf(pane.getByRole("status"))).toMatch(/Messaging is paused/)
     // Codex's queued message is held; the one already being delivered goes on.
     const items = messageItems(thread(pane, "Checkout implementation", "t1"))
@@ -174,6 +179,16 @@ describe("Who named a terminal", () => {
     await expect.element(field).toHaveFocus()
     await expect.element(field).toHaveValue("Half")
     await expect.element(terminalTab("Half")).not.toBeInTheDocument()
+  })
+
+  it("keeps the tab itself through a rename", async () => {
+    await openMessagesDemo()
+    const before = terminalTab("Checkout review").element().closest("[data-terminal-tab-id]")
+    await tabAction("Rename Checkout review").click()
+    await expect.element(sidebarRenameField("Checkout review")).toHaveFocus()
+    await userEvent.keyboard("Review{Enter}")
+    await expect.element(terminalTab("Review")).toBeVisible()
+    expect(terminalTab("Review").element().closest("[data-terminal-tab-id]")).toBe(before)
   })
 
   it("is the person's once they rename it", async () => {

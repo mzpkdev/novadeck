@@ -88,6 +88,10 @@ const stateOf = (boxes: readonly DemoMailbox[], paused: boolean): MailState => (
   ),
 })
 
+// How long a pause takes to reach the demo's stand-in runner, so its view shows one on
+// its way.
+const pauseMs = 150
+
 export const createDemoMessages = (initial: readonly DemoMailbox[], paused = false): Messages => {
   let boxes = initial
   let isPaused = paused
@@ -96,8 +100,11 @@ export const createDemoMessages = (initial: readonly DemoMailbox[], paused = fal
   return {
     state,
     pause: (next) => {
-      isPaused = next
-      publish()
+      state.update((current) => ({ ...current, pending: true }))
+      setTimeout(() => {
+        isPaused = next
+        publish()
+      }, pauseMs)
     },
     // Thread ids are the demo's own, unique across its mailboxes.
     release: (thread) => {

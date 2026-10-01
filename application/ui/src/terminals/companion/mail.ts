@@ -37,9 +37,11 @@ export type MailHandle = {
   readonly paused: boolean
   // A pause or resume is on its way to the backend.
   readonly pending: boolean
-  readonly releasing: readonly string[]
-  // Why the last pause, resume or release didn't take.
+  // Why the last pause or resume didn't take.
   readonly error: string | null
+  readonly releasing: readonly string[]
+  // Why a thread's last release didn't take, by thread.
+  readonly failed: Readonly<Record<string, string>>
   // Whether the terminal has a messages view: an agent is there, or it had messages.
   readonly present: boolean
   readonly badge: MailBadge | null
@@ -54,12 +56,14 @@ export const useMail = (messages: Messages | undefined, key: CompanionKey): Mail
   const pending = useMailPart(messages, (state) => state.pending)
   const releasing = useMailPart(messages, (state) => state.releasing)
   const error = useMailPart(messages, (state) => state.error)
+  const failed = useMailPart(messages, (state) => state.failed)
   return {
     mail,
     paused,
     pending,
     releasing,
     error,
+    failed,
     present: hasMail(mail),
     badge: mailBadge(mail, paused),
     pause: (next) => messages?.pause(next),

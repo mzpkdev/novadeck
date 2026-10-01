@@ -249,8 +249,8 @@ allows it 12 more hops; an unknown thread is `NOT_FOUND`. Each refuses with
 `list` says, then again on each change to the terminal's threads, messages or delivery
 state, and on each pause or resume, a burst of changes within one tick as one listing;
 a reader that falls behind gets only the newest listing, never one equal to the last it
-read. The runner sends each watch the pause, or a released thread, before `pause` or
-`release` answers. It ends when the terminal is closed or let
+read. A watch's listing may come before or after the `pause` or `release` call that
+changed it answers. It ends when the terminal is closed or let
 go; an unknown one is `TERMINAL_NOT_FOUND`. The client's `messages.watch(terminalId)`
 resubscribes across reconnections and ends once the terminal is gone.
 

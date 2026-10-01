@@ -1179,6 +1179,11 @@
   cursor: default;
   opacity: 0.6;
 }
+.mail-thread-error {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--color-danger-fg);
+}
 .mail-error {
   margin: 0;
   padding: 6px 14px;
