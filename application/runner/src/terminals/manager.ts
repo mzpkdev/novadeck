@@ -501,6 +501,16 @@ export class Terminals {
       if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
+      // Read again after every wait above: a rename meanwhile, as from another window,
+      // stands. Nothing waits between this and saving it, and a
+      // terminal that can't be numbered fails before its shell starts.
+      const kept = input.restore ? this.identity(input.id) : undefined
+      // Every new terminal draws its session's next number, for its handle, `t3`, and its
+      // default title, "Terminal 03", even one given its own title.
+      const number = kept ? undefined : this.nextNumber(input.sessionId)
+      const handle = kept?.handle ?? `t${number}`
+      const title = input.title ?? kept?.title ?? `Terminal ${String(number).padStart(2, "0")}`
+      const titledBy = input.title === undefined ? (kept?.titledBy ?? null) : null
       const resume =
         input.command === undefined &&
         input.resume &&
@@ -514,15 +524,6 @@ export class Terminals {
         this.claims.set(resume.key, input.id)
         started.resumeClaim = resume.key
       }
-      // Read again after every wait above: a rename meanwhile, as from another window,
-      // stands. Nothing waits between this and saving it.
-      const kept = input.restore ? this.identity(input.id) : undefined
-      // Every new terminal draws its session's next number, for its handle, `t3`, and its
-      // default title, "Terminal 03", even one given its own title.
-      const number = kept ? undefined : this.nextNumber(input.sessionId)
-      const handle = kept?.handle ?? `t${number}`
-      const title = input.title ?? kept?.title ?? `Terminal ${String(number).padStart(2, "0")}`
-      const titledBy = input.title === undefined ? (kept?.titledBy ?? null) : null
       const record: Record = {
         summary: {
           id: input.id,
@@ -650,16 +651,27 @@ export class Terminals {
     return kept
   }
 
-  /** The next number of a session's terminals, never given twice, from its records when kept. */
+  /**
+   * The next number of a session's terminals, never given twice: from its records when
+   * the runner keeps them, else counted in memory. When the records can't give one, no
+   * terminal is created, since a number counted afresh could repeat a handle.
+   */
   private nextNumber(sessionId: string): number {
+    const { records } = this.options
+    if (!records) {
+      const number = (this.numbers.get(sessionId) ?? 0) + 1
+      this.numbers.set(sessionId, number)
+      return number
+    }
     let number: number | undefined
     this.persisting(() => {
-      number = this.options.records?.nextTerminalNumber(sessionId)
+      number = records.nextTerminalNumber(sessionId)
     })
-    if (number === undefined) {
-      number = (this.numbers.get(sessionId) ?? 0) + 1
-      this.numbers.set(sessionId, number)
-    }
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    if (number === undefined)
+      throw new Error(
+        "NovaDeck couldn't number a new terminal in its workspace database, so it didn't create it.",
+      )
     return number
   }
 
@@ -1963,7 +1975,7 @@ export class Terminals {
     })
     record.root = root
     if (changes.length > 0) this.messaging.rooted(id, changes)
-    const work = workAfter(record.work, root, events, Date.now())
+    const work = workAfter(record.work, root, events, Date.now(), changes)
     if (work === record.work) return false
     record.work = work
     return true

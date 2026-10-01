@@ -23,6 +23,7 @@ const peer = peerOf({
   terminalId: "B",
   handle: "t2",
   agent: "codex",
+  expecting: null,
   busy: true,
   where: {
     title: "API author",
@@ -59,11 +60,23 @@ describe("a peer as agents read it", () => {
       terminalId: "C",
       handle: "t3",
       agent: null,
+      expecting: null,
       busy: false,
       where: undefined,
       withYou: null,
     })
     expect(renderPeer(bare, now)).toEqual(["- t3: no agent NovaDeck can deliver to"])
+    // Opened to run an agent that hasn't started: messages to it are taken.
+    const starting = peerOf({
+      terminalId: "D",
+      handle: "t4",
+      agent: null,
+      expecting: "codex",
+      busy: false,
+      where: undefined,
+      withYou: null,
+    })
+    expect(renderPeer(starting, now)).toEqual(["- t4: expecting Codex, not started yet"])
   })
 
   it("tells the latest message between the caller and the peer, either way", () => {

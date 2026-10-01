@@ -54,6 +54,28 @@ describe("what a root session worked on", () => {
     expect(workAfter(work, root, [other], 3)).toEqual(work)
   })
 
+  it("carries over to the session a guess at the root was corrected to", () => {
+    const guess: Root = { ...root, agent: "agy", sessionId: "c-sub", source: "binding" }
+    const agy = { ...fact, agent: "agy", sessionId: "c-sub" } as const
+    const work = workAfter(
+      null,
+      guess,
+      [{ type: "file-touched", ...agy, actor: null, path: "/w/a.ts" }],
+      4,
+    )
+    const corrected: Root = { ...guess, sessionId: "c-root", source: "status-line" }
+    const change = { type: "corrected", from: "c-sub", root: corrected, confirmed: true } as const
+    expect(workAfter(work, corrected, [], 5, [change])).toEqual({
+      session: "agy:c-root",
+      first: null,
+      latest: null,
+      folders: { "/w": 1 },
+      activeAt: 4,
+    })
+    // Without the correction, another session starts afresh.
+    expect(workAfter(work, corrected, [], 5)).toMatchObject({ folders: {}, activeAt: null })
+  })
+
   it("keeps the folders written in most, and always the one just written in", () => {
     let folders: Record<string, number> = {}
     for (let index = 0; index < 30; index += 1)

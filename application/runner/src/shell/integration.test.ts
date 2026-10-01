@@ -1230,6 +1230,36 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shell.store.terminal(id)?.transcript).toContain("kept")
   })
 
+  it("creates no terminal it can't number, so no handle repeats", async ({ shell }) => {
+    const manager = shell.manager()
+    const first = await create(manager, shell)
+    // Numbering fails once, as a busy or full disk would.
+    let refuse = true
+    const records: TerminalRecords = {
+      terminal: (terminalId) => shell.store.terminal(terminalId),
+      terminals: (sessionId) => shell.store.terminals(sessionId),
+      nextTerminalNumber: (sessionId) => {
+        if (refuse) throw new Error("disk full")
+        return shell.store.nextTerminalNumber(sessionId)
+      },
+      renameTerminal: (terminalId, title) => shell.store.renameTerminal(terminalId, title),
+      terminalIdentity: (terminalId) => shell.store.terminalIdentity(terminalId),
+      saveTerminal: (terminal) => shell.store.saveTerminal(terminal),
+      removeTerminal: (terminalId) => shell.store.removeTerminal(terminalId),
+      clearTranscripts: () => shell.store.clearTranscripts(),
+      forgetAgent: (agent) => shell.store.forgetAgent(agent),
+    }
+    const later = shell.manager({ records })
+    const id = randomUUID()
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    await expect(create(later, shell, { id })).rejects.toThrow(/couldn't number a new terminal/)
+    error.mockRestore()
+    expect(later.list(shell.sessionId).map((terminal) => terminal.id)).not.toContain(id)
+    refuse = false
+    expect(first.handle).toBe("t1")
+    expect(await create(later, shell, { id })).toMatchObject({ handle: "t2" })
+  })
+
   it("forgets every transcript once transcripts are turned off", async ({ shell }) => {
     const id = randomUUID()
     const manager = shell.manager()

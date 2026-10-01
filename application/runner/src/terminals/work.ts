@@ -1,7 +1,7 @@
 import { dirname } from "node:path"
 
 import type { HarnessEvent } from "../harnesses/events.js"
-import { rootedIn, type Root } from "../harnesses/roots.js"
+import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 
 /**
  * What the agent session at a terminal's root worked on, as its hooks said: the person's
@@ -66,18 +66,25 @@ export const busiestFolders = (
     .map(([folder, edits]) => ({ folder, edits }))
 
 /**
- * The work of the root's session after its root changed and a report's facts: the same
- * session keeps what it worked on, another starts afresh, and none has none.
+ * The work of the root's session after its root `changes` and a report's facts: the same
+ * session keeps what it worked on, and so does a guess at it corrected to another
+ * session, as Antigravity's root once its status line names it; another session starts
+ * afresh, and none has none.
  */
 export const workAfter = (
   work: Work | null,
   root: Root | null,
   events: readonly HarnessEvent[],
   now: number,
+  changes: readonly RootChange[] = [],
 ): Work | null => {
   if (!root) return work
+  let carried = work
+  for (const change of changes)
+    if (change.type === "corrected" && carried?.session === `${change.root.agent}:${change.from}`)
+      carried = { ...carried, session: sessionOf(change.root) }
   const session = sessionOf(root)
-  let next = work?.session === session ? work : freshWork(session)
+  let next = carried?.session === session ? carried : freshWork(session)
   for (const event of events) {
     if (event.type === "session-observed" || !rootedIn(root, event)) continue
     if (event.type === "turn-started") {

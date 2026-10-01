@@ -33,6 +33,8 @@ export type Peer = {
   readonly terminalId: string
   readonly handle: string
   readonly agent: AgentName | null
+  /** The agent it was opened to run, which messages may already be sent to, before it binds. */
+  readonly expecting: AgentName | null
   readonly title: string | null
   readonly titledBy: string | null
   readonly folder: string | null
@@ -75,6 +77,7 @@ export const peerOf = (input: {
   readonly terminalId: string
   readonly handle: string
   readonly agent: AgentName | null
+  readonly expecting: AgentName | null
   readonly busy: boolean
   readonly where: Whereabouts | undefined
   readonly withYou: Peer["withYou"]
@@ -86,6 +89,7 @@ export const peerOf = (input: {
     terminalId: input.terminalId,
     handle: input.handle,
     agent,
+    expecting: agent ? null : input.expecting,
     title: where?.title ?? null,
     titledBy: where?.title ? where.titledBy : null,
     folder: where?.folder ?? null,
@@ -121,7 +125,9 @@ export const renderPeer = (peer: Peer, now: number): readonly string[] =>
     `- ${peer.handle}: ${
       peer.agent
         ? `${agentLabel(peer.agent)}, ${peer.state}${peer.activeAt === null ? "" : `, last active ${ago(peer.activeAt, now)}`}`
-        : "no agent NovaDeck can deliver to"
+        : peer.expecting
+          ? `expecting ${agentLabel(peer.expecting)}, not started yet`
+          : "no agent NovaDeck can deliver to"
     }`,
     peer.title &&
       `  title: ${peer.title}${peer.titledBy ? ` (set by ${peer.titledBy}, not the user)` : ""}`,

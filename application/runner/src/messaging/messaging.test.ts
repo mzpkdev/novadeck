@@ -328,6 +328,65 @@ describe("an addressee with no session yet", () => {
     expect(prompt("N", first).stdout).toContain("hello")
   })
 
+  it("shows in the listings as expected, matching what send takes", () => {
+    const { messaging, send } = create()
+    messaging.register("N", here, "t3")
+    messaging.expect("N", "codex")
+    const listed = messaging.agents("A")
+    expect(listed.ok && listed.text).toContain("- t3: expecting Codex, not started yet")
+    expect(send("A", "nobody", "hi")).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("- t3: expecting Codex, not started yet"),
+    })
+  })
+
+  it("ends once the expected agent's session binds: after it ends, nothing more is taken", () => {
+    const { messaging, send, follow, prompt } = create()
+    messaging.register("N", here, "t3")
+    messaging.expect("N", "codex")
+    const first = binding("codex", "s-first", "3")
+    follow("N", first)
+    follow("N", null)
+    const refusal = {
+      ok: false,
+      reason: "t3 has no agent running there that NovaDeck can deliver to.",
+    }
+    expect(send("A", "t3", "after")).toEqual(refusal)
+    // A later, unrelated session there gets nothing sent before it.
+    const later = binding("codex", "s-later", "4")
+    follow("N", later)
+    expect(prompt("N", later)).toEqual({ leaseId: null, stdout: "" })
+    follow("N", null)
+    expect(send("A", "t3", "again")).toEqual(refusal)
+  })
+
+  it("ends once a different agent's session binds, refusing sends after it ends", () => {
+    const { messaging, send, follow } = create()
+    messaging.register("N", here, "t3")
+    messaging.expect("N", "codex")
+    follow("N", binding("claude", "s-other", "3"))
+    follow("N", null)
+    expect(send("A", "t3", "hi")).toEqual({
+      ok: false,
+      reason: "t3 has no agent running there that NovaDeck can deliver to.",
+    })
+  })
+
+  it("never hands a message that waited for the first session to a later one", () => {
+    const { messaging, send, follow, prompt } = create()
+    messaging.register("N", here, "t3")
+    messaging.expect("N", "codex")
+    const { id } = sent(send("A", "t3", "for the first session"))
+    const first = binding("codex", "s-first", "3")
+    follow("N", first)
+    // The first session ends before it ever prompts: its message is gone with it.
+    follow("N", null)
+    const later = binding("codex", "s-later", "4")
+    follow("N", later)
+    expect(prompt("N", later)).toEqual({ leaseId: null, stdout: "" })
+    expect(messages(messaging, "N")).toMatchObject([{ id, state: "gone" }])
+  })
+
   it("outlasts the restore, and is gone once another agent binds there or the terminal closes", () => {
     const records = memoryMailbox()
     const setup = create(records, { now: 1_000_000 }, { restoreMs: 60_000 })

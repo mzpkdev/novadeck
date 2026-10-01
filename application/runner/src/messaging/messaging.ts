@@ -51,7 +51,10 @@ type Live = Scope & {
   /** Its root session, as the terminal manager follows it. */
   root: Root | null
   delivery: Delivery
-  /** The agent expected to bind there, which messages may be addressed to before it has. */
+  /**
+   * The agent expected to bind there, which messages may be addressed to before it has;
+   * none once a root session has, when only a bound session takes messages.
+   */
   expecting: AgentName | null
 }
 
@@ -218,7 +221,8 @@ export class Messaging {
 
   /**
    * Expects an agent to bind in the terminal, as one it was opened to run: messages may
-   * be addressed to it before it has, and wait for its first session.
+   * be addressed to it before it has, and wait for its first session. The expectation
+   * ends once any root session binds there.
    */
   expect(terminalId: string, agent: AgentName | null): void {
     const live = this.live.get(terminalId)
@@ -602,6 +606,7 @@ export class Messaging {
         terminalId: peer.terminalId,
         handle: peer.handle,
         agent: peer.root?.agent ?? null,
+        expecting: peer.root ? null : peer.expecting,
         busy: peer.delivery.state === "working",
         where: about(peer.terminalId),
         withYou: lastBetween(this.messages.values(), live.terminalId, peer),
@@ -736,6 +741,8 @@ export class Messaging {
    */
   private rootAt(live: Live, root: Root, guess: boolean): void {
     live.root = root
+    // Its first session came: from now on, only a bound session takes messages.
+    live.expecting = null
     this.step(live, { type: "bound" })
     for (const message of this.messages.values()) {
       if (message.to.terminalId !== live.terminalId) continue
