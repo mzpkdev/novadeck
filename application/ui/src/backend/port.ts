@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react"
 
 import type { Companions } from "../model/companion"
+import type { Messages } from "../model/messages"
 import type { WorkspaceSeed } from "../model/seed"
 import type { WorkspaceAction } from "../model/state"
 import type { Store } from "../model/store"
@@ -157,6 +158,14 @@ export type Backend = {
   // Only the content-preview demo implements it so far; a runner would report the same
   // from the agents' files.
   readonly companions?: Companions
+  // Optional. Messages between the agents in its terminals, and the pause that holds
+  // them. A terminal it lists has a messages view in its companion pane, and its tab
+  // counts the messages waiting for its agent.
+  readonly messages?: Messages
+  // Optional. Hands a terminal's name back to the backend, which names it on its own
+  // again: the name the person gave it goes, and the backend reports the one it takes
+  // with `terminal/update`. Absent where names are only the person's.
+  readonly resetTitle?: (key: TerminalKey) => void
   // Optional. Asks the person for a folder to open as a project; null when cancelled.
   // Absent where the backend cannot offer one.
   readonly pickDirectory?: () => Promise<string | null>

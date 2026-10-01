@@ -1,4 +1,5 @@
 import type { TerminalMetadata } from "../model/types"
+import { useMail } from "../terminals/companion/mail"
 import { renameView } from "../terminals/rename-state"
 import { TerminalTab } from "../terminals/TerminalTab"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
@@ -13,7 +14,7 @@ export const WorkspaceTab = ({
   readonly terminal: TerminalMetadata
   readonly index: number
 }): React.JSX.Element => {
-  const { commands } = useWorkspaceServices()
+  const { commands, backend } = useWorkspaceServices()
   const { id } = terminal
   const { context, selected, hidden } = useWorkspaceState((workspace) => {
     const { selected: current, layout } = currentState(workspace)
@@ -29,6 +30,8 @@ export const WorkspaceTab = ({
       state.rename?.context === context && state.rename.id === id ? renameView(state.rename) : null,
     shallowEqual,
   )
+  const { badge } = useMail(backend.messages, { ...target, terminalId: id })
+  const { resetTitle } = backend
   return (
     <TerminalTab
       terminal={terminal}
@@ -36,6 +39,7 @@ export const WorkspaceTab = ({
       selected={selected}
       hidden={hidden}
       rename={rename}
+      mail={badge}
       onVisibilityChange={(isHidden) => commands.setVisibility(target, id, isHidden)}
       onSelect={() => commands.select(id)}
       onBeginRename={() => commands.startRename(terminal, "sidebar")}
@@ -43,6 +47,7 @@ export const WorkspaceTab = ({
       onRenameSave={() => commands.saveRename(id)}
       onRenameCancel={() => commands.cancelRename(id)}
       onClose={() => commands.close(id)}
+      onResetTitle={resetTitle && (() => resetTitle({ ...target, terminalId: id }))}
     />
   )
 }

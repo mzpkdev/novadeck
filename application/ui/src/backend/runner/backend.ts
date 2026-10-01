@@ -15,7 +15,7 @@ import {
 } from "@novadeck/protocol/client"
 
 import { createStore } from "../../model/store"
-import type { TerminalMetadata, TerminalStatus, Workspace } from "../../model/types"
+import type { TerminalMetadata, TerminalStatus, TitleSource, Workspace } from "../../model/types"
 import type {
   AgentConnection,
   Backend,
@@ -30,6 +30,7 @@ import { createBootProgress } from "./boot-progress"
 import { createRunnerCompanions } from "./companions"
 import type { RunnerDebug } from "./debug"
 import { createDebugPanel } from "./DebugPanel"
+import { createRunnerMessages } from "./messages"
 import { pause } from "./pause"
 import { resumableProgram } from "./resumable"
 import { createRunnerTerminal } from "./RunnerTerminal"
@@ -47,7 +48,7 @@ import {
 // The part of the runner client the adapter uses.
 export type RunnerApi = Pick<
   Runner,
-  "watch" | "projects" | "sessions" | "terminals" | "agents" | "settings"
+  "watch" | "projects" | "sessions" | "terminals" | "agents" | "messages" | "settings"
 >
 
 export type RunnerBackendOptions = {
@@ -179,6 +180,10 @@ const statusKey = (status: TerminalStatus): string => {
   if (status.state === "running") return `running:${JSON.stringify(status.agent ?? null)}`
   return status.state
 }
+
+// Whether a terminal's name is still from whom the workspace says.
+const sameSource = (a: TitleSource | undefined, b: TitleSource): boolean =>
+  a?.kind === b.kind && (a.kind !== "agent" || (b.kind === "agent" && a.by === b.by))
 
 const connectionState = (status: RunnerStatus): BackendConnectionState => {
   if (status.state === "connected") return "connected"
@@ -573,7 +578,13 @@ export const runnerBackend = (
     const name =
       unconfirmed === undefined && current.name !== summary.title ? summary.title : undefined
     const directory = current.directory !== summary.cwd ? summary.cwd : undefined
-    if (name === undefined && directory === undefined) return []
+    const handle = current.handle !== summary.handle ? summary.handle : undefined
+    // While the person's name is on its way, it is theirs, whatever the runner said before.
+    const titleSource =
+      unconfirmed === undefined && !sameSource(current.titleSource, summary.titleSource)
+        ? summary.titleSource
+        : undefined
+    if ([name, directory, handle, titleSource].every((fact) => fact === undefined)) return []
     return [
       {
         type: "terminal/update",
@@ -581,6 +592,8 @@ export const runnerBackend = (
         terminalId,
         ...(name !== undefined && { name }),
         ...(directory !== undefined && { directory }),
+        ...(handle !== undefined && { handle }),
+        ...(titleSource !== undefined && { titleSource }),
       },
     ]
   }
@@ -854,13 +867,21 @@ export const runnerBackend = (
     },
     { livePages: options.livePages === true },
   )
+  // The messages between their agents, followed alongside.
+  const messages = createRunnerMessages({
+    watch: (terminalId) => runner.messages.watch(terminalId),
+    pause: (paused) => runner.messages.pause(paused),
+    release: (thread) => runner.messages.release(thread),
+  })
   let following = false
   // Follows a terminal's plans once the runner has it: its detail answers "not found"
   // before then. Called whenever a shell is created or started afresh.
   const followWhenReady = (entry: RunnerEntry): void => {
     const { ready } = entry
     void ready.then((ok) => {
-      if (ok && following && !entry.closed && entry.ready === ready) companions.follow(entry.key)
+      if (!ok || !following || entry.closed || entry.ready !== ready) return
+      companions.follow(entry.key)
+      messages.follow(entry.key)
     })
   }
 
@@ -898,6 +919,7 @@ export const runnerBackend = (
       entry.closed = true
       entries.delete(key.terminalId)
       companions.unfollow(key)
+      messages.unfollow(key)
       void track(endShell(entry))
       checkBoot()
     },
@@ -1110,6 +1132,7 @@ export const runnerBackend = (
       stopOutage?.()
       following = false
       companions.stop()
+      messages.stop()
       // The last changes are saved; nothing retries after this.
       flush()
       halted = true
@@ -1133,6 +1156,18 @@ export const runnerBackend = (
     TerminalSurface: createRunnerTerminal(runtime),
     start,
     companions,
+    messages,
+    resetTitle: ({ terminalId }) => {
+      // The person's name goes here too, so nothing sends it to the runner again, and a
+      // rename still on its way is called off.
+      titles.delete(terminalId)
+      renamed.delete(terminalId)
+      void track(
+        untilAnswered(() => runner.terminals.resetTitle(terminalId), {
+          done: ["TERMINAL_NOT_FOUND"],
+        }),
+      ).catch(() => {})
+    },
     connection,
     crashLoop: { crashes: crashLooping, retry: retryAfterCrashLoop },
     boot: boot.store,
