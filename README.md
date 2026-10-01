@@ -134,6 +134,8 @@ agent.
   terminal it runs in which session it is, and does nothing when the agent runs
   anywhere else. It adds nothing to the model's context but the messages other agents in
   NovaDeck send it, wrapped as theirs (see [Agent messaging](docs/agent-messaging.md)).
+  Agents address each other by terminal handle, `t3` for "Terminal 03", which stays
+  the terminal's when you rename it.
   Without a connected agent
   there is no resume, even for sessions it reported before: disconnecting forgets them,
   and the terminal comes back as a plain shell with its transcript.

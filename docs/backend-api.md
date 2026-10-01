@@ -208,8 +208,35 @@ program where `process` cannot; it is `null` otherwise. `cwd` is the directory t
 shell last reported at a prompt, or where it started. `title` is the name the person
 gave the terminal with `create` or `terminals.rename({ terminalId, title })`, or the
 runner's default for its session ("Terminal 01", "Terminal 02", …, never given twice);
-`command` is what it was opened to run, and `lastProgram` the program it last had in
-its foreground, which a fresh shell resumes where that is an agent.
+`handle` is its handle for agents' messages, `t3`, numbered from the same counter, so
+"Terminal 03" is `t3`; every terminal takes a number, even one created with its own
+title, and keeps its handle across renames. `command` is what it was opened to run, and
+`lastProgram` the program it last had in its foreground, which a fresh shell resumes
+where that is an agent.
+
+Agents in a project's terminals message each other (see
+[Agent messaging](agent-messaging.md)); the runner API lets a client see and steer it:
+
+```ts
+const messages = await runner.messages.list(terminalId)
+// { terminalId, handle, delivery, paused, threads: [{ id, peer, hops, allowed, held, messages }] }
+await runner.messages.pause(true) // or false to resume
+await runner.messages.release(threadId) // a thread held after too many hops
+```
+
+`messages.list(terminalId)` gives a running or exited terminal's handle, its delivery
+state (`unbound`, `fresh`, `working`, `settled`, `drafting` or `unknown`), whether
+messaging is paused, and its threads, newest first, each with the other terminal's
+handle, its hops so far and the hops it is allowed before the person must release it,
+whether it is held, and its messages, oldest first: id, hop, sender and recipient
+handles and agents, text, when sent, state (`queued`, `leased`, `delivered`, `held` or
+`gone`), why it is held (`paused` or `release`), and when delivered. A terminal the
+runner doesn't hold is `TERMINAL_NOT_FOUND`. `messages.pause(paused)` pauses messaging
+across the whole runner, every project and session, keeping the switch across
+restarts: waiting messages are held, and wait in order again once resumed.
+`messages.release(threadId)` lets a held thread's messages wait to be delivered and
+allows it 12 more hops; an unknown thread is `NOT_FOUND`. Each refuses with
+`RUNTIME_CLOSING` once the runner is stopping.
 
 Calls made while reconnecting reject with `DISCONNECTED`; input and creation are
 never retried automatically. Each client sends a random client ID in its handshake,
