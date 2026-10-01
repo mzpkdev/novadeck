@@ -75,20 +75,20 @@ command, so no new trust is asked for. What the probes did not establish is list
 
 All three harnesses get every path. Where one falls short, the design accepts it:
 
-| Harness       | Falls short                                                                  | Accepted as                                                                                                                                                 |
-| ------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code   | Stop delivery shows in the chat as "Stop hook error: …"                      | A cosmetic label; the content is still wrapped and attributed                                                                                               |
-| Codex         | A Stop hook's reason reaches the model as a user-role `<hook_prompt>`        | Still never the person's prompt: wrapped and attributed, per principle 1                                                                                    |
-| Codex         | Server instructions only arrive as a tool namespace's description            | Rules live in each tool's description and in the delivery wrapper                                                                                           |
-| Antigravity   | `PreInvocation` has no prompt text, and runs before every model call         | A ring is confirmed by a root prompt starting after its Enter; any root `PreInvocation` may take a lease; the transcript's last user input tells a doorbell |
-| Antigravity   | Server instructions don't reach the model                                    | Rules live in each tool's description and in the delivery wrapper                                                                                           |
-| Antigravity   | No permission hook                                                           | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it                                                |
-| Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                       | Unknown until the next prompt; no doorbell meanwhile                                                                                                        |
-| Codex         | A failed turn sends nothing                                                  | Stays Working until its next turn event; `send`'s route says so                                                                                             |
-| Codex         | Its hooks run only once trusted in its "Hooks need review" screen            | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice      |
-| Antigravity   | Esc and denials show only as an idle status line                             | Its decoder tells them from completion; they leave it Unknown                                                                                               |
-| Antigravity   | An interactive start with an initial prompt is unconfirmed                   | If it has none, one ring into a Fresh agent once its status line says idle (see Starting a task)                                                            |
-| Windows (all) | The hook reports no instance, and the foreground process group can't be read | Nested agents are told apart by the decoders alone; the doorbell's gate relies on the screen checks                                                         |
+| Harness       | Falls short                                                                                               | Accepted as                                                                                                                                                                                             |
+| ------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code   | Stop delivery shows in the chat as "Stop hook error: …"                                                   | A cosmetic label; the content is still wrapped and attributed                                                                                                                                           |
+| Codex         | A Stop hook's reason reaches the model as a user-role `<hook_prompt>`                                     | Still never the person's prompt: wrapped and attributed, per principle 1                                                                                                                                |
+| Codex         | Server instructions only arrive as a tool namespace's description                                         | Rules live in each tool's description and in the delivery wrapper                                                                                                                                       |
+| Antigravity   | `PreInvocation` has no prompt text, runs before every model call, and its injected message lasts one call | A ring is confirmed by a root prompt starting after its Enter; messages are leased at a turn's first invocation and injected again on each later one; the transcript's last user input tells a doorbell |
+| Antigravity   | Server instructions don't reach the model                                                                 | Rules live in each tool's description and in the delivery wrapper                                                                                                                                       |
+| Antigravity   | No permission hook                                                                                        | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it                                                                                            |
+| Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                    |
+| Codex         | A failed turn sends nothing                                                                               | Stays Working until its next turn event; `send`'s route says so                                                                                                                                         |
+| Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                  |
+| Antigravity   | Esc and denials show only as an idle status line                                                          | Its decoder tells them from completion; they leave it Unknown                                                                                                                                           |
+| Antigravity   | An interactive start with an initial prompt is unconfirmed                                                | If it has none, one ring into a Fresh agent once its status line says idle (see Starting a task)                                                                                                        |
+| Windows (all) | The hook reports no instance, and the foreground process group can't be read                              | Nested agents are told apart by the decoders alone; the doorbell's gate relies on the screen checks                                                                                                     |
 
 ## How it fits
 
@@ -150,7 +150,8 @@ agent session; never a name the model passes.
 - **Threads.** A message continues the thread of the latest message between the same
   two handles, in either direction, within the last ten minutes; otherwise it starts
   one. Agents never name threads.
-- **Text.** Up to 8 KB of UTF-8. Control characters other than newline and tab are
+- **Text.** Up to 4 KB of UTF-8, the most every harness's hooks pass whole; longer
+  content belongs in a file the recipient can open. Control characters other than newline and tab are
   removed. Kept as sent; escaped only where delivered.
 - **Duplicates.** The same text from the same sender to the same recipient within ten
   seconds is the same message: `send` answers with the original's id and state.
@@ -194,9 +195,10 @@ sending, end your turn rather than wait or poll, since replies arrive by themsel
 
 - **The agent's activity** is the decoded activity the harness adapters already keep:
   a root turn running or ended, how it ended, and any pending permission or question.
-  A turn ends normally only when its harness says it completed: a root Stop, not an
-  idle status line after Esc or a denial (Antigravity's decoder must tell these apart,
-  testing for a pending confirmation before idle).
+  A turn ends normally only when its harness says it completed: a root Stop. Esc and a
+  denied tool fire no Stop in Antigravity, and its status line then reads idle exactly
+  as after a completed turn, so an idle status line with no fresh root Stop is an
+  abnormal end, never a completion.
 - **A root turn event** is a decoded turn event, from any source the adapters read
   (hooks, Antigravity's status line, Claude Code's transcript for interrupts), of the
   terminal's bound agent instance and its root session: not of a nested agent run
@@ -216,8 +218,8 @@ sending, end your turn rather than wait or poll, since replies arrive by themsel
 - **The prompt is known empty** after one of these, with no input from the person
   since (apart from answers to a request): a root prompt that followed the person's
   Enter, or Codex's Tab; a confirmed ring; the command-line prompt an agent was started with; or the
-  session binding. A turn the harness starts by itself (a background subagent's
-  result in Claude Code, a later model call in Antigravity, where only a turn's first
+  session binding. A turn the harness starts by itself (a background task's
+  result in Claude Code, whose prompt is a `<task-notification>`, a later model call in Antigravity, where only a turn's first
   invocation counts) proves nothing about the prompt.
 - **The person submitted during a turn** when they sent Enter while no request was
   pending, or Codex's Tab, which queues a prompt Codex submits after the turn.
@@ -237,8 +239,13 @@ facts above, so the prompt's emptiness is known before any message arrives:
   end. If the person did submit during the turn, their prompt's hook delivers instead.
   Codex sends nothing when a turn fails, so such a turn stays Working until the next
   root turn event; `send`'s route then says "at its turn's end or its next prompt".
-- **Settled**: the last root turn ended normally, no request is pending, and the prompt
-  is known empty. The doorbell may ring once the screen is quiet.
+- **Settled**: the last root turn ended normally, nothing it started still runs, no
+  request is pending, and the prompt is known empty. The doorbell may ring once the
+  screen is quiet. "Nothing still runs" matters because an agent can wake itself after
+  its Stop: Claude Code starts a turn when a background task finishes (its Stop lists
+  `background_tasks`), and Antigravity's root wakes when a subagent messages it (its
+  Stop says `fullyIdle: false` while one runs, and its status line lists `subagents`).
+  Until they are done the terminal stays Working.
 - **Ringing**: the doorbell is being rung (below).
 - **Person busy**: the prompt isn't known empty, or the person queued a prompt Codex
   has yet to submit. No doorbell; their next submitted prompt's hook delivers. It
@@ -291,7 +298,7 @@ the runner, over the same endpoint and token `show` uses, and print what it retu
    emit, so a status line may rebind) skip the foreground and connection lookups, so
    the runner answers within 1 s.
 3. **Leasing.** If the report is a root turn event and messages wait for that session,
-   the runner leases them (at most 16 KB per delivery; the rest wait for the next) and
+   the runner leases them (at most 4 KB per delivery; the rest wait for the next) and
    returns the exact stdout that harness expects, built by its adapter. It leases only
    if at least 300 ms remain before the hook's deadline, so the hook can print and
    acknowledge. Otherwise it returns what the hook prints today (nothing, or
@@ -307,16 +314,25 @@ the runner, over the same endpoint and token `show` uses, and print what it retu
 
 Delivery is at least once: a message whose acknowledgement was lost after the harness
 read it can arrive twice. Each carries its id, and the wrapper says repeats can be
-ignored. For Antigravity, if a turn's first invocation can't be told from its input,
-any root `PreInvocation` may take a lease; should its injected message not stay in
-context after that model call, the turn's delivered messages are injected again on each
-of its invocations, within 16 KB.
+ignored.
 
-| Harness     | Working: Stop                        | Fresh, Settled or person's prompt: prompt time                                              |
-| ----------- | ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Claude Code | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                        |
-| Codex       | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                        |
-| Antigravity | `{"decision":"continue","reason":…}` | `PreInvocation`: `{"injectSteps":[{"ephemeralMessage":…}]}`, on the turn's first invocation |
+Antigravity keeps an injected message in the model's view only for the call it was
+injected on. So its `PreInvocation` asks lease at a root turn's first invocation
+(`invocationNum` 0, which restarts every turn, in the root conversation), and the
+turn's delivered messages are injected again on each of its later invocations. A
+subagent's invocations, in their own conversations, get nothing. Its Stop
+continuation, by contrast, is a lasting system step.
+
+Hook output has limits: Claude Code turns prompt-time context past roughly 10 KB into a
+file the model must open itself, Codex keeps only about 10 KB of any hook's output (its
+start and end), and Antigravity cuts at about 48 KB. Hence at most 4 KB per message and
+per delivery: under every limit, so nothing is ever cut or moved to a file.
+
+| Harness     | Working: Stop                        | Fresh, Settled or person's prompt: prompt time                                                                                       |
+| ----------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude Code | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                                                                 |
+| Codex       | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                                                                 |
+| Antigravity | `{"decision":"continue","reason":…}` | `PreInvocation`: `{"injectSteps":[{"ephemeralMessage":…}]}`, leased on the turn's first invocation, injected again on each later one |
 
 Messages are delivered together, wrapped:
 
@@ -400,7 +416,7 @@ output, not that the model acted on it.
   runner allows 60 a minute in all.
 - **Pause.** One runner switch, stored so it survives restarts, stops all delivery;
   `send` answers `held`.
-- **Size.** 8 KB per message, 16 KB per delivery, 50 undelivered per recipient.
+- **Size.** 4 KB per message and per delivery, 50 undelivered per recipient.
 
 ## Security
 
@@ -462,19 +478,20 @@ shows them strictly better, and then only behind a flag, never as the only path.
 
 ## Before building
 
-Probe before step 1:
+Probed before step 1 (2026-10-01), and folded in above:
 
-- whether Antigravity's `ephemeralMessage` stays in context after its model call, and
-  whether `PreInvocation`'s input tells a turn's first invocation (`invocationNum`);
-- Antigravity subagents' hooks, to tell a root turn from a subagent's, and how its Stop
-  says a turn completed rather than was interrupted; it is supported like the others,
-  and the probe only settles how its root turns are recognised;
-- the role the model sees for Claude Code's Stop block reason;
-- each harness's limit on hook output size;
-- Codex with a real model;
-- Antigravity's status-line turn events in a live NovaDeck terminal, which name its root
-  conversation and tell Esc and denials from completion (until then, the root is the
-  conversation of the first `PreInvocation` after binding).
+- Antigravity's injected message lasts only for its own model call; `invocationNum`
+  restarts at 0 every turn; subagents run in their own conversations; its status line
+  names the root conversation and lists subagents, but reads the same idle after Esc,
+  a denial and completion, and only completion fires Stop.
+- Claude Code's Stop reason reaches the model as a user-role note, "Stop hook
+  feedback:"; its prompt-time context past roughly 10 KB becomes a file; it starts
+  turns by itself when background tasks finish, with a `<task-notification>` prompt.
+- Codex keeps about 10 KB of hook output; with a real model, prompt-time context and a
+  Stop continuation were both followed.
+- A hook slower than its `timeout` is dropped silently in Claude Code and Codex;
+  NovaDeck's hooks set one explicitly (which Codex counts as a changed hook, to trust
+  again once).
 
 Probe before step 2:
 
