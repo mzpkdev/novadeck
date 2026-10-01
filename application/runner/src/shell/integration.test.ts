@@ -559,7 +559,11 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const connected = shell.manager({ shims: () => Promise.resolve(["codex" as const]) })
     const on = await create(connected, shell)
     connected.write({ terminalId: on.id, data: "codex resume abc\r" }, "owner")
-    await shell.until(connected, on.id, "codex args: --no-daemon resume abc")
+    await shell.until(
+      connected,
+      on.id,
+      "codex args: --no-daemon -c tui.terminal_title=['status','thread-id'] resume abc",
+    )
 
     const disconnected = shell.manager()
     const off = await create(disconnected, shell)
@@ -2642,6 +2646,8 @@ const standInTui = (home: string): string => {
 const { spawn } = require("node:child_process")
 const fs = require("node:fs")
 const [agent, session, received, raw, mode] = process.argv.slice(2)
+// The session it runs, which /clear replaces with a new one.
+let current = session
 fs.writeFileSync(raw + ".pid", String(process.pid))
 // Claude Code names itself to its hooks, whatever an outer one left in the environment.
 if (agent === "claude") process.env.CLAUDE_PID = String(process.pid)
@@ -2650,7 +2656,7 @@ const hook = (event, payload, done) => {
   let printed = ""
   child.stdout.on("data", (chunk) => (printed += chunk))
   child.on("close", () => done(printed))
-  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: session, cwd: process.cwd(), ...payload }))
+  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: current, cwd: process.cwd(), ...payload }))
 }
 let box = ""
 let last = ""
@@ -2668,12 +2674,23 @@ const step = (fields) =>
     transcript,
     JSON.stringify({ ...fields, step_index: steps++, created_at: new Date().toISOString() }) + "\n",
   )
-const agy = { conversationId: session, transcriptPath: transcript, workspacePaths: [process.cwd()] }
+const agy = { transcriptPath: transcript, workspacePaths: [process.cwd()] }
+// With "shown" or "resumed", Codex announces its session only with its first prompt, as
+// it does; Claude Code at its start.
+const showing = mode === "shown" || mode === "resumed"
+let announced = !showing || agent === "claude"
 const started = (prompt, typed, done) => {
+  if (agent !== "agy" && !announced) {
+    announced = true
+    const source = current !== session ? "clear" : mode === "resumed" ? "resume" : "startup"
+    return hook("SessionStart", { source }, () =>
+      hook("UserPromptSubmit", { prompt }, done),
+    )
+  }
   if (agent !== "agy") return hook("UserPromptSubmit", { prompt }, done)
   if (typed) step({ source: "USER_EXPLICIT", type: "USER_INPUT", content: "<USER_REQUEST>\n" + prompt + "\n</USER_REQUEST>" })
   else step({ source: "SYSTEM", type: "SYSTEM_MESSAGE", content: prompt })
-  hook("PreInvocation", { ...agy, invocationNum: 0 }, done)
+  hook("PreInvocation", { ...agy, conversationId: current, invocationNum: 0 }, done)
 }
 const turn = (prompt, typed = true) => {
   dialog = null
@@ -2689,10 +2706,13 @@ const turn = (prompt, typed = true) => {
     fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + "\n")
     const finish = () => {
       process.stdout.write("\r\x1b[2Kworked on it\r\n")
-      hook("Stop", agent === "agy" ? { ...agy, fullyIdle: true } : {}, () => {
+      hook("Stop", agent === "agy" ? { ...agy, conversationId: current, fullyIdle: true } : {}, () => {
         busy = false
         menu = mode === "menu"
         draw()
+        // Antigravity's status line, which keeps running, names the conversation idle.
+        if (agent === "agy" && showing)
+          hook("StatusLine", { conversation_id: current, agent_state: "idle" }, () => {})
       })
     }
     if (mode === "perm2" && turns === 2) {
@@ -2767,6 +2787,7 @@ if (mode !== "bg") {
           process.stdout.write("\r\x1b[2K[dialog] allow ls? (1/2)\r\n")
         })
       }
+      if (prompt === "/clear") return clear()
       return turn(prompt)
     } else if (data === "\x1b\r") box += "\n"
     else if (data === "\x15") box = ""
@@ -2789,8 +2810,30 @@ const ready = () => {
   draw()
   if (mode === "bg") setTimeout(() => turn("self-started", false), 300)
 }
+// /clear starts a new session at the prompt, which each harness tells its own way.
+const clear = () => {
+  current = "0c1ea200" + current.slice(8)
+  draw()
+  if (agent === "agy") return hook("StatusLine", { conversation_id: current, agent_state: "idle" }, () => {})
+  if (agent === "codex" && showing) {
+    announced = false
+    return process.stdout.write("\x1b]0;Ready | " + current.slice(0, 29) + "...\x07")
+  }
+  hook("SessionStart", { source: "clear" }, () => {})
+}
+// With "shown", its prompt tells NovaDeck it shows, before any session: Codex's title says
+// Ready, Antigravity's status line says idle with no conversation yet.
+if (showing && agent !== "claude") {
+  ready()
+  // A resumed conversation is named at once; a new one only with its first prompt.
+  const conversation = mode === "resumed" ? current : ""
+  if (agent === "agy") hook("StatusLine", { conversation_id: conversation, agent_state: "idle" }, () => {})
+  else process.stdout.write("\x1b]0;Ready | " + session.slice(0, 29) + "...\x07")
+}
+// Claude Code resumed announces the session it resumes at once.
+else if (mode === "resumed") hook("SessionStart", { source: "resume" }, ready)
 // Antigravity has no SessionStart hook: its first model call binds it.
-if (agent === "agy") ready()
+else if (agent === "agy") ready()
 else hook("SessionStart", { source: "startup" }, ready)
 `,
   )
@@ -2822,12 +2865,14 @@ const ringing = async (
   program = "tui",
   agent: AgentName = "codex",
   session = `s-${agent}`,
+  hooksTrusted = true,
 ) => {
   const bin = standIn(shell.home)
   standInTui(shell.home)
   const manager = shell.manager({
     env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
     doorbell: { calmMs: 200, settleMs: 300 },
+    hooksTrusted: () => Promise.resolve(hooksTrusted),
   })
   const sender = await create(manager, shell)
   const idle = await create(manager, shell)
@@ -2938,6 +2983,107 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(pastes(tui.raw())).toEqual([])
       expect(tui.received()).toEqual([])
     })
+
+    it("wakes a Codex TUI started plain once its title says Ready, before any session binds", async ({
+      shell,
+    }) => {
+      const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
+      const tui = await ringing(shell, "shown", "named", "codex", thread)
+      await expect.poll(tui.delivery).toBe("ready")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
+      const [rung] = tui.received()
+      expect(rung!.prompt).toMatch(
+        /^\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]$/,
+      )
+      expect(rung!.printed).toContain(">Review a.ts</message>")
+      await expect
+        .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
+        .toBe("delivered")
+      await expect.poll(tui.delivery).toBe("settled")
+    })
+
+    it("takes no Codex title as its prompt while NovaDeck's hooks aren't trusted there", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "shown", "named", "codex", "01a0f932-a824", false)
+      await quiet()
+      expect(tui.delivery()).toBe("unbound")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: false })
+    })
+
+    it("takes no title as Codex's unless a codex process holds the terminal's foreground", async ({
+      shell,
+    }) => {
+      // The same title, from a program of another name.
+      const tui = await ringing(shell, "shown", "tui", "codex", "01a0f932-a824")
+      await quiet()
+      expect(tui.delivery()).toBe("unbound")
+    })
+
+    it("wakes an Antigravity TUI started plain once its status line says idle", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "shown", "tui", "agy")
+      await expect.poll(tui.delivery).toBe("ready")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
+      expect(tui.received()[0]!.printed).toContain(">Review a.ts</message>")
+      await expect
+        .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
+        .toBe("delivered")
+    })
+
+    // Each harness tells of a resumed session its own way: Claude Code's SessionStart,
+    // Codex's title naming the thread, Antigravity's status line naming the conversation.
+    for (const [agent, program] of [
+      ["claude", "tui"],
+      ["codex", "named"],
+      ["agy", "tui"],
+    ] as const)
+      it(`wakes ${agent} resumed at its prompt, as after a runner restart`, async ({ shell }) => {
+        const tui = await ringing(
+          shell,
+          "resumed",
+          program,
+          agent,
+          "01a0f932-a824-7c30-b713-b59ed562f00b",
+        )
+        await expect.poll(tui.delivery).toBe("ready")
+        expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+        await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
+        expect(tui.received()[0]!.printed).toContain(">Review a.ts</message>")
+      })
+
+    // Each harness tells of /clear its own way: Claude Code's SessionStart, Codex's title
+    // naming another thread, Antigravity's status line naming another conversation.
+    for (const [agent, program, mode] of [
+      ["claude", "tui", ""],
+      ["codex", "named", "shown"],
+      ["agy", "tui", "shown"],
+    ] as const)
+      it(`wakes ${agent} at its prompt after /clear, its new session's hook delivering`, async ({
+        shell,
+      }) => {
+        const tui = await ringing(
+          shell,
+          mode,
+          program,
+          agent,
+          "01a0f932-a824-7c30-b713-b59ed562f00b",
+        )
+        await tui.first()
+        tui.type("/clear")
+        await shell.until(tui.manager, tui.idle.id, "> /clear")
+        tui.type("\r")
+        await expect.poll(tui.delivery, { timeout: 10_000 }).toBe("ready")
+        expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+        await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+        expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+        await expect
+          .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
+          .toBe("delivered")
+      })
 
     it("rings no agent whose start says nothing of its screen, before its first turn", async ({
       shell,

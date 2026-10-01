@@ -37,9 +37,9 @@ import {
 import { observe, type Binding } from "../harnesses/bindings.js"
 import { actorOf, agentDetail, planOf } from "../harnesses/detail.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
-import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
+import type { HarnessEvent, PromptShown, SessionObserved } from "../harnesses/events.js"
 import { doorbellLine, quotedLine, type Install } from "../harnesses/harness.js"
-import { harnesses } from "../harnesses/registry.js"
+import { agents, harnesses } from "../harnesses/registry.js"
 import { followRoot, rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
@@ -69,6 +69,7 @@ import { expectedAgent, promptIn } from "./commands.js"
 import { readDescribeRequest, type DescribeAnswer } from "./describe.js"
 import { Doorbell, screenText, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
 import {
+  foregroundRuns,
   processGroup,
   sampleForeground,
   shellInForeground,
@@ -172,6 +173,12 @@ export type TerminalOptions = {
    * harness counts as having none when omitted.
    */
   install?: (agent: AgentName) => Promise<Install | undefined>
+  /**
+   * Whether NovaDeck's hooks run for the harness in a folder, where it runs them only
+   * once the person trusts them (`Harness.hooksTrusted`); asked of the harness itself when
+   * omitted, and untrusted where it can't be asked.
+   */
+  hooksTrusted?: (agent: AgentName, cwd: string) => Promise<boolean>
 }
 
 type Create = {
@@ -429,6 +436,7 @@ export class Terminals {
       | "projectOf"
       | "doorbell"
       | "install"
+      | "hooksTrusted"
     >
   > & {
     env: NodeJS.ProcessEnv
@@ -439,6 +447,7 @@ export class Terminals {
     shims: () => Promise<readonly AgentName[]>
     connected: (agent: AgentName) => Promise<boolean>
     install: (agent: AgentName) => Promise<Install | undefined>
+    hooksTrusted: (agent: AgentName, cwd: string) => Promise<boolean>
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
@@ -490,6 +499,14 @@ export class Terminals {
       projectOf: options.projectOf,
       openMs: positive(options.openMs, 6_000),
       install: options.install ?? (() => Promise.resolve(undefined)),
+      hooksTrusted:
+        options.hooksTrusted ??
+        (async (agent, cwd) => {
+          const trusted = harnesses[agent].hooksTrusted
+          if (!trusted) return true
+          const install = await this.options.install(agent)
+          return install ? trusted(install, cwd).catch(() => false) : false
+        }),
     }
     // Child programs do not need the runner's network capability, nor the identity of a
     // NovaDeck terminal the runner itself was started from.
@@ -1445,7 +1462,7 @@ export class Terminals {
    * The command that starts `agent` with a task: the doorbell's line, with its `nonce`, as
    * its command-line prompt, which it submits once past its startup screens; plain where
    * it may not take one (Antigravity in a folder it doesn't trust), when the task arrives
-   * with the person's first prompt there.
+   * once the person trusts the folder and its prompt shows, rung as any message is.
    */
   private async taskCommand(
     agent: AgentName,
@@ -2074,6 +2091,8 @@ export class Terminals {
       screen.onData((data) => {
         if (!record.exitQueued) child.write(data)
       }),
+      // A harness may tell by the title it sets that its prompt shows.
+      screen.onTitleChange((title) => this.screenTitled(record, child, title)),
       // The shell integration reports the directory at each prompt: OSC 7 from bash, zsh
       // and fish, OSC 9;9 from PowerShell and cmd. A directory on another machine, as
       // from a shell over SSH, is not this shell's prompt.
@@ -2108,6 +2127,8 @@ export class Terminals {
     record.telemetry = null
     this.unwatch(record)
     this.rebound(record)
+    // An agent whose prompt showed, with no session bound, left with it.
+    this.messaging.unshown(record.summary.id)
     if (moved || record.summary.agent !== null) {
       record.summary = { ...record.summary, cwd, agent: null, activity: null, telemetry: null }
       this.announce(record)
@@ -2156,10 +2177,13 @@ export class Terminals {
     const record = this.records.get(report.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, report.token)) return silent
     const events = harnesses[report.agent].decode(report)
-    if (events.length === 0) return silent
+    // Its prompt shows before any session of its binds, as Antigravity's status line says.
+    const shown = harnesses[report.agent].shown?.(report)
+    if (events.length === 0 && !shown) return silent
     const { process: child } = record
     const disconnections = this.disconnections.get(report.agent)
-    const observes = events.some((event) => event.type === "session-observed")
+    const observes =
+      shown !== undefined || events.some((event) => event.type === "session-observed")
     const [foreground, connected] = observes
       ? await Promise.all([shellInForeground(child.pid), this.connected(report.agent)])
       : [undefined, true]
@@ -2187,6 +2211,16 @@ export class Terminals {
       connected,
       platform: process.platform,
     }
+    // Its prompt shows, as the agent holding the terminal tells, as for a session it names.
+    if (
+      shown &&
+      foreground !== true &&
+      (process.platform !== "win32" || record.submitted) &&
+      (await this.promptCounts(record, report.agent)) &&
+      record.process === child
+    )
+      this.showPrompt(record, shown)
+    if (events.length === 0) return silent
     const cwd = record.summary.cwd
     // Every fact applies before messaging sees the report: a turn's start clears the
     // requests waiting on the person, and `askedCleared` must reach messaging before that
@@ -2429,6 +2463,68 @@ export class Terminals {
   /** Follows the root after the terminal's binding changed outside its hooks' reports. */
   private rebound(record: Record): void {
     this.trackRoot(record, [], false)
+  }
+
+  /**
+   * The terminal's title changed: a harness that tells by its title that its prompt shows,
+   * as Codex through NovaDeck's shim, may say so. Anything can set a title, so it counts
+   * only while a process of that harness's name runs in the terminal's foreground, in turn
+   * with the terminal's reports.
+   */
+  private screenTitled(record: Record, child: pty.IPty, title: string): void {
+    for (const agent of agents) {
+      const shown = harnesses[agent].title?.(title, Date.now())
+      if (!shown) continue
+      // Checked before it joins the terminal's queue, so asking the harness whether its
+      // hooks are trusted never holds the terminal's reports up.
+      void (async () => {
+        if ((await foregroundRuns(child.pid, agent)) === false) return
+        if (!(await this.promptCounts(record, agent))) return
+        await this.queue(
+          record.summary.id,
+          () => {
+            if (record.process === child && !record.exitQueued) this.showPrompt(record, shown)
+            return Promise.resolve()
+          },
+          undefined,
+        )
+      })().catch((error: unknown) => console.error("NovaDeck could not read a title:", error))
+    }
+  }
+
+  /** Whether a prompt the harness shows counts: it is connected, and its hooks run there. */
+  private async promptCounts(record: Record, agent: AgentName): Promise<boolean> {
+    return (
+      (await this.connected(agent)) &&
+      (await this.options.hooksTrusted(agent, record.summary.cwd).catch(() => false))
+    )
+  }
+
+  /**
+   * A connected harness's own empty prompt shows, before a session it names in full binds,
+   * and NovaDeck's hooks run for it there (`promptCounts`; see docs/agent-messaging.md,
+   * "States"): messages wait for the session it starts there, and the doorbell may ring
+   * it. With a session of that agent bound, it changes nothing, unless it shows another
+   * session's id: the harness started a new one, as Codex's /clear does, which binds only
+   * with its first prompt, so the bound one's binding ends.
+   */
+  private showPrompt(record: Record, shown: PromptShown): void {
+    const { agent, sessionPrefix } = shown
+    const { binding } = record
+    if (binding) {
+      if (binding.agent !== agent || sessionPrefix === undefined) return
+      if (binding.sessionId.startsWith(sessionPrefix)) return
+      record.binding = null
+      record.activity = null
+      record.telemetry = null
+      this.unwatch(record)
+      this.rebound(record)
+      if (record.summary.agent !== null) {
+        record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
+        this.announce(record)
+      }
+    }
+    this.messaging.shown(record.summary.id, agent, sessionPrefix ?? null)
   }
 
   /**

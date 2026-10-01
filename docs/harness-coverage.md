@@ -50,7 +50,7 @@ Evidence:
 
 - `SessionStart.source` is `startup`, `resume`, `clear`, `compact` or `fork`.
 - `clear` and `fork` mint a new session id.
-- `SessionStart` waits for the trust dialog and the first-run onboarding: it fired neither while they showed (5 and 10 s) nor when Esc left the trust dialog, which exits. Once past them, at a `startup`, `resume` or `clear`, it fired within about 150 ms of the empty input prompt drawing, before or after it. Logged out but onboarded, Claude Code shows its own prompt ("Not logged in · Run /login"), with `SessionStart`, and no login screen. `claude --resume` without an id shows its session picker first, with no `SessionStart` for 8 s, and Esc there exits with none. Keys typed 150 ms after launch, before the prompt drew, were dropped (probed 2026-10-01, 2.1.287, a throwaway `CLAUDE_CONFIG_DIR`).
+- `SessionStart` waits for the trust dialog and the first-run onboarding: it fired neither while they showed (5 and 10 s) nor when Esc left the trust dialog, which exits. Once past them, at a `startup`, `resume` or `clear`, it fired within about 150 ms of the empty input prompt drawing, before or after it. Logged out but onboarded, Claude Code shows its own prompt ("Not logged in · Run /login"), with `SessionStart`, and no login screen. `claude --resume` without an id shows its session picker first, with no `SessionStart` for 8 s, and Esc there exits with none. `--resume <id> --fork-session` fired `SessionStart` with source `fork` at about 700 ms, its prompt already up; `--continue` fired a `resume`. Keys typed 150 ms after launch, before the prompt drew, were dropped (probed 2026-10-01, 2.1.287, a throwaway `CLAUDE_CONFIG_DIR`).
 - `SessionEnd.reason` is `clear`, `resume`, `logout`, `prompt_input_exit` or `other`.
 - Closing the terminal (SIGHUP) fired `SessionEnd` with reason `other` (probed). A crash or SIGKILL should fire nothing (not probed), so the PTY exit remains the fallback.
 
@@ -122,6 +122,8 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 - `SessionStart.source` is `startup`, `resume`, `clear`, `compact` or `fork`.
 - Interactive Codex fires `SessionStart` only with the first prompt submitted, about 50 ms before its `UserPromptSubmit`; idle at its prompt it fired nothing for 10 s, and `/clear` fired nothing in the 5 s after it (probed 2026-10-01, 0.159.3, `--no-daemon`, a throwaway `CODEX_HOME`).
+- Its terminal title tells when its own prompt shows, before any `SessionStart`: given the items `status` and `thread-id` (`-c tui.terminal_title=['status','thread-id']`, as NovaDeck's shim passes), it read "Ready | <the start of its thread's id>..." about 440 ms after its prompt drew, at a plain start, after `/clear` (the new thread's id, the one `SessionStart` names at the next prompt) and at `codex resume <id>`; "Working" during a turn, "Ready" after. It set no title at all while its folder-trust dialog, "Hooks need review" screen, sign-in screen, update screen ("Update available", from a newer version planted in `version.json`, killed without a key pressed) or the bare `codex resume` picker showed. The `thread` item shows the whole id only while the thread has no name, so `thread-id` it is. After Esc skipped the hooks review it said Ready with the hooks not running (probed 2026-10-01, 0.159.3).
+- Its app-server's `hooks/list` (`codex app-server`, JSON-RPC over stdio: `initialize`, `initialized`, then `hooks/list` with `cwds`) lists each hook with its `pluginId`, `eventName`, `currentHash` and `trustStatus`: `trusted`, `untrusted`, or `modified` since trusted; about 150 ms. Trust is recorded in `config.toml` as `[hooks.state."<plugin>:<file>:<event>:<i>:<j>"] trusted_hash`; with the listed hashes recorded there, the TUI showed no review and ran the hooks without `--dangerously-bypass-hook-trust` (probed 2026-10-01, 0.159.3).
 - `SessionEnd` fires on a normal end only.
 - The thread id from `codex exec --json`, the rollout file name and `session_meta.id`/`session_id` are the same value, and the hook's `session_id` is that id (probed).
 - `CODEX_THREAD_ID` reaches commands Codex runs, not the TUI.
@@ -182,6 +184,8 @@ Other facts:
 **Sessions.**
 
 - `/clear`, `/resume` and `/fork` switch conversations inside one process. The only sign is a new `conversationId` on the next hook, from the same `agy` process (probed with `/clear`).
+- Its status line runs from the start, every 300 ms or so: `agent_state` "authenticating", then "initializing", then "idle" about 200 ms after its prompt drew. It stayed "initializing" throughout its folder-trust dialog and "authenticating" behind its sign-in screen, never "idle". A plain start's idle names no `conversation_id` until the first prompt starts one; after `/clear` it names the new conversation at once, idle; `--conversation <id>` and `--continue` name the resumed one, idle (probed 2026-10-01, 1.2.14, a throwaway `HOME` with `AGY_CLI_DISABLE_AUTO_UPDATE=true`, which it logs as honoured, and `onboardingComplete: true` in its settings, without which a first run shows a colour-scheme picker, the status line already running).
+- `AGY_CLI_DISABLE_AUTO_UPDATE` takes `true`, not `1`: with `1` it spawned its background updater (which found nothing newer) (probed 2026-10-01, 1.2.14).
 - Nothing marks the end of a session.
 
 **Activity.**

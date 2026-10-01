@@ -37,11 +37,11 @@ export const decode = (report: Report): readonly HarnessEvent[] =>
  * The SessionStart sources that announce a session at Claude Code's own input prompt.
  * Probed on 2026-10-01 (2.1.287): SessionStart never fired while its trust dialog or
  * first-run onboarding showed, nor while `--resume` without an id showed its session
- * picker; at a `startup`, a `clear` or a `resume` (as the runner restores a terminal with
- * `claude --resume <id>`) it fired within about 150 ms of its empty prompt drawing. A
- * `fork` wasn't probed, so a forked session waits for its first turn.
+ * picker; at a `startup`, a `clear`, a `resume` (as the runner restores a terminal with
+ * `claude --resume <id>`, and as `--continue` does) or a `fork` (`--fork-session`) it
+ * fired within about 150 ms of its empty prompt drawing.
  */
-const atPrompt: ReadonlySet<string> = new Set(["startup", "clear", "resume"])
+const atPrompt: ReadonlySet<string> = new Set(["startup", "clear", "resume", "fork"])
 
 const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly HarnessEvent[] => {
   const id = sessionId(payload.session_id)

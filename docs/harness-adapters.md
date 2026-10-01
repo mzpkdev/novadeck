@@ -430,12 +430,19 @@ Besides the facts shared with the agent model, decoders give
   reports no compaction. It nudges the agent to describe its terminal again (see
   [Self-description](agent-messaging.md#self-description)).
 - `session-observed` has `atPrompt` when the harness announced the session as its own
-  input prompt came up, past any trust, onboarding or login screen: only Claude Code's
-  `SessionStart` with source `startup`, `clear` or `resume` (probed 2026-10-01; `fork`
-  wasn't). Such a session is
-  Ready, and may be rung before its first turn (see
-  [States](agent-messaging.md#states)). Codex's `SessionStart` comes only with the first
-  prompt, and Antigravity has none, so neither sets it.
+  input prompt came up, past any trust, onboarding or login screen: Claude Code's
+  `SessionStart` with source `startup`, `clear`, `resume` or `fork`, and Antigravity's
+  status line naming a conversation idle (probed 2026-10-01). Such a session is Ready,
+  and may be rung before its first turn (see [States](agent-messaging.md#states)).
+- A `prompt-shown` fact says the harness's own prompt shows before any session it names
+  in full has bound: Antigravity's status line idle with no conversation yet (its
+  adapter's `shown`, read from the status line report), and Codex's terminal title
+  saying Ready, with the start of its thread's id (its adapter's `title`, read from the
+  title the terminal's screen keeps; NovaDeck's Codex shim names the title's items). It
+  is not a `HarnessEvent`, as it names no session: the terminal manager takes it apart.
+  A title counts only while a process of the harness's name runs in the terminal's
+  foreground group, and, for a harness with `hooksTrusted` (Codex), only once NovaDeck's
+  hooks are trusted there, as its app-server's `hooks/list` says.
 
 ### Messaging profile
 

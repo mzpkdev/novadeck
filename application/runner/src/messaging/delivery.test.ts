@@ -353,7 +353,9 @@ describe("a ring", () => {
       })
     expect(transition(ringing, ended)).toMatchObject({ state: "unknown", box: { empty: false } })
     expect(transition(ringing, { type: "unbound" }).state).toBe("unbound")
-    expect(transition(ringing, binds).state).toBe("fresh")
+    // A session binding mid-ring is the one its own prompt starts, as Codex's first
+    // prompt binds one: the ring goes on, for that prompt to confirm.
+    expect(transition(ringing, binds)).toMatchObject({ state: "ringing", nonce: "k3f9" })
     // No Stop or idle status line ends it.
     for (const event of [stop, idle]) expect(transition(ringing, event)).toBe(ringing)
   })
@@ -477,6 +479,47 @@ describe("a new session at its own prompt", () => {
     expect(run(ready, person)).toMatchObject({ state: "working", byPerson: true })
     expect(run(ready, harness)).toMatchObject({ state: "working", byPerson: false })
     expect(run(ready, person, stop).state).toBe("settled")
+  })
+})
+
+describe("an agent's prompt shown before any session binds", () => {
+  const shown = { type: "shown", at } as const
+  const ready = transition(unbound, shown)
+  const doorbell = { type: "prompt", by: "doorbell", nonce: "k3f9", at } as const
+
+  it("is Ready since it showed, as Codex's title or Antigravity's status line tells", () => {
+    expect(ready).toMatchObject({ state: "ready", since: at, box: { empty: true } })
+    expect(ringableSince(ready)).toBe(at)
+    // Shown again, as each title or status line says it, changes nothing.
+    expect(transition(ready, { ...shown, at: at + 5_000 })).toBe(ready)
+    // Bound already, the session's own events tell.
+    expect(transition(settled, shown)).toBe(settled)
+  })
+
+  it("is Drafting when the person typed after the Enter that started it", () => {
+    expect(run(unbound, typing, enter, typing, shown).state).toBe("drafting")
+    expect(run(unbound, typing, enter, shown).state).toBe("ready")
+    expect(run(ready, typing).state).toBe("drafting")
+  })
+
+  it("is rung, and its ring goes on as the ring's own prompt binds the session, which it confirms", () => {
+    const ringing = transition(ready, { type: "ring", nonce: "k3f9" })
+    const boundMidRing = transition(ringing, binds)
+    expect(boundMidRing).toMatchObject({
+      state: "ringing",
+      nonce: "k3f9",
+      epoch: ringing.epoch + 1,
+    })
+    expect(transition(boundMidRing, doorbell)).toMatchObject({
+      state: "working",
+      box: { empty: true },
+    })
+    // The person typed during the ring: their words stay a draft.
+    expect(run(ringing, typing, binds, doorbell)).toMatchObject({ box: { empty: false } })
+  })
+
+  it("is Unbound again once the agent leaves before any session bound", () => {
+    expect(transition(ready, { type: "unbound" }).state).toBe("unbound")
   })
 })
 

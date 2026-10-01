@@ -59,6 +59,23 @@ const sessionStarted = (bound: Binding, source: string): HarnessEvent[] => [
   }),
 ]
 
+// Antigravity's status line report, as its hook hands it on.
+const agyReport = (conversation: string, state: string) => ({
+  terminalId: "x",
+  token: "0".repeat(48),
+  agent: "agy" as const,
+  event: "StatusLine",
+  seq: 1,
+  instance: "4",
+  env: { cursor: false },
+  payload: { conversation_id: conversation, agent_state: state },
+})
+
+// What Antigravity's status line says of a conversation, decoded by its own adapter.
+const agyStatus = (bound: Binding, state: string): HarnessEvent[] => [
+  ...harnesses.agy.decode({ ...agyReport(bound.sessionId, state), instance: bound.instance }),
+]
+
 type Clock = { now: number }
 
 // One project and NovaDeck session, and another project.
@@ -1387,19 +1404,16 @@ describe("a new agent session at its own prompt", () => {
     expect(answer.stdout).toContain(">again</message>")
   })
 
-  it("never rings a forked Claude Code session, its readiness unproven, before its first turn", () => {
-    const { messaging, observe, prompt, send, clock: time } = create()
+  it("rings a forked Claude Code session at its prompt, and its doorbell prompt delivers", () => {
+    const { messaging, observe, ask, send } = create()
     const forked = binding("claude", "s-forked", "1")
     observe("A", forked, sessionStarted(forked, "fork"))
-    expect(messaging.delivery("A")?.state).toBe("fresh")
-    expect(sent(send("B", "t1", "hello"))).toMatchObject({
-      route: "when its agent's first turn starts",
-    })
-    time.now += 60_000
-    expect(messaging.ringable("A")).toBe(false)
-    expect(messaging.settledSince("A")).toBeUndefined()
-    // Its first turn event delivers what waited.
-    expect(prompt("A", forked).stdout).toContain(">hello</message>")
+    expect(messaging.delivery("A")?.state).toBe("ready")
+    expect(sent(send("B", "t1", "hello"))).toMatchObject({ route: "ringing it now" })
+    expect(messaging.ring("A", "n1")).toBe(true)
+    expect(ask("A", forked, "UserPromptSubmit", [doorbellStarted(forked, "n1")]).stdout).toContain(
+      ">hello</message>",
+    )
   })
 
   it("turns Drafting as the person types there, ringing nothing", () => {
@@ -1466,14 +1480,16 @@ describe("a new agent session at its own prompt", () => {
     expect(messaging.delivery("A")?.state).toBe("ready")
   })
 
-  it("leaves Codex and Antigravity Fresh until their first turn, nothing showing their prompt is up", () => {
+  it("never rings a session whose prompt nothing showed, before its first turn", () => {
     const { messaging, send, observe } = create()
+    // Codex's SessionStart alone, with no title saying Ready.
     messaging.register("C", here, "t3")
     const codex = binding("codex", "s-c", "3")
     observe("C", codex, sessionStarted(codex, "startup"))
+    // Antigravity's status line naming a conversation before it says idle.
     messaging.register("G", here, "t4")
     const agy = binding("agy", "c-root", "4")
-    observe("G", agy, [observed(agy, true)], true)
+    observe("G", agy, agyStatus(agy, "initializing"), true)
     for (const [terminalId, handle] of [
       ["C", "t3"],
       ["G", "t4"],
@@ -1482,6 +1498,115 @@ describe("a new agent session at its own prompt", () => {
       expect(messaging.delivery(terminalId)?.state).toBe("fresh")
       expect(messaging.ringable(terminalId)).toBe(false)
     }
+  })
+})
+
+describe("an agent's prompt shown before any session binds", () => {
+  // A terminal where the person ran the agent, with no session bound yet.
+  const plain = (agent: AgentName) => {
+    const setup = create()
+    setup.messaging.register("N", here, "t3")
+    return { ...setup, launched: binding(agent, `s-${agent}-new`, "3") }
+  }
+
+  it("rings a Codex started plain once its title says Ready, and the session its ring starts delivers", () => {
+    const { messaging, send, ask, follow, launched, clock: time } = plain("codex")
+    expect(send("A", "t3", "early")).toMatchObject({ ok: false })
+    messaging.shown("N", "codex", "01a0f932-a824")
+    expect(messaging.delivery("N")).toMatchObject({ state: "ready", since: time.now })
+    expect(sent(send("A", "t3", "Review a.ts"))).toMatchObject({
+      state: "queued",
+      route: "ringing it now",
+    })
+    expect(messaging.ringable("N")).toBe(true)
+    expect(messaging.ring("N", "n1")).toBe(true)
+    // The ring's own prompt: Codex's SessionStart binds the session, then its prompt asks.
+    follow("N", launched, sessionStarted(launched, "startup"))
+    expect(messaging.ringing("N")).toBe("n1")
+    const answer = ask("N", launched, "UserPromptSubmit", [doorbellStarted(launched, "n1")])
+    expect(answer.stdout).toContain(">Review a.ts</message>")
+    messaging.acknowledge("N", answer.leaseId!)
+    expect(messages(messaging, "N")[0]?.state).toBe("delivered")
+    expect(messaging.delivery("N")).toMatchObject({ state: "working", box: { empty: true } })
+  })
+
+  it("rings an Antigravity started plain once its status line says idle, and its first model call delivers", () => {
+    const { messaging, send, ask, launched } = plain("agy")
+    const shown = harnesses.agy.shown?.(agyReport("", "idle"))
+    expect(shown).toMatchObject({ type: "prompt-shown", agent: "agy" })
+    messaging.shown("N", "agy", null)
+    sent(send("A", "t3", "Review a.ts"))
+    expect(messaging.ring("N", "n1")).toBe(true)
+    // Its first model call binds the conversation; its transcript tells the doorbell line.
+    const answer = ask("N", launched, "PreInvocation", [
+      observed(launched),
+      doorbellStarted(launched, "n1"),
+    ])
+    expect(answer.stdout).toContain(">Review a.ts</message>")
+  })
+
+  it("rings an Antigravity resumed at its prompt, its status line naming the conversation idle", () => {
+    const { messaging, send, observe, ask, launched } = plain("agy")
+    observe("N", launched, agyStatus(launched, "idle"), true)
+    expect(messaging.delivery("N")?.state).toBe("ready")
+    sent(send("A", "t3", "hello"))
+    expect(messaging.ring("N", "n1")).toBe(true)
+    expect(
+      ask("N", launched, "PreInvocation", [observed(launched), doorbellStarted(launched, "n1")])
+        .stdout,
+    ).toContain(">hello</message>")
+  })
+
+  it("keeps a restored Codex's messages for the session its title shows, and rings it", () => {
+    vi.useFakeTimers()
+    try {
+      const records = memoryMailbox()
+      const first = create(records)
+      const resumed = binding("codex", "01a0f932-a824-7c30-b713-b59ed562f00b", "2")
+      first.follow("B", resumed)
+      sent(first.send("A", "t2", "hello"))
+      first.messaging.close()
+      // The runner restarts: `codex resume <id>` shows its prompt, with the thread's id cut short.
+      const second = new Messaging({ records, sweepMs: 0, restoreMs: 60_000, exists: () => true })
+      second.register("B", here, "t2")
+      second.expect("B", "codex")
+      second.shown("B", "codex", "01a0f932-a824-7c30-b713-b59ed")
+      vi.advanceTimersByTime(60_000)
+      expect(records.messages()[0]?.state).toBe("queued")
+      expect(second.ringable("B")).toBe(true)
+      second.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("takes another session's id, as after Codex's /clear, as a new session to come", () => {
+    const { messaging, send, follow, prompt, codex } = create()
+    sent(send("A", "t2", "for the old session"))
+    // The terminal manager ends the old binding, then the title shows the new thread.
+    follow("B", null)
+    messaging.shown("B", "codex", "01a0f99f")
+    expect(messages(messaging, "B")[0]?.state).toBe("gone")
+    sent(send("A", "t2", "for the new one"))
+    expect(messaging.ringable("B")).toBe(true)
+    // The new session binds with its first prompt, which takes only what waited for it.
+    const cleared = binding("codex", "01a0f99f-0000-7000-8000-000000000000", codex.instance)
+    follow("B", cleared, sessionStarted(cleared, "clear"))
+    const delivered = prompt("B", cleared).stdout
+    expect(delivered).toContain(">for the new one</message>")
+    expect(delivered).not.toContain("for the old session")
+  })
+
+  it("turns Drafting as the person types, and Unbound once the agent leaves unbound", () => {
+    const { messaging, send } = plain("codex")
+    messaging.shown("N", "codex", null)
+    sent(send("A", "t3", "hello"))
+    messaging.keys("N", ["content"], false)
+    expect(messaging.delivery("N")?.state).toBe("drafting")
+    expect(messaging.ringable("N")).toBe(false)
+    messaging.unshown("N")
+    expect(messaging.delivery("N")?.state).toBe("unbound")
+    expect(send("A", "t3", "again")).toMatchObject({ ok: false })
   })
 })
 

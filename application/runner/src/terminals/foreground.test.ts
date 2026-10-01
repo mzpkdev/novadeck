@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test.js"
-import { parseCommandLine, parseProcessStat, sampleForeground } from "./foreground.js"
+import { parseCommandLine, parseProcessStat, sampleForeground, statName } from "./foreground.js"
 
 const cmdline = (...args: string[]): Buffer => Buffer.from(`${args.join("\0")}\0`)
 
@@ -53,4 +53,12 @@ describe("Linux foreground inspection", () => {
       ])
     },
   )
+})
+
+describe("a process's name, as /proc names it", () => {
+  it("is what its stat holds in parentheses, which may hold parentheses itself", () => {
+    expect(statName("42 (codex) S 1 42 42 34816 99 0")).toBe("codex")
+    expect(statName("42 (node ) helper) S 1 42")).toBe("node ) helper")
+    expect(statName("garbage")).toBeNull()
+  })
 })

@@ -1,14 +1,16 @@
 import { header } from "../../shell/header.js"
+import { titleSetting } from "./title.js"
 
 // Interactive Codex runs its sessions, and their hooks, in a shared background server
 // that knows nothing of the terminal it was started from. While Codex is connected,
 // NovaDeck's shells run it through this shim, which adds --no-daemon so the session and
 // its hook run in the terminal. `codex agents` and --remote need the server, so they go
-// unchanged, as does anything outside NovaDeck's shells.
+// unchanged, as does anything outside NovaDeck's shells. It also names its terminal
+// title's items, so the title tells NovaDeck once its prompt shows (`title.ts`).
 export const posixShim = `#!/bin/sh
 ${header("#", "shim for codex")}
 # Runs the real codex with --no-daemon, so its hooks can tell NovaDeck which session runs
-# in this terminal.
+# in this terminal, and with a title that tells NovaDeck once its prompt shows.
 novadeck_real=
 novadeck_ifs=$IFS
 IFS=:
@@ -38,7 +40,7 @@ for novadeck_arg in "$@"; do
     agents | --remote | --remote=* | --no-daemon) exec "$novadeck_real" "$@" ;;
   esac
 done
-exec "$novadeck_real" --no-daemon "$@"
+exec "$novadeck_real" --no-daemon -c "${titleSetting}" "$@"
 `
 
 // `where` lists matches in PATH order, including this shim, and on npm installs an
@@ -46,7 +48,7 @@ exec "$novadeck_real" --no-daemon "$@"
 export const cmdShim = `@echo off
 ${header("rem", "shim for codex")}
 rem Runs the real codex with --no-daemon, so its hooks can tell NovaDeck which session
-rem runs in this terminal.
+rem runs in this terminal, and with a title that tells NovaDeck once its prompt shows.
 setlocal
 set "novadeck_real="
 for /f "delims=" %%i in ('where codex 2^>nul') do call :consider "%%~fi"
@@ -62,7 +64,7 @@ for %%a in (%*) do (
   if /i "%%~a"=="--remote" goto plain
   if /i "%%~a"=="--no-daemon" goto plain
 )
-"%novadeck_real%" --no-daemon %*
+"%novadeck_real%" --no-daemon -c "${titleSetting}" %*
 exit /b %ERRORLEVEL%
 :plain
 "%novadeck_real%" %*

@@ -2,8 +2,9 @@
  * How a terminal's agent can take a message now, one state machine per terminal (see
  * docs/agent-messaging.md, "States"). Every terminal with an agent is in one state at
  * all times, derived from what its harness and its person did, so the prompt's emptiness
- * is known before any message arrives. A Settled terminal, or a Ready one (a new session
- * its harness announced at its own input prompt), is rung by the doorbell
+ * is known before any message arrives. A Settled terminal, or a Ready one (the agent's own
+ * prompt shows, with no turn yet: a new session its harness announced there, or none yet
+ * where the harness starts one only with the first prompt), is rung by the doorbell
  * (`terminals/doorbell.ts`) and is Ringing, with its ring's nonce, until a doorbell
  * prompt with that nonce confirms it or the ring fails; a Fresh (bound, but nothing
  * shows its prompt is up), Drafting (person busy) or Unknown one waits for its next root
@@ -90,6 +91,8 @@ export type KeyKind = "enter" | "queue" | "neutral" | "content"
  * What changes a terminal's delivery:
  * - `bound`: a session binds, or its harness announced a new one, `ready` when it
  *   announced it as its own input prompt came up, past its startup screens;
+ * - `shown`: with no session bound, the agent's own empty prompt shows, past its startup
+ *   screens, before the session it starts there binds (Codex, Antigravity);
  * - `unbound`: the binding ended, as its instance exited;
  * - `prompt`: a root turn started, as its decoder says: a `prompt` (the person's only if
  *   their bare Enter came shortly before with nothing typed since, or they queued it),
@@ -107,6 +110,7 @@ export type KeyKind = "enter" | "queue" | "neutral" | "content"
  */
 export type DeliveryEvent =
   | { readonly type: "bound"; readonly ready: boolean; readonly at: number }
+  | { readonly type: "shown"; readonly at: number }
   | { readonly type: "unbound" }
   | {
       readonly type: "prompt"
@@ -213,6 +217,16 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       byPerson: false,
       box: draft ? typed(emptyBox) : emptyBox,
     }
+    // The session a ring's own prompt starts, as Codex's or Antigravity's first prompt
+    // binds one: the ring goes on, for that prompt to confirm.
+    if (delivery.state === "ringing")
+      return {
+        ...next,
+        box: delivery.box,
+        state: "ringing",
+        nonce: delivery.nonce,
+        touched: delivery.touched,
+      }
     // Only a session announced at its own prompt may be rung before its first turn.
     if (!event.ready) return { ...next, state: "fresh" }
     // One that replaced a session bound here (a /clear, an in-app resume) keeps that box,
@@ -239,6 +253,19 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         draftWhileAsked: delivery.box.draftWhileAsked,
       },
     }
+  // The agent's prompt shows before any session binds: Ready, as a session announced at
+  // its prompt would be, unless the person typed after their last Enter.
+  if (event.type === "shown") {
+    if (delivery.state !== "unbound") return delivery
+    const draft = delivery.box.typedSinceEnter || delivery.box.draftWhileAsked
+    const next: Counts = {
+      epoch: delivery.epoch + 1,
+      continued: 0,
+      byPerson: false,
+      box: draft ? typed(emptyBox) : emptyBox,
+    }
+    return draft ? { ...next, state: "drafting" } : { ...next, state: "ready", since: event.at }
+  }
   // With no agent bound, only whether the person typed after their last Enter counts, for
   // the session that binds next. Starting an agent takes an Enter, which clears it all.
   if (delivery.state === "unbound") {

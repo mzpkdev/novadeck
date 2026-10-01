@@ -67,7 +67,7 @@ describe("decoding captured hooks", () => {
     ])
   })
 
-  it("takes Claude Code's start, /clear and resume as at its prompt, never a fork or compaction", () => {
+  it("takes Claude Code's start, /clear, resume and fork as at its prompt, never a compaction", () => {
     const [start] = probe("claude").events
     const at = (source: string) =>
       harnesses.claude
@@ -77,6 +77,7 @@ describe("decoding captured hooks", () => {
       "startup",
       "clear",
       "resume",
+      "fork",
     ])
     // Codex announces its session only with the first prompt: never at its prompt.
     expect(decoded("codex")).toHaveLength(1)

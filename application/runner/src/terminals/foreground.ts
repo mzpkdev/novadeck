@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { basename } from "node:path"
 import { promisify } from "node:util"
 
@@ -102,6 +102,55 @@ export const processGroup = async (pid: number): Promise<number | undefined> => 
     }
   } catch {
     // Gone, or ps unavailable.
+  }
+  return undefined
+}
+
+/** A process's name as /proc/<pid>/stat holds it, in parentheses; null when unreadable. */
+export const statName = (stat: string): string | null => {
+  const start = stat.indexOf("(")
+  const end = stat.lastIndexOf(")")
+  return start >= 0 && end > start ? stat.slice(start + 1, end) : null
+}
+
+/**
+ * Whether a process named `name` runs in the terminal's foreground process group, as a
+ * harness's own process does while its TUI holds the terminal; undefined where the
+ * platform doesn't tell, as on Windows. Anything can set a terminal's title, so only this
+ * ties a title to the harness that would set it.
+ */
+export const foregroundRuns = async (
+  shellPid: number,
+  name: string,
+): Promise<boolean | undefined> => {
+  const group = await terminalForeground(shellPid)
+  if (group === undefined) return undefined
+  try {
+    if (process.platform === "linux") {
+      for (const entry of readdirSync("/proc")) {
+        if (!/^\d+$/.test(entry)) continue
+        let stat: string
+        try {
+          stat = readFileSync(`/proc/${entry}/stat`, "utf8")
+        } catch {
+          continue
+        }
+        if (statName(stat) === name && parseProcessStat(stat)?.pgrp === group) return true
+      }
+      return false
+    }
+    if (process.platform === "darwin") {
+      const found = await promisify(execFile)("pgrep", ["-g", String(group), "-x", name], {
+        encoding: "utf8",
+        timeout: 2_000,
+      }).then(
+        ({ stdout }) => stdout.trim().length > 0,
+        () => false,
+      )
+      return found
+    }
+  } catch {
+    // The group may be gone.
   }
   return undefined
 }

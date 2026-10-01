@@ -9,7 +9,7 @@ import {
 } from "@novadeck/protocol"
 
 import type { Report } from "../shell/reports.js"
-import type { HarnessEvent } from "./events.js"
+import type { HarnessEvent, PromptShown } from "./events.js"
 
 /** Where a harness lives on this machine, as its setup and inspection need it. */
 export type Install = {
@@ -90,6 +90,23 @@ export type Harness = {
   readonly messaging: MessagingProfile
   /** The normalized facts in one of its hooks' reports; none for one it ignores. */
   readonly decode: (report: Report) => readonly HarnessEvent[]
+  /**
+   * Whether one of its hooks' reports says its prompt shows before any session it names
+   * has bound, as Antigravity's status line saying idle with no conversation yet.
+   */
+  readonly shown?: (report: Report) => PromptShown | undefined
+  /**
+   * Whether the terminal title it sets, as NovaDeck's shells start it (Codex's shim names
+   * the title's items), says its prompt shows. It counts only while the terminal's
+   * foreground runs a process of the harness's name.
+   */
+  readonly title?: (title: string, at: number) => PromptShown | undefined
+  /**
+   * Whether NovaDeck's hooks run for it in `cwd`, where it runs them only once the person
+   * trusts them (Codex): a prompt it shows counts only then, as nothing could deliver a
+   * message, or confirm a ring, without them. Trusted when omitted.
+   */
+  readonly hooksTrusted?: (install: Install, cwd: string) => Promise<boolean>
   /**
    * Follows a bound session's own sources beyond its hooks, as its transcript, emitting
    * what they say until `signal` aborts.
