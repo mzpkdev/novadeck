@@ -90,9 +90,15 @@ describe("requests on their way to the client", () => {
     const asked = opens.ask(request, 1_000, { by: "t1", title: "Server" })
     const { value } = await first
     expect(value).toEqual({ requestId: expect.any(String), ...request })
-    // Who asked, with the title it asked for, waits for the terminal its client creates.
-    expect(opens.opener(value!.requestId, "newer")).toEqual({ by: "t1", title: "Server" })
-    expect(opens.opener(value!.requestId, "older")).toBeUndefined()
+    // Who asked, with the title it asked for, waits for the terminal its client creates:
+    // only that client's, in the request's session, and only the first.
+    expect(opens.opener(value!.requestId, "older", request.sessionId)).toBeUndefined()
+    expect(opens.opener(value!.requestId, "newer", randomUUID())).toBeUndefined()
+    expect(opens.opener(value!.requestId, "newer", request.sessionId)).toEqual({
+      by: "t1",
+      title: "Server",
+    })
+    expect(opens.opener(value!.requestId, "newer", request.sessionId)).toBeUndefined()
     const terminalId = randomUUID()
     // Only the client it went to answers it.
     expect(() => opens.answer({ requestId: value!.requestId, terminalId }, "older")).toThrow(

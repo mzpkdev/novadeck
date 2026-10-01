@@ -241,11 +241,17 @@ export const startupCommand = z
 
 // The title the person gives a terminal: one line, without control characters. The
 // runner owns it, keeps it with the terminal, and every client shows it.
-export const terminalTitle = name.regex(
-  // eslint-disable-next-line no-control-regex -- These are the characters it refuses.
-  /^[^\x00-\x1f\x7f]*$/,
-  "A title must be one line, without control characters.",
-)
+export const terminalTitle = z
+  .string()
+  .trim()
+  .min(1)
+  // In characters, never half of one: an emoji counts once.
+  .refine((title) => [...title].length <= 200, "A title holds at most 200 characters.")
+  .regex(
+    // eslint-disable-next-line no-control-regex -- These are the characters it refuses.
+    /^[^\x00-\x1f\x7f]*$/,
+    "A title must be one line, without control characters.",
+  )
 
 // A terminal's handle: `t` and a number its NovaDeck session gives it as it is created,
 // never twice, from the same count as its default title ("Terminal 03" is `t3`). It

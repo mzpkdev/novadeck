@@ -20,6 +20,11 @@ export type Work = {
    * command-line prompt; undefined until told.
    */
   readonly firstByPerson?: boolean
+  /**
+   * Whether it is the first root session of a terminal an agent opened, whose first
+   * prompt may be that agent's command; later sessions are the person's.
+   */
+  readonly opened?: true
   readonly latest: string | null
   /** Edits by folder, by absolute path, the `keptFolders` written in most. */
   readonly folders: { readonly [folder: string]: number }
@@ -30,6 +35,34 @@ export type Work = {
 export const promptChars = 120
 /** How many folders' edits are kept. */
 export const keptFolders = 20
+
+/**
+ * Whose the root session's first prompt is: the `user`'s; the `opener`'s, in the first
+ * session of a terminal an agent opened, when the person's own submission didn't start it
+ * (or that isn't told yet), as the opener's command-line prompt; null without one.
+ */
+export const firstFrom = (work: Work | null, openedBy: string | null): "user" | "opener" | null => {
+  if (!work?.first) return null
+  if (openedBy === null || work.opened !== true) return "user"
+  return work.firstByPerson === true ? "user" : "opener"
+}
+
+/** The work once told whether the person's own submission started its first prompt; told once. */
+export const judgedFirst = (work: Work, byPerson: boolean): Work =>
+  !work.first || work.firstByPerson !== undefined ? work : { ...work, firstByPerson: byPerson }
+
+// Text on one line and in one case, as prompts and commands are compared.
+const oneLine = (text: string): string =>
+  text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim()
+
+/**
+ * Whether a prompt is the one in a command that started an agent with it, as an opener's
+ * `claude "…"`: the prompt, on one line and in one case, is in the command.
+ */
+export const promptIn = (command: string, prompt: string): boolean => {
+  const wanted = oneLine(prompt)
+  return wanted.length > 0 && oneLine(command).includes(wanted)
+}
 
 /** Text on one line, cut to `max` characters (code points, never half of one) with an ellipsis. */
 export const shorten = (text: string, max: number): string => {

@@ -103,8 +103,11 @@ export const allowOpen = (
   return recent.length < limit.count ? [...recent, now] : undefined
 }
 
-/** Who asked for a terminal: its terminal's handle, and the title it asked for, if any. */
-export type Opener = { readonly by: string; readonly title?: string }
+/**
+ * Who asked for a terminal: its terminal's handle, the title it asked for, if any, and the
+ * command it starts there, whose prompt is never the person's.
+ */
+export type Opener = { readonly by: string; readonly title?: string; readonly command?: string }
 
 /**
  * How a request went: answered; sent to nobody, as no client follows; or left without an
@@ -165,7 +168,9 @@ export class OpenRequests {
     string,
     {
       readonly owner: string
-      readonly opener: Opener
+      readonly sessionId: string
+      /** Who asked, until the terminal created for the request takes it. */
+      opener: Opener | undefined
       readonly settle: (asked: Asked) => void
     }
   >()
@@ -212,15 +217,27 @@ export class OpenRequests {
         this.pending.delete(requestId)
         resolve(asked)
       }
-      this.pending.set(requestId, { owner: follower.owner, opener, settle })
+      this.pending.set(requestId, {
+        owner: follower.owner,
+        sessionId: request.sessionId,
+        opener,
+        settle,
+      })
       follower.push({ requestId, ...request })
     })
   }
 
-  /** Who asked for the terminal `owner`'s client creates for a request still waiting; undefined otherwise. */
-  opener(requestId: string, owner: string): Opener | undefined {
+  /**
+   * Who asked for the terminal `owner`'s client creates, in `sessionId`, for a request still
+   * waiting: taken by the first terminal created for it, so no other claims it; undefined
+   * otherwise, or for a terminal in another session than the request's.
+   */
+  opener(requestId: string, owner: string, sessionId: string): Opener | undefined {
     const waiting = this.pending.get(requestId)
-    return waiting?.owner === owner ? waiting.opener : undefined
+    if (waiting?.owner !== owner || waiting.sessionId !== sessionId) return undefined
+    const { opener } = waiting
+    waiting.opener = undefined
+    return opener
   }
 
   /** The client's answer; NOT_FOUND once nothing waits for it from this client. */

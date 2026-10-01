@@ -218,9 +218,9 @@ terminals.
   4. its folder, relative to the project when inside it, and git branch (read from
      git's own files, cached, with a short timeout);
   5. "started with": the person's first root prompt in the bound session, about 120
-     characters. In a terminal another agent opened, a first prompt the person didn't
-     submit themselves (delivery's `byPerson`, kept with it) is the opener's command's,
-     and says so: "started with (t2's command)";
+     characters. In the first root session of a terminal another agent opened, a first
+     prompt that isn't the user's (see [Self-description](#self-description)) is the
+     opener's command's, and says so: "started with (t2's command)";
   6. "latest": the person's most recent root prompt there, left out when it is the
      first. Only the person's prompts count, never a turn the harness started (a task
      notification, a subagent waking Antigravity, which never shows prompt text);
@@ -644,10 +644,11 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
 - **`describe(title, summary, asked?)`**, listed like the other tools only inside
   NovaDeck's terminals, describes the caller's own terminal only: it takes no target,
   and the runner knows the caller from its terminal token. The title is one line, as
-  the person's are; `summary` is one or two lines of up to 200 characters,
-  kept with the terminal's record, and `agents()` lists it as "described by its agent";
-  the UI doesn't show it. A refused description (an empty summary, three lines) says
-  why.
+  the person's are, of up to 200 characters (code points, an emoji counting once);
+  `summary` is one or two lines of up to 200 characters, kept with the terminal's record,
+  and `agents()` lists it as "described by its agent"; the UI doesn't show it. Each needs
+  a letter or a digit: only symbols or invisible characters are refused. A refused
+  description (an empty summary, three lines) says why.
 - **Who wins the title.** The record keeps each layer apart (`naming`: the person's
   title, the newest an agent gave with that agent's terminal's handle, and the summary),
   and the store persists only these. The terminal manager derives the title from them by
@@ -657,39 +658,53 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   as the summary's `titleSource` (`person`, `agent` with its handle, `fallback` or
   `default`). An opener's title never passes through the client as the person's: the
   request the client gets has no title, and the client creates the terminal with the
-  request's `requestId`, from which the runner takes the opener's title and handle.
+  request's `requestId`, from which the runner takes the opener's title, handle and
+  command: only for the first terminal created for that request, in the request's own
+  session. That is the only way a terminal is known as agent-opened (`openedBy`).
   Nothing automatic ever replaces the person's title: `describe` still keeps its title as
   the agent's newest, beneath the person's, and its answer says the user named the
   terminal. The runner API's `terminals.resetTitle` takes the person's title away, so the
   title is automatic again: the newest an agent gave first.
 - **`asked`.** When the person's own prompt asks the agent to give the terminal a title,
   `describe` with `asked: true` makes that title the person's, so later descriptions and
-  nudges never replace it. It is taken only when both hold, a rule nothing in the model's
-  context can satisfy on its own:
+  nudges never replace it. It is taken only when all of these hold:
   1. the current root turn was started by the person's own submission (messaging's
      delivery tells it, `byPerson`: their bare Enter, then the prompt, or a prompt they
      queued), never one the doorbell or the harness started;
-  2. the title, folded (case, spaces, surrounding quotes and punctuation aside), is in
-     the text of that prompt (`Messaging.personPrompt`, from the same prompt text the
-     hooks or Antigravity's transcript give `promptStart`), read as the call arrives.
+  2. the title, folded (case, spaces, surrounding quotes and punctuation aside) and
+     holding three letters or digits at least, is in the text of that prompt as whole
+     words, between Unicode word boundaries (`Messaging.personPrompt`, from the same
+     prompt text the hooks or Antigravity's transcript give `promptStart`), read as the
+     call arrives;
+  3. it is in no other text that reached the agent: no message delivered (or leased) to
+     its root session, and no title or summary of a peer in its project and session. So
+     a person pasting a peer's output, or quoting a peer's suggestion to refuse it, never
+     grants it.
 
   Otherwise the title is taken as the agent's own, as without `asked`, the summary still
-  changes, and the answer says that to rename over the user's title, the user must give
-  it in their own prompt, so the agent should suggest it to them. A subagent or a nested
-  agent holding the terminal's token can still describe the terminal without `asked`,
-  setting the agent's layer and the summary: accepted, as that layer never outranks the
+  changes, and, where the person's title stays, the answer says "Not renamed: the user
+  named this terminal. Suggest the title to them." This doesn't stop a coached agent
+  from picking a whole word or phrase the person typed themselves as the title; that
+  risk is accepted, as all it changes is a title. A subagent or a nested agent holding
+  the terminal's token can still describe the terminal without `asked`, setting the
+  agent's layer and the summary: accepted too, as that layer never outranks the
   person's. The tool's description says when to set `asked`; the nudges never mention it.
 
 - **The first-prompt title.** Before anything else names it, the terminal's title is the
   person's first prompt of its root session, shortened to one line of 48 characters: the
   "started with" of `agents()`, so a doorbell line, a delivery of messages and a task
   never become one. A new root session (start, `/clear`, restart) starts over: the
-  default, until its own first prompt. The prompt must be the user's: in a terminal the
-  person opened it always is; in one another agent opened (`openedBy`), only when the
-  person's own submission started its turn (`byPerson`, recorded with it), as otherwise
-  it is the opener's command, which can name the terminal through `open_terminal`'s
-  `title`. So a terminal opened with a task still takes its title from the person's first
-  prompt there.
+  default, until its own first prompt. The prompt must be the user's, by one rule
+  (`firstFrom` in `terminals/work.ts`, which the title and `agents()` both use): in a
+  terminal the person opened it always is, as it is in every root session but the first
+  of a terminal another agent opened (`openedBy`). In that first session it is the
+  user's only when the person's own submission started its turn (`byPerson`, recorded
+  with it, `judgedFirst`) and its text isn't the prompt in the opener's command, which
+  the runner keeps in memory with the open, whatever Enter came before; until told, it
+  counts as the opener's command. The opener can name the terminal through
+  `open_terminal`'s `title`. So a terminal opened with a task still takes its title from
+  the person's first prompt there. The work is tallied from the prompts as attributed,
+  so Antigravity's first typed prompt, read from its transcript, counts too.
 - **Nudges.** The prompt-time hook (`UserPromptSubmit`, Antigravity's `PreInvocation`)
   of a root prompt its decoder calls the person's (cause `prompt`; this is looser than
   `asked`'s `byPerson`, as a nudge needs no proof) adds one line, worded as NovaDeck's automatic notice, only when

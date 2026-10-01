@@ -40,7 +40,7 @@ import { resumeAvailability } from "../harnesses/eligibility.js"
 import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
 import { doorbellLine, quotedLine, type Install } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
-import { followRoot, rootedIn, type Root } from "../harnesses/roots.js"
+import { followRoot, rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
 import { agentLabel } from "../messaging/mailbox.js"
@@ -111,7 +111,7 @@ import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
 import { transcriptChanges } from "./transcripts.js"
 import { Watcher } from "./watcher.js"
-import { workAfter, type Work } from "./work.js"
+import { judgedFirst, promptIn, workAfter, type Work } from "./work.js"
 
 const { Terminal } = headless
 const OUTPUT_CHARS = 4096
@@ -250,6 +250,13 @@ type Record = {
   held: string[] | null
   /** The handle of the terminal whose agent opened this one; null otherwise. */
   openedBy: string | null
+  /**
+   * The command the agent that opened it started there, whose prompt is never the
+   * person's; kept for this runner's lifetime, for its first root session.
+   */
+  openerCommand: string | null
+  /** Whether its first root session after an agent opened it is still to come. */
+  awaitsOpened: boolean
   /** The nonce of the doorbell line its agent was started with, as a task, if it was. */
   startedWith?: string
   /**
@@ -555,7 +562,9 @@ export class Terminals {
     const pending = this.pending(ownerId)
     // An agent's request this answers: read now, as it may stop waiting meanwhile.
     const opener =
-      input.requestId === undefined ? undefined : this.opens.opener(input.requestId, ownerId)
+      input.requestId === undefined
+        ? undefined
+        : this.opens.opener(input.requestId, ownerId, input.sessionId)
     try {
       // A new terminal's number is drawn as it is asked for, before anything waits, so
       // terminals asked for together are numbered, and listed, in the order they were.
@@ -654,6 +663,8 @@ export class Terminals {
         work,
         held: null,
         openedBy,
+        openerCommand: opener?.command ?? null,
+        awaitsOpened: opener !== undefined && !kept,
         seenEntry: undefined,
       }
       this.records.set(record.summary.id, record)
@@ -1403,18 +1414,13 @@ export class Terminals {
       {
         by: record.summary.handle,
         ...(request.title !== undefined && { title: request.title }),
+        ...(command !== undefined && { command }),
       },
     )
     let task: SendAnswer | undefined
     if (asked.type === "answered" && "terminalId" in asked.answer) {
       this.openers.set(asked.answer.terminalId, charged)
       const opened = this.records.get(asked.answer.terminalId)
-      // Opened by this terminal's agent, as a client that created it for the request said.
-      if (opened && opened.openedBy === null) {
-        opened.openedBy = record.summary.handle
-        this.retitle(opened)
-        this.save(opened, false)
-      }
       // The task goes to the first session of the agent it starts there, from the opener.
       if (opened && request.message !== undefined) {
         // Its first typed entry is this line, where a transcript tells its prompts.
@@ -1506,8 +1512,17 @@ export class Terminals {
     const summary = cleanSummary(read.request.summary)
     const refusal = descriptionRefusal(title, summary)
     if (refusal) return refused(refusal)
-    // The person's prompt of the turn this call came in, before anything waits.
+    // The person's prompt of the turn this call came in, and what else reached its agent
+    // (messages this root session, its peers' titles and summaries), before anything waits.
     const prompt = this.messaging.personPrompt(call.terminalId)
+    const elsewhere = [
+      ...this.messaging.receivedTexts(call.terminalId),
+      ...[...this.records.values()].flatMap((peer) =>
+        peer !== record && peer.summary.sessionId === record.summary.sessionId
+          ? [peer.summary.title, peer.naming.summary ?? ""]
+          : [],
+      ),
+    ]
     // Drift is measured from where its work is now.
     const facts = await this.peers.facts(record)
     if (this.stopping || this.records.get(call.terminalId) !== record)
@@ -1518,6 +1533,7 @@ export class Terminals {
       by: record.summary.handle,
       asked: read.request.asked === true,
       prompt,
+      elsewhere,
     })
     record.naming = naming
     record.nudges = described(facts)
@@ -2217,8 +2233,7 @@ export class Terminals {
       record.summary = { ...record.summary, cwd: next.cwd }
     }
     this.publishAgent(record, record.summary.cwd !== cwd)
-    if (this.trackRoot(record, events, report.event === "StatusLine") || changed)
-      this.save(record, false)
+    const changes = this.followRootOf(record, events, report.event === "StatusLine")
     // The harness compacted the root session's context: it may have lost its description.
     if (
       events.some(
@@ -2228,6 +2243,9 @@ export class Terminals {
     )
       record.nudges = fired(record.nudges, "compaction")
     const told = await this.attributed(record, events)
+    // What the root worked on, from its prompts as told, as Antigravity's from its
+    // transcript; this terminal's later reports wait for this one.
+    if (this.tallyWork(record, told, changes) || changed) this.save(record, false)
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
       this.judgeFirst(record)
@@ -2250,8 +2268,14 @@ export class Terminals {
   private judgeFirst(record: Record): void {
     const { work } = record
     if (!work?.first || work.firstByPerson !== undefined) return
-    const byPerson = this.messaging.personPrompt(record.summary.id) !== undefined
-    record.work = { ...work, firstByPerson: byPerson }
+    const prompt = this.messaging.personPrompt(record.summary.id)
+    // The opener's own command-line prompt is never the person's, whatever Enter came before.
+    const command =
+      work.opened === true &&
+      prompt !== undefined &&
+      record.openerCommand !== null &&
+      promptIn(record.openerCommand, prompt)
+    record.work = judgedFirst(work, prompt !== undefined && !command)
     this.retitle(record)
     this.save(record, false)
   }
@@ -2299,6 +2323,18 @@ export class Terminals {
    * root worked on; true when that work changed, to be saved.
    */
   private trackRoot(record: Record, events: readonly HarnessEvent[], statusLine: boolean): boolean {
+    return this.tallyWork(record, events, this.followRootOf(record, events, statusLine))
+  }
+
+  /**
+   * Follows the terminal's root session after its binding changed or a report's facts, as
+   * its harness's profile says, telling messaging how it changed; how it changed.
+   */
+  private followRootOf(
+    record: Record,
+    events: readonly HarnessEvent[],
+    statusLine: boolean,
+  ): readonly RootChange[] {
     const { id } = record.summary
     const agent = record.binding?.agent ?? record.root?.agent
     const { root, changes } = followRoot(record.root, record.binding, events, {
@@ -2311,8 +2347,24 @@ export class Terminals {
     // A new root session may not know what the terminal is described as.
     if (changes.some((change) => change.type === "new"))
       record.nudges = fired(record.nudges, "session")
-    const work = workAfter(record.work, root, events, Date.now(), changes)
-    if (work === record.work) return false
+    return changes
+  }
+
+  /**
+   * Tallies what the root worked on from a report's facts, after its root `changes`;
+   * true when that work changed, to be saved. The first session after an agent opened the
+   * terminal is marked, as its first prompt may be that agent's command.
+   */
+  private tallyWork(
+    record: Record,
+    events: readonly HarnessEvent[],
+    changes: readonly RootChange[],
+  ): boolean {
+    const after = workAfter(record.work, record.root, events, Date.now(), changes)
+    if (after === record.work) return false
+    const started = after !== null && after.session !== record.work?.session
+    const work = started && record.awaitsOpened ? { ...after, opened: true as const } : after
+    if (started) record.awaitsOpened = false
     record.work = work
     // A title from the person's first prompt follows the root session's.
     this.retitle(record)

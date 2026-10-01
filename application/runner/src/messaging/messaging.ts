@@ -415,6 +415,23 @@ export class Messaging {
     return prompt.text
   }
 
+  /**
+   * The texts of the messages that reached the terminal's root session: delivered, or
+   * leased to its hooks.
+   */
+  receivedTexts(terminalId: string): readonly string[] {
+    const root = this.live.get(terminalId)?.root
+    if (!root) return []
+    return [...this.messages.values()]
+      .filter(
+        (message) =>
+          message.to.terminalId === terminalId &&
+          (message.state === "delivered" || message.state === "leased") &&
+          this.addressed(message, root),
+      )
+      .map(({ text }) => text)
+  }
+
   /** When the terminal last became Settled, if it is. */
   settledSince(terminalId: string): number | undefined {
     const delivery = this.live.get(terminalId)?.delivery

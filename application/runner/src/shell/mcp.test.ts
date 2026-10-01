@@ -288,8 +288,8 @@ describe("NovaDeck's MCP server", () => {
       await expect(described({ ok: true, title: "Mine", kept: "person" })).resolves.toBe(
         'The user named this terminal "Mine", so that title stays; your summary is saved.',
       )
-      await expect(described({ ok: true, title: "Mine", kept: "unasked" })).resolves.toMatch(
-        /^The title wasn't taken as the user's: to rename over the user's title, the user must give the new title in their own prompt; suggest it to them instead\. This terminal's title is "Mine"/,
+      await expect(described({ ok: true, title: "Mine", kept: "unasked" })).resolves.toBe(
+        "Not renamed: the user named this terminal. Suggest the title to them. Your summary is saved.",
       )
     })
 

@@ -1,6 +1,6 @@
 import type { AgentName, TitleSource } from "@novadeck/protocol"
 
-import { busiestFolders, shorten, type Work } from "../terminals/work.js"
+import { busiestFolders, firstFrom, shorten, type Work } from "../terminals/work.js"
 import { agentLabel, clock, holdOf, type Message } from "./mailbox.js"
 
 /**
@@ -100,6 +100,7 @@ export const peerOf = (input: {
 }): Peer => {
   const { where, agent } = input
   const work = agent ? (where?.work ?? null) : null
+  const openedBy = where?.openedBy ?? null
   const place = where?.place ?? ((path: string) => path)
   return {
     terminalId: input.terminalId,
@@ -114,8 +115,7 @@ export const peerOf = (input: {
     startedWith: work?.first ?? null,
     openedBy: where?.openedBy ?? null,
     // In a terminal an agent opened, a first prompt nobody submitted is its command's.
-    startedBy:
-      where?.openedBy && work?.first && work.firstByPerson === false ? where.openedBy : null,
+    startedBy: firstFrom(work, openedBy) === "opener" ? openedBy : null,
     latest: work?.latest !== work?.first ? (work?.latest ?? null) : null,
     plan: agent ? (where?.plan ?? null) : null,
     worksIn: work

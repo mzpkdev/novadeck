@@ -72,6 +72,7 @@ const opened = (firstByPerson: boolean) =>
         session: "claude:s",
         first: "fix the build",
         firstByPerson,
+        opened: true,
         latest: "fix the build",
         folders: {},
         activeAt: null,
