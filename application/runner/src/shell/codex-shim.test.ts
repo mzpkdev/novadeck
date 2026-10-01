@@ -72,7 +72,12 @@ describe("codex shim", () => {
   }) => {
     expect(shim.run(["agents"])).toEqual(["agents"])
     expect(shim.run(["--remote", "ws://host"])).toEqual(["--remote", "ws://host"])
-    expect(shim.run(["--no-daemon"])).toEqual(["--no-daemon"])
+    // Already without the shared server: only the title is added.
+    expect(shim.run(["--no-daemon"])).toEqual([
+      "-c",
+      "tui.terminal_title=['status','thread-id']",
+      "--no-daemon",
+    ])
     expect(shim.run(["exec", "hi"], { NOVADECK_TERMINAL_ID: "" })).toEqual(["exec", "hi"])
   })
 

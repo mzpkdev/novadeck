@@ -35,12 +35,15 @@ fi
 [ -n "\${NOVADECK_TERMINAL_ID:-}" ] || exec "$novadeck_real" "$@"
 # Only while Codex is connected: NovaDeck's shells name the harnesses whose shims apply.
 case " \${NOVADECK_SHIMS:-} " in *" codex "*) ;; *) exec "$novadeck_real" "$@" ;; esac
+novadeck_daemon=--no-daemon
 for novadeck_arg in "$@"; do
   case $novadeck_arg in
-    agents | --remote | --remote=* | --no-daemon) exec "$novadeck_real" "$@" ;;
+    agents | --remote | --remote=*) exec "$novadeck_real" "$@" ;;
+    # Already without the shared server: only the title is added.
+    --no-daemon) novadeck_daemon= ;;
   esac
 done
-exec "$novadeck_real" --no-daemon -c "${titleSetting}" "$@"
+exec "$novadeck_real" \${novadeck_daemon:+"$novadeck_daemon"} -c "${titleSetting}" "$@"
 `
 
 // `where` lists matches in PATH order, including this shim, and on npm installs an
@@ -62,9 +65,13 @@ echo " %NOVADECK_SHIMS% " | findstr /c:" codex " >nul || goto plain
 for %%a in (%*) do (
   if /i "%%~a"=="agents" goto plain
   if /i "%%~a"=="--remote" goto plain
-  if /i "%%~a"=="--no-daemon" goto plain
+  if /i "%%~a"=="--no-daemon" goto titled
 )
 "%novadeck_real%" --no-daemon -c "${titleSetting}" %*
+exit /b %ERRORLEVEL%
+rem Already without the shared server: only the title is added.
+:titled
+"%novadeck_real%" -c "${titleSetting}" %*
 exit /b %ERRORLEVEL%
 :plain
 "%novadeck_real%" %*

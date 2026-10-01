@@ -1583,9 +1583,12 @@ describe("an agent's prompt shown before any session binds", () => {
   it("takes another session's id, as after Codex's /clear, as a new session to come", () => {
     const { messaging, send, follow, prompt, codex } = create()
     sent(send("A", "t2", "for the old session"))
-    // The terminal manager ends the old binding, then the title shows the new thread.
+    // The title shows the new thread, its lock confirming it a new root: it replaces the
+    // bound session, whose binding the terminal manager then ends.
+    messaging.keys("B", ["content", "enter"], false)
+    messaging.shown("B", "codex", "01a0f99f", true)
     follow("B", null)
-    messaging.shown("B", "codex", "01a0f99f")
+    expect(messaging.delivery("B")?.state).toBe("ready")
     expect(messages(messaging, "B")[0]?.state).toBe("gone")
     sent(send("A", "t2", "for the new one"))
     expect(messaging.ringable("B")).toBe(true)
@@ -1595,6 +1598,26 @@ describe("an agent's prompt shown before any session binds", () => {
     const delivered = prompt("B", cleared).stdout
     expect(delivered).toContain(">for the new one</message>")
     expect(delivered).not.toContain("for the old session")
+  })
+
+  it("keeps a prompt the person queued in the replaced session as a draft", () => {
+    const { messaging, prompt, follow, codex } = create()
+    prompt("B", codex)
+    // Their Enter during the turn queued a prompt, as /clear came.
+    messaging.keys("B", ["content", "enter"], false)
+    messaging.shown("B", "codex", "01a0f99f", true)
+    follow("B", null)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+    expect(messaging.ringable("B")).toBe(false)
+  })
+
+  it("leaves a bound session alone for a prompt shown without replacing it", () => {
+    const { messaging, prompt, stop, codex } = create()
+    prompt("B", codex)
+    stop("B", codex)
+    messaging.shown("B", "codex", "01a0f99f")
+    expect(messaging.delivery("B")?.state).toBe("settled")
+    expect(messaging.shownAgent("B")).toBeUndefined()
   })
 
   it("turns Drafting as the person types, and Unbound once the agent leaves unbound", () => {

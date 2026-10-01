@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync, readlinkSync } from "node:fs"
 import { basename } from "node:path"
 import { promisify } from "node:util"
 
@@ -114,15 +114,15 @@ export const statName = (stat: string): string | null => {
 }
 
 /**
- * Whether a process named `name` runs in the terminal's foreground process group, as a
- * harness's own process does while its TUI holds the terminal; undefined where the
- * platform doesn't tell, as on Windows. Anything can set a terminal's title, so only this
- * ties a title to the harness that would set it.
+ * A process named `name` in the terminal's foreground process group, as a harness's own
+ * process is while its TUI holds the terminal: its pid; null when none is; undefined
+ * where the platform doesn't tell, as on Windows. Anything can set a terminal's title, so
+ * only this ties a title to the harness that would set it.
  */
-export const foregroundRuns = async (
+export const foregroundProcess = async (
   shellPid: number,
   name: string,
-): Promise<boolean | undefined> => {
+): Promise<{ readonly pid: number } | null | undefined> => {
   const group = await terminalForeground(shellPid)
   if (group === undefined) return undefined
   try {
@@ -135,24 +135,60 @@ export const foregroundRuns = async (
         } catch {
           continue
         }
-        if (statName(stat) === name && parseProcessStat(stat)?.pgrp === group) return true
+        if (statName(stat) === name && parseProcessStat(stat)?.pgrp === group)
+          return { pid: Number(entry) }
       }
-      return false
+      return null
     }
     if (process.platform === "darwin") {
       const found = await promisify(execFile)("pgrep", ["-g", String(group), "-x", name], {
         encoding: "utf8",
         timeout: 2_000,
       }).then(
-        ({ stdout }) => stdout.trim().length > 0,
-        () => false,
+        ({ stdout }) => Number(stdout.trim().split("\n")[0]),
+        () => Number.NaN,
       )
-      return found
+      return Number.isSafeInteger(found) && found > 0 ? { pid: found } : null
     }
   } catch {
     // The group may be gone.
   }
   return undefined
+}
+
+/** Whether a process named `name` runs in the terminal's foreground; see `foregroundProcess`. */
+export const foregroundRuns = async (
+  shellPid: number,
+  name: string,
+): Promise<boolean | undefined> => {
+  const found = await foregroundProcess(shellPid, name)
+  return found === undefined ? undefined : found !== null
+}
+
+/**
+ * What a process of the person's own runs with, where the platform tells (Linux): the
+ * variables named, from its environment, and its program, by its absolute path.
+ */
+export const processSetting = (
+  pid: number,
+  names: readonly string[],
+): { readonly env: { readonly [name: string]: string }; readonly program?: string } => {
+  if (process.platform !== "linux") return { env: {} }
+  const env: { [name: string]: string } = {}
+  try {
+    for (const entry of readFileSync(`/proc/${pid}/environ`, "utf8").split("\0")) {
+      const split = entry.indexOf("=")
+      const key = entry.slice(0, split)
+      if (split > 0 && names.includes(key)) env[key] = entry.slice(split + 1)
+    }
+  } catch {
+    return { env: {} }
+  }
+  try {
+    return { env, program: readlinkSync(`/proc/${pid}/exe`) }
+  } catch {
+    return { env }
+  }
 }
 
 /** Whether the shell itself holds its terminal's foreground, as at its prompt. */

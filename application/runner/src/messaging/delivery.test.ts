@@ -201,7 +201,13 @@ describe("a terminal's delivery state", () => {
   })
 
   it("ignores everything but a binding, and the person's keys, while Unbound", () => {
-    for (const event of [prompted(), stop, ended, idle, { type: "ring", nonce: "k3f9" } as const])
+    for (const event of [
+      prompted(),
+      stop,
+      ended,
+      idle,
+      { type: "ring", nonce: "k3f9", opening: false } as const,
+    ])
       expect(transition(unbound, event)).toBe(unbound)
     expect(run(unbound, typing)).toMatchObject({ state: "unbound", box: { empty: false } })
   })
@@ -296,7 +302,7 @@ describe("when a message would reach an agent", () => {
 })
 
 describe("a ring", () => {
-  const ringing = transition(settled, { type: "ring", nonce: "k3f9" })
+  const ringing = transition(settled, { type: "ring", nonce: "k3f9", opening: false })
   const doorbell = { type: "prompt", by: "doorbell", nonce: "k3f9", at } as const
 
   it("rings only a Settled terminal, its line a draft until its own prompt", () => {
@@ -308,7 +314,7 @@ describe("a ring", () => {
       box: { empty: false },
     })
     for (const from of [bound, working, drafting, unknown, unbound])
-      expect(transition(from, { type: "ring", nonce: "k3f9" })).toBe(from)
+      expect(transition(from, { type: "ring", nonce: "k3f9", opening: false })).toBe(from)
   })
 
   it("is confirmed by its own doorbell prompt: a new turn, the prompt empty", () => {
@@ -353,9 +359,13 @@ describe("a ring", () => {
       })
     expect(transition(ringing, ended)).toMatchObject({ state: "unknown", box: { empty: false } })
     expect(transition(ringing, { type: "unbound" }).state).toBe("unbound")
-    // A session binding mid-ring is the one its own prompt starts, as Codex's first
-    // prompt binds one: the ring goes on, for that prompt to confirm.
-    expect(transition(ringing, binds)).toMatchObject({ state: "ringing", nonce: "k3f9" })
+    // A binding that replaces the session it rang takes its line as a draft; only a ring
+    // of a prompt shown before any session binds goes on as its own prompt binds one.
+    expect(transition(ringing, binds)).toMatchObject({ state: "fresh", box: { empty: false } })
+    expect(transition(ringing, announced)).toMatchObject({
+      state: "drafting",
+      box: { empty: false },
+    })
     // No Stop or idle status line ends it.
     for (const event of [stop, idle]) expect(transition(ringing, event)).toBe(ringing)
   })
@@ -386,7 +396,7 @@ describe("a new session at its own prompt", () => {
     expect(ringableSince(ready)).toBe(at)
     // One bound with nothing showing its prompt is up, as a forked one, is never rung.
     expect(ringableSince(bound)).toBeUndefined()
-    expect(transition(bound, { type: "ring", nonce: "k3f9" })).toBe(bound)
+    expect(transition(bound, { type: "ring", nonce: "k3f9", opening: false })).toBe(bound)
   })
 
   it("is Ready after a /clear the person submitted, in any bound state", () => {
@@ -462,7 +472,7 @@ describe("a new session at its own prompt", () => {
   })
 
   it("rings like Settled: its own doorbell prompt confirms, a failure leaves it Unknown", () => {
-    const ringing = transition(ready, { type: "ring", nonce: "k3f9" })
+    const ringing = transition(ready, { type: "ring", nonce: "k3f9", opening: false })
     expect(ringing).toMatchObject({ state: "ringing", nonce: "k3f9", box: { empty: false } })
     expect(transition(ringing, doorbell)).toMatchObject({
       state: "working",
@@ -482,8 +492,11 @@ describe("a new session at its own prompt", () => {
   })
 })
 
+// The agent's prompt shown at `time` for a session that replaces the one bound.
+const replacing = (time: number) => ({ type: "shown", at: time, replaces: true }) as const
+
 describe("an agent's prompt shown before any session binds", () => {
-  const shown = { type: "shown", at } as const
+  const shown = { type: "shown", at, replaces: false } as const
   const ready = transition(unbound, shown)
   const doorbell = { type: "prompt", by: "doorbell", nonce: "k3f9", at } as const
 
@@ -503,7 +516,7 @@ describe("an agent's prompt shown before any session binds", () => {
   })
 
   it("is rung, and its ring goes on as the ring's own prompt binds the session, which it confirms", () => {
-    const ringing = transition(ready, { type: "ring", nonce: "k3f9" })
+    const ringing = transition(ready, { type: "ring", nonce: "k3f9", opening: true })
     const boundMidRing = transition(ringing, binds)
     expect(boundMidRing).toMatchObject({
       state: "ringing",
@@ -516,6 +529,20 @@ describe("an agent's prompt shown before any session binds", () => {
     })
     // The person typed during the ring: their words stay a draft.
     expect(run(ringing, typing, binds, doorbell)).toMatchObject({ box: { empty: false } })
+  })
+
+  it("replaces a bound session as a binding at its prompt would, keeping a box that may hold text", () => {
+    // Nothing typed since its turn, or the person's /clear and its Enter just before.
+    expect(transition(settled, replacing(at))).toMatchObject({ state: "ready", since: at })
+    expect(run(settled, typing, enter, replacing(at + submitWindowMs)).state).toBe("ready")
+    // An Enter that started no turn, as a newline's, longer ago than the window.
+    expect(run(settled, typing, enter, replacing(at + submitWindowMs + 1)).state).toBe("drafting")
+    // A prompt the person queued during the turn, which the harness may still hold.
+    const queuing = run(working, typing, enter)
+    expect(transition(queuing, replacing(at))).toMatchObject({ state: "drafting" })
+    expect(transition(run(queuing, stop), replacing(at)).state).toBe("drafting")
+    // Without replacing it, a bound session's own events tell.
+    expect(transition(settled, { ...replacing(at), replaces: false })).toBe(settled)
   })
 
   it("is Unbound again once the agent leaves before any session bound", () => {

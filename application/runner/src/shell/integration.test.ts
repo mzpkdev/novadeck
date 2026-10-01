@@ -2743,6 +2743,8 @@ const turn = (prompt, typed = true) => {
   }), slow ? 6_000 : late ? 800 : 0)
 }
 process.on("SIGUSR1", () => turn("background result", false))
+// It exits by itself, as an agent that ends without a key from the person.
+process.on("SIGUSR2", () => process.exit(0))
 if (mode !== "bg") {
   process.stdin.setRawMode(true)
   process.stdin.setEncoding("utf8")
@@ -2760,6 +2762,8 @@ if (mode !== "bg") {
       dialog = null
       return answer()
     }
+    // Ctrl-D quits, as an agent's exit does.
+    if (data === "\x04") process.exit(0)
     if (data.startsWith("\x1b[200~")) box += data.slice(6, -6)
     else if (data === "\r") {
       // A dialog takes Enter; a backslash before it makes it a newline in the box.
@@ -2788,6 +2792,11 @@ if (mode !== "bg") {
         })
       }
       if (prompt === "/clear") return clear()
+      // A /side conversation, which Codex forks without a writer lock, its title naming it.
+      if (prompt === "/side") {
+        draw()
+        return process.stdout.write("\x1b]0;Ready | 0d1de200" + current.slice(8, 29) + "...\x07")
+      }
       return turn(prompt)
     } else if (data === "\x1b\r") box += "\n"
     else if (data === "\x15") box = ""
@@ -2817,6 +2826,11 @@ const clear = () => {
   if (agent === "agy") return hook("StatusLine", { conversation_id: current, agent_state: "idle" }, () => {})
   if (agent === "codex" && showing) {
     announced = false
+    // Codex writes a lock for each thread it starts, as at /clear.
+    if (process.env.CODEX_HOME) {
+      fs.mkdirSync(process.env.CODEX_HOME + "/thread-writer-locks", { recursive: true })
+      fs.writeFileSync(process.env.CODEX_HOME + "/thread-writer-locks/" + current + ".lock", "")
+    }
     return process.stdout.write("\x1b]0;Ready | " + current.slice(0, 29) + "...\x07")
   }
   hook("SessionStart", { source: "clear" }, () => {})
@@ -2846,6 +2860,13 @@ else hook("SessionStart", { source: "startup" }, ready)
   writeFileSync(join(named, "codex"), `#!/bin/sh\n"${process.execPath}" "$@"\n`, { mode: 0o755 })
   writeFileSync(join(bin, "named"), `#!/bin/sh\nexec "${join(named, "codex")}" "${script}" "$@"\n`)
   chmodSync(join(bin, "named"), 0o755)
+  // And under Antigravity's.
+  writeFileSync(join(named, "agy"), `#!/bin/sh\n"${process.execPath}" "$@"\n`, { mode: 0o755 })
+  writeFileSync(
+    join(bin, "named-agy"),
+    `#!/bin/sh\nexec "${join(named, "agy")}" "${script}" "$@"\n`,
+  )
+  chmodSync(join(bin, "named-agy"), 0o755)
   return bin
 }
 
@@ -2865,14 +2886,22 @@ const ringing = async (
   program = "tui",
   agent: AgentName = "codex",
   session = `s-${agent}`,
-  hooksTrusted = true,
+  hooksTrusted: boolean | (() => Promise<boolean>) = true,
+  // A command the idle terminal runs first, as a nested shell.
+  first?: string,
 ) => {
   const bin = standIn(shell.home)
   standInTui(shell.home)
   const manager = shell.manager({
-    env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    env: {
+      HOME: shell.home,
+      PS1: "$ ",
+      PATH: `${bin}:${process.env.PATH}`,
+      CODEX_HOME: join(shell.home, ".codex"),
+    },
     doorbell: { calmMs: 200, settleMs: 300 },
-    hooksTrusted: () => Promise.resolve(hooksTrusted),
+    hooksTrusted:
+      typeof hooksTrusted === "boolean" ? () => Promise.resolve(hooksTrusted) : hooksTrusted,
   })
   const sender = await create(manager, shell)
   const idle = await create(manager, shell)
@@ -2881,6 +2910,7 @@ const ringing = async (
   const received = join(shell.home, "received.jsonl")
   const raw = join(shell.home, "raw.jsonl")
   const type = (data: string) => manager.write({ terminalId: idle.id, data }, "owner")
+  if (first) type(`${first}\r`)
   type(
     `${program} ${agent} ${session} '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`,
   )
@@ -2899,6 +2929,8 @@ const ringing = async (
       ),
     // Starts a turn by itself, as a background task's result does.
     kick: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGUSR1"),
+    // It exits by itself.
+    leave: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGUSR2"),
     // The person's own first prompt, which settles it.
     first: async () => {
       type("hello")
@@ -3024,7 +3056,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
     it("wakes an Antigravity TUI started plain once its status line says idle", async ({
       shell,
     }) => {
-      const tui = await ringing(shell, "shown", "tui", "agy")
+      const tui = await ringing(shell, "shown", "named-agy", "agy")
       await expect.poll(tui.delivery).toBe("ready")
       expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
       await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
@@ -3084,6 +3116,70 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
           .toBe("delivered")
       })
+
+    it("drops a prompt shown before the shell's prompt came back, however long its check took", async ({
+      shell,
+    }) => {
+      let asked!: () => void
+      const checking = new Promise<void>((resolve) => (asked = resolve))
+      let answer!: (trusted: boolean) => void
+      const slow = () => {
+        asked()
+        return new Promise<boolean>((resolve) => (answer = resolve))
+      }
+      const tui = await ringing(shell, "shown", "named", "codex", "01a0f932-a824", slow)
+      await checking
+      // Codex quits while its hooks are still being asked about; the shell's prompt returns.
+      tui.type("\x04")
+      await quiet()
+      answer(true)
+      await quiet()
+      expect(tui.delivery()).toBe("unbound")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: false })
+    })
+
+    it("rings no prompt shown in a nested shell once its agent has left unseen", async ({
+      shell,
+    }) => {
+      // A nested shell without NovaDeck's integration tells no prompt of its own.
+      const tui = await ringing(
+        shell,
+        "shown",
+        "named",
+        "codex",
+        "01a0f932-a824",
+        true,
+        "PS1='nested$ ' bash --norc --noprofile",
+      )
+      await expect.poll(tui.delivery).toBe("ready")
+      tui.leave()
+      await shell.until(tui.manager, tui.idle.id, /> nested\$/)
+      // Still Ready, as nothing told it the agent left: the ring's foreground check does.
+      expect(tui.delivery()).toBe("ready")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true })
+      await quiet()
+      expect(await screen(tui.manager, tui.idle.id)).not.toContain("automatic notice")
+      expect(tui.delivery()).toBe("ready")
+    })
+
+    it("keeps a Codex binding when its title names a /side conversation, which no new lock confirms", async ({
+      shell,
+    }) => {
+      const tui = await ringing(
+        shell,
+        "shown",
+        "named",
+        "codex",
+        "01a0f932-a824-7c30-b713-b59ed562f00b",
+      )
+      await tui.first()
+      tui.type("/side")
+      await shell.until(tui.manager, tui.idle.id, "> /side")
+      tui.type("\r")
+      await quiet()
+      expect(tui.manager.get(tui.idle.id).agent).not.toBeNull()
+      expect(tui.delivery()).toBe("drafting")
+    })
 
     it("rings no agent whose start says nothing of its screen, before its first turn", async ({
       shell,

@@ -24,7 +24,13 @@ export type Delivery = Counts &
     | { readonly state: "unbound" | "fresh" | "drafting" | "unknown" }
     | { readonly state: "settled" | "ready"; readonly since: number }
     | { readonly state: "working"; readonly phase: "turn" | "continuing" | "background" }
-    | { readonly state: "ringing"; readonly nonce: string; readonly touched: boolean }
+    | {
+        readonly state: "ringing"
+        readonly nonce: string
+        readonly touched: boolean
+        /** Whether it rings a prompt shown with no session bound, which its own prompt binds. */
+        readonly opening: boolean
+      }
   )
 
 /**
@@ -91,8 +97,9 @@ export type KeyKind = "enter" | "queue" | "neutral" | "content"
  * What changes a terminal's delivery:
  * - `bound`: a session binds, or its harness announced a new one, `ready` when it
  *   announced it as its own input prompt came up, past its startup screens;
- * - `shown`: with no session bound, the agent's own empty prompt shows, past its startup
- *   screens, before the session it starts there binds (Codex, Antigravity);
+ * - `shown`: the agent's own empty prompt shows, past its startup screens, before the
+ *   session it starts there binds (Codex, Antigravity): with no session bound, or
+ *   `replaces` the one bound, as Codex's /clear starts a thread that binds only later;
  * - `unbound`: the binding ended, as its instance exited;
  * - `prompt`: a root turn started, as its decoder says: a `prompt` (the person's only if
  *   their bare Enter came shortly before with nothing typed since, or they queued it),
@@ -110,7 +117,7 @@ export type KeyKind = "enter" | "queue" | "neutral" | "content"
  */
 export type DeliveryEvent =
   | { readonly type: "bound"; readonly ready: boolean; readonly at: number }
-  | { readonly type: "shown"; readonly at: number }
+  | { readonly type: "shown"; readonly at: number; readonly replaces: boolean }
   | { readonly type: "unbound" }
   | {
       readonly type: "prompt"
@@ -128,7 +135,7 @@ export type DeliveryEvent =
   | { readonly type: "idle"; readonly background: boolean; readonly at: number }
   | { readonly type: "key"; readonly key: KeyKind; readonly asked: boolean; readonly at: number }
   | { readonly type: "asked-cleared" }
-  | { readonly type: "ring"; readonly nonce: string }
+  | { readonly type: "ring"; readonly nonce: string; readonly opening: boolean }
   | { readonly type: "ring-failed"; readonly nonce: string }
 
 /** A box nothing is known to be in: as a session binds. */
@@ -204,42 +211,59 @@ const typed = (box: Box): Box => ({
   queued: false,
 })
 
+/**
+ * What a new session there starts from: no turn yet, and the person's keys after their last
+ * Enter, or a ring's line, as a draft, as keys typed once an agent's TUI reads input, before NovaDeck has taken
+ * its binding, reach its box (the probe's earlier ones were dropped). Any doubt is a draft.
+ */
+const arrived = (delivery: Delivery): Counts => {
+  // A ring's line may be in the box too.
+  const draft =
+    delivery.box.typedSinceEnter || delivery.box.draftWhileAsked || delivery.state === "ringing"
+  return {
+    epoch: delivery.epoch + 1,
+    continued: 0,
+    byPerson: false,
+    box: draft ? typed(emptyBox) : emptyBox,
+  }
+}
+
+/**
+ * A new session at the agent's own prompt, announced there or shown before it binds:
+ * Ready, unless the box may hold the person's text. One that replaces a session bound here
+ * (a /clear, an in-app resume) keeps that box, unless it was known empty or the person's
+ * bare Enter just submitted it: an Enter that made a newline or took a suggestion left
+ * their text there, and one during a turn queued a prompt the harness may still hold.
+ */
+const atPrompt = (delivery: Delivery, at: number): Delivery => {
+  const next = arrived(delivery)
+  const { box } = delivery
+  const kept =
+    delivery.state !== "unbound" &&
+    (box.queuing || box.queued || (!box.empty && pendingEnter(delivery, at) === undefined))
+  return next.box.typedSinceEnter || kept
+    ? { ...next, box: typed(emptyBox), state: "drafting" }
+    : { ...next, state: "ready", since: at }
+}
+
 /** The delivery after an event; the same delivery when it changes nothing. */
 export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery => {
   if (event.type === "bound") {
-    // Keys typed after the last Enter may be in the new session's box: those typed once
-    // its TUI reads input, before NovaDeck has taken its binding (the probe's earlier
-    // ones were dropped). Any doubt is a draft.
-    const draft = delivery.box.typedSinceEnter || delivery.box.draftWhileAsked
-    const next: Counts = {
-      epoch: delivery.epoch + 1,
-      continued: 0,
-      byPerson: false,
-      box: draft ? typed(emptyBox) : emptyBox,
-    }
-    // The session a ring's own prompt starts, as Codex's or Antigravity's first prompt
-    // binds one: the ring goes on, for that prompt to confirm.
-    if (delivery.state === "ringing")
+    // The session a ring's own prompt starts, where it rang a prompt shown before any
+    // session bound (Codex's or Antigravity's first prompt binds one): the ring goes on,
+    // for that prompt to confirm. Any other binding mid-ring takes its line as a draft.
+    if (delivery.state === "ringing" && delivery.opening)
       return {
-        ...next,
+        ...arrived(delivery),
         box: delivery.box,
         state: "ringing",
         nonce: delivery.nonce,
         touched: delivery.touched,
+        opening: false,
       }
     // Only a session announced at its own prompt may be rung before its first turn.
-    if (!event.ready) return { ...next, state: "fresh" }
-    // One that replaced a session bound here (a /clear, an in-app resume) keeps that box,
-    // unless it was known empty or the person's bare Enter just submitted it: an Enter
-    // that made a newline or took a suggestion left their text there, and one during a
-    // turn queued a prompt the harness may still hold.
-    const { box } = delivery
-    const kept =
-      delivery.state !== "unbound" &&
-      (box.queuing || box.queued || (!box.empty && pendingEnter(delivery, event.at) === undefined))
-    return draft || kept
-      ? { ...next, box: typed(emptyBox), state: "drafting" }
-      : { ...next, state: "ready", since: event.at }
+    if (!event.ready) return { ...arrived(delivery), state: "fresh" }
+    return atPrompt(delivery, event.at)
   }
   // What the person typed after their last Enter outlasts the binding's end, which may be
   // noticed only as the next agent binds.
@@ -253,19 +277,10 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         draftWhileAsked: delivery.box.draftWhileAsked,
       },
     }
-  // The agent's prompt shows before any session binds: Ready, as a session announced at
-  // its prompt would be, unless the person typed after their last Enter.
-  if (event.type === "shown") {
-    if (delivery.state !== "unbound") return delivery
-    const draft = delivery.box.typedSinceEnter || delivery.box.draftWhileAsked
-    const next: Counts = {
-      epoch: delivery.epoch + 1,
-      continued: 0,
-      byPerson: false,
-      box: draft ? typed(emptyBox) : emptyBox,
-    }
-    return draft ? { ...next, state: "drafting" } : { ...next, state: "ready", since: event.at }
-  }
+  // The agent's prompt shows before any session binds: as a session announced at its
+  // prompt would, from no session, or replacing the one bound.
+  if (event.type === "shown")
+    return delivery.state === "unbound" || event.replaces ? atPrompt(delivery, event.at) : delivery
   // With no agent bound, only whether the person typed after their last Enter counts, for
   // the session that binds next. Starting an agent takes an Enter, which clears it all.
   if (delivery.state === "unbound") {
@@ -367,6 +382,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
             state: "ringing",
             nonce: event.nonce,
             touched: false,
+            opening: event.opening,
           }
         : delivery
     case "ring-failed":

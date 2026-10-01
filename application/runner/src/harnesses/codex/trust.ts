@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { stat } from "node:fs/promises"
+import { readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 
 import type { Install } from "../harness.js"
@@ -39,17 +39,25 @@ export const trustedIn = (result: unknown): boolean => {
   })
 }
 
+/**
+ * Where to ask Codex: the program and environment of the Codex in the terminal, where the
+ * runner can tell them, else as the person's login would run it.
+ */
+export type Asking = Install & { readonly program?: string }
+
 /** Asks Codex's app-server which hooks run in `cwd`, as its `hooks/list` reports them. */
-const listHooks = (install: Install, cwd: string, timeoutMs: number): Promise<unknown> =>
+const listHooks = (where: Asking, cwd: string, timeoutMs: number): Promise<unknown> =>
   new Promise((resolve) => {
-    const windows = install.platform === "win32"
-    const child = windows
-      ? spawn(install.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", "codex app-server"], {
-          env: install.env,
-          stdio: ["pipe", "pipe", "ignore"],
-          windowsHide: true,
-        })
-      : spawn("codex", ["app-server"], { env: install.env, stdio: ["pipe", "pipe", "ignore"] })
+    const program = where.program ?? "codex"
+    const child =
+      where.platform === "win32"
+        ? spawn(where.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", `""${program}" app-server"`], {
+            env: where.env,
+            stdio: ["pipe", "pipe", "ignore"],
+            windowsHide: true,
+            windowsVerbatimArguments: true,
+          })
+        : spawn(program, ["app-server"], { env: where.env, stdio: ["pipe", "pipe", "ignore"] })
     let buffered = ""
     const done = (value: unknown) => {
       clearTimeout(timer)
@@ -89,28 +97,75 @@ const listHooks = (install: Install, cwd: string, timeoutMs: number): Promise<un
       child.stdin.write(`${JSON.stringify(message)}\n`)
   })
 
-// Answers kept until Codex's configuration, where trust is recorded, changes.
-const known = new Map<string, { readonly changed: number; readonly trusted: boolean }>()
+// When a file last changed; 0 when it isn't there.
+const changed = (path: string): Promise<number> =>
+  stat(path).then(
+    (file) => file.mtimeMs,
+    () => 0,
+  )
+
+/**
+ * What trust depends on, as it changes: Codex's `config.toml`, which records it, and the
+ * hook definitions of NovaDeck's plugin, as Codex keeps them in its plugin cache, which a
+ * plugin's reinstall rewrites (and which then reads "modified").
+ */
+const stateOf = async (home: string): Promise<string> => {
+  const cache = join(home, "plugins", "cache", "novadeck", "novadeck")
+  const versions = await readdir(cache).catch(() => [] as string[])
+  const hooks = await Promise.all(
+    versions.toSorted().map(async (version) => {
+      const path = join(cache, version, "hooks", "hooks.json")
+      return `${version}:${await changed(path)}`
+    }),
+  )
+  return [await changed(join(home, "config.toml")), ...hooks].join("|")
+}
+
+/** How long an answer Codex couldn't give is kept before it is asked again, in milliseconds. */
+export const failureMs = 60_000
+
+type Known = { readonly state: string; readonly trusted: boolean; readonly failedAt?: number }
+const known = new Map<string, Known>()
+const asking = new Map<string, Promise<boolean>>()
 
 /**
  * Whether NovaDeck's Codex hooks run in `cwd`: Codex runs a plugin's hooks only once the
  * person trusts them, and no hook says when it doesn't, so its app-server is asked. The
- * answer is kept until Codex's `config.toml`, which records trust, changes. Untrusted when
- * Codex can't be asked.
+ * answer is kept until Codex's configuration or NovaDeck's hook definitions change; one
+ * Codex couldn't give (it couldn't start, or didn't answer within 10 s) counts as
+ * untrusted, and is asked again only a minute later. Asks under way are shared.
  */
-export const hooksTrusted = async (install: Install, cwd: string): Promise<boolean> => {
-  const home = install.env.CODEX_HOME || join(install.home, ".codex")
-  const changed = await stat(join(home, "config.toml")).then(
-    (file) => file.mtimeMs,
-    () => 0,
-  )
-  const key = `${home}\0${cwd}`
+export const hooksTrusted = async (where: Asking, cwd: string): Promise<boolean> => {
+  const home = where.env.CODEX_HOME || join(where.home, ".codex")
+  const key = `${where.program ?? "codex"}\0${home}\0${cwd}`
+  const state = await stateOf(home)
   const kept = known.get(key)
-  if (kept?.changed === changed) return kept.trusted
-  const result = await listHooks(install, cwd, 10_000)
-  // Not asked: untrusted for now, and asked again next time.
-  if (result === undefined) return false
-  const trusted = trustedIn(result)
-  known.set(key, { changed, trusted })
-  return trusted
+  if (
+    kept?.state === state &&
+    (kept.failedAt === undefined || Date.now() - kept.failedAt < failureMs)
+  )
+    return kept.trusted
+  const pending = asking.get(key)
+  if (pending) return pending
+  const ask = listHooks(where, cwd, 10_000).then((result) => {
+    const trusted = result !== undefined && trustedIn(result)
+    known.set(key, {
+      state,
+      trusted,
+      ...(result === undefined && { failedAt: Date.now() }),
+    })
+    return trusted
+  })
+  asking.set(key, ask)
+  try {
+    return await ask
+  } finally {
+    asking.delete(key)
+  }
+}
+
+/** Forgets every answer, as a test starting afresh does. */
+export const forgetTrust = (): void => {
+  known.clear()
+  asking.clear()
 }

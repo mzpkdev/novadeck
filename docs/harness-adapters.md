@@ -437,12 +437,21 @@ Besides the facts shared with the agent model, decoders give
 - A `prompt-shown` fact says the harness's own prompt shows before any session it names
   in full has bound: Antigravity's status line idle with no conversation yet (its
   adapter's `shown`, read from the status line report), and Codex's terminal title
-  saying Ready, with the start of its thread's id (its adapter's `title`, read from the
-  title the terminal's screen keeps; NovaDeck's Codex shim names the title's items). It
-  is not a `HarnessEvent`, as it names no session: the terminal manager takes it apart.
-  A title counts only while a process of the harness's name runs in the terminal's
-  foreground group, and, for a harness with `hooksTrusted` (Codex), only once NovaDeck's
-  hooks are trusted there, as its app-server's `hooks/list` says.
+  holding the run state Ready, and the start of its thread's id (its adapter's `title`,
+  read from the title the terminal's screen keeps; NovaDeck's Codex shim names the
+  title's items, and a title of the person's own with `status` and `thread-id` reads the
+  same). It is not a `HarnessEvent`, as it names no session: the terminal manager takes
+  it apart. A title counts only while a process of the harness's name runs in the
+  terminal's foreground group, which the doorbell checks again as it rings; a stale one,
+  as the shell's prompt came after it, is dropped, as is one a later title overtook. For
+  a harness with `hooksTrusted` (Codex), it counts only once NovaDeck's hooks are trusted
+  there, as its app-server's `hooks/list` says, asked with the program and environment
+  of the Codex in the terminal where the platform tells (Linux), kept until Codex's
+  `config.toml` or NovaDeck's hook definitions in its plugin cache change, a failure kept
+  a minute. A Codex that can't answer gets nothing before its first prompt. A title
+  naming another thread than the bound one ends that binding only when the adapter's
+  `startedSession` confirms a new root (Codex's fresh writer lock for that thread); else
+  the session's own `SessionStart` tells at its first prompt.
 
 ### Messaging profile
 

@@ -267,16 +267,24 @@ export class Messaging {
    * The agent's own prompt shows in the terminal before any session of its has bound
    * there, as Codex's title or Antigravity's status line tells it: it is Ready, and
    * messages wait for the first session of that agent to bind there, or for the session
-   * whose id starts with `prefix`. A terminal with a root session takes nothing from this.
+   * whose id starts with `prefix`. With a root session bound it changes nothing, unless it
+   * `replaces` that session (the terminal manager then ends its binding), as Codex's
+   * /clear starts a thread that binds only with its first prompt.
    */
-  shown(terminalId: string, agent: AgentName, prefix: string | null): void {
+  shown(terminalId: string, agent: AgentName, prefix: string | null, replaces = false): void {
     const live = this.live.get(terminalId)
-    if (!live || live.root) return
+    if (!live || (live.root && !replaces)) return
     const changed = live.shown?.agent !== agent || live.shown.prefix !== prefix
     live.shown = { agent, prefix }
-    this.step(live, { type: "shown", at: this.now() })
+    this.step(live, { type: "shown", at: this.now(), replaces })
     // A prefix it learns later may make other messages its own.
     if (changed) this.onChange(terminalId)
+  }
+
+  /** The agent whose prompt shows there with no session bound, if any. */
+  shownAgent(terminalId: string): AgentName | undefined {
+    const live = this.live.get(terminalId)
+    return live && !live.root ? live.shown?.agent : undefined
   }
 
   /** The agent whose prompt showed left before any session bound, as the shell's prompt says. */
@@ -488,7 +496,7 @@ export class Messaging {
   ring(terminalId: string, nonce: string): boolean {
     const live = this.live.get(terminalId)
     if (!live || !this.ringable(terminalId)) return false
-    this.step(live, { type: "ring", nonce })
+    this.step(live, { type: "ring", nonce, opening: !live.root })
     return live.delivery.state === "ringing"
   }
 
@@ -951,7 +959,8 @@ export class Messaging {
       if (change.type === "ended") {
         if (!live.root) continue
         live.root = null
-        this.step(live, { type: "unbound" })
+        // A session already shown at its prompt in its place keeps the state it gave.
+        if (!live.shown) this.step(live, { type: "unbound" })
         // Messages for the session that ended are gone; those for the first session the
         // terminal expects wait on, until it closes.
         for (const message of this.messages.values())

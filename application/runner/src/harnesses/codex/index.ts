@@ -15,7 +15,7 @@ import {
 import { decode } from "./decode.js"
 import { followRollout } from "./rollout.js"
 import { cmdShim, posixShim } from "./shim.js"
-import { title } from "./title.js"
+import { startedSession, title } from "./title.js"
 import { transcripts } from "./transcripts.js"
 import { hooksTrusted } from "./trust.js"
 
@@ -132,6 +132,7 @@ export const codex = {
   },
   decode,
   title,
+  startedSession,
   hooksTrusted,
   messaging,
   // The rollout records the session's tokens and the account's rate-limit windows, each
