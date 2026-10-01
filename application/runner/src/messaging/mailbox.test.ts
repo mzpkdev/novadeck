@@ -10,6 +10,10 @@ import {
   holdOf,
   maxDeliveryBytes,
   resolvePeer,
+  shorten,
+  describePeer,
+  busiestFolders,
+  type Peer,
   threadBetween,
   threadMs,
   wrap,
@@ -73,12 +77,62 @@ describe("a message's text", () => {
   })
 })
 
+const peer = (fields: Partial<Peer> & Pick<Peer, "terminalId" | "handle">): Peer => ({
+  agent: null,
+  title: null,
+  folder: null,
+  branch: null,
+  startedWith: null,
+  latest: null,
+  plan: null,
+  worksIn: [],
+  withYou: null,
+  state: null,
+  activeAt: null,
+  ...fields,
+})
+
+describe("describing a terminal", () => {
+  it("says in one line what NovaDeck knows of it, leaving out what it doesn't", () => {
+    expect(
+      describePeer(
+        peer({
+          terminalId: "b",
+          handle: "codex-2",
+          agent: "codex",
+          title: "API server",
+          folder: "src/api",
+          branch: "feat/paging",
+          startedWith: "Build the users API",
+          latest: "add pagination to /users",
+          plan: "Pagination",
+          worksIn: [
+            { folder: "src/api/", edits: 14 },
+            { folder: "tests/", edits: 3 },
+          ],
+          state: "busy",
+        }),
+      ),
+    ).toBe(
+      'codex-2 (Codex); titled "API server"; in src/api on feat/paging; started with "Build ' +
+        'the users API"; latest "add pagination to /users"; plan "Pagination"; works in ' +
+        "src/api/ (14), tests/ (3)",
+    )
+    expect(describePeer(peer({ terminalId: "e", handle: "term-4" }))).toBe("term-4 (no agent)")
+  })
+
+  it("shortens text to one line", () => {
+    expect(shorten("add\n  pagination   to /users", 120)).toBe("add pagination to /users")
+    expect(shorten("x".repeat(130), 120)).toBe(`${"x".repeat(119)}…`)
+  })
+})
+
 describe("addressing", () => {
   const peers = [
-    { terminalId: "b", handle: "codex-2", agent: "codex" as const },
-    { terminalId: "c", handle: "codex-3", agent: "codex" as const },
-    { terminalId: "d", handle: "agy-1", agent: "agy" as const },
-    { terminalId: "e", handle: "term-4", agent: null },
+    peer({ terminalId: "b", handle: "codex-2", agent: "codex", title: "API server" }),
+    peer({ terminalId: "c", handle: "codex-3", agent: "codex", title: "Web client" }),
+    peer({ terminalId: "d", handle: "agy-1", agent: "agy" }),
+    peer({ terminalId: "e", handle: "term-4" }),
   ]
 
   it("takes a handle, or an agent's name exactly one terminal runs", () => {
@@ -86,18 +140,26 @@ describe("addressing", () => {
     expect(resolvePeer("agy", peers, "claude-1")).toEqual({ ok: true, peer: peers[2] })
   })
 
-  it("refuses anything else, listing the handles there", () => {
+  it("refuses anything else, describing the terminals it could mean", () => {
     expect(resolvePeer("codex", peers, "claude-1")).toEqual({
       ok: false,
-      reason:
-        "More than one terminal here runs Codex: codex-2, codex-3. Send to one of them by its handle.",
+      reason: [
+        "More than one terminal here runs Codex. Pick the one you mean by its title, folder " +
+          "and work, and send to it by its handle; if you can't tell, ask the person.",
+        '- codex-2 (Codex); titled "API server"',
+        '- codex-3 (Codex); titled "Web client"',
+      ].join("\n"),
     })
     const unknown = resolvePeer("reviewer", peers, "claude-1")
     expect(unknown).toEqual({
       ok: false,
-      reason:
-        'No terminal here is called "reviewer". The terminals in this project are: codex-2 ' +
-        "(Codex), codex-3 (Codex), agy-1 (Antigravity), term-4 (no agent).",
+      reason: [
+        'No terminal here is called "reviewer". The terminals here are:',
+        '- codex-2 (Codex); titled "API server"',
+        '- codex-3 (Codex); titled "Web client"',
+        "- agy-1 (Antigravity)",
+        "- term-4 (no agent)",
+      ].join("\n"),
     })
     expect(resolvePeer("claude", peers, "claude-1")).toMatchObject({
       ok: false,
@@ -108,7 +170,7 @@ describe("addressing", () => {
       reason: expect.stringContaining("claude-1 is this terminal."),
     })
     expect(resolvePeer("codex", [], "claude-1")).toMatchObject({
-      reason: expect.stringContaining("There are no other terminals in this project."),
+      reason: expect.stringContaining("There are no other terminals in this project and session."),
     })
   })
 })
@@ -151,20 +213,21 @@ describe("holds", () => {
   })
 })
 
+// As printed: wrapped, escaped and encoded, within a budget.
+const fits = (taken: readonly Message[]) =>
+  Buffer.byteLength(JSON.stringify({ reason: wrap(taken) })) <= 4_600
+
 describe("a delivery", () => {
-  it("carries messages oldest first, up to 4 KB of escaped text, and always the first", () => {
-    const big = "x".repeat(3_000)
+  it("carries messages oldest first while they fit together, and always the first", () => {
     const messages = [
-      message({ id: "m-1", text: big }),
+      message({ id: "m-1", text: "x".repeat(3_000) }),
       message({ id: "m-2", text: "y".repeat(1_000) }),
       message({ id: "m-3", text: "z".repeat(200) }),
     ]
-    expect(deliveryOf(messages).map(({ id }) => id)).toEqual(["m-1", "m-2"])
-    // Escaping counts: what fits as sent may not once escaped.
-    const escaped = [message({ id: "m-1", text: "<".repeat(1_100) }), message({ id: "m-2" })]
-    expect(deliveryOf(escaped).map(({ id }) => id)).toEqual(["m-1"])
-    expect(Buffer.byteLength(escapeText("<".repeat(1_100)))).toBeGreaterThan(maxDeliveryBytes)
-    expect(deliveryOf([])).toEqual([])
+    expect(deliveryOf(messages, fits).map(({ id }) => id)).toEqual(["m-1", "m-2"])
+    expect(deliveryOf(messages, () => false).map(({ id }) => id)).toEqual(["m-1"])
+    expect(deliveryOf([], fits)).toEqual([])
+    expect(maxDeliveryBytes).toBe(8_192)
   })
 
   it("is wrapped and attributed, never as the person", () => {
@@ -181,5 +244,15 @@ describe("a delivery", () => {
     // A sender whose agent never bound is named by its handle alone.
     const from = { terminalId: "a", handle: "term-1", agent: null, sessionId: null }
     expect(wrap([message({ from })])).toContain('<message id="m-1" from="term-1" thread="t-1"')
+  })
+})
+
+describe("the folders a session writes in most", () => {
+  it("are the top three by edits, ties by name", () => {
+    expect(busiestFolders({ "/b": 2, "/a": 2, "/c": 5, "/d": 1 })).toEqual([
+      { folder: "/c", edits: 5 },
+      { folder: "/a", edits: 2 },
+      { folder: "/b", edits: 2 },
+    ])
   })
 })

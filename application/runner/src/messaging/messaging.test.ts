@@ -5,7 +5,7 @@ import type { Binding } from "../harnesses/bindings.js"
 import type { HarnessEvent } from "../harnesses/events.js"
 import { describe, expect, it } from "../test.js"
 import { retentionMs, threadMs } from "./mailbox.js"
-import { Messaging, type SendAnswer } from "./messaging.js"
+import { Messaging, type SendAnswer, type Whereabouts } from "./messaging.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
 
 const binding = (agent: AgentName, sessionId: string, instance: string | null = "10"): Binding => ({
@@ -42,13 +42,17 @@ const observed = (bound: Binding, root = false): HarnessEvent => ({
 
 type Clock = { now: number }
 
+// One project and NovaDeck session, and another project.
+const here = { projectId: "p", sessionId: "s" }
+const elsewhere = { projectId: "q", sessionId: "s2" }
+
 const create = (records: MailboxRecords = memoryMailbox(), clock: Clock = { now: 1_000_000 }) => {
-  const messaging = new Messaging({ records, now: () => clock.now, sweepMs: 0 })
+  const messaging = new Messaging({ records, now: () => clock.now, sweepMs: 0, restoreMs: 0 })
   // Two running terminals in one project, each with its agent bound.
   const claude = binding("claude", "s-claude", "1")
   const codex = binding("codex", "s-codex", "2")
-  messaging.register("A", "p", "claude")
-  messaging.register("B", "p", "codex")
+  messaging.register("A", here, "claude")
+  messaging.register("B", here, "codex")
   messaging.observe("A", { binding: claude, events: [] })
   messaging.observe("B", { binding: codex, events: [] })
   // What a hook of the terminal's agent asks, with plenty of time left.
@@ -70,6 +74,23 @@ const create = (records: MailboxRecords = memoryMailbox(), clock: Clock = { now:
   return { messaging, records, clock, claude, codex, ask, prompt, stop, send }
 }
 
+/** The terminals `agents` describes to A, as B's whereabouts say. */
+const peersOf = (messaging: Messaging) => {
+  const answer = messaging.agents("A", (terminalId) =>
+    terminalId === "B"
+      ? {
+          title: "API author",
+          folder: "src/api",
+          branch: "feat/paging",
+          plan: "Pagination",
+          place: (path: string) => path.replace(/^\/w\//, ""),
+        }
+      : undefined,
+  )
+  if (!answer.ok) throw new Error(answer.reason)
+  return answer.agents
+}
+
 const sent = (answer: SendAnswer) => {
   if (!answer.ok) throw new Error(answer.reason)
   return answer
@@ -80,23 +101,23 @@ const messages = (messaging: Messaging, terminalId: string) =>
 
 describe("handles", () => {
   it("are given once per terminal, kept across its shells, and never reused in a project", () => {
-    const messaging = new Messaging({ sweepMs: 0 })
-    expect(messaging.register("A", "p", "claude")).toBe("claude-1")
-    expect(messaging.register("B", "p", "term")).toBe("term-1")
-    expect(messaging.register("C", "p", "claude")).toBe("claude-2")
-    expect(messaging.register("D", "q", "claude")).toBe("claude-1")
+    const messaging = new Messaging({ sweepMs: 0, restoreMs: 0 })
+    expect(messaging.register("A", here, "claude")).toBe("claude-1")
+    expect(messaging.register("B", here, "term")).toBe("term-1")
+    expect(messaging.register("C", here, "claude")).toBe("claude-2")
+    expect(messaging.register("D", elsewhere, "claude")).toBe("claude-1")
     messaging.unregister("A")
     expect(messaging.handle("A")).toBeUndefined()
     // Restarted or restored, it is the same terminal.
-    expect(messaging.register("A", "p", "term")).toBe("claude-1")
-    expect(messaging.register("E", "p", "claude")).toBe("claude-3")
+    expect(messaging.register("A", here, "term")).toBe("claude-1")
+    expect(messaging.register("E", here, "claude")).toBe("claude-3")
   })
 })
 
 describe("sending", () => {
   it("addresses a terminal by handle or by its agent's name, never one without an agent", () => {
     const { messaging, send } = create()
-    messaging.register("C", "p", "term")
+    messaging.register("C", here, "term")
     expect(sent(send("A", "codex", "hi"))).toMatchObject({ to: "codex-1", state: "queued" })
     expect(sent(send("A", "codex-1", "again"))).toMatchObject({ to: "codex-1" })
     expect(send("A", "term-1", "hi")).toEqual({
@@ -104,7 +125,7 @@ describe("sending", () => {
       reason: "term-1 has no agent running there that NovaDeck can deliver to.",
     })
     // Terminals of other projects are not there to address.
-    messaging.register("Z", "q", "agy")
+    messaging.register("Z", elsewhere, "agy")
     messaging.observe("Z", { binding: binding("agy", "s-agy"), events: [] })
     expect(send("A", "agy-1", "hi")).toMatchObject({ ok: false })
   })
@@ -127,7 +148,7 @@ describe("sending", () => {
     expect(messages(messaging, "A")[0]?.text).toBe("line\n[1mbold\ttab")
     expect(send("A", "codex", "é".repeat(2_049))).toMatchObject({
       ok: false,
-      reason: expect.stringContaining("longer than 4 KB"),
+      reason: expect.stringContaining("4098 bytes, over the 4096 a message may hold"),
     })
     expect(sent(send("A", "codex", "é".repeat(2_048)))).toMatchObject({ state: "queued" })
     expect(send("A", "codex", " \n\u0007")).toEqual({ ok: false, reason: "The message is empty." })
@@ -168,7 +189,7 @@ describe("sending", () => {
   it("limits a sender to 10 a minute, 3 of them to any one terminal", () => {
     const { messaging, send, clock } = create()
     for (const id of ["C", "D", "E", "F"]) {
-      messaging.register(id, "p", "term")
+      messaging.register(id, here, "term")
       messaging.observe(id, { binding: binding("codex", `s-${id}`, id), events: [] })
     }
     for (let index = 0; index < 3; index += 1) sent(send("A", "codex-1", `to B ${index}`))
@@ -187,13 +208,13 @@ describe("sending", () => {
   it("limits every agent together to 60 a minute", () => {
     const { messaging, send } = create()
     const recipients = ["R1", "R2", "R3"].map((id) => {
-      messaging.register(id, "p", "term")
+      messaging.register(id, here, "term")
       messaging.observe(id, { binding: binding("codex", `s-${id}`, id), events: [] })
       return messaging.handle(id)!
     })
     const senders = Array.from({ length: 7 }, (_, index) => {
       const id = `S${index}`
-      messaging.register(id, "p", "term")
+      messaging.register(id, here, "term")
       return id
     })
     const answers = senders.flatMap((from) =>
@@ -392,14 +413,14 @@ describe("delivery through hooks", () => {
     expect(second.prompt("B", second.codex).stdout).toContain("hello")
   })
 
-  it("delivers several messages together, up to 4 KB, the rest at the next hook", () => {
+  it("delivers several messages together, up to 8 KB as printed, the rest at the next hook", () => {
     const { messaging, send, prompt, codex } = create()
-    sent(send("A", "codex", "a".repeat(3_000)))
-    sent(send("A", "codex", "b".repeat(2_000)))
+    sent(send("A", "codex", "a".repeat(4_000)))
+    sent(send("A", "codex", "b".repeat(4_000)))
     const first = prompt("B", codex)
     messaging.acknowledge("B", first.leaseId!)
     expect(first.stdout).not.toContain("bbb")
-    expect(prompt("B", codex).stdout).toContain("b".repeat(2_000))
+    expect(prompt("B", codex).stdout).toContain("b".repeat(4_000))
   })
 
   it("gives nested agents' and other sessions' hooks nothing", () => {
@@ -432,6 +453,111 @@ describe("delivery through hooks", () => {
   })
 })
 
+describe("critic's cases", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("delivers at a Stop after background work, once the person prompts again", () => {
+    const { messaging, send, prompt, stop, claude } = create()
+    prompt("A", claude)
+    // The turn ends with a background task still running: Working, no root turn.
+    stop("A", claude, true)
+    expect(messaging.delivery("A")).toMatchObject({ state: "working", running: false })
+    // The person's Enter starts their next prompt at once: nothing is queued.
+    messaging.input("A", { submits: true, answers: false })
+    prompt("A", claude)
+    sent(send("B", "claude", "Review it"))
+    expect(stop("A", claude).leaseId).toEqual(expect.any(String))
+  })
+
+  it("leaves a turn that began since alone when an older Stop's lease lapses", () => {
+    const { messaging, send, prompt, stop, codex } = create()
+    prompt("B", codex)
+    sent(send("A", "codex", "one"))
+    expect(stop("B", codex).leaseId).toEqual(expect.any(String))
+    // Its acknowledgement was lost, but the harness continued, and the person prompted.
+    prompt("B", codex)
+    vi.advanceTimersByTime(5_000)
+    expect(messaging.delivery("B")).toMatchObject({ state: "working", running: true })
+  })
+
+  it("refuses a message too large to deliver, saying how large it may be", () => {
+    const { send } = create()
+    expect(send("A", "codex", "&".repeat(4_000))).toEqual({
+      ok: false,
+      reason: expect.stringMatching(
+        /^Delivered, this message would take \d+ bytes, over the 8192 a delivery may/,
+      ),
+    })
+    expect(sent(send("A", "codex", "a".repeat(4_096)))).toMatchObject({ state: "queued" })
+  })
+
+  it("never makes the root's messages gone when Antigravity restarts during a subagent's work", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    const root = binding("agy", "c-root", "7")
+    first.messaging.register("G", here, "agy")
+    first.messaging.observe("G", {
+      binding: root,
+      events: [observed(root, true)],
+      statusLine: true,
+    })
+    sent(first.send("A", "agy", "hello"))
+    first.messaging.close()
+    const second = create(records)
+    second.messaging.register("G", here, "agy")
+    // The first report after the restart is a subagent's model call.
+    const subagent = binding("agy", "c-sub", "8")
+    second.messaging.observe("G", {
+      binding: subagent,
+      events: [observed(subagent), started(subagent, "call")],
+    })
+    expect(messages(second.messaging, "G")[0]?.state).toBe("queued")
+    // The root's own call, which a message waits for, corrects the guess.
+    const rooted = binding("agy", "c-root", "8")
+    const answer = second.ask("G", rooted, "PreInvocation", [
+      observed(rooted),
+      started(rooted, "harness"),
+    ])
+    expect(answer.stdout).toContain("hello")
+  })
+
+  it("makes messages gone once restoring is over for a terminal never restored, until it is", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    sent(first.send("A", "codex", "hello"))
+    first.messaging.close()
+    const second = new Messaging({ records, sweepMs: 0, restoreMs: 60_000 })
+    second.register("A", here, "claude")
+    vi.advanceTimersByTime(60_000)
+    expect(records.messages()[0]?.state).toBe("gone")
+    second.register("B", here, "codex")
+    second.observe("B", { binding: binding("codex", "s-codex", "2"), events: [] })
+    expect(records.messages()[0]?.state).toBe("queued")
+    second.close()
+  })
+
+  it("gives a valid handle no record holds when the records can't give one", () => {
+    const records = {
+      ...memoryMailbox(),
+      assignHandle: () => {
+        throw new Error("disk full")
+      },
+    }
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const messaging = new Messaging({ records, sweepMs: 0, restoreMs: 0 })
+    const one = messaging.register("A", here, "codex")
+    const two = messaging.register("B", here, "codex")
+    error.mockRestore()
+    for (const handle of [one, two]) expect(handle).toMatch(/^codex-9\d{8}$/)
+    expect(one).not.toBe(two)
+  })
+})
+
 describe("gone messages", () => {
   it("are gone once the recipient's session ends, its sender told once, and wait again if it returns", () => {
     const { messaging, send, codex } = create()
@@ -439,7 +565,7 @@ describe("gone messages", () => {
     messaging.observe("B", { binding: null, events: [] })
     expect(messages(messaging, "B")[0]?.state).toBe("gone")
     expect(send("A", "codex-1", "again")).toMatchObject({ ok: false })
-    messaging.register("C", "p", "term")
+    messaging.register("C", here, "term")
     messaging.observe("C", { binding: binding("agy", "s-agy", "5"), events: [] })
     const told = sent(send("A", "agy", "first"))
     expect(told.gone).toEqual([{ id, to: "codex-1" }])
@@ -468,7 +594,7 @@ describe("Antigravity's root conversation", () => {
   const agyTerminal = () => {
     const setup = create()
     const root = binding("agy", "c-root", "7")
-    setup.messaging.register("G", "p", "agy")
+    setup.messaging.register("G", here, "agy")
     return { ...setup, root }
   }
 
@@ -537,7 +663,7 @@ describe("Antigravity's root conversation", () => {
     })
     messaging.observe("G", { binding: root, events: [started(root, "call")] })
     // Esc or a denial: idle, with no Stop.
-    const idle: HarnessEvent = { type: "turn-idle", ...fact(root) }
+    const idle: HarnessEvent = { type: "turn-idle", ...fact(root), background: false }
     messaging.observe("G", { binding: root, events: [idle], statusLine: true })
     expect(messaging.delivery("G")?.state).toBe("unknown")
     // After a Stop, idle says nothing new.
@@ -555,22 +681,175 @@ describe("Antigravity's root conversation", () => {
   })
 })
 
+// What the terminal manager knows of B: its title and where it works.
+const about = (terminalId: string): Whereabouts | undefined =>
+  terminalId === "B"
+    ? {
+        title: "API author",
+        folder: "src/api",
+        branch: "feat/paging",
+        plan: "Pagination",
+        place: (path: string) => path.replace(/^\/w\//, ""),
+      }
+    : terminalId === "D"
+      ? { title: "Web client", folder: null, branch: null, plan: null, place: (path) => path }
+      : undefined
+
+const prompted = (text: string, cause: "prompt" | "harness" = "prompt"): HarnessEvent => ({
+  type: "turn-started",
+  ...fact(binding("codex", "s-codex", "2")),
+  cause,
+  prompt: text,
+})
+
+const touched = (path: string): HarnessEvent => ({
+  type: "file-touched",
+  ...fact(binding("codex", "s-codex", "2")),
+  actor: null,
+  path,
+})
+
 describe("listing", () => {
-  it("lists the other terminals with their agents, and the caller's messages yet to arrive", () => {
-    const { messaging, send, prompt, codex } = create()
-    messaging.register("C", "p", "term")
-    prompt("B", codex)
-    const { id } = sent(send("A", "codex", "hello"))
-    expect(messaging.agents("A")).toEqual({
+  it("describes each other terminal by what NovaDeck knows, and the caller's messages yet to arrive", () => {
+    const { messaging, send, ask, codex, clock } = create()
+    messaging.register("C", here, "term")
+    ask("B", codex, "UserPromptSubmit", [
+      prompted(`Add pagination to /users ${"and more ".repeat(20)}`),
+    ])
+    clock.now += 1_000
+    for (const path of [
+      "/w/src/api/a.ts",
+      "/w/src/api/b.ts",
+      "/w/tests/a.ts",
+      "/w/src/api/a.ts",
+      "/w/docs/x.md",
+      "/w/tests/b.ts",
+      "/w/web/c.ts",
+    ])
+      messaging.observe("B", { binding: codex, events: [touched(path)] })
+    clock.now += 1_000
+    const { id } = sent(send("A", "codex", "Please accommodate x, y and z in the users route."))
+    expect(messaging.agents("A", about)).toEqual({
       ok: true,
       handle: "claude-1",
       agents: [
-        { handle: "codex-1", agent: "codex", state: "busy" },
-        { handle: "term-1", agent: null, state: null },
+        {
+          handle: "codex-1",
+          agent: "codex",
+          title: "API author",
+          folder: "src/api",
+          branch: "feat/paging",
+          startedWith: expect.stringMatching(/^Add pagination to \/users and more .*…$/),
+          // The same as it started with: left out.
+          latest: null,
+          plan: "Pagination",
+          worksIn: [
+            { folder: "src/api/", edits: 3 },
+            { folder: "tests/", edits: 2 },
+            { folder: "docs/", edits: 1 },
+          ],
+          withYou: {
+            from: "you",
+            text: "Please accommodate x, y and z in the users route.",
+            at: 1_002_000,
+          },
+          state: "busy",
+          activeAt: 1_001_000,
+        },
+        {
+          handle: "term-1",
+          agent: null,
+          title: null,
+          folder: null,
+          branch: null,
+          startedWith: null,
+          latest: null,
+          plan: null,
+          worksIn: [],
+          withYou: null,
+          state: null,
+          activeAt: null,
+        },
       ],
-      messages: [{ id, to: "codex-1", state: "queued", sentAt: 1_000_000 }],
+      messages: [{ id, to: "codex-1", state: "queued", sentAt: 1_002_000 }],
     })
+    const [peer] = peersOf(messaging)
+    expect(peer!.startedWith!.length).toBeLessThanOrEqual(120)
     expect(messaging.agents("C")).toMatchObject({ handle: "term-1", unbound: true })
+  })
+
+  it("tells the person's first and latest prompts, never a turn the harness started", () => {
+    const { messaging, ask, codex } = create()
+    ask("B", codex, "UserPromptSubmit", [prompted("Build the users API")])
+    ask("B", codex, "UserPromptSubmit", [prompted("<task-notification>done", "harness")])
+    const peer = () => peersOf(messaging)[0]
+    expect(peer()).toMatchObject({ startedWith: "Build the users API", latest: null })
+    ask("B", codex, "UserPromptSubmit", [prompted("Now add paging")])
+    expect(peer()).toMatchObject({ startedWith: "Build the users API", latest: "Now add paging" })
+  })
+
+  it("keeps what a session worked on across a restart, and starts afresh for a new session", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    first.ask("B", first.codex, "UserPromptSubmit", [prompted("Build the users API")])
+    first.messaging.observe("B", { binding: first.codex, events: [touched("/w/src/api/a.ts")] })
+    first.messaging.close()
+    const second = create(records)
+    const peer = (messaging: Messaging) => peersOf(messaging)[0]
+    expect(peer(second.messaging)).toMatchObject({
+      startedWith: "Build the users API",
+      worksIn: [{ folder: "src/api/", edits: 1 }],
+    })
+    // Another session there, as after /clear, has done nothing yet.
+    second.messaging.observe("B", { binding: binding("codex", "s-new", "2"), events: [] })
+    expect(peer(second.messaging)).toMatchObject({ startedWith: null, worksIn: [] })
+  })
+
+  it("tells the latest message between the caller and each terminal, either way", () => {
+    const { messaging, send, clock } = create()
+    sent(send("A", "codex", "first"))
+    clock.now += 1_000
+    sent(send("B", "claude", `Done; ${"details ".repeat(20)}`))
+    const [peer] = peersOf(messaging)
+    expect(peer!.withYou).toEqual({
+      from: "codex-1",
+      text: expect.stringMatching(/^Done; details .*…$/),
+      at: 1_001_000,
+    })
+  })
+
+  it("lets only terminals of one project and NovaDeck session see each other", () => {
+    const { messaging, send } = create()
+    messaging.register("O", { projectId: "p", sessionId: "other" }, "codex")
+    messaging.observe("O", { binding: binding("codex", "s-o", "9"), events: [] })
+    expect(messaging.agents("A")).toMatchObject({ agents: [{ handle: "codex-1" }] })
+    // The only Codex here is B's: O is in another session.
+    expect(sent(send("A", "codex", "hi")).to).toBe("codex-1")
+    expect(send("A", "codex-2", "hi")).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('No terminal here is called "codex-2"'),
+    })
+  })
+
+  it("describes the candidates in one line each when the name it was given fits several", () => {
+    const { messaging, send, ask, codex } = create()
+    messaging.register("D", here, "codex")
+    messaging.observe("D", { binding: binding("codex", "s-d", "4"), events: [] })
+    ask("B", codex, "UserPromptSubmit", [prompted("Build the users API")])
+    const refused = messaging.send("A", { to: "codex", text: "hi" }, about)
+    expect(refused).toEqual({
+      ok: false,
+      reason: [
+        "More than one terminal here runs Codex. Pick the one you mean by its title, folder " +
+          "and work, and send to it by its handle; if you can't tell, ask the person.",
+        '- codex-1 (Codex); titled "API author"; in src/api on feat/paging; started with ' +
+          '"Build the users API"; plan "Pagination"',
+        '- codex-2 (Codex); titled "Web client"',
+      ].join("\n"),
+    })
+    expect(send("A", "reviewer", "hi")).toMatchObject({
+      reason: expect.stringContaining('No terminal here is called "reviewer"'),
+    })
   })
 
   it("gives the runner API a terminal's threads, messages and states", () => {

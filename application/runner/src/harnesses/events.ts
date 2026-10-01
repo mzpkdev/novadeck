@@ -36,7 +36,7 @@ export type SessionObserved = {
  * of a turn already running. It ends `completed` only when its harness says so (a root
  * Stop, which may leave work it started running in the `background`); `turn-idle` says
  * the agent shows idle however its turn ended, which without such a Stop was an Esc or a
- * denial. A request has no id of its own
+ * denial. `file-touched` names a file an actor wrote or edited. A request has no id of its own
  * in any harness, so `requestId` is derived from the tool call it asks about and the
  * actor that asks: the root agent, or a subagent by its id. A result marked `loose`
  * resolves the actor's oldest request of that tool when its call changed on the way, as
@@ -48,14 +48,24 @@ export type ActivityEvent = {
   readonly instance: string | null
   readonly startedAt: number
 } & (
-  | { readonly type: "turn-started"; readonly cause: "prompt" | "harness" | "call" }
+  | {
+      readonly type: "turn-started"
+      readonly cause: "prompt" | "harness" | "call"
+      /** The person's prompt, where the hook names it. */
+      readonly prompt?: string
+    }
   | {
       readonly type: "turn-ended"
       readonly outcome: "completed" | "interrupted" | "failed"
       /** Whether work the turn started still runs, and may start another turn by itself. */
       readonly background?: boolean
     }
-  | { readonly type: "turn-idle" }
+  | {
+      readonly type: "turn-idle"
+      /** Whether work the turn started, as a subagent, still runs. */
+      readonly background: boolean
+    }
+  | { readonly type: "file-touched"; readonly actor: string | null; readonly path: string }
   | {
       readonly type: "attention-requested"
       readonly requestId: string

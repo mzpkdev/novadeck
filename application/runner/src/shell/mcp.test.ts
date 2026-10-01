@@ -359,14 +359,67 @@ describe("NovaDeck's MCP server", () => {
       })
     })
 
+    it("refuses a message too long to send, without calling the runner", async () => {
+      calls.length = 0
+      const [, refused] = await session(terminal(), [
+        initialize,
+        {
+          id: 3,
+          method: "tools/call",
+          params: { name: "send", arguments: { to: "codex", text: "é".repeat(40_000) } },
+        },
+      ])
+      expect(refused?.result).toEqual({
+        content: [
+          {
+            type: "text",
+            text:
+              "The message is 80000 bytes, over the 4096 a message may hold; put longer " +
+              "content in a file the recipient can open, and send its path.",
+          },
+        ],
+        isError: true,
+      })
+      expect(calls).toEqual([])
+    })
+
     it("lists the project's other terminals and the caller's messages yet to arrive", async () => {
       calls.length = 0
       answer = {
         ok: true,
         handle: "claude-1",
         agents: [
-          { handle: "codex-2", agent: "codex", state: "busy" },
-          { handle: "term-3", agent: null, state: null },
+          {
+            handle: "codex-2",
+            agent: "codex",
+            title: "API author",
+            folder: "src/api",
+            branch: "main",
+            startedWith: "Build the users API",
+            latest: "Add paging",
+            plan: "Pagination",
+            worksIn: [
+              { folder: "src/api/", edits: 14 },
+              { folder: "tests/", edits: 3 },
+            ],
+            withYou: { from: "codex-2", text: "Done.", at: Date.now() },
+            state: "busy",
+            activeAt: Date.now(),
+          },
+          {
+            handle: "term-3",
+            agent: null,
+            title: null,
+            folder: null,
+            branch: null,
+            startedWith: null,
+            latest: null,
+            plan: null,
+            worksIn: [],
+            withYou: null,
+            state: null,
+            activeAt: null,
+          },
         ],
         messages: [{ id: "m-1", to: "codex-2", state: "held", held: "paused", sentAt: 0 }],
       }
@@ -382,8 +435,15 @@ describe("NovaDeck's MCP server", () => {
       expect(isError).toBe(false)
       expect(content[0]?.text.split("\n")).toEqual([
         "You are claude-1 in NovaDeck.",
-        "Other terminals in this project:",
-        "- codex-2: codex, busy",
+        "Other terminals in this project and session:",
+        "- codex-2: Codex, busy, last active just now",
+        "  title: API author",
+        "  folder: src/api, branch main",
+        "  started with: Build the users API",
+        "  latest: Add paging",
+        "  plan: Pagination",
+        "  works in: src/api/ (14), tests/ (3)",
+        "  with you: codex-2, just now: Done.",
         "- term-3: no agent NovaDeck can deliver to",
         "Your messages not yet delivered:",
         `- m-1 to codex-2, sent ${new Date(0).toTimeString().slice(0, 5)}: held while the user has messaging paused`,
@@ -397,6 +457,8 @@ describe("NovaDeck's MCP server", () => {
         const { description } = described.find((tool) => tool.name === name)!
         expect(description).toContain("only when the user asked you to")
         expect(description).toContain("never an approval")
+        expect(description).toContain("call agents again")
+        expect(description).toContain("ask the user rather than guess")
         expect(description).toContain("end your turn rather than wait or poll")
       }
     })

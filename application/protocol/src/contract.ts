@@ -29,6 +29,7 @@ import {
   terminalRequestAnswer,
   terminalMessages,
   terminalSummary,
+  terminalTitle,
   threadId,
   workspaceSession,
 } from "./schemas.js"
@@ -93,6 +94,7 @@ export const contract = {
     save: procedure.input(z.strictObject({ sessionId: id, state: clientState })).output(z.void()),
   },
   terminals: {
+    // Every terminal of the session, running or saved to restore, oldest first.
     list: procedure.input(z.strictObject({ sessionId: id })).output(z.array(terminalSummary)),
     // `restore` starts where the runner's saved record of this terminal left off: in its
     // last directory, showing its saved transcript before the shell's output. `resume`
@@ -114,6 +116,9 @@ export const contract = {
             restore: z.boolean().optional(),
             resume: agentName.optional(),
             command: startupCommand.optional(),
+            // Its title; a restored terminal keeps its saved one, and a new one takes the
+            // session's next default, when left out.
+            title: terminalTitle.optional(),
           })
           .refine(({ command, restore, resume }) => !command || (!restore && !resume), {
             message: "A terminal either starts a command or restores what it ran, not both.",
@@ -127,9 +132,9 @@ export const contract = {
     // Answers a request with the terminal the client opened for it, or why it didn't.
     // One the runner no longer waits for, or sent to another client, is NOT_FOUND.
     answerRequest: procedure.input(terminalRequestAnswer).output(z.void()),
-    // Every terminal across sessions: `changed` for each, `synced`, then later changes
-    // (creation, size, foreground process, exit, restart) and `removed` when a record
-    // is closed or evicted.
+    // Every terminal across sessions, running or saved: `changed` for each, `synced`, then
+    // later changes (creation, title, size, foreground process, exit, restart, and its
+    // shell's record let go, when it is saved again) and `removed` once it is closed.
     watch: procedure.input(z.void()).output(eventIterator(terminalChange)),
     attach: procedure
       .input(
@@ -148,6 +153,13 @@ export const contract = {
       .output(z.void()),
     ack: procedure.input(z.strictObject({ terminalId: id, sequence })).output(z.void()),
     close: procedure.input(z.strictObject({ terminalId: id })).output(z.void()),
+    // Renames a terminal: the runner keeps the title with the terminal, running or saved
+    // to restore, and announces it on `watch`. One it keeps nothing of is
+    // TERMINAL_NOT_FOUND; a new terminal takes its first title with `create`, or the
+    // session's next default.
+    rename: procedure
+      .input(z.strictObject({ terminalId: id, title: terminalTitle }))
+      .output(z.void()),
     // Starts a fresh shell in an exited terminal, keeping its id, session and cwd; the
     // caller gains control. A running terminal is a CONFLICT. The earlier shell's screen
     // shows above the new one's, unless `resume` resumes an agent session, as for create.

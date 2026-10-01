@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto"
+import { randomBytes, randomInt } from "node:crypto"
+import { dirname } from "node:path"
 
 import type { AgentName, MessageThread, TerminalMessages } from "@novadeck/protocol"
 import { z } from "zod"
@@ -6,7 +7,7 @@ import { z } from "zod"
 import { DomainError } from "../errors.js"
 import type { Binding } from "../harnesses/bindings.js"
 import type { HarnessEvent } from "../harnesses/events.js"
-import { harnesses } from "../harnesses/registry.js"
+import { agents as allAgents, harnesses } from "../harnesses/registry.js"
 import type { HookAnswer } from "../shell/reports.js"
 import {
   continues,
@@ -25,17 +26,24 @@ import {
   freshId,
   holdOf,
   hopsPerRelease,
+  maxDeliveryBytes,
   maxMessageBytes,
   maxUndelivered,
   rates,
   resolvePeer,
   retentionMs,
+  shorten,
   threadBetween,
+  busiestFolders,
+  excerptChars,
+  freshWork,
+  promptChars,
+  type Work,
   undelivered,
   waiting,
   wrap,
-  type Addressee,
   type Message,
+  type Peer,
   type Thread,
 } from "./mailbox.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
@@ -43,7 +51,8 @@ import { memoryMailbox, type MailboxRecords } from "./records.js"
 /**
  * The agent session a terminal's messages are for: its bound session, except that
  * Antigravity names subagents' conversations alike, so there it is the conversation its
- * status line names, or until one does, that of the first model call after it bound.
+ * status line names, or until one does, a guess: the conversation that bound, then that
+ * of the first model call after it bound, or of one messages already wait for.
  */
 type Root = {
   readonly agent: AgentName
@@ -52,17 +61,19 @@ type Root = {
   readonly source: "binding" | "invocation" | "status-line"
 }
 
+/** Which terminals see each other: those of one project and one NovaDeck session. */
+export type Scope = { readonly projectId: string; readonly sessionId: string }
+
 /** A running terminal, as messaging knows it. */
-type Live = {
+type Live = Scope & {
   readonly terminalId: string
-  readonly projectId: string
   readonly handle: string
   root: Root | null
   delivery: Delivery
-  /** Counts its root turns, so a lease that lapses late leaves a later turn alone. */
-  turn: number
   /** Antigravity: the delivery its turn's first model call printed, for each later call. */
   reinject: { readonly turn: number; readonly text: string } | null
+  /** What its bound session worked on; null until a session binds. */
+  work: Work | null
 }
 
 /** Messages handed to a hook that has yet to say it printed them. */
@@ -71,11 +82,29 @@ type Lease = {
   readonly terminalId: string
   readonly messages: readonly string[]
   readonly kind: "stop" | "prompt"
+  /** The root turn it was leased in. */
   readonly turn: number
   readonly background: boolean
   readonly text: string
   readonly timer: ReturnType<typeof setTimeout>
 }
+
+/**
+ * What the terminal manager knows of a terminal beyond its agent's hooks: the title the
+ * person gave it, as its record keeps it; its folder, relative to the project when inside
+ * it; its git branch; its current plan's title; and how others read a folder it wrote in.
+ */
+export type Whereabouts = {
+  readonly title: string | null
+  readonly folder: string | null
+  readonly branch: string | null
+  readonly plan: string | null
+  /** A folder it wrote in, as others read it: relative to the project when inside it. */
+  readonly place: (path: string) => string
+}
+
+/** Whereabouts by terminal; undefined for one the manager can't tell of. */
+export type About = (terminalId: string) => Whereabouts | undefined
 
 /** What `send` answers: where the message is, or why it was refused. */
 export type SendAnswer =
@@ -95,17 +124,19 @@ export type SendAnswer =
     }
   | { readonly ok: false; readonly reason: string }
 
-/** What `agents` answers: the other terminals in the project, and this one's undelivered messages. */
+/** A peer as `agents` lists it, without its terminal's id. */
+export type PeerView = Omit<Peer, "terminalId">
+
+/**
+ * What `agents` answers: the other terminals in the project and session, described, and
+ * this one's undelivered messages.
+ */
 export type AgentsAnswer =
   | {
       readonly ok: true
       readonly handle: string
       readonly unbound?: true
-      readonly agents: readonly {
-        readonly handle: string
-        readonly agent: AgentName | null
-        readonly state: "busy" | "idle" | null
-      }[]
+      readonly agents: readonly PeerView[]
       readonly messages: readonly {
         readonly id: string
         readonly to: string
@@ -124,6 +155,12 @@ export type MessagingOptions = {
   readonly leaseMs?: number
   /** How often messages past retention are deleted, in milliseconds. */
   readonly sweepMs?: number
+  /**
+   * How long after the runner starts its terminals have to be restored and their agents
+   * resumed, in milliseconds: then messages for a session not running are gone, until it
+   * runs again.
+   */
+  readonly restoreMs?: number
 }
 
 /** A lease is given only with this long left before its hook's deadline, in milliseconds. */
@@ -156,11 +193,23 @@ const rooted = (
 const sameProcess = (a: string | null, b: string | null): boolean =>
   a === null || b === null || a === b
 
+/** The bytes the largest of a message's deliveries on its own would print, in any harness. */
+const deliveredBytes = (message: Message): number => {
+  const text = wrap([message])
+  return Math.max(
+    ...allAgents.flatMap((agent) => {
+      const { answers } = harnesses[agent]
+      return [byteLength(answers.stop(text)), byteLength(answers.prompt(text))]
+    }),
+  )
+}
+
 /**
  * Messages between the agents in NovaDeck's terminals (see docs/agent-messaging.md): the
  * mailbox, which keeps every message, thread and handle; each terminal's delivery state;
- * and the leases that hand messages to its hooks. The terminal manager tells it what its
- * terminals' agents and people do, and asks it what each hook prints.
+ * the leases that hand messages to its hooks; and what tells its terminals apart. The
+ * terminal manager tells it what its terminals' agents and people do, and asks it what
+ * each hook prints.
  */
 export class Messaging {
   private readonly records: MailboxRecords
@@ -170,12 +219,15 @@ export class Messaging {
   private readonly messages = new Map<string, Message>()
   private readonly threads = new Map<string, Thread>()
   private readonly leases = new Map<string, Lease>()
+  /** What each terminal's session worked on, as kept, for terminals not running yet. */
+  private readonly works = new Map<string, Work>()
   private paused: boolean
   // Send times, for the rates: by sender, by sender and recipient, and all.
   private readonly sent = new Map<string, readonly number[]>()
   private readonly pairs = new Map<string, readonly number[]>()
   private allSent: readonly number[] = []
   private readonly sweeper: ReturnType<typeof setInterval> | undefined
+  private readonly restoring: ReturnType<typeof setTimeout> | undefined
 
   constructor(options: MessagingOptions = {}) {
     this.records = options.records ?? memoryMailbox()
@@ -184,6 +236,8 @@ export class Messaging {
     this.paused = this.read(() => this.records.messagingPaused(), false)
     for (const thread of this.read(() => this.records.threads(), []))
       this.threads.set(thread.id, thread)
+    for (const { terminalId, work } of this.read(() => this.records.works(), []))
+      this.works.set(terminalId, work)
     for (const message of this.read(() => this.records.messages(), [])) {
       this.messages.set(message.id, message)
       // A lease held when the runner stopped is gone with it: its messages wait again.
@@ -195,37 +249,43 @@ export class Messaging {
       this.sweeper = setInterval(() => this.sweep(), options.sweepMs ?? 60 * 60_000)
       this.sweeper.unref()
     }
+    if (options.restoreMs !== 0) {
+      this.restoring = setTimeout(() => this.restored(), options.restoreMs ?? 120_000)
+      this.restoring.unref()
+    }
   }
 
   /** Stops its timers; leases left go back to waiting with the next runner. */
   close(): void {
     clearInterval(this.sweeper)
+    clearTimeout(this.restoring)
     for (const lease of this.leases.values()) clearTimeout(lease.timer)
     this.leases.clear()
   }
 
   /**
    * A terminal starts, or starts again: its handle, which it keeps across its shells and
-   * restores, or the next one in its project for `prefix`.
+   * restores, or the next one in its project for `prefix`. It sees, and is seen by, the
+   * terminals of its project and NovaDeck session.
    */
-  register(terminalId: string, projectId: string, prefix: string): string {
+  register(terminalId: string, scope: Scope, prefix: string): string {
     const known = this.live.get(terminalId)
     if (known) return known.handle
     const handle = this.write(
-      () => this.records.assignHandle(terminalId, projectId, prefix),
-      `${prefix}-0`,
+      () => this.records.assignHandle(terminalId, scope.projectId, prefix),
+      undefined,
     )
     this.write(() => this.records.markRemoved(terminalId, null), undefined)
     this.live.set(terminalId, {
       terminalId,
-      projectId,
-      handle,
+      ...scope,
+      handle: handle ?? this.fallbackHandle(scope.projectId, prefix),
       root: null,
       delivery: unbound,
-      turn: 0,
       reinject: null,
+      work: this.works.get(terminalId) ?? null,
     })
-    return handle
+    return this.live.get(terminalId)!.handle
   }
 
   /** A terminal stops running: its agent's messages are gone until its session runs again. */
@@ -315,12 +375,12 @@ export class Messaging {
     )
     if (!start) return silent
     // A later model call of the turn sees again what its first was given.
-    if (start.cause === "call") {
-      const again = live.reinject?.turn === live.turn ? live.reinject.text : undefined
-      return again ? { leaseId: null, stdout: answers.prompt(again) } : silent
-    }
+    const again =
+      live.reinject?.turn === live.delivery.turn ? answers.prompt(live.reinject.text) : undefined
+    if (start.cause === "call") return again ? { leaseId: null, stdout: again } : silent
     const lease = time && this.lease(live, root, "prompt", false)
-    return lease ? { leaseId: lease.id, stdout: answers.prompt(lease.text) } : silent
+    if (lease) return { leaseId: lease.id, stdout: answers.prompt(lease.text) }
+    return again ? { leaseId: null, stdout: again } : silent
   }
 
   /**
@@ -352,10 +412,11 @@ export class Messaging {
   }
 
   /**
-   * An agent's message to another terminal in its project, by handle or by its agent's
-   * name. It never claims delivery: it answers where the message is, or why not.
+   * An agent's message to another terminal in its project and session, by handle or by
+   * its agent's name. It never claims delivery: it answers where the message is, or why
+   * not, describing the terminals there when `to` names none, or more than one.
    */
-  send(terminalId: string, request: unknown): SendAnswer {
+  send(terminalId: string, request: unknown, about: About = () => undefined): SendAnswer {
     const live = this.live.get(terminalId)
     if (!live) return refused("NovaDeck couldn't send the message.")
     const parsed = sendRequest.safeParse(request)
@@ -365,21 +426,63 @@ export class Messaging {
     if (!text.trim()) return refused("The message is empty.")
     if (byteLength(text) > maxMessageBytes)
       return refused(
-        "The message is longer than 4 KB; put longer content in a file the recipient can " +
-          "open, and send its path.",
+        `The message is ${byteLength(text)} bytes, over the ${maxMessageBytes} a message may ` +
+          "hold; put longer content in a file the recipient can open, and send its path.",
       )
-    const found = resolvePeer(parsed.data.to, this.peers(live), live.handle)
+    const found = resolvePeer(parsed.data.to, this.peers(live, about), live.handle)
     if (!found.ok) return refused(found.reason)
     const recipient = this.live.get(found.peer.terminalId)!
     const root = recipient.root
     if (!root)
       return refused(`${recipient.handle} has no agent running there that NovaDeck can deliver to.`)
     const now = this.now()
-    const extras = this.extras(live)
     const same = duplicateOf(this.messages.values(), terminalId, recipient.terminalId, text, now)
-    if (same) return { ...this.answer(same, recipient), ...extras }
+    if (same) return { ...this.answer(same, recipient), ...this.extras(live) }
+    const known = threadBetween(this.threads.values(), terminalId, recipient.terminalId, now)
+    const thread: Thread = known
+      ? { ...known, hops: known.hops + 1, lastAt: now }
+      : {
+          id: this.freshThreadId(),
+          projectId: live.projectId,
+          between: [terminalId, recipient.terminalId],
+          hops: 1,
+          allowed: hopsPerRelease,
+          lastAt: now,
+        }
+    const message: Message = {
+      id: this.freshMessageId(),
+      projectId: live.projectId,
+      thread: thread.id,
+      hop: thread.hops,
+      from: {
+        terminalId,
+        handle: live.handle,
+        agent: live.root?.agent ?? null,
+        sessionId: live.root?.sessionId ?? null,
+      },
+      to: {
+        terminalId: recipient.terminalId,
+        handle: recipient.handle,
+        agent: root.agent,
+        sessionId: root.sessionId,
+      },
+      text,
+      sentAt: now,
+      state: waiting({ hop: thread.hops }, thread, this.paused),
+      deliveredAt: null,
+      notified: false,
+    }
+    // Alone in a delivery, it must fit whichever harness it reaches, as it is printed.
+    const size = deliveredBytes(message)
+    if (size > maxDeliveryBytes)
+      return refused(
+        `Delivered, this message would take ${size} bytes, over the ${maxDeliveryBytes} a ` +
+          'delivery may: plain text of up to 4 KB fits, but characters such as < > & " and ' +
+          "line breaks take more room once escaped. Shorten it, or put it in a file and send " +
+          "its path.",
+      )
     const waitingThere = [...this.messages.values()].filter(
-      (message) => message.to.terminalId === recipient.terminalId && undelivered(message),
+      (each) => each.to.terminalId === recipient.terminalId && undelivered(each),
     ).length
     if (waitingThere >= maxUndelivered)
       return refused(
@@ -402,48 +505,19 @@ export class Messaging {
     this.sent.set(terminalId, bySender)
     this.pairs.set(pair, byPair)
     this.allSent = byAll
-    const thread = this.continueThread(live, recipient, now)
-    const to: Addressee = {
-      terminalId: recipient.terminalId,
-      handle: recipient.handle,
-      agent: root.agent,
-      sessionId: root.sessionId,
-    }
-    const message: Message = {
-      id: this.freshMessageId(),
-      projectId: live.projectId,
-      thread: thread.id,
-      hop: thread.hops,
-      from: {
-        terminalId,
-        handle: live.handle,
-        agent: live.root?.agent ?? null,
-        sessionId: live.root?.sessionId ?? null,
-      },
-      to,
-      text,
-      sentAt: now,
-      state: waiting({ hop: thread.hops }, thread, this.paused),
-      deliveredAt: null,
-      notified: false,
-    }
+    this.putThread(thread)
     this.put(message)
-    return { ...this.answer(message, recipient), ...extras }
+    return { ...this.answer(message, recipient), ...this.extras(live) }
   }
 
   /**
-   * The other terminals in the caller's project, with their agents and whether each is
-   * busy, and the caller's own messages not yet delivered or gone.
+   * The other terminals in the caller's project and session, each described by what
+   * NovaDeck knows of it, and the caller's own role and messages not yet delivered or gone.
    */
-  agents(terminalId: string): AgentsAnswer {
+  agents(terminalId: string, about: About = () => undefined): AgentsAnswer {
     const live = this.live.get(terminalId)
     if (!live) return refused("NovaDeck couldn't list the terminals.")
-    const agents = this.peers(live).map(({ terminalId: id }) => {
-      const peer = this.live.get(id)!
-      const busy = peer.delivery.state === "working"
-      const state = peer.root ? (busy ? ("busy" as const) : ("idle" as const)) : null
-      return { handle: peer.handle, agent: peer.root?.agent ?? null, state }
-    })
+    const agents = this.peers(live, about).map(({ terminalId: _id, ...view }) => view)
     const messages = [...this.messages.values()]
       .filter(
         (message) =>
@@ -557,13 +631,13 @@ export class Messaging {
     const now = this.now()
     const handles = this.read(() => this.records.handles(), [])
     const gone = new Map<string, number>()
+    const present = (terminalId: string) =>
+      this.live.has(terminalId) || this.read(() => this.records.terminalSaved(terminalId), true)
     for (const record of handles) {
-      const present =
-        this.live.has(record.terminalId) ||
-        this.read(() => this.records.terminalSaved(record.terminalId), true)
-      if (present && record.removedAt !== null)
+      const here = present(record.terminalId)
+      if (here && record.removedAt !== null)
         this.write(() => this.records.markRemoved(record.terminalId, null), undefined)
-      if (present) continue
+      if (here) continue
       const since = record.removedAt ?? now
       if (record.removedAt === null)
         this.write(() => this.records.markRemoved(record.terminalId, now), undefined)
@@ -590,15 +664,69 @@ export class Messaging {
     if (forgotten.length > 0) this.write(() => this.records.removeHandles(forgotten), undefined)
   }
 
-  /** The other running terminals in the terminal's project. */
-  private peers(live: Live) {
+  /**
+   * Restoring is over: messages for a session that doesn't run in their terminal, as one
+   * never restored, are gone, and wait again should that session run there.
+   */
+  private restored(): void {
+    for (const message of this.messages.values()) {
+      if (!undelivered(message) || message.state === "leased") continue
+      const live = this.live.get(message.to.terminalId)
+      if (live?.root && this.addressed(message, live, live.root)) continue
+      this.put({ ...message, state: "gone", notified: false })
+    }
+  }
+
+  /** The other running terminals in the terminal's project and session, described. */
+  private peers(live: Live, about: About): Peer[] {
     return [...this.live.values()]
-      .filter((peer) => peer.projectId === live.projectId && peer.terminalId !== live.terminalId)
-      .map((peer) => ({
-        terminalId: peer.terminalId,
-        handle: peer.handle,
-        agent: peer.root?.agent ?? null,
-      }))
+      .filter(
+        (peer) =>
+          peer.projectId === live.projectId &&
+          peer.sessionId === live.sessionId &&
+          peer.terminalId !== live.terminalId,
+      )
+      .map((peer) => {
+        const where = about(peer.terminalId)
+        const busy = peer.delivery.state === "working"
+        const work = peer.root ? peer.work : null
+        const place = where?.place ?? ((path: string) => path)
+        return {
+          terminalId: peer.terminalId,
+          handle: peer.handle,
+          agent: peer.root?.agent ?? null,
+          title: where?.title ?? null,
+          folder: where?.folder ?? null,
+          branch: where?.branch ?? null,
+          startedWith: work?.first ?? null,
+          latest: work?.latest !== work?.first ? (work?.latest ?? null) : null,
+          plan: peer.root ? (where?.plan ?? null) : null,
+          worksIn: work
+            ? busiestFolders(work.folders).map(({ folder, edits }) => ({
+                folder: `${place(folder).replace(/\/$/, "")}/`,
+                edits,
+              }))
+            : [],
+          withYou: this.lastBetween(live, peer),
+          state: peer.root ? (busy ? ("busy" as const) : ("idle" as const)) : null,
+          activeAt: work?.activeAt ?? null,
+        }
+      })
+  }
+
+  /** The latest message between the caller and a peer, either way, shortened. */
+  private lastBetween(live: Live, peer: Live): Peer["withYou"] {
+    let last: Message | undefined
+    for (const message of this.messages.values()) {
+      const between =
+        (message.from.terminalId === live.terminalId &&
+          message.to.terminalId === peer.terminalId) ||
+        (message.from.terminalId === peer.terminalId && message.to.terminalId === live.terminalId)
+      if (between && (!last || message.sentAt >= last.sentAt)) last = message
+    }
+    if (!last) return null
+    const from = last.from.terminalId === live.terminalId ? "you" : peer.handle
+    return { from, text: shorten(last.text, excerptChars), at: last.sentAt }
   }
 
   /** What `send` answers of a message to `recipient`. */
@@ -629,23 +757,6 @@ export class Messaging {
     }
   }
 
-  /** The thread a message from `live` to `recipient` continues, or a new one, with its hop. */
-  private continueThread(live: Live, recipient: Live, now: number): Thread {
-    const found = threadBetween(this.threads.values(), live.terminalId, recipient.terminalId, now)
-    const thread: Thread = found
-      ? { ...found, hops: found.hops + 1, lastAt: now }
-      : {
-          id: this.freshThreadId(),
-          projectId: live.projectId,
-          between: [live.terminalId, recipient.terminalId],
-          hops: 1,
-          allowed: hopsPerRelease,
-          lastAt: now,
-        }
-    this.putThread(thread)
-    return thread
-  }
-
   private holdOf(message: Message): "paused" | "release" | null {
     return holdOf(message, this.threads.get(message.thread), this.paused)
   }
@@ -657,8 +768,9 @@ export class Messaging {
   }
 
   /**
-   * Leases the messages waiting for the root session, as many as one delivery carries,
-   * until the hook acknowledges them or `leaseMs` passes; none when none wait.
+   * Leases the messages waiting for the root session, as many as one delivery carries
+   * once printed as its harness reads it, until the hook acknowledges them or `leaseMs`
+   * passes; none when none wait.
    */
   private lease(
     live: Live,
@@ -675,7 +787,12 @@ export class Messaging {
           to.sessionId === root.sessionId,
       )
       .toSorted((a, b) => a.sentAt - b.sentAt)
-    const messages = deliveryOf(queued)
+    const { answers } = harnesses[root.agent]
+    const encode = kind === "stop" ? answers.stop : answers.prompt
+    const messages = deliveryOf(
+      queued,
+      (taken) => byteLength(encode(wrap(taken))) <= maxDeliveryBytes,
+    )
     if (messages.length === 0) return undefined
     for (const message of messages) this.put({ ...message, state: "leased" })
     let id = randomBytes(18).toString("base64url")
@@ -687,7 +804,7 @@ export class Messaging {
       terminalId: live.terminalId,
       messages: messages.map((message) => message.id),
       kind,
-      turn: live.turn,
+      turn: live.delivery.turn,
       background,
       text: wrap(messages),
       timer,
@@ -698,7 +815,8 @@ export class Messaging {
 
   /**
    * A lease its hook never acknowledged: its messages wait again. A Stop it would have
-   * continued was not continued, so its turn ended there.
+   * continued was not continued, so its turn ended there, unless the turn has moved on
+   * since, as when the hook printed it and only its acknowledgement was lost.
    */
   private lapse(leaseId: string): void {
     const lease = this.leases.get(leaseId)
@@ -709,7 +827,10 @@ export class Messaging {
       if (message?.state === "leased") this.wait(message)
     }
     const live = this.live.get(lease.terminalId)
-    if (live && lease.kind === "stop" && live.turn === lease.turn)
+    const delivery = live?.delivery
+    const atStop =
+      delivery?.turn === lease.turn && delivery.running && delivery.stopped && lease.kind === "stop"
+    if (live && atStop)
       this.step(live, { type: "stop", continued: false, background: lease.background })
   }
 
@@ -717,7 +838,9 @@ export class Messaging {
    * Follows the terminal's root session as its binding and reports change it. A new
    * binding, or a session its harness announced, is a new root. Antigravity names
    * subagents' conversations as it does its own, so there only its status line names a
-   * new root; until it has, its first model call after binding says which it is.
+   * new root; until it has, the root is a guess, which never makes messages gone: the
+   * first model call after binding, or a later one in a conversation messages wait for,
+   * corrects it.
    */
   private rooting(
     live: Live,
@@ -740,32 +863,47 @@ export class Messaging {
       const current = live.root!
       if (event.agent !== "agy" || !sameProcess(current.instance, event.instance)) continue
       if (event.type === "session-observed" && event.root && statusLine) {
-        if (event.sessionId === current.sessionId) {
-          if (current.source !== "status-line") live.root = { ...current, source: "status-line" }
-        } else if (current.source === "status-line")
+        if (current.source === "status-line" && event.sessionId !== current.sessionId)
           // A new conversation its status line names: a /clear, or another resumed.
           this.rootAt(live, { ...current, sessionId: event.sessionId, instance: event.instance })
         else this.retarget(live, event.sessionId, "status-line")
       }
-      if (event.type === "turn-started" && !statusLine && current.source === "binding")
+      if (event.type !== "turn-started" || statusLine || current.source === "status-line") continue
+      if (current.source === "binding") this.retarget(live, event.sessionId, "invocation")
+      else if (event.sessionId !== current.sessionId && this.awaited(live, event.sessionId))
         this.retarget(live, event.sessionId, "invocation")
     }
   }
 
+  /** Whether messages wait, or went, for that session of the terminal's agent. */
+  private awaited(live: Live, sessionId: string): boolean {
+    return [...this.messages.values()].some(
+      (message) =>
+        message.to.terminalId === live.terminalId &&
+        message.to.sessionId === sessionId &&
+        (undelivered(message) || message.state === "gone"),
+    )
+  }
+
   /**
-   * A new root session in the terminal: messages for any other session there are gone,
-   * as after a runner restart, and the new one's that were gone wait again.
+   * A new root session in the terminal: the new one's messages that were gone wait again,
+   * and unless the root is only a guess, those for any other session there are gone, as
+   * after a runner restart.
    */
   private rootAt(live: Live, root: Root): void {
     live.root = root
-    live.turn += 1
     live.reinject = null
+    // The same session bound again keeps what it worked on.
+    const session = `${root.agent}:${root.sessionId}`
+    if (live.work?.session !== session) this.keepWork(live, freshWork(session))
     this.step(live, { type: "bound" })
+    const guess = root.agent === "agy" && root.source !== "status-line"
     for (const message of this.messages.values()) {
       if (message.to.terminalId !== live.terminalId) continue
       if (this.addressed(message, live, root)) {
         if (message.state === "gone") this.wait(message)
-      } else if (undelivered(message)) this.put({ ...message, state: "gone", notified: false })
+      } else if (!guess && undelivered(message))
+        this.put({ ...message, state: "gone", notified: false })
     }
   }
 
@@ -779,14 +917,26 @@ export class Messaging {
         this.put({ ...message, state: "gone", notified: false })
   }
 
-  /** Corrects the root's session, as a guess at it is replaced by a better one. */
+  /**
+   * Corrects the root's session, as a guess at it is replaced by a better one: messages
+   * sent to the guess go to it, and its own that were gone wait again. Once its status
+   * line names it, messages for any other session there are gone.
+   */
   private retarget(live: Live, sessionId: string, source: Root["source"]): void {
     const root = live.root!
-    live.root = { ...root, sessionId, source }
-    if (sessionId === root.sessionId) return
-    for (const message of this.messages.values())
-      if (undelivered(message) && this.addressed(message, live, root))
-        this.put({ ...message, to: { ...message.to, sessionId } })
+    const next = { ...root, sessionId, source }
+    live.root = next
+    if (live.work && sessionId !== root.sessionId)
+      this.keepWork(live, { ...live.work, session: `${root.agent}:${sessionId}` })
+    for (const message of this.messages.values()) {
+      if (message.to.terminalId !== live.terminalId) continue
+      if (this.addressed(message, live, root) && sessionId !== root.sessionId) {
+        if (undelivered(message)) this.put({ ...message, to: { ...message.to, sessionId } })
+      } else if (this.addressed(message, live, next)) {
+        if (message.state === "gone") this.wait(message)
+      } else if (source === "status-line" && undelivered(message))
+        this.put({ ...message, state: "gone", notified: false })
+    }
   }
 
   private addressed(message: Message, live: Live, root: Root): boolean {
@@ -797,37 +947,77 @@ export class Messaging {
     )
   }
 
-  /** Applies a root turn event to the terminal's delivery. */
+  /** Applies a root event to the terminal's delivery, and to what tells others of its work. */
   private turn(live: Live, event: HarnessEvent): void {
     const root = live.root
     if (!root || !rooted(root, event)) return
     switch (event.type) {
-      case "turn-started":
+      case "turn-started": {
+        // Only the person's prompts say what the session works on.
+        const prompt =
+          event.cause === "prompt" && event.prompt ? shorten(event.prompt, promptChars) : null
+        this.worked(live, (work) =>
+          prompt ? { ...work, first: work.first ?? prompt, latest: prompt } : work,
+        )
         this.step(live, { type: "prompt", by: event.cause === "prompt" ? "person" : event.cause })
         return
+      }
       case "turn-ended":
+        this.worked(live, (work) => work)
         if (event.outcome === "completed")
           this.step(live, { type: "stop", continued: false, background: event.background === true })
         else this.step(live, { type: "ended" })
         return
       case "turn-idle":
-        if (live.delivery.state === "working") this.step(live, { type: "ended" })
+        this.step(live, { type: "idle", background: event.background })
         return
+      case "file-touched": {
+        const folder = dirname(event.path)
+        this.worked(live, (work) => ({
+          ...work,
+          folders: { ...work.folders, [folder]: (work.folders[folder] ?? 0) + 1 },
+        }))
+        return
+      }
       default:
         return
     }
   }
 
+  /** Records what the root session did now, as `change` says, and that it was active. */
+  private worked(live: Live, change: (work: Work) => Work): void {
+    if (!live.work) return
+    this.keepWork(live, { ...change(live.work), activeAt: this.now() })
+  }
+
+  /** Keeps the terminal's work, with its record. */
+  private keepWork(live: Live, work: Work): void {
+    live.work = work
+    this.works.set(live.terminalId, work)
+    this.write(() => this.records.saveWork(live.terminalId, work), undefined)
+  }
+
   private step(live: Live, event: DeliveryEvent): void {
     const before = live.delivery
     live.delivery = transition(before, event)
-    // A new turn, or the end of one, leaves the last turn's leases and deliveries behind.
-    const started = event.type === "prompt" && event.by !== "call" && before.state !== "working"
-    const ended = live.delivery.state !== "working" && before.state === "working"
-    if (started || ended) {
-      live.turn += 1
-      live.reinject = null
-    }
+    // A turn that ended, or a new one, leaves the last one's delivery behind.
+    const over = before.running && !live.delivery.running
+    if (over || live.delivery.turn !== before.turn) live.reinject = null
+  }
+
+  /**
+   * A handle when the records can't give one: valid, and far past any number the records
+   * give, so it collides with none of them.
+   */
+  private fallbackHandle(projectId: string, prefix: string): string {
+    const taken = new Set(
+      [...this.live.values()]
+        .filter((live) => live.projectId === projectId)
+        .map((live) => live.handle),
+    )
+    let handle = `${prefix}-${randomInt(900_000_000, 1_000_000_000)}`
+    while (taken.has(handle)) handle = `${prefix}-${randomInt(900_000_000, 1_000_000_000)}`
+    return handle
   }
 
   private freshMessageId(): string {

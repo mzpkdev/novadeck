@@ -132,6 +132,11 @@ export type Runner = {
        * `resume`. A shell that can't run one rejects with `SPAWN_FAILED`.
        */
       readonly command?: string
+      /**
+       * Its title; a restored terminal keeps its saved one, and a new one takes the
+       * session's next default, when left out.
+       */
+      readonly title?: string
     }): Promise<TerminalSummary>
     /**
      * Follows agents' requests for a new terminal, made through NovaDeck's MCP server,
@@ -163,6 +168,11 @@ export type Runner = {
      * while another connection controls the terminal.
      */
     close(terminalId: string): Promise<void>
+    /**
+     * Renames a terminal; the runner keeps the title and `watch` reports it. Rejects with
+     * `TERMINAL_NOT_FOUND` for a terminal the runner keeps nothing of.
+     */
+    rename(terminalId: string, title: string): Promise<void>
     /**
      * Starts a fresh shell in an exited terminal the runner still holds, keeping its id,
      * session and directory, and gives this client control. Attach again for the new
@@ -955,6 +965,7 @@ export const connectRunner = async (
       answerRequest: (answer) => call((wire) => wire.terminals.answerRequest(answer)),
       watch: () => new TerminalWatch(connection),
       close: (terminalId) => call((wire) => wire.terminals.close({ terminalId })),
+      rename: (terminalId, title) => call((wire) => wire.terminals.rename({ terminalId, title })),
       restart: (terminalId, { cols, rows, resume }) =>
         call((wire) =>
           wire.terminals.restart({ terminalId, cols, rows, ...(resume ? { resume } : {}) }),

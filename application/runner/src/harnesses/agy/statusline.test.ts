@@ -64,7 +64,9 @@ describe("Antigravity's status line, as captured", () => {
     ])
     // Denied: the turn ends, and no hook says so; idle reads the same after a completed
     // turn, so it is never taken for one.
-    expect(activity(idle!)).toEqual([{ type: "turn-idle", ...conversation, startedAt: 5 }])
+    expect(activity(idle!)).toEqual([
+      { type: "turn-idle", ...conversation, startedAt: 5, background: false },
+    ])
   })
 
   it("gives the context window's share in use, and each quota window left", () => {

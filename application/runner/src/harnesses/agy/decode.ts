@@ -37,7 +37,9 @@ export const decode = ({ event, seq, instance, payload }: Report): readonly Harn
     case "PreInvocation":
       return [
         observed,
-        { type: "turn-started", ...base, cause: payload.invocationNum === 0 ? "prompt" : "call" },
+        // Its first model call starts a turn, whether the person prompted it or a subagent's
+        // message woke the agent: no hook tells which.
+        { type: "turn-started", ...base, cause: payload.invocationNum === 0 ? "harness" : "call" },
       ]
     case "Stop":
       return [
@@ -50,7 +52,7 @@ export const decode = ({ event, seq, instance, payload }: Report): readonly Harn
         },
       ]
     case "PostToolUse":
-      return [observed, ...artifact(base, payload)]
+      return [observed, ...written(base, payload), ...artifact(base, payload)]
     default:
       return [observed]
   }
@@ -76,6 +78,36 @@ const artifact = (
   if (!inside || inside.startsWith("..") || isAbsolute(inside)) return []
   return [{ type: "plan-observed", ...base, actor: null, plan: { kind: "file", path } }]
 }
+
+// A file it wrote, as its write_to_file call names it.
+const written = (
+  base: { agent: "agy"; sessionId: string; instance: string | null; startedAt: number },
+  payload: Report["payload"],
+): HarnessEvent[] => {
+  const { name, args } = (payload.toolCall ?? {}) as {
+    name?: unknown
+    args?: Record<string, unknown>
+  }
+  const path = absolute(args?.TargetFile)
+  if (name !== "write_to_file" || !path || text(payload.error)) return []
+  return [{ type: "file-touched", ...base, actor: null, path }]
+}
+
+// Statuses of a subagent that no longer runs.
+const finished = new Set(["done", "completed", "finished", "idle", "failed", "cancelled", "error"])
+
+/**
+ * Whether the status line lists a subagent still running. It lists them while they run;
+ * one that names its state counts only while that is not a finished one.
+ */
+const subagentsRunning = (subagents: unknown): boolean =>
+  Array.isArray(subagents) &&
+  subagents.some((subagent) => {
+    if (typeof subagent !== "object" || subagent === null) return true
+    const { status, state } = subagent as { status?: unknown; state?: unknown }
+    const named = text(status) ?? text(state)
+    return named === undefined || !finished.has(named.toLowerCase())
+  })
 
 const count = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
@@ -116,7 +148,8 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
   // Stop did not, as abnormally. Working without a confirmation starts it again, settling
   // any it waited on, as a call of the turn: a snapshot's hook may start after the next
   // turn's, so neither holds for long against a wrong one.
-  if (payload.agent_state === "idle") events.push({ type: "turn-idle", ...base })
+  if (payload.agent_state === "idle")
+    events.push({ type: "turn-idle", ...base, background: subagentsRunning(payload.subagents) })
   else if (payload.tool_confirmation_pending === true)
     events.push({
       type: "attention-requested",

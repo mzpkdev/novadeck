@@ -1,4 +1,4 @@
-import type { Message, Thread } from "./mailbox.js"
+import type { Message, Thread, Work } from "./mailbox.js"
 
 /** A terminal's handle in its project, and since when the terminal is gone, if it is. */
 export type HandleRecord = {
@@ -31,6 +31,9 @@ export type MailboxRecords = {
   threads(): readonly Thread[]
   saveThread(thread: Thread): void
   removeThreads(ids: readonly string[]): void
+  /** What each terminal's agent session worked on, kept with the terminal's record. */
+  works(): readonly { readonly terminalId: string; readonly work: Work }[]
+  saveWork(terminalId: string, work: Work): void
   messagingPaused(): boolean
   pauseMessaging(paused: boolean): void
 }
@@ -41,6 +44,7 @@ export const memoryMailbox = (): MailboxRecords => {
   const counters = new Map<string, number>()
   const messages = new Map<string, Message>()
   const threads = new Map<string, Thread>()
+  const works = new Map<string, Work>()
   let paused = false
   return {
     handles: () => [...handles.values()],
@@ -72,6 +76,8 @@ export const memoryMailbox = (): MailboxRecords => {
     removeThreads(ids) {
       for (const id of ids) threads.delete(id)
     },
+    works: () => [...works].map(([terminalId, work]) => ({ terminalId, work })),
+    saveWork: (terminalId, work) => void works.set(terminalId, work),
     messagingPaused: () => paused,
     pauseMessaging(value) {
       paused = value

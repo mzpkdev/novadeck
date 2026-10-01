@@ -154,6 +154,7 @@ export const createRouter = (options: {
       close: authorized.terminals.close.handler(({ input, context }) =>
         terminals.close(input, context.connection.id),
       ),
+      rename: authorized.terminals.rename.handler(({ input }) => terminals.rename(input)),
     },
     agents: {
       list: authorized.agents.list.handler(() => agents.list()),

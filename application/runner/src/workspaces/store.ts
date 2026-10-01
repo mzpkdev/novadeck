@@ -6,9 +6,9 @@ import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import type { Message, Thread } from "../messaging/mailbox.js"
+import type { Message, Thread, Work } from "../messaging/mailbox.js"
 import type { HandleRecord, MailboxRecords } from "../messaging/records.js"
-import type { SavedTerminal, TerminalRecords } from "../terminals/records.js"
+import type { ListedTerminal, SavedTerminal, TerminalRecords } from "../terminals/records.js"
 
 /** Settings to change; those left out, or undefined, stay as they are. */
 export type SettingsChange = {
@@ -49,7 +49,20 @@ const extras = `
     prompted_at REAL,
     -- The screen and scrollback, serialized; null when not kept.
     transcript TEXT,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    -- The title the person gave it, or its session's default.
+    title TEXT,
+    -- The command it was opened to run at its first prompt.
+    command TEXT,
+    -- The program in its foreground when its shell was last seen.
+    last_program TEXT,
+    -- What its bound agent session worked on, for agents messaging each other, as JSON.
+    work TEXT
+  ) STRICT;
+  -- The last default number given to a session's terminals ("Terminal 03").
+  CREATE TABLE IF NOT EXISTS terminal_numbers (
+    session_id TEXT PRIMARY KEY,
+    last INTEGER NOT NULL
   ) STRICT;
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -104,8 +117,13 @@ const extras = `
     notified INTEGER NOT NULL
   ) STRICT;
 `
-// Records of terminals that are gone, kept for restoring; the oldest beyond this go.
-const keptTerminals = 128
+// Columns `extras` added to its tables since they were first created.
+const added = [
+  ["terminals", "title"],
+  ["terminals", "command"],
+  ["terminals", "last_program"],
+  ["terminals", "work"],
+] as const
 
 const prepareFile = (path: string): void => {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -132,6 +150,12 @@ const prepareSchema = (database: DatabaseSync): void => {
     }
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec(extras)
+    // Columns added to a table that already exists, as in a database from before them.
+    for (const [table, column] of added) {
+      const columns = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+      if (!columns.some(({ name }) => name === column))
+        database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`)
+    }
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")
@@ -147,7 +171,22 @@ type TerminalRow = {
   prompted_at: number | null
   transcript: string | null
   updated_at: number
+  title: string | null
+  command: string | null
+  last_program: string | null
 }
+
+const listed = (row: Omit<TerminalRow, "transcript">) => ({
+  id: row.id,
+  sessionId: row.session_id,
+  title: row.title,
+  command: row.command,
+  lastProgram: row.last_program,
+  cwd: row.cwd,
+  agents: agentsOf(row.agents),
+  promptedAt: row.prompted_at,
+  savedAt: row.updated_at,
+})
 
 const agentsOf = (text: string): SavedTerminal["agents"] => {
   try {
@@ -315,19 +354,40 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
 
   terminal(terminalId: string): SavedTerminal | undefined {
     const row = this.queries.get`
-      SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at FROM terminals
-      WHERE id = ${terminalId}
+      SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at, title, command,
+        last_program
+      FROM terminals WHERE id = ${terminalId}
     ` as TerminalRow | undefined
-    if (!row) return undefined
-    return {
-      id: row.id,
-      sessionId: row.session_id,
-      cwd: row.cwd,
-      agents: agentsOf(row.agents),
-      promptedAt: row.prompted_at,
-      transcript: row.transcript,
-      savedAt: row.updated_at,
-    }
+    return row && { ...listed(row), transcript: row.transcript }
+  }
+
+  terminals(sessionId?: string): ListedTerminal[] {
+    const rows = (
+      sessionId === undefined
+        ? this.queries.all`
+          SELECT id, session_id, cwd, agents, prompted_at, updated_at, title, command,
+            last_program
+          FROM terminals ORDER BY rowid`
+        : this.queries.all`
+          SELECT id, session_id, cwd, agents, prompted_at, updated_at, title, command,
+            last_program
+          FROM terminals WHERE session_id = ${sessionId} ORDER BY rowid`
+    ) as Omit<TerminalRow, "transcript">[]
+    return rows.map(listed)
+  }
+
+  nextTerminalNumber(sessionId: string): number {
+    const row = this.queries.get`
+      INSERT INTO terminal_numbers (session_id, last) VALUES (${sessionId}, 1)
+      ON CONFLICT (session_id) DO UPDATE SET last = last + 1
+      RETURNING last
+    ` as { last: number }
+    return row.last
+  }
+
+  renameTerminal(terminalId: string, title: string): boolean {
+    const result = this.queries.run`UPDATE terminals SET title = ${title} WHERE id = ${terminalId}`
+    return result.changes > 0
   }
 
   /** Saves what restores the terminal; `transcript` is left as it is when omitted. */
@@ -338,29 +398,31 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
     // Strictly increasing, so saves in the same millisecond still sort by recency.
     const now = Math.max(Date.now(), this.lastSave + 0.001)
     this.lastSave = now
+    const { title, command, lastProgram } = terminal
     if (terminal.transcript === undefined)
       void this.queries.run`
-        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at)
+        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at, title,
+          command, last_program)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
-          ${terminal.promptedAt}, ${now})
+          ${terminal.promptedAt}, ${now}, ${title}, ${command}, ${lastProgram})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at, title = excluded.title,
+          command = excluded.command, last_program = excluded.last_program
       `
     else
       void this.queries.run`
-        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at)
+        INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at,
+          title, command, last_program)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
-          ${terminal.promptedAt}, ${terminal.transcript}, ${now})
+          ${terminal.promptedAt}, ${terminal.transcript}, ${now}, ${title}, ${command},
+          ${lastProgram})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
-          transcript = excluded.transcript, updated_at = excluded.updated_at
+          transcript = excluded.transcript, updated_at = excluded.updated_at,
+          title = excluded.title, command = excluded.command,
+          last_program = excluded.last_program
       `
-    void this.queries.run`
-      DELETE FROM terminals WHERE id NOT IN (
-        SELECT id FROM terminals ORDER BY updated_at DESC LIMIT ${keptTerminals}
-      )
-    `
   }
 
   removeTerminal(terminalId: string): void {
@@ -483,6 +545,24 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords {
 
   removeThreads(ids: readonly string[]): void {
     for (const id of ids) void this.queries.run`DELETE FROM message_threads WHERE id = ${id}`
+  }
+
+  works(): { terminalId: string; work: Work }[] {
+    const rows = this.queries.all`
+      SELECT id, work FROM terminals WHERE work IS NOT NULL
+    ` as { id: string; work: string }[]
+    return rows.flatMap(({ id, work }) => {
+      try {
+        return [{ terminalId: id, work: JSON.parse(work) as Work }]
+      } catch {
+        return []
+      }
+    })
+  }
+
+  saveWork(terminalId: string, work: Work): void {
+    void this.queries
+      .run`UPDATE terminals SET work = ${JSON.stringify(work)} WHERE id = ${terminalId}`
   }
 
   messagingPaused(): boolean {

@@ -251,6 +251,9 @@ describe("saved terminals", () => {
       cwd: "/work",
       agents: { claude: { sessionId: "abc", seq: 2 } },
       promptedAt: 1_000,
+      title: "API author",
+      command: "claude",
+      lastProgram: "claude",
     }
     first.saveTerminal({ ...terminal, transcript: "screen" })
     // Saving without a transcript leaves the saved one as it is.
@@ -273,20 +276,81 @@ describe("saved terminals", () => {
   it("overwrite forgotten transcripts, which may hold secrets", ({ directory, store }) => {
     const path = join(directory(), "workspace.sqlite")
     const workspace = store(path)
-    const terminal = { id: randomUUID(), sessionId: "s", cwd: "/", agents: {}, promptedAt: null }
+    const terminal = {
+      id: randomUUID(),
+      sessionId: "s",
+      cwd: "/",
+      agents: {},
+      promptedAt: null,
+      title: null,
+      command: null,
+      lastProgram: null,
+    }
     workspace.saveTerminal({ ...terminal, transcript: "SECRET_TRANSCRIPT_TEXT" })
     workspace.clearTranscripts()
     workspace.close()
     expect(readFileSync(path).includes("SECRET_TRANSCRIPT_TEXT")).toBe(false)
   })
 
-  it("keep the most recently saved terminals only", ({ store }) => {
+  it("keep every terminal until it is closed, listed by session in the order they came", ({
+    store,
+  }) => {
     const workspace = store()
     const ids = Array.from({ length: 130 }, () => randomUUID())
-    for (const id of ids)
-      workspace.saveTerminal({ id, sessionId: "s", cwd: "/", agents: {}, promptedAt: null })
-    expect(workspace.terminal(ids[0]!)).toBeUndefined()
-    expect(workspace.terminal(ids.at(-1)!)).toBeDefined()
+    for (const [index, id] of ids.entries())
+      workspace.saveTerminal({
+        id,
+        sessionId: index % 2 ? "odd" : "even",
+        cwd: "/",
+        agents: {},
+        promptedAt: null,
+        title: `Terminal ${index}`,
+        command: null,
+        lastProgram: null,
+      })
+    expect(workspace.terminal(ids[0]!)).toBeDefined()
+    expect(workspace.terminals()).toHaveLength(130)
+    expect(workspace.terminals("odd").map(({ id }) => id)).toEqual(ids.filter((_, i) => i % 2))
+    expect(workspace.terminals("odd")[0]).not.toHaveProperty("transcript")
+  })
+
+  it("rename a kept terminal, and number each session's terminals without reuse", ({
+    directory,
+    store,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const first = store(path)
+    expect(first.nextTerminalNumber("s")).toBe(1)
+    expect(first.nextTerminalNumber("s")).toBe(2)
+    expect(first.nextTerminalNumber("t")).toBe(1)
+    first.saveTerminal({
+      id: "a",
+      sessionId: "s",
+      cwd: "/",
+      agents: {},
+      promptedAt: null,
+      title: "Terminal 01",
+      command: null,
+      lastProgram: null,
+    })
+    expect(first.renameTerminal("a", "API author")).toBe(true)
+    expect(first.renameTerminal("missing", "x")).toBe(false)
+    first.close()
+    const reopened = store(path)
+    expect(reopened.terminal("a")?.title).toBe("API author")
+    expect(reopened.nextTerminalNumber("s")).toBe(3)
+  })
+
+  it("open a database from before titles, adding what it lacks", ({ directory, store }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const old = new DatabaseSync(path)
+    old.exec(`
+      CREATE TABLE terminals (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, cwd TEXT NOT NULL,
+        agents TEXT NOT NULL, prompted_at REAL, transcript TEXT, updated_at REAL NOT NULL) STRICT;
+      INSERT INTO terminals VALUES ('a', 's', '/', '{}', NULL, NULL, 1);
+    `)
+    old.close()
+    expect(store(path).terminal("a")).toMatchObject({ id: "a", title: null, lastProgram: null })
   })
 
   it("keep transcripts until they are turned off", ({ store }) => {
@@ -362,7 +426,16 @@ describe("the mailbox", () => {
     original.saveThread(thread)
     original.saveThread({ ...thread, allowed: 14 })
     original.pauseMessaging(true)
-    original.saveTerminal({ id: "a", sessionId: "s", cwd: "/", agents: {}, promptedAt: null })
+    original.saveTerminal({
+      id: "a",
+      sessionId: "s",
+      cwd: "/",
+      agents: {},
+      promptedAt: null,
+      title: null,
+      command: null,
+      lastProgram: null,
+    })
     original.close()
     const reopened = store(path)
     expect(reopened.messages()).toEqual([

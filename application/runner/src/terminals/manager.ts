@@ -2,7 +2,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import { constants, rmSync, writeFileSync } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
 import { constants as system } from "node:os"
-import { basename, delimiter, isAbsolute, join, resolve as resolvePath } from "node:path"
+import { basename, delimiter, isAbsolute, join, relative, resolve as resolvePath } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
 import type {
@@ -40,8 +40,13 @@ import { resumeAvailability } from "../harnesses/eligibility.js"
 import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
 import { harnesses } from "../harnesses/registry.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
-import { handlePrefix } from "../messaging/mailbox.js"
-import { Messaging, type AgentsAnswer, type SendAnswer } from "../messaging/messaging.js"
+import { handlePrefix, shorten } from "../messaging/mailbox.js"
+import {
+  Messaging,
+  type AgentsAnswer,
+  type SendAnswer,
+  type Whereabouts,
+} from "../messaging/messaging.js"
 import type { MailboxRecords } from "../messaging/records.js"
 import type { InstalledShell } from "../shell/install.js"
 import { shellLaunch, startsCommands, type ShellLaunch } from "../shell/integration.js"
@@ -57,6 +62,7 @@ import {
   type Reports,
 } from "../shell/reports.js"
 import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
+import { gitBranch } from "./branch.js"
 import {
   sampleForeground,
   shellInForeground,
@@ -73,8 +79,8 @@ import {
   type Asked,
   type OpenAnswer,
 } from "./opens.js"
-import { planContent, planStamp } from "./plans.js"
-import type { AgentReport, SavedTerminal, TerminalRecords } from "./records.js"
+import { planContent, planStamp, planTitle } from "./plans.js"
+import type { AgentReport, ListedTerminal, SavedTerminal, TerminalRecords } from "./records.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
@@ -143,6 +149,8 @@ type Create = {
   resume?: AgentName | undefined
   /** Runs once at the shell's first prompt; never with `restore` or `resume`. */
   command?: string | undefined
+  /** Its title; a restored one keeps its saved title, and a new one takes its session's next default. */
+  title?: string | undefined
 }
 type Size = { cols: number; rows: number }
 type Attach = { terminalId: string; afterSequence?: number; mode?: "control" | "observe" }
@@ -361,10 +369,17 @@ export class Terminals {
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
+  /** Each session's last default terminal number, without records to keep it. */
+  private readonly numbers = new Map<string, number>()
   /** Each terminal's agent reports and asks waiting their turn, in the order they came. */
   private readonly reports = new Map<string, Promise<void>>()
   /** Agents' messages to each other, and how each terminal's agent takes them. */
   private readonly messaging: Messaging
+  /** Each folder's git branch, as last read, and when, so agents listing peers read few. */
+  private readonly branches = new Map<
+    string,
+    { readonly branch: string | null; readonly at: number }
+  >()
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
   /** How many times each harness was disconnected, so a report that waited meanwhile is dropped. */
@@ -472,10 +487,15 @@ export class Terminals {
         this.claims.set(resume.key, input.id)
         started.resumeClaim = resume.key
       }
+      const title = input.title ?? saved?.title ?? this.defaultTitle(input.sessionId)
       const record: Record = {
         summary: {
           id: input.id,
           sessionId: input.sessionId,
+          title,
+          started: true,
+          command: input.command ?? saved?.command ?? null,
+          lastProgram: saved?.lastProgram ?? null,
           cwd,
           cols: input.cols,
           rows: input.rows,
@@ -520,7 +540,7 @@ export class Terminals {
       this.records.set(record.summary.id, record)
       this.messaging.register(
         record.summary.id,
-        this.projectOf(input.sessionId),
+        { projectId: this.projectOf(input.sessionId), sessionId: input.sessionId },
         handlePrefix(input.command ?? input.resume),
       )
       // The resumed agent shows its own history; a shell that resumes none, the transcript.
@@ -539,10 +559,85 @@ export class Terminals {
     }
   }
 
+  /**
+   * Every terminal of a session, or of all: those running, and those kept only as saved,
+   * which have no shell in this runner's lifetime until a client restores them.
+   */
   list(sessionId?: string): TerminalSummary[] {
-    return [...this.records.values()]
-      .filter((record) => sessionId === undefined || record.summary.sessionId === sessionId)
-      .map((record) => ({ ...record.summary }))
+    const live = new Map(
+      [...this.records.values()]
+        .filter((record) => sessionId === undefined || record.summary.sessionId === sessionId)
+        .map((record) => [record.summary.id, { ...record.summary }] as const),
+    )
+    let kept: readonly ListedTerminal[] = []
+    this.persisting(() => {
+      kept = this.options.records?.terminals(sessionId) ?? []
+    })
+    // In the order they were created, as the records keep them; a running one they don't
+    // keep, as without records, follows.
+    const listed = kept.flatMap((terminal) => {
+      const running = live.get(terminal.id)
+      if (running) return [running]
+      return this.draining.has(terminal.id) ? [] : [this.savedSummary(terminal)]
+    })
+    const recorded = new Set(kept.map(({ id }) => id))
+    return [...listed, ...[...live.values()].filter(({ id }) => !recorded.has(id))]
+  }
+
+  /** A terminal kept only as saved, as clients see it: no shell, its last facts. */
+  private savedSummary(terminal: ListedTerminal): TerminalSummary {
+    return {
+      id: terminal.id,
+      sessionId: terminal.sessionId,
+      title: terminal.title ?? "Terminal",
+      started: false,
+      command: terminal.command,
+      lastProgram: terminal.lastProgram,
+      cwd: terminal.cwd,
+      cols: 80,
+      rows: 24,
+      run: 0,
+      exit: null,
+      process: null,
+      agent: null,
+      activity: null,
+      telemetry: null,
+    }
+  }
+
+  /** The next default title of a session's terminals: "Terminal 01", "Terminal 02", … */
+  private defaultTitle(sessionId: string): string {
+    let number: number | undefined
+    this.persisting(() => {
+      number = this.options.records?.nextTerminalNumber(sessionId)
+    })
+    if (number === undefined) {
+      number = (this.numbers.get(sessionId) ?? 0) + 1
+      this.numbers.set(sessionId, number)
+    }
+    return `Terminal ${String(number).padStart(2, "0")}`
+  }
+
+  /**
+   * Renames a terminal, running or saved, and tells every watcher; one the runner keeps
+   * nothing of is TERMINAL_NOT_FOUND.
+   */
+  rename(input: { terminalId: string; title: string }): void {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    const record = this.records.get(input.terminalId)
+    if (record) {
+      record.summary = { ...record.summary, title: input.title }
+      this.announce(record)
+      this.save(record, false)
+      return
+    }
+    let renamed = false
+    this.persisting(() => {
+      renamed = this.options.records?.renameTerminal(input.terminalId, input.title) ?? false
+    })
+    const saved = renamed ? this.saved(input.terminalId) : undefined
+    if (!saved) throw new DomainError("TERMINAL_NOT_FOUND")
+    for (const watcher of this.watchers.keys()) watcher.changed(this.savedSummary(saved))
   }
 
   get(terminalId: string): TerminalSummary {
@@ -673,7 +768,10 @@ export class Terminals {
         if (earlier) this.show(record, earlier, null)
         this.messaging.register(
           record.summary.id,
-          this.projectOf(record.summary.sessionId),
+          {
+            projectId: this.projectOf(record.summary.sessionId),
+            sessionId: record.summary.sessionId,
+          },
           handlePrefix(input.resume),
         )
         this.listen(record)
@@ -695,9 +793,12 @@ export class Terminals {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     const record = this.records.get(input.terminalId)
     if (!record) {
-      // A terminal from an earlier runner is closed by forgetting what restores it.
+      // A terminal kept only as saved closes by forgetting it.
+      const saved = this.saved(input.terminalId)
       this.forget(input.terminalId)
-      throw new DomainError("TERMINAL_NOT_FOUND")
+      if (!saved) throw new DomainError("TERMINAL_NOT_FOUND")
+      for (const watcher of this.watchers.keys()) watcher.removed(saved)
+      return
     }
     if (record.controller !== undefined && record.controller !== ownerId)
       throw new DomainError("CONTROL_IN_USE")
@@ -1085,9 +1186,9 @@ export class Terminals {
       case "open":
         return this.open(call)
       case "send":
-        return Promise.resolve(this.send(call))
+        return this.send(call)
       case "agents":
-        return Promise.resolve(this.agents(call))
+        return this.agents(call)
     }
   }
 
@@ -1096,19 +1197,78 @@ export class Terminals {
    * server: from the terminal and its agent session, never a name the model passes. A
    * call without the shell's own token learns nothing more.
    */
-  send(call: Call): SendAnswer {
+  async send(call: Call): Promise<SendAnswer> {
     const record = this.records.get(call.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, call.token))
       return unansweredCalls.send
-    return this.messaging.send(call.terminalId, call.request)
+    const about = await this.whereabouts(record.summary.sessionId)
+    return this.messaging.send(call.terminalId, call.request, (id) => about.get(id))
   }
 
-  /** The other terminals in the caller's project, and its messages yet to arrive. */
-  agents(call: Call): AgentsAnswer {
+  /**
+   * The other terminals in the caller's project and session, each described by what
+   * NovaDeck knows of it, and the caller's messages yet to arrive.
+   */
+  async agents(call: Call): Promise<AgentsAnswer> {
     const record = this.records.get(call.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, call.token))
       return unansweredCalls.agents
-    return this.messaging.agents(call.terminalId)
+    const about = await this.whereabouts(record.summary.sessionId)
+    return this.messaging.agents(call.terminalId, (id) => about.get(id))
+  }
+
+  /**
+   * What NovaDeck knows of each running terminal in a session beyond its agent's hooks:
+   * its folder, relative to the project when inside it; its git branch; its agent's
+   * current plan's title; and how to shorten the paths it touched.
+   */
+  private async whereabouts(sessionId: string): Promise<Map<string, Whereabouts>> {
+    const project = this.projectFolder(sessionId)
+    const records = [...this.records.values()].filter(
+      (record) => record.summary.sessionId === sessionId && record.summary.exit === null,
+    )
+    const entries = await Promise.all(
+      records.map(async (record) => {
+        const { cwd } = record.summary
+        const plans = record.activity?.plans ?? []
+        const plan = plans.find(({ actor }) => actor === null) ?? plans.at(-1)
+        const [branch, title] = await Promise.all([
+          this.branch(cwd),
+          plan ? planTitle(plan.source) : undefined,
+        ])
+        const place = (path: string): string => {
+          for (const base of [project, cwd]) {
+            if (base === undefined) continue
+            const inside = relative(base, path)
+            if (!inside) return "."
+            if (!inside.startsWith("..") && !isAbsolute(inside)) return inside
+          }
+          return path
+        }
+        const where: Whereabouts = {
+          title: record.summary.title,
+          folder: place(cwd),
+          branch,
+          plan: title === undefined ? null : shorten(title, 120),
+          place: (path) => {
+            const shown = place(path)
+            return shown.length > 80 ? `…${shown.slice(-79)}` : shown
+          },
+        }
+        return [record.summary.id, where] as const
+      }),
+    )
+    return new Map(entries)
+  }
+
+  /** The git branch checked out in a folder, read again once what was read is a few seconds old. */
+  private async branch(cwd: string): Promise<string | null> {
+    const known = this.branches.get(cwd)
+    if (known && Date.now() - known.at < 5_000) return known.branch
+    const branch = await gitBranch(cwd)
+    if (this.branches.size > 256) this.branches.clear()
+    this.branches.set(cwd, { branch, at: Date.now() })
+    return branch
   }
 
   /** A hook printed what a lease delivered; one without the shell's own token is ignored. */
@@ -1406,7 +1566,10 @@ export class Terminals {
       record.foreground = sampleForeground(record.process, record.foreground)
       const current = record.foreground.process
       if (sameProcess(current, record.summary.process)) continue
-      record.summary = { ...record.summary, process: current }
+      // The program a fresh shell resumes, should this one be lost.
+      const lastProgram = current?.name ?? record.summary.lastProgram
+      record.summary = { ...record.summary, process: current, lastProgram }
+      record.changed = true
       this.announce(record)
     }
     if (running) return
@@ -1832,6 +1995,8 @@ export class Terminals {
     void watch(run, controller.signal, (fact) => {
       if (record.watching !== controller || fact.type === "session-observed") return
       if (this.applyFact(record, fact)) this.publishAgent(record, false)
+      // What only its records say, as an interrupted turn, reaches messaging too.
+      this.messaging.observe(record.summary.id, { binding: record.binding, events: [fact] })
     }).catch((error: unknown) => console.error("NovaDeck stopped following an agent:", error))
   }
 
@@ -1904,6 +2069,9 @@ export class Terminals {
       this.options.records?.saveTerminal({
         id: record.summary.id,
         sessionId: record.summary.sessionId,
+        title: record.summary.title,
+        command: record.summary.command,
+        lastProgram: record.summary.lastProgram,
         cwd: record.summary.cwd,
         agents: record.agents,
         promptedAt: record.promptedAt,
@@ -2039,7 +2207,11 @@ export class Terminals {
       this.dispose(record)
       this.records.delete(record.summary.id)
       this.messaging.unregister(record.summary.id)
-      for (const watcher of this.watchers.keys()) watcher.removed(record.summary)
+      // Its record is let go, but the terminal is kept, saved, until it is closed.
+      const saved = this.saved(record.summary.id)
+      for (const watcher of this.watchers.keys())
+        if (saved) watcher.changed(this.savedSummary(saved))
+        else watcher.removed(record.summary)
       this.undetail(record.summary.id)
       // Its share of what agents opened, as `forget` drops it on close.
       this.opened.delete(record.summary.id)

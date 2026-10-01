@@ -139,6 +139,8 @@ export const apply = (
       const kept = evicted < 0 ? activity.plans : activity.plans.toSpliced(evicted, 1)
       return { ...activity, plans: [...kept, next] }
     }
+    case "file-touched":
+      return undefined
     case "mode-observed":
       if (event.startedAt < activity.planningAt) return undefined
       return { ...activity, planning: event.planning, planningAt: event.startedAt }

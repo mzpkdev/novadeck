@@ -20,6 +20,8 @@ const stop = { type: "stop", continued: false, background: false } as const
 const continued = { type: "stop", continued: true, background: false } as const
 const background = { type: "stop", continued: false, background: true } as const
 const ended = { type: "ended" } as const
+const idle = { type: "idle", background: false } as const
+const idleWithWork = { type: "idle", background: true } as const
 const typing = { type: "input", submits: false, answers: false } as const
 const enter = { type: "input", submits: true, answers: false } as const
 const answer = { type: "input", submits: true, answers: true } as const
@@ -31,7 +33,13 @@ const unknown = run(working, ended)
 
 describe("a terminal's delivery state", () => {
   it("is Fresh once a session binds, with its prompt known empty", () => {
-    expect(bound).toEqual({ state: "fresh", empty: true, submitted: false, continued: 0 })
+    expect(bound).toMatchObject({
+      state: "fresh",
+      running: false,
+      empty: true,
+      submitted: false,
+      continued: 0,
+    })
   })
 
   it("is Unbound in every bound state once the binding ends", () => {
@@ -41,16 +49,25 @@ describe("a terminal's delivery state", () => {
 
   it("is Fresh again in every bound state once its harness announces a new session", () => {
     for (const from of [working, settled, busy, unknown])
-      expect(transition(from, { type: "bound" })).toEqual(bound)
+      expect(transition(from, { type: "bound" })).toMatchObject({
+        state: "fresh",
+        empty: true,
+        continued: 0,
+      })
   })
 
   it("works from Fresh, Settled, Person busy and Unknown once a root prompt starts a turn", () => {
     for (const from of [bound, settled, busy, unknown])
-      expect(transition(from, person)).toMatchObject({ state: "working", continued: 0 })
+      expect(transition(from, person)).toMatchObject({
+        state: "working",
+        running: true,
+        continued: 0,
+        turn: from.turn + 1,
+      })
   })
 
   it("settles at a normal root Stop not continued, the prompt known empty", () => {
-    expect(settled).toMatchObject({ state: "settled", empty: true, continued: 0 })
+    expect(settled).toMatchObject({ state: "settled", running: false, empty: true, continued: 0 })
   })
 
   it("leaves the person busy at a Stop when the prompt isn't known empty", () => {
@@ -66,27 +83,70 @@ describe("a terminal's delivery state", () => {
     expect(transition(queued, stop).state).toBe("busy")
   })
 
-  it("keeps working through a Stop NovaDeck continued, counting it", () => {
+  it("keeps working through a Stop NovaDeck continued, counting it, up to its limit", () => {
     const once = transition(working, continued)
-    expect(once).toMatchObject({ state: "working", continued: 1 })
+    expect(once).toMatchObject({ state: "working", running: true, continued: 1 })
     expect(continues(once)).toBe(true)
     const limit = run(working, ...Array.from({ length: maxContinuations }, () => continued))
     expect(continues(limit)).toBe(false)
-    // A later call of the same turn keeps the count.
-    expect(run(limit, call, person).continued).toBe(maxContinuations)
+    // Its continuation, even from the turn's first model call again, is the same turn.
+    expect(run(limit, harness, call).continued).toBe(maxContinuations)
+    expect(run(limit, harness).turn).toBe(working.turn)
     expect(transition(limit, stop).state).toBe("settled")
   })
 
-  it("keeps working while what the turn started still runs, until a later Stop", () => {
+  it("keeps working while what the turn started still runs, until it ends", () => {
     const waiting = transition(working, background)
-    expect(waiting).toMatchObject({ state: "working", continued: 0 })
+    expect(waiting).toMatchObject({ state: "working", running: false, continued: 0 })
+    // A background task's result starts a turn by itself, whose Stop ends it.
     expect(run(waiting, harness, stop).state).toBe("settled")
+    // Antigravity's subagents finishing, as its idle status line says, ends it too.
+    expect(transition(waiting, idleWithWork)).toEqual(waiting)
+    expect(transition(waiting, idle).state).toBe("settled")
   })
 
-  it("is Unknown after an abnormal end", () => {
-    expect(unknown).toMatchObject({ state: "unknown", continued: 0 })
-    // A Stop that arrives anyway, as a status line's idle raced it, ends the turn.
+  it("takes the person's Enter while only background work runs as a prompt, not one queued", () => {
+    const waiting = run(working, continued, background)
+    const submitted = transition(waiting, enter)
+    expect(submitted).toMatchObject({ state: "working", submitted: false })
+    // Their prompt starts a new turn, with nothing queued and no continuations yet.
+    const turn = transition(submitted, person)
+    expect(turn).toMatchObject({ running: true, submitted: false, continued: 0 })
+    expect(turn.turn).toBe(waiting.turn + 1)
+    expect(continues(turn)).toBe(true)
+  })
+
+  it("starts a new turn's count at the person's prompt after a turn that never stopped", () => {
+    // As after a failed Codex turn, which sends nothing: the person's Enter, then prompt.
+    const failed = run(working, continued, call)
+    const next = run(failed, enter, person)
+    expect(next).toMatchObject({ submitted: false, continued: 0 })
+    expect(continues(next)).toBe(true)
+  })
+
+  it("is Unknown after an abnormal end, keeping the turn's counts for a Stop that raced it", () => {
+    expect(unknown).toMatchObject({ state: "unknown", running: false })
+    const queued = run(working, continued, call, enter, ended)
+    expect(queued).toMatchObject({ continued: 1, submitted: true })
+    expect(continues(queued)).toBe(false)
     expect(transition(unknown, stop).state).toBe("settled")
+  })
+
+  it("takes an idle status line before the turn's Stop as an end, without losing its counts", () => {
+    const limit = run(working, continued, call, continued, call)
+    const idled = transition(limit, idle)
+    expect(idled).toMatchObject({ state: "unknown", continued: maxContinuations })
+    // The Stop that follows is still that turn's: it may not be continued again.
+    expect(continues(idled)).toBe(false)
+    expect(transition(idled, stop).state).toBe("settled")
+  })
+
+  it("takes an idle status line after the turn's Stop as nothing new", () => {
+    const stopped = transition(working, continued)
+    expect(transition(stopped, idle)).toEqual(stopped)
+    // Its continuation then runs on with its count.
+    expect(run(stopped, idle, harness)).toMatchObject({ state: "working", continued: 1 })
+    expect(transition(settled, idle)).toEqual(settled)
   })
 
   it("leaves Settled for Person busy at the person's input, but not at an answer", () => {
@@ -103,7 +163,7 @@ describe("a terminal's delivery state", () => {
   })
 
   it("ignores everything but a binding while Unbound", () => {
-    for (const event of [person, stop, ended, enter])
+    for (const event of [person, stop, ended, enter, idle])
       expect(transition(unbound, event)).toBe(unbound)
   })
 
@@ -119,6 +179,7 @@ describe("when a message would reach an agent", () => {
     expect(route(working, false)).toBe("when its current turn ends")
     // Codex sends nothing when a turn fails.
     expect(route(working, true)).toBe("at its turn's end or its next prompt")
+    expect(route(transition(working, background), false)).toBe("when its next turn starts")
     for (const state of [settled, busy, unknown])
       expect(route(state, false)).toBe("when the person next submits a prompt there")
   })

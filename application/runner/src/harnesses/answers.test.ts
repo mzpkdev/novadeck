@@ -112,16 +112,17 @@ const turns = (events: readonly HarnessEvent[]) =>
   events.filter(({ type }) => type.startsWith("turn-"))
 
 describe("root turns, as each harness reports them", () => {
-  it("start an Antigravity turn at its first model call; later calls are of the same turn", () => {
+  it("start an Antigravity turn at its first model call, never taken for the person's prompt", () => {
     const { events } = scenario("agy", "confirm")
     const calls = events
       .filter(({ event }) => event === "PreInvocation")
       .map(({ event, payload }) => turns(decode("agy", event, payload))[0])
+    // A subagent's message wakes it alike, so whether the person prompted can't be told.
     expect(calls.map((call) => call?.type === "turn-started" && call.cause)).toEqual([
-      "prompt",
+      "harness",
       "call",
-      "prompt",
-      "prompt",
+      "harness",
+      "harness",
       "call",
     ])
     // Without a number, it may be any call: never taken for the first.
@@ -146,8 +147,22 @@ describe("root turns, as each harness reports them", () => {
   it("never take Antigravity's idle status line for a completed turn", () => {
     const idle = decode("agy", "StatusLine", { conversation_id: "c", agent_state: "idle" })
     expect(turns(idle)).toEqual([
-      { type: "turn-idle", agent: "agy", sessionId: "c", instance: "7", startedAt: 1 },
+      {
+        type: "turn-idle",
+        agent: "agy",
+        sessionId: "c",
+        instance: "7",
+        startedAt: 1,
+        background: false,
+      },
     ])
+    // Its subagents still running keep the turn's work going.
+    const running = (subagents: unknown) =>
+      turns(decode("agy", "StatusLine", { conversation_id: "c", agent_state: "idle", subagents }))
+    expect(running([{ id: "s1" }])).toMatchObject([{ background: true }])
+    expect(running([{ id: "s1", status: "running" }])).toMatchObject([{ background: true }])
+    expect(running([{ id: "s1", status: "completed" }])).toMatchObject([{ background: false }])
+    expect(running([])).toMatchObject([{ background: false }])
     expect(idle[0]).toMatchObject({ type: "session-observed", root: true })
     // Its hooks name subagents' conversations alike, so none of theirs is the root's word.
     expect(decode("agy", "PreInvocation", { conversationId: "c" })[0]).not.toHaveProperty("root")
@@ -156,13 +171,19 @@ describe("root turns, as each harness reports them", () => {
   it("tell a Claude Code turn it started by itself, and background tasks still running", () => {
     const prompt = (text: string) =>
       turns(decode("claude", "UserPromptSubmit", { session_id: "s", prompt: text }))
-    expect(prompt("Review a.ts")).toMatchObject([{ type: "turn-started", cause: "prompt" }])
+    expect(prompt("Review a.ts")).toMatchObject([
+      { type: "turn-started", cause: "prompt", prompt: "Review a.ts" },
+    ])
     expect(prompt("<task-notification>\n<task-id>b1</task-id>")).toMatchObject([
       { cause: "harness" },
     ])
     const stop = (tasks: unknown) =>
       turns(decode("claude", "Stop", { session_id: "s", background_tasks: tasks }))
     expect(stop([{ id: "b1", status: "running" }])).toMatchObject([{ background: true }])
+    // Only a running one counts.
+    expect(stop([{ id: "b1", status: "completed" }, { id: "b2" }])).toMatchObject([
+      { background: false },
+    ])
     expect(stop([])).toMatchObject([{ background: false }])
     expect(stop(undefined)).toMatchObject([{ background: false }])
   })
@@ -175,5 +196,51 @@ describe("root turns, as each harness reports them", () => {
     expect(turns(decode("codex", "UserPromptSubmit", { session_id: "s" }))).toMatchObject([
       { cause: "prompt" },
     ])
+  })
+})
+
+describe("files an agent wrote, as each harness reports them", () => {
+  const touched = (agent: AgentName, event: string, payload: Report["payload"]) =>
+    decode(agent, event, payload).filter(({ type }) => type === "file-touched")
+
+  it("come from Claude Code's writers, by their absolute paths", () => {
+    const write = (tool: string, input: object) =>
+      touched("claude", "PostToolUse", { session_id: "s", tool_name: tool, tool_input: input })
+    expect(write("Write", { file_path: "/w/a.ts" })).toMatchObject([
+      { path: "/w/a.ts", actor: null },
+    ])
+    expect(write("Edit", { file_path: "/w/b.ts" })).toMatchObject([{ path: "/w/b.ts" }])
+    expect(write("NotebookEdit", { notebook_path: "/w/n.ipynb" })).toMatchObject([
+      { path: "/w/n.ipynb" },
+    ])
+    expect(write("Read", { file_path: "/w/a.ts" })).toEqual([])
+    expect(write("Write", { file_path: "relative.ts" })).toEqual([])
+  })
+
+  it("come from Codex's patches, from the session's folder", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: src/a.ts",
+      "@@",
+      "*** Add File: /abs/b.ts",
+      "*** End Patch",
+    ].join("\n")
+    expect(
+      touched("codex", "PostToolUse", {
+        session_id: "s",
+        cwd: "/w",
+        tool_name: "apply_patch",
+        tool_input: { command: patch },
+      }).map((event) => event.type === "file-touched" && event.path),
+    ).toEqual(["/w/src/a.ts", "/abs/b.ts"])
+  })
+
+  it("come from Antigravity's write_to_file", () => {
+    expect(
+      touched("agy", "PostToolUse", {
+        conversationId: "c",
+        toolCall: { name: "write_to_file", args: { TargetFile: "/w/c.md" } },
+      }),
+    ).toMatchObject([{ path: "/w/c.md" }])
   })
 })

@@ -132,6 +132,9 @@ const it = base.extend<{ shell: Fixture }>({
         id,
         sessionId: session.id,
         cwd: store.terminal(id)?.cwd ?? home,
+        title: null,
+        command: null,
+        lastProgram: null,
         agents: { [agent]: { sessionId, seq: 1 } },
         promptedAt: null,
       })
@@ -690,6 +693,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     const activity = () => manager.list(terminal.sessionId)[0]?.activity
     await expect.poll(activity, { timeout: 10_000 }).toMatchObject({ attention: { pending: 1 } })
+    expect(manager.messages(terminal.id).delivery).toBe("working")
     appendFileSync(
       transcript,
       `${JSON.stringify({
@@ -707,6 +711,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       subagents: [],
       planning: false,
     })
+    // Messaging hears it too: the turn ended without a Stop.
+    expect(manager.messages(terminal.id).delivery).toBe("unknown")
   })
 
   it("shows a Codex session's context and rate limits from its rollout", async ({ shell }) => {
@@ -1192,6 +1198,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     let refuse = false
     const records: TerminalRecords = {
       terminal: (terminalId) => shell.store.terminal(terminalId),
+      terminals: (sessionId) => shell.store.terminals(sessionId),
+      nextTerminalNumber: (sessionId) => shell.store.nextTerminalNumber(sessionId),
+      renameTerminal: (terminalId, title) => shell.store.renameTerminal(terminalId, title),
       saveTerminal: (terminal) => {
         if (refuse && terminal.transcript !== undefined) {
           refuse = false
@@ -1231,17 +1240,57 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(shell.store.terminal(id)?.transcript).toBeNull()
   })
 
-  it("forgets a closed terminal, even one from an earlier runner", async ({ shell }) => {
+  it("keeps a terminal from an earlier runner, with its title, until it is closed", async ({
+    shell,
+  }) => {
     const id = randomUUID()
     const first = shell.manager()
     await create(first, shell, { id })
+    first.rename({ terminalId: id, title: "API author" })
     await first.shutdown()
     expect(shell.store.terminal(id)).toBeDefined()
     const second = shell.manager()
+    // The new runner lists it, with no shell yet, and renames it as it is.
+    expect(second.list(shell.sessionId)).toMatchObject([
+      { id, title: "API author", started: false, run: 0, exit: null },
+    ])
+    second.rename({ terminalId: id, title: "API server" })
+    expect(shell.store.terminal(id)?.title).toBe("API server")
+    await second.close({ terminalId: id }, "owner")
+    expect(shell.store.terminal(id)).toBeUndefined()
+    expect(second.list(shell.sessionId)).toEqual([])
     await expect(second.close({ terminalId: id }, "owner")).rejects.toMatchObject({
       code: "TERMINAL_NOT_FOUND",
     })
-    expect(shell.store.terminal(id)).toBeUndefined()
+    expect(() => second.rename({ terminalId: id, title: "x" })).toThrow(
+      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
+    )
+  })
+
+  it("names terminals by session, renames them, and tells watchers", async ({ shell }) => {
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    const first = await create(manager, shell)
+    const second = await create(manager, shell)
+    expect([first.title, second.title]).toEqual(["Terminal 01", "Terminal 02"])
+    const titled = await manager.create(
+      {
+        id: randomUUID(),
+        sessionId: shell.sessionId,
+        cwd: shell.home,
+        cols: 80,
+        rows: 24,
+        title: "Docs",
+      },
+      "owner",
+    )
+    expect(titled).toMatchObject({ title: "Docs", started: true, command: null })
+    manager.rename({ terminalId: first.id, title: "API author" })
+    await next((summary) => summary.id === first.id && summary.title === "API author")
+    expect(shell.store.terminal(first.id)?.title).toBe("API author")
+    // Numbers aren't given twice, even once a terminal closes.
+    await manager.close({ terminalId: second.id }, "owner")
+    expect((await create(manager, shell)).title).toBe("Terminal 03")
   })
 })
 
@@ -1632,6 +1681,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const manager = shell.manager({
         env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
       })
+      // The project is a git checkout, on main.
+      mkdirSync(join(shell.home, ".git"))
+      writeFileSync(join(shell.home, ".git", "HEAD"), "ref: refs/heads/main\n")
       const claude = await create(manager, shell)
       const codex = await create(manager, shell)
       const { start, step } = driver(shell, manager)
@@ -1685,13 +1737,37 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect
         .poll(() => manager.messages(claude.id).threads[0]?.messages.map(({ state }) => state))
         .toEqual(["delivered", "delivered"])
-      // The agent asked to list sees its peer, busy, and nothing of its own still waiting.
-      expect(JSON.parse(await step(codex.id, { call: "agents", request: {} }))).toEqual({
-        ok: true,
-        handle: "term-2",
-        agents: [{ handle: "term-1", agent: "claude", state: "busy" }],
-        messages: [],
+      // The agent asked to list sees its peer as NovaDeck knows it: busy, the title the
+      // person gave it, where it works, what it was asked and what it wrote; and nothing of
+      // its own still waiting.
+      manager.rename({ terminalId: claude.id, title: "API author" })
+      await step(claude.id, {
+        hook: "PostToolUse",
+        payload: { tool_name: "Write", tool_input: { file_path: join(shell.home, "src", "a.ts") } },
       })
+      await expect
+        .poll(async () => JSON.parse(await step(codex.id, { call: "agents", request: {} })))
+        .toEqual({
+          ok: true,
+          handle: "term-2",
+          agents: [
+            {
+              handle: "term-1",
+              agent: "claude",
+              title: "API author",
+              folder: ".",
+              branch: "main",
+              startedWith: "ask codex",
+              latest: null,
+              plan: null,
+              worksIn: [{ folder: "src/", edits: 1 }],
+              withYou: { from: "you", text: "Looks good & ships.", at: expect.any(Number) },
+              state: "busy",
+              activeAt: expect.any(Number),
+            },
+          ],
+          messages: [],
+        })
       // Nothing more waits: the next Stop ends Claude's turn.
       await expect(step(claude.id, { hook: "Stop", payload: {} })).resolves.toBe("")
       expect(manager.messages(claude.id).delivery).toBe("settled")
@@ -1742,14 +1818,14 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect(step(codex.id, { hook: "Stop", payload: {} })).resolves.toBe("")
       expect(manager.messages(codex.id).delivery).toBe("settled")
       // A call without the terminal's own token learns nothing.
-      expect(
+      await expect(
         manager.send({
           type: "send",
           terminalId: claude.id,
           token: "0".repeat(48),
           request: { to: "codex", text: "x" },
         }),
-      ).toEqual(unansweredCalls.send)
+      ).resolves.toEqual(unansweredCalls.send)
     })
   },
 )

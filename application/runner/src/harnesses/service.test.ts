@@ -253,6 +253,9 @@ describe.skipIf(windows)("resuming an agent's saved session", () => {
         cwd: fixture.home,
         agents: { claude: { sessionId, seq: 1 } },
         promptedAt: null,
+        title: null,
+        command: null,
+        lastProgram: null,
       })
     const runner = createRunner({
       database,

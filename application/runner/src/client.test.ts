@@ -723,9 +723,16 @@ describe("runner client terminal watch", () => {
     await status.until("reconnecting")
     current = await start()
     watch.seen.length = 0
-    // The terminal ended with the old runner; the fresh sync omits it.
+    // Its shell ended with the old runner; the fresh sync lists it as kept, with none.
     await watch.synced()
-    expect(watch.seen).toEqual([{ type: "reset" }, { type: "synced" }])
+    expect(watch.seen).toEqual([
+      { type: "reset" },
+      {
+        type: "changed",
+        terminal: expect.objectContaining({ title: "Terminal 01", started: false, run: 0 }),
+      },
+      { type: "synced" },
+    ])
 
     const pending = watch.stream.next()
     await runner.close()

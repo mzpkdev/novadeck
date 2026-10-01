@@ -6,6 +6,10 @@ import { Watcher } from "./watcher.js"
 const terminal = (id: string, changes: Partial<TerminalSummary> = {}): TerminalSummary => ({
   id,
   sessionId: "session",
+  title: "Terminal 01",
+  started: true,
+  command: null,
+  lastProgram: null,
   cwd: "/tmp",
   cols: 80,
   rows: 24,

@@ -230,17 +230,48 @@ export const transcriptChange = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("reset") }),
 ])
 
+// A command line a new shell runs at its first prompt, as if typed there: one line,
+// without control characters.
+export const startupCommand = z
+  .string()
+  .min(1)
+  .max(4096)
+  // eslint-disable-next-line no-control-regex -- These are the characters it refuses.
+  .regex(/^[^\x00-\x1f\x7f]*$/, "A command must be one line, without control characters.")
+
+// The title the person gives a terminal: one line, without control characters. The
+// runner owns it, keeps it with the terminal, and every client shows it.
+export const terminalTitle = name.regex(
+  // eslint-disable-next-line no-control-regex -- These are the characters it refuses.
+  /^[^\x00-\x1f\x7f]*$/,
+  "A title must be one line, without control characters.",
+)
+
+// The runner owns every terminal's identity and facts: which terminals a session has, their
+// titles, directories, what they run and ran. Clients keep only how they show them.
 export const terminalSummary = z.strictObject({
   id,
   sessionId: id,
+  // The title the person gave the terminal, or the runner's default for its session
+  // ("Terminal 01", "Terminal 02", … in the order they were created).
+  title: terminalTitle,
+  // Whether the runner started a shell for it in this lifetime. A terminal it keeps only
+  // as saved, as after the runner restarted, has none until a client restores it, with
+  // `create` and `restore`.
+  started: z.boolean(),
+  // The command it was opened to run at its first prompt; null for a plain shell.
+  command: startupCommand.nullable(),
+  // The program in its foreground when its shell was last seen, which a fresh shell
+  // resumes where it is an agent the runner knows the session of; null when unknown.
+  lastProgram: z.string().max(256).nullable(),
   // The shell's current directory as its shell integration last reported it, or where
   // it started; a restart starts there.
   cwd: directory,
   cols: columns,
   rows,
-  // Counts the shells this terminal has run: 1 at creation, +1 per restart. A report
-  // about an older run is stale.
-  run: z.number().int().positive(),
+  // Counts the shells this terminal has run: 1 at creation, +1 per restart, 0 while it
+  // has none in this runner's lifetime. A report about an older run is stale.
+  run: z.number().int().nonnegative(),
   // How the shell ended; null while it runs.
   exit: terminalExit.nullable(),
   // The terminal's foreground process, such as the shell or a program it runs. Null
@@ -254,15 +285,6 @@ export const terminalSummary = z.strictObject({
   // Its tokens and quotas, once its records named any; null otherwise.
   telemetry: agentTelemetry.nullable(),
 })
-
-// A command line a new shell runs at its first prompt, as if typed there: one line,
-// without control characters.
-export const startupCommand = z
-  .string()
-  .min(1)
-  .max(4096)
-  // eslint-disable-next-line no-control-regex -- These are the characters it refuses.
-  .regex(/^[^\x00-\x1f\x7f]*$/, "A command must be one line, without control characters.")
 
 // `terminals.requests` items: an agent in terminal `from` asked, through NovaDeck's MCP
 // server, for a new terminal beside it, in `cwd`, starting `command` at its first prompt

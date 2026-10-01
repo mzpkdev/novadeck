@@ -60,9 +60,15 @@ export type Thread = {
   readonly lastAt: number
 }
 
-/** The most a message's text may hold, and the most one delivery carries, in UTF-8 bytes. */
+/** The most a message's text may hold, in UTF-8 bytes. */
 export const maxMessageBytes = 4096
-export const maxDeliveryBytes = 4096
+/**
+ * The most one delivery prints, in UTF-8 bytes: the hook's whole stdout, wrapped and
+ * encoded as its harness reads it. Under every harness's limit for hook output (Claude
+ * Code moves prompt-time context past about 10 KB to a file, Codex keeps about 10 KB),
+ * so nothing is ever cut or moved.
+ */
+export const maxDeliveryBytes = 8192
 /** The most messages a recipient may have waiting; a send beyond it is refused. */
 export const maxUndelivered = 50
 /** How many messages a thread delivers, at first and after each release. */
@@ -173,11 +179,74 @@ export const allowSend = (
   return recent.length < limit ? [...recent, now] : undefined
 }
 
-/** A terminal another can be addressed by: its handle, and the agent bound there if any. */
+/**
+ * What the agent session bound in a terminal worked on, as its hooks said: the person's
+ * first and latest root prompts there, shortened, never a turn the harness started by
+ * itself; how often it wrote in each folder; and when it was last active. Kept with the
+ * terminal, so it outlives the agent compacting its context and the runner restarting.
+ */
+export type Work = {
+  /** The session it is of, as `agent:session`. */
+  readonly session: string
+  readonly first: string | null
+  readonly latest: string | null
+  /** Edits by folder, by absolute path. */
+  readonly folders: { readonly [folder: string]: number }
+  readonly activeAt: number | null
+}
+
+/** The work of a session that has done none yet. */
+export const freshWork = (session: string): Work => ({
+  session,
+  first: null,
+  latest: null,
+  folders: {},
+  activeAt: null,
+})
+
+/** How long a prompt and a message's excerpt show, in characters. */
+export const promptChars = 120
+export const excerptChars = 80
+
+/** The folders a session wrote in most, by edits, at most `count` of them. */
+export const busiestFolders = (
+  folders: Work["folders"],
+  count = 3,
+): readonly { readonly folder: string; readonly edits: number }[] =>
+  Object.entries(folders)
+    .toSorted(([a, x], [b, y]) => y - x || a.localeCompare(b))
+    .slice(0, count)
+    .map(([folder, edits]) => ({ folder, edits }))
+
+/**
+ * A terminal another can be addressed by, and what tells an agent which it is, all of it
+ * NovaDeck's own knowledge, none of it an agent's say: its handle; the agent bound there;
+ * the title the person gave it; its folder and git branch; the person's first and latest
+ * prompts there; its plan's title; the folders it writes in most; the latest message
+ * between it and the caller; whether its agent is busy, and when it was last active.
+ */
 export type Peer = {
   readonly terminalId: string
   readonly handle: string
   readonly agent: AgentName | null
+  readonly title: string | null
+  readonly folder: string | null
+  readonly branch: string | null
+  readonly startedWith: string | null
+  /** Left out when it is the prompt it started with. */
+  readonly latest: string | null
+  readonly plan: string | null
+  readonly worksIn: readonly { readonly folder: string; readonly edits: number }[]
+  /** Who sent the latest message between it and the caller (`you`, or its handle), and when. */
+  readonly withYou: { readonly from: string; readonly text: string; readonly at: number } | null
+  readonly state: "busy" | "idle" | null
+  readonly activeAt: number | null
+}
+
+/** Text on one line, cut to `max` characters with an ellipsis. */
+export const shorten = (text: string, max: number): string => {
+  const line = text.replace(/\s+/g, " ").trim()
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line
 }
 
 const labels: { readonly [agent in AgentName]: string } = {
@@ -189,13 +258,29 @@ const labels: { readonly [agent in AgentName]: string } = {
 /** The harness's name as people know it. */
 export const agentLabel = (agent: AgentName): string => labels[agent]
 
-/** The terminals as an agent can correct itself from: each handle with its agent. */
+/** The folders a peer writes in most, as `src/api/ (14), tests/ (3)`. */
+export const worksIn = (peer: Pick<Peer, "worksIn">): string =>
+  peer.worksIn.map(({ folder, edits }) => `${folder} (${edits})`).join(", ")
+
+/** A terminal in one line, as an agent picks the one it means: what NovaDeck knows of it. */
+export const describePeer = (peer: Peer): string => {
+  const parts = [
+    `${peer.handle} (${peer.agent ? agentLabel(peer.agent) : "no agent"})`,
+    peer.title && `titled "${peer.title}"`,
+    peer.folder && `in ${peer.folder}${peer.branch ? ` on ${peer.branch}` : ""}`,
+    peer.startedWith && `started with "${peer.startedWith}"`,
+    peer.latest && `latest "${peer.latest}"`,
+    peer.plan && `plan "${peer.plan}"`,
+    peer.worksIn.length > 0 && `works in ${worksIn(peer)}`,
+  ]
+  return parts.filter(Boolean).join("; ")
+}
+
+/** The terminals as an agent can correct itself from, each described. */
 const listing = (peers: readonly Peer[]): string =>
   peers.length === 0
-    ? "There are no other terminals in this project."
-    : `The terminals in this project are: ${peers
-        .map(({ handle, agent }) => `${handle} (${agent ? agentLabel(agent) : "no agent"})`)
-        .join(", ")}.`
+    ? "There are no other terminals in this project and session."
+    : `The terminals here are:\n${peers.map((peer) => `- ${describePeer(peer)}`).join("\n")}`
 
 /**
  * The terminal `to` names among the caller's peers: a handle, or an agent's name when
@@ -216,9 +301,10 @@ export const resolvePeer = (
     if (running.length > 1)
       return {
         ok: false,
-        reason: `More than one terminal here runs ${agentLabel(agent.data)}: ${running
-          .map(({ handle }) => handle)
-          .join(", ")}. Send to one of them by its handle.`,
+        reason:
+          `More than one terminal here runs ${agentLabel(agent.data)}. Pick the one you mean by ` +
+          "its title, folder and work, and send to it by its handle; if you can't tell, ask the " +
+          `person.\n${running.map((peer) => `- ${describePeer(peer)}`).join("\n")}`,
       }
     return {
       ok: false,
@@ -233,18 +319,17 @@ export const escapeText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 
 /**
- * The messages one delivery carries, oldest first: as many as fit in `maxDeliveryBytes`
- * of escaped text, and always the first, which on its own never exceeds what a message
- * may hold as sent.
+ * The messages one delivery carries, oldest first: as many as `fits` takes together, and
+ * always the first, which `send` made sure fits on its own.
  */
-export const deliveryOf = (queued: readonly Message[]): readonly Message[] => {
+export const deliveryOf = (
+  queued: readonly Message[],
+  fits: (messages: readonly Message[]) => boolean,
+): readonly Message[] => {
   const taken: Message[] = []
-  let bytes = 0
   for (const message of queued) {
-    const size = byteLength(escapeText(message.text))
-    if (taken.length > 0 && bytes + size > maxDeliveryBytes) break
+    if (taken.length > 0 && !fits([...taken, message])) break
     taken.push(message)
-    bytes += size
   }
   return taken
 }

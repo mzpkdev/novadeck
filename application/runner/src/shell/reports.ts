@@ -44,7 +44,7 @@ export type Ack = { readonly terminalId: string; readonly token: string; readonl
  * What NovaDeck's MCP server forwards: a tool call an agent made in a terminal, which
  * waits for its answer. `present` shows something (see `terminals/artifacts.ts`), `open`
  * opens a new terminal beside it (see `terminals/opens.ts`), and `send` and `agents`
- * message other terminals' agents and list them (see `messaging/messaging.ts`); the
+ * message other terminals' agents and describe them (see `messaging/messaging.ts`); the
  * runner reads `request`, and nothing here does.
  */
 export type Call = {

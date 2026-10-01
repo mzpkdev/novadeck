@@ -58,13 +58,10 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
       // A subagent's prompt is its own work, not the root's turn; a background task's
       // result starts a turn by itself, as a task notification.
       if (actor) return []
-      return [
-        {
-          type: "turn-started",
-          ...base,
-          cause: notification.test(text(payload.prompt) ?? "") ? "harness" : "prompt",
-        },
-      ]
+      const prompt = text(payload.prompt) ?? ""
+      return notification.test(prompt)
+        ? [{ type: "turn-started", ...base, cause: "harness" }]
+        : [{ type: "turn-started", ...base, cause: "prompt", ...(prompt && { prompt }) }]
     case "Stop":
       return actor
         ? []
@@ -124,6 +121,7 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
           outcome: "allowed",
         },
         ...drafted(base, actor, tool, payload),
+        ...touched(base, actor, tool, payload.tool_input),
       ]
     case "StatusLine":
       return statusLine(base, payload)
@@ -135,9 +133,16 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
 // The prompt of a turn Claude Code starts by itself once a background task finishes.
 const notification = /^\s*<task-notification>/
 
-// Whether a Stop lists background tasks still running, which may start a turn by themselves.
+// Whether a Stop lists background tasks still running, which may start a turn by themselves:
+// each names its status, and only a running one counts.
 const running = (tasks: unknown): boolean =>
-  Array.isArray(tasks) ? tasks.length > 0 : typeof tasks === "object" && tasks !== null
+  Array.isArray(tasks) &&
+  tasks.some(
+    (task) =>
+      typeof task === "object" &&
+      task !== null &&
+      (task as { status?: unknown }).status === "running",
+  )
 
 const count = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
@@ -209,6 +214,19 @@ const markdown = (value: unknown): string | undefined => {
 export const planFile = (value: unknown): string | undefined => {
   const path = markdown(value)
   return path && basename(dirname(path)) === "plans" ? path : undefined
+}
+
+// A file a writer wrote or edited, by the absolute path its input names.
+const touched = (
+  base: { agent: "claude"; sessionId: string; instance: string | null; startedAt: number },
+  actor: string | null,
+  tool: string,
+  input: unknown,
+): HarnessEvent[] => {
+  if (!writers.has(tool) && tool !== "NotebookEdit") return []
+  const { file_path: file, notebook_path: notebook } = (input ?? {}) as Record<string, unknown>
+  const path = absolute(file) ?? absolute(notebook)
+  return path ? [{ type: "file-touched", ...base, actor, path }] : []
 }
 
 // A plan drafted in plan mode: the file its writer wrote.

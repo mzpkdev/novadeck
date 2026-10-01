@@ -10,6 +10,10 @@ const { Terminal } = headless
 const summary: TerminalSummary = {
   id: "terminal",
   sessionId: "session",
+  title: "Terminal 01",
+  started: true,
+  command: null,
+  lastProgram: null,
   cwd: "/tmp",
   cols: 20,
   rows: 4,
