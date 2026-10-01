@@ -1879,6 +1879,9 @@ export class Terminals {
       this.records.delete(record.summary.id)
       for (const watcher of this.watchers.keys()) watcher.removed(record.summary)
       this.undetail(record.summary.id)
+      // Its share of what agents opened, as `forget` drops it on close.
+      this.opened.delete(record.summary.id)
+      this.openers.delete(record.summary.id)
     }
   }
 
