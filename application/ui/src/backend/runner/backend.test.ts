@@ -364,6 +364,52 @@ describe("runner backend", () => {
       app.stop()
     })
 
+    it("shows the runner's title again when the runner refuses a rename", async () => {
+      const app = open()
+      const terminal = app.addTerminal()
+      await app.idle()
+      const named = () =>
+        app.received.findLast(
+          (action) => action.type === "terminal/update" && action.terminalId === terminal.id,
+        )
+      await vi.waitFor(() => expect(named()).toMatchObject({ name: expect.any(String) }))
+      const given = (named() as { name: string }).name
+      app.commit([...app.received])
+      // A title the runner won't take, as one with a control character.
+      app.commit([
+        {
+          type: "terminal/rename",
+          target: app.target(),
+          terminalId: terminal.id,
+          name: "bad\u0007name",
+        },
+      ])
+      await app.idle()
+      await vi.waitFor(() => expect(named()).toMatchObject({ name: given }))
+      app.stop()
+    })
+
+    it("creates a terminal with the title it was given, and the others with the runner's", async () => {
+      const app = open()
+      const terminal = app.backend.newTerminal({
+        target: app.target(),
+        directory: activeProject(app.workspace())!.directory,
+        title: "Docs",
+      })
+      app.commit([{ type: "terminal/add", target: app.target(), terminal }])
+      const plain = app.addTerminal()
+      await app.idle()
+      const listed = await runner.client.terminals.list({
+        sessionId: app.target().workspaceSessionId,
+      })
+      expect(listed.find((item) => item.id === terminal.id)).toMatchObject({
+        title: "Docs",
+        handle: expect.stringMatching(/^t\d+$/),
+      })
+      expect(listed.find((item) => item.id === plain.id)?.title).toMatch(/^Terminal \d\d$/)
+      app.stop()
+    })
+
     it("shows a terminal the runner has that this window didn't ask for, and its closing", async () => {
       const app = open()
       await app.idle()

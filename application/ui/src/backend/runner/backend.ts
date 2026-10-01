@@ -37,7 +37,6 @@ import { createSessionSaves } from "./saves"
 import {
   cleanlyExited,
   lostTerminals,
-  newTerminalName,
   runnerSeed,
   runnerTerminal,
   startingTerminal,
@@ -325,6 +324,11 @@ export const runnerBackend = (
   const adopted = new Map<string, TerminalSummary>()
   // Names the person gave terminals, until the runner reports them as theirs.
   const renamed = new Map<string, string>()
+  // Titles given to terminals, as an agent's request or the person's rename did, which a
+  // terminal is created with; the runner names the others.
+  const titles = new Map<string, string>()
+  // Each terminal's title as the runner last reported it.
+  const runnerTitles = new Map<string, string>()
   let sink: BackendSink | undefined
   let runnerId: string | undefined
   // The latest runner status; a simulated outage from the debug panel shows as
@@ -541,11 +545,11 @@ export const runnerBackend = (
       .find((project) => project.id === key.projectId)
       ?.history.find((session) => session.id === key.workspaceSessionId)
       ?.state.roster.terminals.find((terminal) => terminal.id === key.terminalId)
-  // The title a terminal is created with: the one it was given, as by the person before
-  // the runner had it, or by an agent's request; the runner names the others.
+  // The title a terminal is created with: the one it was given, as by an agent's request
+  // or the person; the runner names the others.
   const titled = (key: TerminalKey): { title?: string } => {
-    const name = terminalOf(key)?.name
-    return name && name !== newTerminalName ? { title: name } : {}
+    const title = titles.get(key.terminalId)
+    return title === undefined ? {} : { title }
   }
   // What the runner says of a terminal that the workspace shows otherwise: its title,
   // unless the person renamed it since and the runner has yet to hear, and its directory.
@@ -553,6 +557,7 @@ export const runnerBackend = (
     const current = terminalOf(entry.key)
     if (!current) return []
     const { terminalId } = entry.key
+    runnerTitles.set(terminalId, summary.title)
     const unconfirmed = renamed.get(terminalId)
     if (unconfirmed === summary.title) renamed.delete(terminalId)
     const name =
@@ -571,22 +576,32 @@ export const runnerBackend = (
   }
   // Tells the runner the name the person gave a terminal, whether or not it has a
   // shell. One the runner doesn't have yet, as while it is created, gets it once it does.
-  // The pending name goes once the runner took it, or refused it.
+  // The pending name goes once the runner took it, or refused it; refused for any reason
+  // but not having the terminal, the terminal shows the runner's title again.
   const renameOnRunner = async (key: TerminalKey, name: string): Promise<void> => {
     const { terminalId } = key
     renamed.set(terminalId, name)
+    titles.set(terminalId, name)
     const rename = () =>
       untilAnswered(() => runner.terminals.rename(terminalId, name), {
         cancelled: () => renamed.get(terminalId) !== name,
       })
+    let refused = false
     try {
       await rename()
     } catch (error) {
       const entry = entries.get(terminalId)
-      if (hasCode(error, "TERMINAL_NOT_FOUND") && entry && (await entry.ready))
-        await rename().catch(() => {})
+      if (!hasCode(error, "TERMINAL_NOT_FOUND")) refused = !(error instanceof Cancelled)
+      else if (entry && (await entry.ready))
+        await rename().catch((again: unknown) => {
+          refused = !hasCode(again, "TERMINAL_NOT_FOUND") && !(again instanceof Cancelled)
+        })
     }
-    if (renamed.get(terminalId) === name) renamed.delete(terminalId)
+    if (renamed.get(terminalId) !== name) return
+    renamed.delete(terminalId)
+    const title = runnerTitles.get(terminalId)
+    if (refused && title !== undefined && title !== name)
+      dispatch([{ type: "terminal/update", target: target(key), terminalId, name: title }])
   }
   // A terminal the runner has that this window didn't ask for joins its session, unless
   // the workspace doesn't hold that session or its shell already ended cleanly.
@@ -1086,6 +1101,7 @@ export const runnerBackend = (
     seed,
     newTerminal: ({ directory, launch, title }) => {
       const terminal = startingTerminal(newId(), directory, title)
+      if (title !== undefined) titles.set(terminal.id, title)
       if (launch)
         launches.set(terminal.id, {
           cwd: directory,

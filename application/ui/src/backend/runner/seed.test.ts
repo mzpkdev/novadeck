@@ -244,7 +244,7 @@ describe("runner seed", () => {
   })
 
   context("with a view saved before the runner kept terminals", () => {
-    it("loads its layout and order, ignoring the names and directories it kept then", () => {
+    it("reads none of it, and shows the runner's terminals", () => {
       const state = JSON.stringify({
         version: 1,
         visitedAt: 7,
@@ -268,10 +268,8 @@ describe("runner seed", () => {
       const session = { ...fresh(10), state }
       const current = seeded(session, [summary(20, 10, { title: "runner name" })])
       expect(current.state.roster).toMatchObject({
-        order: [uuid(20)],
         terminals: [{ id: uuid(20), name: "runner name", directory: "/work/1" }],
       })
-      expect(current.visitedAt).toBe(7)
     })
   })
 

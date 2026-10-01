@@ -55,24 +55,13 @@ describe("saved session state", () => {
   })
 
   context("when it was saved by a build that kept the terminals too", () => {
-    it("reads its view, ignoring what the runner keeps now", () => {
+    it("reads nothing, as that build is gone", () => {
       const current = JSON.parse(encodeSession(session(), 1)) as {
         state: Record<string, unknown>
       }
       const { order, ...rest } = current.state
-      const old = JSON.stringify({
-        ...current,
-        state: {
-          ...rest,
-          roster: {
-            terminals: [{ id: "01", name: "Old", directory: "~/old", lastProcess: "claude" }],
-            order,
-            nextNumber: 9,
-          },
-        },
-      })
-      expect(decodeSession(old)?.state).toMatchObject({ order: ["02", "01"], selected: "02" })
-      expect(decodeSession(old)?.state).not.toHaveProperty("roster")
+      const old = JSON.stringify({ ...current, state: { ...rest, roster: { order } } })
+      expect(decodeSession(old)).toBeUndefined()
     })
   })
 

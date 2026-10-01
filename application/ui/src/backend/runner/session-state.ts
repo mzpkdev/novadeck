@@ -79,14 +79,8 @@ export const decodeSession = (text: string | null): SavedSession | undefined => 
   if (value.rank !== 0 && value.rank !== 1 && value.rank !== 2) return undefined
   const state = value.state
   if (!isObject(state)) return undefined
-  // A state saved before the runner kept the terminals has their order in its roster,
-  // beside what the runner now keeps itself, which is ignored.
-  const order = Array.isArray(state.order)
-    ? state.order
-    : isObject(state.roster) && Array.isArray(state.roster.order)
-      ? state.roster.order
-      : undefined
-  if (!order?.every(isString)) return undefined
+  const order = state.order
+  if (!Array.isArray(order) || !order.every(isString)) return undefined
   const restored = layout(state.layout)
   if (!restored) return undefined
   if (!views.includes(state.view) || !["grid", "canvas"].includes(state.windowedView as string))
