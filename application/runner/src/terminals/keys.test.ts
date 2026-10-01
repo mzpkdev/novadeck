@@ -1,8 +1,9 @@
 import { describe, expect, it } from "../test.js"
 import { keysOf, type Reporting } from "./keys.js"
 
-const off: Reporting = { mouse: false, focus: false }
-const on: Reporting = { mouse: true, focus: true }
+const off: Reporting = { mouse: null, focus: false }
+const sgr: Reporting = { mouse: "sgr", focus: true }
+const x10: Reporting = { mouse: "x10", focus: true }
 const kinds = (data: string, queueKey?: string, reporting: Reporting = off) =>
   keysOf(data, queueKey, reporting).map(({ kind }) => kind)
 
@@ -32,16 +33,16 @@ describe("the person's keys", () => {
 
   it("leave out the mouse's scroll and motion and the focus while the TUI reports them, but take a click", () => {
     // A fullscreen TUI's scroll, as SGR and X10 report it, and a move over it.
-    expect(kinds("\x1b[<64;40;10M\x1b[<65;40;10M", undefined, on)).toEqual([])
-    expect(kinds("\x1b[M`!!", undefined, on)).toEqual([])
-    expect(kinds("\x1b[<35;12;7M", undefined, on)).toEqual([])
+    expect(kinds("\x1b[<64;40;10M\x1b[<65;40;10M", undefined, sgr)).toEqual([])
+    expect(kinds("\x1b[M`!!", undefined, x10)).toEqual([])
+    expect(kinds("\x1b[<35;12;7M", undefined, sgr)).toEqual([])
     // Focus out and in, among keys.
-    expect(kinds("\x1b[Oa\x1b[I", undefined, on)).toEqual(["content"])
+    expect(kinds("\x1b[Oa\x1b[I", undefined, sgr)).toEqual(["content"])
     // A click, pressed and released, may open a menu: input.
-    expect(kinds("\x1b[<0;10;5M\x1b[<0;10;5m", undefined, on)).toEqual(["content", "content"])
-    expect(kinds("\x1b[M !!", undefined, on)).toEqual(["content"])
+    expect(kinds("\x1b[<0;10;5M\x1b[<0;10;5m", undefined, sgr)).toEqual(["content", "content"])
+    expect(kinds("\x1b[M !!", undefined, x10)).toEqual(["content"])
     // A key after a report is still a key.
-    expect(kinds("\x1b[<65;10;5Mx\r", undefined, on)).toEqual(["content", "enter"])
+    expect(kinds("\x1b[<65;10;5Mx\r", undefined, sgr)).toEqual(["content", "enter"])
   })
 
   it("read what looks like a mouse or focus report as keys while the TUI hasn't asked for them", () => {
@@ -51,21 +52,40 @@ describe("the person's keys", () => {
     expect(kinds("\x1b[I")).toEqual(["content"])
     expect(kinds("\x1b[Ox")).toEqual(["content", "content"])
     // Each kind of report counts only under its own mode.
-    expect(kinds("\x1b[O", undefined, { mouse: true, focus: false })).toEqual(["content"])
-    expect(kinds("\x1b[<64;40;10M", undefined, { mouse: false, focus: true })).not.toEqual([])
+    expect(kinds("\x1b[O", undefined, { mouse: "sgr", focus: false })).toEqual(["content"])
+    expect(kinds("\x1b[<64;40;10M", undefined, { mouse: null, focus: true })).not.toEqual([])
+  })
+
+  it("leave out a mouse report only in the encoding the TUI asked for", () => {
+    // A wheel in SGR to a TUI that reads X10, which may type part of it.
+    expect(kinds("\x1b[<64;40;10M", undefined, x10)).toEqual(["content"])
+    // A wheel in X10 to a TUI that reads SGR, as a client restored without its encoding sends.
+    expect(kinds("\x1b[Ma*#", undefined, sgr)).toEqual(Array.from({ length: 4 }, () => "content"))
+  })
+
+  it("take an X10 report with a byte past ASCII as keys, as its re-encoding may leave one", () => {
+    // A wheel far right, its column byte above 0x7f, raw and as UTF-8 came through.
+    expect(kinds("\x1b[Ma\xff#", undefined, x10)).toEqual(
+      Array.from({ length: 4 }, () => "content"),
+    )
+    expect(kinds("\x1b[Ma\xc3\xbf#", undefined, x10)).toEqual(
+      Array.from({ length: 5 }, () => "content"),
+    )
   })
 
   it("take a report no terminal it serves sends as keys", () => {
     // urxvt's form, which xterm.js never sends: a key such as Alt+[ then text.
-    expect(kinds("\x1b[96;40;10M", undefined, on)).toEqual(["content"])
-    expect(kinds("\x1b[1;2;3M", undefined, on)).toEqual(["content"])
-    // An X10 button byte below 32 is no button.
-    expect(kinds("\x1b[M\rab", undefined, on)).toEqual(["content"])
-    expect(kinds("\x1b[M\x01ab", undefined, on)).toEqual(["content"])
+    expect(kinds("\x1b[96;40;10M", undefined, x10)).toEqual(["content"])
+    expect(kinds("\x1b[1;2;3M", undefined, sgr)).toEqual(["content"])
+    // An X10 button byte below 32 is no button: the keys after it, a real Enter too.
+    expect(kinds("\x1b[M\rab", undefined, x10)).toEqual(["content", "enter", "content", "content"])
+    expect(kinds("\x1b[M\x01ab", undefined, x10)).toEqual(
+      Array.from({ length: 4 }, () => "content"),
+    )
   })
 
   it("leave out the terminal's answers to queries, whatever it reports", () => {
-    for (const reporting of [off, on]) {
+    for (const reporting of [off, sgr, x10]) {
       // Cursor position, device status, device attributes and an OSC colour answer.
       expect(kinds("\x1b[12;40R", undefined, reporting)).toEqual([])
       expect(kinds("\x1b[0n", undefined, reporting)).toEqual([])

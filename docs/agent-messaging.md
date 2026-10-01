@@ -288,11 +288,19 @@ the opener's, and `describe` names the caller's own terminal (see
   focus reports, and the mouse's scroll and motion reports, while the TUI has turned
   that reporting on, as the runner's own screen of the terminal shows; cursor-position
   and device reports; and OSC answers, such as a colour's. A fullscreen TUI turns mouse
-  reporting on, so those come from merely scrolling or moving over it. Keys, pastes and
-  mouse clicks are input, since a click can open a menu too, and so is whatever looks
-  like a mouse or focus report while the TUI hasn't asked for one: it may be Alt+[ and
-  typing. One known gap errs safe: in an alternate screen without mouse tracking,
-  xterm.js turns the wheel into Up and Down keys, which stay content. While a request
+  reporting on, so those come from merely scrolling or moving over it. A mouse report
+  counts as the terminal's only in the encoding the TUI set: SGR (`ESC [ <`) while it
+  set SGR (1006, or 1016 in pixels), X10 (`ESC [ M` and three bytes) while it set
+  neither, and then only with every byte below 0x80, since the pty re-encodes higher
+  ones as UTF-8 and the TUI may read a leftover byte as typing. A snapshot carries the
+  encoding, as xterm.js's serializer leaves it out, so a client that reloads or attaches
+  anew reports in the TUI's encoding. Keys, pastes and mouse clicks are input, since a
+  click can open a menu too, and so is whatever looks like a mouse or focus report while
+  the TUI hasn't asked for one: it may be Alt+[ and typing. Two known gaps: in an
+  alternate screen without mouse tracking, xterm.js turns the wheel into Up and Down
+  keys, which stay content, erring safe; and a TUI killed with mouse tracking on leaves
+  the runner's screen reporting the mouse, so the next program's wheel reports are left
+  out though it never asked for them. While a request
   (a permission or a question) is pending, whether or not a dialog shows:
   1. its keys are never a submission: they neither count as a prompt the person
      submitted nor as one they queued, so a Stop after them is continued as without

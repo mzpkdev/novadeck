@@ -28,24 +28,30 @@ const report =
 
 /**
  * Which reports the TUI asked its terminal for, as the runner's own screen of it shows:
- * the mouse's, and the focus's. Until it asks, what looks like one is the person's keys.
+ * the mouse's, in the encoding it reads (null while it tracks no mouse), and the focus's.
+ * Until it asks, what looks like one is the person's keys.
  */
-export type Reporting = { readonly mouse: boolean; readonly focus: boolean }
+export type Reporting = { readonly mouse: "sgr" | "x10" | null; readonly focus: boolean }
 
 /**
  * What a report is to the box: none of the person's keys; content, as a click, which can
- * open a menu; or no report at all, as the TUI never asked for it, so keys.
+ * open a menu; or no report at all, so keys: one the TUI never asked for, one in another
+ * encoding than it reads, or an X10 one it may not read whole.
  */
 const reportOf = (match: RegExpExecArray, reporting: Reporting): "none" | "content" | "keys" => {
   const { sgr, x10, focus } = match.groups ?? {}
   if (focus !== undefined) return reporting.focus ? "none" : "keys"
   // Answers to queries, whatever the TUI asked for.
   if (sgr === undefined && x10 === undefined) return "none"
-  if (!reporting.mouse) return "keys"
+  if (reporting.mouse !== (sgr !== undefined ? "sgr" : "x10")) return "keys"
+  // X10's bytes past ASCII come re-encoded as UTF-8 through the terminal's pty, so the TUI
+  // may read a leftover byte as typing.
+  if (x10 !== undefined && /[\u0080-\uffff]/.test(match[0])) return "keys"
   // The button code: SGR's as it is, X10's offset by 32, where a byte below is no button.
-  const button = sgr !== undefined ? Number(sgr) : x10!.charCodeAt(0) - 32
+  const button = sgr !== undefined ? Number(sgr) : (x10?.charCodeAt(0) ?? 0) - 32
+  if (button < 0) return "keys"
   // A wheel (64) or a motion (32) report.
-  return button >= 0 && (button & (64 | 32)) !== 0 ? "none" : "content"
+  return (button & (64 | 32)) !== 0 ? "none" : "content"
 }
 
 // Left, Right, Home and End, and the keypad's: they move within the box without typing.
@@ -59,8 +65,8 @@ const moves = /^\x1b(?:\[[\d;]*[CDFH]|O[CDFH]|\[[1478]~)$/
  */
 export const keysOf = (
   data: string,
-  queueKey?: string,
-  reporting: Reporting = { mouse: false, focus: false },
+  queueKey: string | undefined,
+  reporting: Reporting,
 ): readonly Key[] => {
   const keys: Key[] = []
   let at = 0

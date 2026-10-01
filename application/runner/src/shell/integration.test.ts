@@ -3156,6 +3156,17 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
     })
 
+    it("takes what looks like the mouse's scroll as typing while the agent's TUI reports no mouse", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "", "named")
+      await tui.first()
+      await expect.poll(tui.delivery).toBe("settled")
+      // Without mouse reporting, no terminal sends one: it may be Alt+[ and typing.
+      tui.type("\x1b[<64;40;10M")
+      await expect.poll(tui.delivery).toBe("drafting")
+    })
+
     it("takes Antigravity's turn after the person's Enter as theirs once its transcript shows the input", async ({
       shell,
     }) => {

@@ -77,6 +77,7 @@ import {
 } from "./foreground.js"
 import { keysOf } from "./keys.js"
 import { Latest } from "./latest.js"
+import { type MouseEncoding, watchMouseEncoding } from "./mouse.js"
 import {
   cleanSummary,
   describedAs,
@@ -285,6 +286,8 @@ type Started = {
   process: pty.IPty
   screen: Screen
   serializer: Serializer
+  /** The mouse's encoding a program set on its screen. */
+  mouseEncoding: () => MouseEncoding
   startedAt: number
   token: string
   resumes: boolean
@@ -826,7 +829,12 @@ export class Terminals {
     const queueKey = record.binding ? harnesses[record.binding.agent].messaging.queueKey : undefined
     const { modes } = record.screen
     const keys = keysOf(input.data, queueKey, {
-      mouse: modes.mouseTrackingMode !== "none",
+      mouse:
+        modes.mouseTrackingMode === "none"
+          ? null
+          : record.mouseEncoding() === "default"
+            ? "x10"
+            : "sgr",
       focus: modes.sendFocusMode,
     })
     if (keys.length > 0) {
@@ -1238,6 +1246,7 @@ export class Terminals {
               record.summary,
               record.sequence,
               this.options.snapshotBytes,
+              record.mouseEncoding(),
             ),
           )
         }
@@ -2023,6 +2032,7 @@ export class Terminals {
     const screen = new Terminal({ cols, rows, scrollback: 1000, allowProposedApi: true })
     const serializer = new SerializeAddon()
     screen.loadAddon(serializer)
+    const mouseEncoding = watchMouseEncoding(screen)
     try {
       const args = this.options.shellArgs ?? launched.args
       const child = pty.spawn(shell, typeof args === "string" ? args : [...args], {
@@ -2038,6 +2048,7 @@ export class Terminals {
         process: child,
         screen,
         serializer,
+        mouseEncoding,
         startedAt: performance.now(),
         token,
         resumes: launched.resumes,
