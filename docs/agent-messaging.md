@@ -321,8 +321,8 @@ server itself, before it reaches the runner.
   turn, which it submits as the turn ends, counts too, when the person typed nothing
   after queuing it: the next root prompt after that Stop is theirs.
 - **The prompt is known empty** after one of these, with no input from the person
-  since (apart from answers to a request): the person's submission (a stale doorbell
-  line their own bare Enter submitted alone counts too); a confirmed ring, its doorbell
+  since (apart from answers to a request): the person's submission (not of a stale doorbell
+  line: an Enter can leave text behind, as a newline or a suggestion does); a confirmed ring, its doorbell
   prompt carrying the ring's own nonce; or the session binding. An agent started with
   the line as its command-line prompt stays as empty as its binding left it: a doorbell
   prompt outside a ring, as that start's or a failed ring's late one, empties nothing

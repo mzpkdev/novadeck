@@ -190,20 +190,15 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         // typed while it rang. Another nonce's while ringing is no confirmation.
         if (delivery.state === "ringing" && event.nonce !== delivery.nonce)
           return transition(delivery, { ...event, by: "harness" })
-        // Outside a ring it proves nothing of the box (a late hook of a failed ring, or
-        // an agent's first prompt after the person typed), unless the person's own bare
-        // Enter submitted it, a stale line alone: then the box is empty.
-        const own = delivery.state !== "ringing" && pendingEnter(delivery, event.at) !== undefined
-        const empty = delivery.state === "ringing" ? !delivery.touched : own || box.empty
+        // Outside a ring it proves nothing of the box: a late hook of a failed ring, an
+        // agent's first prompt after the person typed, or a stale line the person's Enter
+        // submitted, which may have left text (a newline, a suggestion) in the box. Any
+        // Enter of theirs is spent on it.
+        const empty = delivery.state === "ringing" ? !delivery.touched : box.empty
         return working(delivery, "turn", {
           epoch: delivery.epoch + 1,
           continued: 0,
-          box: {
-            ...box,
-            empty,
-            queuing: false,
-            ...(own && { enteredAt: null, queued: false, draftWhileAsked: false }),
-          },
+          box: { ...box, empty, queuing: false, enteredAt: null },
         })
       }
       // A later call of the running turn changes nothing, nor ends the wait for the

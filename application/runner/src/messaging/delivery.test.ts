@@ -340,15 +340,11 @@ describe("a ring", () => {
     const failed = run(ringing, { type: "ring-failed", nonce: "k3f9" }, typing)
     expect(transition(failed, doorbell)).toMatchObject({ state: "working", box: { empty: false } })
     expect(run(failed, doorbell, stop).state).toBe("drafting")
-    // Their own bare Enter submitted a stale line alone: the box is empty after it.
+    // Their own bare Enter submitted a stale line: that Enter may have left text in the
+    // box (a newline, a suggestion), so the draft stays, and the Enter is spent.
     expect(run(drafting, key("enter"), { ...doorbell, at: at + 100 })).toMatchObject({
-      box: { empty: true, enteredAt: null },
+      box: { empty: false, enteredAt: null },
     })
-    expect(run(drafting, key("enter"), { ...doorbell, at: at + submitWindowMs + 1 })).toMatchObject(
-      {
-        box: { empty: false },
-      },
-    )
   })
 })
 
