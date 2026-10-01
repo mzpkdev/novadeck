@@ -295,7 +295,8 @@ export const terminalRequest = z.strictObject({
   sessionId: id,
   cwd: directory,
   command: startupCommand.optional(),
-  title: name.optional(),
+  // As the terminal will be titled, so a request the runner can't create is refused first.
+  title: terminalTitle.optional(),
   focus: z.boolean(),
 })
 

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 
 import {
-  name,
   startupCommand,
+  terminalTitle,
   type TerminalRequest,
   type TerminalRequestAnswer,
 } from "@novadeck/protocol"
@@ -18,7 +18,7 @@ import { DomainError } from "../errors.js"
 export const openRequest = z.strictObject({
   command: startupCommand.optional(),
   cwd: z.string().min(1).max(4096).optional(),
-  title: name.optional(),
+  title: terminalTitle.optional(),
   focus: z.boolean().optional(),
 })
 
