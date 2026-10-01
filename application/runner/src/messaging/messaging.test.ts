@@ -832,6 +832,7 @@ const about = (terminalId: string): Whereabouts | undefined =>
           folders: { "/w/src/api": 3, "/w/tests": 2, "/w/docs": 1, "/w/web": 1 },
           activeAt: 1_000_000,
         },
+        openedBy: null,
         place: (path: string) => path.replace(/^\/w\//, ""),
       }
     : terminalId === "D"
@@ -842,6 +843,7 @@ const about = (terminalId: string): Whereabouts | undefined =>
           branch: null,
           plan: null,
           work: null,
+          openedBy: null,
           place: (path) => path,
         }
       : undefined
@@ -956,5 +958,140 @@ describe("retention", () => {
     messaging.sweep()
     expect(records.messages()).toEqual([])
     expect(records.threads()).toEqual([])
+  })
+})
+
+const doorbellStarted = (bound: Binding, nonce: string): HarnessEvent => ({
+  type: "turn-started",
+  ...fact(bound),
+  cause: "doorbell",
+  nonce,
+})
+
+describe("the person's submissions", () => {
+  const enter = { submits: true, answers: false }
+
+  it("are their Enter followed by a root turn within about two seconds, in every harness", () => {
+    for (const agent of ["claude", "codex", "agy"] as const) {
+      const { messaging, follow, prompt, stop, clock: time } = create()
+      const bound = binding(agent, `s-${agent}`, "7")
+      messaging.register("C", here, "t3")
+      follow("C", bound)
+      prompt("C", bound, "harness")
+      stop("C", bound)
+      expect(messaging.delivery("C")?.state).toBe("settled")
+      messaging.input("C", { submits: false, answers: false })
+      expect(messaging.delivery("C")?.state).toBe("drafting")
+      // A turn started with no Enter shortly before proves nothing about the box.
+      prompt("C", bound, "harness")
+      stop("C", bound)
+      expect(messaging.delivery("C")?.state).toBe("drafting")
+      // Their Enter, then the turn: what they drafted went with it.
+      messaging.input("C", enter)
+      time.now += 2_000
+      prompt("C", bound, agent === "agy" ? "harness" : "prompt")
+      stop("C", bound)
+      expect(messaging.delivery("C")?.state).toBe("settled")
+      // An Enter too long before is not the turn's.
+      messaging.input("C", { submits: false, answers: false })
+      messaging.input("C", enter)
+      time.now += 2_001
+      prompt("C", bound, "prompt")
+      stop("C", bound)
+      expect(messaging.delivery("C")?.state).toBe("drafting")
+    }
+  })
+
+  it("count a prompt queued during the turn, which the harness submits as it ends", () => {
+    const { messaging, prompt, stop, codex, clock: time } = create()
+    messaging.input("B", { submits: false, answers: false })
+    messaging.input("B", enter)
+    prompt("B", codex)
+    // Typed and queued with Tab during the turn.
+    messaging.input("B", { submits: false, answers: false })
+    messaging.input("B", enter)
+    time.now += 30_000
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+    time.now += 30_000
+    prompt("B", codex)
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("settled")
+  })
+
+  it("never count an answer to a request", () => {
+    const { messaging, prompt, stop, codex } = create()
+    prompt("B", codex)
+    stop("B", codex)
+    messaging.input("B", { submits: false, answers: false })
+    messaging.input("B", { submits: true, answers: true })
+    prompt("B", codex)
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("drafting")
+  })
+})
+
+describe("ringing", () => {
+  // Codex settled after a turn, with a message waiting.
+  const settledWithMail = () => {
+    const setup = create()
+    setup.prompt("B", setup.codex)
+    setup.stop("B", setup.codex)
+    sent(setup.send("A", "t2", "Review a.ts"))
+    return setup
+  }
+
+  it("is allowed once per Settled period, with messages waiting for the root session", () => {
+    const { messaging, prompt, stop, send, codex } = create()
+    prompt("B", codex)
+    stop("B", codex)
+    expect(messaging.ringable("B")).toBe(false)
+    sent(send("A", "t2", "hello"))
+    expect(messaging.ringable("B")).toBe(true)
+    expect(messaging.ring("B", "n1")).toBe(true)
+    expect(messaging.ringing("B")).toBe("n1")
+    expect(messaging.ringable("B")).toBe(false)
+    messaging.ringFailed("B", "n1")
+    expect(messaging.delivery("B")?.state).toBe("unknown")
+    // Not again until a new turn settles.
+    expect(messaging.ring("B", "n2")).toBe(false)
+  })
+
+  it("is confirmed by its doorbell prompt, whose hook delivers", () => {
+    const { messaging, ask, codex } = settledWithMail()
+    messaging.ring("B", "n1")
+    const answer = ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "n1")])
+    expect(answer.leaseId).toEqual(expect.any(String))
+    expect(answer.stdout).toContain(">Review a.ts</message>")
+    expect(messaging.ringing("B")).toBeUndefined()
+    expect(messaging.delivery("B")).toMatchObject({ state: "working", phase: "turn" })
+  })
+
+  it("tells a doorbell prompt with nothing left for it that it can be ignored", () => {
+    const { messaging, ask, codex, prompt, stop } = create()
+    prompt("B", codex)
+    stop("B", codex)
+    const answer = ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "old")])
+    expect(answer.leaseId).toBeNull()
+    expect(answer.stdout).toContain("no agent messages are waiting")
+    expect(messaging.delivery("B")).toMatchObject({ state: "working", empty: true })
+  })
+
+  it("gives way to another prompt, the ring then over", () => {
+    const { messaging, prompt, codex } = settledWithMail()
+    messaging.ring("B", "n1")
+    expect(messaging.delivery("B")?.state).toBe("ringing")
+    expect(prompt("B", codex).leaseId).toEqual(expect.any(String))
+    expect(messaging.ringing("B")).toBeUndefined()
+    messaging.ringFailed("B", "n1")
+    expect(messaging.delivery("B")?.state).toBe("working")
+  })
+
+  it("tells of each change, for the doorbell to look again", () => {
+    const { messaging, changed } = settledWithMail()
+    changed.length = 0
+    messaging.ring("B", "n1")
+    messaging.ringFailed("B", "n1")
+    expect(changed).toEqual(["B", "B"])
   })
 })

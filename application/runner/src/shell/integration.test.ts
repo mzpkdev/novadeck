@@ -1629,6 +1629,120 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
   },
 )
 
+describe.skipIf(process.platform === "win32" || !existsSync(bash))(
+  "agents opening an agent with a task from a bash terminal",
+  () => {
+    it("starts each agent with the doorbell as its prompt, Antigravity only where trusted", async ({
+      shell,
+    }) => {
+      const bin = presenter(shell.home)
+      for (const agent of ["claude", "codex", "agy"] as const) fakeAgent(shell.home, agent)
+      const trusted = join(shell.home, "trusted")
+      mkdirSync(trusted)
+      mkdirSync(join(shell.home, ".gemini", "antigravity-cli"), { recursive: true })
+      writeFileSync(
+        join(shell.home, ".gemini", "antigravity-cli", "settings.json"),
+        JSON.stringify({ trustedWorkspaces: [trusted] }),
+      )
+      const manager = shell.manager({
+        env: {
+          HOME: shell.home,
+          PS1: "$ ",
+          PATH: `${bin}:${join(shell.home, "bin")}:${process.env.PATH}`,
+        },
+        install: (agent) =>
+          Promise.resolve({
+            env: {},
+            home: shell.home,
+            platform: process.platform,
+            plugin: join(shell.plugins, agent),
+          }),
+      })
+      const terminal = await create(manager, shell)
+      const controller = new AbortController()
+      const requests: TerminalRequest[] = []
+      const client = (async () => {
+        for await (const request of manager.requests("client", controller.signal)) {
+          requests.push(request)
+          const id = randomUUID()
+          // eslint-disable-next-line no-await-in-loop -- Requests are opened in turn.
+          await manager.create(
+            {
+              id,
+              sessionId: request.sessionId,
+              cwd: request.cwd,
+              cols: 100,
+              rows: 20,
+              ...(request.command && { command: request.command }),
+            },
+            "client",
+          )
+          manager.answerRequest({ requestId: request.requestId, terminalId: id }, "client")
+        }
+      })()
+      try {
+        const task = { message: "Review a.ts, please." }
+        const answers = (await present(shell, manager, terminal.id, [
+          open({ agent: "claude", ...task }),
+          open({ agent: "codex", ...task }),
+          open({ agent: "agy", cwd: "trusted", ...task }),
+          open({ agent: "agy", ...task }),
+          open({ agent: "codex" }),
+          open({ agent: "codex", command: "codex", ...task }),
+        ])) as { ok: boolean; terminalId: string; command?: string; task?: object }[]
+        const line = /^\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]{6}\]$/
+        expect(requests.map(({ command }) => command)).toEqual([
+          expect.stringMatching(quoted("claude")),
+          expect.stringMatching(quoted("codex")),
+          expect.stringMatching(quoted("agy -i")),
+          // Antigravity would submit its prompt behind its trust dialog: started plain.
+          "agy",
+        ])
+        expect(answers.slice(0, 4)).toEqual(
+          Array.from({ length: 4 }, () =>
+            expect.objectContaining({
+              ok: true,
+              task: expect.objectContaining({ ok: true, state: "queued" }),
+            }),
+          ),
+        )
+        expect(answers.slice(4)).toEqual([
+          { ok: false, reason: "An agent and its message come together." },
+          { ok: false, reason: "A command can't be combined with an agent and its message." },
+        ])
+        // Each started with the line as one argument, which its harness submits.
+        await shell.until(manager, answers[0]!.terminalId, /claude args: \[NovaDeck: [^\n]*\]/)
+        const shown = await shell.until(manager, answers[2]!.terminalId, "agy args: -i [NovaDeck")
+        expect(shown.split("agy args: -i ")[1]?.split(" prompt=")[0]).toMatch(line)
+        // The opener's peers say who opened it, with a task, before its agent starts.
+        const [listed] = (await present(shell, manager, terminal.id, [
+          { type: "agents" as "open", request: {} },
+        ])) as { ok: true; text: string }[]
+        expect(listed!.text).toContain(
+          "- t2: expecting Claude Code, not started yet\n  title: Terminal 02\n  folder: .\n  opened by t1 with a task",
+        )
+        // The task waits for the first session of that agent there.
+        expect(manager.messages(answers[0]!.terminalId).threads[0]?.messages[0]).toMatchObject({
+          from: "t1",
+          to: "t2",
+          toAgent: "claude",
+          text: "Review a.ts, please.",
+          state: "queued",
+        })
+      } finally {
+        controller.abort()
+        await client
+      }
+    })
+  },
+)
+
+// A command starting an agent with a doorbell line as its prompt.
+const quoted = (start: string) =>
+  new RegExp(
+    `^${start} "\\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]{6}\\]"$`,
+  )
+
 // A stand-in agent with NovaDeck's plugin connected: `agent <name> <session> <steps>` runs
 // the real hook for its SessionStart, says it is ready, then runs each step written to its
 // `steps` folder, in order: a hook, as its harness would run it, keeping what the hook
@@ -1982,3 +2096,162 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
       await shell.until(manager, id, "claude args: --resume abc-1")
     })
 })
+
+/**
+ * A stand-in agent with a TUI of its own: an input box that takes bracketed pastes and
+ * submits on Enter, firing its hooks as a harness does, and writing each prompt and what
+ * its prompt-time hook printed to `received` (one JSON line each).
+ */
+const standInTui = (home: string): string => {
+  const bin = join(home, "bin")
+  mkdirSync(bin, { recursive: true })
+  const script = join(bin, "tui.cjs")
+  writeFileSync(
+    script,
+    [
+      'const { spawn } = require("node:child_process")',
+      'const fs = require("node:fs")',
+      // With `menu`, a menu is open after its first turn, which swallows pastes and
+      // takes Enter as picking its item.
+      "const [agent, session, received, mode] = process.argv.slice(2)",
+      "let menu = false",
+      "const hook = (event, payload, done) => {",
+      "  const child = spawn(process.env.NOVADECK_HOOK, [agent, event], { stdio: ['pipe', 'pipe', 'inherit'] })",
+      '  let printed = ""',
+      '  child.stdout.on("data", (chunk) => (printed += chunk))',
+      '  child.on("close", () => done(printed))',
+      "  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: session, cwd: process.cwd(), ...payload }))",
+      "}",
+      'let box = ""',
+      "const draw = () => process.stdout.write('\\r\\x1b[2K> ' + box)",
+      "let busy = true",
+      "const submit = () => {",
+      "  const prompt = box",
+      '  box = ""',
+      "  busy = true",
+      "  process.stdout.write('\\r\\n')",
+      "  hook('UserPromptSubmit', { prompt }, (printed) => {",
+      "    fs.appendFileSync(received, JSON.stringify({ prompt, printed }) + '\\n')",
+      "    process.stdout.write('worked on it\\r\\n')",
+      "    hook('Stop', {}, () => {",
+      "      busy = false",
+      "      menu = mode === 'menu'",
+      "      if (menu) return process.stdout.write('\\r\\x1b[2K  [menu] pick an item')",
+      "      draw()",
+      "    })",
+      "  })",
+      "}",
+      "process.stdin.setRawMode(true)",
+      "process.stdin.setEncoding('utf8')",
+      "process.stdin.on('data', (data) => {",
+      "  if (busy) return",
+      "  if (menu) {",
+      "    if (data === '\\r') fs.appendFileSync(received, JSON.stringify({ picked: true }) + '\\n')",
+      "    return",
+      "  }",
+      "  const paste = /\\x1b\\[200~([\\s\\S]*?)\\x1b\\[201~/.exec(data)",
+      "  if (paste) box += paste[1]",
+      "  else if (data === '\\r') return submit()",
+      "  else box += data",
+      "  draw()",
+      "})",
+      // Bracketed paste on, as a TUI turns it on for its input box.
+      "process.stdout.write('\\x1b[?2004h' + agent + ' tui\\r\\n\\r\\n')",
+      "hook('SessionStart', { source: 'startup' }, () => {",
+      "  busy = false",
+      "  process.stdout.write(agent + ' ready\\r\\n')",
+      "  draw()",
+      "})",
+    ].join("\n"),
+  )
+  writeFileSync(join(bin, "tui"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`)
+  chmodSync(join(bin, "tui"), 0o755)
+  return bin
+}
+
+describe.skipIf(process.platform === "win32" || !existsSync(bash))(
+  "the doorbell in bash terminals",
+  () => {
+    it("wakes an idle agent's TUI: the test paste, Enter, and its hook delivers", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      standInTui(shell.home)
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+        doorbell: { calmMs: 200 },
+      })
+      const sender = await create(manager, shell)
+      const idle = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(sender.id, "claude", "s-claude")
+      const received = join(shell.home, "received.jsonl")
+      manager.write({ terminalId: idle.id, data: `tui codex s-codex '${received}'\r` }, "owner")
+      await shell.until(manager, idle.id, "codex ready")
+      expect(manager.messages(idle.id).delivery).toBe("fresh")
+      // The person's own first prompt: their Enter, then the turn, which settles.
+      manager.write({ terminalId: idle.id, data: "hello" }, "owner")
+      await shell.until(manager, idle.id, "> hello")
+      manager.write({ terminalId: idle.id, data: "\r" }, "owner")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
+      const reads = () =>
+        existsSync(received)
+          ? readFileSync(received, "utf8")
+              .trim()
+              .split("\n")
+              .map((line) => JSON.parse(line) as { prompt: string; printed: string })
+          : []
+      expect(reads()).toMatchObject([{ prompt: "hello", printed: "" }])
+      // A message for it: the doorbell rings, and the line it submits is its prompt.
+      const sent = JSON.parse(
+        await step(sender.id, { call: "send", request: { to: idle.handle, text: "Review a.ts" } }),
+      ) as { ok: boolean; route: string }
+      expect(sent).toMatchObject({ ok: true, route: "ringing it now" })
+      await vi.waitFor(() => expect(reads()).toHaveLength(2), { timeout: 10_000 })
+      const [, rung] = reads()
+      expect(rung!.prompt).toMatch(
+        /^\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]$/,
+      )
+      expect(rung!.printed).toContain(">Review a.ts</message>")
+      await expect
+        .poll(() => manager.messages(idle.id).threads[0]?.messages[0]?.state)
+        .toBe("delivered")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
+      // Rung once: nothing more is typed.
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      expect(reads()).toHaveLength(2)
+    })
+
+    it("presses nothing when the paste lands nowhere, as in an open menu", async ({ shell }) => {
+      const bin = standIn(shell.home)
+      standInTui(shell.home)
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+        doorbell: { calmMs: 200 },
+      })
+      const sender = await create(manager, shell)
+      const idle = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(sender.id, "claude", "s-claude")
+      const received = join(shell.home, "received.jsonl")
+      manager.write(
+        { terminalId: idle.id, data: `tui codex s-codex '${received}' menu\r` },
+        "owner",
+      )
+      await shell.until(manager, idle.id, "codex ready")
+      manager.write({ terminalId: idle.id, data: "hello" }, "owner")
+      await shell.until(manager, idle.id, "> hello")
+      manager.write({ terminalId: idle.id, data: "\r" }, "owner")
+      await shell.until(manager, idle.id, "[menu] pick an item")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("settled")
+      await step(sender.id, { call: "send", request: { to: idle.handle, text: "Review a.ts" } })
+      // The ring fails: Unknown, the message waits, and no Enter picked the menu's item.
+      await expect
+        .poll(() => manager.messages(idle.id).delivery, { timeout: 5_000 })
+        .toBe("unknown")
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      expect(readFileSync(received, "utf8")).not.toContain("picked")
+      expect(manager.messages(idle.id).threads[0]?.messages[0]?.state).toBe("queued")
+    })
+  },
+)

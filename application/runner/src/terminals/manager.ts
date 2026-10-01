@@ -38,9 +38,11 @@ import { observe, type Binding } from "../harnesses/bindings.js"
 import { actorOf, agentDetail, planOf } from "../harnesses/detail.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
 import type { HarnessEvent, SessionObserved } from "../harnesses/events.js"
+import { doorbellLine, quotedLine, type Install } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
 import { followRoot, type Root } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
+import { agentLabel, byteLength, cleanText, maxMessageBytes } from "../messaging/mailbox.js"
 import { Messaging, type AgentsAnswer, type SendAnswer } from "../messaging/messaging.js"
 import type { MailboxRecords } from "../messaging/records.js"
 import type { InstalledShell } from "../shell/install.js"
@@ -58,6 +60,15 @@ import {
 } from "../shell/reports.js"
 import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
 import {
+  confirmRing,
+  Doorbell,
+  lastUserInput,
+  screenText,
+  type DoorbellHost,
+  type DoorbellOptions,
+} from "./doorbell.js"
+import {
+  processGroup,
   sampleForeground,
   shellInForeground,
   terminalForeground,
@@ -82,6 +93,7 @@ import type {
   TerminalIdentity,
   TerminalRecords,
 } from "./records.js"
+import { freshNonce } from "./ring.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
@@ -139,6 +151,13 @@ export type TerminalOptions = {
    * session counts as its own when omitted, or when that cannot be told.
    */
   projectOf?: (sessionId: string) => string | undefined
+  /** How the doorbell rings idle agents; it never rings with `false`, as in some tests. */
+  doorbell?: DoorbellOptions | false
+  /**
+   * Where a harness lives on this machine, which says how it may start with a task; a
+   * harness counts as having none when omitted.
+   */
+  install?: (agent: AgentName) => Promise<Install | undefined>
 }
 
 type Create = {
@@ -211,6 +230,10 @@ type Record = {
   root: Root | null
   /** What the root session worked on, kept with the terminal; null before any did. */
   work: Work | null
+  /** The person's input waiting while the doorbell's test paste is on screen; null otherwise. */
+  held: string[] | null
+  /** The handle of the terminal whose agent opened this one with a task; null otherwise. */
+  openedBy: string | null
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -368,6 +391,8 @@ export class Terminals {
       | "projectFolder"
       | "mailbox"
       | "projectOf"
+      | "doorbell"
+      | "install"
     >
   > & {
     env: NodeJS.ProcessEnv
@@ -377,6 +402,7 @@ export class Terminals {
     projectOf: ((sessionId: string) => string | undefined) | undefined
     shims: () => Promise<readonly AgentName[]>
     connected: (agent: AgentName) => Promise<boolean>
+    install: (agent: AgentName) => Promise<Install | undefined>
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
@@ -388,6 +414,8 @@ export class Terminals {
   private readonly messaging: Messaging
   /** What agents messaging each other, and the runner API about their messages, are answered. */
   private readonly peers: TerminalPeers
+  /** Wakes idle agents for their messages; none when switched off. */
+  private readonly doorbell: Doorbell | undefined
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
   /** How many times each harness was disconnected, so a report that waited meanwhile is dropped. */
@@ -425,6 +453,7 @@ export class Terminals {
       projectFolder: options.projectFolder,
       projectOf: options.projectOf,
       openMs: positive(options.openMs, 6_000),
+      install: options.install ?? (() => Promise.resolve(undefined)),
     }
     // Child programs do not need the runner's network capability, nor the identity of a
     // NovaDeck terminal the runner itself was started from.
@@ -435,7 +464,10 @@ export class Terminals {
       // A message is kept while either of its terminals is, running or saved.
       exists: (terminalId) =>
         this.records.has(terminalId) || this.identity(terminalId) !== undefined,
+      onChange: (terminalId) => this.doorbell?.changed(terminalId),
     })
+    this.doorbell =
+      options.doorbell === false ? undefined : new Doorbell(this.ringHost(), options.doorbell)
     this.peers = new TerminalPeers({
       messaging: this.messaging,
       caller: (terminalId, token) => {
@@ -576,6 +608,8 @@ export class Terminals {
         titledBy,
         root: null,
         work: saved?.work ?? null,
+        held: null,
+        openedBy: null,
       }
       this.records.set(record.summary.id, record)
       this.register(record, expectedAgent(input.command, input.resume))
@@ -732,8 +766,68 @@ export class Terminals {
         answers: (record.activity?.pending.length ?? 0) > 0,
       })
     }
+    // While the doorbell's test paste is on screen, the person's input waits its turn.
+    if (record.held) {
+      record.held.push(input.data)
+      return
+    }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
     record.process.write(input.data)
+  }
+
+  /** What the doorbell asks of the terminals and messaging. */
+  private ringHost(): DoorbellHost {
+    const live = (terminalId: string) => {
+      const record = this.records.get(terminalId)
+      return record && !record.exitQueued && record.summary.exit === null ? record : undefined
+    }
+    return {
+      ringable: (terminalId) =>
+        live(terminalId) !== undefined && !this.stopping && this.messaging.ringable(terminalId),
+      ring: (terminalId, nonce) => this.messaging.ring(terminalId, nonce),
+      ringing: (terminalId) => this.messaging.ringing(terminalId),
+      ringFailed: (terminalId, nonce) => this.messaging.ringFailed(terminalId, nonce),
+      screen: async (terminalId) => {
+        const record = live(terminalId)
+        if (!record) return undefined
+        const { process: child } = record
+        // Once it has drawn what the shell already sent.
+        const text = await this.enqueue(record, () => screenText(record.screen))
+        return record.process === child && live(terminalId) ? text : undefined
+      },
+      foreground: async (terminalId) => {
+        const record = live(terminalId)
+        const instance = record?.binding?.instance
+        if (!record || !instance) return undefined
+        const [held, own] = await Promise.all([
+          terminalForeground(record.process.pid),
+          processGroup(Number(instance)),
+        ])
+        return held === undefined || own === undefined ? undefined : held === own
+      },
+      hold: (terminalId) => {
+        const record = live(terminalId)
+        if (!record || record.held) return () => {}
+        const held: string[] = []
+        record.held = held
+        const release = () => {
+          clearTimeout(timer)
+          if (record.held !== held) return
+          record.held = null
+          if (held.length > 0 && live(terminalId) === record) record.process.write(held.join(""))
+        }
+        // At most a second, whatever happened.
+        const timer = setTimeout(release, 1_000)
+        timer.unref()
+        return release
+      },
+      write: (terminalId, data) => {
+        const record = live(terminalId)
+        if (!record) return false
+        record.process.write(data)
+        return true
+      },
+    }
   }
 
   resize(input: { terminalId: string; cols: number; rows: number }, ownerId: string): void {
@@ -821,6 +915,7 @@ export class Terminals {
           foreground: undefined,
           binding: null,
           root: null,
+          held: null,
           activity: null,
           telemetry: null,
           watching: null,
@@ -873,6 +968,7 @@ export class Terminals {
   /** Forgets what restores the terminal, and the sessions it claimed. */
   private forget(terminalId: string): void {
     this.messaging.unregister(terminalId)
+    this.doorbell?.forget(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
     this.opened.delete(terminalId)
     this.openers.delete(terminalId)
@@ -1189,7 +1285,22 @@ export class Terminals {
     const read = readOpenRequest(call.request)
     if (!read.ok) return read
     const { request } = read
-    if (request.command !== undefined && !(await this.startsCommands()))
+    const starts = request.command !== undefined || request.agent !== undefined
+    if (request.message !== undefined) {
+      const task = cleanText(request.message)
+      if (!task.trim()) return refused("The message is empty.")
+      if (byteLength(task) > maxMessageBytes)
+        return refused(
+          `The message is ${byteLength(task)} bytes, over the ${maxMessageBytes} a message may ` +
+            "hold; put longer content in a file the agent can open, and send its path.",
+        )
+    }
+    if (request.agent !== undefined && !(await this.connected(request.agent)))
+      return refused(
+        `NovaDeck isn't connected to ${agentLabel(request.agent)}, so its hooks couldn't take ` +
+          "the task; the user can connect it in NovaDeck's preferences.",
+      )
+    if (starts && !(await this.startsCommands()))
       return refused(
         "NovaDeck's shells can't start a command as they open here, as its shell integration " +
           "isn't loaded, so no terminal opened.",
@@ -1197,6 +1308,8 @@ export class Terminals {
     const folder = request.cwd ?? "."
     const cwd = await this.directory(resolvePath(record.summary.cwd, folder)).catch(() => undefined)
     if (cwd === undefined) return refused(`${folder} isn't a folder a terminal can open in.`)
+    const command =
+      request.agent === undefined ? request.command : await this.taskCommand(request.agent, cwd)
     // Closed, or the runner stopped, while the folder was looked at.
     if (this.stopping || this.records.get(call.terminalId) !== record) return unansweredCalls.open
     const now = Date.now()
@@ -1214,12 +1327,13 @@ export class Terminals {
         from: call.terminalId,
         sessionId: record.summary.sessionId,
         cwd,
-        ...(request.command !== undefined && { command: request.command }),
+        ...(command !== undefined && { command }),
         ...(request.title !== undefined && { title: request.title }),
         focus: request.focus === true,
       },
       this.options.openMs,
     )
+    let task: SendAnswer | undefined
     if (asked.type === "answered" && "terminalId" in asked.answer) {
       this.openers.set(asked.answer.terminalId, charged)
       // A title the agent chose is its own, never the person's, and agents are told so.
@@ -1228,8 +1342,34 @@ export class Terminals {
         opened.titledBy = record.summary.handle
         this.save(opened, false)
       }
+      // The task goes to the first session of the agent it starts there, from the opener.
+      if (opened && request.message !== undefined) {
+        opened.openedBy = record.summary.handle
+        task = this.messaging.send(call.terminalId, {
+          to: opened.summary.handle,
+          text: request.message,
+        })
+      }
     }
-    return this.opening(asked, cwd, request.command)
+    const answer = this.opening(asked, cwd, command)
+    return answer.ok && task ? { ...answer, task } : answer
+  }
+
+  /**
+   * The command that starts `agent` with a task: the doorbell's line as its command-line
+   * prompt, which it submits once past its startup screens; plain where it may not take
+   * one (Antigravity in a folder it doesn't trust), when the task rings once it is first
+   * Settled.
+   */
+  private async taskCommand(agent: AgentName, cwd: string): Promise<string> {
+    const { messaging } = harnesses[agent]
+    const install = await this.options.install(agent).catch(() => undefined)
+    const argv =
+      (await messaging
+        .initialPrompt(doorbellLine(freshNonce()), { install, cwd })
+        .catch(() => undefined)) ?? messaging.start
+    // Every word but the line is a plain word; the line holds nothing a shell expands.
+    return argv.map((word) => (/^[\w./-]+$/.test(word) ? word : quotedLine(word))).join(" ")
   }
 
   /** What the agent learns of the client's answer. */
@@ -1487,6 +1627,7 @@ export class Terminals {
     for (const streams of [this.details, this.showings])
       for (const readers of streams.values()) for (const reader of readers) reader.finish()
     for (const record of this.records.values()) this.unwatch(record)
+    this.doorbell?.close()
     this.messaging.close()
     this.shutdownPromise = this.stop()
     return this.shutdownPromise
@@ -1658,6 +1799,7 @@ export class Terminals {
       // Output a previous run left queued belongs to a screen that is gone.
       if (record.process !== child) return
       await new Promise<void>((resolve) => record.screen.write(data, resolve))
+      this.doorbell?.changed(record.summary.id)
       // Once on the screen: a save while it was drawing may have taken the screen before.
       record.changed = true
       for (let start = 0; start < data.length;) {
@@ -1948,14 +2090,15 @@ export class Terminals {
     this.publishAgent(record, record.summary.cwd !== cwd)
     if (this.trackRoot(record, events, report.event === "StatusLine") || changed)
       this.save(record, false)
+    const told = await this.doorbellPrompt(record, events)
     if (deadline === undefined) {
-      this.messaging.observe(report.terminalId, events)
+      this.messaging.observe(report.terminalId, told)
       return silent
     }
     return this.messaging.ask(report.terminalId, {
       agent: report.agent,
       event: report.event,
-      events,
+      events: told,
       deadline,
     })
   }
@@ -1979,6 +2122,33 @@ export class Terminals {
     if (work === record.work) return false
     record.work = work
     return true
+  }
+
+  /**
+   * The facts with a ring's confirmation where the harness's hooks can't show it: while
+   * the terminal rings, a root turn its hooks name no prompt for is the doorbell's when
+   * its transcript's last user input holds the line with its nonce, as Antigravity
+   * wraps it in `<USER_REQUEST>`.
+   */
+  private async doorbellPrompt(
+    record: Record,
+    events: readonly HarnessEvent[],
+  ): Promise<readonly HarnessEvent[]> {
+    const nonce = this.messaging.ringing(record.summary.id)
+    const root = record.root
+    if (!nonce || !root || harnesses[root.agent].messaging.promptVisible) return events
+    const items = harnesses[root.agent].transcripts?.items
+    if (!record.transcript || !items || confirmRing(events, root, nonce, undefined) === undefined)
+      return events
+    // Its transcript may record the input just after the hook runs: a few looks, briefly.
+    for (let look = 0; ; look += 1) {
+      // eslint-disable-next-line no-await-in-loop -- Each look waits for the last.
+      const input = await lastUserInput(record.transcript, items)
+      const confirmed = confirmRing(events, root, nonce, input)
+      if (confirmed || look === 2) return confirmed ?? events
+      // eslint-disable-next-line no-await-in-loop -- As above.
+      await sleep(150)
+    }
   }
 
   /** Follows the root after the terminal's binding changed outside its hooks' reports. */
@@ -2135,6 +2305,7 @@ export class Terminals {
       this.unwatch(record)
       // An exited terminal takes no messages; its agent's are gone until it runs again.
       this.messaging.unregister(record.summary.id)
+      this.doorbell?.forget(record.summary.id)
       record.summary = {
         ...record.summary,
         exit,
@@ -2223,6 +2394,7 @@ export class Terminals {
       this.dispose(record)
       this.records.delete(record.summary.id)
       this.messaging.unregister(record.summary.id)
+      this.doorbell?.forget(record.summary.id)
       // Its record is let go, but the terminal is kept, saved, until it is closed.
       const saved = this.saved(record.summary.id)
       for (const watcher of this.watchers.keys())

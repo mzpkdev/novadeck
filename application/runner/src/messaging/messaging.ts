@@ -56,6 +56,12 @@ type Live = Scope & {
    * none once a root session has, when only a bound session takes messages.
    */
   expecting: AgentName | null
+  /** When the person last submitted there (Enter, or a queue key), apart from answers. */
+  submittedAt: number | null
+  /** Whether the person queued a prompt during the turn that last ended, which its harness submits. */
+  queued: boolean
+  /** The epoch the doorbell last rang in, so a Settled period is rung once. */
+  rungEpoch: number | null
 }
 
 /** What `send` answers: where the message is, or why it was refused. */
@@ -102,7 +108,16 @@ export type MessagingOptions = {
    * watch that follows them would.
    */
   readonly onChange?: (terminalId: string) => void
+  /**
+   * How soon after the person's Enter a root turn must start to be their submission, in
+   * milliseconds.
+   */
+  readonly submitWindowMs?: number
 }
+
+/** What a doorbell prompt's hook adds when nothing waits for it any more. */
+export const nothingWaiting =
+  "NovaDeck: no agent messages are waiting any more; this automatic notice can be ignored."
 
 /** A lease is given only with this long left before its hook's deadline, in milliseconds. */
 export const leaseMargin = 300
@@ -140,6 +155,7 @@ export class Messaging {
   private readonly now: () => number
   private readonly exists: (terminalId: string) => boolean
   private readonly onChange: (terminalId: string) => void
+  private readonly submitWindowMs: number
   private readonly live = new Map<string, Live>()
   private readonly messages = new Map<string, Message>()
   private readonly threads = new Map<string, Thread>()
@@ -157,6 +173,7 @@ export class Messaging {
     this.now = options.now ?? Date.now
     this.exists = options.exists ?? ((terminalId) => this.live.has(terminalId))
     this.onChange = options.onChange ?? (() => {})
+    this.submitWindowMs = options.submitWindowMs ?? 2_000
     this.leases = new Leases(options.leaseMs ?? 5_000, (lease) => this.lapse(lease))
     this.paused = this.read(() => this.records.messagingPaused(), false)
     for (const thread of this.read(() => this.records.threads(), []))
@@ -198,6 +215,9 @@ export class Messaging {
       root: null,
       delivery: unbound,
       expecting: null,
+      submittedAt: null,
+      queued: false,
+      rungEpoch: null,
     })
   }
 
@@ -311,7 +331,11 @@ export class Messaging {
     if (start.cause === "call") return again ? { leaseId: null, stdout: again } : silent
     const lease = time && this.lease(live, root, "prompt", false)
     if (lease) return { leaseId: lease.id, stdout: profile.prompt(lease.text) }
-    return again ? { leaseId: null, stdout: again } : silent
+    if (again) return { leaseId: null, stdout: again }
+    // A doorbell with nothing left for it, as when its messages went another way.
+    return start.cause === "doorbell"
+      ? { leaseId: null, stdout: profile.prompt(nothingWaiting) }
+      : silent
   }
 
   /**
@@ -337,7 +361,54 @@ export class Messaging {
    */
   input(terminalId: string, input: { readonly submits: boolean; readonly answers: boolean }): void {
     const live = this.live.get(terminalId)
-    if (live) this.step(live, { type: "input", ...input })
+    if (!live) return
+    if (!input.answers) {
+      if (input.submits) live.submittedAt = this.now()
+      // Typed after a prompt was queued: what the harness submits then isn't all there is.
+      else live.queued = false
+    }
+    this.step(live, { type: "input", ...input })
+  }
+
+  /**
+   * Whether the doorbell may ring the terminal: Settled, not yet rung in this Settled
+   * period, with messages waiting for its root session. The terminal manager checks the
+   * screen before it rings.
+   */
+  ringable(terminalId: string): boolean {
+    const live = this.live.get(terminalId)
+    if (!live?.root || live.delivery.state !== "settled") return false
+    if (live.rungEpoch === live.delivery.epoch) return false
+    const root = live.root
+    for (const message of this.messages.values())
+      if (
+        message.state === "queued" &&
+        message.to.terminalId === terminalId &&
+        this.addressed(message, root)
+      )
+        return true
+    return false
+  }
+
+  /** The doorbell starts ringing the terminal with its nonce; false when it may not now. */
+  ring(terminalId: string, nonce: string): boolean {
+    const live = this.live.get(terminalId)
+    if (!live || !this.ringable(terminalId)) return false
+    live.rungEpoch = live.delivery.epoch
+    this.step(live, { type: "ring", nonce })
+    return live.delivery.state === "ringing"
+  }
+
+  /** The nonce of the ring under way in the terminal, if it is Ringing. */
+  ringing(terminalId: string): string | undefined {
+    const delivery = this.live.get(terminalId)?.delivery
+    return delivery?.state === "ringing" ? delivery.nonce : undefined
+  }
+
+  /** The ring with that nonce failed: the terminal is Unknown, and its messages wait. */
+  ringFailed(terminalId: string, nonce: string): void {
+    const live = this.live.get(terminalId)
+    if (live) this.step(live, { type: "ring-failed", nonce })
   }
 
   /**
@@ -783,9 +854,24 @@ export class Messaging {
   private turn(live: Live, event: HarnessEvent): void {
     if (!rootedIn(live.root, event)) return
     switch (event.type) {
-      case "turn-started":
-        this.step(live, { type: "prompt", by: event.cause === "prompt" ? "person" : event.cause })
+      case "turn-started": {
+        if (event.cause === "call" || event.cause === "doorbell") {
+          this.step(live, {
+            type: "prompt",
+            by: event.cause,
+            ...(event.nonce !== undefined && { nonce: event.nonce }),
+          })
+          return
+        }
+        // The person's submission, told the same way in every harness: their Enter shortly
+        // before, or a prompt they queued during the turn that just ended.
+        const at = live.submittedAt
+        const person = (at !== null && this.now() - at <= this.submitWindowMs) || live.queued
+        live.submittedAt = null
+        live.queued = false
+        this.step(live, { type: "prompt", by: person ? "person" : "harness" })
         return
+      }
       case "turn-ended":
         if (event.outcome === "completed")
           this.step(live, { type: "stop", continued: false, background: event.background === true })
@@ -801,6 +887,8 @@ export class Messaging {
 
   private step(live: Live, event: DeliveryEvent): void {
     const before = live.delivery
+    // A turn that ends with the person's queued prompt: its harness submits it next.
+    if (event.type === "stop" && !event.continued && running(before)) live.queued = before.submitted
     live.delivery = transition(before, event)
     if (live.delivery === before) return
     // A turn that ended, or a new one, leaves the last one's delivery behind.

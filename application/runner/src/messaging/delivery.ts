@@ -2,8 +2,10 @@
  * How a terminal's agent can take a message now, one state machine per terminal (see
  * docs/agent-messaging.md, "States"). Every terminal with an agent is in one state at
  * all times, derived from what its harness and its person did, so the prompt's emptiness
- * is known before any message arrives. Step one has no doorbell: a Settled terminal waits
- * for its next root prompt, as a Drafting (person busy) or Unknown one does.
+ * is known before any message arrives. A Settled terminal is rung by the doorbell
+ * (`terminals/doorbell.ts`) and is Ringing, with its ring's nonce, until a doorbell
+ * prompt with that nonce confirms it or the ring fails; a Drafting (person busy) or
+ * Unknown one waits for its next root prompt.
  *
  * Working has three phases: a root `turn` running; `continuing`, after a Stop NovaDeck
  * continued, until the continuation's first prompt; and `background`, when only work a
@@ -15,6 +17,7 @@ export type Delivery = Counts &
   (
     | { readonly state: "unbound" | "fresh" | "settled" | "drafting" | "unknown" }
     | { readonly state: "working"; readonly phase: "turn" | "continuing" | "background" }
+    | { readonly state: "ringing"; readonly nonce: string }
   )
 
 /** What every state carries. */
@@ -44,25 +47,34 @@ export const maxContinuations = 2
  * What changes a terminal's delivery:
  * - `bound`: a session binds, or its harness announced a new one;
  * - `unbound`: the binding ended, as its instance exited;
- * - `prompt`: a root turn started: the person's prompt, one the harness started by
- *   itself (a background task's result, or any Antigravity turn, whose hooks can't tell),
- *   or a later model call of a running turn;
+ * - `prompt`: a root turn started: the person's submission (their Enter, then the turn),
+ *   one that started without it (a background task's result, a subagent waking
+ *   Antigravity), a later model call of a running turn, or a doorbell prompt with its
+ *   nonce;
  * - `stop`: a normal root Stop, which NovaDeck `continued` or not, with work the turn
  *   started still running in the `background`;
  * - `ended`: a root turn ended abnormally: an Esc, a denial, a failure;
  * - `idle`: the agent shows idle however its turn ended, with work still running in the
  *   `background` or not, as Antigravity's status line does;
  * - `input`: the person's input, which `submits` a prompt (Enter, or a harness's queue
- *   key, as Codex's Tab), unless it `answers` a pending request.
+ *   key, as Codex's Tab), unless it `answers` a pending request;
+ * - `ring`: the doorbell starts ringing a Settled terminal, with its nonce;
+ * - `ring-failed`: that ring's test paste failed, or no doorbell prompt confirmed it.
  */
 export type DeliveryEvent =
   | { readonly type: "bound" }
   | { readonly type: "unbound" }
-  | { readonly type: "prompt"; readonly by: "person" | "harness" | "call" }
+  | {
+      readonly type: "prompt"
+      readonly by: "person" | "harness" | "call" | "doorbell"
+      readonly nonce?: string
+    }
   | { readonly type: "stop"; readonly continued: boolean; readonly background: boolean }
   | { readonly type: "ended" }
   | { readonly type: "idle"; readonly background: boolean }
   | { readonly type: "input"; readonly submits: boolean; readonly answers: boolean }
+  | { readonly type: "ring"; readonly nonce: string }
+  | { readonly type: "ring-failed"; readonly nonce: string }
 
 export const unbound: Delivery = {
   state: "unbound",
@@ -122,6 +134,15 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
   const phase = phaseOf(delivery)
   switch (event.type) {
     case "prompt": {
+      // A doorbell prompt submitted the line NovaDeck typed into an empty box, or the one an
+      // agent was started with: the prompt is empty, unless the person typed while it rang.
+      if (event.by === "doorbell")
+        return working(delivery, "turn", {
+          epoch: delivery.epoch + 1,
+          empty: delivery.state === "ringing" ? delivery.empty : true,
+          submitted: false,
+          continued: 0,
+        })
       // A later call of the running turn changes nothing, nor ends the wait for the
       // continuation of a Stop NovaDeck continued: a status line saying working can come
       // before the continuation's first model call.
@@ -167,6 +188,14 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       if (phase === "turn") return { ...counts(delivery), state: "unknown" }
       return delivery
     }
+    case "ring":
+      return delivery.state === "settled"
+        ? { ...counts(delivery), state: "ringing", nonce: event.nonce }
+        : delivery
+    case "ring-failed":
+      return delivery.state === "ringing" && delivery.nonce === event.nonce
+        ? { ...counts(delivery), state: "unknown" }
+        : delivery
     case "input": {
       // Keys sent while a request waits answer it; they are no draft.
       if (event.answers) return delivery
@@ -198,6 +227,9 @@ export const route = (delivery: Delivery, silentOnFailure: boolean): string => {
   switch (delivery.state) {
     case "fresh":
       return "when its agent first prompts"
+    case "settled":
+    case "ringing":
+      return "ringing it now"
     case "working":
       if (delivery.phase === "background") return "when its next turn starts"
       return silentOnFailure ? "at its turn's end or its next prompt" : "when its current turn ends"

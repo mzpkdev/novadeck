@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from "node:fs/promises"
+import { readFile, realpath, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import type { Install } from "../harness.js"
@@ -114,3 +114,21 @@ export const statusLineSettings = (home: (install: Install) => string) => ({
     await write(file, settings)
   },
 })
+
+/**
+ * Whether Antigravity trusts `cwd`: its settings list it among `trustedWorkspaces`, the
+ * same folder after resolving links. A folder inside a trusted one isn't taken as
+ * trusted, which no probe showed. Unreadable settings trust nothing.
+ */
+export const trustsFolder = async (antigravityHome: string, cwd: string): Promise<boolean> => {
+  const settings = await read(settingsFile(antigravityHome)).catch(() => undefined)
+  const listed = settings?.trustedWorkspaces
+  if (!Array.isArray(listed)) return false
+  const here = await realpath(cwd).catch(() => cwd)
+  for (const folder of listed) {
+    if (typeof folder !== "string") continue
+    // eslint-disable-next-line no-await-in-loop -- The list is short.
+    if ((await realpath(folder).catch(() => folder)) === here) return true
+  }
+  return false
+}

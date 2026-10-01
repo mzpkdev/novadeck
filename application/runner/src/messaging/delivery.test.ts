@@ -193,7 +193,57 @@ describe("when a message would reach an agent", () => {
     // Codex sends nothing when a turn fails.
     expect(route(working, true)).toBe("at its turn's end or its next prompt")
     expect(route(transition(working, background), false)).toBe("when its next turn starts")
-    for (const state of [settled, drafting, unknown])
+    expect(route(settled, false)).toBe("ringing it now")
+    for (const state of [drafting, unknown])
       expect(route(state, false)).toBe("when the person next submits a prompt there")
+  })
+})
+
+describe("a ring", () => {
+  const ringing = transition(settled, { type: "ring", nonce: "k3f9" })
+  const doorbell = { type: "prompt", by: "doorbell", nonce: "k3f9" } as const
+
+  it("rings only a Settled terminal, keeping its counts", () => {
+    expect(ringing).toEqual({ ...settled, state: "ringing", nonce: "k3f9" })
+    for (const from of [bound, working, drafting, unknown, unbound])
+      expect(transition(from, { type: "ring", nonce: "k3f9" })).toBe(from)
+  })
+
+  it("is confirmed by a doorbell prompt: a new turn, the prompt empty", () => {
+    expect(transition(ringing, doorbell)).toMatchObject({
+      state: "working",
+      phase: "turn",
+      epoch: settled.epoch + 1,
+      empty: true,
+      continued: 0,
+    })
+    // The person typed while it rang: what they typed waits in the box.
+    expect(run(ringing, typing, doorbell)).toMatchObject({ state: "working", empty: false })
+  })
+
+  it("fails into Unknown only for its own nonce", () => {
+    expect(transition(ringing, { type: "ring-failed", nonce: "k3f9" })).toEqual({
+      ...settled,
+      state: "unknown",
+    })
+    expect(transition(ringing, { type: "ring-failed", nonce: "other" })).toBe(ringing)
+    expect(transition(settled, { type: "ring-failed", nonce: "k3f9" })).toBe(settled)
+  })
+
+  it("gives way to any other root prompt, an abnormal end, or the binding ending", () => {
+    expect(transition(ringing, person)).toMatchObject({ state: "working", phase: "turn" })
+    expect(transition(ringing, harness)).toMatchObject({ state: "working", phase: "turn" })
+    expect(transition(ringing, ended).state).toBe("unknown")
+    expect(transition(ringing, { type: "unbound" }).state).toBe("unbound")
+    expect(transition(ringing, { type: "bound" }).state).toBe("fresh")
+    // A model call says a turn runs, its start unseen.
+    expect(transition(ringing, call)).toMatchObject({ state: "working", phase: "turn" })
+    // No Stop or idle status line ends it.
+    for (const event of [stop, idle]) expect(transition(ringing, event)).toBe(ringing)
+  })
+
+  it("makes the prompt known empty at a command-line doorbell prompt too", () => {
+    expect(transition(bound, doorbell)).toMatchObject({ state: "working", empty: true })
+    expect(run(drafting, doorbell)).toMatchObject({ state: "working", empty: true })
   })
 })

@@ -11,7 +11,7 @@ import {
   type Install,
 } from "../harness.js"
 import { decode } from "./decode.js"
-import { statusLineSettings } from "./settings.js"
+import { statusLineSettings, trustsFolder } from "./settings.js"
 import { transcripts } from "./transcripts.js"
 
 // Antigravity keeps its own state beside other Google tools in ~/.gemini.
@@ -37,6 +37,13 @@ const messaging: MessagingProfile = {
   reinjectPerCall: true,
   root: "status-line",
   silentOnFailure: false,
+  // Its hooks name no prompt; its transcript's last user input holds it.
+  promptVisible: false,
+  // `-i` submits its prompt about 0.9 s after it starts, even while its "Do you trust
+  // this folder?" dialog is up, so only in a folder it already trusts.
+  initialPrompt: async (line, { install, cwd }) =>
+    install && (await trustsFolder(cli(install), cwd)) ? ["agy", "-i", line] : undefined,
+  start: ["agy"],
 }
 
 // A handler for one of its events, with the time it may take.
