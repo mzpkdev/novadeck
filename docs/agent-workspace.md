@@ -339,7 +339,7 @@ from what this document describes:
   run one, and the terminal does not open rather than start a plain shell.
 - **Messages** between agents come from the same server's `send` and `agents` tools,
   listed only inside NovaDeck's terminals like the others: an agent messages another
-  terminal of its project by its handle, such as `codex-2`, which `open_terminal` also
+  terminal of its project and session by its handle, such as `t3`, which `open_terminal` also
   answers with, and the message reaches that agent through its own hooks. The runner
   keeps the mailbox with the workspace and lists, pauses and releases it through
   `messages.list`, `messages.pause` and `messages.release`. See
