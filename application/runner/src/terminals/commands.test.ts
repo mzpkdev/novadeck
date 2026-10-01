@@ -32,7 +32,7 @@ describe("a command's words", () => {
   })
 
   it("splits a command into words as a shell unquotes them", () => {
-    expect(commandWords(`claude "fix \\"it\\" now" 'a b' c\\ d '' e`)).toEqual([
+    expect(commandWords(`claude "fix \\"it\\" now" 'a b' c\\ d '' e`, "linux")).toEqual([
       "claude",
       'fix "it" now',
       "a b",
