@@ -398,6 +398,21 @@ export class Messaging {
     return false
   }
 
+  /**
+   * Whether the root turn running in the terminal is the person's: started by their own
+   * submission, and not continued since with messages. A turn the doorbell or the harness
+   * started, or one a Stop continued, is not.
+   */
+  personTurn(terminalId: string): boolean {
+    const delivery = this.live.get(terminalId)?.delivery
+    return (
+      delivery !== undefined &&
+      phaseOf(delivery) === "turn" &&
+      delivery.byPerson &&
+      delivery.continued === 0
+    )
+  }
+
   /** When the terminal last became Settled, if it is. */
   settledSince(terminalId: string): number | undefined {
     const delivery = this.live.get(terminalId)?.delivery

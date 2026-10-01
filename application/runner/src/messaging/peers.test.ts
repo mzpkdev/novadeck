@@ -1,6 +1,14 @@
 import { describe, expect, it } from "../test.js"
 import type { Message } from "./mailbox.js"
-import { ago, lastBetween, peerOf, renderAgents, renderPeer, unknownHandle } from "./peers.js"
+import {
+  ago,
+  lastBetween,
+  peerOf,
+  renderAgents,
+  renderPeer,
+  unknownHandle,
+  type Whereabouts,
+} from "./peers.js"
 
 const now = 10 * 60 * 60_000
 
@@ -27,7 +35,8 @@ const peer = peerOf({
   busy: true,
   where: {
     title: "API author",
-    titledBy: "t1",
+    titleSource: { kind: "agent", by: "t1" },
+    summary: null,
     folder: "src/api",
     branch: "feat/paging",
     plan: "Pagination",
@@ -87,7 +96,8 @@ describe("a peer as agents read it", () => {
       busy: false,
       where: {
         title: "Terminal 05",
-        titledBy: null,
+        titleSource: { kind: "default" },
+        summary: null,
         folder: ".",
         branch: null,
         plan: null,
@@ -103,6 +113,47 @@ describe("a peer as agents read it", () => {
       "  folder: .",
       "  opened by t1 with a task",
     ])
+  })
+
+  it("says who its title is from, and its agent's own summary, marked as its agent's", () => {
+    const titled = (
+      titleSource: Whereabouts["titleSource"],
+      summary: string | null = null,
+    ): readonly string[] =>
+      renderPeer(
+        peerOf({
+          terminalId: "B",
+          handle: "t2",
+          agent: "codex",
+          expecting: null,
+          busy: false,
+          where: {
+            title: "Users API",
+            titleSource,
+            summary,
+            folder: null,
+            branch: null,
+            plan: null,
+            work: null,
+            openedBy: null,
+            place: (path) => path,
+          },
+          withYou: null,
+        }),
+        now,
+      ).slice(1)
+    expect(titled({ kind: "person" })).toEqual(["  title: Users API"])
+    expect(titled({ kind: "agent", by: "t1" })).toEqual([
+      "  title: Users API (set by t1, not the user)",
+    ])
+    expect(titled({ kind: "agent", by: "t2" }, "Builds the users API.\nThen paging.")).toEqual([
+      "  title: Users API (set by its own agent, not the user)",
+      "  described by its agent: Builds the users API. / Then paging.",
+    ])
+    expect(titled({ kind: "fallback" })).toEqual([
+      "  title: Users API (from the user's first prompt there)",
+    ])
+    expect(titled({ kind: "default" })).toEqual(["  title: Users API"])
   })
 
   it("tells the latest message between the caller and the peer, either way", () => {

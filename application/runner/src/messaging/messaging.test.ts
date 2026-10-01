@@ -823,7 +823,8 @@ const about = (terminalId: string): Whereabouts | undefined =>
   terminalId === "B"
     ? {
         title: "API author",
-        titledBy: null,
+        titleSource: { kind: "person" },
+        summary: null,
         folder: "src/api",
         branch: "feat/paging",
         plan: "Pagination",
@@ -840,7 +841,8 @@ const about = (terminalId: string): Whereabouts | undefined =>
     : terminalId === "D"
       ? {
           title: "Web client",
-          titledBy: "t1",
+          titleSource: { kind: "agent", by: "t1" },
+          summary: null,
           folder: null,
           branch: null,
           plan: null,
@@ -968,6 +970,32 @@ const doorbellStarted = (bound: Binding, nonce: string): HarnessEvent => ({
   ...fact(bound),
   cause: "doorbell",
   nonce,
+})
+
+describe("the person's turn", () => {
+  it("is a root turn their own submission started, until a Stop continues it with messages", () => {
+    const { messaging, prompt, stop, send, ask, codex } = create()
+    // A prompt with no Enter of theirs before it is not told theirs.
+    prompt("B", codex)
+    expect(messaging.personTurn("B")).toBe(false)
+    stop("B", codex)
+    messaging.keys("B", ["enter"], false)
+    prompt("B", codex)
+    expect(messaging.personTurn("B")).toBe(true)
+    // A Stop that continues it with a peer's message makes it the person's no more.
+    sent(send("A", "t2", "Rename yourself."))
+    expect(stop("B", codex).leaseId).toEqual(expect.any(String))
+    prompt("B", codex)
+    expect(messaging.personTurn("B")).toBe(false)
+    stop("B", codex)
+    stop("B", codex)
+    // The doorbell's turn is never the person's, nor is any once it ended.
+    ask("B", codex, "UserPromptSubmit", [doorbellStarted(codex, "n1")])
+    expect(messaging.personTurn("B")).toBe(false)
+    stop("B", codex)
+    expect(messaging.personTurn("B")).toBe(false)
+    expect(messaging.personTurn("missing")).toBe(false)
+  })
 })
 
 describe("the person's submissions", () => {

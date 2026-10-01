@@ -299,8 +299,7 @@ const numbered = (id: string, handle: string) => ({
   agents: {},
   promptedAt: null,
   handle,
-  title: `Terminal ${handle}`,
-  titledBy: null,
+  naming: { person: null, agent: null, summary: null },
   openedBy: null,
   command: null,
   lastProgram: null,
@@ -321,8 +320,11 @@ describe("saved terminals", () => {
       agents: { claude: { sessionId: "abc", seq: 2 } },
       promptedAt: 1_000,
       handle: "t3",
-      title: "API author",
-      titledBy: "t1",
+      naming: {
+        person: null,
+        agent: { title: "API author", by: "t1" },
+        summary: "Builds the API.",
+      },
       openedBy: "t2",
       command: "claude",
       lastProgram: "claude",
@@ -343,13 +345,16 @@ describe("saved terminals", () => {
       ...terminal,
       cwd: "/work/sub",
       transcript: "screen",
+      title: "API author",
+      titleSource: { kind: "agent", by: "t1" },
       savedAt: expect.any(Number),
     })
     expect(reopened.terminalIdentity(terminal.id)).toEqual({
       handle: "t3",
+      // What names it, and who gave its title, survive a reload, as who opened it does.
+      naming: terminal.naming,
       title: "API author",
-      titledBy: "t1",
-      // Who opened it with a task survives a reload, as who titled it does.
+      titleSource: { kind: "agent", by: "t1" },
       openedBy: "t2",
     })
     if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600)
@@ -369,8 +374,7 @@ describe("saved terminals", () => {
       agents: {},
       promptedAt: null,
       handle: "t1",
-      title: "Terminal 01",
-      titledBy: null,
+      naming: { person: null, agent: null, summary: null },
       openedBy: null,
       command: null,
       lastProgram: null,
@@ -395,8 +399,7 @@ describe("saved terminals", () => {
         agents: {},
         promptedAt: null,
         handle: `t${index + 1}`,
-        title: `Terminal ${index}`,
-        titledBy: null,
+        naming: { person: null, agent: null, summary: null },
         openedBy: null,
         command: null,
         lastProgram: null,
@@ -439,8 +442,7 @@ describe("saved terminals", () => {
       agents: {},
       promptedAt: null,
       handle: "t1",
-      title: "Terminal 01",
-      titledBy: null,
+      naming: { person: null, agent: null, summary: null },
       openedBy: null,
       command: null,
       lastProgram: null,
@@ -450,8 +452,17 @@ describe("saved terminals", () => {
     expect(first.renameTerminal("missing", "x")).toBe(false)
     first.close()
     const reopened = store(path)
-    expect(reopened.terminal("a")?.title).toBe("API author")
+    expect(reopened.terminal("a")).toMatchObject({
+      title: "API author",
+      titleSource: { kind: "person" },
+    })
     expect(reopened.nextTerminalNumber("s")).toBe(3)
+    // Taking the person's title away leaves it automatic: here, its default.
+    expect(reopened.renameTerminal("a", null)).toBe(true)
+    expect(reopened.terminalIdentity("a")).toMatchObject({
+      title: "Terminal 01",
+      titleSource: { kind: "default" },
+    })
   })
 
   it("keep transcripts until they are turned off", ({ store }) => {
@@ -513,8 +524,7 @@ describe("the mailbox", () => {
       agents: {},
       promptedAt: null,
       handle: "t1",
-      title: "Terminal 01",
-      titledBy: null,
+      naming: { person: null, agent: null, summary: null },
       openedBy: null,
       command: null,
       lastProgram: null,

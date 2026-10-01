@@ -9,13 +9,17 @@ import type { AgentsAnswer, Messaging, SendAnswer } from "../messaging/messaging
 import type { Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
 import { gitBranch } from "./branch.js"
+import type { Naming, TitleSource } from "./naming.js"
+import type { Facts } from "./nudges.js"
 import { planTitle } from "./plans.js"
-import { shorten, type Work } from "./work.js"
+import { busiestFolders, shorten, type Work } from "./work.js"
 
 /** What the terminal manager tells of a terminal, for its agent to message others. */
 export type PeerTerminal = {
   readonly summary: TerminalSummary
-  readonly titledBy: string | null
+  readonly naming: Naming
+  /** Who its title, in `summary`, is from. */
+  readonly titleSource: TitleSource
   readonly work: Work | null
   readonly activity: Activity | null
   /** The handle of the terminal whose agent opened it with a task; null otherwise. */
@@ -131,12 +135,7 @@ export class TerminalPeers {
     const entries = await Promise.all(
       this.options.running(sessionId).map(async (terminal) => {
         const { cwd } = terminal.summary
-        const plans = terminal.activity?.plans ?? []
-        const plan = plans.find(({ actor }) => actor === null) ?? plans.at(-1)
-        const [branch, title] = await Promise.all([
-          this.branch(cwd),
-          plan ? planTitle(plan.source) : undefined,
-        ])
+        const [branch, plan] = await Promise.all([this.branch(cwd), this.plan(terminal)])
         const place = (path: string): string => {
           for (const base of [project, cwd]) {
             if (base === undefined) continue
@@ -148,10 +147,11 @@ export class TerminalPeers {
         }
         const where: Whereabouts = {
           title: terminal.summary.title,
-          titledBy: terminal.titledBy,
+          titleSource: terminal.titleSource,
+          summary: terminal.naming.summary,
           folder: place(cwd),
           branch,
-          plan: title === undefined ? null : shorten(title, 120),
+          plan,
           work: terminal.work,
           openedBy: terminal.openedBy,
           place: (path) => {
@@ -163,6 +163,27 @@ export class TerminalPeers {
       }),
     )
     return new Map(entries)
+  }
+
+  /**
+   * What tells whether a terminal's work drifted from its description: its plan's title,
+   * the folder it writes in most, and its git branch.
+   */
+  async facts(terminal: PeerTerminal): Promise<Facts> {
+    const [branch, plan] = await Promise.all([
+      this.branch(terminal.summary.cwd),
+      this.plan(terminal),
+    ])
+    const [main] = busiestFolders(terminal.work?.folders ?? {}, 1)
+    return { plan, folder: main?.folder ?? null, branch }
+  }
+
+  /** The title of the terminal's agent's current plan, the root's or else the latest; null without one. */
+  private async plan(terminal: PeerTerminal): Promise<string | null> {
+    const plans = terminal.activity?.plans ?? []
+    const plan = plans.find(({ actor }) => actor === null) ?? plans.at(-1)
+    const title = plan ? await planTitle(plan.source) : undefined
+    return title === undefined ? null : shorten(title, 120)
   }
 
   /** The git branch checked out in a folder, read again once what was read is a few seconds old. */

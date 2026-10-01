@@ -257,8 +257,9 @@ export const handle = z.string().regex(/^t[1-9][0-9]{0,8}$/)
 export const terminalSummary = z.strictObject({
   id,
   sessionId: id,
-  // The title the person gave the terminal, or the runner's default for its session
-  // ("Terminal 01", "Terminal 02", … in the order they were created).
+  // The title the person gave the terminal; else the one an agent gave it last, or the
+  // person's first prompt to its agent, shortened; else the runner's default for its
+  // session ("Terminal 01", "Terminal 02", … in the order they were created).
   title: terminalTitle,
   // Its handle, which never changes.
   handle,

@@ -174,6 +174,12 @@ export type Runner = {
      */
     rename(terminalId: string, title: string): Promise<void>
     /**
+     * Takes away the title the person gave a terminal, so its title is automatic again:
+     * the one an agent gave it last, the person's first prompt there, or its default.
+     * Rejects as `rename` does.
+     */
+    resetTitle(terminalId: string): Promise<void>
+    /**
      * Starts a fresh shell in an exited terminal the runner still holds, keeping its id,
      * session and directory, and gives this client control. Attach again for the new
      * screen. Rejects with `CONFLICT` while it runs and `SPAWN_FAILED` when the shell
@@ -969,6 +975,7 @@ export const connectRunner = async (
       watch: () => new TerminalWatch(connection),
       close: (terminalId) => call((wire) => wire.terminals.close({ terminalId })),
       rename: (terminalId, title) => call((wire) => wire.terminals.rename({ terminalId, title })),
+      resetTitle: (terminalId) => call((wire) => wire.terminals.resetTitle({ terminalId })),
       restart: (terminalId, { cols, rows, resume }) =>
         call((wire) =>
           wire.terminals.restart({ terminalId, cols, rows, ...(resume ? { resume } : {}) }),

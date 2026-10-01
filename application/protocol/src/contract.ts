@@ -160,6 +160,10 @@ export const contract = {
     rename: procedure
       .input(z.strictObject({ terminalId: id, title: terminalTitle }))
       .output(z.void()),
+    // Hands a terminal's title back to NovaDeck: the title the person gave it goes, and it
+    // takes the one an agent gave it last, the person's first prompt there, or its
+    // default, as `rename` does announcing it. TERMINAL_NOT_FOUND as for `rename`.
+    resetTitle: procedure.input(z.strictObject({ terminalId: id })).output(z.void()),
     // Starts a fresh shell in an exited terminal, keeping its id, session and cwd; the
     // caller gains control. A running terminal is a CONFLICT. The earlier shell's screen
     // shows above the new one's, unless `resume` resumes an agent session, as for create.

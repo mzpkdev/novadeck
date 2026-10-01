@@ -133,8 +133,7 @@ const it = base.extend<{ shell: Fixture }>({
         sessionId: session.id,
         cwd: store.terminal(id)?.cwd ?? home,
         handle: store.terminal(id)?.handle ?? "t1",
-        title: store.terminal(id)?.title ?? "Terminal 01",
-        titledBy: null,
+        naming: store.terminal(id)?.naming ?? { person: null, agent: null, summary: null },
         openedBy: null,
         command: null,
         lastProgram: null,
@@ -1619,7 +1618,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const [opened] = answers as { terminalId: string }[]
         expect(manager.get(opened!.terminalId)).toMatchObject({ cwd: project, title: "Agent" })
         // The agent chose that title, and the record says which terminal's did.
-        expect(shell.store.terminal(opened!.terminalId)?.titledBy).toBe("t1")
+        expect(shell.store.terminal(opened!.terminalId)).toMatchObject({
+          title: "Agent",
+          titleSource: { kind: "agent", by: "t1" },
+        })
         await shell.until(manager, opened!.terminalId, "claude args: --fresh")
         // Five a minute, counting each request that was asked, opened or not: two more,
         // and the next waits.
@@ -1928,9 +1930,11 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         .toBe("delivered")
 
       // Claude is working when Codex answers: its Stop continues the turn with the reply.
+      // Its first prompt of a new session, carrying no messages, carries the nudge to
+      // describe the terminal instead.
       await expect(
         step(claude.id, { hook: "UserPromptSubmit", payload: { prompt: "ask codex" } }),
-      ).resolves.toBe("")
+      ).resolves.toContain("this terminal has no description yet")
       const reply = await send(codex.id, "t1", "Looks good & ships.")
       expect(reply).toMatchObject({ ok: true, route: "when its current turn ends" })
       const stopped = JSON.parse(await step(claude.id, { hook: "Stop", payload: {} })) as {
@@ -2024,6 +2028,169 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           request: { to: "codex", text: "x" },
         }),
       ).resolves.toEqual(unansweredCalls.send)
+    })
+  },
+)
+
+/** What a prompt-time hook added to what Claude Code or Codex sees; nothing when it printed nothing. */
+const context = (printed: string): string =>
+  printed
+    ? (JSON.parse(printed) as { hookSpecificOutput: { additionalContext: string } })
+        .hookSpecificOutput.additionalContext
+    : ""
+
+describe.skipIf(process.platform === "win32" || !existsSync(bash))(
+  "agents describing their own terminals in bash terminals",
+  () => {
+    it("nudges an agent to describe its terminal at a quiet prompt, then takes its description", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const claude = await create(manager, shell)
+      const codex = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(claude.id, "claude", "s-claude")
+      await start(codex.id, "codex", "s-codex")
+      await expect.poll(() => manager.messages(codex.id).delivery).toBe("fresh")
+      const prompt = async (terminalId: string, text: string) =>
+        context(await step(terminalId, { hook: "UserPromptSubmit", payload: { prompt: text } }))
+      const describeAs = async (terminalId: string, request: object) =>
+        JSON.parse(await step(terminalId, { call: "describe", request })) as object
+      const listed = async () =>
+        (JSON.parse(await step(claude.id, { call: "agents", request: {} })) as { text: string })
+          .text
+
+      // Codex's first prompt of its session carries a message, so the nudge waits.
+      await step(claude.id, { call: "send", request: { to: "t2", text: "Review a.ts" } })
+      const delivered = await prompt(codex.id, "Fix the login bug")
+      expect(delivered).toContain(">Review a.ts</message>")
+      expect(delivered).not.toContain("automatic notice")
+      // The next prompt with nothing else to carry asks for a description, in one line.
+      const nudge = await prompt(codex.id, "and its tests")
+      expect(nudge).toMatch(
+        /^NovaDeck: automatic notice, not from the user: this terminal has no description yet\./,
+      )
+      expect(nudge).not.toContain("\n")
+      // Until anything better names it, the person's first prompt there is its title.
+      expect(manager.get(codex.id).title).toBe("Fix the login bug")
+      // No trigger since: nothing is added.
+      await expect(prompt(codex.id, "go on")).resolves.toBe("")
+
+      // The agent describes its own terminal; nothing names another.
+      await expect(
+        describeAs(codex.id, {
+          title: "Login fix",
+          summary: "Fixes the login bug.\nThen its tests.",
+        }),
+      ).resolves.toEqual({ ok: true, title: "Login fix" })
+      expect(manager.get(codex.id).title).toBe("Login fix")
+      expect(manager.get(claude.id).title).toBe("Terminal 01")
+      expect(await listed()).toContain(
+        "- t2: Codex, busy, last active just now\n" +
+          "  title: Login fix (set by its own agent, not the user)\n" +
+          "  described by its agent: Fixes the login bug. / Then its tests.",
+      )
+      expect(shell.store.terminalIdentity(codex.id)).toMatchObject({
+        title: "Login fix",
+        titleSource: { kind: "agent", by: "t2" },
+        naming: { summary: "Fixes the login bug.\nThen its tests." },
+      })
+      await expect(prompt(codex.id, "carry on")).resolves.toBe("")
+
+      // Its harness compacted its context: the next quiet prompt shows the description.
+      await step(codex.id, {
+        hook: "SessionStart",
+        payload: { source: "compact", cwd: shell.home },
+      })
+      await expect(prompt(codex.id, "and now?")).resolves.toMatch(
+        /described as "Login fix", with the summary "Fixes the login bug\. Then its tests\."; if that no longer fits/,
+      )
+      await expect(prompt(codex.id, "next")).resolves.toBe("")
+
+      // A title the person gave stays: only the summary changes.
+      manager.rename({ terminalId: codex.id, title: "Mine" })
+      await expect(
+        describeAs(codex.id, { title: "Other", summary: "Other work." }),
+      ).resolves.toEqual({ ok: true, title: "Mine", kept: "person" })
+      expect(shell.store.terminalIdentity(codex.id)?.naming.summary).toBe("Other work.")
+      // A rename the person asked for is taken only in a turn their own prompt started:
+      // not one the doorbell started.
+      await prompt(codex.id, "[NovaDeck: automatic notice, agent messages waiting, abc123]")
+      await expect(
+        describeAs(codex.id, { title: "Asked", summary: "Asked work.", asked: true }),
+      ).resolves.toEqual({ ok: true, title: "Mine", kept: "unasked" })
+      // The person's own submission: their Enter, then its prompt.
+      manager.write({ terminalId: codex.id, data: "\r" }, "owner")
+      await prompt(codex.id, "call this terminal Auth")
+      await expect(
+        describeAs(codex.id, { title: "Auth", summary: "Auth work.", asked: true }),
+      ).resolves.toEqual({ ok: true, title: "Auth" })
+      expect(shell.store.terminalIdentity(codex.id)?.titleSource).toEqual({ kind: "person" })
+      // Theirs now, so a later description without it keeps it.
+      await expect(
+        describeAs(codex.id, { title: "Later", summary: "Later work." }),
+      ).resolves.toEqual({ ok: true, title: "Auth", kept: "person" })
+      // Reset to automatic: the title its agent gave it last is back.
+      manager.resetTitle({ terminalId: codex.id })
+      expect(manager.get(codex.id).title).toBe("Login fix")
+      // A description that can't be taken says why.
+      await expect(describeAs(codex.id, { title: "x", summary: "" })).resolves.toMatchObject({
+        ok: false,
+        reason: expect.stringMatching(/^The summary is empty/),
+      })
+    })
+
+    it("titles a terminal by the person's first prompt of each new root session", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const manager = shell.manager({
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const terminal = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(terminal.id, "claude", "s-1")
+      const prompt = async (session: string, text: string) =>
+        context(
+          await step(terminal.id, {
+            hook: "UserPromptSubmit",
+            payload: { session_id: session, prompt: text },
+          }),
+        )
+      const clear = (session: string) =>
+        step(terminal.id, {
+          hook: "SessionStart",
+          payload: { session_id: session, source: "clear", cwd: shell.home },
+        })
+      expect(manager.get(terminal.id).title).toBe("Terminal 01")
+      // A doorbell's line is never the person's prompt, so never a title.
+      await prompt("s-1", "[NovaDeck: automatic notice, agent messages waiting, abc123]")
+      expect(manager.get(terminal.id).title).toBe("Terminal 01")
+      await expect(prompt("s-1", "Fix the login bug")).resolves.toContain("no description yet")
+      await prompt("s-1", "Now its tests")
+      expect(manager.get(terminal.id).title).toBe("Fix the login bug")
+      // A new root session starts over: its default, then its own first prompt, with a nudge.
+      await clear("s-2")
+      await expect.poll(() => manager.get(terminal.id).title).toBe("Terminal 01")
+      await expect(prompt("s-2", "Write the docs")).resolves.toContain("no description yet")
+      expect(manager.get(terminal.id)).toMatchObject({ title: "Write the docs" })
+      expect(shell.store.terminalIdentity(terminal.id)).toMatchObject({
+        title: "Write the docs",
+        titleSource: { kind: "fallback" },
+      })
+      // Once described, a new root session leaves its title as its agent gave it.
+      await step(terminal.id, {
+        call: "describe",
+        request: { title: "Docs", summary: "Writes the docs." },
+      })
+      await clear("s-3")
+      await expect(prompt("s-3", "Something else")).resolves.toContain(
+        'described as "Docs", with the summary "Writes the docs."',
+      )
+      expect(manager.get(terminal.id).title).toBe("Docs")
     })
   },
 )
@@ -2389,7 +2556,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
     }) => {
       const tui = await ringing(shell)
       await tui.first()
-      expect(tui.received()).toMatchObject([{ prompt: "hello", printed: "" }])
+      // Its first prompt carries only the nudge to describe the terminal.
+      expect(tui.received()).toMatchObject([
+        { prompt: "hello", printed: expect.stringContaining("no description yet") },
+      ])
       expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
       const [, rung] = tui.received()
