@@ -41,7 +41,8 @@ export const decode = ({ event, seq, instance, env, payload }: Report): readonly
       ]
     }
     case "UserPromptSubmit":
-      return [{ type: "turn-started", ...base }]
+      // A subagent's prompt is its own work, not the root's turn.
+      return actor ? [] : [{ type: "turn-started", ...base, cause: "prompt" }]
     case "Stop":
       // A subagent's stop ends its own work, not the turn.
       return actor ? [] : [{ type: "turn-ended", ...base, outcome: "completed" }]

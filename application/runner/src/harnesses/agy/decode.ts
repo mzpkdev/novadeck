@@ -7,9 +7,14 @@ import { absolute, sessionId, text } from "../harness.js"
 /**
  * Antigravity's hooks, as normalized facts. Every hook names the conversation it runs in,
  * and nothing says how it began: /clear and /resume switch conversations in one process.
- * PreInvocation starts a model call, so the agent works; Stop ends the turn, as failed
- * when it names an error. Its confirmations fire no hook, and an Esc fires nothing: its
- * status line, which NovaDeck's settings hand to the hook as StatusLine, tells both.
+ * PreInvocation starts a model call, so the agent works: the turn's first (its
+ * `invocationNum` restarts at 0 each turn) as its prompt, any later one as a call of the
+ * turn already running. Stop ends the turn, as failed when it names an error, and says
+ * whether background work, as a subagent, still runs (`fullyIdle`). Only a completed turn
+ * fires Stop: its confirmations fire no hook, and an Esc or a denial fires nothing. Its
+ * status line, which NovaDeck's settings hand to the hook as StatusLine, tells both, but
+ * reads the same idle after them as after a completed turn: so idle there only ends a
+ * turn no Stop ended, and never as completed.
  * Every hook names the conversation's transcript. A plan is an artifact it writes asking
  * for the person's review, which its PostToolUse names.
  */
@@ -30,11 +35,19 @@ export const decode = ({ event, seq, instance, payload }: Report): readonly Harn
   }
   switch (event) {
     case "PreInvocation":
-      return [observed, { type: "turn-started", ...base }]
+      return [
+        observed,
+        { type: "turn-started", ...base, cause: payload.invocationNum === 0 ? "prompt" : "call" },
+      ]
     case "Stop":
       return [
         observed,
-        { type: "turn-ended", ...base, outcome: text(payload.error) ? "failed" : "completed" },
+        {
+          type: "turn-ended",
+          ...base,
+          outcome: text(payload.error) ? "failed" : "completed",
+          background: payload.fullyIdle === false,
+        },
       ]
     case "PostToolUse":
       return [observed, ...artifact(base, payload)]
@@ -94,15 +107,16 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
       ...base,
       evidence: "conversation-observed",
       ...(cwd !== undefined && { cwd }),
+      root: true,
     },
     // Its mode, which it names only while not the default, and reruns on when it changes.
     { type: "mode-observed", ...base, planning: payload.cycle_mode === "plan" },
   ]
-  // Idle ends the turn however it ended, an Esc or a denial included. Working without a
-  // confirmation starts it again, settling any it waited on: a snapshot's hook may start
-  // after the next turn's, so neither holds for long against a wrong one.
-  if (payload.agent_state === "idle")
-    events.push({ type: "turn-ended", ...base, outcome: "completed" })
+  // Idle reads the same after a completed turn, an Esc and a denial: it ends a turn its
+  // Stop did not, as abnormally. Working without a confirmation starts it again, settling
+  // any it waited on, as a call of the turn: a snapshot's hook may start after the next
+  // turn's, so neither holds for long against a wrong one.
+  if (payload.agent_state === "idle") events.push({ type: "turn-idle", ...base })
   else if (payload.tool_confirmation_pending === true)
     events.push({
       type: "attention-requested",
@@ -113,7 +127,7 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
       choices: [],
     })
   else if (payload.agent_state === "working" || payload.agent_state === "tool_use")
-    events.push({ type: "turn-started", ...base })
+    events.push({ type: "turn-started", ...base, cause: "call" })
   const window = (payload.context_window ?? {}) as Record<string, unknown>
   const capacity = count(window.context_window_size)
   const percent = count(window.used_percentage)

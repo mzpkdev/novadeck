@@ -18,8 +18,10 @@ import {
  *
  * SessionStart names the session running in the terminal, unless it is not the
  * terminal's own: a subagent's (it carries `agent_id`), or Claude Code running inside
- * Cursor. A turn starts with UserPromptSubmit and ends with Stop, or StopFailure on an
- * API error; a subagent's stop ends only its own work. PermissionRequest asks the person
+ * Cursor. A turn starts with UserPromptSubmit, which Claude Code also sends with a task
+ * notification as it starts a turn by itself, and ends with Stop, which lists background
+ * tasks still running, or StopFailure on an API error; a subagent's stop ends only its
+ * own work. PermissionRequest asks the person
  * about a tool call, AskUserQuestion's as a question and ExitPlanMode's as a plan to
  * review, for the root agent or a subagent;
  * the call's PostToolUse or PostToolUseFailure from that actor means it was allowed. An
@@ -53,9 +55,27 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
       ]
     }
     case "UserPromptSubmit":
-      return [{ type: "turn-started", ...base }]
+      // A subagent's prompt is its own work, not the root's turn; a background task's
+      // result starts a turn by itself, as a task notification.
+      if (actor) return []
+      return [
+        {
+          type: "turn-started",
+          ...base,
+          cause: notification.test(text(payload.prompt) ?? "") ? "harness" : "prompt",
+        },
+      ]
     case "Stop":
-      return actor ? [] : [{ type: "turn-ended", ...base, outcome: "completed" }]
+      return actor
+        ? []
+        : [
+            {
+              type: "turn-ended",
+              ...base,
+              outcome: "completed",
+              background: running(payload.background_tasks),
+            },
+          ]
     case "StopFailure":
       return actor ? [] : [{ type: "turn-ended", ...base, outcome: "failed" }]
     case "SubagentStart":
@@ -111,6 +131,13 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
       return []
   }
 }
+
+// The prompt of a turn Claude Code starts by itself once a background task finishes.
+const notification = /^\s*<task-notification>/
+
+// Whether a Stop lists background tasks still running, which may start a turn by themselves.
+const running = (tasks: unknown): boolean =>
+  Array.isArray(tasks) ? tasks.length > 0 : typeof tasks === "object" && tasks !== null
 
 const count = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
