@@ -41,9 +41,17 @@ const control = /[\x00-\x1f\x7f-\x9f]/g
 const hasControl = /[\x00-\x1f\x7f-\x9f]/
 
 /**
+ * Whether the root session's first prompt is the user's: always in a terminal the person
+ * opened; in one an agent opened, only when the person's own submission started its turn,
+ * as otherwise it is the opener's command's.
+ */
+export const firstIsUsers = (work: Work | null, openedBy: string | null): boolean =>
+  Boolean(work?.first) && (openedBy === null || work?.firstByPerson === true)
+
+/**
  * The title the person's first root prompt gives, shortened to one line; null when there
- * is none, or nothing of it would make a title. Only the person's prompts are kept in
- * `work`, never a doorbell's line or a task delivered to the agent.
+ * is none, or nothing of it would make a title. Only prompts are kept in `work`, never a
+ * doorbell's line or a task delivered to the agent.
  */
 export const fallbackTitle = (work: Work | null): string | null => {
   if (!work?.first) return null
@@ -53,8 +61,7 @@ export const fallbackTitle = (work: Work | null): string | null => {
 
 /**
  * The terminal's title and who it is from, by precedence: the person, then the agent
- * that set it last, then the person's first prompt, then the default. A terminal an
- * agent opened takes no title from a first prompt: its command's, not the person's.
+ * that set it last, then the user's first prompt (see `firstIsUsers`), then the default.
  */
 export const titleOf = (
   naming: Naming,
@@ -67,7 +74,9 @@ export const titleOf = (
   if (naming.person !== null) return { title: naming.person, source: { kind: "person" } }
   if (naming.agent)
     return { title: naming.agent.title, source: { kind: "agent", by: naming.agent.by } }
-  const fallback = terminal.openedBy === null ? fallbackTitle(terminal.work) : null
+  const fallback = firstIsUsers(terminal.work, terminal.openedBy)
+    ? fallbackTitle(terminal.work)
+    : null
   if (fallback !== null) return { title: fallback, source: { kind: "fallback" } }
   return { title: defaultTitle(terminal.handle), source: { kind: "default" } }
 }

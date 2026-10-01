@@ -17,8 +17,12 @@ import {
 import { freshWork, type Work } from "./work.js"
 
 const work = (first: string | null): Work => ({ ...freshWork("claude:s1"), first, latest: first })
-const terminal = (first: string | null, openedBy: string | null = null) => ({
-  work: work(first),
+const terminal = (
+  first: string | null,
+  openedBy: string | null = null,
+  firstByPerson?: boolean,
+) => ({
+  work: { ...work(first), ...(firstByPerson !== undefined && { firstByPerson }) },
   handle: "t3",
   openedBy,
 })
@@ -48,10 +52,24 @@ describe("a terminal's title", () => {
     )
   })
 
-  it("takes no first prompt in a terminal an agent opened: its command's, not the person's", () => {
-    expect(titleOf(unnamed, terminal("Fix the login bug", "t1"))).toEqual({
+  it("takes a first prompt in a terminal an agent opened only when the person submitted it", () => {
+    // Nobody submitted it, as the opener's command-line prompt: its command's.
+    expect(titleOf(unnamed, terminal("Fix the login bug", "t1", false))).toEqual({
       title: "Terminal 03",
       source: { kind: "default" },
+    })
+    // Not yet told whose it is.
+    expect(titleOf(unnamed, terminal("Fix the login bug", "t1")).source).toEqual({
+      kind: "default",
+    })
+    // The person's own, as their first prompt after a task the opener gave.
+    expect(titleOf(unnamed, terminal("Fix the login bug", "t1", true))).toEqual({
+      title: "Fix the login bug",
+      source: { kind: "fallback" },
+    })
+    // In a terminal the person opened, the first prompt is theirs however it came.
+    expect(titleOf(unnamed, terminal("Fix the login bug", null, false)).source).toEqual({
+      kind: "fallback",
     })
   })
 

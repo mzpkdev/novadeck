@@ -2230,6 +2230,7 @@ export class Terminals {
     const told = await this.attributed(record, events)
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
+      this.judgeFirst(record)
       return silent
     }
     const answer = this.messaging.ask(report.terminalId, {
@@ -2238,7 +2239,21 @@ export class Terminals {
       events: told,
       deadline,
     })
+    this.judgeFirst(record)
     return this.nudged(record, report, told, answer, deadline)
+  }
+
+  /**
+   * Tells whose the root session's first prompt is, once delivery has taken its turn:
+   * the person's own submission, or not, as an agent's command-line prompt.
+   */
+  private judgeFirst(record: Record): void {
+    const { work } = record
+    if (!work?.first || work.firstByPerson !== undefined) return
+    const byPerson = this.messaging.personPrompt(record.summary.id) !== undefined
+    record.work = { ...work, firstByPerson: byPerson }
+    this.retitle(record)
+    this.save(record, false)
   }
 
   /**

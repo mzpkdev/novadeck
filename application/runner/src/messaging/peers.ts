@@ -46,8 +46,10 @@ export type Peer = {
   readonly folder: string | null
   readonly branch: string | null
   readonly startedWith: string | null
-  /** Which terminal's agent opened it: "started with" may be its command's, not the person's. */
+  /** Which terminal's agent opened it, told where "started with" is unknown. */
   readonly openedBy: string | null
+  /** The opener whose command "started with" is, not the user's; null when it is the user's. */
+  readonly startedBy: string | null
   /** Left out when it is the prompt it started with. */
   readonly latest: string | null
   readonly plan: string | null
@@ -111,6 +113,9 @@ export const peerOf = (input: {
     branch: where?.branch ?? null,
     startedWith: work?.first ?? null,
     openedBy: where?.openedBy ?? null,
+    // In a terminal an agent opened, a first prompt nobody submitted is its command's.
+    startedBy:
+      where?.openedBy && work?.first && work.firstByPerson === false ? where.openedBy : null,
     latest: work?.latest !== work?.first ? (work?.latest ?? null) : null,
     plan: agent ? (where?.plan ?? null) : null,
     worksIn: work
@@ -159,7 +164,7 @@ export const renderPeer = (peer: Peer, now: number): readonly string[] =>
     peer.summary && `  described by its agent: ${peer.summary.split("\n").join(" / ")}`,
     peer.folder && `  folder: ${peer.folder}${peer.branch ? `, branch ${peer.branch}` : ""}`,
     peer.startedWith
-      ? `  started with${peer.openedBy ? ` (in a terminal ${peer.openedBy} opened, so maybe its command's, not the user's)` : ""}: ${peer.startedWith}`
+      ? `  started with${peer.startedBy ? ` (${peer.startedBy}'s command)` : ""}: ${peer.startedWith}`
       : peer.openedBy && `  opened by ${peer.openedBy}`,
     peer.latest && `  latest: ${peer.latest}`,
     peer.plan && `  plan: ${peer.plan}`,

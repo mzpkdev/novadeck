@@ -218,8 +218,9 @@ terminals.
   4. its folder, relative to the project when inside it, and git branch (read from
      git's own files, cached, with a short timeout);
   5. "started with": the person's first root prompt in the bound session, about 120
-     characters; in a terminal another agent opened, marked as maybe that agent's
-     command's ("in a terminal t2 opened, so maybe its command's, not the user's");
+     characters. In a terminal another agent opened, a first prompt the person didn't
+     submit themselves (delivery's `byPerson`, kept with it) is the opener's command's,
+     and says so: "started with (t2's command)";
   6. "latest": the person's most recent root prompt there, left out when it is the
      first. Only the person's prompts count, never a turn the harness started (a task
      notification, a subagent waking Antigravity, which never shows prompt text);
@@ -683,9 +684,12 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   person's first prompt of its root session, shortened to one line of 48 characters: the
   "started with" of `agents()`, so a doorbell line, a delivery of messages and a task
   never become one. A new root session (start, `/clear`, restart) starts over: the
-  default, until its own first prompt. A terminal another agent opened (`openedBy`) takes
-  no such title, as its first prompt may be its opener's command; the opener can name it
-  through `open_terminal`'s `title`.
+  default, until its own first prompt. The prompt must be the user's: in a terminal the
+  person opened it always is; in one another agent opened (`openedBy`), only when the
+  person's own submission started its turn (`byPerson`, recorded with it), as otherwise
+  it is the opener's command, which can name the terminal through `open_terminal`'s
+  `title`. So a terminal opened with a task still takes its title from the person's first
+  prompt there.
 - **Nudges.** The prompt-time hook (`UserPromptSubmit`, Antigravity's `PreInvocation`)
   of a root prompt its decoder calls the person's (cause `prompt`; this is looser than
   `asked`'s `byPerson`, as a nudge needs no proof) adds one line, worded as NovaDeck's automatic notice, only when

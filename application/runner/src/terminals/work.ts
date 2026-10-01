@@ -14,6 +14,12 @@ export type Work = {
   /** The session it is of, as `agent:session`. */
   readonly session: string
   readonly first: string | null
+  /**
+   * Whether the person's own submission started the turn of `first` (as delivery tells
+   * it, `byPerson`), so it is theirs; false for one nobody submitted, as an agent's
+   * command-line prompt; undefined until told.
+   */
+  readonly firstByPerson?: boolean
   readonly latest: string | null
   /** Edits by folder, by absolute path, the `keptFolders` written in most. */
   readonly folders: { readonly [folder: string]: number }

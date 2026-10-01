@@ -2289,10 +2289,15 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect(prompt("s-1", "Fix the login bug")).resolves.toContain("no description yet")
       await prompt("s-1", "Now its tests")
       expect(manager.get(terminal.id).title).toBe("Fix the login bug")
+      // Nobody pressed Enter for it, so not the person's submission; still their title, in a
+      // terminal they opened.
+      expect(shell.store.terminal(terminal.id)?.work?.firstByPerson).toBe(false)
       // A new root session starts over: its default, then its own first prompt, with a nudge.
       await clear("s-2")
       await expect.poll(() => manager.get(terminal.id).title).toBe("Terminal 01")
+      manager.write({ terminalId: terminal.id, data: "\r" }, "owner")
       await expect(prompt("s-2", "Write the docs")).resolves.toContain("no description yet")
+      expect(shell.store.terminal(terminal.id)?.work?.firstByPerson).toBe(true)
       expect(manager.get(terminal.id)).toMatchObject({
         title: "Write the docs",
         titleSource: { kind: "fallback" },

@@ -53,6 +53,35 @@ const peer = peerOf({
   withYou: lastBetween([message()], "A", { terminalId: "B", handle: "t2" }),
 })
 
+// A terminal t1's agent opened, whose first prompt the person submitted or not.
+const opened = (firstByPerson: boolean) =>
+  peerOf({
+    terminalId: "E",
+    handle: "t5",
+    agent: "claude",
+    expecting: null,
+    busy: false,
+    where: {
+      title: "Terminal 05",
+      titleSource: { kind: "default" },
+      summary: null,
+      folder: ".",
+      branch: null,
+      plan: null,
+      work: {
+        session: "claude:s",
+        first: "fix the build",
+        firstByPerson,
+        latest: "fix the build",
+        folders: {},
+        activeAt: null,
+      },
+      openedBy: "t1",
+      place: (path) => path,
+    },
+    withYou: null,
+  })
+
 describe("a peer as agents read it", () => {
   it("is one short block of what NovaDeck knows, each fact left out when unknown", () => {
     expect(renderPeer(peer, now)).toEqual([
@@ -191,35 +220,9 @@ describe("a peer as agents read it", () => {
     ).toMatchObject({ from: "you" })
   })
 
-  it("says a terminal another agent opened may have started with that agent's command", () => {
-    const opened = peerOf({
-      terminalId: "E",
-      handle: "t5",
-      agent: "claude",
-      expecting: null,
-      busy: false,
-      where: {
-        title: "Terminal 05",
-        titleSource: { kind: "default" },
-        summary: null,
-        folder: ".",
-        branch: null,
-        plan: null,
-        work: {
-          session: "claude:s",
-          first: "fix the build",
-          latest: "fix the build",
-          folders: {},
-          activeAt: null,
-        },
-        openedBy: "t1",
-        place: (path) => path,
-      },
-      withYou: null,
-    })
-    expect(renderPeer(opened, now)).toContain(
-      "  started with (in a terminal t1 opened, so maybe its command's, not the user's): fix the build",
-    )
+  it("says a terminal another agent opened started with its command, unless the user prompted it", () => {
+    expect(renderPeer(opened(false), now)).toContain("  started with (t1's command): fix the build")
+    expect(renderPeer(opened(true), now)).toContain("  started with: fix the build")
   })
 })
 
