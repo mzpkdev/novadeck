@@ -1464,7 +1464,8 @@ export class Terminals {
     const serializer = new SerializeAddon()
     screen.loadAddon(serializer)
     try {
-      const child = pty.spawn(shell, [...(this.options.shellArgs ?? launched.args)], {
+      const args = this.options.shellArgs ?? launched.args
+      const child = pty.spawn(shell, typeof args === "string" ? args : [...args], {
         name: "xterm-256color",
         cols,
         rows,

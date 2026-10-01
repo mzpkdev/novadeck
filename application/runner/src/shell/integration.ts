@@ -9,7 +9,8 @@ import { fishQuote, psQuote } from "./scripts.js"
  * command. `resumeFile` is where the caller writes that command for the shell to read.
  */
 export type ShellLaunch = {
-  readonly args: readonly string[]
+  /** The shell's arguments, or on Windows its whole command line, which cmd needs as is. */
+  readonly args: readonly string[] | string
   readonly env: NodeJS.ProcessEnv
   readonly integrated: boolean
   readonly resumes: boolean
@@ -46,7 +47,7 @@ const pathKey = (env: NodeJS.ProcessEnv): string =>
  * terminal was opened with. The integration reads it from the file NOVADECK_RESUME
  * names, which it removes, and unsets the variable first, so nothing the command starts
  * runs it again; removing the file first cancels it. bash, zsh and fish run it at the
- * first prompt, PowerShell after its profile. cmd runs its words with /k.
+ * first prompt, PowerShell after its profile. cmd runs the command line with /k.
  */
 export const shellLaunch = (
   shell: string,
@@ -116,7 +117,9 @@ export const shellLaunch = (
     case "cmd":
       // $e]9;9;$P$e\ is OSC 9;9 with the current directory, ahead of the usual prompt.
       return {
-        args: startup ? ["/k", ...startup.command.split(" ")] : [],
+        // As a raw command line, so the command reaches cmd as typed: with /s, cmd strips
+        // only the outer quotes and runs the rest unchanged, inner quotes and all.
+        args: startup ? `/s /k "${startup.command}"` : [],
         env: { ...withHook, PROMPT: `$e]9;9;$P$e\\${env.PROMPT || "$P$G"}` },
         integrated: true,
         resumes: startup !== undefined,
