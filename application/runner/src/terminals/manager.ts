@@ -513,7 +513,10 @@ export class Terminals {
       })
     // The pause shows in every terminal's listing; anything else only in the terminal's.
     // A burst of changes makes one listing, once this tick.
-    const mailChanged = coalesced((terminalId) => this.mailChanged(terminalId))
+    const mailChanged = coalesced(
+      (terminalId) => this.mailChanged(terminalId),
+      "NovaDeck could not tell its message watches:",
+    )
     this.messaging.subscribe((change) => {
       if (change.kind === "terminal") mailChanged(change.terminalId)
       else for (const terminalId of this.mail.keys()) mailChanged(terminalId)
