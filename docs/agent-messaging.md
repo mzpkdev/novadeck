@@ -87,6 +87,9 @@ All three harnesses get every path. Where one falls short, the design accepts it
 | Antigravity   | `PreInvocation` has no prompt text, runs before every model call, and its injected message lasts one call | A ring is confirmed by a root prompt starting after its Enter; messages are leased at a turn's first invocation and injected again on each later one; the transcript's last user input tells a doorbell                                                                         |
 | Antigravity   | Server instructions don't reach the model                                                                 | Rules live in each tool's description and in the delivery wrapper                                                                                                                                                                                                               |
 | Antigravity   | No permission hook                                                                                        | Its approvals happen mid-turn, before Stop, so they never meet a Settled terminal; the screen check backs it                                                                                                                                                                    |
+| Claude Code   | A `resume` or `fork` isn't taken as a session at its prompt                                               | Fresh until its first turn, as is every terminal the runner restores; the probe saw a `resume` reach its prompt as a start does, so this is a choice, open to revisiting                                                                                                        |
+| Codex         | Its `SessionStart` fires only with the first prompt, so a session idle at its prompt isn't bound          | Never Ready: started plain, it binds at the person's first prompt, whose hook delivers                                                                                                                                                                                          |
+| Antigravity   | No `SessionStart`: it binds from its hooks and status line, which say nothing of its screen               | Fresh until its first turn, never rung                                                                                                                                                                                                                                          |
 | Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                                                                                            |
 | Codex         | A failed turn sends nothing                                                                               | Stays Working until its next turn event; `send`'s route says so                                                                                                                                                                                                                 |
 | Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                                                                                          |
@@ -193,8 +196,10 @@ terminals.
 
 - **`send(to, text)`** answers with the recipient's handle, the message id and one of:
   - `queued`, with the route it will take: "when its current turn ends", "when its next
-    turn starts" (only background work runs after its Stop), "ringing it now", "when the
-    person next submits a prompt there", or "when its agent first prompts";
+    turn starts" (only background work runs after its Stop), "ringing it now" (Settled or
+    Ready), "when the person next submits a prompt there", "when the person first submits
+    a prompt there" (Fresh), or "when its agent starts, or with the person's first prompt
+    there" (an agent expected there that hasn't bound yet);
   - `held`, when messaging is paused or its thread awaits the person's release, saying
     which;
   - `refused`, with why: no current handle there (with the full `agents()` listing, and
@@ -349,7 +354,9 @@ the opener's, and `describe` names the caller's own terminal (see
 - **The prompt is known empty** after one of these, with no input from the person
   since (apart from answers to a request): the person's submission (not of a stale doorbell
   line: an Enter can leave text behind, as a newline or a suggestion does); a confirmed ring, its doorbell
-  prompt carrying the ring's own nonce; or the session binding. An agent started with
+  prompt carrying the ring's own nonce; or the session binding, when the person typed
+  nothing after their last Enter before it (keys typed while an agent starts reach its box
+  once it reads them). An agent started with
   the line as its command-line prompt stays as empty as its binding left it: a doorbell
   prompt outside a ring, as that start's or a failed ring's late one, empties nothing
   the person typed. NovaDeck
@@ -372,9 +379,17 @@ the opener's, and `describe` names the caller's own terminal (see
 Every terminal with an agent is in one of these states at all times, derived from the
 facts above, so the prompt's emptiness is known before any message arrives:
 
-- **Fresh**: an agent session is bound but has had no root turn yet, including every
-  terminal resumed after a runner restart. Never rung: its screen may still be a
-  trust, update or login prompt. Its first root prompt's hook delivers.
+- **Fresh**: an agent session is bound but has had no root turn yet, and nothing shows
+  its own input prompt is up: a resumed or forked session, including every terminal
+  resumed after a runner restart; Antigravity's, which binds from its hooks and status
+  line; and Codex's, which binds only with its first prompt. Never rung: its screen may
+  still be a trust, update or login prompt. Its first root prompt's hook delivers.
+- **Ready**: its harness announced a new session as its own input prompt came up, past
+  any trust, onboarding or login screen (Claude Code's `SessionStart` at a `startup` or a
+  `/clear`; see [Per harness](#per-harness) and [Before building](#before-building)); it
+  has had no root turn yet, and the prompt is known empty. Rung as Settled is, its settle
+  window counted from the binding. A session announced while the person had typed after
+  their last Enter is Drafting instead.
 - **Working**: a root turn is running (its `turn` phase); NovaDeck continued its Stop and
   waits for the continuation (`continuing`); or after its Stop only work it started
   still runs (`background`), when a message waits for its next turn. At a root Stop, if the person didn't submit during the turn,
@@ -410,22 +425,24 @@ facts above, so the prompt's emptiness is known before any message arrives:
 
 Transitions:
 
-| From                              | Event                                                     | To                  |
-| --------------------------------- | --------------------------------------------------------- | ------------------- |
-| Unbound                           | A session binds                                           | Fresh               |
-| Any bound state                   | The binding ends (the instance exits)                     | Unbound             |
-| Any bound state                   | Its harness announces a new session                       | Fresh               |
-| Fresh, Settled, Drafting, Unknown | A root prompt                                             | Working             |
-| Working                           | A normal root Stop, not continued, prompt known empty     | Settled             |
-| Working                           | A normal root Stop, not continued, prompt not known empty | Drafting            |
-| Working                           | A Stop NovaDeck continued                                 | Working             |
-| Working                           | An abnormal end                                           | Unknown             |
-| Working, only background work     | It finishes (Antigravity's idle, no subagent running)     | Settled or Drafting |
-| Settled                           | The person's input                                        | Drafting            |
-| Settled                           | Messages waiting and the gate passes                      | Ringing             |
-| Ringing                           | Confirmed: a doorbell prompt with its nonce               | Working             |
-| Ringing                           | The test paste fails, or no confirmation within 5 s       | Unknown             |
-| Ringing                           | Another root prompt, an abnormal end, or the binding ends | As from Settled     |
+| From                                     | Event                                                     | To                  |
+| ---------------------------------------- | --------------------------------------------------------- | ------------------- |
+| Unbound                                  | A session binds, announced at its prompt                  | Ready               |
+| Unbound                                  | The same, the person typed after their last Enter         | Drafting            |
+| Unbound                                  | A session binds otherwise                                 | Fresh               |
+| Any bound state                          | The binding ends (the instance exits)                     | Unbound             |
+| Any bound state                          | Its harness announces a new session                       | As from Unbound     |
+| Fresh, Ready, Settled, Drafting, Unknown | A root prompt                                             | Working             |
+| Working                                  | A normal root Stop, not continued, prompt known empty     | Settled             |
+| Working                                  | A normal root Stop, not continued, prompt not known empty | Drafting            |
+| Working                                  | A Stop NovaDeck continued                                 | Working             |
+| Working                                  | An abnormal end                                           | Unknown             |
+| Working, only background work            | It finishes (Antigravity's idle, no subagent running)     | Settled or Drafting |
+| Settled, Ready                           | The person's input                                        | Drafting            |
+| Settled, Ready                           | Messages waiting and the gate passes                      | Ringing             |
+| Ringing                                  | Confirmed: a doorbell prompt with its nonce               | Working             |
+| Ringing                                  | The test paste fails, or no confirmation within 5 s       | Unknown             |
+| Ringing                                  | Another root prompt, an abnormal end, or the binding ends | As from Settled     |
 
 A background subagent finishing can start a root turn by itself (see
 [Harness coverage](harness-coverage.md)); that is a turn like any other, though it
@@ -487,7 +504,7 @@ escaping and JSON encoding: under every limit, so nothing is ever cut or moved t
 file. A delivery takes waiting messages oldest first while they fit; `send` refused any
 message that wouldn't fit on its own.
 
-| Harness     | Working: Stop                        | Fresh, Settled or person's prompt: prompt time                                                                                       |
+| Harness     | Working: Stop                        | Fresh, Ready, Settled or person's prompt: prompt time                                                                                |
 | ----------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Claude Code | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                                                                 |
 | Codex       | `{"decision":"block","reason":…}`    | `UserPromptSubmit`: `{"hookSpecificOutput":{"additionalContext":…}}`                                                                 |
@@ -503,7 +520,8 @@ Messages are delivered together, wrapped:
 
 ### The doorbell
 
-In the Settled state, NovaDeck wakes the agent by typing one line into its terminal:
+In the Settled or Ready state, NovaDeck wakes the agent by typing one line into its
+terminal:
 
 ```text
 [NovaDeck: automatic notice, agent messages waiting, n7Q2]
@@ -519,14 +537,16 @@ what NovaDeck sees anyway: the person's input, the decoded activity, and the scr
 text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in order:
 
 1. **Idle.** The terminal is Settled: its last root turn ended normally, nothing runs in
-   the background, no request is pending, and messages wait for its root session.
+   the background, no request is pending; or Ready: a new session at its own prompt, with
+   no turn yet. Messages wait for its root session.
 2. **Untouched.** The prompt is known empty (see [What counts](#what-counts)): the
    person sent no input since their last submission, a confirmed ring, the command-line
    prompt or the session binding. A draft can exist only if the person typed, so it
    never reaches the screen checks.
-3. **Settled for a while.** At least 6 s have passed since the root turn ended, for
-   every harness: screens change for a while after a turn, as Claude Code's clears a
-   row about 5 s after it, and a ring meanwhile would fail on that change.
+3. **Settled for a while.** At least 6 s have passed since the root turn ended, or the
+   Ready session bound, for every harness: screens change for a while after a turn, as
+   Claude Code's clears a row about 5 s after it, and after a start, and a ring meanwhile
+   would fail on that change.
 4. **Calm.** The screen's text has been unchanged for 750 ms (its text, not the PTY's
    bytes, as TUIs redraw carets while idle). Bracketed paste is on now. Where the
    platform tells (not Windows) and the bound instance is known, the terminal's
@@ -564,7 +584,7 @@ messaging is paused) is told they still wait and will come on a later turn; only
 with nothing left waiting is told so.
 A doorbell line left in a prompt that the person later submits is harmless: its hook
 recognises the nonce, and the prompt stays the person's. A terminal is rung at most
-once per Settled period; a failed gate doesn't count.
+once per Settled or Ready period; a failed gate doesn't count.
 
 The probes behind this (2026-10-01, Claude Code 2.1.286, Codex 0.159.3, Antigravity
 CLI) took screen snapshots before and after a paste, kept as test fixtures: an empty
@@ -574,7 +594,11 @@ them fail; a half-typed draft passes the check alone (the line appends to it), w
 why the gate stops a draft before any paste. Enter on an approval approves it in all
 three harnesses, which is what the gate and the test paste guard against. Codex's
 footer sits three rows below its input, hence three rows rather than two. Claude Code's
-idle screen settles about 5 s after a turn; Codex's and Antigravity's are still.
+idle screen settles about 5 s after a turn; Codex's and Antigravity's are still. A
+Ready Claude Code (2.1.287, probed the same day) took the line alone 6.5 s after a plain
+start, on its banner, notices and placeholder, and after a `/clear`, and its Enter fired
+`UserPromptSubmit` with exactly the line; its trust dialog and first-run theme picker
+swallowed the paste.
 
 ### Message states
 
@@ -606,8 +630,8 @@ output, not that the model acted on it.
 
 - A message is untrusted data: escaped where delivered, wrapped as from a peer, never
   typed. It can't answer a permission or a question: the doorbell's Enter is pressed
-  only on a Settled terminal whose prompt NovaDeck knows is empty, after its own line
-  landed on a quiet screen and changed nothing else.
+  only on a Settled or Ready terminal whose prompt NovaDeck knows is empty, after its own
+  line landed on a quiet screen and changed nothing else.
 - The terminal's token now leads to a keypress. The `instance` a hook reports is the
   hook's own claim, so a process with the token could fake a Stop. What stops a faked
   turn end from pressing Enter into a dialog is the test paste: a dialog swallows the
@@ -619,8 +643,12 @@ output, not that the model acted on it.
 
 ## Starting a task
 
-A fresh agent can't be rung: its first screens may be a trust, update or login prompt
-that Enter would answer. So `open_terminal(agent, message)`:
+An agent is rung before its first turn only once Ready, which only Claude Code announces,
+at a start or a `/clear`: Codex binds with its first prompt, and Antigravity's binding says nothing of
+its screen, which may still be a trust, update or login prompt that Enter would answer.
+A terminal opened with a plain command (`open_terminal(command: "claude")`) gets its
+messages so: rung once Claude Code is Ready, with the person's first prompt for the
+others. So that a task arrives in every harness, `open_terminal(agent, message)`:
 
 1. Opens the terminal with the agent started through its adapter's
    `initialPrompt(argv)`, with the doorbell line as its command-line prompt:
@@ -789,6 +817,11 @@ later.
    and the runner API as `titleSource`, `terminals.resetTitle` and `create`'s
    `requestId`.
 
+5. **Ringing a new session at its prompt:** the Ready state. Built: `atPrompt` in Claude
+   Code's decoder (`harnesses/claude/decode.ts`), `ready` on a new root
+   (`harnesses/roots.ts`), and the state and its untouched rule in
+   `messaging/delivery.ts`.
+
 Harness accelerators (Claude Code channels, `codex queue`) stay out unless a later probe
 shows them strictly better, and then only behind a flag, never as the only path.
 
@@ -818,6 +851,22 @@ popup, at widths 60, 100 and 160, with a light theme and vim mode; how still eac
 screen is; Enter on an approval (it approves, in all three); each harness's
 command-line prompt behind its startup screens; and `agy -i` with an untrusted folder.
 
+Probed after step 4 (2026-10-01), and folded in above, against Claude Code 2.1.287 and
+Codex 0.159.3 in a PTY, with throwaway configurations whose prompt hooks blocked every
+model call:
+
+- Claude Code's `SessionStart` never fired while its folder-trust dialog or first-run
+  onboarding showed, nor when Esc left the trust dialog. In a trusted folder it fired at
+  a `startup` within about 150 ms of the empty prompt drawing (before or after it), at a
+  `/clear` with the new empty prompt already up, and at a `resume` as at a start.
+  Onboarded but logged out, it showed its own prompt, not a login screen. A command-line
+  prompt's `UserPromptSubmit` came about 150 ms after its `SessionStart`, well inside the
+  settle window.
+- Codex fired `SessionStart` only with the first prompt submitted, never while idle at
+  its prompt, and nothing in the 5 s after a `/clear`, so it never sits Ready; its update
+  and trust screens weren't probed, as no binding can happen behind them.
+- Antigravity wasn't probed: it has no `SessionStart`, so it stays Fresh.
+
 ## Acceptance scenarios
 
 | Scenario                                                        | Outcome                                                                                  |
@@ -844,6 +893,12 @@ command-line prompt behind its startup screens; and `agy -i` with an untrusted f
 | The person answers an approval with Enter during the turn       | Not a submission; Stop still delivers                                                    |
 | A steady stream of messages to a working agent                  | The turn continues at most twice, then ends; the rest wait                               |
 | Codex's first prompt after a runner restart                     | Fresh until then; that prompt's hook delivers; never rung before                         |
+| Claude Code opened plain, idle at its prompt, gets a message    | Ready once its `SessionStart` binds it; rung once its screen settles; its hook delivers  |
+| The person runs `/clear` in Claude Code, then a message arrives | Ready again, a new session; rung; the new session's hook delivers                        |
+| Claude Code resumed after a runner restart, messages waiting    | Fresh; never rung; its first root prompt's hook delivers                                 |
+| The person types in a Ready terminal                            | Drafting; no ring; their prompt carries the messages                                     |
+| The person types while Claude Code starts, before it binds      | Drafting at its binding; no ring                                                         |
+| Codex or Antigravity started plain, idle at its prompt          | Not rung: Codex binds with the person's first prompt, Antigravity stays Fresh            |
 | The screen keeps changing when the ring would start             | The calm check fails; nothing is pasted; tried again on the next change                  |
 | Claude opens Codex with a task, but Codex's hooks are untrusted | No session binds; the task stays not yet bound, with a `/hooks` hint for the opener      |
 | Claude opens Codex with a task                                  | Codex starts with the doorbell as its prompt; its hook delivers the task, wrapped        |

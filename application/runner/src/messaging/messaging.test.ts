@@ -45,6 +45,20 @@ const observed = (bound: Binding, root = false): HarnessEvent => ({
   ...(root && { root }),
 })
 
+// A SessionStart hook's report of the session, decoded by its harness's own adapter.
+const sessionStarted = (bound: Binding, source: string): HarnessEvent[] => [
+  ...harnesses[bound.agent].decode({
+    terminalId: "x",
+    token: "0".repeat(48),
+    agent: bound.agent,
+    event: "SessionStart",
+    seq: 1,
+    instance: bound.instance,
+    env: { cursor: false },
+    payload: { session_id: bound.sessionId, source, hook_event_name: "SessionStart" },
+  }),
+]
+
 type Clock = { now: number }
 
 // One project and NovaDeck session, and another project.
@@ -185,7 +199,7 @@ describe("sending", () => {
     const { messaging, send, prompt, stop, claude, codex } = create()
     expect(sent(send("A", "t2", "one"))).toMatchObject({
       state: "queued",
-      route: "when its agent first prompts",
+      route: "when the person first submits a prompt there",
     })
     prompt("B", codex)
     expect(sent(send("A", "t2", "two"))).toMatchObject({
@@ -322,7 +336,7 @@ describe("an addressee with no session yet", () => {
     messaging.expect("N", "codex")
     expect(sent(send("A", "t3", "hello"))).toMatchObject({
       state: "queued",
-      route: "when its agent first prompts",
+      route: "when its agent starts, or with the person's first prompt there",
     })
     expect(messages(messaging, "N")[0]).toMatchObject({ toAgent: "codex", state: "queued" })
     const first = binding("codex", "s-first", "3")
@@ -664,7 +678,7 @@ describe("delivery through hooks", () => {
     expect(records.messages()[0]?.state).toBe("gone")
     second.register("B", here, "t2")
     const root = { ...first.codex, source: "binding" } as const
-    second.rooted("B", [{ type: "new", root, guess: false }])
+    second.rooted("B", [{ type: "new", root, guess: false, ready: false }])
     expect(records.messages()[0]?.state).toBe("queued")
     second.close()
   })
@@ -1303,6 +1317,127 @@ describe("untouched, erring toward Drafting", () => {
       1_000_000 + 100,
     )
     expect(late.stdout).toContain("still waiting")
+  })
+})
+
+describe("a new agent session at its own prompt", () => {
+  // A terminal opened to run Claude Code, as `open_terminal(command: "claude")` does.
+  const openedClaude = () => {
+    const setup = create()
+    setup.messaging.register("N", here, "t3")
+    setup.messaging.expect("N", "claude")
+    return { ...setup, launched: binding("claude", "s-new", "3") }
+  }
+
+  it("rings a Claude Code launched plain once it binds at its prompt, and its doorbell prompt delivers", () => {
+    const { messaging, send, observe, ask, launched, clock: time } = openedClaude()
+    expect(sent(send("A", "t3", "Review a.ts"))).toMatchObject({
+      state: "queued",
+      route: "when its agent starts, or with the person's first prompt there",
+    })
+    observe("N", launched, sessionStarted(launched, "startup"))
+    // Ready since it bound: the doorbell lets its screen settle from then.
+    expect(messaging.delivery("N")).toMatchObject({ state: "ready", since: time.now })
+    expect(messaging.settledSince("N")).toBe(time.now)
+    expect(messaging.ringable("N")).toBe(true)
+    expect(sent(send("B", "t3", "And b.ts"))).toMatchObject({ route: "ringing it now" })
+    expect(messaging.ring("N", "n1")).toBe(true)
+    const answer = ask("N", launched, "UserPromptSubmit", [doorbellStarted(launched, "n1")])
+    expect(answer.stdout).toContain(">Review a.ts</message>")
+    expect(answer.stdout).toContain(">And b.ts</message>")
+    messaging.acknowledge("N", answer.leaseId!)
+    expect(messages(messaging, "N").map(({ state }) => state)).toEqual(["delivered", "delivered"])
+    expect(messaging.delivery("N")).toMatchObject({ state: "working", phase: "turn" })
+  })
+
+  it("rings a Claude Code session after /clear, a new session at its prompt", () => {
+    const { messaging, send, observe, prompt, stop, ask, claude } = create()
+    messaging.keys("A", ["enter"], false)
+    prompt("A", claude)
+    stop("A", claude)
+    // The person types /clear and submits it: Claude Code starts a new session.
+    messaging.keys("A", ["content", "content", "enter"], false)
+    const cleared = binding("claude", "s-cleared", "1")
+    observe("A", cleared, sessionStarted(cleared, "clear"))
+    expect(messaging.delivery("A")?.state).toBe("ready")
+    sent(send("B", "t1", "hello"))
+    expect(messaging.ringable("A")).toBe(true)
+    expect(messaging.ring("A", "n1")).toBe(true)
+    const answer = ask("A", cleared, "UserPromptSubmit", [doorbellStarted(cleared, "n1")])
+    expect(answer.stdout).toContain(">hello</message>")
+  })
+
+  it("never rings a resumed session, as every terminal the runner restores, before its first turn", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    sent(first.send("B", "t1", "hello"))
+    first.messaging.close()
+    // The runner restarts: the terminal's new shell resumes its session.
+    const { messaging, follow, observe, prompt, send, claude, clock: time } = create(records)
+    follow("A", null)
+    observe("A", claude, sessionStarted(claude, "resume"))
+    expect(messaging.delivery("A")?.state).toBe("fresh")
+    time.now += 60_000
+    expect(messaging.ringable("A")).toBe(false)
+    expect(messaging.settledSince("A")).toBeUndefined()
+    expect(sent(send("B", "t1", "again"))).toMatchObject({
+      route: "when the person first submits a prompt there",
+    })
+    // Its first turn event delivers what waited.
+    expect(prompt("A", claude).stdout).toContain(">hello</message>")
+  })
+
+  it("turns Drafting as the person types there, ringing nothing", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "t3", "hello"))
+    messaging.keys("N", ["content"], false)
+    expect(messaging.delivery("N")?.state).toBe("drafting")
+    expect(messaging.ringable("N")).toBe(false)
+    expect(messaging.ring("N", "n1")).toBe(false)
+    expect(sent(send("B", "t3", "again"))).toMatchObject({
+      route: "when the person next submits a prompt there",
+    })
+  })
+
+  it("keeps what the person typed during a ring as their draft", () => {
+    const { messaging, send, observe, ask, stop, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "t3", "hello"))
+    messaging.ring("N", "n1")
+    messaging.keys("N", ["content"], false)
+    expect(messaging.delivery("N")).toMatchObject({ state: "ringing", touched: true })
+    ask("N", launched, "UserPromptSubmit", [doorbellStarted(launched, "n1")])
+    stop("N", launched)
+    expect(messaging.delivery("N")?.state).toBe("drafting")
+  })
+
+  it("takes words typed after the Enter that launched it as a draft, ringing nothing", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    // `claude`, Enter, then the start of a prompt, before its SessionStart.
+    messaging.keys("N", ["content", "enter", "content"], false)
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "t3", "hello"))
+    expect(messaging.delivery("N")?.state).toBe("drafting")
+    expect(messaging.ringable("N")).toBe(false)
+  })
+
+  it("leaves Codex and Antigravity Fresh until their first turn, nothing showing their prompt is up", () => {
+    const { messaging, send, observe } = create()
+    messaging.register("C", here, "t3")
+    const codex = binding("codex", "s-c", "3")
+    observe("C", codex, sessionStarted(codex, "startup"))
+    messaging.register("G", here, "t4")
+    const agy = binding("agy", "c-root", "4")
+    observe("G", agy, [observed(agy, true)], true)
+    for (const [terminalId, handle] of [
+      ["C", "t3"],
+      ["G", "t4"],
+    ] as const) {
+      sent(send("A", handle, "hello"))
+      expect(messaging.delivery(terminalId)?.state).toBe("fresh")
+      expect(messaging.ringable(terminalId)).toBe(false)
+    }
   })
 })
 

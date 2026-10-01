@@ -429,6 +429,12 @@ Besides the facts shared with the agent model, decoders give
   context: Claude Code's and Codex's `SessionStart` with source `compact`. Antigravity
   reports no compaction. It nudges the agent to describe its terminal again (see
   [Self-description](agent-messaging.md#self-description)).
+- `session-observed` has `atPrompt` when the harness announced the session as its own
+  input prompt came up, past any trust, onboarding or login screen: only Claude Code's
+  `SessionStart` with source `startup` or `clear` (probed 2026-10-01). Such a session is
+  Ready, and may be rung before its first turn (see
+  [States](agent-messaging.md#states)). Codex's `SessionStart` comes only with the first
+  prompt, and Antigravity has none, so neither sets it.
 
 ### Messaging profile
 

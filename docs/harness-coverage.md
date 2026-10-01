@@ -50,6 +50,7 @@ Evidence:
 
 - `SessionStart.source` is `startup`, `resume`, `clear`, `compact` or `fork`.
 - `clear` and `fork` mint a new session id.
+- `SessionStart` waits for the trust dialog and the first-run onboarding: it fired neither while they showed (5 and 10 s) nor when Esc left the trust dialog, which exits. Once past them, at a `startup`, `resume` or `clear`, it fired within about 150 ms of the empty input prompt drawing, before or after it. Logged out but onboarded, Claude Code shows its own prompt ("Not logged in · Run /login"), with `SessionStart`, and no login screen. Keys typed 150 ms after launch, before the prompt drew, were dropped (probed 2026-10-01, 2.1.287, a throwaway `CLAUDE_CONFIG_DIR`).
 - `SessionEnd.reason` is `clear`, `resume`, `logout`, `prompt_input_exit` or `other`.
 - Closing the terminal (SIGHUP) fired `SessionEnd` with reason `other` (probed). A crash or SIGKILL should fire nothing (not probed), so the PTY exit remains the fallback.
 
@@ -120,6 +121,7 @@ In the probe, a background subagent's result began a second turn with its own `U
 **Sessions.**
 
 - `SessionStart.source` is `startup`, `resume`, `clear`, `compact` or `fork`.
+- Interactive Codex fires `SessionStart` only with the first prompt submitted, about 50 ms before its `UserPromptSubmit`; idle at its prompt it fired nothing for 10 s, and `/clear` fired nothing in the 5 s after it (probed 2026-10-01, 0.159.3, `--no-daemon`, a throwaway `CODEX_HOME`).
 - `SessionEnd` fires on a normal end only.
 - The thread id from `codex exec --json`, the rollout file name and `session_meta.id`/`session_id` are the same value, and the hook's `session_id` is that id (probed).
 - `CODEX_THREAD_ID` reaches commands Codex runs, not the TUI.

@@ -33,6 +33,16 @@ import {
 export const decode = (report: Report): readonly HarnessEvent[] =>
   withMode(decodeHook(report), report.payload)
 
+/**
+ * The SessionStart sources that announce a session at Claude Code's own input prompt.
+ * Probed on 2026-10-01 (2.1.287): SessionStart never fired while its trust dialog or
+ * first-run onboarding showed, and at a `startup` or a `clear` it fired within about
+ * 150 ms of its empty prompt drawing. A `resume` came up at its prompt the same way, but a
+ * resumed session, as every terminal the runner restores, waits for its first turn; a
+ * `fork` too.
+ */
+const atPrompt: ReadonlySet<string> = new Set(["startup", "clear"])
+
 const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly HarnessEvent[] => {
   const id = sessionId(payload.session_id)
   if (!id || payload.cursor_version !== undefined || env.cursor) return []
@@ -52,6 +62,7 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
           ...base,
           evidence,
           ...(source === "compact" && { compacted: true }),
+          ...(atPrompt.has(source ?? "") && { atPrompt: true }),
           ...(cwd !== undefined && { cwd }),
           ...(transcript !== undefined && { transcript }),
         },

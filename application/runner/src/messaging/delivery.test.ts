@@ -3,6 +3,7 @@ import {
   continues,
   maxContinuations,
   pendingEnter,
+  ringableSince,
   route,
   submitWindowMs,
   transition,
@@ -12,11 +13,15 @@ import {
   type KeyKind,
 } from "./delivery.js"
 
-const bound = transition(unbound, { type: "bound" })
 const run = (from: Delivery, ...events: (DeliveryEvent | readonly DeliveryEvent[])[]): Delivery =>
   events.flat().reduce(transition, from)
 
 const at = 1_000_000
+// A session binds with nothing showing its prompt is up, or one its harness announced at
+// its own input prompt, as Claude Code's SessionStart at a startup or a /clear.
+const binds = { type: "bound", ready: false, at } as const
+const announced = { type: "bound", ready: true, at } as const
+const bound = transition(unbound, binds)
 const key = (kind: KeyKind, time = at, asked = false): DeliveryEvent => ({
   type: "key",
   key: kind,
@@ -59,12 +64,14 @@ describe("a terminal's delivery state", () => {
   })
 
   it("is Fresh again in every bound state once its harness announces a new session", () => {
-    for (const from of [working, settled, drafting, unknown])
-      expect(transition(from, { type: "bound" })).toMatchObject({
+    for (const from of [working, settled, run(drafting, enter), unknown])
+      expect(transition(from, binds)).toMatchObject({
         state: "fresh",
         continued: 0,
         box: { empty: true },
       })
+    // What the person typed after their last Enter stays in the box.
+    expect(transition(drafting, binds)).toMatchObject({ state: "fresh", box: { empty: false } })
   })
 
   it("works from Fresh, Settled, Drafting and Unknown once a root prompt starts a turn", () => {
@@ -193,9 +200,10 @@ describe("a terminal's delivery state", () => {
     expect(run(drafting, enter, call).box.empty).toBe(false)
   })
 
-  it("ignores everything but a binding while Unbound", () => {
-    for (const event of [prompted(), stop, ended, enter, idle])
+  it("ignores everything but a binding, and the person's keys, while Unbound", () => {
+    for (const event of [prompted(), stop, ended, idle, { type: "ring", nonce: "k3f9" } as const])
       expect(transition(unbound, event)).toBe(unbound)
+    expect(run(unbound, typing)).toMatchObject({ state: "unbound", box: { empty: false } })
   })
 
   it("ignores a Stop with no turn to end", () => {
@@ -247,7 +255,7 @@ describe("whose turn it is", () => {
     // A call while no turn runs resumes one, but nothing says the person started it.
     expect(run(working, stop, call).byPerson).toBe(false)
     expect(run(working, ended, call).byPerson).toBe(false)
-    expect(run(working, { type: "bound" }).byPerson).toBe(false)
+    expect(run(working, binds).byPerson).toBe(false)
   })
 })
 
@@ -275,7 +283,8 @@ describe("keys while a request waits on the person", () => {
 
 describe("when a message would reach an agent", () => {
   it("says so in send's words for each state", () => {
-    expect(route(bound, false)).toBe("when its agent first prompts")
+    expect(route(bound, false)).toBe("when the person first submits a prompt there")
+    expect(route(transition(unbound, announced), false)).toBe("ringing it now")
     expect(route(working, false)).toBe("when its current turn ends")
     // Codex sends nothing when a turn fails.
     expect(route(working, true)).toBe("at its turn's end or its next prompt")
@@ -344,7 +353,7 @@ describe("a ring", () => {
       })
     expect(transition(ringing, ended)).toMatchObject({ state: "unknown", box: { empty: false } })
     expect(transition(ringing, { type: "unbound" }).state).toBe("unbound")
-    expect(transition(ringing, { type: "bound" }).state).toBe("fresh")
+    expect(transition(ringing, binds).state).toBe("fresh")
     // No Stop or idle status line ends it.
     for (const event of [stop, idle]) expect(transition(ringing, event)).toBe(ringing)
   })
@@ -363,6 +372,60 @@ describe("a ring", () => {
     expect(run(drafting, key("enter"), { ...doorbell, at: at + 100 })).toMatchObject({
       box: { empty: false, enteredAt: null },
     })
+  })
+})
+
+describe("a new session at its own prompt", () => {
+  const ready = transition(unbound, announced)
+  const doorbell = { type: "prompt", by: "doorbell", nonce: "k3f9", at } as const
+
+  it("is Ready once its harness announces it at its input prompt, rung since it bound", () => {
+    expect(ready).toMatchObject({ state: "ready", since: at, box: { empty: true } })
+    expect(ringableSince(ready)).toBe(at)
+    // One bound with nothing showing its prompt is up, as a resumed one, is never rung.
+    expect(ringableSince(bound)).toBeUndefined()
+    expect(transition(bound, { type: "ring", nonce: "k3f9" })).toBe(bound)
+  })
+
+  it("is Ready after a /clear the person submitted, in any bound state", () => {
+    for (const from of [settled, drafting, unknown])
+      expect(run(from, typing, enter, announced)).toMatchObject({ state: "ready", since: at })
+  })
+
+  it("is Drafting when the person typed after their last Enter, as while the agent started", () => {
+    // `claude`, Enter, then the first words of a prompt before its SessionStart.
+    const typedAhead = run(unbound, typing, enter, typing, announced)
+    expect(typedAhead).toMatchObject({ state: "drafting", box: { empty: false } })
+    expect(ringableSince(typedAhead)).toBeUndefined()
+    expect(run(unbound, typing, enter, announced).state).toBe("ready")
+    // A draft left while a request waited stays too.
+    expect(run(working, key("content", at, true), announced).state).toBe("drafting")
+  })
+
+  it("turns Drafting at the person's input, but not at keys while asked", () => {
+    expect(run(ready, typing)).toMatchObject({ state: "drafting", box: { empty: false } })
+    expect(run(ready, enter).state).toBe("drafting")
+    expect(transition(ready, key("enter", at, true))).toEqual(ready)
+  })
+
+  it("rings like Settled: its own doorbell prompt confirms, a failure leaves it Unknown", () => {
+    const ringing = transition(ready, { type: "ring", nonce: "k3f9" })
+    expect(ringing).toMatchObject({ state: "ringing", nonce: "k3f9", box: { empty: false } })
+    expect(transition(ringing, doorbell)).toMatchObject({
+      state: "working",
+      phase: "turn",
+      epoch: ready.epoch + 1,
+      box: { empty: true },
+    })
+    expect(transition(ringing, { type: "ring-failed", nonce: "k3f9" }).state).toBe("unknown")
+    // The person typing mid-ring keeps their words as a draft.
+    expect(run(ringing, typing, doorbell)).toMatchObject({ box: { empty: false } })
+  })
+
+  it("works once a root prompt starts its first turn, the person's own when they submitted it", () => {
+    expect(run(ready, person)).toMatchObject({ state: "working", byPerson: true })
+    expect(run(ready, harness)).toMatchObject({ state: "working", byPerson: false })
+    expect(run(ready, person, stop).state).toBe("settled")
   })
 })
 

@@ -1947,7 +1947,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         to: "t2",
         id: expect.stringMatching(/^m-/),
         state: "queued",
-        route: "when its agent first prompts",
+        route: "when the person first submits a prompt there",
       })
       // Codex's next prompt carries it, wrapped and attributed, never as the person.
       const prompted = JSON.parse(
@@ -2043,9 +2043,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       prepare(codex.id)
       const { name } = queue(codex.id, { hook: "UserPromptSubmit", payload: { prompt: "go" } })
       await start(codex.id, "codex", "s-codex")
-      // Meanwhile Claude's terminal binds, though Codex's report still waits.
+      // Meanwhile Claude's terminal binds, at its prompt, though Codex's report still waits.
       await start(claude.id, "claude", "s-claude")
-      await expect.poll(() => manager.messages(claude.id).delivery).toBe("fresh")
+      await expect.poll(() => manager.messages(claude.id).delivery).toBe("ready")
       expect(manager.messages(codex.id).delivery).toBe("unbound")
       for (const connect of waiting) connect()
       await shell.until(manager, codex.id, `done ${name}`)
@@ -2643,6 +2643,8 @@ const { spawn } = require("node:child_process")
 const fs = require("node:fs")
 const [agent, session, received, raw, mode] = process.argv.slice(2)
 fs.writeFileSync(raw + ".pid", String(process.pid))
+// Claude Code names itself to its hooks, whatever an outer one left in the environment.
+if (agent === "claude") process.env.CLAUDE_PID = String(process.pid)
 const hook = (event, payload, done) => {
   const child = spawn(process.env.NOVADECK_HOOK, [agent, event], { stdio: ["pipe", "pipe", "inherit"] })
   let printed = ""
@@ -2814,7 +2816,13 @@ const lines = <T>(file: string): T[] =>
     : []
 
 /** A sender and an idle stand-in TUI, in a manager whose doorbell rings soon. */
-const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentName = "codex") => {
+const ringing = async (
+  shell: Fixture,
+  mode = "",
+  program = "tui",
+  agent: AgentName = "codex",
+  session = `s-${agent}`,
+) => {
   const bin = standIn(shell.home)
   standInTui(shell.home)
   const manager = shell.manager({
@@ -2829,7 +2837,7 @@ const ringing = async (shell: Fixture, mode = "", program = "tui", agent: AgentN
   const raw = join(shell.home, "raw.jsonl")
   const type = (data: string) => manager.write({ terminalId: idle.id, data }, "owner")
   type(
-    `${program} ${agent} s-${agent} '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`,
+    `${program} ${agent} ${session} '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`,
   )
   await shell.until(manager, idle.id, `${agent} ready`)
   return {
@@ -2898,6 +2906,53 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       // Rung once: nothing more is typed.
       await quiet()
       expect(tui.received()).toHaveLength(2)
+    })
+
+    it("wakes a Claude Code TUI idle at its prompt since it started, before any turn", async ({
+      shell,
+    }) => {
+      // Its SessionStart at a startup came as its prompt came up: it is Ready.
+      const tui = await ringing(shell, "", "tui", "claude", "s-idle")
+      await expect.poll(tui.delivery).toBe("ready")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
+      const [rung] = tui.received()
+      expect(rung!.prompt).toMatch(
+        /^\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]$/,
+      )
+      expect(rung!.printed).toContain(">Review a.ts</message>")
+      await expect
+        .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
+        .toBe("delivered")
+      await expect.poll(tui.delivery).toBe("settled")
+    })
+
+    it("rings no Claude Code TUI the person started typing in", async ({ shell }) => {
+      const tui = await ringing(shell, "", "tui", "claude", "s-idle")
+      tui.type("my first thought")
+      await expect.poll(tui.delivery).toBe("drafting")
+      expect(await tui.send("Review a.ts")).toMatchObject({
+        route: "when the person next submits a prompt there",
+      })
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+      expect(tui.received()).toEqual([])
+    })
+
+    it("rings no agent whose start says nothing of its screen, before its first turn", async ({
+      shell,
+    }) => {
+      // Codex announces a session only with its first prompt, so its binding proves nothing.
+      const tui = await ringing(shell)
+      await expect.poll(tui.delivery).toBe("fresh")
+      expect(await tui.send("Review a.ts")).toMatchObject({
+        route: "when the person first submits a prompt there",
+      })
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+      // The person's first prompt carries it.
+      await tui.first()
+      expect(tui.received()[0]!.printed).toContain(">Review a.ts</message>")
     })
 
     it("presses nothing when the paste lands nowhere, as in an open menu", async ({ shell }) => {

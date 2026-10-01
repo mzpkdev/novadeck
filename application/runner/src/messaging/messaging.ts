@@ -9,6 +9,7 @@ import type { HookAnswer } from "../shell/reports.js"
 import {
   continues,
   phaseOf,
+  ringableSince,
   route,
   running,
   transition,
@@ -385,13 +386,13 @@ export class Messaging {
   }
 
   /**
-   * Whether the doorbell may ring the terminal: Settled, with messages waiting for its
-   * root session. The doorbell waits for the screen to settle, and checks it, before it
-   * rings.
+   * Whether the doorbell may ring the terminal: Settled, or Ready (a new session at its
+   * own prompt), with messages waiting for its root session. The doorbell waits for the
+   * screen to settle, and checks it, before it rings.
    */
   ringable(terminalId: string): boolean {
     const live = this.live.get(terminalId)
-    if (!live?.root || live.delivery.state !== "settled") return false
+    if (!live?.root || ringableSince(live.delivery) === undefined) return false
     const root = live.root
     for (const message of this.messages.values())
       if (
@@ -434,10 +435,13 @@ export class Messaging {
       .map(({ text }) => text)
   }
 
-  /** When the terminal last became Settled, if it is. */
+  /**
+   * When the terminal last became Settled, its turn ended, or Ready, its session bound; if
+   * it is either.
+   */
   settledSince(terminalId: string): number | undefined {
     const delivery = this.live.get(terminalId)?.delivery
-    return delivery?.state === "settled" ? delivery.since : undefined
+    return delivery && ringableSince(delivery)
   }
 
   /**
@@ -815,7 +819,7 @@ export class Messaging {
       ...base,
       route: agent
         ? route(recipient.delivery, harnesses[agent].messaging.silentOnFailure)
-        : "when its agent first prompts",
+        : "when its agent starts, or with the person's first prompt there",
     }
   }
 
@@ -924,7 +928,7 @@ export class Messaging {
             undelivered(message)
           )
             this.gone(message)
-      } else if (change.type === "new") this.rootAt(live, change.root, change.guess)
+      } else if (change.type === "new") this.rootAt(live, change.root, change.guess, change.ready)
       else this.correct(live, change.from, change.root, change.confirmed)
     }
   }
@@ -933,13 +937,14 @@ export class Messaging {
    * A new root session in the terminal: its messages that were gone wait again, and those
    * waiting for the terminal's first session of that agent are now its own, while another
    * agent's are gone. Unless the root is only a guess, messages for any other session
-   * there are gone, as after a runner restart.
+   * there are gone, as after a runner restart. A session its harness announced at its own
+   * prompt is `ready` to be rung.
    */
-  private rootAt(live: Live, root: Root, guess: boolean): void {
+  private rootAt(live: Live, root: Root, guess: boolean, ready: boolean): void {
     live.root = root
     // Its first session came: from now on, only a bound session takes messages.
     live.expecting = null
-    this.step(live, { type: "bound" })
+    this.step(live, { type: "bound", ready, at: this.now() })
     for (const message of this.messages.values()) {
       if (message.to.terminalId !== live.terminalId) continue
       if (message.to.sessionId === null) {
