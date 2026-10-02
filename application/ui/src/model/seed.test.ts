@@ -20,13 +20,15 @@ describe("workspace from a backend seed", () => {
           id: "one",
           name: "one",
           directory: "~/one",
-          sessions: [{ id: "initial", name: "Session", terminals, canvasLayout }],
+          sessions: [
+            { id: "initial", name: "Session", items: [], windows: [], terminals, canvasLayout },
+          ],
         },
         {
           id: "two",
           name: "two",
           directory: "~/two",
-          sessions: [{ id: "initial", name: "Session", terminals: [] }],
+          sessions: [{ id: "initial", name: "Session", items: [], windows: [], terminals: [] }],
         },
       ],
     }
@@ -67,8 +69,8 @@ describe("workspace from a backend seed", () => {
               name: "one",
               directory: "~/one",
               sessions: [
-                { id: "latest", name: "Latest", terminals },
-                { id: "older", name: "Older", terminals: [] },
+                { id: "latest", name: "Latest", items: [], windows: [], terminals },
+                { id: "older", name: "Older", items: [], windows: [], terminals: [] },
               ],
             },
           ],
@@ -89,7 +91,7 @@ describe("workspace from a backend seed", () => {
             id: "one",
             name: "one",
             directory: "~/one",
-            sessions: [{ id: "s", name: "S", terminals }],
+            sessions: [{ id: "s", name: "S", items: [], windows: [], terminals }],
           },
         ],
       },
@@ -111,15 +113,25 @@ describe("workspace from a backend seed", () => {
           name: "one",
           directory: "~/one",
           sessions: [
-            { id: "latest", name: "Latest", terminals: [...live, extra], restored, visitedAt: 30 },
-            { id: "older", name: "Older", terminals: [], visitedAt: 10 },
+            {
+              id: "latest",
+              name: "Latest",
+              items: [],
+              windows: [],
+              terminals: [...live, extra],
+              restored,
+              visitedAt: 30,
+            },
+            { id: "older", name: "Older", items: [], windows: [], terminals: [], visitedAt: 10 },
           ],
         },
         {
           id: "two",
           name: "two",
           directory: "~/two",
-          sessions: [{ id: "latest", name: "Two", terminals: [], visitedAt: 20 }],
+          sessions: [
+            { id: "latest", name: "Two", items: [], windows: [], terminals: [], visitedAt: 20 },
+          ],
         },
       ],
     }
@@ -158,7 +170,7 @@ describe("workspace from a backend seed", () => {
               id: "one",
               name: "one",
               directory: "~/one",
-              sessions: [{ id: "s", name: "S", terminals }],
+              sessions: [{ id: "s", name: "S", items: [], windows: [], terminals }],
             },
           ],
         },
@@ -177,7 +189,9 @@ describe("workspace from a backend seed", () => {
               id: "one",
               name: "one",
               directory: "~/one",
-              sessions: [{ id: "s", name: "S", terminals: [kept!], restored: view }],
+              sessions: [
+                { id: "s", name: "S", items: [], windows: [], terminals: [kept!], restored: view },
+              ],
             },
           ],
         },
@@ -262,9 +276,19 @@ describe("workspace from a backend seed", () => {
       expect(state.roster.windows).toEqual([window])
     })
 
-    it("drops items whose terminal or window the backend no longer has", () => {
-      const state = seeded({ windows: [], items: [older, undocked, itemFixture("x", "99")] })
-      expect(state.items).toEqual([older])
+    it("keeps items whose terminal or window isn't known, on no bar", () => {
+      const elsewhere = itemFixture("x", "99")
+      const state = seeded({ windows: [], items: [older, undocked, elsewhere] })
+      expect(state.items).toEqual([older, undocked, elsewhere])
+      expect(state.bars).toEqual({
+        "01": { order: [older.id], hidden: [], tab: null, open: false },
+      })
+    })
+
+    it("keeps a window listed without its item waiting, unseen", () => {
+      const state = seeded({ items: [older] })
+      expect(state.roster.windows).toEqual([])
+      expect(state.waiting).toEqual([window])
     })
   })
 

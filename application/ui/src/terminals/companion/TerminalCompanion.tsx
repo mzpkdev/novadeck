@@ -194,8 +194,19 @@ export const TerminalCompanion = ({
 
   const originOf = (each: BarMember): string | undefined =>
     each.kind === "item" ? terminalName(each.item.from.terminalId) : undefined
+  // The person picked something that may hold secrets: it shows.
+  const picked = (key: BarKey): void => {
+    const found = members.find((each) => each.key === key)
+    if (found?.kind === "item" && found.item.held) panes.reveal(target, found.key)
+  }
+  const openPicked = (key: BarKey): void => {
+    picked(key)
+    commands.openBarTab(terminal, key)
+  }
   const undockMember = (each: BarMember, place?: WindowPlace): void => {
-    if (each.kind === "item" && !each.placed) commands.undock(each.key, place)
+    if (each.kind !== "item" || each.placed) return
+    picked(each.key)
+    commands.undock(each.key, place)
   }
   const actions: Omit<SlotActions, "grab"> = {
     showing,
@@ -206,9 +217,8 @@ export const TerminalCompanion = ({
     panes,
     target,
     // Clicking what the pane is showing hides it, as a taskbar minimizes the active window.
-    activate: (key) =>
-      key === showing ? commands.closeBarPane(terminal) : commands.openBarTab(terminal, key),
-    open: (key) => commands.openBarTab(terminal, key),
+    activate: (key) => (key === showing ? commands.closeBarPane(terminal) : openPicked(key)),
+    open: openPicked,
     close: (each) =>
       each.kind === "messages"
         ? commands.hideOnBar(terminal, messagesKey)
@@ -224,7 +234,10 @@ export const TerminalCompanion = ({
   const land = (dragged: Dragged, ended: BarDrag): boolean => {
     const outcome = dropOutcome(dragged.members, ended, terminal)
     if (outcome?.kind === "place") commands.place(outcome.itemIds, outcome.terminalId)
-    if (outcome?.kind === "undock") commands.undock(outcome.itemId, outcome.place)
+    if (outcome?.kind === "undock") {
+      picked(outcome.itemId)
+      commands.undock(outcome.itemId, outcome.place)
+    }
     return outcome !== null
   }
 

@@ -159,6 +159,21 @@ export const recordingRunner = (runner: Runner, io: string[]): RunnerApi => {
       pause: (paused) => note(`pause messages ${paused}`, () => runner.messages.pause(paused)),
       release: (thread) => note(`release ${thread}`, () => runner.messages.release(thread)),
     },
+    companions: {
+      list: (input) => runner.companions.list(input),
+      watch: () => runner.companions.watch(),
+      content: (itemId, options) => runner.companions.content(itemId, options),
+      attach: (input) => note(`attach ${input.path}`, () => runner.companions.attach(input)),
+      move: (itemId, terminalId) =>
+        note(`move ${itemId} ${terminalId}`, () => runner.companions.move(itemId, terminalId)),
+      undock: (itemId, windowId) =>
+        note(`undock ${itemId} ${windowId}`, () => runner.companions.undock(itemId, windowId)),
+      close: (itemId) => note(`close item ${itemId}`, () => runner.companions.close(itemId)),
+      renameWindow: (windowId, title) =>
+        note(`rename window ${windowId}`, () => runner.companions.renameWindow(windowId, title)),
+      resetWindowTitle: (windowId) =>
+        note(`reset window ${windowId}`, () => runner.companions.resetWindowTitle(windowId)),
+    },
     settings: {
       get: () => runner.settings.get(),
       set: (settings) =>

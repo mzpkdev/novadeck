@@ -58,9 +58,7 @@ export const WorkspaceTab = ({
       onRenameSave={() => commands.saveRename(id)}
       onRenameCancel={() => commands.cancelRename(id)}
       onClose={() => commands.close(id)}
-      {...(backend.resetTitle && !isWindow(terminal)
-        ? { onResetTitle: () => commands.resetTitle(id) }
-        : {})}
+      {...(backend.resetTitle ? { onResetTitle: () => commands.resetTitle(id) } : {})}
       dockIn={dockIn}
     />
   )

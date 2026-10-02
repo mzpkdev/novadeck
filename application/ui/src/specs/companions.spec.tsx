@@ -1,4 +1,5 @@
 import { describe as context, describe, expect, it } from "vitest"
+import { page } from "vitest/browser"
 
 import { boxOf, canvasView, dragBackground, viewBox } from "./support/canvas"
 import {
@@ -74,13 +75,12 @@ describe("Something that can't show", () => {
     await expect.element(pane.getByText("old-migration.md is gone.")).toBeVisible()
   })
 
-  it("shows what may hold secrets once the person asks", async () => {
+  it("shows what may hold secrets once the person picks it, and never in a peek", async () => {
     await openShowcase()
+    await taskbarIcon("Dev server", "7 files").hover()
+    await expect.element(page.getByText("May hold secrets. Click to open.")).toBeVisible()
     await chooseFromIconMenu("Dev server", "7 files", "Open .env.local")
     const pane = companionPane("Dev server")
-    await expect.element(pane.getByText(/^\.env\.local may hold secrets/)).toBeVisible()
-    await expectStaysAbsent(pane.getByText("VITE_API_URL=http://localhost:8787"))
-    await pane.getByRole("button", { name: "Show it" }).click()
     await expect.element(pane.getByText("VITE_API_URL=http://localhost:8787")).toBeVisible()
   })
 })

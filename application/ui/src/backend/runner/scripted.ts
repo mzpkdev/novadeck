@@ -1,16 +1,22 @@
 import type { TerminalSummary } from "@novadeck/protocol"
-import type { RunnerStatus, TerminalWatchItem } from "@novadeck/protocol/client"
+import type {
+  CompanionWatchItem,
+  Runner,
+  RunnerStatus,
+  TerminalWatchItem,
+} from "@novadeck/protocol/client"
 
 import { workspaceFromSeed } from "../../model/seed"
 import { createTerminalState } from "../../model/state"
+import type { BackendAction } from "../port"
 import { runnerBackend, type RunnerApi } from "./backend"
-import { startingTerminal, type RunnerListing } from "./seed"
+import { startingTerminal, type ListedCompanions, type RunnerListing } from "./seed"
 import { encodeSession } from "./session-state"
 
 // Test support: a runner adapter over a runner the test scripts step by step.
 
 // Values pushed by the test, read by the adapter as a stream.
-const channel = <T>() => {
+export const channel = <T>() => {
   const queued: T[] = []
   let wake: (() => void) | undefined
   const iterator: AsyncIterableIterator<T, undefined> = {
@@ -30,6 +36,9 @@ const channel = <T>() => {
     },
   }
 }
+
+// A runner whose terminals' companions hold nothing and never change.
+export const noCompanions = { watch: () => channel<never>().iterator }
 
 const unused = (): never => {
   throw new Error("not used here")
@@ -103,6 +112,9 @@ export const scripted = ({
   restart = () => new Promise<TerminalSummary>(() => {}),
   saveSettings = async () => {},
   connect = async (agent: string, connected: boolean) => ({ agent, available: true, connected }),
+  companions = { items: [], windows: [] },
+  respond = async () => undefined,
+  content = () => channel<never>().iterator,
 }: {
   shown: readonly Saved[]
   background?: readonly Saved[]
@@ -110,8 +122,15 @@ export const scripted = ({
   restart?: () => Promise<TerminalSummary>
   saveSettings?: () => Promise<void>
   connect?: (agent: string, connected: boolean) => Promise<unknown>
+  // What the shown session's terminals hold as the runner lists it.
+  companions?: ListedCompanions
+  // How the runner answers each change to an item or window, by the call's name.
+  respond?: (call: string, input: unknown) => Promise<unknown>
+  content?: Runner["companions"]["content"]
 }) => {
   const changes = channel<TerminalWatchItem>()
+  const items = channel<CompanionWatchItem>()
+  const received: BackendAction[] = []
   const statuses = channel<RunnerStatus>()
   const calls: Call[] = []
   const note =
@@ -144,6 +163,20 @@ export const scripted = ({
       restart: note("restart", restart),
       attach: () => new Promise(() => {}),
     },
+    companions: {
+      list: unused,
+      watch: () => items.iterator,
+      content: (...input: Parameters<typeof content>) => {
+        calls.push({ call: "content", input })
+        return content(...input)
+      },
+      attach: note("attach", (input) => respond("attach", input)),
+      move: note("move", (input) => respond("move", input)),
+      undock: note("undock", (input) => respond("undock", input)),
+      close: note("close item", (input) => respond("close item", input)),
+      renameWindow: note("rename window", (input) => respond("rename window", input)),
+      resetWindowTitle: note("reset window", (input) => respond("reset window", input)),
+    },
   } as unknown as RunnerApi
   const listing: RunnerListing = [
     {
@@ -157,6 +190,7 @@ export const scripted = ({
             state: encodeSession(state(shown, 5, id(8)), 2),
           },
           terminals: terminalsOf(shown, listed, id(8)),
+          companions,
         },
         {
           session: {
@@ -183,9 +217,12 @@ export const scripted = ({
     workspaceFromSeed(created.backend.seed, { view: "grid", windowedView: "grid", now: 1 }),
     [],
   )
-  const stop = created.backend.start!({ dispatch: () => {}, open: () => {} })
+  const stop = created.backend.start!({
+    dispatch: (actions) => received.push(...actions),
+    open: () => {},
+  })
   statuses.push({ state: "connected", runnerId: "runner-1" })
   const of = (call: string) => calls.filter((item) => item.call === call).map((item) => item.input)
   const key = (terminalId: string) => ({ projectId: "p", workspaceSessionId: id(8), terminalId })
-  return { ...created, changes, calls, of, stop, key }
+  return { ...created, changes, items, received, calls, of, stop, key, listing }
 }

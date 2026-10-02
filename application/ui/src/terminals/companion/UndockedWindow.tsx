@@ -15,13 +15,12 @@ export const UndockedWindow = ({
 }: {
   panes: Panes
   target: WorkspaceTarget
-  // Undefined once it's gone, until the window goes with it.
+  // Undefined while the backend hasn't reported it, or once it's gone, until the window
+  // goes with it: the window shows nothing meanwhile.
   item: CompanionItem | undefined
 }): React.JSX.Element => (
   <div className="artifact-window">
-    {!item ? (
-      <div className="artifact-status">This is no longer shown.</div>
-    ) : item.kind === "plan" ? (
+    {!item ? null : item.kind === "plan" ? (
       <section className="plan-reader" data-workspace-companion aria-label="Plan">
         <PlanTab panes={panes} target={target} item={item} />
       </section>

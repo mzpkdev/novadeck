@@ -154,6 +154,8 @@ export type WorkspaceState = {
   readonly bars: Readonly<Record<string, Bar>>
   // Items shown again or anew since the person last looked; never saved.
   readonly fresh: Readonly<Record<ItemId, true>>
+  // Windows the backend reported before the item they show: kept, unseen, until it comes.
+  readonly waiting: readonly CompanionWindowMeta[]
 }
 export type WorkspaceSession = {
   id: string

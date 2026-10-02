@@ -73,7 +73,7 @@ const useWindowFrame = (
     menu: windowMenu({
       terminal: tile,
       onRename: () => startRename(tile, "header"),
-      onResetTitle: backend.resetTitle && !isWindow(tile) ? () => resetTitle(id) : undefined,
+      onResetTitle: backend.resetTitle ? () => resetTitle(id) : undefined,
       dockIn,
       onClose: () => close(id),
     }),

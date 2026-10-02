@@ -148,6 +148,7 @@ export const createContentDemo: CreateBackend = () => {
               name: "Content previews",
               terminals,
               items: showcase.items,
+              windows: [],
               restored: viewOf(
                 createTerminalState(terminals, "focus", "grid", { canvasLayout, gridLayouts }),
               ),
@@ -164,6 +165,8 @@ export const createContentDemo: CreateBackend = () => {
               id: "website-initial",
               name: "Main",
               terminals: [website],
+              items: [],
+              windows: [],
               restored: viewOf(createTerminalState([website], "focus", "grid")),
             },
           ],
