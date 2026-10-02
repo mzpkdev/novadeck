@@ -24,10 +24,7 @@ import type {
 // How the UI showed a session's terminals and windows, as it saved it: only its own view
 // state, by id, never the terminals, windows or companion items themselves, which their
 // backend reports. What's new isn't kept: nothing is new after a reload.
-export type RestoredView = Omit<
-  WorkspaceState,
-  "roster" | "placements" | "items" | "bars" | "fresh"
-> & {
+export type RestoredView = Omit<WorkspaceState, "roster" | "items" | "bars" | "fresh"> & {
   readonly order: readonly string[]
   // Each terminal's bar as the person arranged it, where the view kept them.
   readonly bars?: WorkspaceState["bars"]
@@ -36,7 +33,6 @@ export type RestoredView = Omit<
 // A session's view state, without its terminals, windows and items.
 export const viewOf = ({
   roster,
-  placements: _placements,
   items: _items,
   fresh: _fresh,
   ...view
@@ -165,7 +161,6 @@ const restoredState = (
       windows: windows.filter((window) => laidOut.has(window.id)),
       order: sorted,
     },
-    placements: [],
     items: [],
     bars: {},
     fresh: {},

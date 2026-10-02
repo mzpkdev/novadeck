@@ -9,7 +9,6 @@ import type {
   WorkspaceTarget,
 } from "../model/types"
 import type { FocusPreview } from "../shell/shell-state"
-import { itemKey } from "../terminals/companion/pane"
 import type { UiState } from "./ui-store"
 
 // The active session's state; the workspace always has one once seeded.
@@ -99,12 +98,3 @@ export const handleNames = (workspace: Workspace): Readonly<Record<string, strin
       each.handle ? [[each.handle, each.name]] : [],
     ),
   )
-
-// Terminal `from`'s items undocked into windows of their own now, by their keys in its
-// pane.
-export const undockedFrom =
-  (from: string) =>
-  (workspace: Workspace): readonly string[] =>
-    currentState(workspace).roster.terminals.flatMap(({ companion }) =>
-      companion?.from === from ? [itemKey(companion.item)] : [],
-    )

@@ -6,14 +6,68 @@ import type {
   PlanContent,
 } from "@novadeck/protocol"
 
-import {
-  companionKeyId,
-  type CompanionEvent,
-  type CompanionKey,
-  type CompanionSnapshot,
-  type Companions,
-  type PlanSnapshot,
-} from "../../model/companion"
+import { companionKeyId, type CompanionKey } from "../../model/companion"
+
+// What this follower reports, in the shape the companion pane took before items had one
+// holder. The pane now follows items through `Companions` in model/companion.ts; nothing
+// reads these until this follower reports items instead.
+export type PlanSnapshot = {
+  readonly ref: string
+  readonly role: "root" | "subagent"
+  readonly path: string
+  readonly agent: string
+  readonly skill: boolean
+  readonly writable: boolean
+  readonly text: string
+  readonly revision: string
+  readonly truncated?: boolean
+}
+
+export type ArtifactRef = {
+  readonly id: string
+  readonly kind: "image" | "file" | "page"
+  readonly name: string
+  readonly detail: string
+  readonly version: number
+  readonly held?: boolean
+}
+
+type LoadedArtifact =
+  | { readonly kind: "image"; readonly src: string }
+  | {
+      readonly kind: "file"
+      readonly path: string
+      readonly firstLine: number
+      readonly lines: readonly string[]
+      readonly from: number
+      readonly to: number
+    }
+  | { readonly kind: "page"; readonly url: string; readonly live: boolean }
+
+export type CompanionSnapshot = {
+  readonly key: CompanionKey
+  readonly plans: readonly PlanSnapshot[]
+  readonly shown: readonly ArtifactRef[]
+}
+
+export type CompanionEvent =
+  | { readonly type: "plan/changed"; readonly key: CompanionKey; readonly plan: PlanSnapshot }
+  | { readonly type: "plan/removed"; readonly key: CompanionKey; readonly ref: string }
+  | {
+      readonly type: "artifact/shown"
+      readonly key: CompanionKey
+      readonly artifact: ArtifactRef
+      readonly asked: boolean
+      readonly seen?: boolean
+    }
+  | { readonly type: "companion/closed"; readonly key: CompanionKey }
+
+type Companions = {
+  readonly snapshot: () => readonly CompanionSnapshot[]
+  readonly subscribe: (listener: (event: CompanionEvent) => void) => () => void
+  readonly load: (key: CompanionKey, artifactId: string) => Promise<LoadedArtifact>
+  readonly save: (key: CompanionKey, ref: string, text: string, basedOn: string) => Promise<never>
+}
 
 // The runner's companions: the plans its agents keep, as `agents.detail` lists them and
 // `agents.plan` streams them, and what they showed through NovaDeck's MCP server, as

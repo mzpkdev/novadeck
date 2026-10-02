@@ -14,7 +14,8 @@ import {
   type TerminalWatchItem,
 } from "@novadeck/protocol/client"
 
-import { isCompanionWindow } from "../../model/companion-items"
+import { emptyCompanions } from "../../model/companion"
+import { hasWindow } from "../../model/roster"
 import { createStore } from "../../model/store"
 import { sameTitleSource } from "../../model/title-source"
 import type {
@@ -240,11 +241,10 @@ const isWindow = (
   workspace: Workspace,
   renamed: { readonly target: WorkspaceTarget; readonly terminalId: string },
 ): boolean => {
-  const terminal = workspace.projects
+  const roster = workspace.projects
     .find((project) => project.id === renamed.target.projectId)
-    ?.history.find((session) => session.id === renamed.target.workspaceSessionId)
-    ?.state.roster.terminals.find((each) => each.id === renamed.terminalId)
-  return terminal !== undefined && isCompanionWindow(terminal)
+    ?.history.find((session) => session.id === renamed.target.workspaceSessionId)?.state.roster
+  return roster !== undefined && hasWindow(roster, renamed.terminalId)
 }
 
 // More runner restarts than this within the window stop fresh shells from starting on
@@ -1234,7 +1234,9 @@ export const runnerBackend = (
     commit,
     TerminalSurface: createRunnerTerminal(runtime),
     start,
-    companions,
+    // TODO: report the runner's companion items, and follow their content, once it keeps
+    // them. Until then its terminals show their messages and nothing else in the pane.
+    companions: emptyCompanions(),
     messages,
     resetTitle: ({ terminalId }) => {
       // The person's name goes here too, so nothing sends it to the runner again, and a

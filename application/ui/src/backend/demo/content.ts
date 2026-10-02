@@ -2,12 +2,19 @@ import { companionKeyId } from "../../model/companion"
 import { gridColumns } from "../../model/layout/grid-placement"
 import { viewOf } from "../../model/seed"
 import { createTerminalState } from "../../model/state"
-import type { CanvasLayout, GridBreakpoint, GridLayouts, TerminalMetadata } from "../../model/types"
+import type {
+  CanvasLayout,
+  GridBreakpoint,
+  GridLayouts,
+  TerminalMetadata,
+  Workspace,
+} from "../../model/types"
 import type { CreateBackend, TerminalKey } from "../port"
 import { createDemoEngine, type DemoEngine } from "./engine"
 import { demoBackend } from "./index"
 import { createDemoMessages, studioMailbox } from "./messages"
 import { authAgent, studioAgent, type SampleAgent } from "./showcase/agents"
+import { devServerArtifacts } from "./showcase/artifacts"
 import { createShowcase } from "./showcase/simulation"
 
 // A UI-only workspace. The previews never start processes or request a runner.
@@ -87,13 +94,17 @@ export const createContentDemo: CreateBackend = () => {
   )
   // The sample agents run in the first two terminals of the showcase's own session:
   // they open with their own transcripts, answer what they're told, and report their
-  // plans and what they show.
+  // plans and what they show. The dev server's terminal holds what can't show, one of
+  // each reason.
   const session = { projectId: "studio", workspaceSessionId: "initial" }
   const agents = [
-    { key: { ...session, terminalId: "01" }, sample: studioAgent },
-    { key: { ...session, terminalId: "03" }, sample: authAgent },
+    { key: { ...session, terminalId: "01" }, handle: "t1", sample: studioAgent },
+    { key: { ...session, terminalId: "03" }, handle: "t3", sample: authAgent },
   ]
-  const showcase = createShowcase(agents)
+  const showcase = createShowcase({
+    agents,
+    shown: [{ key: { ...session, terminalId: "02" }, handle: "t2", artifacts: devServerArtifacts }],
+  })
   const agentAt = (key: TerminalKey): SampleAgent | undefined =>
     agents.find((agent) => companionKeyId(agent.key) === companionKeyId(key))?.sample
   const base = createDemoEngine((command, _terminal, key) => agentAt(key)?.reply(command.trim()))
@@ -105,15 +116,24 @@ export const createContentDemo: CreateBackend = () => {
     },
   }
   const backend = demoBackend(engine, false, (_terminal, key) => agentAt(key)?.transcript)
+  let latest: Workspace | undefined
+  // The showcase session's items as they stand, which an agent showing something again
+  // finds its own in.
+  const current = () =>
+    latest?.projects
+      .find((project) => project.id === session.projectId)
+      ?.history.find((each) => each.id === session.workspaceSessionId)?.state.items ?? []
   return {
     ...backend,
     // A closed terminal's agent is gone.
     commit: (workspace, actions) => {
+      latest = workspace
       backend.commit(workspace, actions)
       for (const action of actions)
         if (action.type === "terminal/close")
           showcase.closed({ ...action.target, terminalId: action.terminalId })
     },
+    start: (sink) => showcase.start(sink.dispatch, current),
     companions: showcase,
     messages: createDemoMessages([studioMailbox(Date.now(), session)]),
     seed: {
@@ -127,6 +147,7 @@ export const createContentDemo: CreateBackend = () => {
               id: "initial",
               name: "Content previews",
               terminals,
+              items: showcase.items,
               restored: viewOf(
                 createTerminalState(terminals, "focus", "grid", { canvasLayout, gridLayouts }),
               ),

@@ -1,5 +1,7 @@
 import { useCallback, useMemo, type ReactNode } from "react"
 
+import { isOnBar, type CompanionItem } from "../model/companion"
+import { emptyBar } from "../model/companion-bar"
 import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
 import type { CompanionWindowMeta, TerminalMetadata, Tile } from "../model/types"
@@ -22,8 +24,8 @@ import {
   handleNames,
   sameTarget,
   shallowEqual,
+  sameItems,
   terminalNames,
-  undockedFrom,
   windowedDestination,
 } from "./selectors"
 
@@ -106,13 +108,22 @@ const WorkspaceWindow = ({
   readonly window: CompanionWindowMeta
   readonly controls: TerminalLayoutControls
 }): React.JSX.Element => {
+  const { panes } = useWorkspaceServices()
   const frame = useWindowFrame(window, controls)
+  const target = useWorkspaceState(currentTarget, sameTarget)
   const item = useWorkspaceState((workspace) =>
     currentState(workspace).items.find((each) => each.id === window.itemId),
   )
   const { icon: Icon } = windowProfile(item)
-  return <WindowShell {...frame} icon={<Icon size={14} strokeWidth={1.5} />} />
+  // What it shows, where a terminal's content would be.
+  return (
+    <WindowShell {...frame} icon={<Icon size={14} strokeWidth={1.5} />}>
+      {panes && <UndockedWindow panes={panes} target={target} item={item} />}
+    </WindowShell>
+  )
 }
+
+const noItems: readonly CompanionItem[] = []
 
 // One terminal in the current view: the backend's surface, which keeps its controller
 // mounted while the shared window, and the body its program calls for, wrap its content.
@@ -154,9 +165,13 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
-  // This terminal's items shown elsewhere now, and what's placed on its bar.
-  const undocked = useWorkspaceState(undockedFrom(terminalId), shallowEqual)
-  const placements = useWorkspaceState((workspace) => currentState(workspace).placements)
+  // What its bar holds, as the person arranged it, and what's new there.
+  const bar = useWorkspaceState((workspace) => currentState(workspace).bars[terminalId] ?? emptyBar)
+  const items = useWorkspaceState((workspace) => {
+    const held = currentState(workspace).items.filter((item) => isOnBar(item, terminalId))
+    return held.length ? held : noItems
+  }, sameItems)
+  const fresh = useWorkspaceState((workspace) => currentState(workspace).fresh)
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
   const frame: Omit<WindowShellProps, "children"> = {
@@ -177,10 +192,11 @@ export const WorkspaceTerminal = ({
           onReveal={onReveal}
           minimized={minimize?.minimized}
           clipContent={minimize?.clipContent}
-          undocked={undocked}
-          placements={placements}
+          bar={bar}
+          items={items}
+          fresh={fresh}
           terminalName={(id) => terminalName[id]}
-          items={commands}
+          commands={commands}
         >
           {Body ? <Body>{content}</Body> : content}
         </TerminalCompanion>
@@ -191,20 +207,6 @@ export const WorkspaceTerminal = ({
       )}
     </WindowShell>
   )
-  // A window undocked from a terminal's companion: the same frame, with what it shows
-  // where a terminal's content would be, loading from that terminal.
-  if (terminal.companion)
-    return (
-      <WindowShell {...frame}>
-        {panes && (
-          <UndockedWindow
-            panes={panes}
-            origin={{ projectId, workspaceSessionId, terminalId: terminal.companion.from }}
-            window={terminal.companion}
-          />
-        )}
-      </WindowShell>
-    )
   return (
     <backend.TerminalSurface
       terminalKey={terminalKey}

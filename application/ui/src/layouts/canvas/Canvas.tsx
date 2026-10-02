@@ -397,7 +397,7 @@ const TerminalCanvas = ({
         // Dropped from a taskbar where the ghost was, its window opens exactly there, then
         // settles onto the place it was given.
         const ghostAt =
-          (isWindow(terminal) || terminal.companion) &&
+          isWindow(terminal) &&
           lastGhost.current &&
           saved?.position &&
           samePoint(canvasPointPosition(lastGhost.current), saved.position)

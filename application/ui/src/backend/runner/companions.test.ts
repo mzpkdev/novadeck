@@ -1,8 +1,8 @@
 import type { AgentDetail, AgentShown, ArtifactContent, PlanContent } from "@novadeck/protocol"
 
-import type { CompanionEvent, CompanionKey } from "../../model/companion"
+import type { CompanionKey } from "../../model/companion"
 import { context, describe, expect, it } from "../../test"
-import { createRunnerCompanions, revisionOf } from "./companions"
+import { createRunnerCompanions, revisionOf, type CompanionEvent } from "./companions"
 
 // A stream the test feeds, as the runner's subscriptions would.
 const channel = <T>() => {

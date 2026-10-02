@@ -9,17 +9,16 @@ import { currentState } from "./selectors"
 // terminal.
 export const useDockTarget = (tile: Tile): DockTarget | undefined => {
   const { commands } = useWorkspaceServices()
-  const from = useWorkspaceState((workspace) => {
-    if (!isWindow(tile)) return tile.companion?.from
-    const item = currentState(workspace).items.find((each) => each.id === tile.itemId)
-    return item?.from.terminalId
-  })
-  const docks = isWindow(tile) || tile.companion !== undefined
+  const from = useWorkspaceState((workspace) =>
+    isWindow(tile)
+      ? currentState(workspace).items.find((each) => each.id === tile.itemId)?.from.terminalId
+      : undefined,
+  )
   const name = useWorkspaceState((workspace) =>
     from === undefined
       ? undefined
       : currentState(workspace).roster.terminals.find((each) => each.id === from)?.name,
   )
-  if (!docks) return undefined
+  if (!isWindow(tile)) return undefined
   return { name, onDock: name === undefined ? undefined : () => commands.dock(tile.id) }
 }

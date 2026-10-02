@@ -21,63 +21,7 @@ export const companionKeyOf = (id: string): CompanionKey => {
   return { projectId, workspaceSessionId, terminalId }
 }
 
-// A plan file as it stands. `revision` names this exact text; saving an edit says which
-// revision it was made on.
-export type PlanSnapshot = {
-  // The backend's reference for the plan, stable while the agent keeps it.
-  readonly ref: string
-  // The root agent's plan, or a subagent's.
-  readonly role: "root" | "subagent"
-  readonly path: string
-  readonly agent: string
-  // Whether NovaDeck's skill is installed for this agent. It tells the agent to re-read
-  // the plan before acting on it, apply the notes left in it, and remove each one.
-  readonly skill: boolean
-  // Whether `save` can write it. A plan that lives only in the agent's messages, or a
-  // backend that can't write plans yet, leaves it read-only.
-  readonly writable: boolean
-  readonly text: string
-  readonly revision: string
-  // The backend sent only the start of a very long plan.
-  readonly truncated?: boolean
-}
-
 export type ArtifactKind = "image" | "file" | "page"
-
-// Something the agent showed, as the pane lists it. Its content loads on demand.
-export type ArtifactRef = {
-  readonly id: string
-  readonly kind: ArtifactKind
-  readonly name: string
-  readonly detail: string
-  // Changes when the agent shows it again with new content.
-  readonly version: number
-  // A file that may hold secrets: shown only when the user picks it, never by itself.
-  readonly held?: boolean
-}
-
-export type ArtifactContent =
-  // An image, by a URL the page can load.
-  | { readonly kind: "image"; readonly src: string }
-  // A text file, with the lines the agent pointed at. `firstLine` numbers
-  // the first of `lines`.
-  | {
-      readonly kind: "file"
-      readonly path: string
-      readonly firstLine: number
-      readonly lines: readonly string[]
-      readonly from: number
-      readonly to: number
-    }
-  // A web page, by its http(s) address. `live` when the backend's host can load it in the
-  // pane, as the desktop app does; otherwise it shows as a link to open in the browser,
-  // with its `snapshot` image when the backend has one.
-  | {
-      readonly kind: "page"
-      readonly url: string
-      readonly live: boolean
-      readonly snapshot?: string
-    }
 
 // What an agent showed or the person attached, as the backend keeps it: a pointer to a
 // file or page, never a copy, held by exactly one terminal's bar or one undocked window.
@@ -149,58 +93,119 @@ export const ownItemWith = (
 ): CompanionItem | undefined =>
   items.find((item) => isOnBar(item, terminalId) && samePointer(item, pointer))
 
-// A terminal's companion, as it stands.
-export type CompanionSnapshot = {
-  readonly key: CompanionKey
-  readonly plans: readonly PlanSnapshot[]
-  // What the agent has shown, oldest first.
-  readonly shown: readonly ArtifactRef[]
+// What an item holds as it loads, from the file or page it points at now.
+
+// An image, by a URL the page can load.
+export type ImageContent = { readonly kind: "image"; readonly src: string }
+
+// A text file, with the lines it pointed at. `firstLine` numbers the first of `lines`.
+export type FileContent = {
+  readonly kind: "file"
+  readonly path: string
+  readonly firstLine: number
+  readonly lines: readonly string[]
+  readonly from: number
+  readonly to: number
+  // How many lines the file has, once it was read to its end.
+  readonly total: number | null
+  // The file is long, so only its start was read.
+  readonly truncated: boolean
+  // The lines it pointed at ran past the file's end, which they now stop at.
+  readonly clamped: boolean
 }
 
-export type CompanionEvent =
-  // A plan appeared, or its file changed: the agent wrote it, or it changed on disk.
-  | { readonly type: "plan/changed"; readonly key: CompanionKey; readonly plan: PlanSnapshot }
-  // The agent no longer keeps the plan.
-  | { readonly type: "plan/removed"; readonly key: CompanionKey; readonly ref: string }
-  // The agent showed something, or showed it again. `asked`: the user asked for it, so
-  // it opens; an agent says so when it presents something it was asked for. `seen`: it
-  // was shown before this session, as after a reload, so it's listed as already seen.
+// A web page, by its http(s) address. `live` when the backend's host can load it in the
+// pane, as the desktop app does; otherwise it shows as a link to open in the browser,
+// with its `snapshot` image when the backend has one.
+export type PageContent = {
+  readonly kind: "page"
+  readonly url: string
+  readonly live: boolean
+  readonly snapshot?: string
+}
+
+export type ShownContent = ImageContent | FileContent | PageContent
+
+// A plan's text as it stands. `writable` when `save` can write it: a plan that lives only
+// in the agent's messages, or a backend that can't write plans yet, leaves it read-only.
+// `skill` when NovaDeck's skill is installed for its agent, which tells the agent to
+// re-read the plan before acting on it and apply the notes left in it.
+export type PlanContent = {
+  readonly kind: "plan"
+  readonly text: string
+  // The backend sent only the start of a very long plan.
+  readonly truncated: boolean
+  readonly writable: boolean
+  readonly skill: boolean
+}
+
+// Why an item can't show: its file is gone or can't be read, is no file, is too large or
+// isn't text, may hold secrets and wasn't asked for, or its plan is gone.
+export type UnavailableReason =
+  | "missing"
+  | "unreadable"
+  | "not-a-file"
+  | "too-large"
+  | "binary"
+  | "held"
+  | "gone"
+
+// What an item holds now. `stamp` names this exact content: it changes whenever the
+// content does, and a plan's edit says which stamp it was made on. `size` is in bytes,
+// where the backend knows it.
+export type ItemContent =
   | {
-      readonly type: "artifact/shown"
-      readonly key: CompanionKey
-      readonly artifact: ArtifactRef
-      readonly asked: boolean
-      readonly seen?: boolean
+      readonly state: "ready"
+      readonly stamp: string
+      readonly content: ShownContent | PlanContent
     }
-  // The terminal's agent is gone, and with it what it showed.
-  | { readonly type: "companion/closed"; readonly key: CompanionKey }
+  | {
+      readonly state: "unavailable"
+      readonly reason: UnavailableReason
+      readonly size: number | null
+    }
 
-// Saving an edit: the plan's new revision, or, when the file changed since the revision
-// the edit was made on, the file as it now stands, to merge the edit into.
+// A plan as one stamp has it.
+export type PlanVersion = { readonly stamp: string; readonly plan: PlanContent }
+
+export const planVersionOf = (content: ItemContent): PlanVersion | undefined =>
+  content.state === "ready" && content.content.kind === "plan"
+    ? { stamp: content.stamp, plan: content.content }
+    : undefined
+
+// Saving an edit: the plan's new stamp, or, when the file changed since the stamp the
+// edit was made on, the plan as it now stands, to merge the edit into.
 export type PlanSaved =
-  | { readonly saved: true; readonly revision: string }
-  | { readonly saved: false; readonly current: PlanSnapshot }
+  | { readonly saved: true; readonly stamp: string }
+  | { readonly saved: false; readonly current: PlanVersion }
 
+// Where the items' content comes from. The items themselves reach the workspace store
+// as the backend's seed and actions, like terminals.
 export type Companions = {
-  // Every terminal's companion as it stands now; events follow.
-  readonly snapshot: () => readonly CompanionSnapshot[]
-  readonly subscribe: (listener: (event: CompanionEvent) => void) => () => void
-  readonly load: (key: CompanionKey, artifactId: string) => Promise<ArtifactContent>
-  // Writes the user's edit to the plan file, unless it changed since `basedOn`.
+  // Reports what the item holds now, then again whenever that changes, until stopped.
+  // One that may hold secrets reports `held` unless `reveal`.
+  readonly follow: (
+    target: WorkspaceTarget,
+    itemId: ItemId,
+    options: { readonly reveal: boolean },
+    on: (content: ItemContent) => void,
+  ) => () => void
+  // Writes the person's edit to the plan, unless it changed since `basedOn`.
   readonly save: (
-    key: CompanionKey,
-    ref: string,
+    target: WorkspaceTarget,
+    itemId: ItemId,
     text: string,
     basedOn: string,
   ) => Promise<PlanSaved>
+  // Puts a file on the terminal's bar, as the person attached it. Absent where the
+  // backend can't.
+  readonly attach?: (key: CompanionKey, path: string) => Promise<void>
 }
 
 // Companions with nothing to show, for a backend whose terminals have only their messages
-// in the pane. Each call gives a new one: the pane keeps its state per companions.
+// in the pane.
 export const emptyCompanions = (): Companions => ({
-  snapshot: () => [],
-  subscribe: () => () => {},
-  load: () => Promise.reject(new Error("Nothing was shown")),
+  follow: () => () => {},
   save: () => Promise.reject(new Error("There are no plans")),
 })
 

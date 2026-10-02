@@ -57,6 +57,34 @@ describe("A terminal's taskbar", () => {
   })
 })
 
+describe("Something that can't show", () => {
+  it("says why, with its path to copy", async () => {
+    await openShowcase()
+    await chooseFromIconMenu("Dev server", "7 files", "Open notes.md")
+    const pane = companionPane("Dev server")
+    await expect.element(pane.getByText("notes.md isn't there any more.")).toBeVisible()
+    await expect.element(pane.getByRole("button", { name: "Copy path" })).toBeVisible()
+
+    await taskbarIcon("Dev server", "screen-recording.png").click()
+    await expect
+      .element(pane.getByText("screen-recording.png is too large to preview (14.0 MB)."))
+      .toBeVisible()
+
+    await taskbarIcon("Dev server", "Subagent plan: old-migration.md").click()
+    await expect.element(pane.getByText("old-migration.md is gone.")).toBeVisible()
+  })
+
+  it("shows what may hold secrets once the person asks", async () => {
+    await openShowcase()
+    await chooseFromIconMenu("Dev server", "7 files", "Open .env.local")
+    const pane = companionPane("Dev server")
+    await expect.element(pane.getByText(/^\.env\.local may hold secrets/)).toBeVisible()
+    await expectStaysAbsent(pane.getByText("VITE_API_URL=http://localhost:8787"))
+    await pane.getByRole("button", { name: "Show it" }).click()
+    await expect.element(pane.getByText("VITE_API_URL=http://localhost:8787")).toBeVisible()
+  })
+})
+
 describe("Placing an item on another terminal's taskbar", () => {
   context("when an image is dragged onto it in Grid", () => {
     it("shows there, from its terminal, and goes back from its menu", async () => {

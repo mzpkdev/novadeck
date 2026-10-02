@@ -40,8 +40,5 @@ export const windowProfile = (
   icon: !item || item.kind === "plan" ? FileText : iconOf({ kind: item.kind, name: item.name }),
 })
 
-export const terminalProfile = (terminal: TerminalMetadata): ProcessProfile => {
-  const window = terminal.companion
-  if (window) return { icon: window.artifact ? iconOf(window.artifact) : FileText }
-  return profiles.get(presentedProgram(terminal) ?? "") ?? fallback
-}
+export const terminalProfile = (terminal: TerminalMetadata): ProcessProfile =>
+  profiles.get(presentedProgram(terminal) ?? "") ?? fallback
