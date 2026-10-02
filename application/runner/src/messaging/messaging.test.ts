@@ -7,6 +7,7 @@ import { doorbellLine } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
 import { followRoot, type Root } from "../harnesses/roots.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
+import { keysOf } from "../terminals/keys.js"
 import { describe, expect, it } from "../test.js"
 import { clock, retentionMs, threadMs } from "./mailbox.js"
 import {
@@ -1573,6 +1574,24 @@ describe("an agent's prompt shown before any session binds", () => {
     setup.messaging.register("N", here, "t3")
     return { ...setup, launched: binding(agent, `s-${agent}-new`, "3") }
   }
+
+  it("keeps a new Codex prompt ringable after Escape, cursor movement or Tab", () => {
+    for (const input of ["\u001b", "\u001b[D", "\t"]) {
+      const { messaging, send } = plain("codex")
+      messaging.shown("N", "codex", "01a0f932-a824")
+      messaging.keys(
+        "N",
+        keysOf(input, undefined, { mouse: null, focus: false }).map(({ kind }) => kind),
+        false,
+      )
+      expect(sent(send("A", "t3", "Review a.ts"))).toMatchObject({
+        state: "queued",
+        route: "ringing it now",
+      })
+      expect(messaging.ringable("N")).toBe(true)
+      expect(messaging.ring("N", "n1")).toBe(true)
+    }
+  })
 
   it("rings a Codex started plain once its title says Ready, and the session its ring starts delivers", () => {
     const { messaging, send, ask, follow, launched, clock: time } = plain("codex")

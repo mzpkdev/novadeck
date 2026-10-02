@@ -248,6 +248,7 @@ const atPrompt = (delivery: Delivery, at: number): Delivery => {
 
 /** The delivery after an event; the same delivery when it changes nothing. */
 export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery => {
+  if (event.type === "key" && event.key === "neutral") return delivery
   if (event.type === "bound") {
     // The session a ring's own prompt starts, where it rang a prompt shown before any
     // session bound (Codex's or Antigravity's first prompt binds one): the ring goes on,

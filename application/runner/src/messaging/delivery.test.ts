@@ -50,6 +50,19 @@ const drafting = run(settled, typing)
 const unknown = run(working, ended)
 
 describe("a terminal's delivery state", () => {
+  it("keeps neutral keys from changing readiness, drafts or pending submissions", () => {
+    const ready = transition(unbound, announced)
+    const ringing = transition(ready, { type: "ring", nonce: "k3f9", opening: false })
+    for (const from of [unbound, bound, ready, working, settled, drafting, unknown, ringing]) {
+      expect(transition(from, key("neutral"))).toBe(from)
+      expect(transition(from, key("neutral", at, true))).toBe(from)
+    }
+    // Moving the cursor after Enter does not invalidate its pending submission.
+    expect(run(settled, enter, key("neutral"), prompted()).byPerson).toBe(true)
+    // Navigating during a turn leaves its empty prompt ready for a message after Stop.
+    expect(run(working, key("neutral"), stop).state).toBe("settled")
+  })
+
   it("is Fresh once a session binds, with its prompt known empty", () => {
     expect(bound).toMatchObject({
       state: "fresh",
