@@ -525,13 +525,15 @@ describe("runner client project removal", () => {
   it.skipIf(process.platform === "win32")(
     "leaves the project out of listings and refuses sessions in it while it goes",
     async ({ resources }) => {
-      // A shell that ignores a hangup holds the removal open for about a second.
+      // A shell that ignores a hangup holds the removal open for about a second, once it
+      // says it does.
       const app = await deployed(resources, {
-        terminals: { shell: "/bin/sh", shellArgs: ["-c", "trap '' HUP; exec cat"] },
+        terminals: { shell: "/bin/sh", shellArgs: ["-c", "trap '' HUP; echo ready; exec cat"] },
       })
       const client = await app.connect()
       const { id: sessionId, projectId } = await session(client, app.directory)
-      await client.terminals.create(shell(sessionId))
+      const terminal = await client.terminals.create(shell(sessionId))
+      await view(await client.terminals.attach(terminal.id), resources).until("ready")
       const removing = client.projects.remove({ projectId })
       // Asked once the removal began, long before its shell is gone.
       await expect(client.projects.list()).resolves.toEqual([])
