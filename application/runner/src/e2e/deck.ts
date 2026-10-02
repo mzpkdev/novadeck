@@ -52,7 +52,8 @@ export type DeckTerminal = {
   readonly submit: (text: string) => Promise<void>
   /**
    * Sends keys other than Enter, such as Escape (`\x1b`), as typed. Anything holding a
-   * carriage return or line feed, or the keypad's Enter (`\x1bOM`), is refused.
+   * carriage return or line feed, the keypad's Enter (`\x1bOM`) or the kitty keyboard
+   * protocol's (`\x1b[13u`, `\x1b[13;…u`), is refused.
    */
   readonly press: (keys: string) => void
   /** What a client's terminal listing says of it now: its agent and that agent's activity. */
@@ -200,7 +201,8 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         terminals.write({ terminalId: id, data: "\r" }, owner)
       },
       press: (keys) => {
-        if (/[\r\n]/.test(keys) || keys.includes("\x1bOM"))
+        // eslint-disable-next-line no-control-regex -- Enter's escape sequences start with ESC.
+        if (/[\r\n]|\x1bOM|\x1b\[13[;u]/.test(keys))
           throw new Error("Enter only follows text: use submit")
         terminals.write({ terminalId: id, data: keys }, owner)
       },

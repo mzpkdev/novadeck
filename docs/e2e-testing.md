@@ -38,9 +38,11 @@ the hook timeout (ten minutes) rather than a test's.
 | `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest npm release instead of its pin, as a drift check                                     |
 
 In CI (`.github/workflows/e2e.yml`) each harness runs in a job of its own. Its pinned
-installs are restored from a cache keyed by `harnesses.json` and `install.ts`, without
-npm's own cache (`<cache>/home`) or unfinished staging, and saved even when the tests
-fail, so the next run needn't install again.
+installs are restored from a cache keyed by `harnesses.json` and `install.ts`: the
+entries of `<cache>` without npm's own cache (`<cache>/home`) or unfinished staging
+(`*.tmp`). Unless the run was cancelled, they are saved even when the tests fail, so the
+next run needn't install again, but only once a `<cache>/<harness>-*` folder holding the
+harness's program exists: a failed or cancelled install saves nothing under the key.
 
 ## What is pinned
 
@@ -56,7 +58,8 @@ fail, so the next run needn't install again.
 in a folder with a random name so an interrupted install never counts as done, and
 returns the folder holding its program. Should another run finish the same version
 first, its folder is kept, as that run may be using it, and the staging is discarded;
-an installed folder is never removed. Within a process each harness is installed once,
+an installed folder is never removed. A folder there without its program fails the
+install, naming the folder to delete. Within a process each harness is installed once,
 and `latest` looked up once. npm is the one beside the node running the tests, or the
 first on PATH, and the install fails saying so when there is none. npm runs with a home
 inside the cache (`<cache>/home`, which also holds npm's own cache) and a dead D-Bus
@@ -93,45 +96,58 @@ network:
   route out is a known follow-up.
 - **No real credential.** Each harness gets a fake key that the fake model accepts. A
   request carrying any other credential, in a credential header or a `key` query
-  parameter, is refused and counted, and its value is never stored; an empty header
-  carries none. A request for another server is recorded by its host before it is
+  parameter, is refused and counted, and its value is never stored; an empty value, or
+  an auth scheme such as `Bearer` with nothing after it, carries none. A request for another server is recorded by its host before it is
   refused, whatever it carried. A foreign credential fails the test, as does any request
   that tried a harness's real API host, and any request a dialect failed on, which the
-  fake model records by its method, path and error message (`model.errors`), never its
-  body or headers.
+  fake model records by its method, path and what went wrong (`model.errors`): a parse's
+  first issue, by its path and message, or an error message's first line, never the
+  request's body or headers.
 - **No updates.** Update checks are switched off, and npm's prefix points into the
   sandbox, so a harness that updates itself can't touch a global install.
-- **A tripwire.** Before each test, the fixture notes the modification time and size of
-  a list of paths in the developer's home, never their contents, and checks them again
-  afterwards; a path absent both times is skipped, so CI, which has none, has nothing to
-  check. It also looks for a Claude Code project named after the sandbox. The list holds
-  only what a harness writes when it is configured, connected or signed in:
-  - Claude Code: `~/.claude/settings.json`, `~/.claude/plugins/installed_plugins.json`
-    and `~/.claude/plugins/known_marketplaces.json`.
-  - Codex: `~/.codex/config.toml` (which also lists its plugins and marketplaces),
-    `~/.codex/auth.json`, and the folders `~/.codex/plugins/cache` and
-    `~/.codex/plugins/cache/novadeck`, where installed plugins are copied.
-  - Antigravity: `~/.gemini/config/plugins` (where NovaDeck installs its plugin),
-    `~/.gemini/antigravity-cli/settings.json`, and the folders
-    `~/.gemini/antigravity-cli/mcp`, `plugin_data` and `bin`.
+- **A tripwire.** It looks for what a harness that escaped the sandbox would leave in
+  the developer's home, in three ways. It names only the paths that tripped it, never
+  anything it read, and a path absent both times is skipped, so CI, which has none, has
+  nothing to check.
+  - Configuration files the developer's own sessions rewrite as they start or run are
+    read after the test and searched for the sandbox's root, which a connect or trust
+    that leaked out would write there; nothing read is kept or printed. These are
+    `~/.claude/settings.json`, `~/.claude/plugins/installed_plugins.json`,
+    `~/.claude/plugins/known_marketplaces.json`, `~/.codex/config.toml` and
+    `~/.gemini/antigravity-cli/settings.json`.
+  - Folders are searched by their entries' names for the sandbox's: Antigravity's
+    `~/.gemini/antigravity-cli/mcp`, which it rewrites as it starts, and Claude Code's
+    `~/.claude/projects`, where it names a project after its path.
+  - Paths that change only when a plugin is installed or removed, or the person signs in,
+    have their modification time and size compared before and after, never their
+    contents: `~/.codex/auth.json`, which is never read, `~/.codex/plugins/cache` and
+    `~/.codex/plugins/cache/novadeck` (where Codex copies installed plugins),
+    `~/.gemini/config/plugins` (where NovaDeck installs Antigravity's plugin), and
+    `~/.gemini/antigravity-cli/plugin_data` and `bin`.
 
-  Busy files that the developer's own running agents change constantly, such as
-  histories, sessions, session indexes, sockets, logs and state, aren't on the list, so
-  a real session beside the tests can't trip it.
+  Busy files such as histories, sessions, session indexes, sockets, logs and state
+  aren't checked, so a real session beside the tests can't trip it.
 
 - **Checked once the deck closes.** The fixture closes the deck, then runs its checks
   while the fake model still listens, so whatever a harness sends on its way out, such as
   telemetry flushed on exit, counts too; only then does the model close. It also looks
-  in `/proc` for processes still running in the sandbox, by a working folder inside it or
-  `HOME` set to its home (only that entry of a process's environment is read, and none
-  of it is printed). A harness the deck's hangup reached may take a moment to exit
-  (Claude Code takes about 100 ms), so each gets three seconds to end by itself. One
-  still running then is ended with SIGTERM, then SIGKILL two seconds later, and fails
-  the test, named by its command.
+  in `/proc` for processes still running in the sandbox. For each process it reads
+  `/proc/<pid>/stat`, for its state and its start, and passes over zombies and any
+  process that started before the sandbox was made. Only for the rest does it read where
+  `/proc/<pid>/cwd` points, then, unless that is inside the sandbox, `/proc/<pid>/environ`,
+  searched only for `HOME=<sandbox home>` and neither kept nor printed, and last
+  `/proc/<pid>/comm` for its name. A harness the deck's hangup reached may take a moment
+  to exit (Claude Code takes about 100 ms), so each gets three seconds to end by itself.
+  One still running then is ended with SIGTERM, then SIGKILL two seconds later, each
+  signal sent only once the process is checked to be the same one, and fails the test,
+  named by its command. It looks again, up to five times, until it finds no process it
+  hasn't seen. Should the test end early, its teardown does the same, and fails the test
+  for any process it had to end.
 - **Enter only on text seen to land.** A deck terminal's `submit` types the text, waits
   until the screen shows it once more than it did before, and only then presses Enter.
-  `press` refuses anything holding a carriage return or line feed, and the keypad's
-  Enter (`\x1bOM`), so a test can't confirm a dialog or pick from a menu.
+  `press` refuses anything holding a carriage return or line feed, the keypad's Enter
+  (`\x1bOM`) or the kitty keyboard protocol's (`\x1b[13u`, `\x1b[13;…u`), so a test can't
+  confirm a dialog or pick from a menu.
 
 ## Writing a scenario
 

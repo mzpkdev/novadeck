@@ -1,5 +1,7 @@
 import { connect } from "node:net"
 
+import { z } from "zod"
+
 import { describe, expect, it as base } from "../../test.js"
 import type { Dialect } from "./dialect.js"
 import { startFakeModel, type FakeModel } from "./server.js"
@@ -30,7 +32,9 @@ const echo: Dialect = {
 const broken: Dialect = {
   api: "anthropic",
   matches: (request) => request.path.startsWith("/broken"),
-  handle: () => {
+  handle: (request) => {
+    if (request.path.startsWith("/broken/parse"))
+      z.object({ messages: z.array(z.string()) }).parse({ messages: [1] })
     throw new Error("no messages in this request\nwith a second line")
   },
 }
@@ -127,10 +131,13 @@ describe("startFakeModel", () => {
     expect(model.calls).toHaveLength(1)
   })
 
-  it("passes on a credential header left empty", async ({ model }) => {
+  it("passes on a credential header left empty, or holding an auth scheme alone", async ({
+    model,
+  }) => {
     const empty = await chat(model, "a", { "x-api-key": "", authorization: "" })
+    const scheme = await chat(model, "b", { authorization: "Bearer " })
 
-    expect(empty.status).toBe(200)
+    expect([empty.status, scheme.status]).toEqual([200, 200])
     expect(model.foreign).toBe(0)
   })
 
@@ -177,6 +184,17 @@ describe("startFakeModel", () => {
 
     expect(response.status).toBe(500)
     expect(model.errors).toEqual(["POST /broken: no messages in this request"])
+  })
+
+  it("records a dialect's failure to parse by its first issue's path and message", async ({
+    model,
+  }) => {
+    const response = await fetch(`${model.url}/broken/parse`, { method: "POST", body: "{}" })
+
+    expect(response.status).toBe(500)
+    expect(model.errors).toEqual([
+      "POST /broken/parse: messages.0: Invalid input: expected string, received number",
+    ])
   })
 
   it("records a request no dialect answers by its path, without its query", async ({ model }) => {

@@ -4,6 +4,8 @@ import type { AddressInfo, Socket } from "node:net"
 import { promisify } from "node:util"
 import { brotliDecompress, gunzip, inflate, zstdDecompress } from "node:zlib"
 
+import { ZodError } from "zod"
+
 import type { Dialect, Request } from "./dialect.js"
 import { answer, latest, type Call, type Rule } from "./script.js"
 
@@ -49,8 +51,12 @@ export type FakeModelOptions = {
 // Proxy-Authorization, and the API keys, tokens and cookies APIs take in headers of their own.
 const credentialHeader = /authorization|api[-_]?key|token|secret|cookie|credential/i
 
+// An auth scheme with nothing after it, as a client sends when its token is empty and Node
+// trims the space that followed the scheme.
+const schemeAlone = /^\s*(basic|bearer|digest|negotiate|token)?\s*$/i
+
 // The credentials a request carries: its credential headers' values, and the `key` query
-// parameter the Gemini API also takes. An empty value carries none.
+// parameter the Gemini API also takes. An empty value, or a scheme alone, carries none.
 const credentials = (request: IncomingMessage): string[] => {
   const headers = Object.entries(request.headers)
     .filter(([name]) => credentialHeader.test(name))
@@ -61,7 +67,7 @@ const credentials = (request: IncomingMessage): string[] => {
   } catch {
     // A target no URL can be made of carries no key.
   }
-  return [...headers, ...(key === null ? [] : [key])].filter((value) => value.trim() !== "")
+  return [...headers, ...(key === null ? [] : [key])].filter((value) => !schemeAlone.test(value))
 }
 
 /**
@@ -93,6 +99,19 @@ const hostOf = (target: string): string => {
   } catch {
     return "?"
   }
+}
+
+// What went wrong, in a line that names it rather than quoting the body: a parse's first
+// issue, by where it is and what it says, or an error message's first line.
+const failure = (error: unknown): string => {
+  if (error instanceof ZodError) {
+    const issue = error.issues[0]
+    return issue ? `${issue.path.join(".") || "(root)"}: ${issue.message}`.slice(0, 200) : "invalid"
+  }
+  return ((error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "").slice(
+    0,
+    200,
+  )
 }
 
 // One line per call for a timeout's message: whether it was a side call, and what the
@@ -176,10 +195,8 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
 
   const server = createServer((incoming, outgoing) => {
     respond(incoming, outgoing).catch((error: unknown) => {
-      // Its first line alone, which names what went wrong rather than quoting the body.
-      const message = (error instanceof Error ? error.message : String(error)).split("\n")[0]
       errors.push(
-        `${incoming.method ?? "GET"} ${(incoming.url ?? "/").split("?")[0]}: ${message?.slice(0, 200)}`,
+        `${incoming.method ?? "GET"} ${(incoming.url ?? "/").split("?")[0]}: ${failure(error)}`,
       )
       if (outgoing.headersSent) return outgoing.destroy()
       outgoing.writeHead(500, { "content-type": "application/json" })

@@ -54,9 +54,14 @@ export const e2e = (...setups: AgentSetup[]) => {
       resources.defer(() =>
         rmSync(sandbox.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
       )
-      // Whatever happens, nothing the test started outlives it.
+      // Whatever happens, nothing the test started outlives it. When the test ends early,
+      // what this has to end is a leak too, and fails the test.
       resources.defer(async () => {
-        await reap(sandbox)
+        const leftovers = await reap(sandbox)
+        if (leftovers.length > 0)
+          throw new Error(
+            `process(es) outlived the deck in the sandbox, ended at teardown: ${leftovers.join(", ")}`,
+          )
       })
       const changed = tripwire(sandbox)
       let env = sandbox.env

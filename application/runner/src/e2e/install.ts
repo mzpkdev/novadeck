@@ -138,13 +138,19 @@ const stagingFor = (folder: string): string => `${folder}.${randomBytes(6).toStr
 /**
  * Moves a staged install into place whole. Should another run have put the same version
  * there meanwhile, its folder is kept, as that run may be using it, and the staging goes.
+ * A folder there without the program is no install this code made: it is never removed
+ * in place, and the install fails naming it.
  */
 const settle = async (staging: string, folder: string, program: string): Promise<void> => {
+  const broken = () =>
+    new Error(`${folder} holds no ${program}: delete that folder, then run the tests again`)
   if (existsSync(program)) return
+  if (existsSync(folder)) throw broken()
   try {
     await rename(staging, folder)
   } catch (error) {
-    if (!existsSync(program)) throw error
+    if (existsSync(program)) return
+    throw existsSync(folder) ? broken() : error
   }
 }
 
