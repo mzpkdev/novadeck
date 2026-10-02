@@ -312,6 +312,103 @@ export const terminalSummary = z.strictObject({
   telemetry: agentTelemetry.nullable(),
 })
 
+// What agents show and the person attaches beside a terminal: a pointer to a file, a
+// page or a plan, never a copy of it, which `companions.content` reads when it loads.
+// Each item has one holder, a terminal's bar or an undocked window; `from` is the
+// terminal it was shown or attached in. `version` counts its shows, `asked` says the
+// latest one asked to open it, and `held` marks a file that may hold secrets, which
+// opens only when the person picks it. A plan names its agent, its actor's role, and
+// whether it is a file or text in the agent's own transcript or rollout.
+export const itemHolder = z.union([
+  z.strictObject({ terminalId: id }),
+  z.strictObject({ windowId: id }),
+])
+export const companionItem = z.strictObject({
+  id,
+  sessionId: id,
+  holder: itemHolder,
+  kind: z.enum(["image", "file", "page", "plan"]),
+  name: z.string().max(256),
+  detail: z.string().max(512),
+  path: z.string().max(4096).nullable(),
+  url: z.string().max(8192).nullable(),
+  lines: z.strictObject({ from: z.int().min(1), to: z.int().min(1) }).nullable(),
+  held: z.boolean(),
+  by: z.enum(["agent", "person"]),
+  from: z.strictObject({ terminalId: id, handle }),
+  version: z.int().min(1),
+  asked: z.boolean(),
+  shownAt: z.number(),
+  plan: z
+    .strictObject({
+      agent: agentName,
+      role: z.enum(["root", "subagent"]),
+      source: z.enum(["file", "text"]),
+    })
+    .nullable(),
+})
+
+// An undocked window holding one item, named by the client that undocked it. Its title is
+// the person's, or by default the item's name.
+export const companionWindow = z.strictObject({
+  id,
+  sessionId: id,
+  itemId: id,
+  title: terminalTitle,
+  titleSource: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("person") }),
+    z.strictObject({ kind: z.literal("default") }),
+  ]),
+})
+
+// `companions.watch` events: every item and window, `synced`, then each later change.
+export const companionChange = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("item"), item: companionItem }),
+  z.strictObject({ type: z.literal("itemRemoved"), itemId: id, sessionId: id }),
+  z.strictObject({ type: z.literal("window"), window: companionWindow }),
+  z.strictObject({ type: z.literal("windowRemoved"), windowId: id, sessionId: id }),
+  // Follows the initial events: items and windows not reported by now do not exist.
+  z.strictObject({ type: z.literal("synced") }),
+])
+
+// `companions.content`: what an item points at, read as it is now. `stamp` changes with
+// it. A file is the lines around the ones pointed at, numbered from `firstLine`, with
+// its line count where it was read to its end (`truncated` otherwise), and `clamped`
+// when the lines pointed at ran past its end. A page is its address, which the desktop
+// app loads live. Or why it can't be shown, with the file's size where known.
+export const itemContent = z.discriminatedUnion("state", [
+  z.strictObject({
+    state: z.literal("ready"),
+    stamp: z.string().max(128),
+    content: z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("image"), src: z.string().max(12 * 1024 * 1024) }),
+      z.strictObject({
+        kind: z.literal("file"),
+        path: z.string().max(4096),
+        firstLine: z.int().min(1),
+        lines: z.array(z.string().max(4096)).max(2000),
+        from: z.int().min(1),
+        to: z.int().min(1),
+        total: z.int().nonnegative().nullable(),
+        truncated: z.boolean(),
+        clamped: z.boolean(),
+      }),
+      z.strictObject({ kind: z.literal("page"), url: z.string().max(8192) }),
+      z.strictObject({
+        kind: z.literal("plan"),
+        text: z.string().max(256 * 1024),
+        truncated: z.boolean(),
+        changedAt: z.number().nullable(),
+      }),
+    ]),
+  }),
+  z.strictObject({
+    state: z.literal("unavailable"),
+    reason: z.enum(["missing", "unreadable", "not-a-file", "too-large", "binary", "held", "gone"]),
+    size: z.number().nullable(),
+  }),
+])
+
 // `terminals.requests` items: an agent in terminal `from` asked, through NovaDeck's MCP
 // server, for a new terminal beside it, in `cwd`, starting `command` at its first prompt;
 // `focus` when the person asked to see it. A title the agent asked for is the runner's to
@@ -457,6 +554,11 @@ export type ForegroundProcess = z.infer<typeof foregroundProcess>
 export type TerminalSummary = z.infer<typeof terminalSummary>
 export type TitleSource = z.infer<typeof titleSource>
 export type TerminalChange = z.infer<typeof terminalChange>
+export type ItemHolder = z.infer<typeof itemHolder>
+export type CompanionItem = z.infer<typeof companionItem>
+export type CompanionWindow = z.infer<typeof companionWindow>
+export type CompanionChange = z.infer<typeof companionChange>
+export type ItemContent = z.infer<typeof itemContent>
 export type TerminalRequest = z.infer<typeof terminalRequest>
 export type TerminalRequestAnswer = z.infer<typeof terminalRequestAnswer>
 export type TerminalEvent = z.infer<typeof terminalEvent>

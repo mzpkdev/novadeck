@@ -39,6 +39,7 @@ export const errors = {
   INCOMPATIBLE_PROTOCOL: { status: 409 },
   NOT_FOUND: { status: 404 },
   INVALID_DIRECTORY: { status: 400 },
+  INVALID_FILE: { status: 400 },
   CONFLICT: { status: 409 },
   RESOURCE_LIMIT: { status: 429 },
   TERMINAL_LIMIT: { status: 429 },
