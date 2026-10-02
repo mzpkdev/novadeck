@@ -824,6 +824,25 @@ describe("delivery through hooks", () => {
     expect(second.prompt("B", second.codex).stdout).toContain("hello")
   })
 
+  it("keeps a terminal's messages waiting through the runner's end, as its shells exit after it closed", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    sent(first.send("A", "t2", "hello"))
+    expect(first.prompt("B", first.codex).leaseId).toEqual(expect.any(String))
+    sent(first.send("A", "t2", "and more"))
+    first.messaging.close()
+    // Shutting down ends every shell, and each exit unregisters its terminal: the runner
+    // ending, not its agents, so nothing it held is gone.
+    first.messaging.unregister("B")
+    first.messaging.unregister("A")
+    expect(records.messages().map((one) => one.state)).toEqual(["leased", "queued"])
+    // The next runner, before any session binds again, holds both waiting.
+    const second = new Messaging({ records, now: () => first.clock.now, sweepMs: 0, restoreMs: 0 })
+    second.register("A", here, "t1")
+    second.register("B", here, "t2")
+    expect(messages(second, "B").map((one) => one.state)).toEqual(["queued", "queued"])
+  })
+
   it("delivers several messages together, up to 8 KB as printed, the rest at the next hook", () => {
     const { messaging, send, prompt, codex } = create()
     sent(send("A", "t2", "a".repeat(4_000)))

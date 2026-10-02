@@ -209,6 +209,11 @@ export class Messaging {
   private allSent: readonly number[] = []
   private readonly sweeper: ReturnType<typeof setInterval> | undefined
   private readonly restoring: ReturnType<typeof setTimeout> | undefined
+  /**
+   * Whether the runner closed it: what its end does to its terminals, each shell's exit
+   * unregistering it, is the runner stopping, not its agents ending, so no message changes.
+   */
+  private closed = false
 
   constructor(options: MessagingOptions = {}) {
     this.records = options.records ?? memoryMailbox()
@@ -235,8 +240,12 @@ export class Messaging {
     }
   }
 
-  /** Stops its timers; leases left go back to waiting with the next runner. */
+  /**
+   * Stops its timers and changes no message from then on: leases left, and every message
+   * waiting, wait again with the next runner, for their sessions resumed there.
+   */
   close(): void {
+    this.closed = true
     clearInterval(this.sweeper)
     clearTimeout(this.restoring)
     this.leases.clear()
@@ -1226,6 +1235,7 @@ export class Messaging {
   }
 
   private put(message: Message): void {
+    if (this.closed) return
     this.messages.set(message.id, message)
     this.write(() => this.records.saveMessage(message))
     this.changed(message.to.terminalId)
@@ -1247,6 +1257,7 @@ export class Messaging {
   }
 
   private putThread(thread: Thread): void {
+    if (this.closed) return
     this.threads.set(thread.id, thread)
     this.write(() => this.records.saveThread(thread))
   }
