@@ -101,8 +101,10 @@ network:
   refused, whatever it carried. A foreign credential fails the test, as does any request
   that tried a harness's real API host, and any request a dialect failed on, which the
   fake model records by its method, path and what went wrong (`model.errors`): a parse's
-  first issue, by its path and message, or an error message's first line, never the
-  request's body or headers.
+  first issue, by its path and message, "the body is not JSON" for a body that isn't (the
+  parser's own message would quote it), or an error message's first line, never the
+  request's body or headers. A request a dialect matched but answered 404, an endpoint
+  it doesn't serve, is recorded in `model.strays` like one no dialect took.
 - **No updates.** Update checks are switched off, and npm's prefix points into the
   sandbox, so a harness that updates itself can't touch a global install.
 - **A tripwire.** It looks for what a harness that escaped the sandbox would leave in
@@ -192,7 +194,8 @@ describe("Claude Code", () => {
 2. Write its API's dialect in `src/e2e/model/`: it parses requests into `Call`s and
    encodes `Reply`s the way the harness reads them. It also answers the side endpoints
    the harness calls on the way to its prompt. To find those, run the harness against the
-   fake model and read `model.strays`.
+   fake model and read `model.strays`, which lists both requests no dialect took and those
+   a dialect answered 404.
 3. Write its `AgentSetup` in `src/e2e/agents/`. `prepare` seeds its configuration in
    the sandbox so it starts at its own prompt with no screen in between, and returns
    the environment that points it at the fake model with the fake credential. `hosts`

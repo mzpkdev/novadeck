@@ -26,7 +26,10 @@ export type FakeModel = {
   readonly credential: string
   /** The model calls so far, in order. */
   readonly calls: readonly Call[]
-  /** Requests no dialect answered and connections the proxy refused, by method and host or path. */
+  /**
+   * Requests no dialect served, as none took them or the one that did answered 404, and
+   * connections the proxy refused, by method and host or path.
+   */
   readonly strays: readonly string[]
   /** How many requests carried a credential other than `credential`. */
   readonly foreign: number
@@ -102,8 +105,10 @@ const hostOf = (target: string): string => {
 }
 
 // What went wrong, in a line that names it rather than quoting the body: a parse's first
-// issue, by where it is and what it says, or an error message's first line.
+// issue, by where it is and what it says; for a body that isn't JSON only that, as the
+// parser's message quotes the body; or an error message's first line.
 const failure = (error: unknown): string => {
+  if (error instanceof SyntaxError) return "the body is not JSON"
   if (error instanceof ZodError) {
     const issue = error.issues[0]
     return issue ? `${issue.path.join(".") || "(root)"}: ${issue.message}`.slice(0, 200) : "invalid"
@@ -187,6 +192,9 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
       return
     }
     const response = dialect.handle(request, reply)
+    // A request of the dialect's API it doesn't serve is a stray too: an endpoint the
+    // harness needs that the fake model lacks.
+    if (response.status === 404) strays.push(`${method} ${target.split("?")[0]}`)
     outgoing.writeHead(response.status, response.headers)
     for (const chunk of typeof response.body === "string" ? [response.body] : response.body)
       outgoing.write(chunk)
@@ -195,12 +203,11 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
 
   const server = createServer((incoming, outgoing) => {
     respond(incoming, outgoing).catch((error: unknown) => {
-      errors.push(
-        `${incoming.method ?? "GET"} ${(incoming.url ?? "/").split("?")[0]}: ${failure(error)}`,
-      )
+      const what = failure(error)
+      errors.push(`${incoming.method ?? "GET"} ${(incoming.url ?? "/").split("?")[0]}: ${what}`)
       if (outgoing.headersSent) return outgoing.destroy()
       outgoing.writeHead(500, { "content-type": "application/json" })
-      outgoing.end(JSON.stringify({ error: { type: "api_error", message: String(error) } }))
+      outgoing.end(JSON.stringify({ error: { type: "api_error", message: what } }))
     })
   })
   // A tunnel through the proxy, as for any HTTPS request: refused, by its host alone.

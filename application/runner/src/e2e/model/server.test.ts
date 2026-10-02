@@ -12,6 +12,7 @@ const echo: Dialect = {
   api: "anthropic",
   matches: (request) => request.path.startsWith("/chat"),
   handle: (request, reply) => {
+    if (request.path.startsWith("/chat/unserved")) return { status: 404, headers: {}, body: "" }
     const answer = reply({
       api: "anthropic",
       model: "m",
@@ -35,6 +36,7 @@ const broken: Dialect = {
   handle: (request) => {
     if (request.path.startsWith("/broken/parse"))
       z.object({ messages: z.array(z.string()) }).parse({ messages: [1] })
+    if (request.path.startsWith("/broken/json")) JSON.parse(request.body)
     throw new Error("no messages in this request\nwith a second line")
   },
 }
@@ -195,6 +197,24 @@ describe("startFakeModel", () => {
     expect(model.errors).toEqual([
       "POST /broken/parse: messages.0: Invalid input: expected string, received number",
     ])
+  })
+
+  it("records a body that isn't JSON without quoting it", async ({ model }) => {
+    const response = await fetch(`${model.url}/broken/json`, {
+      method: "POST",
+      body: "grant_type=refresh_token&refresh_token=abcdef",
+    })
+
+    expect(response.status).toBe(500)
+    expect(model.errors).toEqual(["POST /broken/json: the body is not JSON"])
+    expect(await response.text()).not.toContain("grant_type")
+  })
+
+  it("records a request its dialect doesn't serve as a stray", async ({ model }) => {
+    const response = await fetch(`${model.url}/chat/unserved?page=1`)
+
+    expect(response.status).toBe(404)
+    expect(model.strays).toEqual(["GET /chat/unserved"])
   })
 
   it("records a request no dialect answers by its path, without its query", async ({ model }) => {

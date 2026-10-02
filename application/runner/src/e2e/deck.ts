@@ -92,11 +92,11 @@ const occurrences = (shown: string, text: string): number => shown.split(text).l
 
 /**
  * Polls `read` until it gives a value, and returns it; fails with `what` after the
- * timeout.
+ * timeout, read then when it's a function, so it can say how things stand at the end.
  */
 export const poll = async <T>(
   read: () => T | undefined | Promise<T | undefined>,
-  what: string,
+  what: string | (() => string),
   timeoutMs = 30_000,
 ): Promise<T> => {
   const deadline = Date.now() + timeoutMs
@@ -107,7 +107,9 @@ export const poll = async <T>(
     // eslint-disable-next-line no-await-in-loop -- As above.
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error(`Timed out after ${timeoutMs} ms waiting for ${what}`)
+  throw new Error(
+    `Timed out after ${timeoutMs} ms waiting for ${typeof what === "string" ? what : what()}`,
+  )
 }
 
 /**
@@ -214,7 +216,8 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
             const state = terminals.messages(id).delivery
             return states.includes(state) ? state : undefined
           },
-          `${summary.handle} to be ${states.join(" or ")} (it is ${terminals.messages(id).delivery})`,
+          () =>
+            `${summary.handle} to be ${states.join(" or ")} (it is ${terminals.messages(id).delivery})`,
           timeoutMs,
         ),
     }
