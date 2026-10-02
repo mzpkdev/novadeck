@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   e2e:
-    name: E2E (${{ matrix.harness }})
+    name: ${{ matrix.harness }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
