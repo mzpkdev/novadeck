@@ -166,7 +166,9 @@ created without `cwd` opens in the home directory of the user running the runner
 `projects.remove({ projectId })` closes every terminal of the project's sessions,
 running or kept only as saved, whichever connection controls them, so watchers see
 each `removed`; then it deletes the project, its sessions and what the runner kept of
-their terminals, and its agents' messages. Its folder on disk stays. Terminals being
+their terminals, their companion items and undocked windows (`companions.watch` reports
+each `itemRemoved` and `windowRemoved`, and their `content` streams end), and its agents'
+messages. Its folder on disk stays. Terminals being
 created in the project as it begins finish first and close with the rest; while it
 goes, `projects.list` leaves it out, creating a session or terminal in it rejects
 with `NOT_FOUND`, and restarting one of its terminals with `TERMINAL_NOT_FOUND`. A

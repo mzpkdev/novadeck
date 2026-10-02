@@ -430,6 +430,52 @@ const rows = (path: string) => {
 }
 
 describe("runner client project removal", () => {
+  it("takes its companion items and undocked windows along, telling watchers", async ({
+    resources,
+  }) => {
+    const app = await deployed(resources)
+    const client = await app.connect()
+    const { id: sessionId, projectId } = await session(client, app.directory)
+    const terminal = await client.terminals.create(shell(sessionId))
+    const directory = await realpath(app.directory)
+    await writeFile(join(directory, "a.md"), "# A\n")
+    await writeFile(join(directory, "b.md"), "# B\n")
+    const watch = client.companions.watch()
+    resources.defer(async () => {
+      await watch.return?.()
+    })
+    const seen: CompanionWatchItem[] = []
+    const until = async (predicate: (change: CompanionWatchItem) => boolean) => {
+      while (true) {
+        // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
+        const result = await watch.next()
+        if (result.done) throw new Error(`Watch ended; seen=${JSON.stringify(seen)}`)
+        seen.push(result.value)
+        if (predicate(result.value)) return result.value
+      }
+    }
+    await until((change) => change.type === "synced")
+    const onBar = await client.companions.attach({ terminalId: terminal.id, path: "a.md" })
+    const inWindow = await client.companions.attach({ terminalId: terminal.id, path: "b.md" })
+    const windowId = crypto.randomUUID()
+    await client.companions.undock(inWindow.id, windowId)
+    const content = client.companions.content(inWindow.id)
+    await expect(content.next()).resolves.toMatchObject({ value: { state: "ready" } })
+    const ending = content.next()
+
+    await client.projects.remove({ projectId })
+    const gone = (change: CompanionWatchItem) =>
+      (change.type === "itemRemoved" && change.itemId === inWindow.id) ||
+      (change.type === "windowRemoved" && change.windowId === windowId)
+    await until(gone)
+    await until(gone)
+    expect(seen).toContainEqual({ type: "itemRemoved", itemId: onBar.id, sessionId })
+    await expect(ending).resolves.toEqual({ done: true, value: undefined })
+    await expect(client.companions.list({ sessionId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    })
+  })
+
   it("closes the project's terminals, running or kept, and forgets everything it kept", async ({
     resources,
   }) => {

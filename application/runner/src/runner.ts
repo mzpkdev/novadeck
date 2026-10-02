@@ -86,7 +86,7 @@ export const wire = (options: RunnerOptions) => {
     items,
     ...options.terminals,
   })
-  const projects = new Projects(store, terminals)
+  const projects = new Projects(store, terminals, items)
   return { store, shellFiles, agents, terminals, items, projects }
 }
 

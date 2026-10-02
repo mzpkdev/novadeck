@@ -129,8 +129,8 @@ Switching terminal tabs in Focus uses the same transition.
 
 The project switcher in the top bar removes a project from its row's trash icon, after
 you confirm; its terminals close, and the folder on disk stays. The last project stays.
-The runner forgets the project with its sessions and its agents' messages, so it stays
-gone after a reload. While the runner can't be reached, the app keeps asking until it
+The runner forgets the project with its sessions, what its agents showed and the
+windows undocked from them, and its agents' messages, so it stays gone after a reload. While the runner can't be reached, the app keeps asking until it
 answers or the app quits; quitting waits briefly for it. A reload before the runner
 answers leaves the project there, and it comes back.
 

@@ -530,9 +530,9 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
    */
   removeProject(projectId: string): void {
     this.project(projectId)
-    this.database.exec("BEGIN IMMEDIATE")
-    try {
+    this.transaction(() => {
       const sessions = "SELECT id FROM sessions WHERE project_id = ?"
+      // Its sessions' companion items and windows go with them, by their foreign keys.
       for (const sql of [
         "DELETE FROM messages WHERE project_id = ?",
         "DELETE FROM message_threads WHERE project_id = ?",
@@ -542,11 +542,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
         "DELETE FROM projects WHERE id = ?",
       ])
         this.database.prepare(sql).run(projectId)
-      this.database.exec("COMMIT")
-    } catch (error) {
-      this.database.exec("ROLLBACK")
-      throw error
-    }
+    })
   }
 
   project(projectId: string): Project {

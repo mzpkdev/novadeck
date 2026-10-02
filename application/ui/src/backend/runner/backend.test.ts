@@ -623,6 +623,64 @@ describe("runner backend", () => {
       })
     })
 
+    it("lets the runner take its items and windows along, asking nothing of each", async () => {
+      const io: string[] = []
+      const app = open(runner.listing, {}, recordingRunner(runner.client, io))
+      const { id, session, remove } = openProject(app)
+      const terminal = app.addTerminal()
+      await app.idle()
+      const directory = await mkdtemp(join(tmpdir(), "novadeck-items-"))
+      const paths = ["a.md", "b.md"].map((name) => join(directory, name))
+      await Promise.all(paths.map((path) => writeFile(path, "# Notes\n")))
+      const [onBar, inWindow] = await Promise.all(
+        paths.map((path) => runner.client.companions.attach({ terminalId: terminal.id, path })),
+      )
+      await vi.waitFor(() =>
+        expect(app.received.filter((action) => action.type === "item/upsert")).toHaveLength(2),
+      )
+      app.commit(app.received.filter((action) => action.type === "item/upsert"))
+      const windowId = crypto.randomUUID()
+      app.commit([
+        {
+          type: "item/undock",
+          target: app.target(),
+          itemId: itemIdOf(inWindow!.id),
+          window: {
+            id: windowId,
+            itemId: itemIdOf(inWindow!.id),
+            name: inWindow!.name,
+            titleSource: { kind: "default" },
+          },
+        },
+      ])
+      await app.idle()
+      remove()
+      await app.idle()
+      app.stop()
+      expect(io).toContain(`remove project ${id}`)
+      // The runner deletes them with the project; the app closes none itself.
+      expect(io.filter((call) => call.startsWith("close item"))).toEqual([])
+      expect(io).not.toContain(`close item ${onBar!.id}`)
+      expect(app.workspace().projects.map((project) => project.id)).not.toContain(id)
+      await expect(runner.client.companions.list({ sessionId: session.id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      })
+      // Nothing of it comes back on a reload.
+      const reloaded = workspaceFromSeed(runnerSeed(await runner.reload()), {
+        view: "grid",
+        windowedView: "grid",
+        now: 2,
+      })
+      const states = reloaded.projects
+        .flatMap((project) => project.history)
+        .map((each) => each.state)
+      expect(states.flatMap((state) => state.items.map((item) => item.id))).not.toContain(onBar!.id)
+      expect(
+        states.flatMap((state) => state.roster.windows.map((window) => window.id)),
+      ).not.toContain(windowId)
+      expect(states.some((state) => terminal.id in state.bars)).toBe(false)
+    })
+
     it("removes one the runner is still creating once the runner has it", async () => {
       const io: string[] = []
       const app = open(runner.listing, {}, recordingRunner(runner.client, io))

@@ -451,6 +451,17 @@ export class CompanionItems {
     for (const item of this.records.barItems(terminalId)) this.delete(item.id)
   }
 
+  /**
+   * Sessions are being deleted with their project: every item and window they still keep
+   * goes, as closing it would, so watchers hear of each and its content readers end. Their
+   * terminals closed first, which already took their bars' items and what each bound.
+   */
+  sessionsRemoved(sessionIds: readonly string[]): void {
+    if (this.stopping) return
+    for (const sessionId of sessionIds)
+      for (const item of this.records.items(sessionId)) this.delete(item.id)
+  }
+
   /** Ends every stream; nothing changes afterwards. */
   shutdown(): void {
     this.stopping = true
