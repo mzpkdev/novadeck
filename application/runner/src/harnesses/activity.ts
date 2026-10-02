@@ -188,6 +188,11 @@ export const apply = (
       // Idle after the turn's Stop says nothing new; without one, the turn ended abnormally.
       if (activity.state !== "working") return undefined
       return { ...activity, state: "idle", pending: [], turnAt: event.startedAt, idled: true }
+    case "turn-escaped":
+      // The turn may be over, as delivery takes it: idle, its requests settled, until a
+      // later hook moves it on. No working status line resumes it.
+      if (activity.state !== "working") return undefined
+      return { ...activity, state: "idle", pending: [], turnAt: event.startedAt, idled: false }
     case "turn-working":
       // Working after the idle that ended its turn, and newer than it: that idle was stale,
       // and the turn goes on. After a Stop it says nothing new. The turn's fence stays at the

@@ -215,7 +215,7 @@ terminals.
     one whose prompt showed while NovaDeck's hooks aren't trusted for it there, as a
     Codex whose hooks review was skipped: nothing could deliver to it), or a rate or size
     limit. While that review is still open, a message to it waits, as the person may yet
-    trust the hooks there.
+    trust the hooks there; once they trust them in `/hooks`, it waits again.
 
   It never claims delivery. A terminal whose own session never bound (Codex with its
   hooks untrusted) can still send; the answer, refused or not, adds that replies can't
@@ -384,8 +384,9 @@ the opener's, and `describe` names the caller's own terminal (see
   turn, which it submits as the turn ends, counts too, when the person typed nothing
   after queuing it: the next root prompt after that Stop is theirs.
 - **The prompt is known empty** after one of these, with no input from the person
-  since (apart from answers to a request, and Escape, Left, Home and End, which never
-  change the box): the person's submission (not of a stale doorbell
+  since (apart from answers to a request, and Left, Home and End, which never change
+  the box, and Escape outside a running turn: one during it may cancel the turn and
+  put its prompt back, so it leaves a draft): the person's submission (not of a stale doorbell
   line: an Enter can leave text behind, as a newline or a suggestion does); a confirmed ring, its doorbell
   prompt carrying the ring's own nonce; or the session binding, when the person typed
   nothing after their last Enter before it. Keys typed as an agent starts were dropped in
@@ -398,8 +399,12 @@ the opener's, and `describe` names the caller's own terminal (see
   the binding's end, which in a nested shell is noticed only as the next agent binds. A
   binding that replaces a session already bound there (a `/clear`, an in-app resume, a
   plan's "clear context") empties the box only if it was known empty, or the person's
-  bare Enter came within the submission window before it with nothing typed since: an
-  Enter that made a newline or took a suggestion leaves their text. An agent started with
+  bare Enter came within the submission window before its hook started with nothing
+  typed since: an Enter that made a newline or took a suggestion leaves their text. An
+  Enter during a running turn queued a prompt the harness may still hold, so the box
+  stays a draft; after an abnormal end (Unknown), where the turn may have run on, that
+  Enter was the command that replaced the session, and what it might have queued went
+  with the old session. An agent started with
   the line as its command-line prompt stays as empty as its binding left it: a doorbell
   prompt outside a ring, as that start's or a failed ring's late one, empties nothing
   the person typed. NovaDeck
@@ -475,11 +480,15 @@ facts above, so the prompt's emptiness is known before any message arrives:
 - **Unknown**: the last turn ended without a normal Stop (Esc, a denial, `StopFailure`,
   Claude Code's transcript recording an interrupt, Antigravity's status line saying idle
   with no root Stop since the turn began), or a ring failed after its paste. The
-  person's Escape while a root turn runs makes it Unknown at once, keeping the box and
-  the turn's counts: Escape before Claude Code's first reply cancels the turn, puts the
-  prompt back in its box and fires no hook, and its transcript records no interrupt.
-  An Escape that ended nothing (a menu closed) is followed by the turn's Stop, which
-  still continues or settles it. Outside a running turn Escape changes nothing. No
+  person's Escape while a root turn runs makes it Unknown at once, keeping the turn's
+  counts and any prompt they queued, its box a draft: Escape before Claude Code's first
+  reply cancels the turn, puts the prompt back in its box and fires no hook, and its
+  transcript records no interrupt. An Escape that ended nothing (a menu closed) is
+  followed by the turn's Stop, which still continues it or leaves Drafting: a missed
+  ring at worst. An Escape after the person's Enter, heard before that prompt's hook but
+  coming after the hook started, may have cancelled its turn the same way: that prompt
+  starts the turn as Unknown, its box a draft. Either way the agent's activity shows the
+  turn ended too, so the UI no longer shows it working. Elsewhere Escape changes nothing. No
   doorbell; the next root turn event moves it on. It keeps the turn's counts, so a Stop
   that raced the status line, arriving just after it, is still that turn's Stop: it
   can't be continued past the limit, nor despite the person's queued prompt. An idle
@@ -720,9 +729,13 @@ tui.terminal_title` replacing the shim's, or one run by its full path past the s
 default title is the project's name) tells nothing and isn't rung before its first turn;
 one run by its full path without `--no-daemon` runs its hooks in Codex's shared server,
 which can't tell the terminal, so nothing of messaging reaches it. A Codex whose
-app-server can't answer `hooks/list` (it can't start, or takes over 10 s) counts as having
-untrusted hooks: nothing binds before its first prompt, a `send` to it once its prompt shows is refused (no agent there), and it is asked
-again a minute later. On Windows a prompt shown before any session counts with no
+app-server can't answer `hooks/list` (it can't start, or takes over 10 s) has hooks of
+unknown trust: its prompt doesn't count, so nothing binds before its first prompt, but a
+`send` to it waits rather than being refused, and it is asked again a minute later. Only
+a definite answer that NovaDeck's hooks aren't trusted, for a title still current, makes
+`send` refuse it. Trusting them later in Codex's `/hooks` sets no new title (probed with
+0.159.3), so while they are untrusted each pause in the person's keys there asks again,
+reading the latest title anew. On Windows a prompt shown before any session counts with no
 foreground check, as for every ring there (see [Per harness](#per-harness)).
 
 Also accepted, as Codex shows them: a Settled Codex while the person views a `/side`

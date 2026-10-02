@@ -100,6 +100,12 @@ export type ActivityEvent = {
       readonly background: boolean
     }
   | { readonly type: "turn-working" }
+  /**
+   * The person pressed Escape while the root turn ran, as their keys tell delivery (see
+   * docs/agent-messaging.md, "States"): it may have cancelled the turn, which no hook
+   * says, as Claude Code's Escape before its first reply. Started when the key came.
+   */
+  | { readonly type: "turn-escaped" }
   | { readonly type: "file-touched"; readonly actor: string | null; readonly path: string }
   | {
       readonly type: "attention-requested"

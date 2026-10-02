@@ -82,19 +82,27 @@ export const codex: AgentSetup = {
     }),
     shows: /› 1\. Yes, proceed \(y\)/,
     deny: "\x1b",
+    denied: /✗ You canceled the request to run/,
   },
+  // Escape mid-turn says so (probed 2026-10-02, 0.159.3).
+  interrupted: () => /■ Conversation interrupted/,
   // No `background`: nothing a Codex agent starts wakes it once its turn has ended (probed
   // 2026-10-02, 0.159.3). A subagent from `spawn_agent` (`multi_agent_v1`, the default,
   // and `collaboration` with `features.multi_agent_v2`) and a command `exec_command` left
   // running (a "background terminal") each finished with the root idle and no model call
   // for 20 s after. A v1 subagent's `<subagent_notification>` only goes with the person's
   // next prompt, and a v2 one's end with none. NovaDeck rightly calls such a root Settled.
-  // Esc interrupts a running turn, which ends with its Interrupt hook.
-  escape: "\x1b",
+  absent: {
+    background: "nothing it starts wakes it once its turn has ended (probed 2026-10-02, 0.159.3)",
+  },
   // Its folder-trust question, "Trust this folder?", has trusting it selected, and its
   // "Hooks need review" screen says "esc skip", which goes on without trusting them.
   trust: {
-    folder: /› 1\. Trust and continue/,
+    folder: {
+      shows: /› 1\. Trust and continue/,
+      select: "",
+      trusts: /› 1\. Trust and continue/,
+    },
     hooks: { shows: /Hooks need review/, skip: "\x1b" },
   },
   // Its hooks can be trusted only once NovaDeck's plugin is in.

@@ -1,7 +1,7 @@
 import type { AgentName, MessageState } from "@novadeck/protocol"
 
 import { doorbell } from "../harnesses/harness.js"
-import type { AgentSetup } from "./agents/agent.js"
+import type { AgentSetup, Trait } from "./agents/agent.js"
 import { poll, withScreen, type DeckTerminal } from "./deck.js"
 import type { E2E } from "./fixture.js"
 import { named, wanted, type Reach, type ReachOptions, type Snapshot } from "./history.js"
@@ -13,9 +13,6 @@ import { asked, latest, tool, type Call, type Reply, type Rule } from "./model/s
  * call delivered.
  */
 
-/** The traits a scenario may need of a setup, which a harness may not have yet. */
-export type Trait = "approval" | "background" | "trust.folder" | "trust.hooks"
-
 const has = (setup: AgentSetup, trait: Trait): boolean => {
   if (trait === "trust.folder") return setup.trust?.folder !== undefined
   if (trait === "trust.hooks") return setup.trust?.hooks !== undefined
@@ -25,23 +22,21 @@ const has = (setup: AgentSetup, trait: Trait): boolean => {
 /**
  * Why the setup can't run a scenario that needs `traits`, as its skipped test says, or
  * undefined when it has them all. A scenario skips on this, never on which harness it is.
+ * Each trait it lacks must say why in the setup's `absent`, the harness not having the
+ * behaviour; one that doesn't fails, as a gap would hide behind the skip.
  */
 export const lacking = (setup: AgentSetup, ...traits: readonly Trait[]): string | undefined => {
   const missing = traits.filter((trait) => !has(setup, trait))
-  return missing.length > 0 ? `${setup.name} has no ${missing.join(" or ")} trait` : undefined
-}
-
-/**
- * The setup's folder-trust question, as a scenario answers it: what it shows, the keys
- * that select trusting the folder (none when it shows that selected), and that option
- * selected, which `confirm` takes.
- */
-export const folderQuestion = (
-  setup: AgentSetup,
-): { readonly shows: RegExp; readonly select: string; readonly trusts: RegExp } | undefined => {
-  const folder = setup.trust?.folder
-  if (folder === undefined) return undefined
-  return folder instanceof RegExp ? { shows: folder, select: "", trusts: folder } : folder
+  if (missing.length === 0) return undefined
+  const reasons = missing.map((trait) => {
+    const why = setup.absent?.[trait]
+    if (why === undefined)
+      throw new Error(
+        `${setup.name} lacks the ${trait} trait with no reason in its absent: probe the harness, and record a gap in known-gaps.ts if it has the behaviour`,
+      )
+    return `${trait}: ${why}`
+  })
+  return `${setup.name} has no ${reasons.join("; no ")}`
 }
 
 /**
@@ -58,7 +53,7 @@ export const prompted = async (
   timeoutMs = 60_000,
 ): Promise<void> => {
   const { banner } = setup
-  const questions = [folderQuestion(setup)?.shows, setup.trust?.hooks?.shows].filter(
+  const questions = [setup.trust?.folder?.shows, setup.trust?.hooks?.shows].filter(
     (question) => question !== undefined,
   )
   await poll(

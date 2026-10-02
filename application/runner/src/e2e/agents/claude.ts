@@ -37,8 +37,9 @@ export const claude: AgentSetup = {
   },
   hosts: ["api.anthropic.com", "claude.ai", "console.anthropic.com", "statsig.anthropic.com"],
   // A command that writes, which no setting allows: a read-only one such as `ls` runs
-  // without asking. Its dialog's first option is selected as it shows, and Esc refuses
-  // (the dialog says "Esc to cancel"), which also ends the turn.
+  // without asking. Its dialog's first option is selected as it shows, and "3", its "No",
+  // refuses by its number alone, as Esc does, which also ends the turn: a key other than
+  // Escape, so NovaDeck must learn of the refusal from the harness, not the keystroke.
   approval: {
     request: () => ({
       calls: [
@@ -49,8 +50,13 @@ export const claude: AgentSetup = {
       ],
     }),
     shows: /❯ 1\. Yes/,
-    deny: "\x1b",
+    deny: "3",
+    denied: /Interrupted · What should Claude do instead\?/,
   },
+  // Escape before any reply came drops the turn and puts its prompt back in the box,
+  // between the box's rules, with no word of the interruption (probed 2026-10-02, 2.1.287).
+  interrupted: (prompt) =>
+    new RegExp(`─\\n❯\\s+${prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n─`),
   // A subagent run in the background: its Stop lists it as a running background task, and
   // once it finishes Claude Code starts a turn by itself, with a task notification.
   background: {
@@ -73,15 +79,17 @@ export const claude: AgentSetup = {
       !call.side &&
       (call.turns.find((turn) => turn.role === "user")?.text.includes(marker) ?? false),
   },
-  escape: "\x1b",
-  // Its folder-trust question shows "No, exit" selected, trusting the folder below it;
-  // it has no step trusting NovaDeck's hooks.
+  // Its folder-trust question shows "No, exit" selected, trusting the folder below it.
   trust: {
     folder: {
       shows: /Is this a project you created or one you trust\?/,
       select: "\x1b[B",
       trusts: /❯ Yes, I trust this folder/,
     },
+  },
+  absent: {
+    "trust.hooks":
+      "it runs a plugin's hooks with no review: every scenario's session binds unasked (2.1.287)",
   },
   prepare: async (sandbox, model, installed, seed = {}) => {
     const config = join(sandbox.home, ".claude")

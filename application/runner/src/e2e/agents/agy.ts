@@ -71,7 +71,10 @@ export const agy: AgentSetup = {
     }),
     shows: /> 1\. Yes, run command/,
     deny: "4",
+    denied: /User declined the tool call/,
   },
+  // Escape mid-turn says so (probed 2026-10-02, 1.2.14).
+  interrupted: () => /⎿ {2}Interrupted · What should Antigravity CLI do instead\?/,
   // A subagent of its own type `self` runs in a conversation of its own, its model calls
   // told by its system prompt. The root's turn ends while it runs, its Stop saying it isn't
   // fully idle, and the subagent's end wakes it with a message saying it went idle.
@@ -92,10 +95,19 @@ export const agy: AgentSetup = {
     }),
     owns: (call) => call.system.includes(subagent),
   },
-  escape: "\x1b",
-  // "Do you trust the contents of this project?", its status line initializing meanwhile;
-  // it has no step trusting NovaDeck's hooks.
-  trust: { folder: /> Yes, I trust this folder/ },
+  // "Do you trust the contents of this project?", its status line initializing meanwhile,
+  // with trusting it selected.
+  trust: {
+    folder: {
+      shows: /> Yes, I trust this folder/,
+      select: "",
+      trusts: /> Yes, I trust this folder/,
+    },
+  },
+  absent: {
+    "trust.hooks":
+      "it runs a plugin's hooks with no review: every scenario's session binds unasked (1.2.14)",
+  },
   prepare: async (sandbox, model, _installed, seed) => {
     const home = join(sandbox.home, ".gemini", "antigravity-cli")
     await mkdir(home, { recursive: true, mode: 0o700 })

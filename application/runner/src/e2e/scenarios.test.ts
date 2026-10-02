@@ -6,16 +6,7 @@ import { describe, expect, it } from "../test.js"
 import { claude } from "./agents/claude.js"
 import { createHistory } from "./history.js"
 import type { Call } from "./model/script.js"
-import {
-  deliveries,
-  delivered,
-  folderQuestion,
-  holds,
-  lacking,
-  prompted,
-  ring,
-  through,
-} from "./scenarios.js"
+import { deliveries, delivered, holds, lacking, prompted, ring, through } from "./scenarios.js"
 
 const message = (fields: Partial<Message> = {}): Message => ({
   id: "m-1",
@@ -200,29 +191,18 @@ describe("lacking", () => {
     expect(lacking(claude, "approval", "background", "trust.folder")).toBeUndefined()
   })
 
-  it("names the setup and each trait it lacks, as the skipped test says", () => {
-    expect(lacking(bare, "approval", "trust.hooks")).toBe(
-      "Claude Code has no approval or trust.hooks trait",
-    )
-    expect(lacking({ ...claude, trust: {} }, "trust.folder")).toBe(
-      "Claude Code has no trust.folder trait",
+  it("names the setup and each trait it lacks with why, as the skipped test says", () => {
+    const absent = { approval: "it asks before nothing", "trust.hooks": "no hooks review" }
+
+    expect(lacking({ ...bare, absent }, "approval", "trust.hooks")).toBe(
+      "Claude Code has no approval: it asks before nothing; no trust.hooks: no hooks review",
     )
   })
-})
 
-describe("folderQuestion", () => {
-  it("reads a pattern as a question showing its trusting option selected", () => {
-    const shown = /❯ Trust it/
-    expect(folderQuestion({ ...claude, trust: { folder: shown } })).toEqual({
-      shows: shown,
-      select: "",
-      trusts: shown,
-    })
-  })
-
-  it("keeps a question that needs its trusting option selected first as it is", () => {
-    expect(folderQuestion(claude)).toEqual(claude.trust?.folder)
-    expect(folderQuestion({ ...claude, trust: {} })).toBeUndefined()
+  it("fails on a trait lacked with no reason, which could hide a gap", () => {
+    expect(() => lacking({ ...claude, trust: {} }, "trust.folder")).toThrow(
+      /lacks the trust.folder trait with no reason/,
+    )
   })
 })
 

@@ -68,7 +68,7 @@ const sessionStarted = (bound: Binding, source: string): HarnessEvent[] => [
     token: "0".repeat(48),
     agent: bound.agent,
     event: "SessionStart",
-    seq: 1,
+    seq: asHeard,
     instance: bound.instance,
     env: { cursor: false },
     payload: { session_id: bound.sessionId, source, hook_event_name: "SessionStart" },
@@ -630,10 +630,11 @@ describe("delivery through hooks", () => {
     expect(messaging.delivery("A")?.state).toBe("unknown")
     sent(send("B", "t1", "hello"))
     expect(messaging.ringable("A")).toBe(false)
-    // The Escape ended nothing: its Stop comes, continued with the message.
+    // The Escape ended nothing: its Stop comes, continued with the message, and the box
+    // Claude Code may have put the prompt back in is a draft.
     expect(stop("A", claude).stdout).toContain("hello")
     expect(stop("A", claude).leaseId).toBeNull()
-    expect(messaging.delivery("A")?.state).toBe("settled")
+    expect(messaging.delivery("A")?.state).toBe("drafting")
   })
 
   it("leaves a Stop to end when the person queued a prompt, which delivers instead", () => {
@@ -1161,6 +1162,11 @@ describe("Antigravity's turn, as activity and delivery both tell it", () => {
         activity = applyActivity(activity, root, event) ?? activity
       }
     }
+    // What delivery says the person's Escape did to the turn, as the manager applies it.
+    const escaped = () => {
+      const event = setup.messaging.escaped("G", root)
+      if (event) activity = applyActivity(activity, root, event) ?? activity
+    }
     // A hook's report, decoded by Antigravity's own adapter, which messaging asks about.
     const hook = (
       event: string,
@@ -1178,6 +1184,7 @@ describe("Antigravity's turn, as activity and delivery both tell it", () => {
       )
       applied(events)
       setup.ask("G", root, event, [...events])
+      escaped()
     }
     const status = (state: string, seq: number, more: Record<string, unknown> = {}) => {
       const events = agyStatus(root, state, seq, more)
@@ -1200,7 +1207,7 @@ describe("Antigravity's turn, as activity and delivery both tell it", () => {
     const asked = () => activity.pending.length
     // The person's input, asked while activity has a request waiting, as the terminal
     // manager tells it.
-    const press = (input: string) =>
+    const press = (input: string) => {
       setup.messaging.keys(
         "G",
         keysOf(input, harnesses.agy.messaging.queueKey, { mouse: null, focus: false }).map(
@@ -1208,6 +1215,8 @@ describe("Antigravity's turn, as activity and delivery both tell it", () => {
         ),
         asked() > 0,
       )
+      escaped()
+    }
     return { ...setup, hook, status, turn, asked, press }
   }
 
@@ -1327,6 +1336,48 @@ describe("Antigravity's turn, as activity and delivery both tell it", () => {
     status("idle", 3)
     turn(true)
     expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "turn" })
+  })
+
+  it("agrees the person's Escape mid-turn ends it, and its Stop still moves both on", () => {
+    const { messaging, hook, status, turn, press, clock: time } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    turn(true)
+    press("\x1b")
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("unknown")
+    // It closed only a menu: the turn's Stop, its hook started after the Escape, still comes.
+    hook("Stop", time.now + 100, { fullyIdle: true })
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("drafting")
+    // The next turn starts for both.
+    hook("PreInvocation", time.now + 200, { invocationNum: 0 })
+    turn(true)
+  })
+
+  it("agrees a prompt the person's Escape cancelled before its hook was heard runs no turn", () => {
+    const { messaging, hook, status, turn, press, clock: time } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    hook("Stop", 3, { fullyIdle: true })
+    press("fix it")
+    press("\r")
+    const entered = time.now
+    time.now += 600
+    press("\x1b")
+    // Its hook started before the Escape, and is heard after it, its prompt the person's.
+    time.now += 900
+    hook("PreInvocation", entered + 300, { invocationNum: 0 }, (events) =>
+      events.map((event) =>
+        event.type === "turn-started" ? { ...event, cause: "prompt", prompt: "fix it" } : event,
+      ),
+    )
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("unknown")
+    // A turn that went on after all: its Stop moves both on.
+    hook("Stop", entered + 2_000, { fullyIdle: true })
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("drafting")
   })
 
   it("settles after an Enter that answered a confirmation its status line never showed", () => {
@@ -1932,6 +1983,36 @@ describe("a new agent session at its own prompt", () => {
     expect(messaging.ring("A", "n1")).toBe(true)
     const answer = ask("A", cleared, "UserPromptSubmit", [doorbellStarted(cleared, "n1")])
     expect(answer.stdout).toContain(">hello</message>")
+  })
+
+  it("keeps a prompt queued after an Escape when the same session is seen again", () => {
+    const { messaging, observe, prompt, stop, claude } = create()
+    prompt("A", claude)
+    messaging.keys("A", claudeKeys("\x1b"), false)
+    messaging.keys("A", ["content", "enter"], false)
+    // Its own session again, as a compaction's SessionStart keeps its id: no new session.
+    observe("A", claude, sessionStarted(claude, "compact"))
+    expect(messaging.delivery("A")).toMatchObject({ state: "unknown", box: { queuing: true } })
+    stop("A", claude)
+    expect(messaging.delivery("A")?.state).toBe("drafting")
+  })
+
+  it("is Ready after a /clear whose SessionStart hook booted late, judged by when it started", () => {
+    const { messaging, observe, prompt, stop, claude, clock: time } = create()
+    messaging.keys("A", ["enter"], false)
+    prompt("A", claude)
+    stop("A", claude)
+    messaging.keys("A", ["content", "enter"], false)
+    const entered = time.now
+    // Heard 2.6 s after the Enter, its hook having started at 1.5 s.
+    time.now += 2_600
+    const cleared = binding("claude", "s-cleared", "1")
+    observe(
+      "A",
+      cleared,
+      sessionStarted(cleared, "clear").map((event) => ({ ...event, startedAt: entered + 1_500 })),
+    )
+    expect(messaging.delivery("A")).toMatchObject({ state: "ready", since: entered + 1_500 })
   })
 
   it("rings a Claude Code the runner restored, resumed at its prompt, and its doorbell prompt delivers", () => {

@@ -2,7 +2,8 @@ import type { AgentName, MessageThread, TerminalMessages } from "@novadeck/proto
 import { z } from "zod"
 
 import { DomainError } from "../errors.js"
-import type { HarnessEvent } from "../harnesses/events.js"
+import type { Binding } from "../harnesses/bindings.js"
+import type { ActivityEvent, HarnessEvent } from "../harnesses/events.js"
 import { agents as allAgents, harnesses } from "../harnesses/registry.js"
 import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import type { HookAnswer } from "../shell/reports.js"
@@ -310,6 +311,22 @@ export class Messaging {
     this.step(live, { type: "shown", at, replaces })
     // A prefix it learns later may make other messages its own.
     if (learned) this.changed(terminalId)
+  }
+
+  /**
+   * The person's Escape that may have cancelled the root turn, as delivery took it, as an
+   * event for the bound session's activity, so both tell the same (see `turn-escaped`).
+   */
+  escaped(terminalId: string, binding: Binding): ActivityEvent | undefined {
+    const delivery = this.live.get(terminalId)?.delivery
+    if (delivery?.state !== "unknown" || delivery.escapedAt === undefined) return undefined
+    const { agent, sessionId, instance } = binding
+    return { type: "turn-escaped", agent, sessionId, instance, startedAt: delivery.escapedAt }
+  }
+
+  /** The agent whose hooks were found untrusted there, with no session bound, if any. */
+  untrustedAgent(terminalId: string): AgentName | undefined {
+    return this.live.get(terminalId)?.untrusted ?? undefined
   }
 
   /** The agent whose prompt shows there with no session bound, if any. */
@@ -1055,7 +1072,8 @@ export class Messaging {
             undelivered(message)
           )
             this.gone(message)
-      } else if (change.type === "new") this.rootAt(live, change.root, change.guess, change.ready)
+      } else if (change.type === "new")
+        this.rootAt(live, change.root, change.guess, change.ready, change.startedAt)
       else this.correct(live, change.from, change.root, change.confirmed)
     }
   }
@@ -1067,13 +1085,21 @@ export class Messaging {
    * there are gone, as after a runner restart. A session its harness announced at its own
    * prompt is `ready` to be rung.
    */
-  private rootAt(live: Live, root: Root, guess: boolean, ready: boolean): void {
+  private rootAt(
+    live: Live,
+    root: Root,
+    guess: boolean,
+    ready: boolean,
+    startedAt = this.now(),
+  ): void {
     live.root = root
     // Its first session came: from now on, only a bound session takes messages.
     live.expecting = null
     live.shown = null
     live.untrusted = null
-    this.step(live, { type: "bound", ready, at: this.now() })
+    // Judged by when the hook that bound it started, not when it was heard, as a loaded
+    // machine boots the hook late: the person's Enter before it may have submitted.
+    this.step(live, { type: "bound", ready, at: startedAt })
     for (const message of this.messages.values()) {
       if (message.to.terminalId !== live.terminalId) continue
       if (message.to.sessionId === null) {

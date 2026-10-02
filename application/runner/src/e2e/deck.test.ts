@@ -6,6 +6,7 @@ import {
   escaper,
   excerpt,
   occurrences,
+  stated,
   withScreen,
 } from "./deck.js"
 
@@ -67,12 +68,44 @@ describe("withScreen", () => {
     )
   })
 
+  it("says what its agent is doing before the screen, when asked", async () => {
+    const error = await withScreen(
+      new Error("Timed out"),
+      async () => "❯ Try again",
+      () => "idle, no request waiting",
+    )
+
+    expect(error.message).toBe(
+      "Timed out. Its agent: idle, no request waiting. Its screen:\n❯ Try again",
+    )
+  })
+
   it("says why when the screen can't be read", async () => {
     const error = await withScreen(new Error("Timed out"), async () => {
       throw new Error("TERMINAL_NOT_FOUND")
     })
 
     expect(error.message).toBe("Timed out. Its screen:\n(can't be read: TERMINAL_NOT_FOUND)")
+  })
+})
+
+describe("stated", () => {
+  const activity = {
+    state: "working" as const,
+    attention: { pending: 1, kind: "permission" as const },
+    planning: false,
+    subagents: [],
+  }
+
+  it("says what the agent does and what waits on the person", () => {
+    expect(stated(activity)).toBe("working, 1 request waiting (permission)")
+    expect(stated({ ...activity, state: "idle", attention: { pending: 0, kind: null } })).toBe(
+      "idle, no request waiting",
+    )
+  })
+
+  it("says when there is no agent", () => {
+    expect(stated(null)).toBe("no agent")
   })
 })
 

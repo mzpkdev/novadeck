@@ -65,9 +65,6 @@ describe("workspace dialogs that load on demand", () => {
     await import("../preferences/Preferences")
   }, 60_000)
 
-  // Mounting the whole App and then the Preferences dialog in jsdom is CPU-bound work
-  // with no wait in it: about 0.7s on an idle Linux machine and under 1s on macOS CI, but
-  // 1.5-4.6s on Windows CI when the test passes, and over the 5s default once there.
   it("opens the dialog requested last when an earlier one never finished loading", async () => {
     window.location.hash = ""
     const app = render(createElement(App))
@@ -84,5 +81,5 @@ describe("workspace dialogs that load on demand", () => {
     expect(dialog("Find a terminal")).toBeNull()
     expect(dialog("Preferences")).not.toBeNull()
     app.unmount()
-  }, 20_000)
+  })
 })

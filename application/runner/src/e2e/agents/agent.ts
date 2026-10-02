@@ -22,13 +22,8 @@ export type Seed = {
  * needing it skips.
  */
 export type Trust = {
-  /**
-   * With `folderTrusted: false`: its question about the project folder. A pattern is its
-   * option that trusts the folder as the screen shows it selected (`/❯ 1\. Yes, I trust/`),
-   * which `confirm` takes, for a question that shows it selected; a `FolderQuestion` for
-   * one that doesn't.
-   */
-  readonly folder?: RegExp | FolderQuestion
+  /** With `folderTrusted: false`: its question about the project folder. */
+  readonly folder?: FolderQuestion
   /**
    * With `hooksTrusted: false`: the screen asking to review NovaDeck's hooks (`shows`),
    * when the harness shows one, and the keys that leave it without trusting them
@@ -37,15 +32,21 @@ export type Trust = {
   readonly hooks?: { readonly shows: RegExp; readonly skip: string }
 }
 
-/** A folder-trust question whose option that trusts the folder isn't selected as it shows. */
+/** A folder-trust question, as a scenario answers it. */
 export type FolderQuestion = {
   /** Text the question shows, whatever is selected. */
   readonly shows: RegExp
-  /** The keys that select the option trusting the folder, pressed without Enter (Down). */
+  /**
+   * The keys that select the option trusting the folder, pressed without Enter (Down),
+   * or "" when the question shows that option selected.
+   */
   readonly select: string
   /** That option as the screen shows it selected, which `confirm` takes. */
   readonly trusts: RegExp
 }
+
+/** The traits a scenario may need of a setup, which a harness may not have. */
+export type Trait = "approval" | "background" | "trust.folder" | "trust.hooks"
 
 /**
  * How a scenario makes the harness ask the person before a tool runs, and what that
@@ -61,6 +62,8 @@ export type Approval = {
   readonly shows: RegExp
   /** The keys that refuse it, pressed without Enter. */
   readonly deny: string
+  /** What the screen shows once it is refused, the harness's own account of the refusal. */
+  readonly denied: RegExp
 }
 
 /**
@@ -128,10 +131,20 @@ export type AgentSetup = {
   readonly approval?: Approval
   /** How its agent starts work that outlives its turn. */
   readonly background?: Background
-  /** The keys it reads as Escape, sent alone; the deck waits past its Escape-sequence window. */
-  readonly escape?: string
+  /**
+   * What the screen shows once Escape has interrupted the turn of `prompt` before its
+   * reply came, the harness's own account of the interruption.
+   */
+  readonly interrupted: (prompt: string) => RegExp
   /** What it shows when a seed leaves the folder or NovaDeck's hooks untrusted. */
   readonly trust?: Trust
+  /**
+   * Why it has none of a trait it lacks: the harness doesn't have the behaviour, as a
+   * probe of the pinned version found, which the skipped test's name carries. Never a
+   * gap in NovaDeck's support of it: that goes to `known-gaps.ts`, raised as a blocker.
+   * `lacking` fails on a missing trait with no reason here.
+   */
+  readonly absent?: Readonly<Partial<Record<Trait, string>>>
   /**
    * Finishes what only the connected plugin makes possible, before any harness starts:
    * Codex trusts NovaDeck's hooks, whose hashes are of the hooks the plugin installed.

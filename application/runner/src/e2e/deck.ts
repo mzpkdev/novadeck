@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 
 import type {
+  AgentActivity,
   AgentDetail,
   AgentName,
   TerminalMessages,
@@ -75,7 +76,7 @@ export type DeckTerminal = {
    */
   readonly press: (keys: string) => void
   /**
-   * Presses Escape on its own: sends `keys`, the setup's `escape` (`\x1b` unless given),
+   * Presses Escape on its own: sends `keys` (`\x1b` unless given),
    * and resolves only `escapeWindowMs` later. Escapes go one at a time, each waiting for
    * the one before, so two `escape()` calls never reach the TUI as one Esc-Esc, even
    * unawaited. Like `press`, it refuses Enter.
@@ -88,6 +89,15 @@ export type DeckTerminal = {
    * otherwise it throws, sending nothing.
    */
   readonly enterEmpty: () => void
+  /**
+   * Polls `read` until it gives a value, as `poll` does, for something of this terminal;
+   * a failure says what its agent is doing and shows its screen.
+   */
+  readonly poll: <T>(
+    read: () => T | undefined | Promise<T | undefined>,
+    what: string,
+    timeoutMs?: number,
+  ) => Promise<T>
   /** What a client's terminal listing says of it now: its agent and that agent's activity. */
   readonly summary: () => TerminalSummary
   /** Its messages and how its agent can take one now. */
@@ -244,6 +254,8 @@ export type Screen = {
   readonly handle: string
   readonly screen: () => Promise<string>
   readonly enter: () => void
+  /** What its agent is doing, as a failure states it. */
+  readonly state?: () => string
 }
 
 /**
@@ -258,17 +270,43 @@ export const excerpt = (shown: string, rows = 30): string => {
 }
 
 /**
- * A failed wait's error, its message followed by the terminal's screen as it is now, so a
- * timeout shows what the terminal was doing instead; a screen that can't be read says why.
+ * An agent's activity as a failed wait states it: its state and the requests waiting on
+ * the person, `working, 1 request waiting (permission)`.
  */
-export const withScreen = async (error: unknown, screen: () => Promise<string>): Promise<Error> => {
+export const stated = (activity: AgentActivity | null): string => {
+  if (activity === null) return "no agent"
+  const { pending, kind } = activity.attention
+  const waiting =
+    pending === 0
+      ? "no request waiting"
+      : `${pending} request${pending === 1 ? "" : "s"} waiting${kind === null ? "" : ` (${kind})`}`
+  return `${activity.state}, ${waiting}`
+}
+
+// What a failure says of something it couldn't read.
+const unread = (cause: unknown): string =>
+  `(can't be read: ${cause instanceof Error ? cause.message : String(cause)})`
+
+/**
+ * A failed wait's error, its message followed by what the terminal's agent is doing
+ * (`state`, when given) and its screen as it is now, so a timeout shows what the terminal
+ * was doing instead; a screen that can't be read says why.
+ */
+export const withScreen = async (
+  error: unknown,
+  screen: () => Promise<string>,
+  state?: () => string,
+): Promise<Error> => {
   const message = error instanceof Error ? error.message : String(error)
-  const shown = await screen().then(
-    excerpt,
-    (cause: unknown) =>
-      `(can't be read: ${cause instanceof Error ? cause.message : String(cause)})`,
-  )
-  return new Error(`${message}. Its screen:\n${shown}`, { cause: error })
+  let doing = ""
+  if (state)
+    try {
+      doing = `. Its agent: ${state()}`
+    } catch (cause) {
+      doing = `. Its agent: ${unread(cause)}`
+    }
+  const shown = await screen().then(excerpt, unread)
+  return new Error(`${message}${doing}. Its screen:\n${shown}`, { cause: error })
 }
 
 /**
@@ -277,7 +315,7 @@ export const withScreen = async (error: unknown, screen: () => Promise<string>):
  * bring, never what was there before it. Fails after the timeout, with the screen.
  */
 export const enterAfter = async (
-  { handle, screen, enter }: Screen,
+  { handle, screen, enter, state }: Screen,
   shows: string | RegExp,
   trigger: () => Promise<unknown>,
   timeoutMs = 30_000,
@@ -289,7 +327,7 @@ export const enterAfter = async (
     `${handle} to show ${String(shows)} once more`,
     timeoutMs,
   ).catch(async (error: unknown) => {
-    throw await withScreen(error, screen)
+    throw await withScreen(error, screen, state)
   })
   enter()
 }
@@ -465,6 +503,9 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         history.end(`its messages can't be watched: ${(error as Error).message}`)
       }
     })()
+    const state = () => stated(terminals.get(id).activity)
+    // A failed wait's error, with what its agent is doing and its screen.
+    const explain = (error: unknown) => withScreen(error, look, state)
     // The watch's first listing is the terminal's state as it opened.
     await history.reached(() => true, { timeoutMs: 5000 })
     // Waits until the screen passes `shows`, and returns it.
@@ -477,7 +518,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         `${summary.handle} to show ${what}`,
         timeoutMs,
       ).catch(async (error: unknown) => {
-        throw await withScreen(error, look)
+        throw await explain(error)
       })
     const write = (data: string) => terminals.write({ terminalId: id, data }, owner)
     // Where its history stood as its last prompt was submitted, while nothing else has
@@ -491,6 +532,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       handle: summary.handle,
       screen: look,
       enter: () => send("\r"),
+      state,
     }
     const until = (text: string | RegExp, timeoutMs = 30_000) =>
       showing(
@@ -527,6 +569,10 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         if (refusal) throw new Error(refusal)
         write("\r")
       },
+      poll: (read, what, timeoutMs) =>
+        poll(read, `${summary.handle}: ${what}`, timeoutMs).catch(async (error: unknown) => {
+          throw await explain(error)
+        }),
       summary: () => terminals.get(id),
       messages: () => terminals.messages(id),
       detail: () => now((signal) => terminals.detail(id, signal)),
@@ -534,7 +580,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       mark: history.mark,
       reached: (what, reach) =>
         history.reached(what, reach).catch(async (error: unknown) => {
-          throw await withScreen(error, look)
+          throw await explain(error)
         }),
     }
   }

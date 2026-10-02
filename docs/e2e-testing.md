@@ -215,8 +215,8 @@ network:
   deliberate Enter. It presses Enter only while the turn of the prompt the terminal
   last submitted is working, with nothing sent to the terminal since that prompt's
   Enter, so the box is known empty; otherwise it throws, sending nothing.
-- **Escape on its own.** `await t.escape(setup.escape)` sends the setup's Escape keys
-  (`\x1b` when it gives none) and resolves only `escapeWindowMs` (1200 ms) later; escapes
+- **Escape on its own.** `await t.escape()` sends Escape (`\x1b`, or the keys given)
+  and resolves only `escapeWindowMs` (1200 ms) later; escapes
   go one at a time, each waiting out the one before, even unawaited. A TUI reads two
   Escapes close together as Esc-Esc, a different command (Claude Code's Rewind picker,
   Codex's backtrack), and a lone ESC byte followed quickly by another key as one Alt
@@ -253,15 +253,21 @@ for (const setup of setups) {
 
 - **One rule for parity: a scenario never branches on `setup.agent`.** A difference
   between harnesses is either a trait of its setup (`name`, `banner`, `bindsAtReady`,
-  `refused`, `approval`, `background`, `escape`, `trust`) or a known gap in
+  `refused`, `approval`, `background`, `trust`) or a known gap in
   `known-gaps.ts`, which picks the documented detour (see [Known gaps](#known-gaps)). A
   `<harness>.e2e.ts` holds only what is truly that harness's own, such as Codex's logo
   on its first screen, or a known gap's pin.
-- **Traits a harness may not have yet** (`approval`, `background`, `trust.folder`,
+- **Traits a harness may not have** (`approval`, `background`, `trust.folder`,
   `trust.hooks`) gate the scenarios that need them: `gated(it, lacking(setup, "approval"))`
-  runs the test, or skips it with its name saying which trait the harness lacks. A
-  harness without such a step at all, as Claude Code has no hooks review, skips the same
-  way. Skip on a trait, never on a harness's name:
+  runs the test, or skips it with its name saying which trait the harness lacks and why.
+  Skip on a trait, never on a harness's name. A missing trait means the harness doesn't
+  have the behaviour at all, as Claude Code has no hooks review, and its setup says so in
+  `absent`, with what a probe of the pinned version found, as Codex's `background` does:
+  `absent: { background: "nothing it starts wakes it once its turn has ended (probed
+2026-10-02, 0.159.3)" }`. `lacking` fails on a missing trait with no reason there. A
+  missing trait never stands in for a gap: a behaviour the harness has that NovaDeck
+  doesn't yet support the same way is a gap, recorded in `known-gaps.ts` and raised as a
+  blocker (see [Known gaps](#known-gaps)).
 
   ```ts
   gated(it, lacking(setup, "approval"))("asks before a tool runs", async ({ e2e: run }) => {
@@ -273,14 +279,19 @@ for (const setup of setups) {
 
   - `approval`: `request(call)` is a reply calling a tool the harness asks about first,
     as seeded; `shows` matches its question with the allowing option selected, for
-    `confirm`; `deny` is the keys that refuse it, pressed without Enter.
+    `confirm`; `deny` is the keys that refuse it, pressed without Enter, other than
+    Escape where the harness has such a key, so NovaDeck learns of the refusal from the
+    harness rather than the keystroke; `denied` is what the screen then shows of it.
+  - `interrupted(prompt)`: what the screen shows once Escape interrupted the turn of
+    `prompt` before its reply came, the harness's own account; required, as the Escape
+    scenario runs for every harness.
   - `background`: `start(call)` is a reply starting work that outlives the turn (a
     background subagent or task) whose end wakes the agent again; `owns(call)` tells
     that work's model calls from the agent's own, so a rule can hold them at a `gate()`.
-  - `escape`: the keys it reads as Escape, `\x1b` unless given; not gated.
-  - `trust.folder`: its folder-trust question, as `folderTrusted: false` shows it: a
-    pattern of the trusting option as shown selected, or `{ shows, select, trusts }` for
-    a question that shows another option selected (`folderQuestion(setup)` reads either).
+  - `trust.folder`: `{ shows, select, trusts }`, its folder-trust question as
+    `folderTrusted: false` shows it: text it shows whatever is selected, the keys that
+    select the trusting option (`""` when the question shows it selected), and that
+    option as shown selected, for `confirm`.
   - `trust.hooks`: `{ shows, skip }`, its hooks-review screen and the keys that leave it
     without trusting NovaDeck's hooks, as `hooksTrusted: false` shows it.
 
@@ -332,9 +343,11 @@ for (const setup of setups) {
   makes in one go arrive together. On a timeout they fail with every transition since
   the mark (`t2: ready → ringing → unknown`), and `through` also says which steps were
   met (`met: ringing; waiting for: working`), so a failure says what happened. Their
-  failures, and those of `until` and `confirm`, end with the terminal's screen as it is
-  then, its non-blank rows and at most the last 30 (`withScreen` in `deck.ts`), so a
-  wait that times out also shows what the terminal was doing instead. A test that
+  failures, and those of `until`, `confirm` and `t.poll(read, what)`, end with what its
+  agent is doing (`working, 1 request waiting (permission)`) and the terminal's screen
+  as it is then, its non-blank rows and at most the last 30 (`withScreen` in `deck.ts`),
+  so a wait that times out also shows what the terminal was doing instead. A scenario
+  waits on something of a terminal through `t.poll`, never the bare `poll`. A test that
   throws fails its own wait, with its error, and no other.
 - **Holding a turn** pins down how something travels. The round trip holds t2's answer
   at a `gate()` until t1's turn has ended Settled, and asserts t1 is then rung, rather
@@ -367,9 +380,13 @@ for (const setup of setups) {
     `confirm` allows it; the model reads the tool's result, the turn goes Working then
     Settled, never Unknown, and no request waits.
   - _Approval denied_: pressing `deny` refuses it; the turn ends Unknown, never Settled,
-    and the request resolves.
+    and the request resolves; the screen shows `denied`, and no call bearing a tool's
+    result reaches the model in the three seconds after.
   - _Escape_: with the first model call held at a `gate()`, `escape()` interrupts the
-    turn; it ends Unknown, never Settled, and the next prompt's turn settles.
+    turn; it ends Unknown, the screen shows `interrupted(prompt)`, and once the held
+    reply is given, three seconds pass without it showing or the turn going Settled;
+    the next prompt's turn settles. Delivery goes Unknown as NovaDeck sees the key, so
+    only the harness's own account shows that it interrupted.
   - _Empty Enter_: with the turn's model call held, `enterEmpty()` presses Enter on the
     empty box; the turn works on and ends Settled, no other turn starts, and a message
     t2 then sends rings t1.
@@ -412,10 +429,16 @@ for (const setup of setups) {
    - The controls' traits (see [Writing a scenario](#writing-a-scenario)): `approval`, a
      tool call it asks about as seeded, its question and the keys that refuse it;
      `background`, work that outlives the turn and wakes the agent, and how to tell its
-     model calls; `escape`, when its Escape isn't `\x1b`; and `trust`, its folder-trust
-     question and hooks review as a seed shows them. Find each by running the harness in
-     the sandbox, never outside it. A scenario needing a trait it lacks skips, saying so,
-     so add them all: every harness runs every scenario.
+     model calls; and `trust`, its folder-trust question and hooks review as a seed
+     shows them. Find each by running the harness in the sandbox, never outside it. A
+     scenario needing a trait it lacks skips, saying why from `absent`, so add them all:
+     every harness runs every scenario. A trait goes in `absent` only once a probe shows
+     the harness lacks the behaviour. Escape is `\x1b` for all three; a harness reading
+     another key would bring back an `escape` trait.
+   - Traits the acceptance scenarios will add, with them: `exit`, how the person leaves
+     the harness; `clear`, its clear command, where it differs; and `shell(command)`, a
+     reply calling a shell tool its seed allows, so it runs without asking, unlike
+     `approval`'s.
 4. Add the setup to `setups` in `src/e2e/agents/index.ts`. That one list drives the
    messaging scenarios and the tripwire, so every scenario runs for it and its home is
    watched. A gap it shows goes in `known-gaps.ts`, with the test that pins it.
@@ -436,14 +459,17 @@ for (const setup of setups) {
 - **Its controls' traits**, probed in the sandbox against 2.1.287:
   - _Approval_: Bash `touch approved.txt`. A read-only command such as `ls` runs without
     asking. Its dialog, "Do you want to proceed?", shows `❯ 1. Yes` selected, then
-    "2. Yes, and always allow…" and "3. No", with "Esc to cancel". Esc refuses (`deny`),
-    and so does "3"; either interrupts the turn ("Interrupted · What should Claude do
-    instead?"), which NovaDeck sees through its transcript, so the turn ends Unknown.
+    "2. Yes, and always allow…" and "3. No", with "Esc to cancel". "3" refuses (`deny`),
+    and so does Esc; either interrupts the turn ("Interrupted · What should Claude do
+    instead?", `denied`), which NovaDeck sees through its transcript, so the turn ends
+    Unknown.
   - _Background_: its `Agent` tool with `run_in_background: true` and a
     `general-purpose` subagent whose prompt holds a marker; the subagent's calls are
     those whose first user turn holds it. The root's Stop lists it among its running
     `background_tasks`, and its end starts a turn by itself, with a task notification.
-  - _Escape_: `\x1b`. Its Esc-Esc window is about 800 ms (see `escape` above).
+  - _Escape_: `\x1b`. Its Esc-Esc window is about 800 ms (see "Escape on its own" above).
+    Escape before any reply came drops the turn with no word of it and puts the prompt
+    back in its box, between the box's rules (`interrupted`).
   - _Folder trust_: "Is this a project you created or one you trust?" with `❯ No, exit`
     selected; Down selects `❯ Yes, I trust this folder`. About 130 ms after it first
     shows, it draws the question again with `❯ No, exit` selected anew, undoing a Down

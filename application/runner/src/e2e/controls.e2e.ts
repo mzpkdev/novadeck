@@ -1,13 +1,13 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
+import type { FolderQuestion } from "./agents/agent.js"
 import { setups } from "./agents/index.js"
-import { poll, type DeckTerminal } from "./deck.js"
+import type { DeckTerminal } from "./deck.js"
 import { describe, e2e, expect, gated, supported } from "./fixture.js"
 import { asked, gate, latest, tool, type Call } from "./model/script.js"
 import {
   answers,
   delivered,
-  folderQuestion,
   holds,
   lacking,
   messages,
@@ -36,6 +36,9 @@ const calledLast = (call: Call): string | undefined =>
 // window (6 s from when a terminal shows Ready), so a ring had every chance to start.
 const unrung = 8000
 
+// How long a terminal is watched for what a held reply, once let go, would show.
+const quiet = 3000
+
 // How long the option trusting the folder must stay selected before Enter answers the
 // question: Claude Code 2.1.287 draws its question again about 130 ms after the first,
 // with "No, exit" selected anew, undoing a key pressed in between (seen in the sandbox).
@@ -49,7 +52,7 @@ const steady = 1000
  */
 const choose = async (
   terminal: DeckTerminal,
-  { select, trusts }: NonNullable<ReturnType<typeof folderQuestion>>,
+  { select, trusts }: FolderQuestion,
 ): Promise<void> => {
   if (select === "") return
   for (let tries = 0; tries < 10; tries += 1) {
@@ -87,7 +90,7 @@ for (const setup of setups) {
         // the person.
         await t1.confirm(approval!.shows, async () => {
           await t1.submit("Make the file")
-          await poll(
+          await t1.poll(
             async () => ((await t1.detail()).requests.length > 0 ? true : undefined),
             "NovaDeck to see the tool's request",
           )
@@ -121,17 +124,25 @@ for (const setup of setups) {
 
         await t1.submit("Make the file")
         await t1.until(approval!.shows)
-        await poll(
+        await t1.poll(
           async () => ((await t1.detail()).requests.length > 0 ? true : undefined),
           "NovaDeck to see the tool's request",
         )
+        const calls = run.model.mark()
         t1.press(approval!.deny)
 
         // A denial is an abnormal end: Unknown, never Settled, and its request resolved.
         await t1.reached("unknown", { after: mark })
-        await poll(
+        await t1.poll(
           async () => ((await t1.detail()).requests.length === 0 ? true : undefined),
           "the refused request to resolve",
+        )
+        // The harness refused it, as the keys alone can't show: it says so, and the tool's
+        // result never reaches the model.
+        await t1.until(approval!.denied)
+        await sleep(quiet)
+        expect(run.model.calls.slice(calls).filter((call) => result(call) !== undefined)).toEqual(
+          [],
         )
         expect(
           t1
@@ -147,12 +158,14 @@ for (const setup of setups) {
     }) => {
       // The first prompt's reply is held, so Escape comes mid-turn, the model call open.
       const held = gate()
+      const answered = gate()
       run.model.use(
         replies("Carry on", "Carried on."),
         own(async (call) => {
           if (!call.turns.some((one) => one.role === "user" && one.text.includes("Take your time")))
             return undefined
           await held.opened
+          answered.open()
           return { text: "Too late." }
         }),
       )
@@ -165,10 +178,16 @@ for (const setup of setups) {
         after: calls,
       })
       await t1.reached("working", { after: mark })
-      await t1.escape(setup.escape)
+      await t1.escape()
 
       const ended = await t1.reached("unknown", { after: mark })
       held.open()
+      // The harness interrupted the turn, as the key alone can't show: it says so, and the
+      // held reply, once given, never shows nor ends the turn.
+      await answered.opened
+      await t1.until(setup.interrupted("Take your time"))
+      await sleep(quiet)
+      expect(await t1.screen()).not.toContain("Too late.")
       expect(
         t1
           .history()
@@ -259,7 +278,7 @@ for (const setup of setups) {
         await t1.until("Started the work.")
         // Its turn ends while the work runs: the agent idles, but something it started
         // still runs, so NovaDeck holds it Working.
-        await poll(
+        await t1.poll(
           async () => ((await t1.detail()).activity?.state === "idle" ? true : undefined),
           "the agent's turn to end",
         )
@@ -352,7 +371,7 @@ for (const setup of setups) {
 
   describe.skipIf(!supported)(`${setup.name}, its folder untrusted`, () => {
     const it = e2e.seeded({ folderTrusted: false }, setup)
-    const question = folderQuestion(setup)
+    const question = setup.trust?.folder
 
     gated(it, lacking(setup, "trust.folder"))(
       "never rings an agent at its folder-trust question, and rings it once trusted",

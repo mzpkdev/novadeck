@@ -202,12 +202,12 @@ const standing = (message: Message, hold: ReturnType<typeof holdOf>): string => 
   return message.state
 }
 
-/** That a terminal's own session never bound, so replies can't reach it. */
 /** Why nothing can deliver to an agent whose hooks NovaDeck can't run where it runs. */
 export const untrustedNote = (agent: AgentName): string =>
   `${agentLabel(agent)} runs there, but NovaDeck's hooks aren't trusted for it yet ` +
   "(the user can trust them with /hooks)"
 
+/** That a terminal's own session never bound, so replies can't reach it. */
 export const unboundNote =
   "NovaDeck hasn't seen this terminal's own agent session, so replies can't reach you " +
   "until NovaDeck's hooks run here (in Codex, trust them with /hooks)."
