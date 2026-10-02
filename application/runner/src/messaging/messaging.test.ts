@@ -1153,6 +1153,12 @@ describe("the person's prompt", () => {
   })
 })
 
+/** What the person's input to a Claude Code terminal is, as keys. */
+const claudeKeys = (input: string) =>
+  keysOf(input, harnesses.claude.messaging.queueKey, { mouse: null, focus: false }).map(
+    ({ kind }) => kind,
+  )
+
 describe("the person's submissions", () => {
   it("are their Enter followed by a root prompt within about two seconds", () => {
     for (const agent of ["claude", "codex"] as const) {
@@ -1181,6 +1187,21 @@ describe("the person's submissions", () => {
       time.now += 2_001
       prompt("C", bound, "prompt")
       stop("C", bound)
+      expect(messaging.delivery("C")?.state).toBe("drafting")
+    }
+  })
+
+  it("leave a draft once Right or Tab may have taken Claude Code's prompt suggestion", () => {
+    for (const input of ["\t", "\u001b[C", "\u001bOC"]) {
+      const { messaging, follow, prompt, stop } = create()
+      const bound = binding("claude", "s-claude", "7")
+      messaging.register("C", here, "t3")
+      follow("C", bound)
+      prompt("C", bound, "harness")
+      stop("C", bound)
+      messaging.keys("C", claudeKeys("\u001b\u001b[D"), false)
+      expect(messaging.delivery("C")?.state).toBe("settled")
+      messaging.keys("C", claudeKeys(input), false)
       expect(messaging.delivery("C")?.state).toBe("drafting")
     }
   })
@@ -1575,8 +1596,8 @@ describe("an agent's prompt shown before any session binds", () => {
     return { ...setup, launched: binding(agent, `s-${agent}-new`, "3") }
   }
 
-  it("keeps a new Codex prompt ringable after Escape, cursor movement or Tab", () => {
-    for (const input of ["\u001b", "\u001b[D", "\t"]) {
+  it("keeps a new Codex prompt ringable after Escape, Left, Home or End", () => {
+    for (const input of ["\u001b", "\u001b[D", "\u001b[H", "\u001b[F"]) {
       const { messaging, send } = plain("codex")
       messaging.shown("N", "codex", "01a0f932-a824")
       messaging.keys(

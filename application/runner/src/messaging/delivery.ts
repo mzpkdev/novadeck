@@ -89,9 +89,11 @@ export const submitWindowMs = 2_000
 
 /**
  * A key the person sent, as `terminals/keys.ts` tells it: a bare Enter, a harness's queue
- * key, one that never changes the box (Escape, Left, Right, Home, End, Tab), or content.
+ * key, one that never changes the box (Escape, Left, Home, End), one that may take a
+ * prompt suggestion into an empty box, though never in a request's dialog (Right, Tab),
+ * or content.
  */
-export type KeyKind = "enter" | "queue" | "neutral" | "content"
+export type KeyKind = "enter" | "queue" | "neutral" | "accept" | "content"
 
 /**
  * What changes a terminal's delivery:

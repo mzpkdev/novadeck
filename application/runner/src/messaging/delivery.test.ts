@@ -63,6 +63,15 @@ describe("a terminal's delivery state", () => {
     expect(run(working, key("neutral"), stop).state).toBe("settled")
   })
 
+  it("is Drafting after Right or Tab, which may take a prompt suggestion into the box", () => {
+    const ready = transition(unbound, announced)
+    expect(transition(ready, key("accept")).state).toBe("drafting")
+    expect(transition(settled, key("accept")).state).toBe("drafting")
+    expect(run(working, key("accept"), stop).state).toBe("drafting")
+    // A request's dialog shows no suggestion.
+    expect(transition(settled, key("accept", at, true))).toBe(settled)
+  })
+
   it("is Fresh once a session binds, with its prompt known empty", () => {
     expect(bound).toMatchObject({
       state: "fresh",
@@ -290,7 +299,14 @@ describe("keys while a request waits on the person", () => {
 
   it("leave the box as it was when only Enter and neutral keys answered", () => {
     expect(
-      run(working, asked("neutral"), asked("enter"), { type: "asked-cleared" }, stop).state,
+      run(
+        working,
+        asked("neutral"),
+        asked("accept"),
+        asked("enter"),
+        { type: "asked-cleared" },
+        stop,
+      ).state,
     ).toBe("settled")
   })
 
