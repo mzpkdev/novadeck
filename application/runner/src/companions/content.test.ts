@@ -180,12 +180,29 @@ describe("a text file as it loads", () => {
     })
     expect(shown?.lines[40]).toBe(padded(50_000))
     expect(shown?.lines.at(-1)).toBe(padded(50_045))
-    // Past its end, read to its end: pulled back, with its count.
-    await expect(
-      loadFile(file(path, { lines: { from: 200_000, to: 200_001 } }), false),
-    ).resolves.toMatchObject({
-      content: { from: 120_000, to: 120_000, total: 120_000, truncated: false, clamped: true },
+    // Past its end, read to its end: pulled back to its true last lines, with its count.
+    const past = await loadFile(file(path, { lines: { from: 200_000, to: 200_001 } }), false)
+    expect(past).toMatchObject({
+      content: {
+        firstLine: 119_960,
+        from: 120_000,
+        to: 120_000,
+        total: 120_000,
+        truncated: false,
+        clamped: true,
+      },
     })
+    const tail = past.state === "ready" && past.content.kind === "file" ? past.content.lines : []
+    expect(tail).toEqual(Array.from({ length: 41 }, (_, index) => padded(119_960 + index)))
+  })
+
+  it("pulls a range starting past the end back to the file's last lines", async ({ directory }) => {
+    const path = join(directory, "long.txt")
+    writeFileSync(path, numbered(1000))
+    const past = await loadFile(file(path, { lines: { from: 1020, to: 1030 } }), false)
+    expect(past).toMatchObject({ content: { firstLine: 960, from: 1000, to: 1000, clamped: true } })
+    const lines = past.state === "ready" && past.content.kind === "file" ? past.content.lines : []
+    expect(lines).toEqual(Array.from({ length: 41 }, (_, index) => `line ${960 + index}`))
   })
 
   it("ends lines at any line break, old Mac ones too", async ({ directory }) => {
@@ -396,9 +413,24 @@ describe("a plan presented as text", () => {
       readTextPlan("claude", transcript),
     ])
     expect([one?.text, two?.text]).toEqual(["# Third", "# Third"])
+    // Rewritten in place, longer, it is read again from its start.
+    writeFileSync(
+      transcript,
+      presented("# Rewritten", "2026-09-30T10:30:00Z").repeat(4) + "\n".repeat(64),
+    )
+    await expect(readTextPlan("claude", transcript)).resolves.toMatchObject({
+      text: "# Rewritten",
+    })
     // Rewritten shorter, it is read again from its start.
     writeFileSync(transcript, presented("# Anew", "2026-09-30T11:00:00Z"))
     await expect(readTextPlan("claude", transcript)).resolves.toMatchObject({ text: "# Anew" })
+    // A last line whose newline is still to come counts, and again once it has one.
+    writeFileSync(transcript, presented("# Unended", "2026-09-30T12:00:00Z").trimEnd())
+    await expect(readTextPlan("claude", transcript)).resolves.toMatchObject({ text: "# Unended" })
+    appendFileSync(transcript, "\n")
+    await expect(readTextPlan("claude", transcript)).resolves.toMatchObject({ text: "# Unended" })
+    appendFileSync(transcript, presented("# After", "2026-09-30T13:00:00Z"))
+    await expect(readTextPlan("claude", transcript)).resolves.toMatchObject({ text: "# After" })
     // Antigravity keeps its plans in files only.
     await expect(readTextPlan("agy", transcript)).resolves.toBeUndefined()
   })

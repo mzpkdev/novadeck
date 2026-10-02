@@ -193,6 +193,8 @@ const readLines = async (
   const last = range ? Math.min(range.to + contextLines, start + maxLines - 1) : wholeLines
   const keeps = (line: number) => line <= wholeLines || (line >= start && line <= last)
   const kept = new Map<number, string>()
+  // The latest lines read, which a range past the file's end is pulled back to.
+  const tail: [number, string][] = []
   const decoder = new StringDecoder("utf8")
   const breaks = /\r\n|\r|\n/g
   const buffer = Buffer.alloc(chunkBytes)
@@ -206,6 +208,8 @@ const readLines = async (
   const push = () => {
     count += 1
     if (keeps(count)) kept.set(count, line)
+    tail.push([count, line])
+    if (tail.length > contextLines + 1) tail.shift()
     if (count === last) past = position
     line = ""
   }
@@ -234,6 +238,7 @@ const readLines = async (
   take(decoder.end())
   // The line a final newline ends is the last; an empty file has one empty line.
   if (line !== "" || count === 0) push()
+  for (const [number, text] of tail) kept.set(number, text)
   return { kept, count, ended: true }
 }
 
@@ -340,9 +345,17 @@ export const readPlanFile = async (
 type Decoded = {
   readonly stamp: string
   readonly ino: number
+  readonly born: number
+  /** How far it was read, to the end of its last whole line, and the bytes just before. */
   readonly offset: number
+  readonly mark: Buffer
+  /** The latest plan its whole lines held, from which a later read goes on. */
+  readonly settled: PlanText | undefined
+  /** The latest plan, a last line without its newline yet included. */
   readonly plan: PlanText | undefined
 }
+// How many bytes before where a file was read to tell it is still the same file.
+const markBytes = 256
 const decoded = new Map<string, Decoded>()
 const maxDecoded = 16
 // The read under way of each path; another waits for it, then reads only what is new.
@@ -364,6 +377,18 @@ export const readTextPlan = (agent: AgentName, path: string): Promise<PlanText |
   return read
 }
 
+/**
+ * Whether a file is still the one read before, only grown: the same file, at least as
+ * long, holding the same bytes just before where that read ended.
+ */
+const sameFile = async (handle: FileHandle, stats: Stats, known: Decoded): Promise<boolean> => {
+  if (stats.ino !== known.ino || stats.birthtimeMs !== known.born) return false
+  if (stats.size < known.offset) return false
+  const mark = Buffer.alloc(known.mark.length)
+  const { bytesRead } = await handle.read(mark, 0, mark.length, known.offset - mark.length)
+  return bytesRead === mark.length && mark.equals(known.mark)
+}
+
 const decodePlans = async (
   path: string,
   plans: NonNullable<(typeof harnesses)[AgentName]["plans"]>,
@@ -381,8 +406,8 @@ const decodePlans = async (
     const known = decoded.get(path)
     if (known?.stamp === stamp) return known.plan
     // The same file, grown: only what was added. Replaced or cut short: all of it again.
-    const from = known && known.ino === stats.ino && stats.size >= known.offset ? known : undefined
-    let latest = from?.plan
+    const from = known && (await sameFile(handle, stats, known)) ? known : undefined
+    let latest = from?.settled
     let position = from?.offset ?? 0
     let carry = Buffer.alloc(0)
     const buffer = Buffer.alloc(1024 * 1024)
@@ -404,8 +429,23 @@ const decodePlans = async (
       position += end + 1
       carry = data.subarray(end + 1)
     }
+    const settled = latest
+    // A last line without its newline counts, though a later read takes it again.
+    for (const { source, at } of plans(carry.toString("utf8").replace(/\r$/, "")))
+      if (source.kind === "text")
+        latest = { text: source.text, truncated: source.truncated, changedAt: at }
+    const mark = Buffer.alloc(Math.min(markBytes, position))
+    await handle.read(mark, 0, mark.length, position - mark.length)
     decoded.delete(path)
-    decoded.set(path, { stamp, ino: stats.ino, offset: position, plan: latest })
+    decoded.set(path, {
+      stamp,
+      ino: stats.ino,
+      born: stats.birthtimeMs,
+      offset: position,
+      mark,
+      settled,
+      plan: latest,
+    })
     for (const oldest of decoded.keys()) {
       if (decoded.size <= maxDecoded) break
       decoded.delete(oldest)
