@@ -171,8 +171,17 @@ describe("applying activity", () => {
       kind: "permission",
       startedAt,
     })
+  // A result's hook starts after its request's, which these ask by 8.
   const result = (requestId: string, actor: string | null, toolName = "Bash", loose = false) =>
-    fact({ type: "attention-resolved", requestId, actor, toolName, loose, outcome: "allowed" })
+    fact({
+      type: "attention-resolved",
+      requestId,
+      actor,
+      toolName,
+      loose,
+      outcome: "allowed",
+      startedAt: 9,
+    })
 
   it("keeps one actor's request waiting while another actor's calls finish", () => {
     const waiting = apply(started(0), binding, request("a:Bash:1", "a"))!
@@ -385,6 +394,55 @@ describe("applying activity", () => {
       fact({ type: "subagent-started", actor: "a", actorType: long }),
     )!
     expect(summary(typed).subagents[0]?.type).toHaveLength(256)
+  })
+
+  it("settles a subagent's request once it asks again, as a denial that no hook reports", () => {
+    const ended = apply(
+      asking(),
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+    )!
+    // Its call's result, of a call it ran alongside, or another actor's request: none
+    // tells that its dialog closed.
+    expect(apply(ended, binding, { ...result("bg:Read:2", "bg"), startedAt: 12 })).toBeUndefined()
+    const other = apply(ended, binding, request("fg:Bash:1", "fg", 12))!
+    expect(ids(other)).toEqual(["bg:Bash:1", "fg:Bash:1"])
+    // It asks again: it moved past its first dialog, and its newest one waits.
+    const again = apply(ended, binding, request("bg:Bash:2", "bg", 12))!
+    expect(ids(again)).toEqual(["bg:Bash:2"])
+    expect(summary(again).attention).toEqual({ pending: 1, kind: "permission" })
+    // Its older request, arriving after the newer one, asks nothing.
+    expect(apply(again, binding, request("bg:Bash:0", "bg", 8))).toBeUndefined()
+  })
+
+  it("keeps a running subagent's request asked before the root's Stop, and drops the root's", () => {
+    const ended = apply(
+      asking(),
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+    )!
+    // Hooks that started before the Stop, reported after it.
+    const late = apply(ended, binding, request("bg:Edit:1", "bg", 9))!
+    expect(ids(late)).toEqual(["bg:Edit:1"])
+    expect(late.state).toBe("idle")
+    expect(apply(ended, binding, request("root:Edit:1", null, 9))).toBeUndefined()
+    expect(apply(ended, binding, request("gone:Edit:1", "gone", 9))).toBeUndefined()
+  })
+
+  it("leaves a request asked again after a result whose hook started before it", () => {
+    const again = apply(started(0), binding, request("a:Bash:1", "a", 10))!
+    // The first time's result, its hook started before the second ask's.
+    const early = fact({
+      type: "attention-resolved",
+      requestId: "a:Bash:1",
+      actor: "a",
+      toolName: "Bash",
+      loose: false,
+      outcome: "allowed",
+      startedAt: 8,
+    })
+    expect(apply(again, binding, early)).toBeUndefined()
+    expect(apply(again, binding, { ...early, startedAt: 11 })?.pending).toEqual([])
   })
 
   it("keeps at most 32 subagents", () => {

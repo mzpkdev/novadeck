@@ -111,6 +111,20 @@ describe("decoding captured hooks", () => {
     ])
   })
 
+  it("observes a Codex session that keeps no transcript at its start, as an ephemeral root", () => {
+    // `config.ephemeral` keeps no rollout, so its hooks name no transcript_path; only a
+    // fork so started is a /side conversation.
+    const [start] = probe("codex").events
+    const ephemeral = {
+      ...start!,
+      payload: { ...start!.payload, source: "startup", transcript_path: null },
+    }
+    expect(harnesses.codex.decode(report("codex", ephemeral))).toMatchObject([
+      { type: "session-observed", evidence: "startup" },
+    ])
+    expect(harnesses.codex.decode(report("codex", ephemeral))[0]).not.toHaveProperty("transcript")
+  })
+
   it("observes Antigravity's conversation in every hook", () => {
     const events = decoded("agy")
     expect(events).toHaveLength(probe("agy").events.length)

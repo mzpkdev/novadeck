@@ -92,15 +92,23 @@ export const bound = (
   binding.sessionId === event.sessionId &&
   (binding.instance === null || event.instance === null || binding.instance === event.instance)
 
-/** The index of the request a result resolves: its own call, or loosely the actor's oldest. */
+/**
+ * The index of the request a result resolves: its own call, or loosely the actor's oldest.
+ * A result's hook starts after its request's, so one that started before resolves an
+ * earlier ask of the same call, never this one.
+ */
 const resolved = (
   pending: readonly Request[],
   event: Extract<ActivityEvent, { type: "attention-resolved" }>,
 ): number => {
-  const exact = pending.findIndex(({ requestId }) => requestId === event.requestId)
+  const asked = (request: Request) => event.startedAt >= request.askedAt
+  const exact = pending.findIndex(
+    (request) => request.requestId === event.requestId && asked(request),
+  )
   if (exact >= 0 || !event.loose) return exact
   return pending.findIndex(
-    ({ actor, toolName }) => actor === event.actor && toolName === event.toolName,
+    (request) =>
+      request.actor === event.actor && request.toolName === event.toolName && asked(request),
   )
 }
 
@@ -120,9 +128,10 @@ const outliving = (
  * or from a turn already over. A root turn's start or end settles the root's own requests
  * still waiting: no harness ends a root turn normally while its own dialog waits, a
  * denial ends it abnormally, and one answered with no report, as another hook's denial,
- * would otherwise wait forever. A running subagent's requests wait for their own
- * resolution or its stop. An interrupted turn ends the subagents it started, which report no stop then; a
- * background one from an earlier turn runs on.
+ * would otherwise wait forever. A running subagent's requests answer to no root turn: each
+ * waits for its own resolution, that subagent's next request or its stop. An interrupted
+ * turn ends the subagents it started, which report no stop then; a background one from an
+ * earlier turn runs on.
  */
 export const apply = (
   activity: Activity,
@@ -203,6 +212,10 @@ export const apply = (
         return undefined
       return { ...activity, pending: activity.pending.toSpliced(index, 1) }
     }
+    case "attention-requested":
+      // A running subagent's request answers to no root turn, as its result doesn't.
+      if (event.actor !== null && activity.subagents.some(({ id }) => id === event.actor))
+        return asked(activity, event)
   }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
@@ -269,29 +282,42 @@ export const apply = (
         },
       }
     }
-    case "attention-requested": {
-      if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
-      // One only a turn asks, shown while none runs, is a stale snapshot of the turn a Stop
-      // ended: a turn running, or one a working resumed, is the only one it can be.
-      if (event.midTurn === true && activity.state !== "working") return undefined
-      // Asked by a subagent before it stopped, it waits on the person no longer.
-      const stopped = event.actor === null ? undefined : endOf(activity.ended, event.actor)
-      if (stopped !== undefined && event.startedAt < stopped) return undefined
-      const { requestId, actor, toolName, kind, subject, choices } = event
-      // An actor shows one plan for review at a time: a revised one replaces it.
-      const kept =
-        kind === "plan"
-          ? activity.pending.filter((each) => each.kind !== "plan" || each.actor !== actor)
-          : activity.pending
-      return {
-        ...activity,
-        state: "working",
-        pending: [
-          ...kept,
-          { requestId, actor, toolName, kind, subject, choices, askedAt: event.startedAt },
-        ],
-      }
-    }
+    case "attention-requested":
+      return asked(activity, event)
+  }
+}
+
+/**
+ * The activity once a request is asked, or undefined when it asks nothing new. A subagent
+ * shows one dialog at a time, and a hook that answers no reports nothing, so its newest
+ * request stands for it: one it asked later settles its older ones, whatever answered
+ * them, and an older one arriving later asks nothing. A result of another call proves
+ * nothing, as it may come from a call that ran alongside the one asked about. The root's
+ * requests, which may arrive in any order, wait for the turn's end.
+ */
+const asked = (
+  activity: Activity,
+  event: Extract<ActivityEvent, { type: "attention-requested" }>,
+): Activity | undefined => {
+  if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
+  // One only a turn asks, shown while none runs, is a stale snapshot of the turn a Stop
+  // ended: a turn running, or one a working resumed, is the only one it can be.
+  if (event.midTurn === true && activity.state !== "working") return undefined
+  const { requestId, actor, toolName, kind, subject, choices, startedAt } = event
+  // Asked by a subagent before it stopped, it waits on the person no longer.
+  const stopped = actor === null ? undefined : endOf(activity.ended, actor)
+  if (stopped !== undefined && startedAt < stopped) return undefined
+  const own = (each: Request) => actor !== null && each.actor === actor
+  if (activity.pending.some((each) => own(each) && each.askedAt > startedAt)) return undefined
+  // An actor shows one plan for review at a time: a revised one replaces it.
+  const kept = activity.pending.filter(
+    (each) => !own(each) && (kind !== "plan" || each.kind !== "plan" || each.actor !== actor),
+  )
+  return {
+    ...activity,
+    // A subagent's request from before the root's turn ended doesn't resume it.
+    ...(startedAt >= activity.turnAt && { state: "working" }),
+    pending: [...kept, { requestId, actor, toolName, kind, subject, choices, askedAt: startedAt }],
   }
 }
 

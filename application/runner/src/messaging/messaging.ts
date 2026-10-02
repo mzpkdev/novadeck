@@ -169,6 +169,9 @@ const sendRequest = z.strictObject({
 
 const refused = (reason: string) => ({ ok: false, reason }) as const
 
+// Closed, messaging keeps nothing more, so a message then would be lost, not queued.
+const stopping = "NovaDeck is stopping and couldn't keep the message; send it again once it's back."
+
 /** When a thread's latest message was sent. */
 const latest = (thread: MessageThread): number => thread.messages.at(-1)?.sentAt ?? 0
 
@@ -615,6 +618,7 @@ export class Messaging {
   send(terminalId: string, request: unknown, about: About = () => undefined): SendAnswer {
     const live = this.live.get(terminalId)
     if (!live) return refused("NovaDeck couldn't send the message.")
+    if (this.closed) return refused(stopping)
     const answer = this.sendFrom(live, request, about)
     // Refused too, a sender whose own session never bound learns replies can't reach it.
     return answer.ok || !this.unbound(live) ? answer : { ...answer, unbound: true }
@@ -692,6 +696,7 @@ export class Messaging {
   refusal(terminalId: string, text: string, agent: AgentName): string | undefined {
     const live = this.live.get(terminalId)
     if (!live) return "NovaDeck couldn't send the message."
+    if (this.closed) return stopping
     const clean = cleanText(text)
     const textRefusal = refusalOfText(clean)
     if (textRefusal) return textRefusal

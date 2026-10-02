@@ -843,6 +843,18 @@ describe("delivery through hooks", () => {
     expect(messages(second, "B").map((one) => one.state)).toEqual(["queued", "queued"])
   })
 
+  it("refuses a message sent while the runner stops, which it could no longer keep", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    first.messaging.close()
+    const answer = first.send("A", "t2", "hello")
+    expect(answer).toMatchObject({ ok: false, reason: expect.stringContaining("stopping") })
+    expect(first.messaging.refusal("A", "hello", "codex")).toEqual(
+      expect.stringContaining("stopping"),
+    )
+    expect(records.messages()).toEqual([])
+  })
+
   it("delivers several messages together, up to 8 KB as printed, the rest at the next hook", () => {
     const { messaging, send, prompt, codex } = create()
     sent(send("A", "t2", "a".repeat(4_000)))
