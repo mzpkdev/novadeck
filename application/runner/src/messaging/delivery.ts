@@ -68,6 +68,8 @@ export type Box = {
   readonly empty: boolean
   /** Whether the person submitted a prompt during the running turn, which their harness queues. */
   readonly queuing: boolean
+  /** When the person's Enter that set `queuing` came; null when its time is unknown. */
+  readonly queuingSince: number | null
   /**
    * When the person's last bare Enter came, outside a request, until a root prompt uses it
    * up; null once a key whose time is unknown came after it.
@@ -188,6 +190,7 @@ export type DeliveryEvent =
 const emptyBox: Box = {
   empty: true,
   queuing: false,
+  queuingSince: null,
   enteredAt: null,
   typedAt: null,
   escapedAt: null,
@@ -307,7 +310,10 @@ const atPrompt = (delivery: Delivery, at: number): Delivery => {
   const next = arrived(delivery)
   const { box } = delivery
   const entered = pendingEnter(delivery, at) !== undefined
-  const queuing = box.queuing && !(delivery.state === "unknown" && entered)
+  // Only when that Enter is the one that set `queuing`: one before it queued a prompt that
+  // may stay.
+  const queuing =
+    box.queuing && !(delivery.state === "unknown" && entered && box.queuingSince === box.enteredAt)
   const kept = delivery.state !== "unbound" && (queuing || box.queued || (!box.empty && !entered))
   return next.box.typedSinceEnter || kept
     ? { ...next, box: typed(emptyBox), state: "drafting" }
@@ -565,6 +571,7 @@ const keyed = (delivery: Delivery, submits: boolean, at: number | null): Deliver
     empty: false,
     // Only while a root turn runs, or may, does the harness queue what the person submits.
     queuing: box.queuing || (mayRun(delivery) && submits),
+    queuingSince: box.queuing ? box.queuingSince : mayRun(delivery) && submits ? at : null,
   }
   if (delivery.state === "settled" || delivery.state === "ready")
     return { ...counts(delivery), box: after, state: "drafting" }

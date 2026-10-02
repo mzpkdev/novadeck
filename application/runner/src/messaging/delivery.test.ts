@@ -638,6 +638,13 @@ describe("a new session at its own prompt", () => {
     expect(run(unknown, typing, enter, typing, announced).state).toBe("drafting")
     // During a running turn, the Enter queued a prompt the harness may still hold.
     expect(run(working, typing, enter, announced).state).toBe("drafting")
+    // A prompt queued by an earlier Enter, then the /clear's own: that prompt may stay.
+    const queuedFirst = run(unknown, typing, enter, typing, key("enter", at + 500))
+    expect(transition(queuedFirst, { ...announced, at: at + 600 }).state).toBe("drafting")
+    // The /clear's Enter alone: Ready.
+    expect(run(unknown, typing, key("enter", at + 500), { ...announced, at: at + 600 }).state).toBe(
+      "ready",
+    )
   })
 
   it("is Drafting when the person typed after their last Enter, as while the agent started", () => {

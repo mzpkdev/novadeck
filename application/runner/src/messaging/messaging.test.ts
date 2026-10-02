@@ -637,6 +637,50 @@ describe("delivery through hooks", () => {
     expect(messaging.delivery("A")?.state).toBe("drafting")
   })
 
+  it("keeps a request asked after an Escape that only closed a popup, whatever reports follow", () => {
+    const { messaging, prompt, observe, claude, clock: time } = create()
+    // The bound session's activity, as the terminal manager applies it.
+    let activity: Activity = freshActivity(0)
+    const applied = (events: readonly HarnessEvent[]) => {
+      for (const event of events)
+        if (event.type !== "session-observed" && event.type !== "telemetry-observed")
+          activity = applyActivity(activity, claude, event) ?? activity
+      const escaped = messaging.escaped("A", claude)
+      if (escaped) activity = applyActivity(activity, claude, escaped) ?? activity
+    }
+    // A report whose hook started now.
+    const report = (events: HarnessEvent[]) => {
+      const timed = events.map((event) => ({ ...event, startedAt: time.now }))
+      observe("A", claude, timed)
+      applied(timed)
+    }
+    prompt("A", claude)
+    applied([{ ...started(claude), startedAt: time.now }])
+    time.now += 1_000
+    messaging.keys("A", claudeKeys("\x1b"), false)
+    applied([])
+    expect(activity.state).toBe("idle")
+    // The turn went on, and asks the person's permission.
+    time.now += 1_000
+    report([
+      {
+        type: "attention-requested",
+        ...fact(claude),
+        requestId: "r1",
+        actor: null,
+        toolName: "Bash",
+        kind: "permission",
+        subject: null,
+        choices: [],
+      },
+    ])
+    expect(activity.pending).toHaveLength(1)
+    // Any later report leaves it waiting.
+    time.now += 1_000
+    report([observed(claude)])
+    expect(activity.pending).toHaveLength(1)
+  })
+
   it("leaves a Stop to end when the person queued a prompt, which delivers instead", () => {
     const { messaging, send, prompt, stop, codex } = create()
     prompt("B", codex)

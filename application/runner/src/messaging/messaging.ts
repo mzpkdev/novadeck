@@ -80,6 +80,8 @@ type Live = Scope & {
    * `send` refuses. None once its prompt counts, a session binds, or it leaves.
    */
   untrusted: AgentName | null
+  /** The Escape `escaped` last told the agent's activity of, so it tells each one once. */
+  escapeTold: number | null
   /** The prompt that started the current root turn, by its delivery epoch; null before any. */
   prompt: { readonly epoch: number; readonly text: string } | null
 }
@@ -255,6 +257,7 @@ export class Messaging {
       expecting: null,
       shown: null,
       untrusted: null,
+      escapeTold: null,
       prompt: null,
     })
   }
@@ -316,10 +319,16 @@ export class Messaging {
   /**
    * The person's Escape that may have cancelled the root turn, as delivery took it, as an
    * event for the bound session's activity, so both tell the same (see `turn-escaped`).
+   * Each Escape is told once, as it ends the turn: a turn that went on after it, asking
+   * the person something, keeps what it asked.
    */
   escaped(terminalId: string, binding: Binding): ActivityEvent | undefined {
-    const delivery = this.live.get(terminalId)?.delivery
-    if (delivery?.state !== "unknown" || delivery.escapedAt === undefined) return undefined
+    const live = this.live.get(terminalId)
+    if (!live) return undefined
+    const { delivery } = live
+    if (delivery.state !== "unknown" || delivery.escapedAt === undefined) return undefined
+    if (live.escapeTold === delivery.escapedAt) return undefined
+    live.escapeTold = delivery.escapedAt
     const { agent, sessionId, instance } = binding
     return { type: "turn-escaped", agent, sessionId, instance, startedAt: delivery.escapedAt }
   }

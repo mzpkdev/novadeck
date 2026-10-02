@@ -404,7 +404,8 @@ the opener's, and `describe` names the caller's own terminal (see
   Enter during a running turn queued a prompt the harness may still hold, so the box
   stays a draft; after an abnormal end (Unknown), where the turn may have run on, that
   Enter was the command that replaced the session, and what it might have queued went
-  with the old session. An agent started with
+  with the old session; a prompt an earlier Enter queued may stay, so the box stays a
+  draft. An agent started with
   the line as its command-line prompt stays as empty as its binding left it: a doorbell
   prompt outside a ring, as that start's or a failed ring's late one, empties nothing
   the person typed. NovaDeck
