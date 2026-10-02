@@ -139,7 +139,9 @@ network:
   can read, deleted before the command starts. Elsewhere an unprivileged user namespace
   owns it, which Ubuntu 24.04 may forbid
   (`kernel.apparmor_restrict_unprivileged_userns`). `NOVADECK_E2E_NETNS=sudo` or `user`
-  picks one. It refuses to run the command if the namespace has any interface besides
+  picks one. CI always takes `sudo`; `user` is for a developer without passwordless sudo,
+  and the opted-in tests below are where it runs (`NOVADECK_E2E_NETNS=user
+NOVADECK_E2E_NETNS_TESTS=1`). It refuses to run the command if the namespace has any interface besides
   loopback.
 
 - **No real credential.** Each harness gets a fake key that the fake model accepts. A

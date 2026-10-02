@@ -41,9 +41,9 @@ broadcast rooms; and agents starting conversations nobody asked for.
 4. **NovaDeck types one constant line, and only when it can see it is safe.** The
    doorbell that wakes an idle agent is the same text every time apart from a nonce,
    carries nothing a peer chose, and is submitted only after NovaDeck has seen it land on
-   a quiet screen and change nothing else, but for one allowance on an agent's first
-   screen: as the line replaces the box's empty state there, a block of text away from it
-   may vanish, whole. It counts once the agent's hook confirms it.
+   a quiet screen and change nothing else, but for one allowance on a Ready terminal,
+   before its session's first turn: as the line replaces the box's empty state there, a
+   block of text away from it may vanish, whole, as Codex's logo does. It counts once the agent's hook confirms it.
    NovaDeck knows nothing of how any harness draws its screen: the checks are the same
    for every TUI.
 5. **The mailbox is the record.** Every message is stored and visible in NovaDeck, with
@@ -609,8 +609,9 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    - every row that changed is one the line occupies or within 3 rows of them, which
      covers a vanishing placeholder, footer hints and the box growing. When the box
      grows by a row, the rows above it may move up one and those below down one; they
-     are compared moved. Or, for a ring of a Ready terminal only, as a TUI may draw
-     something on its first screen only while its box is empty (Codex its logo), farther
+     are compared moved. Or, for a ring of a Ready terminal only (a first screen, or one
+     after a `/clear` or a resume, its box known empty), as a TUI may draw something
+     there only while its box is empty (Codex its logo), farther
      rows changed too, but only as one block of text that vanished whole, and the line
      replaced the box's empty state; a Settled terminal gets the check above alone. For
      one of the same moves, all of these hold: before the paste, the line's row showed
@@ -632,13 +633,12 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    person opened, by typing or by a shortcut such as Ctrl-R, never gets this far: the
    paste check is not what stops it, Untouched is, as every key but Escape, Left, Home
    and End counts as a draft. One residual case passes, and is accepted: on a Ready
-   terminal's first screen, a picker the harness raised itself, its field showing a
-   placeholder, whose one isolated block of text vanished whole as the line landed in
-   it, as a list emptied by the line would. Enter then goes to that field, not to a
-   prompt: on an emptied list it picks nothing, and where the field still shows an entry
-   the line matched, set apart from the vanished block by blank rows, it may pick that
-   entry. Either way no turn starts with the line, the ring goes unconfirmed, and the
-   terminal goes Unknown.
+   terminal, a picker the harness raised itself, its field showing a placeholder, whose
+   one isolated block of text vanished whole as the line landed in it, as a list emptied
+   by the line would. Enter then goes to that field, not to a prompt: on an emptied list
+   it picks nothing, and where any entry is left beside the field, matched by the line
+   or not (an always-shown "New session", say), it may pick that entry. Either way no
+   turn starts with the line, the ring goes unconfirmed, and the terminal goes Unknown.
 
 6. **Enter**, only while the hold is still in force; a hold that lapsed abandons the
    ring.

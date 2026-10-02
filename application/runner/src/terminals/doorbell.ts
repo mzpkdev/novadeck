@@ -27,7 +27,7 @@ export type DoorbellHost = {
   readonly ringable: (terminalId: string) => boolean
   /** When it became Settled, its turn ended, or Ready, its session bound; if it is either. */
   readonly settledSince: (terminalId: string) => number | undefined
-  /** Whether it is Ready: a new session at its own prompt, its first screen, no turn yet. */
+  /** Whether it is Ready: a session at its own prompt before its first turn, its box empty. */
   readonly ready: (terminalId: string) => boolean
   /** Starts the ring with its nonce: the terminal is Ringing; false when it may not now. */
   readonly ring: (terminalId: string, nonce: string) => boolean
@@ -181,7 +181,7 @@ export class Doorbell {
   private async ring(terminalId: string): Promise<void> {
     const nonce = freshNonce()
     const line = doorbellLine(nonce)
-    // Only a first screen may lose a block of text as the line lands, as Codex's logo.
+    // Only a Ready terminal may lose a block of text as the line lands, as Codex's logo.
     const vanish = this.host.ready(terminalId)
     if (!this.host.ring(terminalId, nonce)) return
     const hold = this.host.hold(terminalId)

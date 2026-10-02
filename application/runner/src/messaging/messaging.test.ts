@@ -1,6 +1,11 @@
 import type { AgentName } from "@novadeck/protocol"
 import { afterEach, beforeEach, vi } from "vitest"
 
+import {
+  apply as applyActivity,
+  started as freshActivity,
+  type Activity,
+} from "../harnesses/activity.js"
 import type { Binding } from "../harnesses/bindings.js"
 import type { HarnessEvent } from "../harnesses/events.js"
 import { doorbellLine } from "../harnesses/harness.js"
@@ -9,6 +14,7 @@ import { followRoot, type Root } from "../harnesses/roots.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
 import { keysOf } from "../terminals/keys.js"
 import { describe, expect, it } from "../test.js"
+import { running } from "./delivery.js"
 import { clock, retentionMs, threadMs } from "./mailbox.js"
 import {
   Messaging,
@@ -1037,6 +1043,145 @@ describe("Antigravity's root conversation", () => {
     observe("G", root, invocation(root, 0))
     ask("G", root, "Stop", [observed(root), stopped(root, true)])
     expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
+  })
+})
+
+// Antigravity's turn rule lives in two places, read from the same decoded events: the
+// activity clients see (`harnesses/activity.ts`) and the delivery state messaging keeps
+// (`delivery.ts`). Both must tell the same of whether a turn runs at every step.
+describe("Antigravity's turn, as activity and delivery both tell it", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const root = binding("agy", "c-root", "7")
+
+  // Its terminal, with the activity the terminal manager would apply from the same reports.
+  const agyTerminal = () => {
+    const setup = create()
+    setup.messaging.register("G", here, "t3")
+    let activity: Activity = freshActivity(0)
+    const applied = (events: readonly HarnessEvent[]) => {
+      for (const event of events) {
+        if (event.type === "session-observed" || event.type === "telemetry-observed") continue
+        activity = applyActivity(activity, root, event) ?? activity
+      }
+    }
+    // A hook's report, decoded by Antigravity's own adapter, which messaging asks about.
+    const hook = (
+      event: string,
+      seq: number,
+      payload: Record<string, unknown>,
+      told: (events: readonly HarnessEvent[]) => readonly HarnessEvent[] = (events) => events,
+    ) => {
+      const events = told(
+        harnesses.agy.decode({
+          ...agyReport(root.sessionId, "idle", seq),
+          event,
+          instance: root.instance,
+          payload: { conversationId: root.sessionId, ...payload },
+        }),
+      )
+      applied(events)
+      setup.ask("G", root, event, [...events])
+    }
+    const status = (state: string, seq: number) => {
+      const events = agyStatus(root, state, seq)
+      applied(events)
+      setup.observe("G", root, events, true)
+    }
+    // Whether a turn runs, as each tells it. Activity has two states, working or idle.
+    // Delivery runs a turn only in its `turn` or `continuing` phase: its `background` phase,
+    // after a Stop while subagents run, is idle to activity, which tells subagents apart;
+    // and Settled, Unknown, Ready, Ringing and Drafting are all idle there.
+    const told = () => ({
+      activity: activity.state === "working",
+      delivery: running(setup.messaging.delivery("G")!),
+    })
+    const turn = (expected: boolean) => {
+      expect(told()).toEqual({ activity: expected, delivery: expected })
+    }
+    return { ...setup, hook, status, turn }
+  }
+
+  it("agrees no turn runs when its status line says working just after a Stop", () => {
+    const { messaging, hook, status, turn } = agyTerminal()
+    status("idle", 1)
+    turn(false)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    turn(true)
+    hook("Stop", 3, { fullyIdle: true })
+    turn(false)
+    status("working", 4)
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("agrees the turn goes on when a newer working follows an idle that ended it", () => {
+    const { messaging, hook, status, turn } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    turn(true)
+    status("idle", 3)
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("unknown")
+    status("working", 4)
+    turn(true)
+  })
+
+  it("agrees no turn runs when a working older than the idle that ended it arrives", () => {
+    const { messaging, hook, status, turn } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    status("idle", 4)
+    turn(false)
+    status("working", 3)
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("unknown")
+  })
+
+  it("agrees no turn runs while it rings, through a working, until the doorbell prompt", () => {
+    const { messaging, hook, status, turn, send, clock: time } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    hook("Stop", 3, { fullyIdle: true })
+    sent(send("A", "t3", "hello"))
+    time.now += 6_000
+    expect(messaging.ring("G", "n1")).toBe(true)
+    turn(false)
+    status("working", 4)
+    turn(false)
+    expect(messaging.delivery("G")).toMatchObject({ state: "ringing", nonce: "n1" })
+    // Its model call, told from its transcript as the ring's own prompt, as
+    // `typedPromptStart` tells it; activity reads any turn start alike.
+    hook("PreInvocation", 5, { invocationNum: 0 }, (events) =>
+      events.map((event) =>
+        event.type === "turn-started" ? { ...event, cause: "doorbell", nonce: "n1" } : event,
+      ),
+    )
+    turn(true)
+    expect(messaging.ringing("G")).toBeUndefined()
+    hook("Stop", 6, { fullyIdle: true })
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("agrees no turn runs after a Stop with subagents running, once they finish, then a working", () => {
+    const { messaging, hook, status, turn } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    hook("Stop", 3, { fullyIdle: false })
+    turn(false)
+    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
+    status("idle", 4)
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("settled")
+    status("working", 5)
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("settled")
   })
 })
 
