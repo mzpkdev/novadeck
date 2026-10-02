@@ -2484,7 +2484,7 @@ export class Terminals {
       // What was seen of this transcript, not another's.
       seen: record.seenEntry?.transcript === transcript ? record.seenEntry.id : undefined,
       enteredAt: this.messaging.pendingSubmission(id),
-      waiting: this.messaging.ringing(id) !== undefined,
+      ringing: this.messaging.ringing(id),
       startedWith: record.startedWith,
     })
     if (told.seen !== undefined) record.seenEntry = { transcript, id: told.seen }

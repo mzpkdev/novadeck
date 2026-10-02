@@ -41,7 +41,8 @@ broadcast rooms; and agents starting conversations nobody asked for.
 4. **NovaDeck types one constant line, and only when it can see it is safe.** The
    doorbell that wakes an idle agent is the same text every time apart from a nonce,
    carries nothing a peer chose, and is submitted only after NovaDeck has seen it land on
-   a quiet screen and change nothing else; it counts once the agent's hook confirms it.
+   a quiet screen, replacing the box's empty state and adding nothing else; away from the
+   line, text may only vanish, whole. It counts once the agent's hook confirms it.
    NovaDeck knows nothing of how any harness draws its screen: the checks are the same
    for every TUI.
 5. **The mailbox is the record.** Every message is stored and visible in NovaDeck, with
@@ -95,6 +96,7 @@ All three harnesses get every path. Where one falls short, the design accepts it
 | Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Antigravity   | Its hooks can't tell the person's prompt from a subagent's message waking it                              | Its transcript can: a typed prompt is a `USER_EXPLICIT` `USER_INPUT` step, while a subagent's message, a Stop hook's continuation or a notice is a `SYSTEM_MESSAGE` step. A turn after the person's bare Enter is theirs only when a new typed step, no doorbell line, is there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Antigravity   | Esc and denials show only as an idle status line                                                          | Its decoder tells them from completion; they leave it Unknown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Antigravity   | Its status line still says working 10–60 ms after its Stop hook                                           | Only `PreInvocation` starts a root turn; working only resolves a confirmation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Antigravity   | `agy -i "<line>"` submits its prompt even while its "Do you trust this folder?" dialog is up              | A task starts it with `-i` only in a folder it already trusts; elsewhere it starts plain, and the task is rung once the person trusts the folder and its prompt shows (see Starting a task)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Windows (all) | The hook reports no instance, and the foreground process group can't be read                              | Nested agents are told apart by the decoders alone. Nothing checks at ring time that the agent still holds the terminal, for a bound session or a prompt shown before one: an agent that left unseen, as from a nested shell without NovaDeck's integration, leaves a shell or REPL prompt, where the test paste lands alone and Enter runs the line as a command. NovaDeck's own shell integration tells each prompt, which ends both; this residual risk stays on Windows                                                                                                                                                                                                                                                                                    |
 
@@ -287,7 +289,9 @@ the opener's, and `describe` names the caller's own terminal (see
   is the conversation its status line names; until that is probed in a live terminal,
   it is the conversation of the first `PreInvocation` after the session binds. Another
   conversation the same process reports is a subagent's and never takes the root's
-  place for messaging.
+  place for messaging. Antigravity's status line ends a turn or shows a confirmation,
+  but never starts one: only `PreInvocation` starts or resumes a root turn, as the
+  status line can still say working just after the turn's Stop.
 - **A request resolves** when its harness says so: `PostToolUse` for the call, Codex's
   `Interrupt`, Claude Code's transcript recording the call as interrupted or denied,
   Antigravity's status line no longer showing a confirmation, or a root prompt the
@@ -349,7 +353,8 @@ the opener's, and `describe` names the caller's own terminal (see
   transcript, where a transcript with no typed entry yet counts as seen; or, before any
   was read, one timed after the Enter, its time rounded down to the second so one in the
   Enter's own second fails safe; or, with no Enter, the very doorbell line NovaDeck
-  started it with as a task, never a stale one a resumed session ends with), that turn becomes a
+  started it with as a task, or the line of the ring waiting on it, as in a terminal the
+  runner restored, by its nonce: never a stale one a resumed session ends with), that turn becomes a
   prompt of its text (`typed-prompts.ts`), classified as Claude Code's and Codex's are:
   a doorbell prompt, or the person's text with any stale line removed. The same rule as
   for them then says whether it is the person's. Its transcript records a subagent's message, a Stop hook's
@@ -597,11 +602,24 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    - every row that changed is one the line occupies or within 3 rows of them, which
      covers a vanishing placeholder, footer hints and the box growing. When the box
      grows by a row, the rows above it may move up one and those below down one; they
-     are compared moved.
+     are compared moved. Or, as a TUI may draw something only while its box is empty
+     (Codex its logo), farther rows changed too, but only by vanishing whole, and the
+     line replaced the box's empty state: for the same moves, every far row is the one
+     it came from, or blank; at least one went blank, none of them beside a row with
+     text that stayed; and before the paste the line's row showed what now precedes the
+     line and more, a placeholder, not text the line was appended to.
 
    Anything else fails the ring: a menu, an approval or a picker took the paste, so the
-   line never appears, or it appears while far rows changed. Nothing is pressed; a line
-   left visible somewhere unexpected stays where it is.
+   line never appears; or it appears while far rows changed otherwise: something was
+   added or rewritten there, a list was filtered down to some of its items, or the line
+   was appended to text, such as a slash command or `@` that raised the popup that
+   closed. That keeps a menu, an approval or a picker from passing: it either swallows
+   the line or keeps part of its list, and a picker the person raised holds their typed
+   text before the line. Nothing is pressed; a line left visible somewhere unexpected
+   stays where it is. One residual case passes, and is accepted: a picker the harness
+   raised itself, whose search field shows an inline placeholder, filtered by the line
+   to an empty list. Enter there acts on the empty list, the ring goes unconfirmed, and
+   the terminal goes Unknown.
 
 6. **Enter**, only while the hold is still in force; a hold that lapsed abandons the
    ring.
@@ -633,7 +651,10 @@ idle screen settles about 5 s after a turn; Codex's and Antigravity's are still.
 Ready Claude Code (2.1.287, probed the same day) took the line alone 6.5 s after a plain
 start, on its banner, notices and placeholder, and after a `/clear`, and its Enter fired
 `UserPromptSubmit` with exactly the line; its trust dialog and first-run theme picker
-swallowed the paste.
+swallowed the paste. A Ready Codex at its first screen (0.159.3, captured 2026-10-02 in
+the e2e sandbox at 120 columns by 40 rows) draws its logo only while its box is empty:
+the paste erased it whole, far from the line, so the line passes as replacing the box's
+empty state, kept as a fixture too.
 
 Left unprobed, for Ready: a `resume` also covers a session picked in the bare
 `claude --resume` picker, an in-app `/resume` and `--continue`, none of them probed past

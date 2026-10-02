@@ -313,9 +313,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
           box: { ...box, empty, queuing: false, enteredAt: null },
         })
       }
-      // A later call of the running turn changes nothing, nor ends the wait for the
-      // continuation of a Stop NovaDeck continued: a status line saying working can come
-      // before the continuation's first model call.
+      // A later model call of the running turn changes nothing, nor ends the wait for the
+      // continuation of a Stop NovaDeck continued: only the continuation's first call
+      // starts it.
       if (event.by === "call" && (phase === "turn" || phase === "continuing")) return delivery
       // The person's submission: their bare Enter shortly before, with nothing typed
       // since, or a prompt they queued during the turn that just ended and typed nothing
@@ -338,9 +338,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       // A prompt right after a Stop NovaDeck continued is that continuation: the same
       // turn, with its count, as Antigravity starts its model calls again from the first.
       if (phase === "continuing") return working(delivery, "turn", { box: after })
-      // A call while no turn ran (as a status line saying working after an idle one)
-      // resumes the turn it belongs to, with its counts, though nothing says the person
-      // started it.
+      // A call while no turn ran (as Antigravity's PreInvocation past the turn's first,
+      // after its Stop or an idle status line) resumes the turn it belongs to, with its
+      // counts, though nothing says the person started it.
       if (event.by === "call") return working(delivery, "turn", { byPerson: false })
       return working(delivery, "turn", {
         epoch: delivery.epoch + 1,

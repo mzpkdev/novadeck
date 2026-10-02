@@ -920,31 +920,92 @@ describe("Antigravity's root conversation", () => {
     expect(messaging.delivery("G")?.state).toBe("settled")
   })
 
-  // A known gap, pinned here: against the fake model, about two turns in five, its status
-  // line still says working 10 to 60 ms after the Stop hook, which reads as the turn going
-  // on, and the idle line after it as a turn that ended with no Stop. The terminal is left
-  // Unknown, and the doorbell never rings it (see docs/e2e-testing.md, "Known gaps"). Once
-  // NovaDeck reads that line right, the terminal is Settled and ringable here.
-  it("is left Unknown when its status line says working just after a Stop, then idle", () => {
-    const { messaging, ask, observe, root, clock: time } = agyTerminal()
-    const hook = (event: string, payload: Record<string, unknown>): HarnessEvent[] => [
-      ...harnesses.agy.decode({
-        ...agyReport(root.sessionId, "idle"),
-        event,
-        instance: root.instance,
-        payload: { conversationId: root.sessionId, ...payload },
-      }),
-    ]
+  // One of its hooks, decoded by its own adapter.
+  const hook = (bound: Binding, event: string, payload: Record<string, unknown>) => [
+    ...harnesses.agy.decode({
+      ...agyReport(bound.sessionId, "idle"),
+      event,
+      instance: bound.instance,
+      payload: { conversationId: bound.sessionId, ...payload },
+    }),
+  ]
+
+  // Its status line may still say working 10 to 60 ms after its Stop hook (probed
+  // 2026-10-02, 1.2.14), about two turns in five. Only PreInvocation starts a turn.
+  it("stays Settled when its status line says working just after a Stop, then idle", () => {
+    const { messaging, ask, observe, send, root, clock: time } = agyTerminal()
     observe("G", root, agyStatus(root, "idle"), true)
-    ask("G", root, "PreInvocation", hook("PreInvocation", { invocationNum: 0 }))
-    ask("G", root, "Stop", hook("Stop", { fullyIdle: true }))
-    expect(messaging.delivery("G")?.state).toBe("settled")
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }))
+    const stoppedAt = time.now
+    sent(send("A", "t3", "hello"))
     time.now += 40
     observe("G", root, agyStatus(root, "working"), true)
     time.now += 500
     observe("G", root, agyStatus(root, "idle"), true)
-    expect(messaging.delivery("G")?.state).toBe("unknown")
-    expect(messaging.ringable("G")).toBe(false)
+    expect(messaging.delivery("G")).toMatchObject({ state: "settled", since: stoppedAt })
+    time.now += 6_000
+    expect(messaging.ringable("G")).toBe(true)
+  })
+
+  it("starts a new turn at its first model call after a stale working", () => {
+    const { messaging, ask, observe, send, root } = agyTerminal()
+    observe("G", root, agyStatus(root, "idle"), true)
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }))
+    const { epoch } = messaging.delivery("G")!
+    sent(send("A", "t3", "hello"))
+    observe("G", root, agyStatus(root, "working"), true)
+    const answer = ask(
+      "G",
+      root,
+      "PreInvocation",
+      hook(root, "PreInvocation", { invocationNum: 0 }),
+    )
+    expect(answer.stdout).toContain(">hello</message>")
+    expect(messaging.delivery("G")).toMatchObject({
+      state: "working",
+      phase: "turn",
+      epoch: epoch + 1,
+    })
+  })
+
+  it("resumes the turn at a later model call after its Stop", () => {
+    const { messaging, ask, observe, root } = agyTerminal()
+    observe("G", root, agyStatus(root, "idle"), true)
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }))
+    const { epoch } = messaging.delivery("G")!
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 3 }))
+    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "turn", epoch })
+  })
+
+  it("keeps ringing through a status line saying working, until its doorbell prompt", () => {
+    const { messaging, ask, observe, send, root, clock: time } = agyTerminal()
+    observe("G", root, agyStatus(root, "idle"), true)
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }))
+    sent(send("A", "t3", "hello"))
+    time.now += 6_000
+    expect(messaging.ring("G", "n1")).toBe(true)
+    observe("G", root, agyStatus(root, "working"), true)
+    expect(messaging.delivery("G")).toMatchObject({ state: "ringing", nonce: "n1" })
+    const answer = ask("G", root, "PreInvocation", [doorbellStarted(root, "n1")])
+    expect(answer.stdout).toContain(">hello</message>")
+    expect(messaging.ringing("G")).toBeUndefined()
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }))
+    expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("settles when its subagents finish, though its status line said working after the Stop", () => {
+    const { messaging, ask, observe, root } = agyTerminal()
+    observe("G", root, agyStatus(root, "idle"), true)
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: false }))
+    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
+    observe("G", root, agyStatus(root, "working"), true)
+    observe("G", root, agyStatus(root, "idle"), true)
+    expect(messaging.delivery("G")?.state).toBe("settled")
   })
 
   it("stays working at a Stop while a subagent still runs", () => {
@@ -1868,7 +1929,12 @@ describe("Antigravity's prompts, told from its transcript", () => {
   const told = (
     text: string,
     id: number,
-    given: { seen?: number; enteredAt?: number; startedWith?: string },
+    given: {
+      seen?: number
+      enteredAt?: number
+      startedWith?: string
+      ringing?: string | undefined
+    },
   ) =>
     typedPromptStart(
       [harnessTurn],
@@ -1878,11 +1944,42 @@ describe("Antigravity's prompts, told from its transcript", () => {
         transcript: "/t.jsonl",
         seen: given.seen,
         enteredAt: given.enteredAt,
-        waiting: false,
+        ringing: given.ringing,
         startedWith: given.startedWith,
       },
       () => Promise.resolve({ text, at: null, id }),
     )
+
+  // Resumed in a terminal the runner restored: Ready at the conversation its status line
+  // names, nothing of its transcript read yet, a message waiting, and rung.
+  const resumedAndRung = () => {
+    const setup = create()
+    setup.messaging.register("G", here, "t3")
+    setup.observe("G", agy, agyStatus(agy, "idle"), true)
+    sent(setup.send("A", "t3", "Review a.ts"))
+    setup.clock.now += 6_000
+    expect(setup.messaging.ring("G", "n1")).toBe(true)
+    return setup
+  }
+
+  it("confirms the ring of a resumed Antigravity by its own line, and it settles", async () => {
+    const { messaging, ask, stop } = resumedAndRung()
+    const { events } = await told(doorbellLine("n1"), 7, { ringing: messaging.ringing("G") })
+    expect(events).toMatchObject([{ cause: "doorbell", nonce: "n1" }])
+    expect(ask("G", agy, "PreInvocation", [...events]).stdout).toContain(">Review a.ts</message>")
+    expect(messaging.ringing("G")).toBeUndefined()
+    stop("G", agy)
+    expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("never takes a stale line a resumed transcript ends with for a ring's", async () => {
+    const { messaging, ask, stop } = resumedAndRung()
+    const { events } = await told(doorbellLine("old"), 4, { ringing: messaging.ringing("G") })
+    expect(events).toEqual([harnessTurn])
+    ask("G", agy, "PreInvocation", [...events])
+    stop("G", agy)
+    expect(messaging.delivery("G")?.state).toBe("drafting")
+  })
 
   it("tells a start with a task, while messaging is paused, that its messages still wait", async () => {
     const { messaging, follow, send, ask } = create()

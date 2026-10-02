@@ -71,7 +71,20 @@ describe("Antigravity's status line, as captured", () => {
       // The status line names the root conversation; hooks name subagents' alike.
       root: true,
     })
-    expect(activity(working!)).toMatchObject([{ type: "turn-started", cause: "call" }])
+    // Working never starts a turn, as it may come just after the turn's Stop: it only
+    // settles a confirmation the turn waited on.
+    expect(activity(working!)).toEqual([
+      {
+        type: "attention-resolved",
+        ...conversation,
+        startedAt: 5,
+        requestId: "confirmation",
+        actor: null,
+        toolName: "confirmation",
+        loose: false,
+        outcome: "allowed",
+      },
+    ])
     expect(activity(confirming!)).toEqual([
       {
         type: "attention-requested",
@@ -144,15 +157,21 @@ describe("Antigravity's status line, as captured", () => {
 
   it("keep a terminal's activity true to the agent, whatever order their hooks start in", () => {
     const [, , , working, confirming, idle] = payloads
-    const binding = {
-      agent: "agy",
-      sessionId: working!.conversation_id as string,
-      instance: "7",
-    } as const
-    const run = (reports: [Report["payload"], number][]) =>
+    const conversationId = working!.conversation_id as string
+    const binding = { agent: "agy", sessionId: conversationId, instance: "7" } as const
+    // Its hooks in the same conversation, each started at `seq`.
+    const preInvocation = (seq: number): Report => ({
+      ...report({ conversationId, invocationNum: 0 }, seq),
+      event: "PreInvocation",
+    })
+    const stop = (seq: number): Report => ({
+      ...report({ conversationId, fullyIdle: true }, seq),
+      event: "Stop",
+    })
+    const run = (reports: Report[]) =>
       summary(
         reports
-          .flatMap(([payload, seq]) => decode(report(payload, seq)))
+          .flatMap((reported) => decode(reported))
           .filter((event): event is ActivityEvent =>
             [
               "turn-started",
@@ -164,42 +183,26 @@ describe("Antigravity's status line, as captured", () => {
           )
           .reduce((state, event) => applyActivity(state, binding, event) ?? state, started(0)),
       )
-    expect(
-      run([
-        [working!, 1],
-        [confirming!, 2],
-      ]),
-    ).toEqual({
+    const quiet = { attention: { pending: 0, kind: null }, subagents: [], planning: false }
+    // Its status line may still say working just after the Stop: the turn stays over.
+    expect(run([preInvocation(1), stop(2), report(working!, 3)])).toEqual({
+      state: "idle",
+      ...quiet,
+    })
+    expect(run([preInvocation(1), report(confirming!, 2)])).toEqual({
       state: "working",
       attention: { pending: 1, kind: "permission" },
       subagents: [],
       planning: false,
     })
-    expect(
-      run([
-        [working!, 1],
-        [confirming!, 2],
-        [idle!, 3],
-      ]),
-    ).toEqual({
-      state: "idle",
-      attention: { pending: 0, kind: null },
-      subagents: [],
-      planning: false,
+    // Working again: the confirmation was answered, and the turn goes on.
+    expect(run([preInvocation(1), report(confirming!, 2), report(working!, 3)])).toEqual({
+      state: "working",
+      ...quiet,
     })
-    // An idle snapshot whose hook started late does not outlast the turn.
-    expect(
-      run([
-        [idle!, 2],
-        [working!, 3],
-      ]),
-    ).toMatchObject({ state: "working" })
-    expect(
-      run([
-        [working!, 3],
-        [idle!, 2],
-      ]),
-    ).toMatchObject({ state: "working" })
+    // An idle snapshot whose hook started before the turn's does not end it.
+    expect(run([report(idle!, 1), preInvocation(2)])).toMatchObject({ state: "working" })
+    expect(run([preInvocation(2), report(idle!, 1)])).toMatchObject({ state: "working" })
   })
 })
 type Fixture = { root: string; install: Install; settings: string }

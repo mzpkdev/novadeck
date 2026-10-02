@@ -68,10 +68,78 @@ describe("the doorbell's test paste", () => {
   it("finds the line wrapped across rows, indented or not", () => {
     expect(
       findLine(["> [NovaDeck: automatic notice, agent messages", "  waiting, n7Q2]"], line),
-    ).toEqual([{ first: 0, last: 1 }])
+    ).toEqual([{ first: 0, last: 1, column: 2 }])
     expect(
       findLine(["[NovaDeck: automatic notice, agent mess", "ages waiting, n7Q2]"], line),
-    ).toEqual([{ first: 0, last: 1 }])
+    ).toEqual([{ first: 0, last: 1, column: 0 }])
+  })
+})
+
+// A 40-row screen, blank but for the rows given.
+const screen = (rows: Record<number, string>): string[] =>
+  Array.from({ length: 40 }, (_, index) => rows[index] ?? "")
+
+describe("the doorbell's test paste where text vanished far from the line", () => {
+  const [head, tail] = [line.slice(0, 40), line.slice(40)]
+  const firstScreen = pairs("codex").find((pair) => pair.name.startsWith("first screen"))!
+  const logo = firstScreen.before.flatMap((row, index) => (/[⣀-⣿]/.test(row) ? [index] : []))
+
+  it("rejects a list filtered down to its top item", () => {
+    const list = { 20: "› Session one", 21: "  Session two", 22: "  Session three", 38: "footer" }
+    const before = screen({ ...list, 36: "› Type to search" })
+    const after = screen({ ...list, 21: "", 22: "", 36: `› ${line}` })
+    expect(checkPaste(before, after, line)).toEqual({ accepted: false, reason: "elsewhere" })
+  })
+
+  it("rejects a logo partly kept, or gone while a row appeared far away", () => {
+    expect(logo.length).toBeGreaterThan(10)
+    const partly = firstScreen.after.with(logo[4]!, firstScreen.before[logo[4]!]!)
+    expect(checkPaste(firstScreen.before, partly, line)).toEqual({
+      accepted: false,
+      reason: "elsewhere",
+    })
+    const added = firstScreen.after.with(5, "  New dialog")
+    expect(checkPaste(firstScreen.before, added, line)).toEqual({
+      accepted: false,
+      reason: "elsewhere",
+    })
+  })
+
+  it("rejects a line appended to a draft as the box grows down, though a far block vanished", () => {
+    const before = screen({ 5: "LOGO", 6: "LOGO", 30: "────", 31: "> /", 32: "────", 33: "footer" })
+    const after = screen({ 30: "────", 31: `> /${head}`, 32: tail, 33: "────", 34: "footer" })
+    expect(checkPaste(before, after, line)).toEqual({ accepted: false, reason: "elsewhere" })
+  })
+
+  it("accepts a line replacing a placeholder as the box grows down and a far block vanishes", () => {
+    const before = screen({
+      5: "LOGO",
+      6: "LOGO",
+      30: "────",
+      31: "> Type a message",
+      32: "────",
+      33: "footer",
+    })
+    const after = screen({ 30: "────", 31: `> ${head}`, 32: tail, 33: "────", 34: "footer" })
+    expect(checkPaste(before, after, line)).toEqual({ accepted: true, first: 31, last: 32 })
+  })
+
+  it("accepts a box growing up at a narrow width as the logo vanishes", () => {
+    const footer = { 38: "  model", 39: "  ? for shortcuts" }
+    const before = screen({
+      1: "  >_ OpenAI Codex",
+      11: "LOGO",
+      12: "LOGO",
+      36: "› Ask Codex to do anything",
+      ...footer,
+    })
+    const after = screen({
+      0: "  >_ OpenAI Codex",
+      35: `› ${head}`,
+      36: `  ${tail}`,
+      38: "  model",
+    })
+    expect(checkPaste(before, after, line)).toEqual({ accepted: true, first: 35, last: 36 })
   })
 })
 

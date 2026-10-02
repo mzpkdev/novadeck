@@ -189,8 +189,8 @@ describe("a terminal's delivery state", () => {
     expect(transition(idled, stop).state).toBe("settled")
   })
 
-  it("keeps a continued Stop's count when the status line says working before its continuation", () => {
-    // As Antigravity's status line, which reports working as the continuation begins.
+  it("keeps a continued Stop's count when a later model call comes before its continuation", () => {
+    // As Antigravity's PreInvocation past a turn's first, arriving late.
     let delivery = working
     for (let index = 0; index < 5; index += 1) {
       delivery = run(delivery, continuous(delivery), call, harness, call)
