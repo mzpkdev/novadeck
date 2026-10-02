@@ -155,16 +155,19 @@ network:
   until the screen shows it once more than it did before, and only then presses Enter.
   `press` refuses anything holding a carriage return or line feed, the keypad's Enter
   (`\x1bOM`) or the kitty keyboard protocol's (`\x1b[13u`, `\x1b[13;…u`). The one
-  deliberate Enter is `confirm(shows)`, which presses it only once the screen shows the
-  expected option or dialog once more than it did when called, so text left from an
-  earlier dialog can't let it through.
+  deliberate Enter is `confirm(shows, trigger)`. It counts what the screen shows of the
+  expected option or dialog, runs `trigger`, the action that brings it up, and presses
+  Enter only once the screen shows it once more. Text left from an earlier dialog can't
+  let it through, and a dialog drawn before `trigger` returns isn't missed:
+  `await t1.confirm("Allow this tool?", () => t1.submit("Run the tool"))`.
 
 ## Writing a scenario
 
-Messaging scenarios live in `messaging.e2e.ts`, written once and run for every harness:
+Messaging scenarios live in `messaging.e2e.ts`, written once and run for every harness
+in `setups` (`agents/index.ts`):
 
 ```ts
-for (const setup of [claude, codex, agy]) {
+for (const setup of setups) {
   describe.skipIf(!supported)(setup.name, () => {
     const it = e2e(setup)
 
@@ -174,7 +177,9 @@ for (const setup of [claude, codex, agy]) {
 
       await turn(t1, setup, "Say the word", "Pelican-7 says hello.")
 
-      const call = await run.model.waitFor((one) => latest(one).includes("Say the word"))
+      const call = await run.model.waitFor(
+        (one) => !one.side && latest(one).includes("Say the word"),
+      )
       expect(tool(call, "send")).toBeDefined()
     })
   })
@@ -211,7 +216,9 @@ for (const setup of [claude, codex, agy]) {
   `["ringing", "working"]` or `holds("t1", "t2", "delivered")`. Each step is met at or
   after the one before it, in the same snapshot or a later one, as changes the runner
   makes in one go arrive together. On a timeout they fail with every transition since
-  the mark (`t2: ready → ringing → unknown`), so a failure says what happened.
+  the mark (`t2: ready → ringing → unknown`), and `through` also says which steps were
+  met (`met: ringing; waiting for: working`), so a failure says what happened. A test
+  that throws fails its own wait, with its error, and no other.
 - **Holding a turn** pins down how something travels. The round trip holds t2's answer
   at a `gate()` until t1's turn has ended, and asserts t1 is then rung; where a harness's
   turn end can't be rung yet (a known gap), it holds t1's turn open instead, so the

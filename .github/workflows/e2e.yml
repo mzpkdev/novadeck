@@ -65,7 +65,8 @@ jobs:
         env:
           HARNESS: ${{ matrix.harness }}
         run: |
-          hash=$(node -e 'const pins = require("./application/runner/src/e2e/harnesses.json"); process.stdout.write(JSON.stringify(pins[process.env.HARNESS] ?? null))' | sha256sum | cut -d' ' -f1)
+          # Hashed inside node, so a failure fails the step rather than hashing nothing.
+          hash=$(node -e 'const { createHash } = require("node:crypto"); const pins = require("./application/runner/src/e2e/harnesses.json"); process.stdout.write(createHash("sha256").update(JSON.stringify(pins[process.env.HARNESS] ?? null)).digest("hex"))')
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
 
       # Pinned harnesses are cached by their pin and the installer; a run against latest

@@ -20,15 +20,33 @@ export type Snapshot = {
   }[]
 }
 
-/** What a snapshot must be to be reached: a delivery state, or a test of the snapshot. */
+/**
+ * What a snapshot must be to be reached: a delivery state, or a test of the snapshot,
+ * which a failed wait calls by its function's name (see `named`).
+ */
 export type Reach = DeliveryState | ((snapshot: Snapshot) => boolean)
 
 export type ReachOptions = {
   /** A `mark`: only snapshots from it on count. From the start when omitted. */
   readonly after?: number
+  /**
+   * Where a failed wait's account of the transitions starts, when it should start before
+   * `after`, as for a step of several waited for in order. `after` unless given.
+   */
+  readonly since?: number
   /** Thirty seconds unless given. */
   readonly timeoutMs?: number
 }
+
+/** A test of a snapshot, named as a failed wait says what it waited for. */
+export const named = (
+  label: string,
+  test: (snapshot: Snapshot) => boolean,
+): ((snapshot: Snapshot) => boolean) => Object.defineProperty(test, "name", { value: label })
+
+/** What a failed wait says it waited for: the state, or the test's name. */
+export const wanted = (what: Reach): string =>
+  typeof what === "function" ? what.name || "the state asked for" : what
 
 /**
  * Every listing of a terminal's messages, from the first, as a watch of them delivers
@@ -99,29 +117,41 @@ export const createHistory = (handle: string): History => {
     },
     snapshots: () => snapshots,
     mark: () => snapshots.length,
-    reached: (what, { after = 0, timeoutMs = 30_000 } = {}) => {
+    reached: (what, { after = 0, since = after, timeoutMs = 30_000 } = {}) => {
       const matches = test(what)
-      const found = snapshots.slice(after).find(matches)
+      let found: Snapshot | undefined
+      try {
+        found = snapshots.slice(after).find(matches)
+      } catch (error) {
+        return Promise.reject(error)
+      }
       if (found) return Promise.resolve(found)
-      const wanted = typeof what === "function" ? "the state asked for" : what
-      // What it went through from the mark on, from the state it was in at the mark.
-      const since = () => snapshots.slice(Math.max(after - 1, 0))
-      if (ended !== undefined)
-        return Promise.reject(
-          new Error(`${handle} can't reach ${wanted}: ${ended}. ${transitions(handle, since())}`),
+      // What it went through from `since` on, from the state it was in then.
+      const account = (why: string) =>
+        new Error(
+          `${handle} can't reach ${wanted(what)}: ${why}. ${transitions(handle, snapshots.slice(Math.max(since - 1, 0)))}`,
         )
+      if (ended !== undefined) return Promise.reject(account(ended))
       return new Promise((resolve, reject) => {
         const waiter = {
+          // A test that throws fails this wait alone, with its own error; the history and
+          // every other wait carry on.
           see: (snapshot: Snapshot) => {
-            if (!matches(snapshot)) return
+            let met: boolean
+            try {
+              met = matches(snapshot)
+            } catch (error) {
+              settle()
+              reject(error)
+              return
+            }
+            if (!met) return
             settle()
             resolve(snapshot)
           },
           fail: (why: string) => {
             settle()
-            reject(
-              new Error(`${handle} can't reach ${wanted}: ${why}. ${transitions(handle, since())}`),
-            )
+            reject(account(why))
           },
         }
         const timer = setTimeout(() => waiter.fail(`timed out after ${timeoutMs} ms`), timeoutMs)

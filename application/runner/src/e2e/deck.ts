@@ -46,12 +46,15 @@ export type DeckTerminal = {
    */
   readonly submit: (text: string) => Promise<void>
   /**
-   * The one deliberate way to confirm a dialog or pick from a menu: waits until the screen
-   * shows `shows`, the option or dialog expected, once more than it did when called, then
-   * presses Enter, so one already on screen, as an earlier dialog, can't be confirmed.
+   * The one deliberate way to confirm a dialog or pick from a menu: counts what the screen
+   * shows of `shows`, the option or dialog expected, runs `trigger`, the action that brings
+   * it up, then waits until it shows once more and presses Enter. Text left from an
+   * earlier dialog can't let it through, and a dialog drawn before `trigger` returns isn't
+   * missed.
    */
   readonly confirm: (
     shows: string | RegExp,
+    trigger: () => Promise<unknown>,
     options?: { readonly timeoutMs?: number },
   ) => Promise<void>
   /**
@@ -106,6 +109,36 @@ export const occurrences = (shown: string, text: string | RegExp): number =>
     : (shown.match(
         new RegExp(text.source, text.flags.includes("g") ? text.flags : `${text.flags}g`),
       )?.length ?? 0)
+
+/** What `enterAfter` needs of a terminal: its handle, its screen, and its Enter key. */
+export type Screen = {
+  readonly handle: string
+  readonly screen: () => Promise<string>
+  readonly enter: () => void
+}
+
+/**
+ * Counts what the screen shows of `shows`, runs `trigger`, waits until the screen shows it
+ * once more, and only then presses Enter: Enter follows only what `trigger` was seen to
+ * bring, never what was there before it. Fails after the timeout, with the screen.
+ */
+export const enterAfter = async (
+  { handle, screen, enter }: Screen,
+  shows: string | RegExp,
+  trigger: () => Promise<unknown>,
+  timeoutMs = 30_000,
+): Promise<void> => {
+  const before = occurrences(await screen(), shows)
+  await trigger()
+  await poll(
+    async () => (occurrences(await screen(), shows) > before ? true : undefined),
+    `${handle} to show ${String(shows)} once more`,
+    timeoutMs,
+  ).catch(async (error: unknown) => {
+    throw new Error(`${(error as Error).message}. Its screen:\n${await screen()}`)
+  })
+  enter()
+}
 
 /**
  * Polls `read` until it gives a value, and returns it; fails with `what` after the
@@ -198,6 +231,11 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       ).catch(async (error: unknown) => {
         throw new Error(`${(error as Error).message}. Its screen:\n${await screen(id)}`)
       })
+    const view: Screen = {
+      handle: summary.handle,
+      screen: () => screen(id),
+      enter: () => terminals.write({ terminalId: id, data: "\r" }, owner),
+    }
     const until = (text: string | RegExp, timeoutMs = 30_000) =>
       showing(
         (shown) => (typeof text === "string" ? shown.includes(text) : text.test(shown)),
@@ -209,26 +247,15 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       handle: summary.handle,
       screen: () => screen(id),
       until,
+      // The text may be on screen already, as an earlier prompt: only one more of it
+      // shows that this one landed.
       submit: async (text) => {
         if (/[\r\n]/.test(text)) throw new Error("A prompt is one line")
-        // The text may be on screen already, as an earlier prompt: only one more of it
-        // shows that this one landed.
-        const before = occurrences(await screen(id), text)
-        terminals.write({ terminalId: id, data: text }, owner)
-        await showing((shown) => occurrences(shown, text) > before, `${text} once more`)
-        terminals.write({ terminalId: id, data: "\r" }, owner)
-      },
-      confirm: async (shows, { timeoutMs } = {}) => {
-        // What it confirms may be on screen already, as an earlier dialog: only one more
-        // of it shows the one expected now.
-        const before = occurrences(await screen(id), shows)
-        await showing(
-          (shown) => occurrences(shown, shows) > before,
-          `${String(shows)} once more`,
-          timeoutMs,
+        await enterAfter(view, text, async () =>
+          terminals.write({ terminalId: id, data: text }, owner),
         )
-        terminals.write({ terminalId: id, data: "\r" }, owner)
       },
+      confirm: (shows, trigger, { timeoutMs } = {}) => enterAfter(view, shows, trigger, timeoutMs),
       press: (keys) => {
         // eslint-disable-next-line no-control-regex -- Enter's escape sequences start with ESC.
         if (/[\r\n]|\x1bOM|\x1b\[13[;u]/.test(keys))

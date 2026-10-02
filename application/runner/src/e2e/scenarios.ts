@@ -4,7 +4,7 @@ import { doorbell } from "../harnesses/harness.js"
 import type { AgentSetup } from "./agents/agent.js"
 import type { DeckTerminal } from "./deck.js"
 import type { E2E } from "./fixture.js"
-import type { Reach, ReachOptions, Snapshot } from "./history.js"
+import { named, wanted, type Reach, type ReachOptions, type Snapshot } from "./history.js"
 import { turnEnds } from "./known-gaps.js"
 import { asked, latest, tool, type Call, type Rule } from "./model/script.js"
 
@@ -29,24 +29,25 @@ export const start = async ({ deck }: E2E, setup: AgentSetup): Promise<DeckTermi
 }
 
 /** A turn's end, as NovaDeck may see it for the harness (see known-gaps.ts). */
-export const ended =
-  (setup: AgentSetup): Reach =>
-  (snapshot) =>
-    turnEnds(setup).includes(snapshot.delivery)
+export const ended = (setup: AgentSetup): Reach =>
+  named(`its turn's end (${turnEnds(setup).join(" or ")})`, (snapshot) =>
+    turnEnds(setup).includes(snapshot.delivery),
+  )
 
 /** A snapshot holding a message from `from` to `to` in `state`. */
-export const holds =
-  (from: string, to: string, state: MessageState): Reach =>
-  (snapshot) =>
+export const holds = (from: string, to: string, state: MessageState): Reach =>
+  named(`${from} → ${to} ${state}`, (snapshot) =>
     snapshot.messages.some(
       (message) => message.from === from && message.to === to && message.state === state,
-    )
+    ),
+  )
 
 /**
  * Waits until the terminal's history has gone through each step in order, from `after`
  * on, whatever came between them, and returns the snapshot of the last. Each step is met
  * at or after the one before: changes the runner makes in one handling come as one
- * snapshot, so two steps may be met by the same.
+ * snapshot, so two steps may be met by the same. A failure says which steps were met and
+ * every transition from `after` on.
  */
 export const through = async (
   terminal: Pick<DeckTerminal, "reached">,
@@ -54,12 +55,20 @@ export const through = async (
   { after = 0, timeoutMs }: ReachOptions = {},
 ): Promise<Snapshot | undefined> => {
   let last: Snapshot | undefined
-  for (const step of steps) {
-    // eslint-disable-next-line no-await-in-loop -- Each step is looked for after the one before.
-    last = await terminal.reached(step, {
-      after: last ? last.index : after,
-      ...(timeoutMs !== undefined && { timeoutMs }),
-    })
+  for (const [index, step] of steps.entries()) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- Each step is looked for after the one before.
+      last = await terminal.reached(step, {
+        after: last ? last.index : after,
+        since: after,
+        ...(timeoutMs !== undefined && { timeoutMs }),
+      })
+    } catch (error) {
+      const met = steps.slice(0, index).map(wanted).join(", ") || "none"
+      throw new Error(`met: ${met}; waiting for: ${wanted(step)}. ${(error as Error).message}`, {
+        cause: error,
+      })
+    }
   }
   return last
 }

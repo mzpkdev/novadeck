@@ -158,6 +158,20 @@ describe("through", () => {
     expect(last?.index).toBe(1)
   })
 
+  it("says which steps were met and every transition since the mark when it fails", async () => {
+    const history = createHistory("t2")
+    history.push(listing("ready", "queued"))
+    const mark = history.mark()
+    history.push(listing("ringing", "leased"))
+    history.push(listing("unknown", "leased"))
+
+    await expect(
+      through(history, ["ringing", "working"], { after: mark, timeoutMs: 20 }),
+    ).rejects.toThrow(
+      "met: ringing; waiting for: working. t2 can't reach working: timed out after 20 ms. t2: ready → ringing → unknown; messages m-1 leased",
+    )
+  })
+
   it("meets each step at or after the one before, never before it", async () => {
     const history = createHistory("t2")
     history.push(listing("working", "queued"))
