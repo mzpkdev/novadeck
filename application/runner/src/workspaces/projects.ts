@@ -25,14 +25,17 @@ export class Projects {
     return this.store.projects().filter(({ id }) => !this.removing.has(id))
   }
 
-  /** A project being removed is already `NOT_FOUND` for anything new in it. */
-  open(projectId: string): void {
+  /** Refuses anything new in a project being removed, as `NOT_FOUND`: it is as good as gone. */
+  ensureNotRemoving(projectId: string): void {
     if (this.removing.has(projectId)) throw new DomainError("NOT_FOUND", "Project not found")
   }
 
-  /** Creates something in the project, which its removal waits for. */
-  create<T>(projectId: string, work: () => Promise<T>): Promise<T> {
-    this.open(projectId)
+  /**
+   * Runs `work`, which creates something in the project, unless it is being removed; a
+   * removal that begins meanwhile waits for it.
+   */
+  creatingIn<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    this.ensureNotRemoving(projectId)
     const created = work()
     const pending = this.creating.get(projectId) ?? new Set()
     this.creating.set(projectId, pending.add(created))

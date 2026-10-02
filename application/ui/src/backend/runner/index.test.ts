@@ -1,85 +1,85 @@
-import type { Project, WorkspaceSession } from "@novadeck/protocol"
-import { RunnerError } from "@novadeck/protocol/client"
+import type { Runner } from "@novadeck/protocol/client"
+import { afterAll, vi } from "vitest"
 
 import { context, describe, expect, it } from "../../test"
 import { loadListing } from "./index"
+import { startTestRunner } from "./testing"
 
-const gone = () => Promise.reject(new RunnerError("NOT_FOUND", "Project not found"))
+vi.setConfig({ testTimeout: 10_000 })
 
-// A runner holding these projects and sessions; those named in `removed` go between the
-// projects' listing and the calls about them, as when another window removes them.
-const runnerHolding = (
-  projects: readonly Project[],
-  sessions: readonly WorkspaceSession[],
-  removed: ReadonlySet<string> = new Set(),
-) => {
-  const created: Project[] = []
-  return {
-    created,
-    runner: {
-      projects: {
-        list: async () => [...projects],
-        create: async (input: { id: string; name: string }) => {
-          const project = { ...input, cwd: "/home" }
-          created.push(project)
-          return project
-        },
-        rename: gone,
-        remove: gone,
-      },
-      sessions: {
-        list: ({ projectId }: { projectId: string }) =>
-          removed.has(projectId)
-            ? gone()
-            : Promise.resolve(sessions.filter((session) => session.projectId === projectId)),
-        create: (input: { id: string; projectId: string; name: string }) =>
-          removed.has(input.projectId) ? gone() : Promise.resolve({ ...input, state: null }),
-        rename: gone,
-        save: gone,
-      },
-      terminals: { list: async () => [] },
-    } as unknown as Parameters<typeof loadListing>[0],
-  }
-}
+const runner = await startTestRunner()
+afterAll(() => runner.close())
 
-const project = (id: string): Project => ({ id, name: id, cwd: `/${id}` })
-const session = (id: string, projectId: string): WorkspaceSession => ({
-  id,
-  projectId,
-  name: id,
-  state: null,
+const newId = () => crypto.randomUUID()
+
+// The runner's client, but another window removes `removed` just after the projects are
+// listed and before anything is asked about them.
+const removingAfterList = (removed: () => readonly string[]): Runner => ({
+  ...runner.client,
+  projects: {
+    ...runner.client.projects,
+    list: async () => {
+      const listed = await runner.client.projects.list()
+      await Promise.all(removed().map((projectId) => runner.client.projects.remove({ projectId })))
+      return listed
+    },
+  },
 })
-let ids = 0
-const newId = () => `new-${(ids += 1)}`
+
+// A project on the runner, with a first session unless `bare`.
+const projectOnRunner = async (bare = false) => {
+  const project = await runner.client.projects.create({
+    id: newId(),
+    name: "Listed",
+    cwd: process.cwd(),
+  })
+  if (!bare)
+    await runner.client.sessions.create({ id: newId(), projectId: project.id, name: "First" })
+  return project.id
+}
 
 describe("loading the runner's listing", () => {
   context("when a project is removed while the listing loads", () => {
-    it("leaves it out and lists the others", async () => {
-      const { runner } = runnerHolding(
-        [project("a"), project("b")],
-        [session("s", "a"), session("t", "b")],
-        new Set(["a"]),
+    it("leaves out one with sessions and lists the others", async () => {
+      const removed = await projectOnRunner()
+      const kept = await projectOnRunner()
+      const listing = await loadListing(
+        removingAfterList(() => [removed]),
+        newId,
+        Date.now,
       )
-      const listing = await loadListing(runner, newId, () => 0)
-      expect(listing.map((item) => item.project.id)).toEqual(["b"])
+      const ids = listing.map((item) => item.project.id)
+      expect(ids).toContain(kept)
+      expect(ids).not.toContain(removed)
     })
 
-    it("leaves out one without sessions, whose first session it can no longer create", async () => {
-      const { runner } = runnerHolding(
-        [project("a"), project("b")],
-        [session("t", "b")],
-        new Set(["a"]),
+    it("leaves out one without sessions, rather than give it a first one", async () => {
+      const removed = await projectOnRunner(true)
+      const listing = await loadListing(
+        removingAfterList(() => [removed]),
+        newId,
+        Date.now,
       )
-      const listing = await loadListing(runner, newId, () => 0)
-      expect(listing.map((item) => item.project.id)).toEqual(["b"])
+      expect(listing.map((item) => item.project.id)).not.toContain(removed)
+      await expect(runner.client.sessions.list({ projectId: removed })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      })
     })
 
-    it("opens a fresh Home project when every project went", async () => {
-      const { runner, created } = runnerHolding([project("a")], [], new Set(["a"]))
-      const listing = await loadListing(runner, newId, () => 0)
-      expect(created).toEqual([expect.objectContaining({ name: "Home" })])
-      expect(listing.map((item) => item.project.id)).toEqual([created[0]!.id])
-      expect(listing[0]!.sessions).toHaveLength(1)
+    it("opens a fresh Home project with a session when every project went", async () => {
+      const all = (await runner.client.projects.list()).map((project) => project.id)
+      const listing = await loadListing(
+        removingAfterList(() => all),
+        newId,
+        Date.now,
+      )
+      expect(listing).toEqual([
+        expect.objectContaining({
+          project: expect.objectContaining({ name: "Home" }),
+          sessions: [expect.objectContaining({ terminals: [] })],
+        }),
+      ])
+      expect(all).not.toContain(listing[0]!.project.id)
     })
   })
 })

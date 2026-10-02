@@ -580,7 +580,11 @@ export const runnerBackend = (
       await untilAnswered(() => runner.projects.remove({ projectId }), {
         done: ["NOT_FOUND"],
         again: ["RUNTIME_CLOSING"],
-      }).catch(() => {})
+      }).catch((error: unknown) => {
+        // Cancelled only as the backend stops; anything else was the runner refusing it.
+        if (!(error instanceof Cancelled))
+          console.error("NovaDeck could not remove the project on the runner:", error)
+      })
     })()
     removals.add(removal)
     void removal.finally(() => removals.delete(removal))

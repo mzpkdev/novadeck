@@ -92,9 +92,10 @@ export type Runner = {
     }): Promise<Project>
     rename(input: { readonly projectId: string; readonly name: string }): Promise<Project>
     /**
-     * Closes every terminal of the project's sessions, so watchers see each `removed`,
-     * then forgets the project and its sessions. Rejects with `NOT_FOUND` for a project
-     * the runner doesn't have, as one already removed.
+     * Closes every terminal of the project's sessions, whichever connection controls
+     * them, so watchers see each `removed`, then forgets the project, its sessions and its
+     * agents' messages. Rejects with `NOT_FOUND` for a project the runner doesn't have, as
+     * one already removed, and with `RUNTIME_CLOSING` when the runner shuts down first.
      */
     remove(input: { readonly projectId: string }): Promise<void>
   }

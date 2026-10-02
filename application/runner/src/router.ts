@@ -89,7 +89,7 @@ export const createRouter = (options: {
     sessions: {
       list: authorized.sessions.list.handler(({ input }) => store.sessions(input.projectId)),
       create: authorized.sessions.create.handler(({ input }) => {
-        projects.open(input.projectId)
+        projects.ensureNotRemoving(input.projectId)
         return store.createSession(input)
       }),
       rename: authorized.sessions.rename.handler(({ input }) => store.renameSession(input)),
@@ -108,7 +108,7 @@ export const createRouter = (options: {
       create: authorized.terminals.create.handler(async ({ input, context }) => {
         const session = store.session(input.sessionId)
         const project = store.project(session.projectId)
-        return projects.create(project.id, () =>
+        return projects.creatingIn(project.id, () =>
           terminals.create({ ...input, cwd: input.cwd ?? project.cwd }, context.connection.id),
         )
       }),

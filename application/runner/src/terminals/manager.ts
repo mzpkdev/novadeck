@@ -1177,6 +1177,9 @@ export class Terminals {
     } finally {
       for (const sessionId of sessions) this.closingSessions.delete(sessionId)
     }
+    // Shutting down meanwhile kept what the shells left saved: the project stays, for the
+    // next runner to remove.
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     this.messaging.forgetProject(projectId)
   }
 
