@@ -212,7 +212,6 @@ export const CompanionPane = ({
   peerName,
   presentation,
   openWindow,
-  undockMessages,
   undockPlan,
   guests = noGuests,
   messages: messageStore,
@@ -223,7 +222,6 @@ export const CompanionPane = ({
   presentation: PlanPresentation
   // Undocks what's shown into a window of its own; absent where there's no such window.
   openWindow?: ((artifact: Shown) => void) | undefined
-  undockMessages?: (() => void) | undefined
   undockPlan?: ((plan: PlanDoc) => void) | undefined
   // Other terminals' items placed on this terminal's bar, and the messages they read.
   guests?: readonly Guest[] | undefined
@@ -261,11 +259,7 @@ export const CompanionPane = ({
       {guest ? (
         <GuestTab key={guest.id} guest={guest} messages={messageStore} peerName={peerName} />
       ) : messages ? (
-        <MessagesView
-          mail={mail}
-          peerName={peerName}
-          actions={undockMessages && <UndockButton onUndock={undockMessages} />}
-        />
+        <MessagesView mail={mail} peerName={peerName} />
       ) : plan ? (
         <PlanTab
           key={`${plan.ref}:${plan.writable}`}

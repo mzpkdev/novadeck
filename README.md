@@ -371,19 +371,22 @@ right-click.
 Drag any icon onto another terminal's bottom bar to show it there instead (Grid and
 Canvas, where both are on screen); a terminal with nothing to show grows an empty bar
 while an icon is dragged over it. What's placed stays its own terminal's: its peek, menu
-and pane say whose it is, an image or file stacks with the bar's own like any other, a
-plan's edits still save to that agent, and a placed Messages is that agent's
-conversation beside the terminal's own. A new version shown by its agent updates it
+and pane say whose it is, an image or file stacks with the bar's own like any other, and
+a plan's edits still save to that agent. A new version shown by its agent updates it
 where it is. **Send back to** its terminal, on its right-click, or a drag onto that
 terminal's bar, returns it. Placements are the UI's alone for now: the backends don't
-keep them (`terminals/companion/placement.ts`).
+keep them (`terminals/companion/placement.ts`). Messages are the exception: a terminal's
+messages are its agent's conversation, so they stay on its bar. Dragged off the bar,
+their icon stretches toward the pointer, giving less the further it's pulled, and
+springs back when let go; nothing out there lights up for it, and the pointer shows it
+can't go. Within the bar it reorders like any icon.
 
 Any card in a peek can be dragged out too, one of a group's on its own: it turns into an
 icon under the pointer, which goes wherever a dragged icon goes, onto another terminal's
 bar or into a view's empty space, while the rest of a group stay grouped. Dropped where
 nothing takes it, or with Escape, it settles back into the icon it came from.
 
-Drop a plan, a single artifact or Messages in a view to undock it right there. On Canvas,
+Drop a plan or a single artifact in a view to undock it right there. On Canvas,
 over its empty space, a ghost window joins the canvas under the pointer and follows it
 freely, as a dragged window does; dropped, the window opens where the ghost was and
 settles onto the canvas's grid. On Grid, a placeholder window joins the grid under
@@ -397,16 +400,16 @@ HTML, XML, Markdown, YAML, Python, Rust, Go, Java and C/C++), with each language
 parser loading the first time one of its files opens; any other file shows as plain
 text. A page shows as a snapshot until the pane hosts a browser.
 
-**Undock to its own window**, in a plan's, a viewer's or the messages' header or an
-icon's right-click, moves a plan, what the agent showed, or the terminal's messages out
-of the pane into a window of its own beside the terminal; a plan stays editable there. It joins the sidebar and every view like a
+**Undock to its own window**, in a plan's or a viewer's header or an icon's right-click,
+moves a plan or what the agent showed out of the pane into a window of its own beside
+the terminal; a plan stays editable there. It joins the sidebar and every view like a
 terminal: rename, hide, minimize, resize, reorder, Focus and close all work. While it's
-undocked, the terminal's taskbar leaves it out. **Dock in** its terminal, on the window's
-right-click, closes the window and opens it in that terminal's pane again; closing the
-window puts it back on the taskbar without opening it. Nothing runs in it; it loads from
-its terminal, so once that terminal closes nothing new loads, and Dock in shows
-disabled. The backends neither keep nor restore these windows yet (`CompanionWindow` in
-`model/companion.ts`; the terminal registry skips them).
+undocked, the terminal's taskbar leaves it out. **Dock in** its terminal, on the
+window's right-click, closes the window and opens it in that terminal's pane again;
+closing the window puts it back on the taskbar without opening it. Nothing runs in it;
+it loads from its terminal, so once that terminal closes nothing new loads, and Dock in
+shows disabled. The backends neither keep nor restore these windows yet
+(`CompanionWindow` in `model/companion.ts`; the terminal registry skips them).
 
 The pane reads everything from the backend's optional `companions` capability
 (`model/companion.ts`): each terminal's plans and what its agent has shown, as terminals

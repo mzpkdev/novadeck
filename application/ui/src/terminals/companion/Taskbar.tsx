@@ -46,6 +46,7 @@ import {
   type CompanionHandle,
   type PlanDoc,
 } from "./state"
+import { beyond, refuseDrop, tether, tetherPoint } from "./tether"
 
 // The plan in miniature: its title over its sections.
 const PlanThumb = ({ plan }: { plan: PlanDoc }): React.JSX.Element => (
@@ -181,16 +182,22 @@ const feedback = Feedback.configure({
 })
 const cursor = Cursor.configure({ cursor: "grabbing" })
 
+// The messages' drag stays on their terminal's bar.
+const onBar = [tether((operation) => operation.source?.element?.closest(".plan-taskbar") ?? null)]
+
 // One slot as the taskbar's drag reorders it: its own box, a direct child of the bar,
 // so the drag moves the whole slot. Its icon button is the handle, which carries what
 // dnd-kit tells assistive technology, so no second button wraps the first.
 const SortableSlot = ({
   id,
   index,
+  tethered,
   children,
 }: {
   id: string
   index: number
+  // Held to its terminal's bar, as the messages are.
+  tethered: boolean
   children: ReactNode
 }): React.JSX.Element => {
   const [element, setElement] = useState<HTMLSpanElement | null>(null)
@@ -201,6 +208,7 @@ const SortableSlot = ({
     element: element ?? undefined,
     handle,
     transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+    modifiers: tethered ? onBar : [],
   })
   return (
     <span
@@ -235,7 +243,6 @@ export const Taskbar = ({
   open,
   presence,
   openWindow,
-  undockMessages,
   undockPlan,
   guests,
   messages,
@@ -245,11 +252,9 @@ export const Taskbar = ({
   companion: CompanionHandle
   mail: MailHandle
   peerName: (handle: string) => string | undefined
-  // Undock something shown, or the messages, into a window of its own; absent where
-  // there's no such window.
+  // Undock something shown into a window of its own; absent where there's no such window.
   // `place`, where its window opens when it was dropped on the empty canvas.
   openWindow: ((artifact: Shown, place?: UndockPlace) => void) | undefined
-  undockMessages: ((place?: UndockPlace) => void) | undefined
   undockPlan: ((plan: PlanDoc, place?: UndockPlace) => void) | undefined
   trigger: React.RefObject<HTMLButtonElement | null>
   open: boolean
@@ -366,17 +371,13 @@ export const Taskbar = ({
   }
   const grabbedIcon = useRef<HTMLDivElement | null>(null)
   const grabbedAt = useRef({ x: 0, y: 0 })
-  // What a drop on the view's free space undocks: one plan, one thing shown, or the messages.
-  // A group would be several windows; another terminal's item isn't this bar's to undock.
+  // What a drop on the view's free space undocks: one plan, or one thing shown. A group
+  // would be several windows; another terminal's item isn't this bar's to undock, and the
+  // messages stay with their terminal.
   const undockable = (entry: BarSlot): boolean =>
-    entry.kind === "plan"
-      ? Boolean(undockPlan)
-      : entry.kind === "mail"
-        ? Boolean(undockMessages)
-        : entry.kind === "one" && Boolean(openWindow)
+    entry.kind === "plan" ? Boolean(undockPlan) : entry.kind === "one" && Boolean(openWindow)
   // What a slot's window would be called, for the ghost of where it would open.
   const slotName = (entry: BarSlot): string => {
-    if (entry.kind === "mail") return "Messages"
     if (entry.kind === "one") return entry.artifact.name
     if (entry.kind === "plan") {
       const plan = pane.plans.find((each) => planTab(each.ref) === entry.tab)
@@ -388,8 +389,7 @@ export const Taskbar = ({
     if (entry.kind === "plan") {
       const plan = pane.plans.find((each) => planTab(each.ref) === entry.tab)
       if (plan) undockPlan?.(plan, place)
-    } else if (entry.kind === "mail") undockMessages?.(place)
-    else if (entry.kind === "one") openWindow?.(entry.artifact, place)
+    } else if (entry.kind === "one") openWindow?.(entry.artifact, place)
   }
   // Dropped on another terminal's bar, a slot shows there: each of a group, one by one; a
   // guest dropped on its own terminal's bar goes home.
@@ -397,7 +397,7 @@ export const Taskbar = ({
     const own = pane.key
     if (entry.kind === "guest") placeOn(entry.guest.from, entry.guest.item, terminalId)
     else if (entry.kind === "plan") placeOn(own, entry.tab, terminalId)
-    else if (entry.kind === "mail") placeOn(own, mailTab, terminalId)
+    else if (entry.kind === "mail") return
     else if (entry.kind === "one") placeOn(own, entry.artifact.id, terminalId)
     else
       for (const shown of entry.artifacts) {
@@ -407,9 +407,24 @@ export const Taskbar = ({
       }
   }
 
+  // This terminal's bar, which the messages stay on.
+  const barOf = (): DOMRect | undefined =>
+    document
+      .querySelector(
+        `section.terminal-window[data-terminal="${pane.key.terminalId}"] .plan-taskbar`,
+      )
+      ?.getBoundingClientRect()
+
   // Where the pointer is on screen while an icon is dragged: over which terminal, and on
   // its bar, or over the view's free space, where its window would open.
   const followPointer = (pointer: PointerEvent, dragged: BarSlot | undefined): void => {
+    // The messages stay: nothing out there lights up for them, and off their bar the
+    // pointer says so.
+    if (dragged?.kind === "mail") {
+      const own = barOf()
+      refuseDrop(Boolean(own && beyond(pointer.clientX, pointer.clientY, own)))
+      return
+    }
     const target = dragTargetAt(pointer.clientX, pointer.clientY)
     dragOver.update(() => ({ source: pane.key.terminalId, ...target }))
     // Over a view's free space only: over a window, nothing makes room, so the window
@@ -426,6 +441,7 @@ export const Taskbar = ({
   // The drag ended: `entry` lands where the pointer left it, or nothing does. Whether it
   // landed anywhere.
   const land = (entry: BarSlot | undefined): boolean => {
+    refuseDrop(false)
     const over = dragOver.getSnapshot()
     dragOver.update(() => null)
     const place = space.current
@@ -476,10 +492,19 @@ export const Taskbar = ({
       }
       pointer.preventDefault()
       grabbedAt.current = { x: pointer.clientX, y: pointer.clientY }
-      grabbedIcon.current?.style.setProperty(
-        "translate",
-        `${pointer.clientX}px ${pointer.clientY}px`,
-      )
+      const track = entry.kind === "mail" ? barOf() : undefined
+      // The messages' icon stays on its bar, its middle where an icon's would be.
+      const middle = track && (track.top + track.bottom) / 2
+      const at =
+        track && middle !== undefined
+          ? tetherPoint(pointer.clientX, pointer.clientY, {
+              left: track.left + 18,
+              top: middle,
+              right: track.right - 18,
+              bottom: middle,
+            })
+          : { x: pointer.clientX, y: pointer.clientY }
+      grabbedIcon.current?.style.setProperty("translate", `${at.x}px ${at.y}px`)
       followPointer(pointer, entry)
     }
     const released = (pointer: PointerEvent): void => {
@@ -658,20 +683,7 @@ export const Taskbar = ({
       return slot(
         mailTab,
         "Messages",
-        [
-          opening(mailTab),
-          ...(undockMessages
-            ? [
-                {
-                  value: "window-mail",
-                  label: "Undock to its own window",
-                  onSelect: () => undockMessages(),
-                },
-              ]
-            : []),
-          ...moving,
-          closing(mailTab),
-        ],
+        [opening(mailTab), ...moving, closing(mailTab)],
         <button
           ref={buttonRef}
           className="plan-tb-item"
@@ -846,7 +858,12 @@ export const Taskbar = ({
       >
         <span className="plan-tb-slots">
           {bar.map((entry, index) => (
-            <SortableSlot key={slotKey(entry)} id={slotKey(entry)} index={index}>
+            <SortableSlot
+              key={slotKey(entry)}
+              id={slotKey(entry)}
+              index={index}
+              tethered={entry.kind === "mail"}
+            >
               {render(entry, index)}
             </SortableSlot>
           ))}

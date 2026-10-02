@@ -1521,3 +1521,9 @@
     animation: none;
   }
 }
+
+/* The messages pulled past their window's edge: nothing out there takes them. */
+:root[data-drag-refused],
+:root[data-drag-refused] * {
+  cursor: not-allowed !important;
+}

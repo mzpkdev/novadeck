@@ -40,12 +40,12 @@ export type TerminalName = { readonly name: string; readonly handle?: string | u
 const clamp = (value: number): number => Math.min(0.7, Math.max(0.22, value))
 
 // What the pane reads besides its plans and what was shown, and what undocks what it
-// shows into a window of its own: something the agent showed, or the messages.
+// shows into a window of its own: a plan, or something the agent showed. The messages
+// stay with their terminal.
 type MailProps = {
   mail: MailHandle
   peerName: (handle: string) => string | undefined
   openWindow: ((artifact: Shown, place?: UndockPlace) => void) | undefined
-  undockMessages: ((place?: UndockPlace) => void) | undefined
   undockPlan: ((plan: PlanDoc, place?: UndockPlace) => void) | undefined
   // Other terminals' items placed on this one's bar, and the messages they read from.
   guests: readonly Guest[]
@@ -58,7 +58,6 @@ const SplitPlan = ({
   mail,
   peerName,
   openWindow,
-  undockMessages,
   undockPlan,
   guests,
   messages,
@@ -115,7 +114,6 @@ const SplitPlan = ({
           peerName={peerName}
           presentation="split"
           openWindow={openWindow}
-          undockMessages={undockMessages}
           undockPlan={undockPlan}
           guests={guests}
           messages={messages}
@@ -135,7 +133,6 @@ const AttachedPlan = ({
   mail,
   peerName,
   openWindow,
-  undockMessages,
   undockPlan,
   guests,
   messages,
@@ -157,7 +154,6 @@ const AttachedPlan = ({
         peerName={peerName}
         presentation="attached"
         openWindow={openWindow}
-        undockMessages={undockMessages}
         undockPlan={undockPlan}
         guests={guests}
         messages={messages}
@@ -194,8 +190,8 @@ export const TerminalCompanion = ({
   children: ReactNode
   minimized?: boolean | undefined
   clipContent?: boolean | undefined
-  // Undocks a plan, something the agent showed, or the messages, into a window of its
-  // own; `place`, where it opens when it was dropped on the canvas.
+  // Undocks a plan, or something the agent showed, into a window of its own; `place`,
+  // where it opens when it was dropped on the canvas.
   undock?: ((item: CompanionWindow["item"], place?: UndockPlace) => void) | undefined
   // What of the companion is undocked now, by its id in the pane: plan tabs, artifact
   // ids, the messages' tab.
@@ -291,8 +287,6 @@ export const TerminalCompanion = ({
     undock &&
     (({ fresh: _fresh, at: _at, ...ref }: Shown, place?: UndockPlace): void =>
       undock({ kind: "artifact", ref }, place))
-  const undockMessages =
-    undock && ((place?: UndockPlace): void => undock({ kind: "messages" }, place))
   const undockPlan =
     undock &&
     ((plan: PlanDoc, place?: UndockPlace): void =>
@@ -332,7 +326,6 @@ export const TerminalCompanion = ({
           mail={mail}
           peerName={peerName}
           openWindow={moveToWindow}
-          undockMessages={undockMessages}
           undockPlan={undockPlan}
           guests={guests}
           messages={messages}
@@ -352,7 +345,6 @@ export const TerminalCompanion = ({
           mail={mail}
           peerName={peerName}
           openWindow={moveToWindow}
-          undockMessages={undockMessages}
           undockPlan={undockPlan}
           guests={guests}
           messages={messages}
@@ -380,7 +372,6 @@ export const TerminalCompanion = ({
           mail={mail}
           peerName={peerName}
           openWindow={moveToWindow}
-          undockMessages={undockMessages}
           undockPlan={undockPlan}
           guests={guests}
           messages={messages}
