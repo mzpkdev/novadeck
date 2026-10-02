@@ -3,13 +3,10 @@ import { constants, rmSync, writeFileSync } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
 import { homedir, constants as system } from "node:os"
 import { basename, delimiter, isAbsolute, join, resolve as resolvePath } from "node:path"
-import { setTimeout as sleep } from "node:timers/promises"
 
 import type {
   AgentDetail,
   AgentName,
-  AgentShown,
-  ArtifactContent,
   ForegroundProcess,
   TerminalAttached,
   TerminalChange,
@@ -18,7 +15,6 @@ import type {
   TerminalRequest,
   TerminalRequestAnswer,
   TerminalSummary,
-  PlanContent,
   TranscriptChange,
 } from "@novadeck/protocol"
 import { SerializeAddon } from "@xterm/addon-serialize"
@@ -39,7 +35,7 @@ import {
   type Activity,
 } from "../harnesses/activity.js"
 import { observe, type Binding } from "../harnesses/bindings.js"
-import { actorOf, agentDetail, planOf } from "../harnesses/detail.js"
+import { actorOf, agentDetail } from "../harnesses/detail.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
 import type {
   ActivityEvent,
@@ -170,8 +166,6 @@ export type TerminalOptions = {
   saveMs?: number
   /** The longest transcript kept per terminal, in characters. */
   transcriptChars?: number
-  /** How often a followed plan's file is looked at for changes, in milliseconds. */
-  planPollMs?: number
   /**
    * What agents show beside terminals, and the plans each terminal's agent keeps there;
    * agents show nothing without it.
@@ -275,7 +269,7 @@ type Record = {
   actorWatches: Map<string, { readonly controller: AbortController; readonly since: number }>
   /** The bound session's transcript, where its hooks named one. */
   transcript: string | null
-  /** Ends the `agents.transcript` and `agents.plan` streams reading the bound session's. */
+  /** Ends the `agents.transcript` streams reading the bound session's. */
   sourceReaders: Set<AbortController>
   /** When the shell last showed its prompt, in epoch milliseconds. */
   promptedAt: number | null
@@ -466,8 +460,6 @@ export class Terminals {
   private readonly watchers = new Map<TerminalWatcher, string>()
   /** Each terminal's `agents.detail` readers. */
   private readonly details = new Map<string, Set<Latest<AgentDetail>>>()
-  /** Each terminal's `agents.shown` readers, until the UI follows items itself. */
-  private readonly showings = new Map<string, Set<Latest<AgentShown>>>()
   /** Each terminal's `messages.watch` readers. */
   private readonly mail = new Map<string, Set<Latest<TerminalMessages>>>()
   /** Agents' requests for a new terminal, on their way to the client. */
@@ -559,7 +551,6 @@ export class Terminals {
       connected: options.connected ?? (() => Promise.resolve(true)),
       saveMs: positive(options.saveMs, 5000),
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
-      planPollMs: positive(options.planPollMs, 500),
       projectFolder: options.projectFolder,
       projectOf: options.projectOf,
       openMs: positive(options.openMs, 6_000),
@@ -609,13 +600,6 @@ export class Terminals {
       stopping: () => this.stopping,
     })
     this.integration = this.integrate(options.shellFiles)
-    // `agents.shown` lists a terminal's bar as it changes.
-    options.items?.subscribe(() => {
-      for (const [terminalId, readers] of this.showings) {
-        const shown = this.shownOf(terminalId)
-        for (const reader of readers) reader.push(shown)
-      }
-    })
   }
 
   /** Listens for agent reports once the shell files are written; shells start plainly without. */
@@ -1518,37 +1502,6 @@ export class Terminals {
   }
 
   /**
-   * What the terminal's bar holds besides plans, as `agents.shown` lists it until the UI
-   * follows items itself: a snapshot, then another on each change, until the terminal is
-   * gone or `signal` aborts.
-   */
-  async *shown(terminalId: string, signal?: AbortSignal): AsyncGenerator<AgentShown> {
-    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    this.record(terminalId)
-    yield* this.snapshots(this.showings, terminalId, this.shownOf(terminalId), signal)
-  }
-
-  /**
-   * One item `shown` lists, read now, as `agents.artifact` gives it until the UI follows
-   * items itself; NOT_FOUND once it is not listed, or can't be read.
-   */
-  async artifact(terminalId: string, artifact: string): Promise<ArtifactContent> {
-    this.record(terminalId)
-    const { items } = this.options
-    const listed = items?.bar(terminalId).find((item) => item.id === artifact)
-    if (!items || !listed || listed.kind === "plan") throw new DomainError("NOT_FOUND")
-    // What was held when shown, the person opens as before; anything since found to be a
-    // secret, as through a swapped link, stays held.
-    const loaded = await items.load(artifact, listed.held)
-    if (loaded.state !== "ready") throw new DomainError("NOT_FOUND")
-    const { content } = loaded
-    if (content.kind === "plan") throw new DomainError("NOT_FOUND")
-    if (content.kind !== "file") return content
-    const { path, firstLine, lines, from, to } = content
-    return { kind: "file", path, firstLine, lines, from, to }
-  }
-
-  /**
    * Shows the person what an agent asked to, through NovaDeck's MCP server in one of
    * the terminal's shells, on the terminal's own bar (see `CompanionItems.show`). A call
    * without the shell's own token learns nothing more.
@@ -1854,26 +1807,6 @@ export class Terminals {
     }
   }
 
-  /** A terminal's bar, besides plans, as `agents.shown` lists it: its latest 64. */
-  private shownOf(terminalId: string): AgentShown {
-    const items = this.options.items?.bar(terminalId) ?? []
-    return {
-      terminalId,
-      shown: items
-        .filter((item) => item.kind !== "plan")
-        .slice(-64)
-        .map(({ id, kind, name, detail, version, asked, held }) => ({
-          id,
-          kind: kind === "plan" ? "file" : kind,
-          name,
-          detail,
-          version,
-          asked,
-          ...(held && { held: true }),
-        })),
-    }
-  }
-
   /**
    * A terminal's snapshots, from `first`, as they are pushed to `streams`' readers,
    * until they are finished or `signal` aborts.
@@ -1939,54 +1872,6 @@ export class Terminals {
     }
   }
 
-  /**
-   * A plan the bound session keeps as an actor's latest, read from the item mirroring it
-   * on the terminal's bar, as `agents.plan` gives it until the UI follows items itself:
-   * its text as it stands, then again on each change, until another plan replaces it,
-   * the terminal's agent leaves the session, or `signal` aborts. A plan it does not keep
-   * is NOT_FOUND.
-   */
-  async *plan(terminalId: string, plan: string, signal?: AbortSignal): AsyncGenerator<PlanContent> {
-    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    const record = this.record(terminalId)
-    const { binding } = record
-    const { items } = this.options
-    if (!items || !binding || !planOf(binding, record.activity, plan))
-      throw new DomainError("NOT_FOUND")
-    const reader = new AbortController()
-    record.sourceReaders.add(reader)
-    const abort = () => reader.abort()
-    signal?.addEventListener("abort", abort, { once: true })
-    if (signal?.aborted) reader.abort()
-    const listed = () =>
-      !reader.signal.aborted && record.binding === binding
-        ? planOf(binding, record.activity, plan)
-        : undefined
-    try {
-      // The item comes once its plan has been read, a moment after the plan is listed.
-      let itemId: string | undefined
-      while (!itemId) {
-        const current = listed()
-        if (!current) return
-        itemId = items.planItem(terminalId, binding.sessionId, current.actor)
-        if (itemId) break
-        const wait = this.options.planPollMs
-        // eslint-disable-next-line no-await-in-loop -- Each look follows the one before.
-        await sleep(wait, undefined, { signal: reader.signal }).catch(() => {})
-      }
-      for await (const content of items.content(itemId, false, reader.signal)) {
-        if (!listed()) return
-        if (content.state !== "ready" || content.content.kind !== "plan") continue
-        const { text, truncated, changedAt } = content.content
-        yield { ref: plan, text, truncated, changedAt }
-      }
-    } finally {
-      signal?.removeEventListener("abort", abort)
-      reader.abort()
-      record.sourceReaders.delete(reader)
-    }
-  }
-
   ack(input: { terminalId: string; sequence: number }, ownerId: string): void {
     // A closed terminal's viewers still acknowledge the events they drain.
     const record = this.draining.get(input.terminalId) ?? this.record(input.terminalId)
@@ -2022,7 +1907,7 @@ export class Terminals {
     for (const watcher of this.watchers.keys()) watcher.finish()
     this.opens.finish()
     this.options.items?.shutdown()
-    for (const streams of [this.details, this.showings, this.mail])
+    for (const streams of [this.details, this.mail])
       for (const readers of streams.values()) for (const reader of readers) reader.finish()
     for (const record of this.records.values()) this.unwatch(record)
     this.doorbell?.close()
@@ -2076,9 +1961,9 @@ export class Terminals {
     for (const reader of readers) reader.push(detail)
   }
 
-  /** Ends the terminal's detail, shown and messages streams, as it is closed. */
+  /** Ends the terminal's detail and messages streams, as it is closed. */
   private undetail(id: string): void {
-    for (const streams of [this.details, this.showings, this.mail]) {
+    for (const streams of [this.details, this.mail]) {
       for (const reader of streams.get(id) ?? []) reader.finish()
       streams.delete(id)
     }

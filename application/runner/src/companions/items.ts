@@ -142,7 +142,6 @@ export class CompanionItems {
   private readonly watchers = new Map<Watcher<string, CompanionChange>, string>()
   /** Each item's `content` readers, which end once it is deleted. */
   private readonly readers = new Map<string, Set<AbortController>>()
-  private readonly listeners = new Set<(change: CompanionChange) => void>()
   /**
    * The agent session each terminal bound last, in this runner's lifetime: a plan of
    * another one, observed while it bound, is not mirrored on its bar.
@@ -310,18 +309,6 @@ export class CompanionItems {
     return this.records.barItems(terminalId).map(wireItem)
   }
 
-  /** The item mirroring an agent session's plan on a terminal's own bar, by its id. */
-  planItem(terminalId: string, agentSession: string, actor: string | null): string | undefined {
-    const key = planKey({ agentSession, actor })
-    return this.records.barItems(terminalId).find((item) => item.pointerKey === key)?.id
-  }
-
-  /** Tells `listener` of every change, until the returned function is called. */
-  subscribe(listener: (change: CompanionChange) => void): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
-  }
-
   /**
    * Every window and item across sessions, `synced`, then later changes, until `signal`
    * aborts, the owner is released or the runner shuts down.
@@ -469,7 +456,6 @@ export class CompanionItems {
     this.stopping = true
     for (const watcher of this.watchers.keys()) watcher.finish()
     for (const readers of this.readers.values()) for (const reader of readers) reader.abort()
-    this.listeners.clear()
   }
 
   private async observe(
@@ -705,6 +691,5 @@ export class CompanionItems {
     for (const watcher of this.watchers.keys())
       if (removal) watcher.removed(key, change)
       else watcher.changed(key, change)
-    for (const listener of this.listeners) listener(change)
   }
 }

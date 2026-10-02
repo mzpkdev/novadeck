@@ -5,10 +5,6 @@ import {
   agentDetail,
   agentIntegration,
   agentRef,
-  planContent,
-  agentShown,
-  artifactContent,
-  artifactId,
   transcriptChange,
   agentName,
   clientState,
@@ -198,19 +194,6 @@ export const contract = {
     transcript: procedure
       .input(z.strictObject({ terminalId: id, actor: agentRef }))
       .output(eventIterator(transcriptChange)),
-    // A plan `detail` lists, by its ref: its text as it stands, then again on each change,
-    // while the terminal's agent keeps it as its actor's latest. A plan it does not list is
-    // NOT_FOUND; the stream ends once another plan replaces it or the agent leaves.
-    plan: procedure
-      .input(z.strictObject({ terminalId: id, plan: agentRef }))
-      .output(eventIterator(planContent)),
-    // What the terminal's agents showed the user: a snapshot, then another on each
-    // change, until the terminal is closed. An unknown terminal is TERMINAL_NOT_FOUND.
-    shown: procedure.input(z.strictObject({ terminalId: id })).output(eventIterator(agentShown)),
-    // One thing `shown` lists, as captured. One it does not list is NOT_FOUND.
-    artifact: procedure
-      .input(z.strictObject({ terminalId: id, artifact: artifactId }))
-      .output(artifactContent),
     // Installs or removes the plugin through the agent's own commands.
     set: procedure
       .input(z.strictObject({ agent: agentName, connected: z.boolean() }))
