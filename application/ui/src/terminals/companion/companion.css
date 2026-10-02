@@ -1303,63 +1303,58 @@
 .mail-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 8px 0 0;
+  gap: 12px;
+  margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }
+/* Messages are rows, not cards: the thread holds them. What the terminal's own agent
+   sent carries a rule down its left edge; what it received, none. */
 .mail-message {
-  padding: 7px 10px 8px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-panel);
-  background: var(--color-paper);
+  padding-left: 10px;
+  border-left: 2px solid transparent;
 }
-/* What the terminal's own agent sent sits on the shell's grey, as the sidebar's tabs do. */
 .mail-message[data-direction="sent"] {
-  background: var(--color-shell);
+  border-left-color: var(--color-line-strong);
 }
 .mail-message-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-  font-size: 10px;
+  gap: 4px 8px;
+  font-size: 11px;
   color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
 }
 .mail-message-direction {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  color: var(--color-ink);
-  font-weight: 500;
 }
-.mail-message-meta time {
-  font-family: var(--font-mono);
-}
+/* A state still worth a look, after the time: a dot of its colour and a word. */
 .mail-state {
-  margin-left: auto;
-  padding: 0 5px;
-  border-radius: var(--radius-control);
-  background: var(--color-soft);
-  color: var(--color-ink);
-  line-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
-.mail-state[data-state="delivered"] {
-  background: transparent;
-  color: var(--color-muted);
+.mail-state::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .mail-state[data-state="held"] {
-  background: var(--color-warning);
   color: var(--color-warning-fg);
 }
 .mail-state[data-state="gone"] {
-  background: transparent;
-  color: var(--color-muted);
   text-decoration: line-through;
+}
+.mail-state[data-state="gone"]::before {
+  display: none;
 }
 /* The agent's text, as it wrote it: its line breaks kept, nothing rendered. */
 .mail-text {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
