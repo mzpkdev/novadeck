@@ -4,6 +4,8 @@ import type { TerminalChange, TerminalSummary } from "@novadeck/protocol"
  * One watch stream: the current state, one change per key, then `synced`, then later
  * changes. It holds at most one pending change per key, so a slow reader receives the
  * latest change instead of every step, and a key it never saw leaves without a removal.
+ * Coalesced changes keep their first place: what one key's change refers to in another
+ * may still be on its way, and is there once the stream has caught up.
  */
 export class Watcher<Key, Change> {
   private readonly initial: Change[]
@@ -58,10 +60,12 @@ export class Watcher<Key, Change> {
     }
   }
 
-  /** Moves the key to the back of the queue, so older changes are read first. */
+  /**
+   * Queues a key's change, in place of one of its own still unread: it keeps that one's
+   * place, so changes are read in the order their keys first changed since last read.
+   */
   private queue(key: Key, entry: { readonly change: Change; readonly removal: boolean }): void {
     if (this.finished) return
-    this.pending.delete(key)
     this.pending.set(key, entry)
     this.notify()
   }

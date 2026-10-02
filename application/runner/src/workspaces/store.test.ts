@@ -684,6 +684,13 @@ describe("companion items", () => {
     )
     expect(workspace.renameWindow(windowId, "Mine")).toBe(true)
     expect(workspace.renameWindow(randomUUID(), "Nobody's")).toBe(false)
+    // A terminal it doesn't keep can hold nothing.
+    expect(() => workspace.dockItem(plan.id, randomUUID())).toThrow(
+      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
+    )
+    expect(() => workspace.saveItem(item(session.id, randomUUID(), "/work/b.ts"))).toThrow(
+      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
+    )
 
     // Docked onto the second bar, it replaces the copy there, and its window goes.
     const docked = workspace.dockItem(shown.id, second)

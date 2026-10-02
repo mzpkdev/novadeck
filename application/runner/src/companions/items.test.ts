@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CompanionChange, ItemContent } from "@novadeck/protocol"
+import { itemContent, type CompanionChange, type ItemContent } from "@novadeck/protocol"
 
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
@@ -308,6 +308,42 @@ describe("moving items", () => {
     expect(() => fixture.items.renameWindow(randomUUID(), "x")).toThrow(
       expect.objectContaining({ code: "NOT_FOUND" }),
     )
+    // A terminal whose record is gone, though it is still looked up, is not found.
+    const gone = fixture.terminal("t2")
+    fixture.store.removeTerminal(gone.terminalId)
+    expect(() => fixture.items.move(itemId, gone.terminalId)).toThrow(
+      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
+    )
+    await expect(
+      fixture.items.attach({ terminalId: gone.terminalId, path: "a.ts" }),
+    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+    await expect(fixture.items.show(gone, { path: "a.ts" })).resolves.toEqual({
+      ok: false,
+      reason: "NovaDeck couldn't show it.",
+    })
+  })
+
+  it("reports a window ahead of the item it holds, renamed or not", async ({ fixture }) => {
+    writeFileSync(join(fixture.directory, "n.md"), "# N\n")
+    const t1 = fixture.terminal("t1")
+    const controller = new AbortController()
+    const stream = fixture.items.watch("owner", controller.signal)
+    await expect(next(stream)).resolves.toEqual({ type: "synced" })
+    const shown = await fixture.items.show(t1, { path: "n.md" })
+    const itemId = shown.ok ? shown.id : ""
+    await expect(next(stream)).resolves.toMatchObject({ type: "item" })
+    const windowId = randomUUID()
+    fixture.items.undock(itemId, windowId)
+    fixture.items.renameWindow(windowId, "Renamed")
+    await expect(next(stream)).resolves.toMatchObject({
+      type: "window",
+      window: { id: windowId, title: "Renamed" },
+    })
+    await expect(next(stream)).resolves.toMatchObject({
+      type: "item",
+      item: { id: itemId, holder: { windowId } },
+    })
+    controller.abort()
   })
 
   it("closes an item with its window, and a terminal's items with it, windows staying", async ({
@@ -349,6 +385,17 @@ describe("an item's content", () => {
     fixture.items.close(itemId)
     await expect(ending).resolves.toEqual({ done: true, value: undefined })
     await expect(fixture.items.load(itemId, false)).rejects.toMatchObject({ code: "NOT_FOUND" })
+  })
+
+  it("stamps a page within what the protocol takes, however long its address", async ({
+    fixture,
+  }) => {
+    const t1 = fixture.terminal("t1")
+    const url = `http://localhost:5173/${"long/".repeat(60)}`
+    const shown = await fixture.items.show(t1, { url })
+    const content = await fixture.items.load(shown.ok ? shown.id : "", false)
+    expect(content).toMatchObject({ state: "ready", content: { kind: "page", url } })
+    expect(itemContent.parse(content)).toEqual(content)
   })
 
   it("holds a file that may hold secrets until revealed", async ({ fixture }) => {
@@ -396,6 +443,18 @@ describe("plans beside their terminal", () => {
     await expect(fixture.items.load(item!.id, false)).resolves.toMatchObject({
       content: { kind: "plan", text: "# Fix the redirect, take two\n" },
     })
+    // An older observation of another file, as a late replay, changes nothing.
+    const older = join(fixture.directory, "older.md")
+    writeFileSync(older, "# Older\n")
+    await fixture.items.planObserved(
+      t1,
+      slot,
+      { source: { kind: "file", path: older }, path: older },
+      150,
+    )
+    expect(fixture.items.bar(t1.terminalId)).toMatchObject([
+      { id: item!.id, version: 2, name: "Fix the redirect, take two", path },
+    ])
     expect(fixture.items.listing(t1.terminalId)).toBe(
       [
         "Showing beside your terminal in NovaDeck (1):",

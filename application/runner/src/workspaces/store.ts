@@ -380,6 +380,20 @@ const messageOf = (row: MessageRow): Message => ({
   notified: row.notified === 1,
 })
 
+/** Whether SQLite refused a write for a row it references that is not there. */
+const missingReference = (error: unknown): boolean =>
+  (error as { errcode?: unknown } | undefined)?.errcode === 787
+
+/** A write that references a row, failing as `code` when that row is gone. */
+const referencing = <T>(code: "TERMINAL_NOT_FOUND" | "NOT_FOUND", write: () => T): T => {
+  try {
+    return write()
+  } catch (error) {
+    if (missingReference(error)) throw new DomainError(code)
+    throw error
+  }
+}
+
 type ItemRow = {
   id: string
   session_id: string
@@ -840,9 +854,12 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     return (rows as WindowRow[]).map(windowOf)
   }
 
+  /** Adds or changes an item; TERMINAL_NOT_FOUND when its terminal or session is gone. */
   saveItem(item: ItemRecord): void {
     const { plan, lines, from } = item
-    void this.queries.run`
+    referencing(
+      "TERMINAL_NOT_FOUND",
+      () => this.queries.run`
       INSERT INTO companion_items (id, session_id, terminal_id, window_id, pointer_key, kind, path,
         url, lines_from, lines_to, plan_agent, plan_session, plan_actor, plan_format, name,
         detail, held, shown_by, from_terminal, from_handle, version, asked, shown_at,
@@ -863,9 +880,11 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
         from_terminal = excluded.from_terminal, from_handle = excluded.from_handle,
         version = excluded.version, asked = excluded.asked, shown_at = excluded.shown_at,
         observed_at = excluded.observed_at
-    `
+    `,
+    )
   }
 
+  /** TERMINAL_NOT_FOUND when the terminal is not kept. */
   dockItem(itemId: string, terminalId: string): Placed {
     return this.transaction(() => {
       const item = this.item(itemId)
@@ -876,8 +895,12 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
         WHERE terminal_id = ${terminalId} AND pointer_key = ${item.pointerKey} AND id <> ${itemId}
       ` as ItemRow | undefined
       if (row) void this.queries.run`DELETE FROM companion_items WHERE id = ${row.id}`
-      void this.queries.run`
-        UPDATE companion_items SET terminal_id = ${terminalId}, window_id = NULL WHERE id = ${itemId}`
+      referencing(
+        "TERMINAL_NOT_FOUND",
+        () => this.queries.run`
+          UPDATE companion_items SET terminal_id = ${terminalId}, window_id = NULL
+          WHERE id = ${itemId}`,
+      )
       if (left) void this.queries.run`DELETE FROM companion_windows WHERE id = ${left.id}`
       return { item: this.item(itemId)!, left, replaced: row && itemOf(row) }
     })
@@ -890,9 +913,13 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       if (this.queries.get`SELECT 1 FROM companion_windows WHERE id = ${window.id}`)
         throw new DomainError("CONFLICT", "Window id is already taken")
       const left = item.windowId === null ? undefined : this.window(item.windowId)
-      void this.queries.run`
-        INSERT INTO companion_windows (id, session_id, created_at)
-        VALUES (${window.id}, ${item.sessionId}, ${window.createdAt})`
+      // Its session gone, so is the item.
+      referencing(
+        "NOT_FOUND",
+        () => this.queries.run`
+          INSERT INTO companion_windows (id, session_id, created_at)
+          VALUES (${window.id}, ${item.sessionId}, ${window.createdAt})`,
+      )
       void this.queries.run`
         UPDATE companion_items SET terminal_id = NULL, window_id = ${window.id} WHERE id = ${itemId}`
       if (left) void this.queries.run`DELETE FROM companion_windows WHERE id = ${left.id}`

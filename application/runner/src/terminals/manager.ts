@@ -1537,7 +1537,9 @@ export class Terminals {
     const { items } = this.options
     const listed = items?.bar(terminalId).find((item) => item.id === artifact)
     if (!items || !listed || listed.kind === "plan") throw new DomainError("NOT_FOUND")
-    const loaded = await items.load(artifact, true)
+    // What was held when shown, the person opens as before; anything since found to be a
+    // secret, as through a swapped link, stays held.
+    const loaded = await items.load(artifact, listed.held)
     if (loaded.state !== "ready") throw new DomainError("NOT_FOUND")
     const { content } = loaded
     if (content.kind === "plan") throw new DomainError("NOT_FOUND")

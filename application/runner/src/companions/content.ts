@@ -23,8 +23,11 @@ const images: { readonly [extension: string]: string } = {
 }
 /** The largest image previewed; a larger one is listed without its picture. */
 export const maxImageBytes = 8 * 1024 * 1024
-// How much of a text file is read at most; past it, its lines are cut short.
+// How much of a text file is read past the lines it shows, to count its lines; past it,
+// its line count is unknown.
 const textBudget = 4 * 1024 * 1024
+// How much of a file is read at a time.
+const chunkBytes = 64 * 1024
 // A text file has no NUL byte in this much of its start.
 const sniffBytes = 8 * 1024
 // A file this long is shown whole; a longer one, around what was pointed at.
@@ -133,7 +136,8 @@ const reasonOf = (error: unknown): Unavailable["reason"] => {
 /** What says a file changed: its size, when it last changed, and which file it is. */
 const stampOf = (stats: Stats): string => `${stats.size}:${stats.mtimeMs}:${stats.ino}`
 
-const hashOf = (text: string): string =>
+/** A short digest of a text, as a stamp. */
+export const hashOf = (text: string): string =>
   createHash("sha256").update(text).digest("base64url").slice(0, 22)
 
 /**
@@ -176,6 +180,64 @@ const readUpTo = async (
 }
 
 /**
+ * Streams a text file's lines, keeping those it may show: its first `wholeLines`, and
+ * those around `range` with their context. It reads on to the last of those, then up to
+ * `textBudget` more to count the rest; `ended` once it reached the file's end. Each kept
+ * line is cut to what the protocol takes. A NUL byte near its start makes it binary.
+ */
+const readLines = async (
+  handle: FileHandle,
+  range: { readonly from: number; readonly to: number } | null,
+): Promise<{ kept: Map<number, string>; count: number; ended: boolean } | "binary"> => {
+  const start = range ? Math.max(1, range.from - contextLines) : 1
+  const last = range ? Math.min(range.to + contextLines, start + maxLines - 1) : wholeLines
+  const keeps = (line: number) => line <= wholeLines || (line >= start && line <= last)
+  const kept = new Map<number, string>()
+  const decoder = new StringDecoder("utf8")
+  const breaks = /\r\n|\r|\n/g
+  const buffer = Buffer.alloc(chunkBytes)
+  let count = 0
+  let line = ""
+  // A carriage return ended the last chunk, so a line feed opening the next is its pair.
+  let carriage = false
+  let position = 0
+  // Where the last kept line ended, past which only `textBudget` more is read.
+  let past: number | undefined
+  const push = () => {
+    count += 1
+    if (keeps(count)) kept.set(count, line)
+    if (count === last) past = position
+    line = ""
+  }
+  const take = (text: string) => {
+    let at = carriage && text.startsWith("\n") ? 1 : 0
+    breaks.lastIndex = at
+    for (let found = breaks.exec(text); found; found = breaks.exec(text)) {
+      line = (line + text.slice(at, found.index)).slice(0, maxLineChars)
+      push()
+      at = breaks.lastIndex
+    }
+    line = (line + text.slice(at)).slice(0, maxLineChars)
+    if (text.length > 0) carriage = text.endsWith("\r")
+  }
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- One chunk after another.
+    const { bytesRead } = await handle.read(buffer, 0, chunkBytes, position)
+    if (bytesRead === 0) break
+    const chunk = buffer.subarray(0, bytesRead)
+    if (position < sniffBytes && chunk.subarray(0, sniffBytes - position).includes(0))
+      return "binary"
+    position += bytesRead
+    take(decoder.write(chunk))
+    if (past !== undefined && position - past > textBudget) return { kept, count, ended: false }
+  }
+  take(decoder.end())
+  // The line a final newline ends is the last; an empty file has one empty line.
+  if (line !== "" || count === 0) push()
+  return { kept, count, ended: true }
+}
+
+/**
  * An image or a text file, as it is now, symlinks resolved. One that may hold secrets is
  * `held` unless `reveal`; an image past the preview limit is `too-large`; a text file
  * with a NUL byte near its start is `binary`. A text file is read up to a budget, then
@@ -214,13 +276,12 @@ export const loadFile = async (
         content: { kind: "image", src: `data:${mime};base64,${bytes.toString("base64")}` },
       }
     }
-    const { bytes, more } = await readUpTo(handle, textBudget)
-    if (bytes.subarray(0, sniffBytes).includes(0)) return unavailable("binary", stats.size)
-    // A character cut at the budget is left out rather than mangled.
-    const all = new StringDecoder("utf8").write(bytes).split(/\r\n|\r|\n/)
-    // Cut short, its last line is partial; whole, the line a final newline ends is the last.
-    if (all.length > 1 && (more || all.at(-1) === "")) all.pop()
-    const window = captureWindow(all.length, item.lines)
+    const read = await readLines(handle, item.lines)
+    if (read === "binary") return unavailable("binary", stats.size)
+    const { kept, count, ended } = read
+    const window = captureWindow(count, item.lines)
+    const lines: string[] = []
+    for (let line = window.first; line <= window.last; line += 1) lines.push(kept.get(line) ?? "")
     return {
       state: "ready",
       stamp,
@@ -228,12 +289,13 @@ export const loadFile = async (
         kind: "file",
         path: clip(path, 4096),
         firstLine: window.first,
-        lines: all.slice(window.first - 1, window.last).map((line) => line.slice(0, maxLineChars)),
+        lines,
         from: window.from,
         to: window.to,
-        total: more ? null : all.length,
-        truncated: more,
-        clamped: window.clamped,
+        total: ended ? count : null,
+        truncated: !ended,
+        // Only lines past the file's end are pulled back, never those past what was read.
+        clamped: ended && window.clamped,
       },
     }
   } catch (error) {
@@ -272,21 +334,40 @@ export const readPlanFile = async (
   }
 }
 
-// What was last read of each transcript or rollout holding text plans, by its path, with
-// the stamp it was read at: a long rollout is decoded again only once it changes.
-const decoded = new Map<string, { readonly stamp: string; readonly plan: PlanText | undefined }>()
+// What was last read of each transcript or rollout holding text plans, by its path: the
+// file it was, as far as it was read, and the latest plan it held there. Such a file is
+// only appended to, so a later read decodes only what was added since.
+type Decoded = {
+  readonly stamp: string
+  readonly ino: number
+  readonly offset: number
+  readonly plan: PlanText | undefined
+}
+const decoded = new Map<string, Decoded>()
 const maxDecoded = 16
+// The read under way of each path; another waits for it, then reads only what is new.
+const decoding = new Map<string, Promise<PlanText | undefined>>()
 
 /**
  * The latest plan presented as text that a transcript or rollout records, read with its
  * harness's own decoders; undefined when the file is gone or records none.
  */
-export const readTextPlan = async (
-  agent: AgentName,
-  path: string,
-): Promise<PlanText | undefined> => {
+export const readTextPlan = (agent: AgentName, path: string): Promise<PlanText | undefined> => {
   const plans = harnesses[agent].plans
-  if (!plans) return undefined
+  if (!plans) return Promise.resolve(undefined)
+  const before = decoding.get(path) ?? Promise.resolve(undefined)
+  const read = before.then(() => decodePlans(path, plans))
+  decoding.set(path, read)
+  void read.finally(() => {
+    if (decoding.get(path) === read) decoding.delete(path)
+  })
+  return read
+}
+
+const decodePlans = async (
+  path: string,
+  plans: NonNullable<(typeof harnesses)[AgentName]["plans"]>,
+): Promise<PlanText | undefined> => {
   let handle: FileHandle
   try {
     handle = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
@@ -299,13 +380,32 @@ export const readTextPlan = async (
     const stamp = stampOf(stats)
     const known = decoded.get(path)
     if (known?.stamp === stamp) return known.plan
-    let latest: PlanText | undefined
-    for await (const line of handle.readLines({ autoClose: false }))
-      for (const { source, at } of plans(line))
-        if (source.kind === "text")
-          latest = { text: source.text, truncated: source.truncated, changedAt: at }
+    // The same file, grown: only what was added. Replaced or cut short: all of it again.
+    const from = known && known.ino === stats.ino && stats.size >= known.offset ? known : undefined
+    let latest = from?.plan
+    let position = from?.offset ?? 0
+    let carry = Buffer.alloc(0)
+    const buffer = Buffer.alloc(1024 * 1024)
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- One chunk after another.
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position + carry.length)
+      if (bytesRead === 0) break
+      const data = Buffer.concat([carry, buffer.subarray(0, bytesRead)])
+      const end = data.lastIndexOf(10)
+      // Only whole lines: one still being written is read once it ends.
+      if (end < 0) {
+        carry = data
+        continue
+      }
+      for (const line of data.subarray(0, end).toString("utf8").split("\n"))
+        for (const { source, at } of plans(line.endsWith("\r") ? line.slice(0, -1) : line))
+          if (source.kind === "text")
+            latest = { text: source.text, truncated: source.truncated, changedAt: at }
+      position += end + 1
+      carry = data.subarray(end + 1)
+    }
     decoded.delete(path)
-    decoded.set(path, { stamp, plan: latest })
+    decoded.set(path, { stamp, ino: stats.ino, offset: position, plan: latest })
     for (const oldest of decoded.keys()) {
       if (decoded.size <= maxDecoded) break
       decoded.delete(oldest)

@@ -1655,6 +1655,19 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect(manager.artifact(terminal.id, first!.id)).resolves.toMatchObject({
         lines: ["const a = 2"],
       })
+      // Held when shown, it opens as the person picks it; swapped since for a link to a
+      // key, a file that wasn't stays held.
+      const [, workFile, , , env] = answers as { id: string }[]
+      await expect(manager.artifact(terminal.id, env!.id)).resolves.toMatchObject({
+        lines: ["TOKEN=x"],
+      })
+      mkdirSync(join(shell.home, ".ssh"))
+      writeFileSync(join(shell.home, ".ssh", "id_rsa"), "KEY\n")
+      rmSync(join(work, "w.txt"))
+      symlinkSync(join(shell.home, ".ssh", "id_rsa"), join(work, "w.txt"))
+      await expect(manager.artifact(terminal.id, workFile!.id)).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      })
       await manager.close({ terminalId: terminal.id }, "owner")
       await reading
       await expect(manager.artifact(terminal.id, first!.id)).rejects.toMatchObject({

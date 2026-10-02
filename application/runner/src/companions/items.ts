@@ -15,6 +15,7 @@ import type { PlanSource } from "../harnesses/events.js"
 import { agentLabel } from "../messaging/mailbox.js"
 import { Watcher } from "../terminals/watcher.js"
 import {
+  hashOf,
   loadFile,
   loadPlan,
   maxImageBytes,
@@ -168,7 +169,15 @@ export class CompanionItems {
     if (!pointed.ok) return pointed
     const { pointer, tooLarge } = pointed
     const asked = request.open === true && !pointer.held
-    const kept = this.keep(place, pointer, { by: "agent", asked })
+    let kept: ReturnType<CompanionItems["keep"]>
+    try {
+      kept = this.keep(place, pointer, { by: "agent", asked })
+    } catch (error) {
+      // Its terminal went while the file was looked at; anything else is worth a word.
+      if (!(error instanceof DomainError && error.code === "TERMINAL_NOT_FOUND"))
+        console.error("NovaDeck could not keep an item beside its terminal:", error)
+      kept = undefined
+    }
     if (!kept) return failure("NovaDeck couldn't show it.")
     return {
       ok: true,
@@ -492,16 +501,17 @@ export class CompanionItems {
     }
     const own = this.records.barItems(place.terminalId).find((item) => item.pointerKey === key)
     if (own) {
-      const newer = own.observedAt === null || at > own.observedAt
-      const same =
-        own.path === pointer.path && own.plan?.format === format && own.name === pointer.name
-      if (!newer && same) return
+      // An older observation, as a replay, changes nothing it already has.
+      if (own.observedAt !== null && at <= own.observedAt) {
+        if (own.path === null) this.save({ ...own, path: pointer.path })
+        return
+      }
       this.save({
         ...own,
         ...pointer,
-        version: own.version + (newer ? 1 : 0),
-        shownAt: newer ? Date.now() : own.shownAt,
-        observedAt: newer ? at : own.observedAt,
+        version: own.version + 1,
+        shownAt: Date.now(),
+        observedAt: at,
       })
       return
     }
@@ -593,7 +603,8 @@ export class CompanionItems {
 
   /**
    * Keeps a pointer on a terminal's own bar: updating the item it holds under it, or
-   * adding one. Undefined once the terminal is gone.
+   * adding one. Undefined once the terminal is gone; TERMINAL_NOT_FOUND once its record
+   * is, and any other failure to keep it as it is.
    */
   private keep(
     place: TerminalPlace,
@@ -619,12 +630,7 @@ export class CompanionItems {
           shownAt: Date.now(),
           observedAt: null,
         }
-    try {
-      this.save(item)
-    } catch (error) {
-      console.error("NovaDeck could not keep an item beside its terminal:", error)
-      return undefined
-    }
+    this.save(item)
     return { item, again: own !== undefined }
   }
 
@@ -662,7 +668,7 @@ export class CompanionItems {
     if (item.kind === "page")
       return Promise.resolve({
         state: "ready",
-        stamp: item.url ?? "",
+        stamp: hashOf(item.url ?? ""),
         content: { kind: "page", url: item.url ?? "" },
       })
     if (item.kind === "plan") return loadPlan(item, live)

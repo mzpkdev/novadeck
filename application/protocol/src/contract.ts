@@ -224,7 +224,11 @@ export const contract = {
       .input(z.strictObject({ sessionId: id }))
       .output(z.strictObject({ items: z.array(companionItem), windows: z.array(companionWindow) })),
     // Every item and window across sessions: each, `synced`, then later changes, as
-    // `terminals.watch` reports terminals.
+    // `terminals.watch` reports terminals. What comes before `synced` is a set, applied
+    // whole at `synced`. After it, each change is the latest state of its item or window,
+    // in the order they first changed since the reader last caught up, so a reference
+    // (an item's holder window, a window's item, an item's terminal) may name one not yet
+    // reported, or one whose removal follows. They agree once the stream is idle.
     watch: procedure.input(z.void()).output(eventIterator(companionChange)),
     // What an item points at, read now, then again each time it changes, until it is
     // deleted. A file that may hold secrets is `held` unless `reveal`. An unknown item is

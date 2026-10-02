@@ -45,7 +45,7 @@ describe("terminal watcher", () => {
     ])
   })
 
-  it("keeps only the latest unread summary of each terminal, oldest change first", async () => {
+  it("keeps only the latest unread summary of each terminal, in the order they first changed", async () => {
     const watcher = new TerminalWatcher([])
     watcher.changed(terminal("a", { process: { name: "vim", argv: null } }))
     watcher.changed(terminal("b"))
@@ -54,8 +54,8 @@ describe("terminal watcher", () => {
     }
     expect(await read(watcher, 3)).toEqual([
       { type: "synced" },
-      { type: "changed", terminal: terminal("b") },
       { type: "changed", terminal: terminal("a", { process: { name: "step-999", argv: null } }) },
+      { type: "changed", terminal: terminal("b") },
     ])
   })
 
@@ -91,7 +91,7 @@ describe("terminal watcher", () => {
 })
 
 describe("keyed watcher", () => {
-  it("keeps each key's latest change, a removal included, behind the current state", async () => {
+  it("keeps each key's latest change in its first place, a removal included, behind the current state", async () => {
     const watcher = new Watcher<string, string>([["a", "a1"]], "synced")
     watcher.changed("b", "b1")
     watcher.changed("a", "a2")
@@ -99,6 +99,14 @@ describe("keyed watcher", () => {
     watcher.removed("a", "a gone")
     expect([await watcher.next(), await watcher.next()]).toEqual(["a1", "synced"])
     expect([await watcher.next(), await watcher.next()]).toEqual(["b2", "a gone"])
+    // A window renamed after it was undocked stays ahead of the item it holds.
+    watcher.changed("window", "window opened")
+    watcher.changed("item", "item in window")
+    watcher.changed("window", "window renamed")
+    expect([await watcher.next(), await watcher.next()]).toEqual([
+      "window renamed",
+      "item in window",
+    ])
     // A key the reader no longer knows leaves without a word.
     watcher.removed("a", "a gone again")
     watcher.finish()

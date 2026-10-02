@@ -270,8 +270,11 @@ export type Runner = {
      * Follows every item and window on the runner, across sessions, as
      * `terminals.watch()` follows terminals: each subscription yields `reset`, every item
      * and window, then `synced`; at `synced`, forget any not reported since. Later events
-     * report changes and removals. Iteration ends only when the runner closes or on
-     * `return()`.
+     * report changes and removals, each the latest state of its item or window, in the
+     * order they first changed since this client last caught up. A reference may name an
+     * item, window or terminal not yet reported, or one whose removal follows: keep both
+     * sides and resolve them as the rest arrives, never drop one for it. Iteration ends
+     * only when the runner closes or on `return()`.
      */
     watch(): AsyncIterableIterator<CompanionWatchItem, undefined>
     /**
