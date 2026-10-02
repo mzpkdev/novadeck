@@ -73,6 +73,24 @@ export const agy: AgentSetup = {
     deny: "4",
     denied: /User declined the tool call/,
   },
+  // `run_command` running its own print mode, which its settings allow (`command(agy -p)`).
+  shell: {
+    run: (call, command) => ({
+      calls: [
+        {
+          name: "run_command",
+          input: {
+            CommandLine: command,
+            Cwd: workingDirectory(call),
+            WaitMsBeforeAsync: 30_000,
+            toolSummary: "Run a command",
+            toolAction: "Running",
+          },
+        },
+      ],
+    }),
+    nested: (prompt) => `agy -p '${prompt}'`,
+  },
   // Escape mid-turn says so (probed 2026-10-02, 1.2.14).
   interrupted: () => /⎿ {2}Interrupted · What should Antigravity CLI do instead\?/,
   // A subagent of its own type `self` runs in a conversation of its own, its model calls
@@ -105,6 +123,10 @@ export const agy: AgentSetup = {
     },
   },
   absent: {
+    popup:
+      "nothing shows after a turn on its Gemini API route, the screen still for 15 s, and its program holds no dialog for after one; its quota screens belong to the Code Assist route (probed 2026-10-02, 1.2.14)",
+    rewind:
+      "Esc-Esc opens nothing; its rewind is the typed /rewind command, which Untouched covers (probed 2026-10-02, 1.2.14)",
     "trust.hooks":
       "it runs a plugin's hooks with no review: every scenario's session binds unasked (1.2.14)",
   },
@@ -119,7 +141,8 @@ export const agy: AgentSetup = {
         modelProvider: "gemini",
         // NovaDeck's MCP tools run without asking, so a `send` needs no approval (its
         // plugin's server is namespaced after the plugin).
-        permissions: { allow: ["mcp(novadeck_novadeck/*)"] },
+        // Its own print mode too, so `shell` runs a nested Antigravity unasked.
+        permissions: { allow: ["mcp(novadeck_novadeck/*)", "command(agy -p)"] },
       }),
     )
     return {
