@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type ReactNode } from "react"
 
-import { isOnBar, type CompanionItem } from "../model/companion"
+import { isOnBar, type CompanionItem, type ItemId } from "../model/companion"
 import { emptyBar } from "../model/companion-bar"
 import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
@@ -171,7 +171,15 @@ export const WorkspaceTerminal = ({
     const held = currentState(workspace).items.filter((item) => isOnBar(item, terminalId))
     return held.length ? held : noItems
   }, sameItems)
-  const fresh = useWorkspaceState((workspace) => currentState(workspace).fresh)
+  // Only its own items' marks, so something new on another bar re-renders nothing here.
+  const fresh = useWorkspaceState((workspace): Readonly<Record<ItemId, true>> => {
+    const state = currentState(workspace)
+    return Object.fromEntries(
+      state.items.flatMap((item) =>
+        isOnBar(item, terminalId) && state.fresh[item.id] ? [[item.id, true]] : [],
+      ),
+    )
+  }, shallowEqual)
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
   const frame: Omit<WindowShellProps, "children"> = {

@@ -4,9 +4,15 @@ import { vi } from "vitest"
 
 import { itemIdOf } from "../../model/companion"
 import { workspaceFromSeed } from "../../model/seed"
-import { workspaceReducer, type WorkspaceAction } from "../../model/state"
+import {
+  createTerminalState,
+  createWorkspaceSession,
+  workspaceReducer,
+  type WorkspaceAction,
+} from "../../model/state"
 import { context, describe, expect, it } from "../../test"
 import type { BackendAction } from "../port"
+import { itemOf } from "./companions"
 import { id, scripted } from "./scripted"
 
 const session = id(8)
@@ -45,8 +51,12 @@ const windowId = "00000000-0000-4000-8000-0000000000b1"
 
 // The adapter over a scripted runner whose shown session has two terminals, and `notes`
 // on the first one's bar. `answer` is how the runner answers the person's changes.
-const open = (answer?: (call: string, input: unknown) => Promise<unknown>) => {
+const open = (
+  answer?: (call: string, input: unknown) => Promise<unknown>,
+  createSession?: () => Promise<unknown>,
+) => {
   const app = scripted({
+    ...(createSession ? { createSession } : {}),
     shown: [
       { id: first, lastProcess: "" },
       { id: second, lastProcess: "" },
@@ -218,6 +228,48 @@ describe("the runner's items and windows", () => {
       await vi.waitFor(() => expect(app.of("close item")).toHaveLength(1))
       await settle()
       expect(app.reported()).toEqual([])
+      app.stop()
+    })
+  })
+
+  context("in a session the runner hasn't finished creating", () => {
+    it("sends the person's changes only once the session exists there", async () => {
+      let created!: () => void
+      const app = open(undefined, () => new Promise<void>((resolve) => (created = resolve)))
+      const fresh = id(7)
+      const there = { projectId: "p", workspaceSessionId: fresh }
+      const item = itemIdOf(hero.id)
+      app.commit(
+        {
+          type: "session/add",
+          projectId: "p",
+          activate: false,
+          session: createWorkspaceSession(
+            { name: "Fresh", state: createTerminalState([], "grid", "grid") },
+            { id: fresh, now: 1 },
+          ),
+        },
+        { type: "item/upsert", target: there, item: { ...itemOf(hero), id: item } },
+        { type: "item/move", target: there, itemIds: [item], terminalId: first },
+        {
+          type: "item/undock",
+          target: there,
+          itemId: item,
+          window: { id: windowId, itemId: item, name: "hero", titleSource: { kind: "default" } },
+        },
+        { type: "terminal/rename", target: there, terminalId: windowId, name: "Hero" },
+      )
+      await vi.waitFor(() => expect(app.of("create session")).toHaveLength(1))
+      await settle()
+      const sent = () =>
+        app.calls
+          .map((call) => call.call)
+          .filter((call) => ["create session", "move", "undock", "rename window"].includes(call))
+      expect(sent()).toEqual(["create session"])
+      created()
+      await vi.waitFor(() =>
+        expect(sent()).toEqual(["create session", "move", "undock", "rename window"]),
+      )
       app.stop()
     })
   })

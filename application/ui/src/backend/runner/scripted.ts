@@ -115,6 +115,7 @@ export const scripted = ({
   companions = { items: [], windows: [] },
   respond = async () => undefined,
   content = () => channel<never>().iterator,
+  createSession = unused,
 }: {
   shown: readonly Saved[]
   background?: readonly Saved[]
@@ -127,6 +128,8 @@ export const scripted = ({
   // How the runner answers each change to an item or window, by the call's name.
   respond?: (call: string, input: unknown) => Promise<unknown>
   content?: Runner["companions"]["content"]
+  // How the runner answers creating a session this window adds.
+  createSession?: () => Promise<unknown>
 }) => {
   const changes = channel<TerminalWatchItem>()
   const items = channel<CompanionWatchItem>()
@@ -142,7 +145,12 @@ export const scripted = ({
   const api = {
     watch: () => statuses.iterator,
     projects: { list: unused, create: unused, rename: unused, remove: unused },
-    sessions: { list: unused, create: unused, rename: unused, save: async () => {} },
+    sessions: {
+      list: unused,
+      create: note("create session", createSession),
+      rename: unused,
+      save: async () => {},
+    },
     settings: { get: unused, set: note("settings", saveSettings) },
     agents: {
       list: async () => [],
