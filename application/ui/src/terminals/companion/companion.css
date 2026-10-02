@@ -341,8 +341,11 @@
   .plan-divider {
     display: none;
   }
-  .plan-split-terminal {
-    border-bottom: 1px solid var(--color-line-strong);
+  /* Stacked under the terminal, the pane rises from below as it opens, its top edge
+     the line between them, so the line comes and goes with it. */
+  .plan-split-reader {
+    --plan-enter: 0 16px;
+    border-top: 1px solid var(--color-line-strong);
   }
 }
 
@@ -480,7 +483,6 @@
   background: var(--color-paper);
   box-shadow: var(--shadow-floating);
   cursor: default;
-  animation: plan-attach var(--motion-layout) var(--ease-interface);
 }
 .plan-attached::before {
   content: "";
@@ -490,16 +492,58 @@
   width: 20px;
   border-top: 1px dashed var(--color-line-strong);
 }
+/* The pane opens and closes on opacity and translate only, which the compositor runs
+   without layout: the terminal beside a split takes its new size once, not per frame.
+   It slides from where it sits: the split's from the window's right edge, or from
+   below when stacked under the terminal, and the attached sheet from its node. What
+   was open already, after a view switch or a restore, has no state and appears as it
+   was. */
+.plan-split-reader[data-state="open"] {
+  animation: plan-split-in var(--motion-state) var(--ease-interface);
+}
+.plan-attached[data-state="open"] {
+  animation: plan-attach var(--motion-layout) var(--ease-interface);
+}
+:is(.plan-split-reader, .plan-attached)[data-state="closed"] {
+  animation: plan-out var(--motion-feedback) var(--ease-interface) forwards;
+  pointer-events: none;
+}
+/* The divider beside the split fades with it. */
+.plan-split:has(> .plan-split-reader[data-state="open"]) > .plan-divider {
+  animation: plan-divider-in var(--motion-state) var(--ease-interface);
+}
+.plan-split:has(> .plan-split-reader[data-state="closed"]) > .plan-divider {
+  animation: plan-out var(--motion-feedback) var(--ease-interface) forwards;
+  pointer-events: none;
+}
+@keyframes plan-divider-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes plan-split-in {
+  from {
+    opacity: 0;
+    translate: var(--plan-enter, 16px 0);
+  }
+}
 @keyframes plan-attach {
   from {
     opacity: 0;
     translate: -12px 0;
   }
 }
+@keyframes plan-out {
+  to {
+    opacity: 0;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
+  .plan-split-reader,
+  .plan-divider,
   .plan-attached {
-    animation: none;
+    animation: none !important;
   }
 }
 .plan-editor .cm-editor {

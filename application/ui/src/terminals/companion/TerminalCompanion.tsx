@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { CompanionKey, Companions } from "../../model/companion"
 import type { Messages } from "../../model/messages"
 import type { ViewMode } from "../../model/types"
+import { usePresence, type Presence } from "../../ui-toolkit/presence"
 import type { TerminalLayoutControls } from "../WindowShell"
 import { CompanionPane } from "./CompanionPane"
 import { useMail, type MailHandle } from "./mail"
@@ -25,10 +26,12 @@ const SplitPlan = ({
   mail,
   peerName,
   view,
+  presence,
   children,
 }: MailProps & {
   companion: CompanionHandle
   view: ViewMode
+  presence: Presence
   children: ReactNode
 }): React.JSX.Element => {
   const [ratio, setRatio] = useState(view === "focus" ? 0.36 : 0.42)
@@ -68,7 +71,7 @@ const SplitPlan = ({
           )
         }}
       />
-      <div className="plan-split-reader nodrag nopan nowheel">
+      <div {...presence.props} className="plan-split-reader nodrag nopan nowheel">
         <CompanionPane companion={companion} mail={mail} peerName={peerName} presentation="split" />
       </div>
     </div>
@@ -85,15 +88,17 @@ const AttachedPlan = ({
   mail,
   peerName,
   onReveal,
+  presence,
 }: MailProps & {
   companion: CompanionHandle
   onReveal: TerminalLayoutControls["onReveal"]
+  presence: Presence
 }): React.JSX.Element => {
   // Frame once as the sheet opens, not whenever the canvas hands over a new callback.
   const reveal = useRef(onReveal)
   useEffect(() => reveal.current?.(attachedExtent), [])
   return (
-    <div className="plan-attached nodrag nopan nowheel">
+    <div {...presence.props} className="plan-attached nodrag nopan nowheel">
       <CompanionPane
         companion={companion}
         mail={mail}
@@ -137,6 +142,9 @@ export const TerminalCompanion = ({
   const present = companion.present || mail.present
   // Open while there's something to show, the messages among it.
   const open = companion.pane.open && !minimized && shownTab(companion.pane, mail.present) !== ""
+  // The pane stays while it animates out. Only the pane animates: the terminal beside
+  // it takes its new size once, never frame by frame.
+  const shown = usePresence(open)
   const wasOpen = useRef(open)
   // Opening leaves focus on the taskbar. Hiding the pane from inside it (Escape) would
   // drop focus with the pane, so it goes back to the taskbar.
@@ -153,8 +161,14 @@ export const TerminalCompanion = ({
       aria-hidden={minimized}
       inert={minimized}
     >
-      {open && presentation === "split" ? (
-        <SplitPlan companion={companion} mail={mail} peerName={peerName} view={view}>
+      {shown.mounted && presentation === "split" ? (
+        <SplitPlan
+          companion={companion}
+          mail={mail}
+          peerName={peerName}
+          view={view}
+          presence={shown}
+        >
           {children}
         </SplitPlan>
       ) : (
@@ -171,8 +185,14 @@ export const TerminalCompanion = ({
           open={open}
         />
       )}
-      {open && presentation === "attached" && (
-        <AttachedPlan companion={companion} mail={mail} peerName={peerName} onReveal={onReveal} />
+      {shown.mounted && presentation === "attached" && (
+        <AttachedPlan
+          companion={companion}
+          mail={mail}
+          peerName={peerName}
+          onReveal={onReveal}
+          presence={shown}
+        />
       )}
     </div>
   )
