@@ -129,7 +129,8 @@ Switching terminal tabs in Focus uses the same transition.
 
 The project switcher in the top bar removes a project from its row's trash icon, after
 you confirm; its terminals close, and the folder on disk stays. The last project stays.
-The backends don't remove projects yet: on the runner it comes back on the next reload.
+The runner forgets the project with its sessions and its agents' messages, so it stays
+gone after a reload.
 
 ## Restoring terminals
 

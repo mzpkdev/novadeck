@@ -163,6 +163,14 @@ The client names every project, session, and terminal it creates with a fresh UU
 so it can refer to one before the runner answers. A taken ID rejects with `CONFLICT`;
 for terminals that includes exited records the runner still retains. A project
 created without `cwd` opens in the home directory of the user running the runner.
+`projects.remove({ projectId })` closes every terminal of the project's sessions,
+running or kept only as saved, whichever connection controls them, so watchers see
+each `removed`; then it deletes the project, its sessions and what the runner kept of
+their terminals, and its agents' messages. Its folder on disk stays. Terminals being
+created in the project as it begins finish first and close with the rest; while it
+goes, creating a session or terminal in it rejects with `NOT_FOUND`. A second call
+while it goes shares the first, and one after it, like one for a project the runner
+never had, rejects with `NOT_FOUND`.
 `sessions.save({ sessionId, state })` replaces a session's `state`, a string the
 runner stores with the session without reading it, such as a UI layout. It holds only
 how a client shows the session's terminals, by id: the terminals themselves, their

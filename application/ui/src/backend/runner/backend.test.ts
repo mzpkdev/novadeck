@@ -12,11 +12,16 @@ import {
 import type { Workspace, WorkspaceTarget } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import type { BackendAction } from "../port"
-import { runnerBackend, type RunnerBackend, type RunnerBackendOptions } from "./backend"
+import {
+  runnerBackend,
+  type RunnerApi,
+  type RunnerBackend,
+  type RunnerBackendOptions,
+} from "./backend"
 import { keptSummary } from "./scripted"
 import { runnerSeed, startingTerminal, type RunnerListing } from "./seed"
 import { encodeSession } from "./session-state"
-import { startTestRunner, typeInto } from "./testing"
+import { recordingRunner, startTestRunner, typeInto } from "./testing"
 
 // The runner samples the foreground process about once a second.
 const eventually = { timeout: 5000 }
@@ -28,8 +33,12 @@ const runner = await startTestRunner()
 afterAll(() => runner.close())
 
 // A backend over the runner as the app drives it: seeded, committed and started.
-const open = (listing: RunnerListing = runner.listing, options: RunnerBackendOptions = {}) => {
-  const created: RunnerBackend = runnerBackend(runner.client, listing, {
+const open = (
+  listing: RunnerListing = runner.listing,
+  options: RunnerBackendOptions = {},
+  api: RunnerApi = runner.client,
+) => {
+  const created: RunnerBackend = runnerBackend(api, listing, {
     saveDelay: 10,
     ...options,
   })
@@ -561,6 +570,48 @@ describe("runner backend", () => {
         // The runner forgets a terminal closed on purpose, so a reload cannot bring it back.
         expect(listed.map((item) => item.id)).not.toContain(terminal.id)
       })
+    })
+  })
+
+  context("when the person removes a project", () => {
+    it("removes it on the runner, which closes its terminals, so a reload leaves it out", async () => {
+      const io: string[] = []
+      const app = open(runner.listing, {}, recordingRunner(runner.client, io))
+      const kept = app.target().projectId
+      const project = { id: crypto.randomUUID(), name: "tmp", directory: process.cwd() }
+      const session = {
+        id: crypto.randomUUID(),
+        name: "First",
+        visitedAt: Date.now(),
+        state: createTerminalState([], "grid", "grid"),
+      }
+      app.commit([{ type: "project/add", project, activate: true, initialSession: session }])
+      const terminal = app.addTerminal()
+      await app.idle()
+      app.commit([{ type: "project/remove", projectId: project.id, now: Date.now() }])
+      await app.idle()
+      app.stop()
+      expect(io).toContain(`remove project ${project.id}`)
+      // The runner closes them as it removes the project, so the app closes none itself.
+      expect(io).not.toContain(`close ${terminal.id}`)
+      const listed = (await runner.reload()).map((item) => item.project.id)
+      expect(listed).toContain(kept)
+      expect(listed).not.toContain(project.id)
+      await expect(runner.client.terminals.list({ sessionId: session.id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      })
+    })
+
+    it("leaves the last project on the runner, as the workspace keeps it", async () => {
+      const io: string[] = []
+      const last = runner.listing.slice(0, 1)
+      const app = open(last, {}, recordingRunner(runner.client, io))
+      const { projectId } = app.target()
+      app.commit([{ type: "project/remove", projectId, now: Date.now() }])
+      await app.idle()
+      app.stop()
+      expect(io).not.toContain(`remove project ${projectId}`)
+      expect((await runner.reload()).map((item) => item.project.id)).toContain(projectId)
     })
   })
 

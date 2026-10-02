@@ -563,6 +563,17 @@ export const runnerBackend = (
       ),
     )
 
+  // Projects the person removed, whose terminals the runner closes as it removes them.
+  const removedProjects = new Set<string>()
+  // Removes the project on the runner once it has it, retrying while the runner is
+  // unreachable. One already gone, as removed from another window, is left as it is.
+  const removeOnRunner = async (projectId: string): Promise<void> => {
+    if (!(await (projects.get(projectId) ?? created))) return
+    await untilAnswered(() => runner.projects.remove({ projectId }), {
+      done: ["NOT_FOUND"],
+    }).catch(() => {})
+  }
+
   // Ends the shell, retrying while the runner is unreachable. A terminal already gone,
   // or one another window controls, is left as it is.
   // A lost terminal is closed too, so the runner forgets what would restore it.
@@ -954,7 +965,8 @@ export const runnerBackend = (
       entries.delete(key.terminalId)
       companions.unfollow(key)
       messages.unfollow(key)
-      void track(endShell(entry))
+      // A removed project's terminals are closed by the runner, as it removes the project.
+      if (!removedProjects.has(key.projectId)) void track(endShell(entry))
       checkBoot()
     },
   })
@@ -998,7 +1010,16 @@ export const runnerBackend = (
             ),
           )
     }
+    // The reducer keeps the last project, so only one gone from the workspace is removed.
+    const removed = actions.flatMap((action) =>
+      action.type === "project/remove" &&
+      !workspace.projects.some((project) => project.id === action.projectId)
+        ? [action.projectId]
+        : [],
+    )
+    for (const projectId of removed) removedProjects.add(projectId)
     registry.reconcile(workspace, actions)
+    for (const projectId of removed) void track(removeOnRunner(projectId))
     saves.note(workspace)
     for (const action of actions) {
       // The person's renames go to the runner, which owns every terminal's title; a
@@ -1006,8 +1027,6 @@ export const runnerBackend = (
       // TODO: keep companion windows' names once the runner keeps the windows.
       if (action.type === "terminal/rename" && !isWindow(workspace, action))
         void track(renameOnRunner({ ...action.target, terminalId: action.terminalId }, action.name))
-      // TODO: on "project/remove", remove the project on the runner. Until then only its
-      // terminals close, as the registry finds them gone, and it returns on reload.
     }
     // The first commit renders the page and must start nothing; `start` covers it.
     // Reviving reports to the store, which cannot take a transaction inside its
