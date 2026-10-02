@@ -4,6 +4,7 @@ import type { ArtifactKind } from "../../model/companion"
 import { mailBadgeLabel } from "../../model/messages"
 import { ContextMenu, type ContextMenuItem } from "../../ui-toolkit/ContextMenu"
 import { HoverCard } from "../../ui-toolkit/HoverCard"
+import type { Presence } from "../../ui-toolkit/presence"
 import { ArtifactThumb, kindIcons } from "./ArtifactViewer"
 import type { MailHandle } from "./mail"
 import { dismiss, mailTab, pickFromGroup, planTab, slotsOf, type Shown } from "./pane"
@@ -114,12 +115,15 @@ export const Taskbar = ({
   peerName,
   trigger,
   open,
+  presence,
 }: {
   companion: CompanionHandle
   mail: MailHandle
   peerName: (handle: string) => string | undefined
   trigger: React.RefObject<HTMLButtonElement | null>
   open: boolean
+  // How the bar comes and goes with what the terminal has to show.
+  presence: Presence
 }): React.JSX.Element => {
   const { pane } = companion
   const current = shownTab(pane, mail.present)
@@ -158,6 +162,7 @@ export const Taskbar = ({
   const firstSlot = slots[0]
   return (
     <div
+      {...presence.props}
       className="plan-taskbar nodrag nopan"
       data-workspace-companion
       role="group"

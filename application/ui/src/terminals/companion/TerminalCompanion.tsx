@@ -145,6 +145,8 @@ export const TerminalCompanion = ({
   // The pane stays while it animates out. Only the pane animates: the terminal beside
   // it takes its new size once, never frame by frame.
   const shown = usePresence(open)
+  // The taskbar too, once the terminal first has something to show.
+  const bar = usePresence(present)
   const wasOpen = useRef(open)
   // Opening leaves focus on the taskbar. Hiding the pane from inside it (Escape) would
   // drop focus with the pane, so it goes back to the taskbar.
@@ -176,13 +178,14 @@ export const TerminalCompanion = ({
       )}
       {/* A terminal gains its taskbar once its agent has a plan, shows something, or can
           message others. */}
-      {present && (
+      {bar.mounted && (
         <Taskbar
           companion={companion}
           mail={mail}
           peerName={peerName}
           trigger={trigger}
           open={open}
+          presence={bar}
         />
       )}
       {shown.mounted && presentation === "attached" && (

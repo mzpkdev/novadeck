@@ -23,6 +23,27 @@
   border-top: 1px solid var(--color-line);
   background: var(--color-shell);
 }
+/* The bar rises into place when the terminal first has something to show, and fades
+   as it goes. The terminal takes its new height once; only opacity and translate
+   animate. A bar there already, after a view switch or a restore, just appears. */
+.plan-taskbar[data-state="open"] {
+  animation: plan-taskbar-in var(--motion-layout) var(--ease-interface);
+}
+.plan-taskbar[data-state="closed"] {
+  animation: plan-out var(--motion-feedback) var(--ease-interface) forwards;
+  pointer-events: none;
+}
+@keyframes plan-taskbar-in {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-taskbar {
+    animation: none !important;
+  }
+}
 .plan-tb-slot {
   display: contents;
 }
