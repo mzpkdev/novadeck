@@ -2,25 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { gemini } from "../model/gemini.js"
-import type { Sandbox } from "../sandbox.js"
 import type { AgentSetup } from "./agent.js"
-
-/**
- * A program in the sandbox that waits until the file it names exists, for two minutes at
- * most. A scenario's agent runs it to keep its turn open until the test lets it end. It is
- * the one command Antigravity runs there without asking: it asks before a loop typed out
- * as a command (probed 2026-10-02, 1.2.14), so the loop lives here instead.
- */
-export const waiter = (sandbox: Sandbox): string => join(sandbox.root, "wait-for")
-
-const waiterScript = `#!/bin/sh
-# Waits until the file named by $1 exists, for two minutes at most.
-n=0
-while [ ! -e "$1" ] && [ "$n" -lt 600 ]; do
-  sleep 0.2
-  n=$((n + 1))
-done
-`
 
 /**
  * Antigravity against the fake model: its own folder in the sandbox's `~/.gemini`, seeded
@@ -31,7 +13,23 @@ done
  */
 export const agy: AgentSetup = {
   agent: "agy",
+  name: "Antigravity",
   dialect: gemini,
+  banner: "Antigravity CLI",
+  bindsAtReady: false,
+  // Its feature flags and its telemetry.
+  refused: ["antigravity-unleash.goog", "play.googleapis.com"],
+  watch: {
+    searched: [".gemini/antigravity-cli/settings.json"],
+    // Its MCP servers' folder, which it rewrites each time it starts.
+    listed: [".gemini/antigravity-cli/mcp"],
+    // Where NovaDeck installs its plugin, and its own plugin data and programs.
+    stamped: [
+      ".gemini/config/plugins",
+      ".gemini/antigravity-cli/plugin_data",
+      ".gemini/antigravity-cli/bin",
+    ],
+  },
   hosts: [
     "generativelanguage.googleapis.com",
     "cloudcode-pa.googleapis.com",
@@ -50,11 +48,10 @@ export const agy: AgentSetup = {
         trustedWorkspaces: [sandbox.project],
         modelProvider: "gemini",
         // NovaDeck's MCP tools run without asking, so a `send` needs no approval (its
-        // plugin's server is namespaced after the plugin), as does the waiter.
-        permissions: { allow: ["mcp(novadeck_novadeck/*)", `command(${waiter(sandbox)})`] },
+        // plugin's server is namespaced after the plugin).
+        permissions: { allow: ["mcp(novadeck_novadeck/*)"] },
       }),
     )
-    await writeFile(waiter(sandbox), waiterScript, { mode: 0o700 })
     return {
       GEMINI_API_KEY: model.credential,
       GOOGLE_GEMINI_BASE_URL: model.url,

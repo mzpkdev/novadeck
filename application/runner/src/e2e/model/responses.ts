@@ -276,14 +276,14 @@ export const responses: Dialect = {
     const path = route(request.path)
     return path === "/v1/responses" || path.endsWith("/backend-api/plugins/featured")
   },
-  handle: (request, reply) => {
+  handle: async (request, reply) => {
     const path = route(request.path)
     if (path.endsWith("/plugins/featured")) return json(200, [])
     if (request.method !== "POST")
       return json(404, { error: { type: "invalid_request_error", message: path } })
     const data: unknown = JSON.parse(request.body || "{}")
     const call = parse(data, request.headers)
-    const answer = reply(call)
+    const answer = await reply(call)
     const offered = payload.parse(data).tools
     return {
       status: 200,

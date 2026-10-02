@@ -1,14 +1,20 @@
 import { rmSync } from "node:fs"
 import { join } from "node:path"
 
+import { agentName } from "@novadeck/protocol"
 import { beforeAll } from "vitest"
 
 import { it as base } from "../test.js"
 import type { AgentSetup } from "./agents/agent.js"
+import { agy } from "./agents/agy.js"
+import { claude } from "./agents/claude.js"
+import { codex } from "./agents/codex.js"
 import { createDeck, type Deck } from "./deck.js"
 import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
-import { createSandbox, reap, tripwire, type Sandbox } from "./sandbox.js"
+import { reap } from "./reap.js"
+import { createSandbox, type Sandbox } from "./sandbox.js"
+import { tripwire } from "./tripwire.js"
 
 export { describe, expect } from "../test.js"
 
@@ -19,6 +25,32 @@ export { describe, expect } from "../test.js"
  * (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
  */
 export const supported = process.platform === "linux"
+
+/**
+ * The harnesses this run tests, from `NOVADECK_E2E_AGENTS`: their names, comma-separated
+ * (`claude,codex`), or every harness when it is unset or empty. A name that isn't one
+ * fails the run rather than leaving a harness untested.
+ */
+const chosen = ((): ReadonlySet<string> | undefined => {
+  const names = (process.env.NOVADECK_E2E_AGENTS ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean)
+  if (names.length === 0) return undefined
+  const unknown = names.filter((name) => !agentName.safeParse(name).success)
+  if (unknown.length > 0)
+    throw new Error(
+      `NOVADECK_E2E_AGENTS names no harness ${unknown.join(", ")}: use ${agentName.options.join(", ")}`,
+    )
+  return new Set(names)
+})()
+
+/** Whether this run tests the setup's harness (`NOVADECK_E2E_AGENTS`). */
+export const selected = (setup: Pick<AgentSetup, "agent">): boolean =>
+  chosen === undefined || chosen.has(setup.agent)
+
+// Every harness's setup: the tripwire watches all of their homes, whichever a test runs.
+const every: readonly AgentSetup[] = [claude, codex, agy]
 
 export type E2E = {
   readonly model: FakeModel
@@ -34,13 +66,15 @@ export type E2E = {
  * the fake model still listening for whatever a harness sends on its way out, the test
  * fails should any request have carried a real credential, tried a harness's real host or
  * tripped a dialect, should the developer's own harness homes have changed, or should any
- * process have outlived the deck in the sandbox.
+ * process have outlived the deck in the sandbox. Unless the run tests every one of the
+ * setups' harnesses (`selected`), the tests are skipped and nothing is installed.
  */
 export const e2e = (...setups: AgentSetup[]) => {
+  const runs = setups.every(selected)
   beforeAll(async () => {
-    if (supported) await Promise.all(setups.map((setup) => installHarness(setup.agent)))
+    if (supported && runs) await Promise.all(setups.map((setup) => installHarness(setup.agent)))
   })
-  return base.extend<{ e2e: E2E }>({
+  const test = base.extend<{ e2e: E2E }>({
     e2e: async ({ resources }, use) => {
       if (!supported)
         throw new Error(
@@ -49,8 +83,8 @@ export const e2e = (...setups: AgentSetup[]) => {
       const model = await startFakeModel({ dialects: setups.map((setup) => setup.dialect) })
       resources.defer(() => model.close())
       // Installed before the file's tests: these are the same installs, already done.
-      const bins = await Promise.all(setups.map((setup) => installHarness(setup.agent)))
-      const sandbox = createSandbox({ proxy: model.proxy, bins })
+      const installs = await Promise.all(setups.map((setup) => installHarness(setup.agent)))
+      const sandbox = createSandbox({ proxy: model.proxy, bins: installs.map((one) => one.bin) })
       resources.defer(() =>
         rmSync(sandbox.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
       )
@@ -63,11 +97,14 @@ export const e2e = (...setups: AgentSetup[]) => {
             `process(es) outlived the deck in the sandbox, ended at teardown: ${leftovers.join(", ")}`,
           )
       })
-      const changed = tripwire(sandbox)
+      const changed = tripwire(sandbox, every)
       let env = sandbox.env
-      for (const setup of setups)
-        // eslint-disable-next-line no-await-in-loop -- Each setup sees what the ones before added.
-        env = { ...env, ...(await setup.prepare({ ...sandbox, env }, model)) }
+      for (const [index, setup] of setups.entries())
+        env = {
+          ...env,
+          // eslint-disable-next-line no-await-in-loop -- Each setup sees what the ones before added.
+          ...(await setup.prepare({ ...sandbox, env }, model, installs[index]!)),
+        }
       const deck = await createDeck({
         data: join(sandbox.root, "data"),
         project: sandbox.project,
@@ -109,4 +146,5 @@ export const e2e = (...setups: AgentSetup[]) => {
       if (problems.length > 0) throw new Error(problems.join("\n"))
     },
   })
+  return test.skipIf(!runs)
 }

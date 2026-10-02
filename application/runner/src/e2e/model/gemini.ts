@@ -219,12 +219,12 @@ const method = /^\/v1(?:beta|alpha)?\/models\/([^/:]+):(\w+)$/
 export const gemini: Dialect = {
   api: "gemini",
   matches: (request: Request) => method.test(route(request.path)),
-  handle: (request, reply) => {
+  handle: async (request, reply) => {
     const [, model = "", name = ""] = method.exec(route(request.path)) ?? []
     if (name !== "generateContent" && name !== "streamGenerateContent")
       return json(404, { error: { code: 404, message: name, status: "NOT_FOUND" } })
     const call = parse(model, JSON.parse(request.body || "{}"))
-    const response = responseOf(call, reply(call))
+    const response = responseOf(call, await reply(call))
     if (name === "generateContent") return json(200, response)
     return {
       status: 200,

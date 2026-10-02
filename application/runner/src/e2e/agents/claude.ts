@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { pins } from "../install.js"
 import { anthropic } from "../model/anthropic.js"
 import type { AgentSetup } from "./agent.js"
 
@@ -12,19 +11,34 @@ import type { AgentSetup } from "./agent.js"
  */
 export const claude: AgentSetup = {
   agent: "claude",
+  name: "Claude Code",
   dialect: anthropic,
+  // Its prompt; the scenario checks no startup screen stands before it.
+  banner: "❯",
+  bindsAtReady: true,
+  refused: [],
+  watch: {
+    searched: [
+      ".claude/settings.json",
+      ".claude/plugins/installed_plugins.json",
+      ".claude/plugins/known_marketplaces.json",
+    ],
+    // Its projects, each named after its path with every other character a dash, which
+    // keeps the sandbox's name whole: that holds only letters, digits and dashes.
+    listed: [".claude/projects"],
+    stamped: [],
+  },
   hosts: ["api.anthropic.com", "claude.ai", "console.anthropic.com", "statsig.anthropic.com"],
-  prepare: async (sandbox, model) => {
+  prepare: async (sandbox, model, installed) => {
     const config = join(sandbox.home, ".claude")
     await mkdir(config, { recursive: true, mode: 0o700 })
-    const version = pins.claude?.version ?? ""
     // With CLAUDE_CONFIG_DIR set, Claude Code keeps its global state in the folder too.
     await writeFile(
       join(config, ".claude.json"),
       JSON.stringify({
         hasCompletedOnboarding: true,
-        lastOnboardingVersion: version,
-        lastReleaseNotesSeen: version,
+        lastOnboardingVersion: installed.version,
+        lastReleaseNotesSeen: installed.version,
         theme: "dark",
         autoUpdates: false,
         officialMarketplaceAutoInstall: false,

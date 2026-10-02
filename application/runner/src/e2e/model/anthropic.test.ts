@@ -55,9 +55,9 @@ const events = (body: string | readonly string[]): { type: string }[] =>
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice("data: ".length)) as { type: string })
 
-const handle = (request: Request, reply: Reply) => {
+const handle = async (request: Request, reply: Reply) => {
   const calls: Call[] = []
-  const response = anthropic.handle(request, (call) => {
+  const response = await anthropic.handle(request, async (call) => {
     calls.push(call)
     return reply
   })
@@ -91,8 +91,8 @@ describe("anthropic", () => {
     expect(call.turns).toEqual([{ role: "user", text: "Name this session" }])
   })
 
-  it("streams a reply's text and tool calls as the Messages API does", () => {
-    const { response, calls } = handle(
+  it("streams a reply's text and tool calls as the Messages API does", async () => {
+    const { response, calls } = await handle(
       post("/v1/messages?beta=true", { ...conversation, stream: true }),
       { text: "On it.", calls: [{ name: "send", input: { to: "t1", text: "hi" } }] },
     )
@@ -123,8 +123,8 @@ describe("anthropic", () => {
     )
   })
 
-  it("answers whole when not asked to stream", () => {
-    const { response } = handle(post("/v1/messages", conversation), { text: "Done." })
+  it("answers whole when not asked to stream", async () => {
+    const { response } = await handle(post("/v1/messages", conversation), { text: "Done." })
 
     expect(JSON.parse(response.body as string)).toMatchObject({
       type: "message",
@@ -135,9 +135,9 @@ describe("anthropic", () => {
     })
   })
 
-  it("counts tokens and lists models without making a call", () => {
-    const counted = handle(post("/v1/messages/count_tokens", conversation), {})
-    const listed = handle(
+  it("counts tokens and lists models without making a call", async () => {
+    const counted = await handle(post("/v1/messages/count_tokens", conversation), {})
+    const listed = await handle(
       { method: "GET", path: "/v1/models?limit=100", headers: {}, body: "" },
       {},
     )

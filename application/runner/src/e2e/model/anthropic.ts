@@ -181,7 +181,7 @@ const route = (path: string): string => path.split("?")[0] ?? path
 export const anthropic: Dialect = {
   api: "anthropic",
   matches: (request: Request) => /^\/v1\/(messages|models)(\/|$)/.test(route(request.path)),
-  handle: (request, reply) => {
+  handle: async (request, reply) => {
     const path = route(request.path)
     if (path === "/v1/models")
       return json(200, { data: models, has_more: false, first_id: "", last_id: "" })
@@ -193,7 +193,7 @@ export const anthropic: Dialect = {
     if (path !== "/v1/messages" || request.method !== "POST")
       return json(404, { type: "error", error: { type: "not_found_error", message: path } })
     const call = parse(body)
-    const message = messageOf(call, reply(call))
+    const message = messageOf(call, await reply(call))
     if (!messages.parse(body).stream) return json(200, message)
     return {
       status: 200,

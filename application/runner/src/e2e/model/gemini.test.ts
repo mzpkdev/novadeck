@@ -82,9 +82,9 @@ const events = (body: string | readonly string[]): unknown[] =>
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice("data: ".length)) as unknown)
 
-const handle = (request: Request, reply: Reply) => {
+const handle = async (request: Request, reply: Reply) => {
   const calls: Call[] = []
-  const response = gemini.handle(request, (call) => {
+  const response = await gemini.handle(request, async (call) => {
     calls.push(call)
     return reply
   })
@@ -141,8 +141,8 @@ describe("gemini", () => {
     expect(title.turns).toEqual([{ role: "user", text: "Ask t2" }])
   })
 
-  it("streams a reply's text and calls, a lazy tool's through call_mcp_tool", () => {
-    const { response, calls } = handle(post(stream, conversation), {
+  it("streams a reply's text and calls, a lazy tool's through call_mcp_tool", async () => {
+    const { response, calls } = await handle(post(stream, conversation), {
       text: "Sending.",
       calls: [
         { name: "mcp_novadeck_novadeck_send", input: { to: "t1", text: "teal" } },
@@ -172,8 +172,8 @@ describe("gemini", () => {
     })
   })
 
-  it("answers a call that isn't streamed as one response", () => {
-    const { response } = handle(
+  it("answers a call that isn't streamed as one response", async () => {
+    const { response } = await handle(
       post("/v1beta/models/gemini-3.1-pro-preview:generateContent", conversation),
       { text: "Done." },
     )
@@ -185,8 +185,8 @@ describe("gemini", () => {
     })
   })
 
-  it("answers no method but a model call's", () => {
-    const { response, calls } = handle(
+  it("answers no method but a model call's", async () => {
+    const { response, calls } = await handle(
       post("/v1beta/models/gemini-3.1-pro-preview:countTokens", conversation),
       {},
     )

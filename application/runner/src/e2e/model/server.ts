@@ -38,8 +38,20 @@ export type FakeModel = {
    * body or headers. Any fails the test: the fake model misread a harness.
    */
   readonly errors: readonly string[]
-  /** Waits for a call that matches, including one already made. */
-  readonly waitFor: (match: (call: Call) => boolean, timeoutMs?: number) => Promise<Call>
+  /**
+   * How many calls have been made so far: a cursor that `waitFor`'s `after` takes, to wait
+   * only for a call made from now on.
+   */
+  readonly mark: () => number
+  /**
+   * Waits for a call that matches, including one already made, unless it came before
+   * `after` (a `mark`). A call counts as made as soon as it arrives, while a rule may
+   * still hold its reply. Fails after `timeoutMs`, a minute unless given.
+   */
+  readonly waitFor: (
+    match: (call: Call) => boolean,
+    options?: { readonly after?: number; readonly timeoutMs?: number },
+  ) => Promise<Call>
   /** Adds rules ahead of the ones given before. */
   readonly use: (...rules: Rule[]) => void
   readonly close: () => Promise<void>
@@ -143,7 +155,7 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
   const errors: string[] = []
   let foreign = 0
   let rules: readonly Rule[] = options.rules ?? []
-  const waiters = new Set<(call: Call) => void>()
+  const waiters = new Set<(index: number, call: Call) => void>()
 
   // Counts a request carrying a credential that isn't the fake one, and says so.
   const trespasses = (request: IncomingMessage): boolean => {
@@ -152,9 +164,11 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     return other
   }
 
+  // The call counts as made, and its waiters hear of it, before any rule answers: a
+  // test can see a call whose reply a rule holds.
   const reply = (call: Call) => {
     calls.push(call)
-    for (const waiter of waiters) waiter(call)
+    for (const waiter of waiters) waiter(calls.length - 1, call)
     return answer(rules, call)
   }
 
@@ -191,7 +205,7 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
       outgoing.end(JSON.stringify({ error: { type: "not_found_error", message: "not found" } }))
       return
     }
-    const response = dialect.handle(request, reply)
+    const response = await dialect.handle(request, reply)
     // A request of the dialect's API it doesn't serve is a stray too: an endpoint the
     // harness needs that the fake model lacks.
     if (response.status === 404) strays.push(`${method} ${target.split("?")[0]}`)
@@ -239,16 +253,21 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     get errors() {
       return errors
     },
-    waitFor: (match, timeoutMs = 60_000) => {
-      const made = calls.find(match)
+    mark: () => calls.length,
+    waitFor: (match, { after = 0, timeoutMs = 60_000 } = {}) => {
+      const made = calls.find((call, index) => index >= after && match(call))
       if (made) return Promise.resolve(made)
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           waiters.delete(waiter)
-          reject(new Error(`No matching model call in ${timeoutMs} ms. Calls:\n${outline(calls)}`))
+          reject(
+            new Error(
+              `No matching model call${after > 0 ? ` from call ${after + 1} on` : ""} in ${timeoutMs} ms. Calls:\n${outline(calls)}`,
+            ),
+          )
         }, timeoutMs)
-        const waiter = (call: Call) => {
-          if (!match(call)) return
+        const waiter = (index: number, call: Call) => {
+          if (index < after || !match(call)) return
           clearTimeout(timer)
           waiters.delete(waiter)
           resolve(call)

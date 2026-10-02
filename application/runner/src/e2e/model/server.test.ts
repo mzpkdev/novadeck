@@ -4,6 +4,7 @@ import { z } from "zod"
 
 import { describe, expect, it as base } from "../../test.js"
 import type { Dialect } from "./dialect.js"
+import { gate } from "./script.js"
 import { startFakeModel, type FakeModel } from "./server.js"
 
 // A dialect that takes every request to /chat as a call of its body's text, and answers
@@ -11,9 +12,9 @@ import { startFakeModel, type FakeModel } from "./server.js"
 const echo: Dialect = {
   api: "anthropic",
   matches: (request) => request.path.startsWith("/chat"),
-  handle: (request, reply) => {
+  handle: async (request, reply) => {
     if (request.path.startsWith("/chat/unserved")) return { status: 404, headers: {}, body: "" }
-    const answer = reply({
+    const answer = await reply({
       api: "anthropic",
       model: "m",
       system: "",
@@ -33,7 +34,7 @@ const echo: Dialect = {
 const broken: Dialect = {
   api: "anthropic",
   matches: (request) => request.path.startsWith("/broken"),
-  handle: (request) => {
+  handle: async (request) => {
     if (request.path.startsWith("/broken/parse"))
       z.object({ messages: z.array(z.string()) }).parse({ messages: [1] })
     if (request.path.startsWith("/broken/json")) JSON.parse(request.body)
@@ -91,7 +92,46 @@ describe("startFakeModel", () => {
     expect((await model.waitFor((call) => call.turns[0]?.text === "early")).turns).toHaveLength(1)
     await chat(model, "late")
     expect((await late).turns[0]).toEqual({ role: "user", text: "late" })
-    await expect(model.waitFor(() => false, 50)).rejects.toThrow(/No matching model call/)
+    await expect(model.waitFor(() => false, { timeoutMs: 50 })).rejects.toThrow(
+      /No matching model call/,
+    )
+  })
+
+  it("waits only for calls made from a mark on, when given one", async ({ model }) => {
+    await chat(model, "same")
+    const mark = model.mark()
+    const next = model.waitFor((call) => call.turns[0]?.text === "same", { after: mark })
+    await chat(model, "other")
+    await chat(model, "same")
+
+    expect(mark).toBe(1)
+    expect(await next).toBe(model.calls[2])
+    await expect(
+      model.waitFor((call) => call.turns[0]?.text === "other", { after: 3, timeoutMs: 50 }),
+    ).rejects.toThrow(/No matching model call from call 4 on/)
+  })
+
+  it("holds a reply a rule waits on, with the call already seen, until the gate opens", async ({
+    model,
+  }) => {
+    const held = gate()
+    model.use(async (call) => {
+      if (call.turns[0]?.text !== "hold") return undefined
+      await held.opened
+      return { text: "released" }
+    })
+    let answered = false
+    const response = chat(model, "hold").then((result) => {
+      answered = true
+      return result
+    })
+
+    const call = await model.waitFor((one) => one.turns[0]?.text === "hold")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(answered).toBe(false)
+    expect(model.calls).toEqual([call])
+    held.open()
+    expect(JSON.parse((await response).body).text).toBe("released")
   })
 
   it("accepts its own credential, alone or as a bearer token, and passes on no credential", async ({

@@ -42,7 +42,20 @@ trust_level = "trusted"
  */
 export const codex: AgentSetup = {
   agent: "codex",
+  name: "Codex",
   dialect: responses,
+  banner: "OpenAI Codex",
+  bindsAtReady: false,
+  // Its curated-plugin sync and its startup tips (see `prepare`).
+  refused: ["github.com", "api.github.com", "raw.githubusercontent.com"],
+  watch: {
+    searched: [".codex/config.toml"],
+    listed: [],
+    // Its login, and NovaDeck's copy among its installed plugins. Not the plugins' folder
+    // itself: the developer's own Codex refreshes its bundled plugins there whenever it
+    // likes, which would trip it with nothing leaked.
+    stamped: [".codex/auth.json", ".codex/plugins/cache/novadeck"],
+  },
   hosts: ["api.openai.com", "chatgpt.com", "auth.openai.com", "ab.chatgpt.com"],
   // Its hooks can be trusted only once NovaDeck's plugin is in.
   connected: (sandbox) => trustHooks(sandbox),

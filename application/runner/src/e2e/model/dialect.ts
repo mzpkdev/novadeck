@@ -20,11 +20,12 @@ export type Response = {
  * One API, as a harness speaks it. It answers every request of that API the harness makes
  * on its way to the agent's turns (its models list, token counts, eligibility checks),
  * and for each model call parses the request into a `Call`, asks `reply` what to say, and
- * encodes the answer as that API streams it.
+ * encodes the answer as that API streams it. The reply may take its time, as a rule
+ * holding it at a gate does; the call counts as made as soon as `reply` is asked.
  */
 export type Dialect = {
   readonly api: Api
   /** Whether the request is one of this API's. */
   readonly matches: (request: Request) => boolean
-  readonly handle: (request: Request, reply: (call: Call) => Reply) => Response
+  readonly handle: (request: Request, reply: (call: Call) => Promise<Reply>) => Promise<Response>
 }

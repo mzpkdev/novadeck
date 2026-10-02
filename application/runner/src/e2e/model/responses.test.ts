@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "../../test.js"
 import type { Request } from "./dialect.js"
 import { parse, responses } from "./responses.js"
-import { latest, tool, type Call } from "./script.js"
+import { latest, tool, type Call, type Reply } from "./script.js"
 
 // Requests Codex 0.159.3 made to a loopback provider, its long texts and tool definitions
 // cut short: a turn after NovaDeck's prompt hook added a delivery, the model called
@@ -29,8 +29,8 @@ const events = (body: string | readonly string[]) =>
 
 const post = (path: string): Request => ({ method: "POST", path, headers: {}, body: "{}" })
 
-const answer = (request: Request, reply: Parameters<typeof responses.handle>[1]) => {
-  const response = responses.handle(request, reply)
+const answer = async (request: Request, reply: (call: Call) => Reply) => {
+  const response = await responses.handle(request, async (call) => reply(call))
   return { ...response, events: events(response.body) }
 }
 
@@ -90,8 +90,8 @@ describe("responses", () => {
     expect(latest(call)).toContain("Generate a concise, single-line task title")
   })
 
-  it("streams text as a message that completes the response", () => {
-    const { status, headers, events: streamed } = answer(turn, () => ({ text: "Hi there" }))
+  it("streams text as a message that completes the response", async () => {
+    const { status, headers, events: streamed } = await answer(turn, () => ({ text: "Hi there" }))
     expect(status).toBe(200)
     expect(headers["content-type"]).toBe("text/event-stream")
     expect(streamed.map((one) => one.type)).toEqual([
@@ -114,8 +114,8 @@ describe("responses", () => {
     })
   })
 
-  it("sends a call to a namespaced tool back in its namespace", () => {
-    const { events: streamed } = answer(turn, (call) => ({
+  it("sends a call to a namespaced tool back in its namespace", async () => {
+    const { events: streamed } = await answer(turn, (call) => ({
       calls: [{ name: tool(call, "send") ?? "", input: { to: "t1", text: "pong" } }],
     }))
     const done = streamed.find((one) => one.type === "response.output_item.done")?.data.item
@@ -134,7 +134,7 @@ describe("responses", () => {
     })
   })
 
-  it("answers the featured plugins Codex asks its ChatGPT backend for with none", () => {
+  it("answers the featured plugins Codex asks its ChatGPT backend for with none", async () => {
     const featured: Request = {
       method: "GET",
       path: "/backend-api/plugins/featured?platform=codex",
@@ -142,7 +142,10 @@ describe("responses", () => {
       body: "",
     }
     expect(responses.matches(featured)).toBe(true)
-    expect(responses.handle(featured, () => ({}))).toMatchObject({ status: 200, body: "[]" })
+    expect(await responses.handle(featured, async () => ({}))).toMatchObject({
+      status: 200,
+      body: "[]",
+    })
   })
 
   it("leaves other APIs' requests to their dialects", () => {

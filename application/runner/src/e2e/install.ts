@@ -6,7 +6,7 @@ import { homedir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import { promisify } from "node:util"
 
-import type { AgentName } from "@novadeck/protocol"
+import { agentName, type AgentName } from "@novadeck/protocol"
 import { z } from "zod"
 
 /** The harnesses an end-to-end test can run: those `harnesses.json` pins. */
@@ -45,7 +45,7 @@ const pin = z.union([npmPin, archivePin])
 
 /** Each harness's pinned release, from `harnesses.json`. */
 export const pins = z
-  .partialRecord(z.enum(["claude", "codex", "agy"]), pin)
+  .partialRecord(agentName, pin)
   .parse(JSON.parse(readFileSync(new URL("harnesses.json", import.meta.url), "utf8")))
 
 // A harness's pin, or why it has none.
@@ -114,15 +114,19 @@ const npmVersion = async (found: z.infer<typeof npmPin>, cache: string): Promise
   return safeVersion(stdout.trim(), `npm view ${found.package} version`)
 }
 
+/** A harness installed in the cache: the folder holding its program, and its version. */
+export type Installed = { readonly bin: string; readonly version: string }
+
 // Each harness's install in this process, by harness and which version it runs, so a
 // file's tests and its setup share one, and `latest` is looked up once.
-const installs = new Map<string, Promise<string>>()
+const installs = new Map<string, Promise<Installed>>()
 
 /**
  * Installs the harness's pinned version into the cache, once, and returns the folder
- * holding its program. It never uses a copy installed elsewhere on the machine.
+ * holding its program and the version installed, the newest one with
+ * `NOVADECK_E2E_HARNESS=latest`. It never uses a copy installed elsewhere on the machine.
  */
-export const installHarness = (name: HarnessName): Promise<string> => {
+export const installHarness = (name: HarnessName): Promise<Installed> => {
   const key = `${name}:${process.env.NOVADECK_E2E_HARNESS === "latest" ? "latest" : "pinned"}`
   const known = installs.get(key)
   if (known) return known
@@ -157,14 +161,15 @@ const settle = async (staging: string, folder: string, program: string): Promise
 const installPackage = async (
   name: HarnessName,
   found: z.infer<typeof npmPin>,
-): Promise<string> => {
+): Promise<Installed> => {
   const cache = cacheFolder()
   await mkdir(join(cache, "home"), { recursive: true })
   const { package: spec, bin } = found
   const wanted = await npmVersion(found, cache)
   const folder = join(cache, `${name}-${wanted}`)
   const bins = join(folder, "node_modules", ".bin")
-  if (existsSync(join(bins, bin))) return bins
+  const installed = { bin: bins, version: wanted }
+  if (existsSync(join(bins, bin))) return installed
   // Installed beside it first, then moved into place whole, so a run stopped halfway
   // leaves nothing that looks installed.
   const staging = stagingFor(folder)
@@ -190,7 +195,7 @@ const installPackage = async (
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
-  return bins
+  return installed
 }
 
 type Release = { readonly version: string; readonly url: string; readonly sha512: string }
@@ -218,13 +223,14 @@ const archiveRelease = async (found: z.infer<typeof archivePin>): Promise<Releas
 const installArchive = async (
   name: HarnessName,
   found: z.infer<typeof archivePin>,
-): Promise<string> => {
+): Promise<Installed> => {
   if (process.platform !== "linux" || process.arch !== "x64")
     throw new Error(`${name}'s end-to-end tests run on Linux x86-64 only`)
   const wanted = await archiveRelease(found)
   const folder = join(cacheFolder(), `${name}-${wanted.version}`)
   const bins = join(folder, "bin")
-  if (existsSync(join(bins, found.bin))) return bins
+  const installed = { bin: bins, version: wanted.version }
+  if (existsSync(join(bins, found.bin))) return installed
   // Unpacked beside it first, then moved into place whole, as a package is.
   const staging = stagingFor(folder)
   await mkdir(join(staging, "bin"), { recursive: true })
@@ -243,5 +249,5 @@ const installArchive = async (
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
-  return bins
+  return installed
 }

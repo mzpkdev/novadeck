@@ -9,10 +9,10 @@ import type {
 } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 
-import { createHarnesses, type Harnesses } from "../harnesses/service.js"
-import { installShellFiles, type InstalledShell } from "../shell/install.js"
-import { Terminals } from "../terminals/index.js"
-import { WorkspaceStore } from "../workspaces/store.js"
+import { wire } from "../runner.js"
+import type { Terminals } from "../terminals/index.js"
+import type { WorkspaceStore } from "../workspaces/store.js"
+import { createHistory, type Reach, type ReachOptions, type Snapshot } from "./history.js"
 
 /** The client the deck drives terminals as: it creates them, so it controls them. */
 const owner = "e2e"
@@ -51,16 +51,40 @@ export type DeckTerminal = {
    */
   readonly submit: (text: string) => Promise<void>
   /**
+   * The one deliberate way to confirm a dialog or pick from a menu: waits until the screen
+   * shows `shows`, the option or dialog expected, then presses Enter.
+   */
+  readonly confirm: (
+    shows: string | RegExp,
+    options?: { readonly timeoutMs?: number },
+  ) => Promise<void>
+  /**
    * Sends keys other than Enter, such as Escape (`\x1b`), as typed. Anything holding a
    * carriage return or line feed, the keypad's Enter (`\x1bOM`) or the kitty keyboard
-   * protocol's (`\x1b[13u`, `\x1b[13;…u`), is refused.
+   * protocol's (`\x1b[13u`, `\x1b[13;…u`), is refused: `submit` and `confirm` press it.
    */
   readonly press: (keys: string) => void
   /** What a client's terminal listing says of it now: its agent and that agent's activity. */
   readonly summary: () => TerminalSummary
   /** Its messages and how its agent can take one now. */
   readonly messages: () => TerminalMessages
-  /** Waits until its delivery state is one of those given, and returns it. */
+  /**
+   * Every change to its messages and delivery state since it opened, in order, as a
+   * client watching them saw it, so no state between two looks is missed.
+   */
+  readonly history: () => readonly Snapshot[]
+  /** How far its history goes now: a cursor `reached` takes as `after`. */
+  readonly mark: () => number
+  /**
+   * Waits until its history holds a snapshot from `after` on that is in the state asked
+   * for, or passes the test, and returns it; at once if one already does. On timeout it
+   * fails with the delivery states it went through from the mark on.
+   */
+  readonly reached: (what: Reach, options?: ReachOptions) => Promise<Snapshot>
+  /**
+   * Waits until its delivery state is one of those given, now or at any change from now
+   * on, however briefly, and returns it.
+   */
   readonly delivery: (
     states: readonly DeliveryState[],
     timeoutMs?: number,
@@ -113,42 +137,26 @@ export const poll = async <T>(
 }
 
 /**
- * The runner's terminals as a test needs them, wired as the runner wires them, with every
- * process the deck starts given exactly `env`: nothing of the developer's reaches a shell.
+ * A runner's store, terminals and harness connections, in process, for one test: wired by
+ * the runner's own `wire`, with every process the deck starts given exactly `env`, so
+ * nothing of the developer's reaches a shell.
  */
-const terminalsFor = (
-  options: DeckOptions,
-  store: WorkspaceStore,
-  shell: Promise<InstalledShell>,
-  harnesses: Harnesses,
-): Terminals =>
-  new Terminals({
-    shell: "/bin/bash",
-    baseEnv: options.env,
-    records: store,
-    shellFiles: shell,
-    shims: () => harnesses.shims(),
-    connected: (agent) => harnesses.connected(agent),
-    install: (agent) => harnesses.install(agent),
-    projectFolder: (sessionId) => store.project(store.session(sessionId).projectId).cwd,
-    mailbox: store,
-    projectOf: (sessionId) => store.session(sessionId).projectId,
-  })
-
-/** A runner's store, terminals and harness connections, in process, for one test. */
 export const createDeck = async (options: DeckOptions): Promise<Deck> => {
-  const store = new WorkspaceStore(join(options.data, "workspace.sqlite"))
-  const shell = installShellFiles(join(options.data, "shell"))
-  await shell
-  // Plugin commands run with the sandbox's environment as it is: a login shell's startup
-  // files, even the system's own in /etc/profile, could put another PATH before the
-  // pinned harnesses.
-  const harnesses = createHarnesses(() => shell, {
-    env: options.env,
-    home: options.env.HOME!,
-    login: false,
+  const { store, shellFiles, agents, terminals } = wire({
+    database: join(options.data, "workspace.sqlite"),
+    shell: join(options.data, "shell"),
+    // Plugin commands run with the sandbox's environment as it is: a login shell's startup
+    // files, even the system's own in /etc/profile, could put another PATH before the
+    // pinned harnesses.
+    agents: { env: options.env, home: options.env.HOME!, login: false },
+    terminals: { shell: "/bin/bash", baseEnv: options.env },
   })
-  const terminals = terminalsFor(options, store, shell, harnesses)
+  // The runner carries on without its shell files; a test can't, as no agent would report.
+  if ((await shellFiles) === undefined) {
+    await terminals.shutdown()
+    store.close()
+    throw new Error("NovaDeck's shell files could not be written")
+  }
   const project = await store.createProject({ id: randomUUID(), name: "E2E", cwd: options.project })
   const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "E2E" })
 
@@ -168,8 +176,23 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
     }
   }
 
-  const terminal = (summary: TerminalSummary): DeckTerminal => {
+  // Every terminal's watch of its messages, until the deck closes.
+  const watching = new AbortController()
+
+  const terminal = async (summary: TerminalSummary): Promise<DeckTerminal> => {
     const id = summary.id
+    const history = createHistory(summary.handle)
+    void (async () => {
+      try {
+        for await (const listing of terminals.watchMessages(id, watching.signal))
+          history.push(listing)
+        history.end(watching.signal.aborted ? "the deck closed" : "its terminal is gone")
+      } catch (error) {
+        history.end(`its messages can't be watched: ${(error as Error).message}`)
+      }
+    })()
+    // The watch's first listing is the terminal's state as it opened.
+    await history.reached(() => true, { timeoutMs: 5000 })
     // Waits until the screen passes `shows`, and returns it.
     const showing = (shows: (shown: string) => boolean, what: string, timeoutMs = 30_000) =>
       poll(
@@ -202,24 +225,29 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         await showing((shown) => occurrences(shown, text) > before, `${text} once more`)
         terminals.write({ terminalId: id, data: "\r" }, owner)
       },
+      confirm: async (shows, { timeoutMs } = {}) => {
+        await until(shows, timeoutMs)
+        terminals.write({ terminalId: id, data: "\r" }, owner)
+      },
       press: (keys) => {
         // eslint-disable-next-line no-control-regex -- Enter's escape sequences start with ESC.
         if (/[\r\n]|\x1bOM|\x1b\[13[;u]/.test(keys))
-          throw new Error("Enter only follows text: use submit")
+          throw new Error("Enter only follows text or a dialog seen: use submit or confirm")
         terminals.write({ terminalId: id, data: keys }, owner)
       },
       summary: () => terminals.get(id),
       messages: () => terminals.messages(id),
-      delivery: (states, timeoutMs = 30_000) =>
-        poll(
-          () => {
-            const state = terminals.messages(id).delivery
-            return states.includes(state) ? state : undefined
-          },
-          () =>
-            `${summary.handle} to be ${states.join(" or ")} (it is ${terminals.messages(id).delivery})`,
-          timeoutMs,
-        ),
+      history: history.snapshots,
+      mark: history.mark,
+      reached: history.reached,
+      // From the snapshot it is in now on.
+      delivery: async (states, timeoutMs) =>
+        (
+          await history.reached((snapshot) => states.includes(snapshot.delivery), {
+            after: Math.max(history.mark() - 1, 0),
+            ...(timeoutMs !== undefined && { timeoutMs }),
+          })
+        ).delivery,
     }
   }
 
@@ -228,7 +256,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
     store,
     sessionId: session.id,
     connect: async (agent) => {
-      const result = await harnesses.set(agent, true)
+      const result = await agents.set(agent, true)
       if (!result.connected) throw new Error(`${agent} did not connect`)
     },
     open: async (command) =>
@@ -246,6 +274,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         ),
       ),
     close: async () => {
+      watching.abort()
       try {
         await terminals.shutdown()
       } finally {

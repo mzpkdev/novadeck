@@ -44,6 +44,7 @@ jobs:
             name: Antigravity
     env:
       NOVADECK_E2E_CACHE: ${{ github.workspace }}/.e2e-cache
+      NOVADECK_E2E_AGENTS: ${{ matrix.harness }}
       NOVADECK_E2E_HARNESS: ${{ (github.event_name == 'schedule' || inputs.harness == 'latest') && 'latest' || 'pinned' }}
     steps:
       - name: Check Out Repository
@@ -56,7 +57,18 @@ jobs:
           cache: true
           require-lockfile: true
 
-      # Pinned harnesses are cached by their pins and the installer; a run against latest
+      # The job's harness's own pin, hashed alone, so moving another harness's pin keeps
+      # this one's cache.
+      - name: Hash Pin
+        id: pin
+        if: env.NOVADECK_E2E_HARNESS == 'pinned'
+        env:
+          HARNESS: ${{ matrix.harness }}
+        run: |
+          hash=$(node -e 'const pins = require("./application/runner/src/e2e/harnesses.json"); process.stdout.write(JSON.stringify(pins[process.env.HARNESS] ?? null))' | sha256sum | cut -d' ' -f1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      # Pinned harnesses are cached by their pin and the installer; a run against latest
       # installs fresh. npm's own cache (home) and unfinished staging stay out.
       - name: Restore Harnesses
         id: harnesses
@@ -67,13 +79,14 @@ jobs:
             ${{ env.NOVADECK_E2E_CACHE }}/*
             !${{ env.NOVADECK_E2E_CACHE }}/home
             !${{ env.NOVADECK_E2E_CACHE }}/*.tmp
-          key: e2e-harnesses-${{ runner.os }}-${{ matrix.harness }}-${{ hashFiles('application/runner/src/e2e/harnesses.json', 'application/runner/src/e2e/install.ts') }}
+          key: e2e-harnesses-${{ runner.os }}-${{ matrix.harness }}-${{ steps.pin.outputs.hash }}-${{ hashFiles('application/runner/src/e2e/install.ts') }}
 
       - name: Build Protocol
         run: pnpm --filter @novadeck/protocol build
 
+      # The whole suite, with the tests of every other harness skipped.
       - name: Run E2E
-        run: pnpm --filter @novadeck/runner test:e2e src/e2e/${{ matrix.harness }}.e2e.ts
+        run: pnpm --filter @novadeck/runner test:e2e
 
       # Whether the harness's install finished: a folder for it, not a staging one, that
       # holds its program. A cancelled or failed install leaves none, and saves nothing.

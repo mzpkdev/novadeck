@@ -42,19 +42,37 @@ export type Reply = {
   readonly calls?: readonly Omit<ToolCall, "id">[]
 }
 
-/** Answers a call, or leaves it to the next rule. */
-export type Rule = (call: Call) => Reply | undefined
+/**
+ * Answers a call, or leaves it to the next rule. A rule may take its time: the harness
+ * waits for the answer as it would for a slow model, so a test can hold a reply until it
+ * lets it go (see `gate`).
+ */
+export type Rule = (call: Call) => Reply | undefined | Promise<Reply | undefined>
 
 /** The answer when no rule takes a call. */
 export const fallback: Reply = { text: "OK." }
 
 /** The first reply a rule gives, or the fallback. */
-export const answer = (rules: readonly Rule[], call: Call): Reply => {
+export const answer = async (rules: readonly Rule[], call: Call): Promise<Reply> => {
   for (const rule of rules) {
-    const reply = rule(call)
+    // eslint-disable-next-line no-await-in-loop -- Rules are asked in order, one at a time.
+    const reply = await rule(call)
     if (reply) return reply
   }
   return fallback
+}
+
+/**
+ * A gate a rule can hold its reply at until the test opens it: the rule awaits `opened`,
+ * and the harness waits with it, mid-turn, as on a slow model. Opening it again does
+ * nothing.
+ */
+export const gate = (): { readonly open: () => void; readonly opened: Promise<void> } => {
+  let release!: () => void
+  const opened = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { open: () => release(), opened }
 }
 
 /** All of a call's text, in order: what a scenario looks for when it doesn't mind where. */
