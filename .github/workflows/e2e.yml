@@ -29,13 +29,19 @@ concurrency:
 
 jobs:
   e2e:
-    name: ${{ matrix.harness }}
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        harness: [claude, codex, agy]
+        include:
+          - harness: claude
+            name: Claude
+          - harness: codex
+            name: Codex
+          - harness: agy
+            name: Agy
     env:
       NOVADECK_E2E_CACHE: ${{ github.workspace }}/.e2e-cache
       NOVADECK_E2E_HARNESS: ${{ (github.event_name == 'schedule' || inputs.harness == 'latest') && 'latest' || 'pinned' }}
