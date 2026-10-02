@@ -37,11 +37,11 @@ jobs:
       matrix:
         include:
           - harness: claude
-            name: Claude
+            name: Claude Code
           - harness: codex
             name: Codex
           - harness: agy
-            name: Agy
+            name: Antigravity
     env:
       NOVADECK_E2E_CACHE: ${{ github.workspace }}/.e2e-cache
       NOVADECK_E2E_HARNESS: ${{ (github.event_name == 'schedule' || inputs.harness == 'latest') && 'latest' || 'pinned' }}
