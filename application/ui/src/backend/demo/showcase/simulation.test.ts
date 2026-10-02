@@ -29,7 +29,11 @@ describe("showcase agents", () => {
   it("start from their first plan and what they had already shown", () => {
     const { showcase, plan } = running()
     expect(plan(studio)).toMatchObject({ ref: "root", role: "root", text: studioAgent.text })
-    expect(showcase.snapshot()[0]!.shown.map((artifact) => artifact.id)).toEqual(["hero", "about"])
+    expect(showcase.snapshot()[0]!.shown.map((artifact) => artifact.id)).toEqual([
+      "hero",
+      "about",
+      "voice",
+    ])
   })
 
   it("open what they open as the demo starts, once, for the first to listen", async () => {

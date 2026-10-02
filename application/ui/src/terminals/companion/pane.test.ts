@@ -192,10 +192,23 @@ describe("companion pane", () => {
       ])
     })
 
-    it("keeps each page in its own slot", () => {
+    it("groups several pages too, as it does images and files", () => {
       const docs = ref("docs", "page", "localhost:6006")
       const shown = show(show(companion, preview, false), docs, false)
-      expect(slotsOf(shown.artifacts).map((slot) => slot.kind)).toEqual(["one", "one"])
+      expect(slotsOf(shown.artifacts)).toMatchObject([
+        { kind: "group", of: "page", artifacts: [{ id: "preview" }, { id: "docs" }] },
+      ])
+    })
+
+    it("stacks several plans, by their ids in the order they came", () => {
+      const sub = planTab("sub")
+      const ordered: Companion = { ...companion, order: [sub, "home", root] }
+      const slots = arrange(ordered, [
+        { kind: "plans", members: [sub, root] },
+        ...slotsOf(show(ordered, home, false).artifacts),
+      ])
+      expect(slots.map(slotKey)).toEqual(["group-plans", "home"])
+      expect(reorderBar(ordered, [slots[1]!, slots[0]!]).order).toEqual(["home", sub, root])
     })
 
     it("opens a group to what's new, else what's open, else the latest", () => {

@@ -104,10 +104,7 @@ export const reopen = <C extends Companion>(companion: C, id: string): C =>
     ? arrived({ ...companion, closed: companion.closed.filter((each) => each !== id) }, id)
     : companion
 
-// The kinds the taskbar groups. Each page keeps its own slot, as a browser window would.
-export const groupedKinds: ReadonlySet<ArtifactKind> = new Set(["image", "file"])
-
-// A taskbar slot: one artifact, or every image or every file, grouped as a taskbar
+// A taskbar slot: one artifact, or every image, every file or every page, grouped as a taskbar
 // groups an app's windows once there are several. Slots keep the order things first
 // arrived in, a group where its first one arrived.
 export type Slot =
@@ -118,7 +115,7 @@ export const slotsOf = (artifacts: readonly Shown[]): readonly Slot[] => {
   const ofKind = (kind: ArtifactKind): readonly Shown[] =>
     artifacts.filter((shown) => shown.kind === kind)
   return artifacts.flatMap((artifact): Slot[] => {
-    const group = groupedKinds.has(artifact.kind) ? ofKind(artifact.kind) : []
+    const group = ofKind(artifact.kind)
     if (group.length < 2) return [{ kind: "one", artifact }]
     return artifact === group[0] ? [{ kind: "group", of: artifact.kind, artifacts: group }] : []
   })
@@ -128,32 +125,39 @@ export const slotsOf = (artifacts: readonly Shown[]): readonly Slot[] => {
 export type BarSlot =
   | Slot
   | { readonly kind: "plan"; readonly tab: string }
+  // Every plan, once there are several: the terminal's own by their tabs, and plans placed
+  // here from other terminals by their ids here, in the order they came.
+  | { readonly kind: "plans"; readonly members: readonly string[] }
   | { readonly kind: "mail" }
   | { readonly kind: "guest"; readonly guest: Guest }
 
 // The items a slot stands for in the taskbar's order.
 const itemsOf = (slot: BarSlot): readonly string[] =>
-  slot.kind === "guest"
-    ? [slot.guest.id]
-    : slot.kind === "plan"
-      ? [slot.tab]
-      : slot.kind === "mail"
-        ? [mailTab]
-        : slot.kind === "one"
-          ? [slot.artifact.id]
-          : slot.artifacts.map((shown) => shown.id)
+  slot.kind === "plans"
+    ? slot.members
+    : slot.kind === "guest"
+      ? [slot.guest.id]
+      : slot.kind === "plan"
+        ? [slot.tab]
+        : slot.kind === "mail"
+          ? [mailTab]
+          : slot.kind === "one"
+            ? [slot.artifact.id]
+            : slot.artifacts.map((shown) => shown.id)
 
 // A slot's identity on the taskbar, which stays the same as it moves.
 export const slotKey = (slot: BarSlot): string =>
-  slot.kind === "guest"
-    ? slot.guest.id
-    : slot.kind === "plan"
-      ? slot.tab
-      : slot.kind === "mail"
-        ? mailTab
-        : slot.kind === "one"
-          ? slot.artifact.id
-          : `group-${slot.of}`
+  slot.kind === "plans"
+    ? "group-plans"
+    : slot.kind === "guest"
+      ? slot.guest.id
+      : slot.kind === "plan"
+        ? slot.tab
+        : slot.kind === "mail"
+          ? mailTab
+          : slot.kind === "one"
+            ? slot.artifact.id
+            : `group-${slot.of}`
 
 // The slots in the taskbar's order: each where its earliest item is, a group where its
 // first one came; anything the order doesn't know yet follows, as given.

@@ -10,7 +10,8 @@ export type SampleArtifacts = {
 }
 
 // What the sample Codex shows beside "Build Studio": drafts of the Studio site, drawn as
-// SVG in its own palette, files from the project, and the site in the preview browser.
+// SVG in its own palette, files from the project, a markdown document it wrote, and the
+// site in the preview browser.
 
 const ivory = "#f6f1e7"
 const ink = "#2d2a24"
@@ -107,6 +108,61 @@ const home: SampleArtifact = {
   },
 }
 
+const voiceLines = [
+  "# Studio voice",
+  "",
+  "How Studio sounds on the site, in proposals and in captions. Written from the interviews in March; the founders signed off on it.",
+  "",
+  "## In a sentence",
+  "",
+  "Plain, warm and exact: we say what the work is and why it matters, and stop.",
+  "",
+  "## Principles",
+  "",
+  '- **Name the thing.** "A type system for a quarterly journal", not "a holistic brand experience".',
+  "- **Credit the people.** Every project names its collaborators, from the architect to the photographer.",
+  "- **Let the work lead.** Copy sits beside images, never over them; captions are one line.",
+  "- **Slow is a value, not an excuse.** Say how long things took when it helps the reader trust the result.",
+  "",
+  "## Words we use, and don't",
+  "",
+  "| Prefer | Avoid |",
+  "| --- | --- |",
+  "| identity | branding solution |",
+  "| publication | content |",
+  "| place, wayfinding | spatial experience |",
+  "| we made | we delivered |",
+  "",
+  "## Headlines",
+  "",
+  "Short, sentence case, no exclamation marks. The home page leads with *Careful work, made slowly.*; project pages lead with the project's name and one line on what it is.",
+  "",
+  "## Open questions",
+  "",
+  "1. Do we sign case studies with a person's name, or as Studio?",
+  "2. Should the journal keep its own voice, closer to the publisher's?",
+  "",
+  "> Write as you would explain the work to a friend who asked, across a table.",
+]
+
+const voice: SampleArtifact = {
+  ref: {
+    id: "voice",
+    kind: "file",
+    name: "brand-voice.md",
+    detail: "docs/brand-voice.md",
+    version: 1,
+  },
+  content: {
+    kind: "file",
+    path: "docs/brand-voice.md",
+    firstLine: 1,
+    from: 1,
+    to: voiceLines.length,
+    lines: voiceLines,
+  },
+}
+
 const projects: SampleArtifact = {
   ref: {
     id: "projects",
@@ -185,7 +241,7 @@ const preview: SampleArtifact = {
 // Shown before the demo starts; opened for the user as the demo starts; then one at a
 // time as the user types `show` or `open`.
 export const studioArtifacts: SampleArtifacts = {
-  shown: [hero, about],
+  shown: [hero, about, voice],
   opened: [projects],
   next: [home, preview, mobile],
 }

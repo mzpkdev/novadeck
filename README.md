@@ -352,21 +352,23 @@ highlighted, and the notes it applied are gone. Without the skill, as in “Refa
 auth”, notes wait until you ask the agent in its terminal to re-read the plan.
 Escape closes the plan. Plans never create sidebar tabs or separate windows.
 
-Besides its plan, an agent can show you other things: an image, a file from the
-project, a page in a preview browser. They join the plan in the terminal's
-companion pane, which has no header of its own.
-Each gets an icon in the taskbar, as an OS taskbar has, with several images, or several files, grouped under one; each page keeps its own. The
-mark under an icon says whether it's new, showing, or seen; something new hops
-once, and nothing opens on its own unless you asked for it. Hover an icon to peek:
-a card per thing behind it, each a preview, its name and the same mark, with no
-copy. Click an icon or a card to open it, click the icon again (or press Escape) to
-hide the pane, and close from a card's corner button or the icon's right-click. Anything
-closes, plans and Messages too: a closed plan comes back with the agent's next version of
-it, Messages with the next message, and something shown when it's shown again, last on
-the bar each time. (The agent can't yet reopen what you closed when asked; nothing tells
-the backend.) Icons line up in the order they came, plans and Messages among them; drag
-any icon to reorder the bar, a group moving as one, or use Move left and Move right on its
-right-click.
+Besides its plan, an agent can show you other things: an image, a file from the project,
+a page in a preview browser. They join the plan in the terminal's companion pane, which
+has no header of its own. Each gets an icon in the taskbar, as an OS taskbar has, with
+several of a kind (images, files, pages, or plans) stacked under one; only Messages
+never stack. A markdown file the agent shows reads as a document, formatted like a plan
+with its outline, but read-only: it's the agent's file, not a plan to edit or note (the
+demo's Codex has shown `docs/brand-voice.md`). The mark under an icon says whether it's
+new, showing, or seen; something new hops once, and nothing opens on its own unless you
+asked for it. Hover an icon to peek: a card per thing behind it, each a preview, its
+name and the same mark, with no copy. Click an icon or a card to open it, click the icon
+again (or press Escape) to hide the pane, and close from a card's corner button or the
+icon's right-click. Anything closes, plans and Messages too: a closed plan comes back
+with the agent's next version of it, Messages with the next message, and something shown
+when it's shown again, last on the bar each time. (The agent can't yet reopen what you
+closed when asked; nothing tells the backend.) Icons line up in the order they came,
+plans and Messages among them; drag any icon to reorder the bar, a group moving as one,
+or use Move left and Move right on its right-click.
 
 Drag any icon onto another terminal's bottom bar to show it there instead (Grid and
 Canvas, where both are on screen); a terminal with nothing to show grows an empty bar

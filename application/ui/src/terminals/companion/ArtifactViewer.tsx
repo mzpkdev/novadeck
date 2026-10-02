@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  BookText,
   ExternalLink,
   FileCode2,
   Globe,
@@ -10,8 +11,10 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import type { ArtifactContent, ArtifactKind } from "../../model/companion"
+import { DocumentViewer } from "./DocumentViewer"
 import type { HighlightedLine } from "./highlight"
 import type { Shown } from "./pane"
+import { headingsOf, titleOf } from "./plan-text"
 import type { ArtifactLoad } from "./state"
 import { createWebview, type WebviewElement } from "./webview"
 
@@ -25,8 +28,16 @@ export const kindIcons: Record<ArtifactKind, typeof Image> = {
   page: Globe,
 }
 
+// A markdown file reads as a document, as a plan does, not as code.
+export const isMarkdown = (path: string): boolean => /\.(md|markdown)$/i.test(path)
+
+// An artifact's icon: its kind's, or a document's for a markdown file.
+export const iconOf = (artifact: { readonly kind: ArtifactKind; readonly name: string }) =>
+  artifact.kind === "file" && isMarkdown(artifact.name) ? BookText : kindIcons[artifact.kind]
+
 // Viewers for what an agent shows beside its terminal. Files show as plain text at
-// once, then highlighted when their language is one NovaDeck knows (see ./highlight.ts).
+// once, then highlighted when their language is one NovaDeck knows (see ./highlight.ts);
+// a markdown file reads as a document instead, formatted as a plan is.
 // A page loads live where the backend's host allows, in Electron's <webview>, which the
 // desktop app locks down (no Node, its own session, http(s) only; see ./webview.ts);
 // elsewhere it's a link to open in the browser, with a snapshot when the backend has
@@ -227,6 +238,16 @@ export const ArtifactThumb = ({ load }: { load: ArtifactLoad }): React.JSX.Eleme
   const { content } = load
   return content.kind === "image" ? (
     <img src={content.src} alt="" />
+  ) : content.kind === "file" && isMarkdown(content.path) ? (
+    // A document in miniature, as a plan is: its title over its sections.
+    <span className="peek-plan">
+      <b>{titleOf(content.path, content.lines.join("\n"))}</b>
+      {headingsOf(content.lines.join("\n"))
+        .slice(0, 4)
+        .map((heading) => (
+          <span key={heading.at}>{heading.text}</span>
+        ))}
+    </span>
   ) : content.kind === "file" ? (
     <code className="peek-code">{pointedLines(content).join("\n")}</code>
   ) : (
@@ -253,13 +274,22 @@ export const ArtifactViewer = ({
   artifact: Shown
   load: ArtifactLoad
 }): React.JSX.Element => (
-  <div className="artifact-viewer" aria-busy={load.status === "loading"}>
+  <div
+    className="artifact-viewer"
+    aria-busy={load.status === "loading"}
+    data-document={
+      (load.status === "ready" && load.content.kind === "file" && isMarkdown(load.content.path)) ||
+      undefined
+    }
+  >
     {load.status === "loading" ? (
       <div className="artifact-status" />
     ) : load.status === "failed" ? (
       <div className="artifact-status">Couldn't load {artifact.name}.</div>
     ) : load.content.kind === "image" ? (
       <ImageViewer artifact={artifact} content={load.content} actions={actions} />
+    ) : load.content.kind === "file" && isMarkdown(load.content.path) ? (
+      <DocumentViewer content={load.content} actions={actions} />
     ) : load.content.kind === "file" ? (
       <FileViewer content={load.content} actions={actions} />
     ) : (

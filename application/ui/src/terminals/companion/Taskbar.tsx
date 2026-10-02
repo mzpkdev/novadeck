@@ -18,7 +18,7 @@ import { HoverCard } from "../../ui-toolkit/HoverCard"
 import { Portal } from "../../ui-toolkit/Portal"
 import type { Presence } from "../../ui-toolkit/presence"
 import { dropPreview, dropSpaceAt, requestDropPlace } from "../drop-space"
-import { ArtifactThumb, kindIcons } from "./ArtifactViewer"
+import { ArtifactThumb, iconOf, kindIcons } from "./ArtifactViewer"
 import { dragOver, dragTargetAt } from "./drag-over"
 import type { Guest } from "./guests"
 import { useMail, type MailHandle } from "./mail"
@@ -222,6 +222,16 @@ const SortableSlot = ({
   )
 }
 
+// A plan as a stack's peek and menu name it: by its file.
+const fileOf = (plan: PlanDoc): string => plan.path.split("/").at(-1)!
+
+// A plan in a stack: the terminal's own, or one placed here from `guest`'s terminal.
+type PlanMember = {
+  readonly id: string
+  readonly plan: PlanDoc
+  readonly guest: Guest | undefined
+}
+
 type Grabbed = { readonly icon: LucideIcon; readonly from: DOMRect | undefined }
 
 // A card pulled out of a peek, turned into an icon of its own.
@@ -297,7 +307,7 @@ export const Taskbar = ({
     onSelect: () => companion.update((next) => close(next, id)),
   })
   const peekOf = (artifact: Shown): PeekEntry => {
-    const Icon = kindIcons[artifact.kind]
+    const Icon = iconOf(artifact)
     return {
       id: artifact.id,
       name: artifact.name,
@@ -311,7 +321,7 @@ export const Taskbar = ({
   // Another terminal's image or file in a stack here: it loads from that terminal, and
   // says whose it is.
   const guestPeekOf = (guest: Guest, artifact: Shown): PeekEntry => {
-    const Icon = kindIcons[artifact.kind]
+    const Icon = iconOf(artifact)
     return {
       id: guest.id,
       name: `${artifact.name} · from ${guest.origin.name}`,
@@ -338,15 +348,26 @@ export const Taskbar = ({
       guest.kind === "artifact" ? [{ ...guest.artifact, id: guest.id }] : [],
     ),
   ].toSorted((a, b) => rank(a.id) - rank(b.id))
+  // Plans stack the same way: the terminal's own and those placed here, once there are
+  // several.
+  const planMembers = [
+    ...pane.plans.map((plan) => planTab(plan.ref)),
+    ...guests.flatMap((guest) => (guest.kind === "plan" ? [guest.id] : [])),
+  ].toSorted((a, b) => rank(a) - rank(b))
   const bar = arrange(pane, [
-    ...pane.plans.map((plan): BarSlot => ({ kind: "plan", tab: planTab(plan.ref) })),
+    ...(planMembers.length > 1
+      ? [{ kind: "plans", members: planMembers } as const]
+      : planMembers.map((id): BarSlot => {
+          const guest = guestOf.get(id)
+          return guest ? { kind: "guest", guest } : { kind: "plan", tab: id }
+        })),
     ...slotsOf(stacking).map((each): BarSlot => {
       const guest = each.kind === "one" ? guestOf.get(each.artifact.id) : undefined
       return guest ? { kind: "guest", guest } : each
     }),
     ...(mail.present ? [{ kind: "mail" } as const] : []),
     ...guests.flatMap((guest): BarSlot[] =>
-      guest.kind === "artifact" ? [] : [{ kind: "guest", guest }],
+      guest.kind === "mail" ? [{ kind: "guest", guest }] : [],
     ),
   ])
   // A guest is its terminal's to close: it goes home, closed there.
@@ -398,6 +419,12 @@ export const Taskbar = ({
     if (entry.kind === "guest") placeOn(entry.guest.from, entry.guest.item, terminalId)
     else if (entry.kind === "plan") placeOn(own, entry.tab, terminalId)
     else if (entry.kind === "mail") return
+    else if (entry.kind === "plans")
+      for (const id of entry.members) {
+        const guest = guestOf.get(id)
+        if (guest) placeOn(guest.from, guest.item, terminalId)
+        else placeOn(own, id, terminalId)
+      }
     else if (entry.kind === "one") placeOn(own, entry.artifact.id, terminalId)
     else
       for (const shown of entry.artifacts) {
@@ -563,7 +590,7 @@ export const Taskbar = ({
           ? FileText
           : guest.kind === "mail"
             ? MessagesSquare
-            : kindIcons[guest.artifact.kind]
+            : iconOf(guest.artifact)
       const name =
         guest.kind === "plan"
           ? guest.plan.path.split("/").at(-1)!
@@ -625,6 +652,91 @@ export const Taskbar = ({
               onGrab: (event) => grab(event, entry, Icon, guest.id),
             },
           ]}
+        />,
+      )
+    }
+    if (entry.kind === "plans") {
+      // Each plan in the stack: the terminal's own, or one placed here, saying whose.
+      const members = entry.members.flatMap((id): PlanMember[] => {
+        const guest = guestOf.get(id)
+        if (guest?.kind === "plan") return [{ id, plan: guest.plan, guest }]
+        const plan = pane.plans.find((each) => planTab(each.ref) === id)
+        return plan ? [{ id, plan, guest: undefined }] : []
+      })
+      const fresh = members.some((member) => unread(member.plan))
+      const openOne = members.find((member) => showing(member.id))
+      const pick = members.find((member) => unread(member.plan)) ?? openOne ?? members[0]
+      return slot(
+        "group-plans",
+        "Plans",
+        [
+          ...members.flatMap(({ id, plan, guest }): ContextMenuItem[] => {
+            const name = fileOf(plan)
+            const from = guest ? ` from ${guest.origin.name}` : ""
+            return [
+              opening(id, `Open ${name}${from}`),
+              ...(guest
+                ? [
+                    {
+                      value: `send-back-${id}`,
+                      label: `Send ${name} back to ${guest.origin.name}`,
+                      onSelect: () => placeOn(guest.from, guest.item, guest.from.terminalId),
+                    },
+                  ]
+                : undockPlan
+                  ? [
+                      {
+                        value: `window-${id}`,
+                        label: `Undock ${name} to its own window`,
+                        onSelect: () => undockPlan(plan),
+                      },
+                    ]
+                  : []),
+              guest
+                ? {
+                    value: `close-${id}`,
+                    label: `Close ${name}${from}`,
+                    onSelect: () => closeGuest(guest),
+                  }
+                : closing(id, `Close ${name}`),
+            ]
+          }),
+          ...moving,
+        ],
+        <button
+          ref={buttonRef}
+          className="plan-tb-item"
+          data-state={fresh ? "new" : openOne ? "open" : "seen"}
+          aria-label={`${members.length} plans${fresh ? ", new" : ""}`}
+          aria-pressed={Boolean(openOne)}
+          onClick={() => pick && activate(pick.id)}
+        >
+          <FileText size={20} strokeWidth={1.5} />
+          <b className="plan-tb-count" aria-hidden="true">
+            {members.length}
+          </b>
+        </button>,
+        <Peek
+          entries={members.map(({ id, plan, guest }): PeekEntry => {
+            const Icon = plan.role === "root" ? FileText : FileStack
+            return {
+              id,
+              name: guest ? `${fileOf(plan)} · from ${guest.origin.name}` : fileOf(plan),
+              icon: <Icon size={13} strokeWidth={1.5} />,
+              preview: <PlanThumb plan={plan} />,
+              state: state(id, unread(plan)),
+              onOpen: () => companion.update((next) => openTab(next, id)),
+              onClose: () =>
+                guest ? closeGuest(guest) : companion.update((next) => close(next, id)),
+              onGrab: (event) =>
+                grab(
+                  event,
+                  guest ? { kind: "guest", guest } : { kind: "plan", tab: id },
+                  Icon,
+                  "group-plans",
+                ),
+            }
+          })}
         />,
       )
     }
@@ -722,7 +834,7 @@ export const Taskbar = ({
       )
     if (entry.kind === "one") {
       const { artifact } = entry
-      const Icon = kindIcons[artifact.kind]
+      const Icon = iconOf(artifact)
       return slot(
         artifact.id,
         artifact.name,

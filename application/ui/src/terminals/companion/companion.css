@@ -1056,6 +1056,12 @@
   min-height: 0;
   overflow: auto;
 }
+/* A markdown document scrolls inside its reader, beside its outline, as a plan does. */
+.artifact-viewer[data-document] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .artifact-meta {
   display: flex;
   flex-wrap: wrap;
