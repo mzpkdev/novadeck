@@ -292,6 +292,8 @@ export const TerminalCompanion = ({
   const shown = usePresence(open)
   // The taskbar too, once the terminal first has something to show.
   const bar = usePresence(present)
+  // And the empty one to drop on, while an icon is dragged over a terminal without a bar.
+  const emptyBar = usePresence(hovered && !present)
   const wasOpen = useRef(open)
   // Opening leaves focus on the taskbar. Hiding the pane from inside it (Escape) would
   // drop focus with the pane, so it goes back to the taskbar.
@@ -345,11 +347,13 @@ export const TerminalCompanion = ({
           presence={bar}
         />
       )}
-      {/* Nothing to show yet, but an icon is dragged over: an empty bar to drop it on. */}
-      {hovered && !bar.mounted && (
+      {/* Nothing to show yet, but an icon is dragged over: an empty bar to drop it on. It
+          gives way to the real bar at once once something lands. */}
+      {emptyBar.mounted && !bar.mounted && (
         <div
+          {...emptyBar.props}
           className="plan-taskbar plan-taskbar-empty nodrag nopan"
-          data-drop-target={over.onBar || undefined}
+          data-drop-target={(hovered && over.onBar) || undefined}
         >
           <span className="plan-tb-empty-hint">Drop here to show it on this terminal</span>
         </div>

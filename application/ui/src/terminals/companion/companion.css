@@ -22,6 +22,10 @@
   padding: 0 10px;
   border-top: 1px solid var(--color-line);
   background: var(--color-shell);
+  /* Lighting up as a drop target, and back. */
+  transition:
+    background-color var(--motion-feedback) var(--ease-interface),
+    box-shadow var(--motion-feedback) var(--ease-interface);
 }
 /* The bar rises into place when the terminal first has something to show, and fades
    as it goes. The terminal takes its new height once; only opacity and translate
@@ -42,6 +46,7 @@
 @media (prefers-reduced-motion: reduce) {
   .plan-taskbar {
     animation: none !important;
+    transition: none;
   }
 }
 .plan-tb-slot {
@@ -153,6 +158,21 @@
    it on. */
 .plan-taskbar-empty {
   justify-content: center;
+}
+/* The empty bar pops up under the dragged icon, a touch past its place and back, and
+   fades as the pointer leaves. Opacity and translate only. */
+.plan-taskbar-empty[data-state="open"] {
+  animation: plan-drop-bar-in 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.plan-taskbar-empty[data-state="closed"] {
+  animation: plan-out var(--motion-feedback) var(--ease-interface) forwards;
+  pointer-events: none;
+}
+@keyframes plan-drop-bar-in {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
 }
 .plan-tb-empty-hint {
   font-size: 11px;
