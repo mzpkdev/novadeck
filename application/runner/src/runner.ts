@@ -83,6 +83,7 @@ export const wire = (options: RunnerOptions) => {
     // Agents message each other within a project, and the mailbox is kept with it.
     mailbox: store,
     projectOf: (sessionId) => store.session(sessionId).projectId,
+    items,
     ...options.terminals,
   })
   const projects = new Projects(store, terminals)
@@ -92,7 +93,7 @@ export const wire = (options: RunnerOptions) => {
 /** Owns shells and workspace metadata, independent of how clients reach it. */
 export const createRunner = (options: RunnerOptions = {}): Runner => {
   const id = randomUUID()
-  const { store, terminals, agents, projects } = wire(options)
+  const { store, terminals, items, agents, projects } = wire(options)
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {
@@ -122,6 +123,7 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
       store,
       terminals,
       projects,
+      items,
       agents,
       closing: () => closing !== undefined,
     }),

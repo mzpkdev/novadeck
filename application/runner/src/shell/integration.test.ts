@@ -28,6 +28,7 @@ import type {
 } from "@novadeck/protocol"
 import { vi } from "vitest"
 
+import { CompanionItems } from "../companions/items.js"
 import { codex as codexHarness } from "../harnesses/codex/index.js"
 import { Terminals, type TerminalOptions } from "../terminals/index.js"
 import { Latest } from "../terminals/latest.js"
@@ -80,7 +81,14 @@ const it = base.extend<{ shell: Fixture }>({
     const project = await store.createProject({ id: randomUUID(), name: "P", cwd: home })
     const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "S" })
     const manager = (options: TerminalOptions = {}) => {
-      const terminals = new Terminals({
+      // What agents show, kept in the store as the runner keeps it.
+      const items = new CompanionItems({
+        records: store,
+        terminal: (terminalId) => terminals.place(terminalId),
+        livePlan: (item) => terminals.livePlan(item),
+        pollMs: 20,
+      })
+      const terminals: Terminals = new Terminals({
         shell: bash,
         env: { HOME: home, PS1: "$ ", PATH: process.env.PATH },
         // Only when the test has none of its own: an install nobody waits for would fail
@@ -92,6 +100,7 @@ const it = base.extend<{ shell: Fixture }>({
         records: store,
         mailbox: store,
         projectOf: (sessionId) => store.session(sessionId).projectId,
+        items,
         ...options,
       })
       resources.defer(() => terminals.shutdown())
@@ -1087,6 +1096,65 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     })
   })
 
+  it("keeps a plan presented as text beside its terminal, read back from its transcript", async ({
+    shell,
+  }) => {
+    const transcript = join(shell.home, "s1.jsonl")
+    writeFileSync(
+      transcript,
+      `${JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-09-30T08:00:00Z",
+        message: {
+          content: [{ type: "tool_use", name: "ExitPlanMode", input: { plan: "# Text plan\n" } }],
+        },
+      })}\n`,
+    )
+    const bin = reporter(shell.home, [
+      {
+        agent: "claude",
+        sessionId: "s1",
+        seq: 1,
+        source: "startup",
+        fields: { transcript_path: transcript },
+      },
+      {
+        agent: "claude",
+        sessionId: "s1",
+        seq: 2,
+        source: "",
+        event: "PermissionRequest",
+        fields: { tool_name: "ExitPlanMode", tool_input: { plan: "# Text plan\n" } },
+      },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    // The item points at the transcript, never holding the plan's text itself.
+    await expect
+      .poll(() => shell.store.barItems(terminal.id))
+      .toMatchObject([
+        {
+          kind: "plan",
+          name: "Text plan",
+          path: transcript,
+          plan: { agent: "claude", session: "s1", actor: null, format: "text" },
+        },
+      ])
+    // Another session binding there takes the plan its bar mirrored of the first.
+    const next = reporter(shell.home, [
+      { agent: "claude", sessionId: "s2", seq: 3, source: "startup" },
+    ])
+    // The stand-in agent ends, and another starts there.
+    manager.write({ terminalId: terminal.id, data: "\x03" }, "owner")
+    manager.write({ terminalId: terminal.id, data: `${join(next, "report")}\r` }, "owner")
+    await expect.poll(() => shell.store.barItems(terminal.id), { timeout: 10_000 }).toEqual([])
+    expect(manager.reportedSession(terminal.id, "claude")).toBe("s2")
+  })
+
   it("keeps an agent session's own markers out of its shells", async ({ shell }) => {
     // As when NovaDeck itself was started from inside Claude Code.
     const manager = shell.manager({
@@ -1508,7 +1576,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         { request: { path: "w.txt" }, token: "0".repeat(48) },
         { request: { path: "w.txt", lines: { from: 2, to: 1 } } },
       ])
-      const shown = { ok: true, id: expect.stringMatching(/^[\w-]{16}$/), kind: "file" }
+      const shown = { ok: true, id: expect.any(String), kind: "file", again: false }
       expect(answers).toEqual([
         { ...shown, name: "a.ts", opened: false },
         { ...shown, name: "w.txt", opened: true },
@@ -1526,7 +1594,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             id: expect.any(String),
             kind: "file",
             name: "a.ts",
-            detail: "a.ts · whole file",
+            detail: "a.ts",
             version: 1,
             asked: false,
           },
@@ -1534,7 +1602,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             id: expect.any(String),
             kind: "file",
             name: "w.txt",
-            detail: "w.txt · whole file",
+            detail: "w.txt",
             version: 1,
             asked: true,
           },
@@ -1542,7 +1610,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             id: expect.any(String),
             kind: "file",
             name: "The plan",
-            detail: `${join(plans, "p.md")} · whole file`,
+            detail: join(plans, "p.md"),
             version: 1,
             asked: false,
           },
@@ -1550,7 +1618,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             id: expect.any(String),
             kind: "file",
             name: "elsewhere.txt",
-            detail: `${join(shell.home, "elsewhere.txt")} · whole file`,
+            detail: join(shell.home, "elsewhere.txt"),
             version: 1,
             asked: false,
           },
@@ -1558,14 +1626,14 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
             id: expect.any(String),
             kind: "file",
             name: ".env",
-            detail: ".env · whole file",
+            detail: ".env",
             version: 1,
             asked: false,
             held: true,
           },
         ])
       const [first] = answers as { id: string }[]
-      expect(manager.artifact(terminal.id, first!.id)).toEqual({
+      await expect(manager.artifact(terminal.id, first!.id)).resolves.toEqual({
         kind: "file",
         path: join(project, "a.ts"),
         firstLine: 1,
@@ -1579,20 +1647,26 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await moved((summary) => summary.id === terminal.id && summary.cwd === project)
       writeFileSync(join(project, "a.ts"), "const a = 2\n")
       expect(await present(shell, manager, terminal.id, [{ request: { path: "a.ts" } }])).toEqual([
-        { ...shown, id: first!.id, name: "a.ts", opened: false },
+        { ...shown, id: first!.id, name: "a.ts", opened: false, again: true },
       ])
       await expect
         .poll(() => snapshots.at(-1)?.shown.map(({ name, version }) => `${name} ${version}`))
         .toEqual(["w.txt 1", "The plan 1", "elsewhere.txt 1", ".env 1", "a.ts 2"])
-      expect(manager.artifact(terminal.id, first!.id)).toMatchObject({ lines: ["const a = 2"] })
+      await expect(manager.artifact(terminal.id, first!.id)).resolves.toMatchObject({
+        lines: ["const a = 2"],
+      })
       await manager.close({ terminalId: terminal.id }, "owner")
       await reading
-      expect(() => manager.artifact(terminal.id, first!.id)).toThrow(
-        expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
-      )
+      await expect(manager.artifact(terminal.id, first!.id)).rejects.toMatchObject({
+        code: "TERMINAL_NOT_FOUND",
+      })
+      // Closed, the terminal took what its bar held along.
+      expect(shell.store.items()).toEqual([])
     })
 
-    it("keeps what the latest 64 showings showed", async ({ shell }) => {
+    it("keeps everything shown, with no cap, listing the latest 64 as before", async ({
+      shell,
+    }) => {
       const bin = presenter(shell.home)
       const manager = shell.manager({
         env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
@@ -1613,10 +1687,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const { value } = await manager.shown(terminal.id).next()
       expect(value?.shown).toHaveLength(64)
       expect(value?.shown[0]?.name).toBe("f1.txt")
-      expect(() => manager.artifact(terminal.id, answers[0]!.id)).toThrow(
-        expect.objectContaining({ code: "NOT_FOUND" }),
-      )
-      expect(manager.artifact(terminal.id, answers[64]!.id)).toMatchObject({ lines: ["f64.txt"] })
+      expect(shell.store.barItems(terminal.id)).toHaveLength(65)
+      await expect(manager.artifact(terminal.id, answers[64]!.id)).resolves.toMatchObject({
+        lines: ["f64.txt"],
+      })
     })
   },
 )

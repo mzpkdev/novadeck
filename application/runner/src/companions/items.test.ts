@@ -425,6 +425,9 @@ describe("plans beside their terminal", () => {
     fixture.items.sessionBound(t1.terminalId, "s2")
     expect(fixture.items.bar(t1.terminalId)).toEqual([])
     expect(fixture.items.bar(t2.terminalId)).toMatchObject([{ id: sub!.id }])
+    // A plan of the earlier session, observed as the new one bound, is not mirrored.
+    await fixture.items.planObserved(t1, slot, plan, 2)
+    expect(fixture.items.bar(t1.terminalId)).toEqual([])
   })
 
   it("presented as text point at the agent's own record, read back once the terminal is gone", async ({

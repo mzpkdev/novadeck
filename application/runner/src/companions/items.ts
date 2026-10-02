@@ -142,6 +142,11 @@ export class CompanionItems {
   /** Each item's `content` readers, which end once it is deleted. */
   private readonly readers = new Map<string, Set<AbortController>>()
   private readonly listeners = new Set<(change: CompanionChange) => void>()
+  /**
+   * The agent session each terminal bound last, in this runner's lifetime: a plan of
+   * another one, observed while it bound, is not mirrored on its bar.
+   */
+  private readonly bound = new Map<string, string>()
   /** Plan observations, one after another, so two never add the same slot twice. */
   private observing: Promise<void> = Promise.resolve()
   private stopping = false
@@ -296,6 +301,12 @@ export class CompanionItems {
     return this.records.barItems(terminalId).map(wireItem)
   }
 
+  /** The item mirroring an agent session's plan on a terminal's own bar, by its id. */
+  planItem(terminalId: string, agentSession: string, actor: string | null): string | undefined {
+    const key = planKey({ agentSession, actor })
+    return this.records.barItems(terminalId).find((item) => item.pointerKey === key)?.id
+  }
+
   /** Tells `listener` of every change, until the returned function is called. */
   subscribe(listener: (change: CompanionChange) => void): () => void {
     this.listeners.add(listener)
@@ -427,6 +438,7 @@ export class CompanionItems {
    */
   sessionBound(terminalId: string, agentSession: string): void {
     if (this.stopping) return
+    this.bound.set(terminalId, agentSession)
     for (const item of this.records.barItems(terminalId))
       if (
         item.plan !== null &&
@@ -439,6 +451,7 @@ export class CompanionItems {
   /** A terminal is closed: the items on its bar go with it. Windows stay. */
   terminalClosed(terminalId: string): void {
     if (this.stopping) return
+    this.bound.delete(terminalId)
     for (const item of this.records.barItems(terminalId)) this.delete(item.id)
   }
 
@@ -458,6 +471,9 @@ export class CompanionItems {
   ): Promise<void> {
     const title = await planTitle(plan.source)
     if (this.stopping || !this.options.terminal(place.terminalId)) return
+    // Another session bound there meanwhile: this plan is no longer its terminal's.
+    const bound = this.bound.get(place.terminalId)
+    if (bound !== undefined && bound !== slot.agentSession) return
     const key = planKey(slot)
     const format = plan.source.kind
     const pointer: Pointer = {

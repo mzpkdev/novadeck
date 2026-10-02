@@ -13,8 +13,12 @@ import {
   agentName,
   clientState,
   columns,
+  companionChange,
+  companionItem,
+  companionWindow,
   directory,
   id,
+  itemContent,
   name,
   project,
   protocolVersion,
@@ -211,6 +215,53 @@ export const contract = {
     set: procedure
       .input(z.strictObject({ agent: agentName, connected: z.boolean() }))
       .output(agentIntegration),
+  },
+  // What agents show and the person attaches beside terminals: items held by a terminal's
+  // bar or an undocked window, kept across restarts as pointers to files, pages and plans.
+  companions: {
+    // A session's items and windows. An unknown session is NOT_FOUND.
+    list: procedure
+      .input(z.strictObject({ sessionId: id }))
+      .output(z.strictObject({ items: z.array(companionItem), windows: z.array(companionWindow) })),
+    // Every item and window across sessions: each, `synced`, then later changes, as
+    // `terminals.watch` reports terminals.
+    watch: procedure.input(z.void()).output(eventIterator(companionChange)),
+    // What an item points at, read now, then again each time it changes, until it is
+    // deleted. A file that may hold secrets is `held` unless `reveal`. An unknown item is
+    // NOT_FOUND.
+    content: procedure
+      .input(z.strictObject({ itemId: id, reveal: z.boolean().optional() }))
+      .output(eventIterator(itemContent)),
+    // Attaches a file the person picked to a terminal's bar, by a path absolute or from
+    // the terminal's directory. A terminal the runner keeps nothing of is
+    // TERMINAL_NOT_FOUND; a path that is no file is INVALID_FILE, saying why.
+    attach: procedure
+      .input(
+        z.strictObject({
+          terminalId: id,
+          path: z.string().min(1).max(4096),
+          lines: z
+            .strictObject({ from: z.int().min(1), to: z.int().min(1) })
+            .refine(({ from, to }) => to >= from)
+            .optional(),
+          title: z.string().min(1).max(256).optional(),
+        }),
+      )
+      .output(companionItem),
+    // Moves an item onto a terminal's bar, from a bar or a window, which goes with it; what
+    // that bar held under the same pointer is replaced. An unknown item is NOT_FOUND, an
+    // unknown terminal TERMINAL_NOT_FOUND, and one of another session a CONFLICT.
+    move: procedure.input(z.strictObject({ itemId: id, terminalId: id })).output(companionItem),
+    // Moves an item into a new window the client names; a taken id is a CONFLICT.
+    undock: procedure.input(z.strictObject({ itemId: id, windowId: id })).output(companionWindow),
+    // Deletes an item and the window holding it; closing a window is this call.
+    close: procedure.input(z.strictObject({ itemId: id })).output(z.void()),
+    // Gives a window the person's title. An unknown window is NOT_FOUND.
+    renameWindow: procedure
+      .input(z.strictObject({ windowId: id, title: terminalTitle }))
+      .output(z.void()),
+    // Gives a window its item's name again, as `renameWindow` does.
+    resetWindowTitle: procedure.input(z.strictObject({ windowId: id })).output(z.void()),
   },
   // Messages between agents in NovaDeck's terminals (see docs/agent-messaging.md).
   messages: {

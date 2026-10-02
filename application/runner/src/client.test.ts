@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises"
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -11,6 +11,7 @@ import {
   websocket,
   type AttachedTerminal,
   type Channel,
+  type CompanionWatchItem,
   type Runner,
   type RunnerStatus,
   type TerminalWatchItem,
@@ -632,6 +633,98 @@ describe("runner client shown artifacts", () => {
     await expect(ending).resolves.toEqual({ done: true, value: undefined })
     await expect(client.agents.artifact(terminal.id, "nothing")).rejects.toMatchObject({
       code: "TERMINAL_NOT_FOUND",
+    })
+  })
+})
+
+describe("runner client companion items", () => {
+  it("attaches, undocks, renames, moves and closes items, as its watch reports", async ({
+    resources,
+  }) => {
+    const app = await deployed(resources)
+    const client = await app.connect()
+    const { id: sessionId } = await session(client, app.directory)
+    const first = await client.terminals.create(shell(sessionId))
+    const second = await client.terminals.create(shell(sessionId))
+    const directory = await realpath(app.directory)
+    await writeFile(join(directory, "notes.md"), "# Notes\n")
+    const watch = client.companions.watch()
+    resources.defer(async () => {
+      await watch.return?.()
+    })
+    const seen: CompanionWatchItem[] = []
+    const until = async (predicate: (change: CompanionWatchItem) => boolean) => {
+      while (true) {
+        // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
+        const result = await watch.next()
+        if (result.done) throw new Error(`Watch ended; seen=${JSON.stringify(seen)}`)
+        seen.push(result.value)
+        if (predicate(result.value)) return result.value
+      }
+    }
+    await until((change) => change.type === "synced")
+    expect(seen).toEqual([{ type: "reset" }, { type: "synced" }])
+
+    const item = await client.companions.attach({ terminalId: first.id, path: "notes.md" })
+    expect(item).toMatchObject({
+      sessionId,
+      holder: { terminalId: first.id },
+      kind: "file",
+      name: "notes.md",
+      path: join(directory, "notes.md"),
+      by: "person",
+      from: { terminalId: first.id, handle: "t1" },
+      version: 1,
+    })
+    await expect(
+      client.companions.attach({ terminalId: first.id, path: "." }),
+    ).rejects.toMatchObject({ code: "INVALID_FILE" })
+    await expect(
+      client.companions.attach({ terminalId: crypto.randomUUID(), path: "notes.md" }),
+    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+    const content = client.companions.content(item.id)
+    await expect(content.next()).resolves.toMatchObject({
+      value: { state: "ready", content: { kind: "file", lines: ["# Notes"], total: 1 } },
+    })
+
+    const windowId = crypto.randomUUID()
+    await expect(client.companions.undock(item.id, windowId)).resolves.toEqual({
+      id: windowId,
+      sessionId,
+      itemId: item.id,
+      title: "notes.md",
+      titleSource: { kind: "default" },
+    })
+    await client.companions.renameWindow(windowId, "Notes")
+    await expect(client.companions.list({ sessionId })).resolves.toMatchObject({
+      items: [{ id: item.id, holder: { windowId } }],
+      windows: [{ id: windowId, title: "Notes", titleSource: { kind: "person" } }],
+    })
+    await client.companions.resetWindowTitle(windowId)
+    await expect(client.companions.renameWindow(crypto.randomUUID(), "x")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    })
+
+    // Docked on the other terminal's bar, its window goes.
+    await expect(client.companions.move(item.id, second.id)).resolves.toMatchObject({
+      holder: { terminalId: second.id },
+    })
+    await expect(client.companions.list({ sessionId })).resolves.toMatchObject({
+      items: [{ id: item.id, holder: { terminalId: second.id } }],
+      windows: [],
+    })
+    await until((change) => change.type === "windowRemoved")
+
+    const ending = content.next()
+    await client.companions.close(item.id)
+    await expect(ending).resolves.toEqual({ done: true, value: undefined })
+    await until((change) => change.type === "itemRemoved")
+    await expect(client.companions.list({ sessionId })).resolves.toEqual({ items: [], windows: [] })
+    await expect(client.companions.list({ sessionId: crypto.randomUUID() })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    })
+    await expect(client.companions.move(item.id, first.id)).rejects.toMatchObject({
+      code: "NOT_FOUND",
     })
   })
 })
