@@ -374,8 +374,9 @@ terminal, on its right-click, or a drag onto that terminal's bar, returns it. Pl
 are the UI's alone for now: the backends don't keep them (`terminals/companion/placement.ts`).
 
 Drop a plan, a single artifact or Messages in a view to undock it right there. On Canvas,
-over its empty space, a ghost of the window shows where it opens, its header under the
-pointer, snapped to the canvas's grid. On Grid, a placeholder window joins the grid under
+over its empty space, a ghost window joins the canvas under the pointer and follows it
+freely, as a dragged window does; dropped, the window opens where the ghost was and
+settles onto the canvas's grid. On Grid, a placeholder window joins the grid under
 the pointer as soon as the icon is over it, and the grid makes room for it like any
 window: the window it's over moves aside. It goes as the icon leaves the grid; dropped,
 the window takes its place. In

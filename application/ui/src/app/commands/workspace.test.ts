@@ -266,14 +266,15 @@ describe("workspace commands", () => {
 
     it("opens a window dropped on the canvas there, and moves one already open there", () => {
       const app = openCommands()
-      app.commands.undock("01", image, { canvas: { x: 400, y: 240 } })
+      app.commands.undock("01", image, { canvas: { x: 408, y: 240 } })
       const shown = app.state().roster.terminals.find((each) => each.companion)!
       expect(app.state().layout.canvas.geometry[shown.id]).toMatchObject({
-        position: { x: 400, y: 240 },
+        position: { x: 408, y: 240 },
       })
-      app.commands.undock("01", image, { canvas: { x: 80, y: 960 } })
+      // Dropped off the canvas's grid, it settles onto it.
+      app.commands.undock("01", image, { canvas: { x: 83, y: 970 } })
       expect(app.state().layout.canvas.geometry[shown.id]).toMatchObject({
-        position: { x: 80, y: 960 },
+        position: { x: 72, y: 960 },
       })
     })
 

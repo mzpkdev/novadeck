@@ -1,5 +1,6 @@
 import type { TerminalRequest } from "../../backend/port"
 import { droppedWindow, type CompanionWindow, type UndockPlace } from "../../model/companion"
+import { canvasPointPosition } from "../../model/layout/canvas-placement"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
 import { canvasPresetSize } from "../../model/layout/terminal-size"
 import { activeProject, type WorkspaceAction } from "../../model/state"
@@ -248,7 +249,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       // moves there. Dropped on the grid: the layout it made there, with the window in it.
       const geometry = place &&
         "canvas" in place && {
-          position: place.canvas,
+          position: canvasPointPosition(place.canvas),
           ...canvasPresetSize("small"),
         }
       const gridPlace = place && "grid" in place ? place.grid : undefined

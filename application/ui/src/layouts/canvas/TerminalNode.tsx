@@ -1,6 +1,7 @@
 import { NodeResizeControl, type NodeProps } from "@xyflow/react"
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react"
 
+import { useDropPreview } from "../../terminals/drop-space"
 import type { TerminalNode } from "./types"
 
 // Terminal content comes from the canvas's current render, not from node data: node data
@@ -43,4 +44,15 @@ const TerminalNodeView = ({ id, data, selected }: NodeProps<TerminalNode>): Reac
     </div>
   )
 }
-export const nodeTypes = { terminal: TerminalNodeView }
+// While an icon from a taskbar is over the empty canvas: a ghost of the window a drop
+// would open, as a node of its own, under the pointer. It takes no pointer, so the
+// canvas under it still reads as empty.
+const DropGhostNodeView = (): React.JSX.Element => (
+  <div className="view-drop-preview canvas-drop-ghost" aria-hidden="true">
+    <span className="view-drop-preview-header">{useDropPreview()?.label}</span>
+  </div>
+)
+
+export const dropGhostId = "drop-ghost"
+
+export const nodeTypes = { terminal: TerminalNodeView, dropGhost: DropGhostNodeView }
