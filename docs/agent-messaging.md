@@ -40,12 +40,12 @@ broadcast rooms; and agents starting conversations nobody asked for.
    follow. Receiving happens to the agent, through its hooks.
 4. **NovaDeck types one constant line, and only when it can see it is safe.** The
    doorbell that wakes an idle agent is the same text every time apart from a nonce,
-   carries nothing a peer chose, and is submitted only after NovaDeck has seen it land on
-   a quiet screen and change nothing else, but for one allowance on a Ready terminal,
+   carries nothing a peer chose, and is submitted only after NovaDeck has seen it land
+   on a quiet screen and change nothing else, but for one allowance on a Ready terminal,
    before its session's first turn: as the line replaces the box's empty state there, a
-   block of text away from it may vanish, whole, as Codex's logo does. It counts once the agent's hook confirms it.
-   NovaDeck knows nothing of how any harness draws its screen: the checks are the same
-   for every TUI.
+   block of text away from it may vanish, whole, as Codex's logo does. It counts once
+   the agent's hook confirms it. NovaDeck knows nothing of how any harness draws its
+   screen: the checks are the same for every TUI.
 5. **The mailbox is the record.** Every message is stored and visible in NovaDeck, with
    its delivery state; the person can pause all traffic.
 6. **Every harness is supported.** Claude Code, Codex and Antigravity all send and
