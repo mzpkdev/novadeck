@@ -3,9 +3,16 @@ import { context, describe, expect, it } from "../../test"
 import {
   dismiss,
   freshCount,
+  moveSlot,
+  arrived,
+  mailTab,
+  slotKey,
   openCompanion,
   pickFromGroup,
   planTab,
+  reorderBar,
+  arrange,
+  type BarSlot,
   selectTab,
   show,
   slotsOf,
@@ -95,6 +102,62 @@ describe("companion pane", () => {
       expect(slots).toMatchObject([
         { kind: "group", of: "file", artifacts: [{ id: "home" }, { id: "data" }] },
         { kind: "group", of: "image", artifacts: [{ id: "hero" }, { id: "about" }] },
+      ])
+    })
+
+    it("lays the bar out in the order things came, plans and messages among them", () => {
+      let shown = show(companion, home, false)
+      shown = arrived(shown, planTab("root"))
+      shown = show(shown, image("hero"), false)
+      shown = arrived(shown, mailTab)
+      shown = show(shown, image("about"), false)
+      const slots: BarSlot[] = [
+        { kind: "plan", tab: planTab("root") },
+        ...slotsOf(shown.artifacts),
+        { kind: "mail" },
+      ]
+      // The images group sits where its first one came, before the messages.
+      expect(arrange(shown, slots).map(slotKey)).toEqual([
+        "home",
+        planTab("root"),
+        "group-image",
+        mailTab,
+      ])
+    })
+
+    it("moves a slot with its items, a group's together, anywhere on the bar", () => {
+      let shown = arrived(companion, planTab("root"))
+      for (const next of [image("hero"), home, image("about")]) shown = show(shown, next, false)
+      shown = arrived(shown, mailTab)
+      const bar = arrange(shown, [
+        { kind: "plan", tab: planTab("root") },
+        ...slotsOf(shown.artifacts),
+        { kind: "mail" },
+      ])
+      // Messages to the front, then the plan to the end.
+      let moved = reorderBar(shown, moveSlot(bar, 3, 0))
+      moved = reorderBar(moved, moveSlot(arrange(moved, bar), 1, 3))
+      expect(arrange(moved, bar).map(slotKey)).toEqual([
+        mailTab,
+        "group-image",
+        "home",
+        planTab("root"),
+      ])
+    })
+
+    it("leaves what isn't on the bar where it was, and sends what's dismissed to the end", () => {
+      let shown = show(companion, home, false)
+      for (const next of [image("hero"), preview]) shown = show(shown, next, false)
+      // The image is undocked: the bar holds Home.tsx and the preview, and swaps them.
+      const onBar = slotsOf(shown.artifacts.filter((each) => each.id !== "hero"))
+      const moved = reorderBar(shown, moveSlot(onBar, 1, 0))
+      expect(moved.order).toEqual(["preview", "hero", "home"])
+      // Dismissed and shown again, Home.tsx comes last.
+      expect(show(dismiss(moved, "home"), home, false).order).toEqual(["preview", "hero", "home"])
+      expect(show(dismiss(moved, "preview"), preview, false).order).toEqual([
+        "hero",
+        "home",
+        "preview",
       ])
     })
 

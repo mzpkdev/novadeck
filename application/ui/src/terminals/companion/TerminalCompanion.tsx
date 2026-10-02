@@ -7,7 +7,7 @@ import { usePresence, type Presence } from "../../ui-toolkit/presence"
 import type { TerminalLayoutControls } from "../WindowShell"
 import { CompanionPane } from "./CompanionPane"
 import { useMail, type MailHandle } from "./mail"
-import type { Shown } from "./pane"
+import { arrived, mailTab, type Shown } from "./pane"
 import { presentationOf, shownTab, useCompanion, type CompanionHandle } from "./state"
 import { Taskbar } from "./Taskbar"
 
@@ -174,6 +174,13 @@ export const TerminalCompanion = ({
     }
   }, [terminalCompanion, undockedArtifacts])
   const terminalMail = useMail(messages, companionKey)
+  // The messages join the taskbar's order when the terminal first has them, after what
+  // came before.
+  const mailKnown = terminalCompanion.pane.order?.includes(mailTab) ?? false
+  useEffect(() => {
+    if (terminalMail.present && !mailKnown)
+      terminalCompanion.update((pane) => arrived(pane, mailTab))
+  }, [terminalMail.present, mailKnown, terminalCompanion])
   const mail = messagesUndocked ? { ...terminalMail, present: false } : terminalMail
   const moveToWindow =
     undock &&

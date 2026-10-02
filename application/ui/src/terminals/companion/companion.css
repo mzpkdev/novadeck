@@ -47,6 +47,23 @@
 .plan-tb-slot {
   display: contents;
 }
+/* The bar's slots, which a drag reorders within. */
+.plan-tb-slots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.plan-tb-slots:empty {
+  display: none;
+}
+/* What the drag moves: a slot in a box of its own. */
+.plan-tb-sortable {
+  display: flex;
+}
+/* A peek stays out of the way of an icon being dragged past. */
+:root:has(.plan-tb-sortable[data-dragging]) .plan-tb-peek {
+  visibility: hidden;
+}
 .plan-tb-item {
   position: relative;
   display: grid;

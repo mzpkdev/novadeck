@@ -21,7 +21,16 @@ export type Companion = {
   // Where the pane goes when what it showed goes: the terminal's main plan.
   readonly home: string
   readonly artifacts: readonly Shown[]
+  // The taskbar's items, plan tabs, what was shown and the messages, by id, in the order
+  // they first came or the person since dragged them into.
+  readonly order?: readonly string[]
 }
+
+// Something came to the taskbar: it joins the end of its order, unless it has a place.
+export const arrived = <C extends Companion>(companion: C, id: string): C =>
+  companion.order?.includes(id)
+    ? companion
+    : { ...companion, order: [...(companion.order ?? []), id] }
 
 // The agent put something in front of the user, or showed it again with new content.
 // It waits in the taskbar unless the user asked for it, and then it opens. Something
@@ -36,7 +45,7 @@ export const show = <C extends Companion>(
   const shown: Shown = { ...artifact, fresh: !asked && !seen, at: "just now" }
   const known = companion.artifacts.some((existing) => existing.id === artifact.id)
   return {
-    ...companion,
+    ...arrived(companion, artifact.id),
     artifacts: known
       ? companion.artifacts.map((existing) => (existing.id === artifact.id ? shown : existing))
       : [...companion.artifacts, shown],
@@ -67,6 +76,8 @@ export const dismiss = <C extends Companion>(companion: C, id: string): C => ({
   ...companion,
   tab: companion.tab === id ? companion.home : companion.tab,
   artifacts: companion.artifacts.filter((shown) => shown.id !== id),
+  // Shown again, it comes last, as anything new does.
+  ...(companion.order ? { order: companion.order.filter((each) => each !== id) } : {}),
 })
 
 // The kinds the taskbar groups. Each page keeps its own slot, as a browser window would.
@@ -87,6 +98,67 @@ export const slotsOf = (artifacts: readonly Shown[]): readonly Slot[] => {
     if (group.length < 2) return [{ kind: "one", artifact }]
     return artifact === group[0] ? [{ kind: "group", of: artifact.kind, artifacts: group }] : []
   })
+}
+
+// Everything on the taskbar: each plan, what was shown (one or a group), the messages.
+export type BarSlot =
+  | Slot
+  | { readonly kind: "plan"; readonly tab: string }
+  | { readonly kind: "mail" }
+
+// The items a slot stands for in the taskbar's order.
+const itemsOf = (slot: BarSlot): readonly string[] =>
+  slot.kind === "plan"
+    ? [slot.tab]
+    : slot.kind === "mail"
+      ? [mailTab]
+      : slot.kind === "one"
+        ? [slot.artifact.id]
+        : slot.artifacts.map((shown) => shown.id)
+
+// A slot's identity on the taskbar, which stays the same as it moves.
+export const slotKey = (slot: BarSlot): string =>
+  slot.kind === "plan"
+    ? slot.tab
+    : slot.kind === "mail"
+      ? mailTab
+      : slot.kind === "one"
+        ? slot.artifact.id
+        : `group-${slot.of}`
+
+// The slots in the taskbar's order: each where its earliest item is, a group where its
+// first one came; anything the order doesn't know yet follows, as given.
+export const arrange = (companion: Companion, slots: readonly BarSlot[]): readonly BarSlot[] => {
+  const order = companion.order ?? []
+  const rank = (slot: BarSlot, given: number): number => {
+    const places = itemsOf(slot)
+      .map((id) => order.indexOf(id))
+      .filter((place) => place >= 0)
+    return places.length ? Math.min(...places) : order.length + given
+  }
+  return slots
+    .map((slot, given) => ({ slot, rank: rank(slot, given) }))
+    .toSorted((a, b) => a.rank - b.rank)
+    .map(({ slot }) => slot)
+}
+
+// The slot at `from` moved to `to`, the others keeping their order.
+export const moveSlot = <T>(slots: readonly T[], from: number, to: number): readonly T[] => {
+  const moved = [...slots]
+  const [slot] = moved.splice(from, 1)
+  if (slot !== undefined) moved.splice(to, 0, slot)
+  return moved
+}
+
+// The taskbar's slots in a new order: their items move with them, a group's together
+// and in its own order. Anything not on the taskbar, as what's undocked, keeps its place.
+export const reorderBar = <C extends Companion>(companion: C, slots: readonly BarSlot[]): C => {
+  const placed = slots.flatMap(itemsOf)
+  const moving = new Set(placed)
+  const known = companion.order ?? []
+  const all = [...known, ...placed.filter((id) => !known.includes(id))]
+  let next = 0
+  return { ...companion, order: all.map((id) => (moving.has(id) ? placed[next++]! : id)) }
 }
 
 // Which of a group a click opens: what's new, else the one already open, else the latest;

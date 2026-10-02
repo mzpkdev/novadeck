@@ -13,6 +13,7 @@ import { createStore, type MutableStore } from "../../model/store"
 import type { ViewMode } from "../../model/types"
 import {
   mailTab,
+  arrived,
   openCompanion,
   planRefOf,
   planTab,
@@ -108,6 +109,8 @@ const paneOf = ({ key, plans, shown }: CompanionSnapshot): PaneState => {
     tab: homeOf(docs),
     home: homeOf(docs),
     artifacts: shown.map((artifact): Shown => ({ ...artifact, fresh: false, at: "1 min ago" })),
+    // What came before this session, in the order the backend tells it.
+    order: [...docs.map((plan) => planTab(plan.ref)), ...shown.map((artifact) => artifact.id)],
   }
 }
 
@@ -467,7 +470,12 @@ const sessionOf = (companions: Companions): Session => {
     else
       change(session, event.key, (pane) => {
         const plans = ordered([...pane.plans, docOf(event.plan)])
-        return { ...pane, plans, home: homeOf(plans), tab: pane.tab || homeOf(plans) }
+        return {
+          ...arrived(pane, planTab(event.plan.ref)),
+          plans,
+          home: homeOf(plans),
+          tab: pane.tab || homeOf(plans),
+        }
       })
   })
   sessions.set(companions, session)

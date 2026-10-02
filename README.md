@@ -360,7 +360,9 @@ mark under an icon says whether it's new, showing, or seen; something new hops
 once, and nothing opens on its own unless you asked for it. Hover an icon to peek:
 a card per thing behind it, each a preview, its name and the same mark, with no
 copy. Click an icon or a card to open it, click the icon again (or press Escape) to
-hide the pane, and dismiss from a card's corner button or the icon's right-click. In
+hide the pane, and dismiss from a card's corner button or the icon's right-click. Icons
+line up in the order they came, plans and Messages among them; drag any icon to reorder
+the bar, a group moving as one, or use Move left and Move right on its right-click. In
 “Build Studio”, type `show` to have Codex show the next thing, or `open` to play
 asking it to open it; it opens `projects.json` for you as the demo starts. Files are
 syntax-highlighted by their extension (JSON, JavaScript and TypeScript with JSX, CSS,

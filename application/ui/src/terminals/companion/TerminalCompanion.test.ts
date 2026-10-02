@@ -1,5 +1,5 @@
 import { act, createElement, type ComponentProps } from "react"
-import { afterEach } from "vitest"
+import { afterEach, vi } from "vitest"
 
 import type {
   ArtifactRef,
@@ -11,6 +11,15 @@ import type {
 import { context, describe, expect, it } from "../../test"
 import { render } from "../../test/render"
 import { TerminalCompanion } from "./TerminalCompanion"
+
+// jsdom has no layout and no resizes; the taskbar's drag-to-reorder asks for them.
+vi.hoisted(() => {
+  globalThis.ResizeObserver ??= class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+})
 
 const unmounts: (() => void)[] = []
 afterEach(() => unmounts.splice(0).forEach((unmount) => unmount()))
