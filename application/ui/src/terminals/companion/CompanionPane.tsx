@@ -1,25 +1,17 @@
 import { AppWindow } from "lucide-react"
 import { lazy, Suspense, useRef, type ReactNode } from "react"
 
-import { notePattern, notesIn } from "../../model/companion"
-import type { Messages } from "../../model/messages"
+import { notePattern, notesIn, type ArtifactContent } from "../../model/companion"
 import { ArtifactViewer } from "./ArtifactViewer"
-import type { Guest } from "./guests"
-import { useMail, type MailHandle } from "./mail"
+import type { BarMember } from "./bar"
+import type { MailHandle } from "./mail"
 import { MessagesView } from "./MessagesView"
-import { mailTab, planRefOf, type Shown } from "./pane"
+import { closePane, toggleChanges, type Shown } from "./pane"
+import { currentMarks, type PlanDoc } from "./plan-doc"
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
 import { headingsOf } from "./plan-text"
-import {
-  closePane,
-  currentMarks,
-  shownTab,
-  toggleChanges,
-  useArtifactContent,
-  type CompanionHandle,
-  type PlanDoc,
-  type PlanPresentation,
-} from "./state"
+import type { PaneActions, Panes, PlanPresentation } from "./state"
+import { useArtifactContent, type PaneHandle } from "./use-panes"
 
 // The editor loads when a plan first opens, so the workspace never pays for it.
 const PlanEditor = lazy(() =>
@@ -81,29 +73,30 @@ const UndockButton = ({ onUndock }: { onUndock: () => void }): React.JSX.Element
 )
 
 const ArtifactTab = ({
-  companion,
+  load,
   artifact,
-  openWindow,
+  onUndock,
 }: {
-  companion: CompanionHandle
+  load: (artifact: Shown) => Promise<ArtifactContent>
   artifact: Shown
-  openWindow: ((artifact: Shown) => void) | undefined
+  onUndock: (() => void) | undefined
 }): React.JSX.Element => (
   <ArtifactViewer
     artifact={artifact}
-    load={useArtifactContent(companion, artifact)}
-    actions={openWindow && <UndockButton onUndock={() => openWindow(artifact)} />}
+    load={useArtifactContent(load, artifact)}
+    actions={onUndock && <UndockButton onUndock={onUndock} />}
   />
 )
 
 // One plan, edited where it's read, with its outline: in the pane, or in a window of its
 // own once undocked.
 export const PlanTab = ({
-  companion,
+  pane,
   plan,
   actions,
 }: {
-  companion: CompanionHandle
+  // The plan's terminal's pane, which its edits save through.
+  pane: PaneActions
   plan: PlanDoc
   // What the place showing the plan offers, at the end of its header.
   actions?: ReactNode
@@ -121,7 +114,7 @@ export const PlanTab = ({
             <button
               className="plan-changes-toggle"
               aria-pressed={plan.showChanges}
-              onClick={() => companion.update((pane) => toggleChanges(pane, plan.ref))}
+              onClick={() => pane.update((current) => toggleChanges(current, plan.ref))}
             >
               <i aria-hidden="true" />
               {plural(plan.changes, "change")} since you last read
@@ -153,11 +146,11 @@ export const PlanTab = ({
             readOnly={!plan.writable}
             text={plan.text}
             marks={marks}
-            onChange={(text, moved) => companion.edit(plan.ref, text, moved)}
+            onChange={(text, moved) => pane.edit(plan.ref, text, moved)}
             onReady={(handle) => {
               editor.current = handle
             }}
-            onClose={() => companion.closeEditor(plan.ref)}
+            onClose={() => pane.closeEditor(plan.ref)}
           />
         </Suspense>
       </div>
@@ -165,80 +158,80 @@ export const PlanTab = ({
   )
 }
 
-const noGuests: readonly Guest[] = []
-
-// Another terminal's item placed on this bar, as its own terminal's pane shows it, loading
-// and saving through that terminal, with a line saying whose it is.
-const GuestTab = ({
-  guest,
-  messages,
+// What the pane shows of one item on the bar, through its own terminal's pane.
+const MemberTab = ({
+  member,
+  panes,
+  mail,
   peerName,
+  onUndock,
 }: {
-  guest: Guest
-  messages: Messages | undefined
+  member: BarMember
+  panes: Panes
+  mail: MailHandle
   peerName: (handle: string) => string | undefined
-}): React.JSX.Element => (
-  <div className="guest-tab">
-    <p className="guest-from">From {guest.origin.name}</p>
-    {guest.kind === "plan" ? (
-      <PlanTab
-        key={`${guest.plan.ref}:${guest.plan.writable}`}
-        companion={guest.companion}
-        plan={guest.plan}
-      />
-    ) : guest.kind === "artifact" ? (
-      <ArtifactTab companion={guest.companion} artifact={guest.artifact} openWindow={undefined} />
-    ) : (
-      messages && <GuestMessages messages={messages} guest={guest} peerName={peerName} />
-    )}
-  </div>
-)
+  onUndock: (() => void) | undefined
+}): React.JSX.Element => {
+  const { content } = member
+  const source = panes.of(member.source)
+  return content.kind === "plan" ? (
+    <PlanTab
+      key={`${content.plan.ref}:${content.plan.writable}`}
+      pane={source}
+      plan={content.plan}
+      actions={onUndock && <UndockButton onUndock={onUndock} />}
+    />
+  ) : content.kind === "artifact" ? (
+    <ArtifactTab
+      key={`${content.artifact.id}@${content.artifact.version}`}
+      load={source.load}
+      artifact={content.artifact}
+      onUndock={onUndock}
+    />
+  ) : (
+    <MessagesView mail={mail} peerName={peerName} />
+  )
+}
 
-const GuestMessages = ({
-  messages,
-  guest,
-  peerName,
-}: {
-  messages: Messages
-  guest: Guest
-  peerName: (handle: string) => string | undefined
-}): React.JSX.Element => <MessagesView mail={useMail(messages, guest.from)} peerName={peerName} />
-
-// A terminal's companion pane, wherever it is presented: one of its plans, edited where
-// it's read, one of the other things its agent showed the user, or its messages.
+// A terminal's companion pane, wherever it is presented: what it shows of the terminal's
+// taskbar, `member`: one of its plans, edited where it's read, something its agent showed,
+// its messages, or another terminal's item placed here, under a line saying whose it is.
 export const CompanionPane = ({
-  companion,
+  pane,
+  member,
+  panes,
   mail,
   peerName,
   presentation,
-  openWindow,
-  undockPlan,
-  guests = noGuests,
-  messages: messageStore,
+  originOf,
+  onUndock,
 }: {
-  companion: CompanionHandle
+  // This terminal's pane.
+  pane: PaneHandle
+  member: BarMember | undefined
+  panes: Panes
   mail: MailHandle
   peerName: (handle: string) => string | undefined
   presentation: PlanPresentation
-  // Undocks what's shown into a window of its own; absent where there's no such window.
-  openWindow?: ((artifact: Shown) => void) | undefined
-  undockPlan?: ((plan: PlanDoc) => void) | undefined
-  // Other terminals' items placed on this terminal's bar, and the messages they read.
-  guests?: readonly Guest[] | undefined
-  messages?: Messages | undefined
+  originOf: (member: BarMember) => string
+  // Undocks what's shown into a window of its own.
+  onUndock: (member: BarMember) => void
 }): React.JSX.Element => {
-  const { pane } = companion
-  const tab = shownTab(
-    pane,
-    mail.present,
-    guests.map((guest) => guest.id),
+  const messages = member?.content.kind === "messages"
+  const plan = member?.content.kind === "plan" ? member.content.plan : undefined
+  const agent = pane.pane.plans[0]?.agent ?? "The agent"
+  const undock =
+    member && !member.placed && !messages && onUndock ? () => onUndock(member) : undefined
+  const tab = member && (
+    <MemberTab
+      key={member.id}
+      member={member}
+      panes={panes}
+      mail={mail}
+      peerName={peerName}
+      onUndock={undock}
+    />
   )
-  const guest = guests.find((each) => each.id === tab)
-  const messages = tab === mailTab
-  const ref = planRefOf(tab)
-  const plan = pane.plans.find((candidate) => candidate.ref === ref)
-  const artifact = pane.artifacts.find((shown) => shown.id === tab)
-  const agent = pane.plans[0]?.agent ?? "The agent"
   return (
     <section
       className="plan-reader"
@@ -248,35 +241,25 @@ export const CompanionPane = ({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation()
-          companion.update(closePane)
+          pane.update(closePane)
         }
       }}
       // Leaving the plan saves it at once, so an agent told to re-read it finds the edits.
       onBlur={(event) => {
-        if (plan && !event.currentTarget.contains(event.relatedTarget)) companion.flush(plan.ref)
+        if (member && plan && !event.currentTarget.contains(event.relatedTarget))
+          panes.of(member.source).flush(plan.ref)
       }}
     >
-      {guest ? (
-        <GuestTab key={guest.id} guest={guest} messages={messageStore} peerName={peerName} />
-      ) : messages ? (
-        <MessagesView mail={mail} peerName={peerName} />
-      ) : plan ? (
-        <PlanTab
-          key={`${plan.ref}:${plan.writable}`}
-          companion={companion}
-          plan={plan}
-          actions={undockPlan && <UndockButton onUndock={() => undockPlan(plan)} />}
-        />
-      ) : artifact ? (
-        <ArtifactTab
-          key={`${artifact.id}@${artifact.version}`}
-          companion={companion}
-          artifact={artifact}
-          openWindow={openWindow}
-        />
-      ) : (
+      {!member ? (
         // All that's left may hold secrets, which shows only once picked.
         <div className="artifact-status">Pick what to show from the taskbar.</div>
+      ) : member.placed ? (
+        <div className="placed-tab">
+          <p className="placed-from">From {originOf(member)}</p>
+          {tab}
+        </div>
+      ) : (
+        tab
       )}
     </section>
   )

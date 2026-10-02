@@ -1,14 +1,9 @@
 import type { TerminalRequest } from "../../backend/port"
-import { droppedWindow, type CompanionWindow, type UndockPlace } from "../../model/companion"
-import { canvasPointPosition } from "../../model/layout/canvas-placement"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
-import { canvasPresetSize } from "../../model/layout/terminal-size"
 import { activeProject, type WorkspaceAction } from "../../model/state"
 import type {
-  GridItem,
   PreferencesValue,
   Project,
-  TerminalMetadata,
   ViewMode,
   Workspace,
   WorkspaceProject,
@@ -22,6 +17,7 @@ import {
   sameTarget,
   windowedDestination,
 } from "../selectors"
+import { createCompanionCommands, type CompanionCommands } from "./companion"
 import type { CommandContext } from "./context"
 import { createLayoutCommands, type LayoutCommands } from "./layout"
 import { createRecentCommands, type RecentCommands } from "./recent"
@@ -34,6 +30,7 @@ export type AddTerminalOptions = { fromKeyboard?: boolean; beginRename?: boolean
 // Workspace operations shared by the pointer UI and keyboard shortcuts. Each reads the
 // latest stores when it runs, so several in one event keep one another's changes.
 export type WorkspaceCommands = ShellCommands &
+  CompanionCommands &
   RenameCommands &
   RecentCommands &
   LayoutCommands & {
@@ -44,10 +41,6 @@ export type WorkspaceCommands = ShellCommands &
     readonly openFolder: () => Promise<void>
     // Removes a project and closes its terminals; the last project stays.
     readonly removeProject: (id: string) => void
-    // Undocks part of the companion of the terminal `from`, a plan, something its agent
-    // showed or its messages, into a window of its own beside it, or brings that window
-    // forward.
-    readonly undock: (from: string, item: CompanionWindow["item"], place?: UndockPlace) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -160,6 +153,13 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     ...rename,
     ...recent,
     ...createLayoutCommands(ctx),
+    ...createCompanionCommands(ctx, {
+      select,
+      setSelected,
+      close: closeNow,
+      markCreated,
+      pulse: () => pulse(),
+    }),
     setSelected,
     select,
     switchSession: (id) => {
@@ -231,100 +231,6 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           enabledViews: preferences().enabledViews,
         },
       ])
-    },
-    undock: (from, item, place) => {
-      const snapshot = workspace.getSnapshot()
-      const { roster, layout } = currentState(snapshot)
-      const same = (other: CompanionWindow["item"]): boolean =>
-        other.kind === "messages"
-          ? item.kind === "messages"
-          : other.kind === "plan"
-            ? item.kind === "plan" && other.ref === item.ref
-            : item.kind === "artifact" && other.ref.id === item.ref.id
-      const open = roster.terminals.find(
-        (terminal) => terminal.companion?.from === from && same(terminal.companion.item),
-      )
-      const target = currentTarget(snapshot)
-      // Dropped on the canvas: its window opens there, at its usual size, or the one open
-      // moves there. Dropped on the grid: the layout it made there, with the window in it.
-      const geometry = place &&
-        "canvas" in place && {
-          position: canvasPointPosition(place.canvas),
-          ...canvasPresetSize("small"),
-        }
-      const gridPlace = place && "grid" in place ? place.grid : undefined
-      // The window in its dropped place, and nowhere else in that layout.
-      const gridWith = (id: string): readonly GridItem[] =>
-        gridPlace!.layout
-          .filter((cell) => cell.i !== id)
-          .map((cell) => (cell.i === droppedWindow ? { ...cell, i: id } : cell))
-      if (open) {
-        if (gridPlace)
-          workspace.transact([
-            {
-              type: "grid/layouts",
-              target,
-              layouts: (layouts) => ({
-                ...layouts,
-                [gridPlace.breakpoint]: gridWith(open.id),
-              }),
-            },
-          ])
-        if (geometry)
-          workspace.transact([
-            {
-              type: "canvas/layout",
-              target,
-              layout: (canvas) => ({
-                ...canvas,
-                geometry: {
-                  ...canvas.geometry,
-                  [open.id]: { ...canvas.geometry[open.id], ...geometry },
-                },
-              }),
-            },
-          ])
-        // Placed where the person dropped it, in view: it's selected without bringing
-        // the camera to it.
-        return geometry || gridPlace ? setSelected(open.id) : select(open.id)
-      }
-      const origin = roster.terminals.find((terminal) => terminal.id === from)
-      if (!origin) return
-      // A window, not a shell: nothing runs in it, so it's idle and has no program.
-      const terminal: TerminalMetadata = {
-        id: effects.newId(),
-        name:
-          item.kind === "messages"
-            ? `${origin.name} messages`
-            : item.kind === "plan"
-              ? item.name
-              : item.ref.name,
-        directory: origin.directory,
-        command: "",
-        process: "",
-        state: "idle",
-        companion: { from, item },
-      }
-      markCreated({ context: currentContext(snapshot), id: terminal.id })
-      navigateWorkspace(
-        [
-          {
-            type: "terminal/add",
-            target,
-            terminal,
-            gridLayouts: gridPlace
-              ? {
-                  ...addCompactGridTerminal(roster.terminals, layout.grid, terminal),
-                  [gridPlace.breakpoint]: gridWith(terminal.id),
-                }
-              : addCompactGridTerminal(roster.terminals, layout.grid, terminal),
-            anchor: from,
-            ...(geometry ? { canvasGeometry: geometry } : {}),
-          },
-        ],
-        { panel: "terminals" },
-      )
-      if (!geometry && !gridPlace) pulse()
     },
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()

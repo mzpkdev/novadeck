@@ -1,39 +1,18 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  BookText,
-  ExternalLink,
-  FileCode2,
-  Globe,
-  Image,
-  RotateCw,
-} from "lucide-react"
+import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
-import type { ArtifactContent, ArtifactKind } from "../../model/companion"
+import type { ArtifactContent } from "../../model/companion"
+import { isMarkdown } from "./artifact-icons"
 import { DocumentViewer } from "./DocumentViewer"
 import type { HighlightedLine } from "./highlight"
 import type { Shown } from "./pane"
 import { headingsOf, titleOf } from "./plan-text"
-import type { ArtifactLoad } from "./state"
+import type { ArtifactLoad } from "./use-panes"
 import { createWebview, type WebviewElement } from "./webview"
 
 type ImageContent = Extract<ArtifactContent, { kind: "image" }>
 type FileContent = Extract<ArtifactContent, { kind: "file" }>
 type PageContent = Extract<ArtifactContent, { kind: "page" }>
-
-export const kindIcons: Record<ArtifactKind, typeof Image> = {
-  image: Image,
-  file: FileCode2,
-  page: Globe,
-}
-
-// A markdown file reads as a document, as a plan does, not as code.
-export const isMarkdown = (path: string): boolean => /\.(md|markdown)$/i.test(path)
-
-// An artifact's icon: its kind's, or a document's for a markdown file.
-export const iconOf = (artifact: { readonly kind: ArtifactKind; readonly name: string }) =>
-  artifact.kind === "file" && isMarkdown(artifact.name) ? BookText : kindIcons[artifact.kind]
 
 // Viewers for what an agent shows beside its terminal. Files show as plain text at
 // once, then highlighted when their language is one NovaDeck knows (see ./highlight.ts);

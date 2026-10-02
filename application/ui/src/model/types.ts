@@ -1,4 +1,4 @@
-import type { CompanionWindow } from "./companion"
+import type { CompanionWindow, Placement } from "./companion-items"
 
 export type ViewMode = "focus" | "grid" | "canvas"
 export type WindowedView = Exclude<ViewMode, "focus">
@@ -131,6 +131,8 @@ export type WorkspaceState = {
   readonly view: ViewMode
   readonly windowedView: WindowedView
   readonly selected: string
+  // Terminals' items shown on other terminals' taskbars, in the order they were placed.
+  readonly placements: readonly Placement[]
 }
 export type WorkspaceSession = {
   id: string

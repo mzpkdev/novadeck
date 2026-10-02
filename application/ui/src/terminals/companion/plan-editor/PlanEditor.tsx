@@ -5,7 +5,7 @@ import { EditorView, keymap } from "@codemirror/view"
 import { GFM, parser } from "@lezer/markdown"
 import { useEffect, useLayoutEffect, useRef } from "react"
 
-import type { Mark } from "../state"
+import type { Mark } from "../plan-doc"
 import { currentAgentMarks, livePreview, setMarks } from "./live-preview"
 import { scrollLineToTop } from "./scroll"
 import { lineChanges } from "./sync"

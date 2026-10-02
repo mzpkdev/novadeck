@@ -56,10 +56,7 @@ describe("terminal registry", () => {
         state: "idle" as const,
         companion: {
           from: "01",
-          item: {
-            kind: "artifact" as const,
-            ref: { id: "hero", kind: "image" as const, name: "hero.png", detail: "", version: 1 },
-          },
+          item: { kind: "artifact" as const, id: "hero" },
         },
       }
       const add: WorkspaceAction = { type: "terminal/add", target, terminal: shown }

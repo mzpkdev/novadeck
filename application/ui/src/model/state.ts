@@ -1,4 +1,11 @@
 import {
+  forgetTerminal,
+  isCompanionWindow,
+  place,
+  unplace,
+  type Placement,
+} from "./companion-items"
+import {
   emptyLayout,
   placeTerminal,
   pruneCanvasLayout,
@@ -94,6 +101,8 @@ export type WorkspaceAction =
       titleSource?: TitleSource
     }
   | { type: "terminal/close"; target: WorkspaceTarget; terminalId: string }
+  // The person shows terminals' items on other terminals' taskbars, or on their own again.
+  | { type: "companion/place"; target: WorkspaceTarget; placements: readonly Placement[] }
   | { type: "terminal/reorder"; target: WorkspaceTarget; tabOrder: string[] }
   | { type: "terminal/status"; target: WorkspaceTarget; terminalId: string; status: TerminalStatus }
   | {
@@ -153,6 +162,7 @@ export const createTerminalState = (
   view,
   windowedView,
   selected: terminals[0]?.id ?? "",
+  placements: [],
 })
 
 export const createWorkspace = ({
@@ -255,6 +265,7 @@ const closeTerminal = (state: WorkspaceState, terminalId: string): WorkspaceStat
     roster: removeTerminal(state.roster, terminalId),
     layout: removeFromLayout(state.layout, terminalId),
     selected: state.selected === terminalId ? neighbor : state.selected,
+    placements: forgetTerminal(state.placements, terminalId),
   }
 }
 
@@ -389,6 +400,14 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
             canvasGeometry: action.canvasGeometry,
           }),
           selected: action.select === false ? state.selected : action.terminal.id,
+          // Undocked, an item leaves any other terminal's taskbar.
+          placements: action.terminal.companion
+            ? unplace(
+                state.placements,
+                action.terminal.companion.from,
+                action.terminal.companion.item,
+              )
+            : state.placements,
         }
       })
     case "terminal/rename":
@@ -410,6 +429,18 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
       return updateTarget(workspace, action.target, (state) =>
         closeTerminal(state, action.terminalId),
       )
+    case "companion/place":
+      return updateTarget(workspace, action.target, (state) => {
+        // Only a terminal's own taskbar takes items: a window undocked from one has none.
+        const shell = (id: string): boolean =>
+          state.roster.terminals.some(
+            (terminal) => terminal.id === id && !isCompanionWindow(terminal),
+          )
+        const placements = action.placements
+          .filter(({ from, to }) => shell(from) && shell(to))
+          .reduce(place, state.placements)
+        return placements === state.placements ? state : { ...state, placements }
+      })
     case "terminal/reorder":
       return updateTarget(workspace, action.target, (state) => {
         const roster = reorderTerminals(state.roster, action.tabOrder)

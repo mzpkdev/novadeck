@@ -12,8 +12,7 @@ export type PeekEntry = {
   readonly preview: ReactNode
   readonly state: Indicator
   readonly onOpen: () => void
-  // Absent for what can't be closed from here, such as another terminal's item.
-  readonly onClose?: () => void
+  readonly onClose: () => void
   // Pressing on the card may start pulling it out, as an icon of its own.
   readonly onGrab?: (event: React.PointerEvent<HTMLElement>) => void
 }
@@ -48,15 +47,13 @@ export const Peek = ({ entries }: { entries: readonly PeekEntry[] }): React.JSX.
             <span>{entry.name}</span>
           </span>
         </button>
-        {entry.onClose && (
-          <button
-            className="plan-peek-close"
-            aria-label={`Close ${entry.name}`}
-            onClick={entry.onClose}
-          >
-            <X size={12} />
-          </button>
-        )}
+        <button
+          className="plan-peek-close"
+          aria-label={`Close ${entry.name}`}
+          onClick={entry.onClose}
+        >
+          <X size={12} />
+        </button>
       </div>
     ))}
   </div>

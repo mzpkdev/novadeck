@@ -731,11 +731,9 @@
 }
 
 /* Where a window dragged off a taskbar would open in a view's free space: a ghost of it,
-   following the pointer, on the Canvas or the Grid, with a header strip saying what it
-   would show. */
-.view-drop-preview {
-  position: fixed;
-  z-index: 40;
+   a node on the Canvas and a placeholder in the Grid, with a header strip saying what it
+   would show. It takes no pointer, so the view under it still reads as free. */
+.drop-ghost {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -744,30 +742,18 @@
   background: color-mix(in srgb, var(--color-paper) 78%, transparent);
   box-shadow: var(--shadow-floating);
   pointer-events: none;
-  animation: view-drop-preview-in var(--motion-feedback) var(--ease-interface);
 }
-.view-drop-preview-header {
+.drop-ghost-header {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  height: calc(48px * var(--drop-scale, 1));
-  padding-inline: calc(16px * var(--drop-scale, 1));
+  height: 48px;
+  padding-inline: 16px;
   overflow: hidden;
   border-bottom: 1px dashed color-mix(in srgb, var(--color-strong) 22%, transparent);
   color: var(--color-muted);
-  font-size: calc(12px * var(--drop-scale, 1));
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-@keyframes view-drop-preview-in {
-  from {
-    opacity: 0;
-    scale: 0.97;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .view-drop-preview {
-    animation: none;
-  }
 }

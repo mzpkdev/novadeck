@@ -1,4 +1,4 @@
-import type { GridBreakpoint, GridItem, WorkspaceTarget } from "./types"
+import type { WorkspaceTarget } from "./types"
 
 // What agents put in front of the user beside their terminals: the plans they write,
 // and images, project files and preview-browser pages they show. A backend reports
@@ -14,6 +14,12 @@ export const companionKeyId = ({
   workspaceSessionId,
   terminalId,
 }: CompanionKey): string => `${projectId}/${workspaceSessionId}/${terminalId}`
+
+// The terminal a `companionKeyId` names. Its ids hold no slashes.
+export const companionKeyOf = (id: string): CompanionKey => {
+  const [projectId = "", workspaceSessionId = "", terminalId = ""] = id.split("/")
+  return { projectId, workspaceSessionId, terminalId }
+}
 
 // A plan file as it stands. `revision` names this exact text; saving an edit says which
 // revision it was made on.
@@ -72,34 +78,6 @@ export type ArtifactContent =
       readonly live: boolean
       readonly snapshot?: string
     }
-
-// Part of a terminal's companion undocked into a window of its own: one of its plans,
-// something its agent showed, or its messages, and the terminal in the same session it belongs to, where it
-// loads from and docks back in. The window lives in the session's roster beside the
-// terminals, so the sidebar and every view treat it as one, but no backend runs
-// anything for it.
-// TODO: connect to the backends, which neither keep nor restore these windows yet.
-export type CompanionWindow = {
-  readonly from: string
-  readonly item:
-    | { readonly kind: "plan"; readonly ref: string; readonly name: string }
-    | { readonly kind: "artifact"; readonly ref: ArtifactRef }
-    | { readonly kind: "messages" }
-}
-
-// Where an undocked window opens, when it was dropped somewhere: a point on the canvas,
-// its top left; or, on the grid, the layout it makes at the grid's width then, with the
-// window in it as `droppedWindow`.
-export type UndockPlace =
-  | { readonly canvas: { readonly x: number; readonly y: number } }
-  | {
-      readonly grid: {
-        readonly breakpoint: GridBreakpoint
-        readonly layout: readonly GridItem[]
-      }
-    }
-
-export const droppedWindow = "dropped"
 
 // A terminal's companion, as it stands.
 export type CompanionSnapshot = {

@@ -3,7 +3,7 @@ import { useCallback, useMemo, type ReactNode } from "react"
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
 import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
-import { paneItemOf, UndockedWindow } from "../terminals/companion/UndockedWindow"
+import { UndockedWindow } from "../terminals/companion/UndockedWindow"
 import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
 import { windowMenu } from "../terminals/window-menu"
@@ -12,14 +12,17 @@ import {
   type TerminalLayoutControls,
   type WindowShellProps,
 } from "../terminals/WindowShell"
-import { useCompanionDock } from "./companion-dock"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
+import { useDockTarget } from "./dock-target"
 import {
   currentContext,
   currentState,
   currentTarget,
+  handleNames,
   sameTarget,
   shallowEqual,
+  terminalNames,
+  undockedFrom,
   windowedDestination,
 } from "./selectors"
 
@@ -32,9 +35,9 @@ export const WorkspaceTerminal = ({
   readonly terminal: TerminalMetadata
   readonly controls: TerminalLayoutControls
 }): React.JSX.Element => {
-  const { backend, commands } = useWorkspaceServices()
+  const { backend, commands, panes } = useWorkspaceServices()
   const { setSelected, openWindowed, openFocus, close, startRename, openSwitcher } = commands
-  const { undock, resetTitle } = commands
+  const { resetTitle } = commands
   const { changeRenameDraft, saveRename, cancelRename, setKeyboardFocus } = commands
   const terminalId = terminal.id
   // Each terminal selects only what concerns it, so a rename keystroke or a keyboard
@@ -55,36 +58,8 @@ export const WorkspaceTerminal = ({
     shallowEqual,
   )
   const { projectId, workspaceSessionId } = useWorkspaceState(currentTarget, sameTarget)
-  // The session's terminals by id, as they're named, for what's placed from one to another.
-  const terminalNames = useWorkspaceState(
-    (workspace) =>
-      Object.fromEntries(
-        currentState(workspace).roster.terminals.map((each) => [
-          each.id,
-          `${each.name}\n${each.handle ?? ""}`,
-        ]),
-      ) as Readonly<Record<string, string>>,
-    shallowEqual,
-  )
-  const terminalOf = useCallback(
-    (id: string) => {
-      const named = terminalNames[id]
-      if (named === undefined) return undefined
-      const [name = "", handle = ""] = named.split("\n")
-      return handle ? { name, handle } : { name }
-    },
-    [terminalNames],
-  )
-  // The session's terminals by handle, which name the agents its messages are with.
-  const names = useWorkspaceState(
-    (workspace) =>
-      Object.fromEntries(
-        currentState(workspace).roster.terminals.flatMap((each) =>
-          each.handle ? [[each.handle, each.name]] : [],
-        ),
-      ) as Readonly<Record<string, string>>,
-    shallowEqual,
-  )
+  const terminalName = useWorkspaceState(terminalNames, shallowEqual)
+  const names = useWorkspaceState(handleNames, shallowEqual)
   const { fresh, rename, keyboardFocus, enabledViews, fontSize } = useUiState(
     (state) => ({
       fresh: state.created?.context === context && state.created.id === terminalId,
@@ -106,17 +81,10 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
-  const dockIn = useCompanionDock(terminal)
-  // What of this terminal's companion is undocked in windows of its own now, by its id
-  // in the pane: a plan's tab, an artifact's id, the messages' tab.
-  const undockedKey = useWorkspaceState((workspace) =>
-    currentState(workspace)
-      .roster.terminals.flatMap(({ companion }) =>
-        companion?.from !== terminalId ? [] : [paneItemOf(companion.item)],
-      )
-      .join("\n"),
-  )
-  const undocked = useMemo(() => (undockedKey ? undockedKey.split("\n") : []), [undockedKey])
+  const dockIn = useDockTarget(terminal)
+  // This terminal's items shown elsewhere now, and what's placed on its bar.
+  const undocked = useWorkspaceState(undockedFrom(terminalId), shallowEqual)
+  const placements = useWorkspaceState((workspace) => currentState(workspace).placements)
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
   const frame: Omit<WindowShellProps, "children"> = {
@@ -161,9 +129,9 @@ export const WorkspaceTerminal = ({
   // One shell element whatever runs, so only the body around the content changes.
   const renderWindow = (content: ReactNode): ReactNode => (
     <WindowShell {...frame}>
-      {backend.companions ? (
+      {panes ? (
         <TerminalCompanion
-          companions={backend.companions}
+          panes={panes}
           messages={backend.messages}
           peerName={(handle) => names[handle]}
           companionKey={terminalKey}
@@ -171,9 +139,10 @@ export const WorkspaceTerminal = ({
           onReveal={onReveal}
           minimized={minimize?.minimized}
           clipContent={minimize?.clipContent}
-          undock={(item, place) => undock(terminal.id, item, place)}
           undocked={undocked}
-          terminalOf={terminalOf}
+          placements={placements}
+          terminalName={(id) => terminalName[id]}
+          items={commands}
         >
           {Body ? <Body>{content}</Body> : content}
         </TerminalCompanion>
@@ -189,13 +158,13 @@ export const WorkspaceTerminal = ({
   if (terminal.companion)
     return (
       <WindowShell {...frame}>
-        <UndockedWindow
-          companions={backend.companions}
-          messages={backend.messages}
-          origin={{ projectId, workspaceSessionId, terminalId: terminal.companion.from }}
-          window={terminal.companion}
-          peerName={(handle) => names[handle]}
-        />
+        {panes && (
+          <UndockedWindow
+            panes={panes}
+            origin={{ projectId, workspaceSessionId, terminalId: terminal.companion.from }}
+            window={terminal.companion}
+          />
+        )}
       </WindowShell>
     )
   return (

@@ -1466,20 +1466,19 @@
 
 /* Another terminal's item, placed on this one's bar: as its own pane shows it, under a
    line saying whose it is. */
-.guest-tab {
+.placed-tab {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
-.guest-tab > .plan-reader-body,
-.guest-tab > .artifact-viewer,
-.guest-tab > .mail-view {
+.placed-tab > .plan-reader-body,
+.placed-tab > .artifact-viewer {
   flex: 1;
   min-height: 0;
 }
-.guest-from {
+.placed-from {
   margin: 0;
   padding: 6px 14px;
   border-bottom: 1px solid var(--color-line);

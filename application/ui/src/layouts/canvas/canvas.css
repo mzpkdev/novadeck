@@ -112,14 +112,13 @@
   cursor: text;
 }
 
-/* The ghost node of a window a drop from a taskbar would open: it fills its node, which
-   the canvas places and scales like a window. */
-.view-drop-preview.canvas-drop-ghost {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  z-index: auto;
-  animation: none;
+/* The ghost of a window a drop from a taskbar would open: on the canvas's viewport, which
+   places and scales it like a window, above the windows. */
+.canvas-drop-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
 }
 /* A window dropped from a taskbar gliding onto the grid from where its ghost was. */
 .react-flow__node.canvas-drop-settle {
