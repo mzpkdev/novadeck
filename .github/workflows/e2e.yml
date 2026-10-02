@@ -1,0 +1,65 @@
+name: E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/e2e.yml
+      - application/protocol/**
+      - application/runner/**
+      - package.json
+      - pnpm-lock.yaml
+  schedule:
+    # Nightly, against each harness's latest release, to catch drift before a pin moves.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      harness:
+        description: Harness versions to run against
+        type: choice
+        options: [pinned, latest]
+        default: pinned
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: E2E (${{ matrix.harness }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [claude, codex, agy]
+    env:
+      NOVADECK_E2E_CACHE: ${{ github.workspace }}/.e2e-cache
+      NOVADECK_E2E_HARNESS: ${{ (github.event_name == 'schedule' || inputs.harness == 'latest') && 'latest' || 'pinned' }}
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up Toolchain
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      # Pinned harnesses are cached by their pins; a run against latest installs fresh.
+      - name: Cache Harnesses
+        if: env.NOVADECK_E2E_HARNESS == 'pinned'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.NOVADECK_E2E_CACHE }}
+          key: e2e-harnesses-${{ runner.os }}-${{ matrix.harness }}-${{ hashFiles('application/runner/src/e2e/harnesses.json') }}
+
+      - name: Build Protocol
+        run: pnpm --filter @novadeck/protocol build
+
+      - name: Run E2E
+        run: pnpm --filter @novadeck/runner test:e2e src/e2e/${{ matrix.harness }}.e2e.ts
