@@ -14,6 +14,8 @@ export type PeekEntry = {
   readonly onOpen: () => void
   // Absent for what can't be closed from here, such as another terminal's item.
   readonly onClose?: () => void
+  // Pressing on the card may start pulling it out, as an icon of its own.
+  readonly onGrab?: (event: React.PointerEvent<HTMLElement>) => void
 }
 
 // A peek above a taskbar icon: a card for each thing behind it, one or many. The card
@@ -34,6 +36,9 @@ export const Peek = ({ entries }: { entries: readonly PeekEntry[] }): React.JSX.
           aria-label={`${entry.name}${entry.state === "new" ? ", new" : ""}`}
           aria-pressed={entry.state === "open"}
           onClick={entry.onOpen}
+          onPointerDown={entry.onGrab}
+          // An image in it would start the browser's own drag instead.
+          onDragStart={entry.onGrab && ((event) => event.preventDefault())}
         >
           <span className="plan-peek-thumb" aria-hidden="true">
             {entry.preview}

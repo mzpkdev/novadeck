@@ -370,12 +370,18 @@ right-click.
 
 Drag any icon onto another terminal's bottom bar to show it there instead (Grid and
 Canvas, where both are on screen); a terminal with nothing to show grows an empty bar
-while an icon is dragged over it. What's placed stays its own terminal's: its icon wears
-that terminal's handle, its peek, menu and pane say whose it is, a plan's edits still save
-to that agent, and a placed Messages is that agent's conversation beside the terminal's
-own. A new version shown by its agent updates it where it is. **Send back to** its
-terminal, on its right-click, or a drag onto that terminal's bar, returns it. Placements
-are the UI's alone for now: the backends don't keep them (`terminals/companion/placement.ts`).
+while an icon is dragged over it. What's placed stays its own terminal's: its peek, menu
+and pane say whose it is, an image or file stacks with the bar's own like any other, a
+plan's edits still save to that agent, and a placed Messages is that agent's
+conversation beside the terminal's own. A new version shown by its agent updates it
+where it is. **Send back to** its terminal, on its right-click, or a drag onto that
+terminal's bar, returns it. Placements are the UI's alone for now: the backends don't
+keep them (`terminals/companion/placement.ts`).
+
+Any card in a peek can be dragged out too, one of a group's on its own: it turns into an
+icon under the pointer, which goes wherever a dragged icon goes, onto another terminal's
+bar or into a view's empty space, while the rest of a group stay grouped. Dropped where
+nothing takes it, or with Escape, it settles back into the icon it came from.
 
 Drop a plan, a single artifact or Messages in a view to undock it right there. On Canvas,
 over its empty space, a ghost window joins the canvas under the pointer and follows it

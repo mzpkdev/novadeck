@@ -8,13 +8,14 @@ import {
 } from "@dnd-kit/dom"
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable, useSortable } from "@dnd-kit/react/sortable"
-import { FileStack, FileText, MessagesSquare, Pause } from "lucide-react"
+import { FileStack, FileText, MessagesSquare, Pause, type LucideIcon } from "lucide-react"
 import { useRef, useState, type ReactNode } from "react"
 
 import type { ArtifactKind, CompanionKey, UndockPlace } from "../../model/companion"
 import { mailBadgeLabel, type Messages } from "../../model/messages"
 import { ContextMenu, type ContextMenuItem } from "../../ui-toolkit/ContextMenu"
 import { HoverCard } from "../../ui-toolkit/HoverCard"
+import { Portal } from "../../ui-toolkit/Portal"
 import type { Presence } from "../../ui-toolkit/presence"
 import { dropPreview, dropSpaceAt, requestDropPlace } from "../drop-space"
 import { ArtifactThumb, kindIcons } from "./ArtifactViewer"
@@ -202,11 +203,25 @@ const SortableSlot = ({
     transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
   })
   return (
-    <span className="plan-tb-sortable" ref={setElement} data-dragging={isDragSource || undefined}>
+    <span
+      className="plan-tb-sortable"
+      ref={setElement}
+      data-slot={id}
+      data-dragging={isDragSource || undefined}
+    >
       {children}
     </span>
   )
 }
+
+type Grabbed = { readonly icon: LucideIcon; readonly from: DOMRect | undefined }
+
+// A card pulled out of a peek, turned into an icon of its own.
+const GrabbedIcon = ({ icon: Icon }: { icon: LucideIcon }): React.JSX.Element => (
+  <span className="plan-tb-item" data-state="seen">
+    <Icon size={20} strokeWidth={1.5} />
+  </span>
+)
 
 // The pane's taskbar along the terminal's bottom: its plans, what the agent showed, an
 // icon each with images and files grouped, and its messages, in the order they came or
@@ -288,20 +303,69 @@ export const Taskbar = ({
       onClose: () => companion.update((next) => close(next, artifact.id)),
     }
   }
+  // Another terminal's image or file in a stack here: it loads from that terminal, and
+  // says whose it is.
+  const guestPeekOf = (guest: Guest, artifact: Shown): PeekEntry => {
+    const Icon = kindIcons[artifact.kind]
+    return {
+      id: guest.id,
+      name: `${artifact.name} · from ${guest.origin.name}`,
+      icon: <Icon size={13} strokeWidth={1.5} />,
+      preview: <ArtifactPreview companion={guest.companion} artifact={artifact} />,
+      state: state(guest.id, artifact.fresh),
+      onOpen: () => companion.update((next) => openTab(next, guest.id)),
+      onClose: () => closeGuest(guest),
+    }
+  }
   const agent = pane.plans[0]?.agent ?? "The agent"
   // Everything on the bar, in the order things came or the person dragged them into.
+  // Images and files placed here from other terminals stack with this bar's own, by
+  // their ids here, in the order they came; on their own, they're guests as any other.
+  const guestOf = new Map(guests.map((guest) => [guest.id, guest]))
+  const order = pane.order ?? []
+  const rank = (id: string): number => {
+    const place = order.indexOf(id)
+    return place < 0 ? order.length : place
+  }
+  const stacking = [
+    ...pane.artifacts,
+    ...guests.flatMap((guest) =>
+      guest.kind === "artifact" ? [{ ...guest.artifact, id: guest.id }] : [],
+    ),
+  ].toSorted((a, b) => rank(a.id) - rank(b.id))
   const bar = arrange(pane, [
     ...pane.plans.map((plan): BarSlot => ({ kind: "plan", tab: planTab(plan.ref) })),
-    ...slotsOf(pane.artifacts),
+    ...slotsOf(stacking).map((each): BarSlot => {
+      const guest = each.kind === "one" ? guestOf.get(each.artifact.id) : undefined
+      return guest ? { kind: "guest", guest } : each
+    }),
     ...(mail.present ? [{ kind: "mail" } as const] : []),
-    ...guests.map((guest): BarSlot => ({ kind: "guest", guest })),
+    ...guests.flatMap((guest): BarSlot[] =>
+      guest.kind === "artifact" ? [] : [{ kind: "guest", guest }],
+    ),
   ])
+  // A guest is its terminal's to close: it goes home, closed there.
+  const closeGuest = (guest: Guest): void => {
+    placeOn(guest.from, guest.item, guest.from.terminalId)
+    guest.companion.update((next) => close(next, guest.item))
+  }
   const move = (from: number, to: number): void =>
     companion.update((next) => reorderBar(next, moveSlot(bar, from, to)))
   // Ends following the pointer once a drag ends.
   const stopFollowing = useRef<(() => void) | undefined>(undefined)
   // Where the dragged slot's window would open in the view's free space, if it's over it.
   const space = useRef<UndockPlace | null>(null)
+  // A card pulled out of a group's peek, as the icon it turned into: what it is, and where
+  // its group's icon is, which it goes back into if it lands nowhere. The icon follows the
+  // pointer by its style, not by rendering.
+  const [grabbedNow, setGrabbedNow] = useState<Grabbed | null>(null)
+  const grabbed = useRef<Grabbed | null>(null)
+  const setGrabbed = (next: Grabbed | null): void => {
+    grabbed.current = next
+    setGrabbedNow(next)
+  }
+  const grabbedIcon = useRef<HTMLDivElement | null>(null)
+  const grabbedAt = useRef({ x: 0, y: 0 })
   // What a drop on the view's free space undocks: one plan, one thing shown, or the messages.
   // A group would be several windows; another terminal's item isn't this bar's to undock.
   const undockable = (entry: BarSlot): boolean =>
@@ -335,7 +399,123 @@ export const Taskbar = ({
     else if (entry.kind === "plan") placeOn(own, entry.tab, terminalId)
     else if (entry.kind === "mail") placeOn(own, mailTab, terminalId)
     else if (entry.kind === "one") placeOn(own, entry.artifact.id, terminalId)
-    else for (const shown of entry.artifacts) placeOn(own, shown.id, terminalId)
+    else
+      for (const shown of entry.artifacts) {
+        const guest = guestOf.get(shown.id)
+        if (guest) placeOn(guest.from, guest.item, terminalId)
+        else placeOn(own, shown.id, terminalId)
+      }
+  }
+
+  // Where the pointer is on screen while an icon is dragged: over which terminal, and on
+  // its bar, or over the view's free space, where its window would open.
+  const followPointer = (pointer: PointerEvent, dragged: BarSlot | undefined): void => {
+    const target = dragTargetAt(pointer.clientX, pointer.clientY)
+    dragOver.update(() => ({ source: pane.key.terminalId, ...target }))
+    // Over a view's free space only: over a window, nothing makes room, so the window
+    // stays put for a drop on its bar.
+    const free =
+      !target.terminal && dragged && undockable(dragged)
+        ? dropSpaceAt(pointer.clientX, pointer.clientY)
+        : null
+    space.current = free?.place ?? null
+    dropPreview.update(() =>
+      free && dragged ? { ...free.outline, label: slotName(dragged) } : null,
+    )
+  }
+  // The drag ended: `entry` lands where the pointer left it, or nothing does. Whether it
+  // landed anywhere.
+  const land = (entry: BarSlot | undefined): boolean => {
+    const over = dragOver.getSnapshot()
+    dragOver.update(() => null)
+    const place = space.current
+    space.current = null
+    dropPreview.update(() => null)
+    if (entry && over?.onBar && over.terminal && over.terminal !== pane.key.terminalId) {
+      placeSlot(entry, over.terminal)
+      return true
+    }
+    // Dropped on the view's free space: it undocks, its window where it was dropped.
+    if (entry && place && undockable(entry)) {
+      // The canvas places a new window where it was asked to; the grid, as its layout says.
+      if ("canvas" in place) requestDropPlace(place.canvas)
+      undockAt(entry, place)
+      return true
+    }
+    return false
+  }
+  // A card pulled out of a peek turns into an icon, `icon`, of its own, and goes where any
+  // icon dragged off the bar would: `entry`, one of a group on its own. Back on its own
+  // bar, it goes back into the icon it came from, the slot `slotId`.
+  const grab = (
+    start: React.PointerEvent<HTMLElement>,
+    entry: BarSlot,
+    icon: LucideIcon,
+    slotId: string,
+  ): void => {
+    if (start.button !== 0 || start.ctrlKey) return
+    const touch = start.pointerType === "touch"
+    const from = { x: start.clientX, y: start.clientY }
+    // Its icon on this terminal's bar; the peek it's pulled from is elsewhere.
+    const home = document.querySelector(
+      `section.terminal-window[data-terminal="${pane.key.terminalId}"] [data-slot="${slotId}"] .plan-tb-item`,
+    )
+    // As on the bar: from 6px of movement with a mouse, a quarter second's press on touch.
+    let armed = !touch
+    let dragging = false
+    const press = touch ? setTimeout(() => (armed = true), 250) : undefined
+    const moved = (pointer: PointerEvent): void => {
+      if (pointer.pointerId !== start.pointerId) return
+      const distance = Math.hypot(pointer.clientX - from.x, pointer.clientY - from.y)
+      if (!dragging) {
+        if (touch && !armed && distance > 5) return stop()
+        if (!armed || (!touch && distance < 6)) return
+        dragging = true
+        grabbedAt.current = { x: pointer.clientX, y: pointer.clientY }
+        setGrabbed({ icon, from: home?.getBoundingClientRect() })
+      }
+      pointer.preventDefault()
+      grabbedAt.current = { x: pointer.clientX, y: pointer.clientY }
+      grabbedIcon.current?.style.setProperty(
+        "translate",
+        `${pointer.clientX}px ${pointer.clientY}px`,
+      )
+      followPointer(pointer, entry)
+    }
+    const released = (pointer: PointerEvent): void => {
+      if (pointer.pointerId !== start.pointerId) return
+      stop()
+      if (dragging) settle(land(entry))
+    }
+    const cancelled = (key: KeyboardEvent): void => {
+      if (key.key !== "Escape" || !dragging) return
+      key.stopPropagation()
+      stop()
+      land(undefined)
+      settle(false)
+    }
+    const stop = (): void => {
+      clearTimeout(press)
+      window.removeEventListener("pointermove", moved, { capture: true })
+      window.removeEventListener("pointerup", released, { capture: true })
+      window.removeEventListener("pointercancel", released, { capture: true })
+      window.removeEventListener("keydown", cancelled, { capture: true })
+    }
+    window.addEventListener("pointermove", moved, { capture: true })
+    window.addEventListener("pointerup", released, { capture: true })
+    window.addEventListener("pointercancel", released, { capture: true })
+    window.addEventListener("keydown", cancelled, { capture: true })
+  }
+  // The grabbed icon goes: at once where it landed, which shows it there; back into its
+  // group's icon where it didn't.
+  const settle = (landed: boolean): void => {
+    const icon = grabbedIcon.current
+    const to = grabbed.current?.from
+    if (landed || !icon || !to || matchMedia("(prefers-reduced-motion: reduce)").matches)
+      return setGrabbed(null)
+    icon.dataset.settling = ""
+    icon.style.setProperty("translate", `${to.left + to.width / 2}px ${to.top + to.height / 2}px`)
+    setTimeout(() => setGrabbed(null), 180)
   }
 
   // One slot's menu, icon and peek, where it stands on the bar.
@@ -352,11 +532,6 @@ export const Taskbar = ({
     ]
     if (entry.kind === "guest") {
       const { guest } = entry
-      // It's its terminal's to close: it goes home, closed there.
-      const closeGuest = (): void => {
-        placeOn(guest.from, guest.item, guest.from.terminalId)
-        guest.companion.update((next) => close(next, guest.item))
-      }
       const from = `from ${guest.origin.name}`
       const Icon =
         guest.kind === "plan"
@@ -387,7 +562,7 @@ export const Taskbar = ({
             onSelect: () => placeOn(guest.from, guest.item, guest.from.terminalId),
           },
           ...moving,
-          { value: `close-${guest.id}`, label: "Close", onSelect: closeGuest },
+          { value: `close-${guest.id}`, label: "Close", onSelect: () => closeGuest(guest) },
         ],
         <button
           ref={buttonRef}
@@ -402,9 +577,6 @@ export const Taskbar = ({
           {guest.kind === "mail" && messages && (
             <GuestMailCount messages={messages} from={guest.from} />
           )}
-          <b className="plan-tb-origin" aria-hidden="true">
-            {guest.origin.handle ?? guest.origin.name.slice(0, 2)}
-          </b>
         </button>,
         <Peek
           entries={[
@@ -424,7 +596,8 @@ export const Taskbar = ({
                 ),
               state: state(guest.id, false),
               onOpen: () => companion.update((next) => openTab(next, guest.id)),
-              onClose: closeGuest,
+              onClose: () => closeGuest(guest),
+              onGrab: (event) => grab(event, entry, Icon, guest.id),
             },
           ]}
         />,
@@ -475,6 +648,7 @@ export const Taskbar = ({
               state: state(tab, fresh),
               onOpen: () => companion.update((next) => openTab(next, tab)),
               onClose: () => companion.update((next) => close(next, tab)),
+              onGrab: (event) => grab(event, entry, Icon, tab),
             },
           ]}
         />,
@@ -529,6 +703,7 @@ export const Taskbar = ({
               state: state(mailTab, false),
               onOpen: () => companion.update((next) => openTab(next, mailTab)),
               onClose: () => companion.update((next) => close(next, mailTab)),
+              onGrab: (event) => grab(event, entry, MessagesSquare, mailTab),
             },
           ]}
         />,
@@ -550,7 +725,11 @@ export const Taskbar = ({
         >
           <Icon size={20} strokeWidth={1.5} />
         </button>,
-        <Peek entries={[peekOf(artifact)]} />,
+        <Peek
+          entries={[
+            { ...peekOf(artifact), onGrab: (event) => grab(event, entry, Icon, artifact.id) },
+          ]}
+        />,
       )
     }
     const group = entry.artifacts
@@ -562,11 +741,28 @@ export const Taskbar = ({
       `group-${entry.of}`,
       names.many,
       [
-        ...group.flatMap((shown) => [
-          opening(shown.id, `Open ${shown.name}`),
-          ...windowing(shown, `Undock ${shown.name} to its own window`),
-          closing(shown.id, `Close ${shown.name}`),
-        ]),
+        ...group.flatMap((shown) => {
+          const guest = guestOf.get(shown.id)
+          if (guest)
+            return [
+              opening(shown.id, `Open ${shown.name} from ${guest.origin.name}`),
+              {
+                value: `send-back-${guest.id}`,
+                label: `Send ${shown.name} back to ${guest.origin.name}`,
+                onSelect: () => placeOn(guest.from, guest.item, guest.from.terminalId),
+              },
+              {
+                value: `close-${guest.id}`,
+                label: `Close ${shown.name} from ${guest.origin.name}`,
+                onSelect: () => closeGuest(guest),
+              },
+            ]
+          return [
+            opening(shown.id, `Open ${shown.name}`),
+            ...windowing(shown, `Undock ${shown.name} to its own window`),
+            closing(shown.id, `Close ${shown.name}`),
+          ]
+        }),
         ...moving,
       ],
       <button
@@ -582,7 +778,21 @@ export const Taskbar = ({
           {group.length}
         </b>
       </button>,
-      <Peek entries={group.map(peekOf)} />,
+      <Peek
+        entries={group.map((shown) => {
+          const guest = guestOf.get(shown.id)
+          return {
+            ...(guest?.kind === "artifact" ? guestPeekOf(guest, guest.artifact) : peekOf(shown)),
+            onGrab: (event: React.PointerEvent<HTMLElement>) =>
+              grab(
+                event,
+                guest ? { kind: "guest", guest } : { kind: "one", artifact: shown },
+                Icon,
+                `group-${entry.of}`,
+              ),
+          }
+        })}
+      />,
     )
   }
 
@@ -615,25 +825,10 @@ export const Taskbar = ({
           cursor,
         ]}
         onDragStart={(event) => {
-          // Where the pointer is on screen: over which terminal, and on its bar, or over the
-          // empty canvas. The drag's own position is the dragged slot's, and it keeps the
-          // pointer's moves to itself, so this listens ahead of it.
-          const source = pane.key.terminalId
+          // The drag's own position is the dragged slot's, and it keeps the pointer's moves
+          // to itself, so this listens ahead of it.
           const dragged = bar.find((each) => slotKey(each) === String(event.operation.source?.id))
-          const follow = (pointer: PointerEvent): void => {
-            const target = dragTargetAt(pointer.clientX, pointer.clientY)
-            dragOver.update(() => ({ source, ...target }))
-            // Over a view's free space only: over a window, nothing makes room, so the
-            // window stays put for a drop on its bar.
-            const free =
-              !target.terminal && dragged && undockable(dragged)
-                ? dropSpaceAt(pointer.clientX, pointer.clientY)
-                : null
-            space.current = free?.place ?? null
-            dropPreview.update(() =>
-              free && dragged ? { ...free.outline, label: slotName(dragged) } : null,
-            )
-          }
+          const follow = (pointer: PointerEvent): void => followPointer(pointer, dragged)
           window.addEventListener("pointermove", follow, { capture: true })
           stopFollowing.current = () =>
             window.removeEventListener("pointermove", follow, { capture: true })
@@ -641,26 +836,12 @@ export const Taskbar = ({
         onDragEnd={(event) => {
           stopFollowing.current?.()
           stopFollowing.current = undefined
-          const over = dragOver.getSnapshot()
-          dragOver.update(() => null)
-          const place = space.current
-          space.current = null
-          dropPreview.update(() => null)
-          if (event.canceled) return
           const { source } = event.operation
-          if (!isSortable(source)) return
+          const sortable = !event.canceled && isSortable(source)
           // Where the bar's own drag left it, so the bar stays as its DOM shows it.
-          if (source.initialIndex !== source.index) move(source.initialIndex, source.index)
-          const entry = bar.find((each) => slotKey(each) === String(source.id))
-          if (entry && over?.onBar && over.terminal && over.terminal !== pane.key.terminalId)
-            placeSlot(entry, over.terminal)
-          // Dropped on the view's free space: it undocks, its window where it was dropped.
-          else if (entry && place && undockable(entry)) {
-            // The canvas places a new window where it was asked to; the grid, as its
-            // layout says.
-            if ("canvas" in place) requestDropPlace(place.canvas)
-            undockAt(entry, place)
-          }
+          if (sortable && source.initialIndex !== source.index)
+            move(source.initialIndex, source.index)
+          land(sortable ? bar.find((each) => slotKey(each) === String(source.id)) : undefined)
         }}
       >
         <span className="plan-tb-slots">
@@ -671,6 +852,22 @@ export const Taskbar = ({
           ))}
         </span>
       </DragDropProvider>
+      {grabbedNow && (
+        <Portal>
+          <div
+            ref={(element) => {
+              grabbedIcon.current = element
+              // Placed once here; from then on it follows the pointer by its style.
+              if (element && !element.style.translate)
+                element.style.translate = `${grabbedAt.current.x}px ${grabbedAt.current.y}px`
+            }}
+            className="plan-tb-grabbed"
+            aria-hidden="true"
+          >
+            <GrabbedIcon icon={grabbedNow.icon} />
+          </div>
+        </Portal>
+      )}
     </div>
   )
 }

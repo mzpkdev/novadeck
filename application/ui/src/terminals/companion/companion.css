@@ -66,7 +66,8 @@
   display: flex;
 }
 /* A peek stays out of the way of an icon being dragged past. */
-:root:has(.plan-tb-sortable[data-dragging]) .plan-tb-peek {
+:root:has(.plan-tb-sortable[data-dragging]) .plan-tb-peek,
+:root:has(.plan-tb-grabbed) .plan-tb-peek {
   visibility: hidden;
 }
 .plan-tb-item {
@@ -136,18 +137,6 @@
   75% {
     transform: translateY(-2px);
   }
-}
-/* Where a placed item is from: its terminal's handle, at the icon's lower right. */
-.plan-tb-origin {
-  position: absolute;
-  right: 3px;
-  bottom: 5px;
-  padding: 0 3px;
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  background: var(--color-paper);
-  color: var(--color-muted);
-  font: 500 8px/11px var(--font-mono);
 }
 /* An icon from another terminal's bar is over this one: a drop lands here. */
 .plan-taskbar[data-drop-target] {
@@ -1491,4 +1480,44 @@
   background: var(--color-shell);
   font-size: 11px;
   color: var(--color-muted);
+}
+
+/* A card pulled out of a group's peek, as an icon of its own: it shrinks from the card
+   into an icon under the pointer, raised like a dragged icon, and settles back into its
+   group's icon when dropped where nothing takes it. */
+.plan-tb-grabbed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.plan-tb-grabbed > .plan-tb-item {
+  translate: -50% -50%;
+  border-color: var(--color-line);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-floating);
+  animation: plan-tb-grab 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.plan-tb-grabbed[data-settling] {
+  transition: translate 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.plan-tb-grabbed[data-settling] > .plan-tb-item {
+  opacity: 0;
+  scale: 0.8;
+  transition:
+    opacity 180ms ease-in,
+    scale 180ms ease-in;
+}
+@keyframes plan-tb-grab {
+  from {
+    opacity: 0.4;
+    scale: 2.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-tb-grabbed > .plan-tb-item {
+    animation: none;
+  }
 }
