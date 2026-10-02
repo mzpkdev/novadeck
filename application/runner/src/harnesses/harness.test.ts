@@ -96,6 +96,21 @@ describe("decoding captured hooks", () => {
     expect(decoded("codex", { env: { cursor: false, codexThread: "someone-else" } })).toEqual([])
   })
 
+  it("observes no session at a Codex /side conversation's start, which keeps no transcript", () => {
+    // Codex 0.159.3's `/side` forks an ephemeral thread: its hooks say `fork` and name no
+    // transcript_path (null), while the thread it forked from stays the person's.
+    const [start] = probe("codex").events
+    const side = {
+      ...start!,
+      payload: { ...start!.payload, source: "fork", transcript_path: null },
+    }
+    expect(harnesses.codex.decode(report("codex", side))).toEqual([])
+    const fork = { ...start!, payload: { ...start!.payload, source: "fork" } }
+    expect(harnesses.codex.decode(report("codex", fork))).toMatchObject([
+      { type: "session-observed", evidence: "native-switch" },
+    ])
+  })
+
   it("observes Antigravity's conversation in every hook", () => {
     const events = decoded("agy")
     expect(events).toHaveLength(probe("agy").events.length)
