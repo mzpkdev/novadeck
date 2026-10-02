@@ -80,8 +80,28 @@ describe("companion pane", () => {
       let shown = show(companion, image("hero"), false)
       for (const next of [home, image("about"), preview]) shown = show(shown, next, false)
       const slots = slotsOf(shown.artifacts)
-      expect(slots.map((slot) => slot.kind)).toEqual(["images", "one", "one"])
-      expect(slots[0]).toMatchObject({ artifacts: [{ id: "hero" }, { id: "about" }] })
+      expect(slots.map((slot) => slot.kind)).toEqual(["group", "one", "one"])
+      expect(slots[0]).toMatchObject({
+        of: "image",
+        artifacts: [{ id: "hero" }, { id: "about" }],
+      })
+    })
+
+    it("groups several files the same way, apart from the images", () => {
+      const data = ref("data", "file", "projects.json")
+      let shown = show(companion, home, false)
+      for (const next of [image("hero"), data, image("about")]) shown = show(shown, next, false)
+      const slots = slotsOf(shown.artifacts)
+      expect(slots).toMatchObject([
+        { kind: "group", of: "file", artifacts: [{ id: "home" }, { id: "data" }] },
+        { kind: "group", of: "image", artifacts: [{ id: "hero" }, { id: "about" }] },
+      ])
+    })
+
+    it("keeps each page in its own slot", () => {
+      const docs = ref("docs", "page", "localhost:6006")
+      const shown = show(show(companion, preview, false), docs, false)
+      expect(slotsOf(shown.artifacts).map((slot) => slot.kind)).toEqual(["one", "one"])
     })
 
     it("opens a group to what's new, else what's open, else the latest", () => {

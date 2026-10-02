@@ -1,5 +1,6 @@
-import { FileStack, FileText, Image, MessagesSquare, Pause } from "lucide-react"
+import { FileStack, FileText, MessagesSquare, Pause } from "lucide-react"
 
+import type { ArtifactKind } from "../../model/companion"
 import { mailBadgeLabel } from "../../model/messages"
 import { ContextMenu, type ContextMenuItem } from "../../ui-toolkit/ContextMenu"
 import { HoverCard } from "../../ui-toolkit/HoverCard"
@@ -74,6 +75,13 @@ const ArtifactPreview = ({
     <LoadedPreview companion={companion} artifact={artifact} />
   )
 
+// A group's name, as its menu and its count say it.
+const groupNames: Record<ArtifactKind, { readonly one: string; readonly many: string }> = {
+  image: { one: "image", many: "Images" },
+  file: { one: "file", many: "Files" },
+  page: { one: "page", many: "Pages" },
+}
+
 // A taskbar slot: its icon, the peek above it, and its menu, which is also the
 // keyboard's way to everything the peek offers.
 const slot = (
@@ -98,7 +106,7 @@ const slot = (
 )
 
 // The pane's taskbar along the terminal's bottom: its plans, the agent's own first, then
-// what else the agent showed, an icon each, images grouped. Hover peeks, click opens or
+// what else the agent showed, an icon each, images and files grouped. Hover peeks, click opens or
 // hides, the menu opens or dismisses. Nothing opens on its own.
 export const Taskbar = ({
   companion,
@@ -221,30 +229,32 @@ export const Taskbar = ({
             <Peek entries={[peekOf(artifact)]} />,
           )
         }
-        const images = entry.artifacts
-        const fresh = images.some((shown) => shown.fresh)
-        const openImage = images.find((shown) => showing(shown.id))
+        const group = entry.artifacts
+        const names = groupNames[entry.of]
+        const Icon = kindIcons[entry.of]
+        const fresh = group.some((shown) => shown.fresh)
+        const openOne = group.find((shown) => showing(shown.id))
         return slot(
-          "images",
-          "Images",
-          images.flatMap((image) => [
-            opening(image.id, `Open ${image.name}`),
-            dismissing(image.id, `Dismiss ${image.name}`),
+          `group-${entry.of}`,
+          names.many,
+          group.flatMap((shown) => [
+            opening(shown.id, `Open ${shown.name}`),
+            dismissing(shown.id, `Dismiss ${shown.name}`),
           ]),
           <button
             ref={pane.plans.length || entry !== firstSlot ? undefined : trigger}
             className="plan-tb-item"
-            data-state={fresh ? "new" : openImage ? "open" : "seen"}
-            aria-label={`${images.length} images${fresh ? ", new" : ""}`}
-            aria-pressed={Boolean(openImage)}
-            onClick={() => activate(pickFromGroup(pane, images).id)}
+            data-state={fresh ? "new" : openOne ? "open" : "seen"}
+            aria-label={`${group.length} ${names.one}s${fresh ? ", new" : ""}`}
+            aria-pressed={Boolean(openOne)}
+            onClick={() => activate(pickFromGroup(pane, group).id)}
           >
-            <Image size={20} strokeWidth={1.5} />
+            <Icon size={20} strokeWidth={1.5} />
             <b className="plan-tb-count" aria-hidden="true">
-              {images.length}
+              {group.length}
             </b>
           </button>,
-          <Peek entries={images.map(peekOf)} />,
+          <Peek entries={group.map(peekOf)} />,
         )
       })}
       {mail.present &&

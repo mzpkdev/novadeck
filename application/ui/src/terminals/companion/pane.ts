@@ -1,4 +1,4 @@
-import type { ArtifactRef } from "../../model/companion"
+import type { ArtifactKind, ArtifactRef } from "../../model/companion"
 
 // What a terminal's companion pane holds besides its plans: what the agent showed, in
 // the order it came, and which tab is open.
@@ -69,17 +69,23 @@ export const dismiss = <C extends Companion>(companion: C, id: string): C => ({
   artifacts: companion.artifacts.filter((shown) => shown.id !== id),
 })
 
-// A taskbar slot: one artifact, or every image, grouped as a taskbar groups an app's
-// windows once there are several. Slots keep the order things first arrived in.
+// The kinds the taskbar groups. Each page keeps its own slot, as a browser window would.
+export const groupedKinds: ReadonlySet<ArtifactKind> = new Set(["image", "file"])
+
+// A taskbar slot: one artifact, or every image or every file, grouped as a taskbar
+// groups an app's windows once there are several. Slots keep the order things first
+// arrived in, a group where its first one arrived.
 export type Slot =
   | { readonly kind: "one"; readonly artifact: Shown }
-  | { readonly kind: "images"; readonly artifacts: readonly Shown[] }
+  | { readonly kind: "group"; readonly of: ArtifactKind; readonly artifacts: readonly Shown[] }
 
 export const slotsOf = (artifacts: readonly Shown[]): readonly Slot[] => {
-  const images = artifacts.filter((shown) => shown.kind === "image")
+  const ofKind = (kind: ArtifactKind): readonly Shown[] =>
+    artifacts.filter((shown) => shown.kind === kind)
   return artifacts.flatMap((artifact): Slot[] => {
-    if (artifact.kind !== "image" || images.length < 2) return [{ kind: "one", artifact }]
-    return artifact === images[0] ? [{ kind: "images", artifacts: images }] : []
+    const group = groupedKinds.has(artifact.kind) ? ofKind(artifact.kind) : []
+    if (group.length < 2) return [{ kind: "one", artifact }]
+    return artifact === group[0] ? [{ kind: "group", of: artifact.kind, artifacts: group }] : []
   })
 }
 

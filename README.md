@@ -348,7 +348,7 @@ Escape closes the plan. Plans never create sidebar tabs or separate windows.
 Besides its plan, an agent can show you other things: an image, a file from the
 project, a page in a preview browser. They join the plan in the terminal's
 companion pane, which has no header of its own.
-Each gets an icon in the taskbar, as an OS taskbar has, with several images grouped under one. The
+Each gets an icon in the taskbar, as an OS taskbar has, with several images, or several files, grouped under one; each page keeps its own. The
 mark under an icon says whether it's new, showing, or seen; something new hops
 once, and nothing opens on its own unless you asked for it. Hover an icon to peek:
 a card per thing behind it, each a preview, its name and the same mark, with no
