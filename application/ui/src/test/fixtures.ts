@@ -1,5 +1,5 @@
 import { itemIdOf, type CompanionItem } from "../model/companion"
-import { createTerminalState } from "../model/state"
+import { createTerminalState, workspaceReducer, type WorkspaceAction } from "../model/state"
 import type { TerminalMetadata, ViewMode, Workspace } from "../model/types"
 
 // A plain shell terminal numbered like the ones a person creates.
@@ -67,3 +67,21 @@ export const workspaceFixture = ({
     },
   ],
 })
+
+// The fixture's active session with terminal 01's file `hero` undocked into window `w1`,
+// as its backend reports it, laid out after the terminals.
+export const workspaceWithWindow = (
+  options?: Parameters<typeof workspaceFixture>[0],
+): Workspace => {
+  const target = { projectId: "project", workspaceSessionId: "initial" }
+  const hero = itemFixture("hero", "01", { holder: { windowId: "w1" } })
+  const actions: WorkspaceAction[] = [
+    { type: "item/upsert", target, item: hero },
+    {
+      type: "window/upsert",
+      target,
+      window: { id: "w1", itemId: hero.id, name: "hero.ts", titleSource: { kind: "default" } },
+    },
+  ]
+  return actions.reduce(workspaceReducer, workspaceFixture(options))
+}

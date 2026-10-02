@@ -1,5 +1,6 @@
 import type { TerminalRequest } from "../../backend/port"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
+import { tilesOf } from "../../model/roster"
 import { activeProject, type WorkspaceAction } from "../../model/state"
 import type {
   PreferencesValue,
@@ -322,7 +323,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           type: "terminal/add",
           target,
           terminal,
-          gridLayouts: addCompactGridTerminal(roster.terminals, layout.grid, terminal),
+          gridLayouts: addCompactGridTerminal(tilesOf(roster), layout.grid, terminal),
         },
       ]
       navigateWorkspace(actions, { panel: "terminals" })
@@ -348,7 +349,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
         type: "terminal/add",
         target,
         terminal,
-        gridLayouts: addCompactGridTerminal(roster.terminals, layout.grid, terminal),
+        gridLayouts: addCompactGridTerminal(tilesOf(roster), layout.grid, terminal),
         anchor: request.from,
         select: request.focus,
       }

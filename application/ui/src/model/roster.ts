@@ -26,12 +26,28 @@ export const hasWindow = (roster: TerminalRoster, windowId: string): boolean =>
 export const hasTile = (roster: TerminalRoster, id: string): boolean =>
   hasTerminal(roster, id) || hasWindow(roster, id)
 
+// One answer per roster, so readers that compare by identity see a change only when the
+// roster changed. A roster is never changed in place.
+const remembered = <T>(derive: (roster: TerminalRoster) => T) => {
+  const answers = new WeakMap<TerminalRoster, T>()
+  return (roster: TerminalRoster): T => {
+    const known = answers.get(roster)
+    if (known !== undefined) return known
+    const answer = derive(roster)
+    answers.set(roster, answer)
+    return answer
+  }
+}
+
 // Every terminal and window, terminals first, as views lay them out.
-export const tilesOf = (roster: TerminalRoster): Tile[] => [...roster.terminals, ...roster.windows]
+export const tilesOf: (roster: TerminalRoster) => readonly Tile[] = remembered((roster) => [
+  ...roster.terminals,
+  ...roster.windows,
+])
 
 // Terminals and windows in sidebar order; those missing from the saved order follow,
 // terminals in creation order, then windows.
-export const orderedTiles = (roster: TerminalRoster): Tile[] => {
+export const orderedTiles: (roster: TerminalRoster) => readonly Tile[] = remembered((roster) => {
   const all = tilesOf(roster)
   const byId = new Map(all.map((tile) => [tile.id, tile]))
   const ordered = roster.order.flatMap((id) => {
@@ -40,7 +56,7 @@ export const orderedTiles = (roster: TerminalRoster): Tile[] => {
   })
   const orderedIds = new Set(ordered.map((tile) => tile.id))
   return [...ordered, ...all.filter((tile) => !orderedIds.has(tile.id))]
-}
+})
 
 // Terminals in sidebar order; terminals missing from the saved order follow in creation order.
 export const orderedTerminals = (roster: TerminalRoster): TerminalMetadata[] => {
