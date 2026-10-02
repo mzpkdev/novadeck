@@ -10,7 +10,7 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
-import { hideShowing, itemKey } from "../../terminals/companion/pane"
+import { hideShowing, itemKey, placedKey } from "../../terminals/companion/pane"
 import {
   currentContext,
   currentState,
@@ -129,14 +129,17 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     const { view, selected } = currentState(snapshot)
     const active = rename.activeRename()
     if (active?.id === terminalId) rename.finishRename(active, false)
-    // A window undocked from a terminal puts its item back on that terminal's bar, unopened.
-    const window = currentState(snapshot).roster.terminals.find(
-      (terminal) => terminal.id === terminalId,
-    )?.companion
-    if (window)
+    // What leaves other bars with it leaves no pane open to it: a window's item goes back
+    // to its terminal's bar unopened, and a terminal's items placed elsewhere go with it.
+    const { roster, placements } = currentState(snapshot)
+    const hide = (on: string, key: string): void =>
       ctx.panes
-        ?.of({ ...currentTarget(snapshot), terminalId: window.from })
-        .update((pane) => hideShowing(pane, itemKey(window.item)))
+        ?.of({ ...currentTarget(snapshot), terminalId: on })
+        .update((pane) => hideShowing(pane, key))
+    const window = roster.terminals.find((terminal) => terminal.id === terminalId)?.companion
+    if (window) hide(window.from, itemKey(window.item))
+    for (const { from, item, to } of placements)
+      if (from === terminalId) hide(to, placedKey(from, item))
     navigateWorkspace(
       [{ type: "terminal/close", target: currentTarget(snapshot), terminalId }],
       {},

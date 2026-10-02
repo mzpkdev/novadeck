@@ -3,6 +3,7 @@ import { mailTab, openTab, planTab, placedKey } from "../../terminals/companion/
 import { createPanes } from "../../terminals/companion/state"
 import { context, describe, expect, it } from "../../test"
 import { openCommands } from "../../test/commands"
+import { workspaceFixture } from "../../test/fixtures"
 
 const key = (terminalId: string): CompanionKey => ({
   projectId: "project",
@@ -222,6 +223,14 @@ describe("companion commands", () => {
       app.commands.place([{ from: "01", item: image, to: "01" }])
       expect(app.pane("02").open).toBe(false)
       expect(app.pane("01").open).toBe(false)
+    })
+
+    it("hides the bar's pane when the terminal it's from closes", () => {
+      const app = open({ workspace: workspaceFixture({ terminals: 3 }) })
+      app.commands.place([{ from: "01", item: image, to: "02" }])
+      showing(app, "02", placedKey("01", image))
+      app.commands.close("01")
+      expect(app.pane("02").open).toBe(false)
     })
 
     it("hides the bar's pane when it's closed there", () => {
