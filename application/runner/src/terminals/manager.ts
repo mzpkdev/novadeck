@@ -923,8 +923,17 @@ export class Terminals {
       return record && !record.exitQueued && record.summary.exit === null ? record : undefined
     }
     return {
-      ringable: (terminalId) =>
-        live(terminalId) !== undefined && !this.stopping && this.messaging.ringable(terminalId),
+      // A request asked after the turn's Stop waits on the person though messaging has the
+      // terminal Settled: the line would land in its dialog.
+      ringable: (terminalId) => {
+        const record = live(terminalId)
+        return (
+          record !== undefined &&
+          (record.activity?.pending.length ?? 0) === 0 &&
+          !this.stopping &&
+          this.messaging.ringable(terminalId)
+        )
+      },
       settledSince: (terminalId) => this.messaging.settledSince(terminalId),
       ring: (terminalId, nonce) => this.messaging.ring(terminalId, nonce),
       ringing: (terminalId) => this.messaging.ringing(terminalId),
@@ -2793,9 +2802,12 @@ export class Terminals {
     const waited = (record.activity?.pending.length ?? 0) > 0
     const applied = this.appliedFact(record, fact)
     // A request no longer waits on the person: what they typed meanwhile counts now, at
-    // once, before the report's prompt reaches messaging.
-    if (waited && (record.activity?.pending.length ?? 0) === 0)
+    // once, before the report's prompt reaches messaging. The doorbell looks again too, as
+    // the request kept it from ringing and its screen may not change.
+    if (waited && (record.activity?.pending.length ?? 0) === 0) {
       this.messaging.askedCleared(record.summary.id)
+      this.doorbell?.changed(record.summary.id)
+    }
     return applied
   }
 

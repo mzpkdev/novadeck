@@ -107,7 +107,9 @@ const resolved = (
 /**
  * The activity after an event, or undefined when it changes nothing: another session's,
  * or from a turn already over. A turn's start or end settles every request still
- * waiting, since no harness reports a denial: the person answered it one way or another.
+ * waiting: no harness ends a root turn normally while its own dialog waits, a denial ends
+ * it abnormally, and one answered with no report, as another hook's denial, would
+ * otherwise wait forever.
  * An interrupted turn ends the subagents it started, which report no stop then; a
  * background one from an earlier turn runs on.
  */

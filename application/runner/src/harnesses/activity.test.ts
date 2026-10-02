@@ -193,6 +193,18 @@ describe("applying activity", () => {
     expect(apply(over, binding, request("a", null, 9))).toBeUndefined()
   })
 
+  it("settles every request still waiting when the turn ends, as a faked Stop would too", () => {
+    const working = apply(started(0), binding, fact({ type: "turn-started", startedAt: 1 }))!
+    const waiting = apply(working, binding, request("a", null, 5))!
+    const ended = apply(
+      waiting,
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+    )!
+    expect(ended.pending).toEqual([])
+    expect(summary(ended).attention).toEqual({ pending: 0, kind: null })
+  })
+
   it("settles a question loosely by its actor and tool, as its answered call changed", () => {
     const asked = apply(
       started(0),

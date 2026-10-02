@@ -2714,7 +2714,7 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
  * the tool for a while; `bg` runs it in the background, starting a turn by itself;
  * `mouse` turns on mouse and focus reporting, as a fullscreen TUI does. It skips mouse and
  * focus reports, as such a TUI does. `named` is the same TUI under its harness's name, so
- * its hooks find its instance.
+ * its hooks find its instance. `askafter` asks a permission after its first turn's Stop.
  */
 const standInTui = (home: string): string => {
   const bin = join(home, "bin")
@@ -2794,6 +2794,15 @@ const turn = (prompt, typed = true) => {
         busy = false
         menu = mode === "menu"
         draw()
+        // With "askafter", a call asks a permission after its first turn's Stop, as a
+        // background task's may: its dialog draws nothing, and Enter allows it, so only the
+        // request's own resolution tells NovaDeck it no longer waits.
+        if (mode === "askafter" && turns === 1) {
+          const input = { tool_name: "Bash", tool_input: { command: "ls" } }
+          hook("PermissionRequest", input, () => {
+            dialog = () => hook("PostToolUse", { ...input, tool_response: {} }, () => {})
+          })
+        }
         // Antigravity's status line, which keeps running, names the conversation idle.
         if (agent === "agy" && showing)
           hook("StatusLine", { conversation_id: current, agent_state: "idle" }, () => {})
@@ -3123,6 +3132,27 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
         .toBe("delivered")
       await expect.poll(tui.delivery).toBe("settled")
+    })
+
+    it("rings no Settled TUI while a request asked after its Stop waits, and rings once it resolves", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "askafter")
+      await tui.first()
+      const pending = () => tui.manager.get(tui.idle.id).activity?.attention.pending
+      await expect.poll(pending).toBe(1)
+      // Settled by its Stop, yet the request waits on the person: no ring.
+      expect(tui.delivery()).toBe("settled")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true })
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+      expect(tui.received()).toHaveLength(1)
+      // The person allows it; its dialog drew nothing, so the screen stays as it was.
+      tui.type("\r")
+      await expect.poll(pending).toBe(0)
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+      expect(pastes(tui.raw())).toHaveLength(1)
     })
 
     it("rings no Claude Code TUI the person started typing in", async ({ shell }) => {
