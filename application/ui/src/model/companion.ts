@@ -79,6 +79,76 @@ export type ArtifactContent =
       readonly snapshot?: string
     }
 
+// What an agent showed or the person attached, as the backend keeps it: a pointer to a
+// file or page, never a copy, held by exactly one terminal's bar or one undocked window.
+// Its content loads when something shows it, so it shows what the file holds now.
+
+// An item's id, as its backend names it: stable across restarts and unique in the app.
+export type ItemId = string & { readonly __item: unique symbol }
+
+export const itemIdOf = (id: string): ItemId => id as ItemId
+
+// Who holds the item: a terminal's bar, or a window of its own.
+export type ItemHolder = { readonly terminalId: string } | { readonly windowId: string }
+
+export type ItemKind = ArtifactKind | "plan"
+
+export type CompanionItem = {
+  readonly id: ItemId
+  readonly holder: ItemHolder
+  readonly kind: ItemKind
+  readonly name: string
+  readonly detail: string
+  // A file's or plan's path, or the page's address.
+  readonly path: string | null
+  readonly url: string | null
+  // The lines it points at, numbered from 1.
+  readonly lines: { readonly from: number; readonly to: number } | null
+  // A file that may hold secrets: shown only when the person picks it.
+  readonly held: boolean
+  // Shown by an agent, or attached by the person.
+  readonly by: "agent" | "person"
+  // The terminal it was shown from, which a window docks back into.
+  readonly from: { readonly terminalId: string; readonly handle: string }
+  // Counts its shows; a higher version is something shown again.
+  readonly version: number
+  // The person asked to see it: it opens rather than waits.
+  readonly asked: boolean
+  readonly shownAt: number
+  // A plan's agent, by the name the person knows it by, and whose plan it is.
+  readonly plan: { readonly agent: string; readonly role: "root" | "subagent" } | null
+}
+
+export const isOnBar = (
+  item: CompanionItem,
+  terminalId: string,
+): item is CompanionItem & { readonly holder: { readonly terminalId: string } } =>
+  "terminalId" in item.holder && item.holder.terminalId === terminalId
+
+export const windowOfItem = (item: CompanionItem): string | undefined =>
+  "windowId" in item.holder ? item.holder.windowId : undefined
+
+type Pointer = Pick<CompanionItem, "kind" | "path" | "url">
+
+// What a file or page item points at, so showing the same thing again finds it. A plan
+// has none here: which agent's plan slot it fills is the backend's to know.
+const pointerOf = (item: Pointer): string | null =>
+  item.kind === "plan" ? null : item.kind === "page" ? `page:${item.url}` : `file:${item.path}`
+
+export const samePointer = (a: Pointer, b: Pointer): boolean => {
+  const pointer = pointerOf(a)
+  return pointer !== null && pointer === pointerOf(b)
+}
+
+// The item on terminal `terminalId`'s own bar that points where `pointer` does, which an
+// agent showing it again updates rather than adding another.
+export const ownItemWith = (
+  items: readonly CompanionItem[],
+  terminalId: string,
+  pointer: Pointer,
+): CompanionItem | undefined =>
+  items.find((item) => isOnBar(item, terminalId) && samePointer(item, pointer))
+
 // A terminal's companion, as it stands.
 export type CompanionSnapshot = {
   readonly key: CompanionKey

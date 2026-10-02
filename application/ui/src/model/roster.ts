@@ -1,14 +1,46 @@
 import { isShellProcess } from "./process"
 import { sameTitleSource } from "./title-source"
-import type { TerminalMetadata, TerminalRoster, TerminalStatus } from "./types"
+import type {
+  CompanionWindowMeta,
+  TerminalMetadata,
+  TerminalRoster,
+  TerminalStatus,
+  Tile,
+} from "./types"
 
-export const createRoster = (terminals: TerminalMetadata[]): TerminalRoster => ({
-  terminals,
-  order: [],
-})
+export const createRoster = (
+  terminals: TerminalMetadata[],
+  windows: readonly CompanionWindowMeta[] = [],
+): TerminalRoster => ({ terminals, windows, order: [] })
 
 export const hasTerminal = (roster: TerminalRoster, terminalId: string): boolean =>
   roster.terminals.some((terminal) => terminal.id === terminalId)
+
+// A window undocked from a terminal's companion, rather than a terminal.
+export const isWindow = (tile: Tile): tile is CompanionWindowMeta => "itemId" in tile
+
+export const hasWindow = (roster: TerminalRoster, windowId: string): boolean =>
+  roster.windows.some((window) => window.id === windowId)
+
+// Whether the session lays out a terminal or window by this id.
+export const hasTile = (roster: TerminalRoster, id: string): boolean =>
+  hasTerminal(roster, id) || hasWindow(roster, id)
+
+// Every terminal and window, terminals first, as views lay them out.
+export const tilesOf = (roster: TerminalRoster): Tile[] => [...roster.terminals, ...roster.windows]
+
+// Terminals and windows in sidebar order; those missing from the saved order follow,
+// terminals in creation order, then windows.
+export const orderedTiles = (roster: TerminalRoster): Tile[] => {
+  const all = tilesOf(roster)
+  const byId = new Map(all.map((tile) => [tile.id, tile]))
+  const ordered = roster.order.flatMap((id) => {
+    const tile = byId.get(id)
+    return tile ? [tile] : []
+  })
+  const orderedIds = new Set(ordered.map((tile) => tile.id))
+  return [...ordered, ...all.filter((tile) => !orderedIds.has(tile.id))]
+}
 
 // Terminals in sidebar order; terminals missing from the saved order follow in creation order.
 export const orderedTerminals = (roster: TerminalRoster): TerminalMetadata[] => {
@@ -57,13 +89,20 @@ export const updateTerminal = (
   }
 }
 
-// The person names a terminal: the name is theirs.
+// The person names a terminal or window: the name is theirs.
 export const renameTerminal = (
   roster: TerminalRoster,
   terminalId: string,
   name: string,
-): TerminalRoster =>
-  hasTerminal(roster, terminalId)
+): TerminalRoster => {
+  if (hasWindow(roster, terminalId))
+    return {
+      ...roster,
+      windows: roster.windows.map((window) =>
+        window.id === terminalId ? { ...window, name, titleSource: { kind: "person" } } : window,
+      ),
+    }
+  return hasTerminal(roster, terminalId)
     ? {
         ...roster,
         terminals: roster.terminals.map((terminal) =>
@@ -73,6 +112,7 @@ export const renameTerminal = (
         ),
       }
     : roster
+}
 
 export const removeTerminal = (roster: TerminalRoster, terminalId: string): TerminalRoster =>
   hasTerminal(roster, terminalId)
@@ -83,11 +123,41 @@ export const removeTerminal = (roster: TerminalRoster, terminalId: string): Term
       }
     : roster
 
+export const addWindow = (roster: TerminalRoster, window: CompanionWindowMeta): TerminalRoster => ({
+  ...roster,
+  windows: [...roster.windows, window],
+})
+
+// What the backend says of a window now: its name, and whose it is.
+export const updateWindow = (
+  roster: TerminalRoster,
+  window: CompanionWindowMeta,
+): TerminalRoster => {
+  const current = roster.windows.find((each) => each.id === window.id)
+  if (
+    !current ||
+    (current.itemId === window.itemId &&
+      current.name === window.name &&
+      current.titleSource.kind === window.titleSource.kind)
+  )
+    return roster
+  return { ...roster, windows: roster.windows.map((each) => (each === current ? window : each)) }
+}
+
+export const removeWindow = (roster: TerminalRoster, windowId: string): TerminalRoster =>
+  hasWindow(roster, windowId)
+    ? {
+        ...roster,
+        windows: roster.windows.filter((window) => window.id !== windowId),
+        order: roster.order.filter((id) => id !== windowId),
+      }
+    : roster
+
 // Keeps known ids once each, in the requested order.
 export const reorderTerminals = (roster: TerminalRoster, requested: string[]): TerminalRoster => {
   const seen = new Set<string>()
   const order = requested.filter(
-    (id) => hasTerminal(roster, id) && !seen.has(id) && (seen.add(id), true),
+    (id) => hasTile(roster, id) && !seen.has(id) && (seen.add(id), true),
   )
   return order.length === roster.order.length &&
     order.every((id, index) => roster.order[index] === id)
