@@ -4,38 +4,18 @@ import { open, realpath, stat } from "node:fs/promises"
 import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path"
 
 import type { ArtifactContent, ShownArtifact } from "@novadeck/protocol"
-import { z } from "zod"
 
-/**
- * What an agent asks to show, through NovaDeck's MCP server: a file by its path, absolute
- * or from the terminal's directory; for a text file, the lines it points at; a title in
- * place of the file's name; and `open` when the person asked to see it.
- */
-// What either request takes: a short name to show, and whether the person asked to see it.
-const shared = { title: z.string().min(1).max(256).optional(), open: z.boolean().optional() }
+import {
+  failure,
+  maxUrlChars,
+  type FileRequest,
+  type PageRequest,
+  type PresentFailure,
+  type PresentRequest,
+} from "../companions/request.js"
+import { secret } from "../companions/secrets.js"
 
-/** A file to show, by its path, and the lines to point at. */
-export const fileRequest = z.strictObject({
-  path: z.string().min(1).max(4096),
-  lines: z
-    .strictObject({ from: z.int().min(1), to: z.int().min(1) })
-    .refine(({ from, to }) => to >= from)
-    .optional(),
-  ...shared,
-})
-
-// What the protocol takes of a page's address.
-const maxUrlChars = 8192
-
-/** A page to show, by its http(s) address. */
-export const pageRequest = z.strictObject({ url: z.string().min(1).max(maxUrlChars), ...shared })
-
-export type FileRequest = z.infer<typeof fileRequest>
-export type PageRequest = z.infer<typeof pageRequest>
-export type PresentRequest = FileRequest | PageRequest
-
-/** Why it was not shown, in a sentence the agent can act on. */
-export type PresentFailure = { readonly ok: false; readonly reason: string }
+export { readRequest } from "../companions/request.js"
 
 /**
  * The MCP server's answer: what the person now sees, or why not. `opened` when it opened
@@ -95,64 +75,6 @@ const maxLineChars = 4096
 export const maxShown = 64
 /** The most a terminal keeps of what it showed, in bytes of content; the oldest go first. */
 export const maxShownBytes = 48 * 1024 * 1024
-
-// Files that often hold secrets: a key, credentials, an environment file, an agent's or a
-// tool's login, a shell's history. NovaDeck shows them, as any file the person can
-// read, but never puts one on screen by itself, as while the person shares it.
-const secretFolders = new Set([".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"])
-const secretNames = [
-  /^\.env(\..*)?$/i,
-  /\.env$/i,
-  /^\.envrc$/i,
-  /^\.?credentials(\.[\w.]+)?$/i,
-  /^oauth_creds\.json$/i,
-  /^\.yarnrc\.yml$/i,
-  /^\.s3cfg$/i,
-  /^rclone\.conf$/i,
-  /^fish_history$/i,
-  /^\.vault-token$/i,
-  /^\.dockercfg$/i,
-  /^kubeconfig$/i,
-  /^\.[\w-]*_history$/i,
-  /^\.netrc$/i,
-  /^\.git-credentials$/i,
-  /^\.npmrc$/i,
-  /^\.pypirc$/i,
-  /^\.pgpass$/i,
-  /^secrets?\.(json|ya?ml|toml|ini|env|txt|properties)$/i,
-  /^service-account.*\.json$/i,
-  /^id_(rsa|dsa|ecdsa|ed25519)(_[^.]*)?$/i,
-  /\.(pem|key|p12|pfx|keystore|jks|tfstate)$/i,
-]
-// Where tools keep their logins under names too plain to hold everywhere: the GitHub
-// CLI's hosts.yml (in "GitHub CLI" on Windows), Codex's auth.json, and gcloud's folder.
-const secretPaths = [
-  /[\\/](gh|GitHub CLI)[\\/]hosts\.ya?ml$/i,
-  /[\\/]\.codex[\\/]auth\.json$/i,
-  /[\\/](\.config|AppData[\\/]Roaming)[\\/]gcloud[\\/]/i,
-]
-const secret = (path: string): boolean =>
-  path.split(sep).some((part) => secretFolders.has(part)) ||
-  secretNames.some((name) => name.test(basename(path))) ||
-  secretPaths.some((pattern) => pattern.test(path))
-
-const failure = (reason: string): PresentFailure => ({ ok: false, reason })
-
-/** The request, or why it cannot be one. */
-export const readRequest = (
-  value: unknown,
-): { readonly ok: true; readonly request: PresentRequest } | PresentFailure => {
-  // A page by its url, otherwise a file; each read strictly, so it names what's wrong.
-  const page = typeof value === "object" && value !== null && "url" in value
-  if (page && "path" in value) return failure("Give a path or a url, not both.")
-  if (typeof value === "object" && value !== null && !page && !("path" in value))
-    return failure("Give a path or a url.")
-  const parsed = (page ? pageRequest : fileRequest).safeParse(value)
-  if (parsed.success) return { ok: true, request: parsed.data }
-  const [issue] = parsed.error.issues
-  const field = issue?.path.join(".")
-  return failure(field ? `The request's "${field}" is not valid.` : "The request is not valid.")
-}
 
 /** Whether `path` lies inside `folder`; both resolved alike. */
 const inside = (folder: string, path: string): boolean => {

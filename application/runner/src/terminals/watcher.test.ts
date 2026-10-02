@@ -1,7 +1,7 @@
 import type { TerminalSummary } from "@novadeck/protocol"
 
 import { describe, expect, it } from "../test.js"
-import { Watcher } from "./watcher.js"
+import { TerminalWatcher, Watcher } from "./watcher.js"
 
 const terminal = (id: string, changes: Partial<TerminalSummary> = {}): TerminalSummary => ({
   id,
@@ -24,7 +24,7 @@ const terminal = (id: string, changes: Partial<TerminalSummary> = {}): TerminalS
   ...changes,
 })
 
-const read = async (watcher: Watcher, count: number) => {
+const read = async (watcher: TerminalWatcher, count: number) => {
   const changes = []
   for (let index = 0; index < count; index += 1) {
     // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
@@ -35,7 +35,7 @@ const read = async (watcher: Watcher, count: number) => {
 
 describe("terminal watcher", () => {
   it("reports every current terminal, then synced, then later changes", async () => {
-    const watcher = new Watcher([terminal("a"), terminal("b")])
+    const watcher = new TerminalWatcher([terminal("a"), terminal("b")])
     watcher.changed(terminal("c"))
     expect(await read(watcher, 4)).toEqual([
       { type: "changed", terminal: terminal("a") },
@@ -46,7 +46,7 @@ describe("terminal watcher", () => {
   })
 
   it("keeps only the latest unread summary of each terminal, oldest change first", async () => {
-    const watcher = new Watcher([])
+    const watcher = new TerminalWatcher([])
     watcher.changed(terminal("a", { process: { name: "vim", argv: null } }))
     watcher.changed(terminal("b"))
     for (let index = 0; index < 1000; index += 1) {
@@ -60,7 +60,7 @@ describe("terminal watcher", () => {
   })
 
   it("reports removal only of terminals the reader was told about", async () => {
-    const watcher = new Watcher([terminal("initial")])
+    const watcher = new TerminalWatcher([terminal("initial")])
     watcher.removed(terminal("initial"))
     watcher.changed(terminal("unseen"))
     watcher.removed(terminal("unseen"))
@@ -80,12 +80,28 @@ describe("terminal watcher", () => {
   })
 
   it("ends a waiting read when finished and ignores later changes", async () => {
-    const watcher = new Watcher([])
+    const watcher = new TerminalWatcher([])
     await watcher.next()
     const pending = watcher.next()
     watcher.finish()
     watcher.changed(terminal("late"))
     await expect(pending).resolves.toBeUndefined()
+    await expect(watcher.next()).resolves.toBeUndefined()
+  })
+})
+
+describe("keyed watcher", () => {
+  it("keeps each key's latest change, a removal included, behind the current state", async () => {
+    const watcher = new Watcher<string, string>([["a", "a1"]], "synced")
+    watcher.changed("b", "b1")
+    watcher.changed("a", "a2")
+    watcher.changed("b", "b2")
+    watcher.removed("a", "a gone")
+    expect([await watcher.next(), await watcher.next()]).toEqual(["a1", "synced"])
+    expect([await watcher.next(), await watcher.next()]).toEqual(["b2", "a gone"])
+    // A key the reader no longer knows leaves without a word.
+    watcher.removed("a", "a gone again")
+    watcher.finish()
     await expect(watcher.next()).resolves.toBeUndefined()
   })
 })

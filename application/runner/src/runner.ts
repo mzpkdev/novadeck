@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 
+import { CompanionItems } from "./companions/items.js"
 import { createHarnesses, type HarnessesOptions } from "./harnesses/service.js"
 import { createRouter, type Connection } from "./router.js"
 import { installShellFiles } from "./shell/install.js"
@@ -47,8 +48,8 @@ export type Runner = {
 
 /**
  * The runner's parts, wired together: its metadata store, the shell files it writes once,
- * the agents that install NovaDeck's plugin, and the terminals, which keep their records
- * and mailboxes in the store. `createRunner` serves them; the end-to-end deck drives them
+ * the agents that install NovaDeck's plugin, the terminals, which keep their records and
+ * mailboxes in the store, and the items shown beside them. `createRunner` serves them; the end-to-end deck drives them
  * in process, so both run the same wiring. Internal: not exported from the package.
  */
 export const wire = (options: RunnerOptions) => {
@@ -62,6 +63,13 @@ export const wire = (options: RunnerOptions) => {
           return undefined
         })
   const agents = createHarnesses(() => shellFiles, options.agents)
+  // What agents show and the person attaches beside terminals, kept in the store; it
+  // asks the terminals where each one is.
+  const items = new CompanionItems({
+    records: store,
+    terminal: (terminalId) => terminals.place(terminalId),
+    livePlan: (item) => terminals.livePlan(item),
+  })
   const terminals = new Terminals({
     records: store,
     shellFiles,
@@ -78,7 +86,7 @@ export const wire = (options: RunnerOptions) => {
     ...options.terminals,
   })
   const projects = new Projects(store, terminals)
-  return { store, shellFiles, agents, terminals, projects }
+  return { store, shellFiles, agents, terminals, items, projects }
 }
 
 /** Owns shells and workspace metadata, independent of how clients reach it. */

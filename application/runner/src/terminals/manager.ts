@@ -27,6 +27,9 @@ import headless from "@xterm/headless"
 import type { Terminal as Screen } from "@xterm/headless"
 import * as pty from "node-pty"
 
+import type { PlanText } from "../companions/content.js"
+import type { TerminalPlace } from "../companions/items.js"
+import type { ItemRecord } from "../companions/records.js"
 import { DomainError } from "../errors.js"
 import {
   apply,
@@ -117,7 +120,7 @@ import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
 import { transcriptChanges } from "./transcripts.js"
-import { Watcher } from "./watcher.js"
+import { TerminalWatcher } from "./watcher.js"
 import { judgedFirst, workAfter, type Work } from "./work.js"
 
 const { Terminal } = headless
@@ -453,7 +456,7 @@ export class Terminals {
   private readonly draining = new Map<string, Record>()
   private readonly pendingOwners = new Map<string, Set<{ released: boolean }>>()
   /** Each `watch` stream and the owner whose release ends it. */
-  private readonly watchers = new Map<Watcher, string>()
+  private readonly watchers = new Map<TerminalWatcher, string>()
   /** Each terminal's `agents.detail` readers. */
   private readonly details = new Map<string, Set<Latest<AgentDetail>>>()
   /** Each terminal's `agents.shown` readers. */
@@ -1218,6 +1221,38 @@ export class Terminals {
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
   }
 
+  /**
+   * Where a terminal kept by the runner is, running or saved, as items shown in it or
+   * placed on it need: its session, handle, directory and project folder.
+   */
+  place(terminalId: string): TerminalPlace | undefined {
+    const live = this.records.get(terminalId)
+    const terminal = live?.summary ?? this.saved(terminalId)
+    if (!terminal) return undefined
+    return {
+      terminalId,
+      sessionId: terminal.sessionId,
+      handle: terminal.handle,
+      cwd: terminal.cwd,
+      project: this.projectFolder(terminal.sessionId),
+    }
+  }
+
+  /**
+   * A plan presented as text, as the terminal it came from has it live while it still
+   * runs the plan's session: the latest its actor presented, and when.
+   */
+  livePlan(item: ItemRecord): PlanText | undefined {
+    const { plan } = item
+    const record = this.records.get(item.from.terminalId)
+    const { binding } = record ?? {}
+    if (!plan || !binding || binding.agent !== plan.agent || binding.sessionId !== plan.session)
+      return undefined
+    const live = record?.activity?.plans.find(({ actor }) => actor === plan.actor)
+    if (live?.source.kind !== "text") return undefined
+    return { text: live.source.text, truncated: live.source.truncated, changedAt: live.at }
+  }
+
   /** The session `agent` last reported in the terminal, live or saved; null when none. */
   reportedSession(terminalId: string, agent: AgentName): string | null {
     const live = this.records.get(terminalId)
@@ -1435,7 +1470,7 @@ export class Terminals {
    */
   async *watch(ownerId: string, signal?: AbortSignal): AsyncGenerator<TerminalChange> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    const watcher = new Watcher(this.list())
+    const watcher = new TerminalWatcher(this.list())
     this.watchers.set(watcher, ownerId)
     const abort = () => watcher.finish()
     signal?.addEventListener("abort", abort, { once: true })
