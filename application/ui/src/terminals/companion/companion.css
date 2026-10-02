@@ -319,7 +319,7 @@
 /* Split: the plan shares the terminal's window. */
 .plan-split {
   display: grid;
-  grid-template-columns: var(--plan-terminal) 9px minmax(0, 1fr);
+  grid-template-columns: var(--plan-terminal) 0 minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
@@ -334,24 +334,32 @@
 }
 .plan-split-reader {
   display: flex;
+  border-left: 1px solid var(--color-line);
   min-width: 0;
   min-height: 0;
 }
+/* The line between them is the pane's own edge, so it comes and goes with the pane.
+   The divider is an invisible strip over that edge, the ::after, for the pointer to
+   grab; it shows a line only while hovered or focused. */
 .plan-divider {
   position: relative;
+  z-index: 1;
   cursor: col-resize;
   touch-action: none;
 }
 .plan-divider::before {
   content: "";
   position: absolute;
-  inset: 0 4px;
-  background: var(--color-line);
+  inset: 0 -1px;
   transition: background var(--motion-feedback) var(--ease-interface);
+}
+.plan-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
 }
 .plan-divider:hover::before,
 .plan-divider:focus-visible::before {
-  inset: 0 3px;
   background: var(--color-line-strong);
 }
 @container terminal-plan (max-width: 640px) {
@@ -367,6 +375,7 @@
   .plan-split-reader {
     --plan-enter: 0 16px;
     border-top: 1px solid var(--color-line-strong);
+    border-left: none;
   }
 }
 
@@ -529,19 +538,6 @@
   animation: plan-out var(--motion-feedback) var(--ease-interface) forwards;
   pointer-events: none;
 }
-/* The divider beside the split fades with it. */
-.plan-split:has(> .plan-split-reader[data-state="open"]) > .plan-divider {
-  animation: plan-divider-in var(--motion-state) var(--ease-interface);
-}
-.plan-split:has(> .plan-split-reader[data-state="closed"]) > .plan-divider {
-  animation: plan-out var(--motion-feedback) var(--ease-interface) forwards;
-  pointer-events: none;
-}
-@keyframes plan-divider-in {
-  from {
-    opacity: 0;
-  }
-}
 @keyframes plan-split-in {
   from {
     opacity: 0;
@@ -562,7 +558,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .plan-split-reader,
-  .plan-divider,
   .plan-attached {
     animation: none !important;
   }
