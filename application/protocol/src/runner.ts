@@ -91,6 +91,12 @@ export type Runner = {
       readonly cwd?: string
     }): Promise<Project>
     rename(input: { readonly projectId: string; readonly name: string }): Promise<Project>
+    /**
+     * Closes every terminal of the project's sessions, so watchers see each `removed`,
+     * then forgets the project and its sessions. Rejects with `NOT_FOUND` for a project
+     * the runner doesn't have, as one already removed.
+     */
+    remove(input: { readonly projectId: string }): Promise<void>
   }
   readonly sessions: {
     list(input: { readonly projectId: string }): Promise<WorkspaceSession[]>
@@ -968,6 +974,7 @@ export const connectRunner = async (
       list: () => call((wire) => wire.projects.list()),
       create: (input) => call((wire) => wire.projects.create(input)),
       rename: (input) => call((wire) => wire.projects.rename(input)),
+      remove: (input) => call((wire) => wire.projects.remove(input)),
     },
     sessions: {
       list: (input) => call((wire) => wire.sessions.list(input)),

@@ -1154,6 +1154,38 @@ export class Terminals {
     this.forget(input.terminalId)
   }
 
+  /**
+   * Closes every terminal of a project's sessions, running or kept only as saved, as
+   * `close` does but whoever controls them, then forgets its agents' messages: the
+   * project is going. Its records are the caller's to delete.
+   */
+  async closeProject(projectId: string, sessionIds: readonly string[]): Promise<void> {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    const sessions = new Set(sessionIds)
+    const running = [...this.records.values()].filter(({ summary }) =>
+      sessions.has(summary.sessionId),
+    )
+    await Promise.all(
+      running.map(async (record) => {
+        await this.terminate(record)
+        this.remove(record)
+        this.forget(record.summary.id)
+      }),
+    )
+    for (const sessionId of sessions) {
+      let kept: readonly ListedTerminal[] = []
+      this.persisting(() => {
+        kept = this.options.records?.terminals(sessionId) ?? []
+      })
+      for (const terminal of kept) {
+        this.forget(terminal.id)
+        for (const watcher of this.watchers.keys()) watcher.removed(terminal)
+      }
+      this.numbers.delete(sessionId)
+    }
+    this.messaging.forgetProject(projectId)
+  }
+
   /** Forgets what restores the terminal, and the sessions it claimed. */
   private forget(terminalId: string): void {
     this.messaging.unregister(terminalId)
