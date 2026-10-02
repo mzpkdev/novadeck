@@ -1,8 +1,11 @@
+import type { DeliveryState, MessageState, TerminalMessages } from "@novadeck/protocol"
+
 import { doorbellLine } from "../harnesses/harness.js"
 import { wrap, type Message } from "../messaging/mailbox.js"
 import { describe, expect, it } from "../test.js"
+import { createHistory } from "./history.js"
 import type { Call } from "./model/script.js"
-import { deliveries, delivered, ring } from "./scenarios.js"
+import { deliveries, delivered, holds, ring, through } from "./scenarios.js"
 
 const message = (fields: Partial<Message> = {}): Message => ({
   id: "m-1",
@@ -108,5 +111,60 @@ describe("the doorbell's line", () => {
     expect(prompt).toMatch(ring)
     expect(prompt).toMatch(ring)
     expect("Say hi").not.toMatch(ring)
+  })
+})
+
+// A listing of t2's messages: its delivery state and one message from t1 in `state`.
+const listing = (delivery: DeliveryState, state: MessageState): TerminalMessages => ({
+  terminalId: "terminal-2",
+  handle: "t2",
+  delivery,
+  paused: false,
+  threads: [
+    {
+      id: "thread-1",
+      peer: "t1",
+      hops: 1,
+      allowed: 8,
+      held: false,
+      messages: [
+        {
+          id: "m-1",
+          thread: "thread-1",
+          hop: 1,
+          from: "t1",
+          fromAgent: "claude",
+          to: "t2",
+          toAgent: "codex",
+          text: "What is your colour?",
+          sentAt: 0,
+          state,
+          held: null,
+          deliveredAt: null,
+        },
+      ],
+    },
+  ],
+})
+
+describe("through", () => {
+  it("meets two steps in one snapshot, as one handling of the runner's changes", async () => {
+    const history = createHistory("t2")
+    history.push(listing("ready", "queued"))
+    history.push(listing("working", "delivered"))
+
+    const last = await through(history, ["working", holds("t1", "t2", "delivered")])
+
+    expect(last?.index).toBe(1)
+  })
+
+  it("meets each step at or after the one before, never before it", async () => {
+    const history = createHistory("t2")
+    history.push(listing("working", "queued"))
+    history.push(listing("settled", "queued"))
+
+    await expect(through(history, ["settled", "working"], { timeoutMs: 50 })).rejects.toThrow(
+      /can't reach/,
+    )
   })
 })

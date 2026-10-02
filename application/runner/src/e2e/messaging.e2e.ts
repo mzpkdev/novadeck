@@ -1,6 +1,4 @@
-import { agy } from "./agents/agy.js"
-import { claude } from "./agents/claude.js"
-import { codex } from "./agents/codex.js"
+import { setups } from "./agents/index.js"
 import { describe, e2e, expect, supported } from "./fixture.js"
 import { ringsAfterTurn, ringsAtReady } from "./known-gaps.js"
 import { gate, latest, tool } from "./model/script.js"
@@ -23,7 +21,7 @@ import {
 
 // The same scenarios for every harness. Where one differs, it is a trait of its setup or
 // a known gap (known-gaps.ts), never a check of which harness this is.
-for (const setup of [claude, codex, agy]) {
+for (const setup of setups) {
   describe.skipIf(!supported)(setup.name, () => {
     const it = e2e(setup)
 
@@ -58,22 +56,26 @@ for (const setup of [claude, codex, agy]) {
     it("rings an idle agent for a message, and its answer reaches the sender", async ({
       e2e: run,
     }) => {
-      // Where a turn's end may not be rung, t1 holds its turn open after sending until t2
-      // has answered, so the answer comes as its Stop continuation instead.
-      const hold = gate()
-      if (ringsAfterTurn(setup)) hold.open()
+      // Each answer's path is fixed. Where a turn's end is rung, t2's answer waits until
+      // t1's turn has ended, so the doorbell brings it. Where it may not be, t1 holds its
+      // turn open after sending until t2 has answered, so its Stop continuation brings it.
+      const asking = gate()
+      const answering = gate()
+      if (ringsAfterTurn(setup)) asking.open()
+      else answering.open()
       run.model.use(
         sends("Ask t2 for its colour", "t2", "What is your colour?"),
         own(async (call) => {
           if (!sent(call, "t2")) return undefined
-          await hold.opened
+          await asking.opened
           return { text: "Asked." }
         }),
-        own((call) =>
-          delivered(call, "t1")
-            ? sends("What is your colour?", "t1", "Mine is teal.")(call)
-            : undefined,
-        ),
+        own(async (call) => {
+          if (!delivered(call, "t1")) return undefined
+          const reply = await sends("What is your colour?", "t1", "Mine is teal.")(call)
+          if (reply) await answering.opened
+          return reply
+        }),
         own((call) => (delivered(call, "t2") ? { text: "t2 says teal." } : undefined)),
         replies("Keep this in mind", "Kept."),
       )
@@ -91,14 +93,21 @@ for (const setup of [claude, codex, agy]) {
       const rung = await run.model.waitFor((call) => delivered(call, "t1"), { after: calls })
       expect(latest(rung)).toMatch(ring)
       expect(deliveries(rung)).toEqual([{ from: "t1", text: "What is your colour?" }])
-      await through(t2, ["ringing", "working"], { after: from2 })
-      await through(t2, [holds("t1", "t2", "queued"), holds("t1", "t2", "delivered")], {
-        after: from2,
-      })
-      // Once t2's answer waits for t1, a held t1 may end its turn, and its Stop takes it.
-      await t1.reached(holds("t2", "t1", "queued"), { after: from1 })
-      hold.open()
-      // The answer comes back to t1, however t1 was waiting for it, and its turn ends.
+      await through(
+        t2,
+        [holds("t1", "t2", "queued"), "ringing", "working", holds("t1", "t2", "delivered")],
+        { after: from2 },
+      )
+      if (ringsAfterTurn(setup)) {
+        // t1's turn ends; then t2 answers, and the doorbell rings t1.
+        const done = await t1.reached(ended(setup), { after: from1 })
+        answering.open()
+        await through(t1, ["ringing", "working"], { after: done.index })
+      } else {
+        // Once t2's answer waits for t1, the held t1 ends its turn, and its Stop takes it.
+        await t1.reached(holds("t2", "t1", "queued"), { after: from1 })
+        asking.open()
+      }
       const answer = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
       expect(deliveries(answer)).toEqual([{ from: "t2", text: "Mine is teal." }])
       await t1.until("t2 says teal.")

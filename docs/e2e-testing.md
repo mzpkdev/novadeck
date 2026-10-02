@@ -156,7 +156,8 @@ network:
   `press` refuses anything holding a carriage return or line feed, the keypad's Enter
   (`\x1bOM`) or the kitty keyboard protocol's (`\x1b[13u`, `\x1b[13;…u`). The one
   deliberate Enter is `confirm(shows)`, which presses it only once the screen shows the
-  expected option or dialog.
+  expected option or dialog once more than it did when called, so text left from an
+  earlier dialog can't let it through.
 
 ## Writing a scenario
 
@@ -207,9 +208,14 @@ for (const setup of [claude, codex, agy]) {
   the history of its delivery state and its messages' states from the moment it opens.
   `t.mark()` and `t.reached(state or predicate, { after })` wait for a transition after
   a point, and `through(t, steps, { after })` for several in order, such as
-  `["ringing", "working"]` or `holds("t1", "t2", "delivered")`. On a timeout they fail
-  with every transition since the mark (`t2: ready → ringing → unknown`), so a failure
-  says what happened. `delivery(states)` waits for a state from now on.
+  `["ringing", "working"]` or `holds("t1", "t2", "delivered")`. Each step is met at or
+  after the one before it, in the same snapshot or a later one, as changes the runner
+  makes in one go arrive together. On a timeout they fail with every transition since
+  the mark (`t2: ready → ringing → unknown`), so a failure says what happened.
+- **Holding a turn** pins down how something travels. The round trip holds t2's answer
+  at a `gate()` until t1's turn has ended, and asserts t1 is then rung; where a harness's
+  turn end can't be rung yet (a known gap), it holds t1's turn open instead, so the
+  answer comes as its Stop continuation.
 - Prefer asserting on what the model received and on NovaDeck's state over reading the
   screen; read the screen for what only it shows, such as a reply rendered.
 
@@ -234,8 +240,9 @@ for (const setup of [claude, codex, agy]) {
      which no request may try; and `refused`, hosts it tries that no setting turns off.
    - `watch`: the paths in the developer's home its tripwire checks, searched for the
      sandbox's root, listed by entry name, or stamped by time and size.
-4. Add the setup to the list in `messaging.e2e.ts`. Every messaging scenario then runs
-   for it. A gap it shows goes in `known-gaps.ts`, with the test that pins it.
+4. Add the setup to `setups` in `src/e2e/agents/index.ts`. That one list drives the
+   messaging scenarios and the tripwire, so every scenario runs for it and its home is
+   watched. A gap it shows goes in `known-gaps.ts`, with the test that pins it.
 5. Add it to the CI matrix in `.github/workflows/e2e.yml`, with its display name.
 
 ## Claude Code against the fake model

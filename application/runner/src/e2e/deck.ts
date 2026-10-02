@@ -1,12 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 
-import type {
-  AgentName,
-  DeliveryState,
-  TerminalMessages,
-  TerminalSummary,
-} from "@novadeck/protocol"
+import type { AgentName, TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 
 import { wire } from "../runner.js"
@@ -52,7 +47,8 @@ export type DeckTerminal = {
   readonly submit: (text: string) => Promise<void>
   /**
    * The one deliberate way to confirm a dialog or pick from a menu: waits until the screen
-   * shows `shows`, the option or dialog expected, then presses Enter.
+   * shows `shows`, the option or dialog expected, once more than it did when called, then
+   * presses Enter, so one already on screen, as an earlier dialog, can't be confirmed.
    */
   readonly confirm: (
     shows: string | RegExp,
@@ -81,14 +77,6 @@ export type DeckTerminal = {
    * fails with the delivery states it went through from the mark on.
    */
   readonly reached: (what: Reach, options?: ReachOptions) => Promise<Snapshot>
-  /**
-   * Waits until its delivery state is one of those given, now or at any change from now
-   * on, however briefly, and returns it.
-   */
-  readonly delivery: (
-    states: readonly DeliveryState[],
-    timeoutMs?: number,
-  ) => Promise<DeliveryState>
 }
 
 export type Deck = {
@@ -111,8 +99,13 @@ export type DeckOptions = {
   readonly env: Readonly<Record<string, string>>
 }
 
-// How many times the text appears on the screen.
-const occurrences = (shown: string, text: string): number => shown.split(text).length - 1
+/** How many times the text, or a match of the pattern, appears on the screen. */
+export const occurrences = (shown: string, text: string | RegExp): number =>
+  typeof text === "string"
+    ? shown.split(text).length - 1
+    : (shown.match(
+        new RegExp(text.source, text.flags.includes("g") ? text.flags : `${text.flags}g`),
+      )?.length ?? 0)
 
 /**
  * Polls `read` until it gives a value, and returns it; fails with `what` after the
@@ -226,7 +219,14 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         terminals.write({ terminalId: id, data: "\r" }, owner)
       },
       confirm: async (shows, { timeoutMs } = {}) => {
-        await until(shows, timeoutMs)
+        // What it confirms may be on screen already, as an earlier dialog: only one more
+        // of it shows the one expected now.
+        const before = occurrences(await screen(id), shows)
+        await showing(
+          (shown) => occurrences(shown, shows) > before,
+          `${String(shows)} once more`,
+          timeoutMs,
+        )
         terminals.write({ terminalId: id, data: "\r" }, owner)
       },
       press: (keys) => {
@@ -240,14 +240,6 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       history: history.snapshots,
       mark: history.mark,
       reached: history.reached,
-      // From the snapshot it is in now on.
-      delivery: async (states, timeoutMs) =>
-        (
-          await history.reached((snapshot) => states.includes(snapshot.delivery), {
-            after: Math.max(history.mark() - 1, 0),
-            ...(timeoutMs !== undefined && { timeoutMs }),
-          })
-        ).delivery,
     }
   }
 

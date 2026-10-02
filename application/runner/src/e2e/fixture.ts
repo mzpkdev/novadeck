@@ -6,9 +6,7 @@ import { beforeAll } from "vitest"
 
 import { it as base } from "../test.js"
 import type { AgentSetup } from "./agents/agent.js"
-import { agy } from "./agents/agy.js"
-import { claude } from "./agents/claude.js"
-import { codex } from "./agents/codex.js"
+import { setups as every } from "./agents/index.js"
 import { createDeck, type Deck } from "./deck.js"
 import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
@@ -48,9 +46,6 @@ const chosen = ((): ReadonlySet<string> | undefined => {
 /** Whether this run tests the setup's harness (`NOVADECK_E2E_AGENTS`). */
 export const selected = (setup: Pick<AgentSetup, "agent">): boolean =>
   chosen === undefined || chosen.has(setup.agent)
-
-// Every harness's setup: the tripwire watches all of their homes, whichever a test runs.
-const every: readonly AgentSetup[] = [claude, codex, agy]
 
 export type E2E = {
   readonly model: FakeModel
@@ -97,6 +92,7 @@ export const e2e = (...setups: AgentSetup[]) => {
             `process(es) outlived the deck in the sandbox, ended at teardown: ${leftovers.join(", ")}`,
           )
       })
+      // The tripwire watches every harness's home, whichever a test runs.
       const changed = tripwire(sandbox, every)
       let env = sandbox.env
       for (const [index, setup] of setups.entries())

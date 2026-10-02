@@ -44,10 +44,12 @@ export const holds =
 
 /**
  * Waits until the terminal's history has gone through each step in order, from `after`
- * on, whatever came between them, and returns the snapshot of the last.
+ * on, whatever came between them, and returns the snapshot of the last. Each step is met
+ * at or after the one before: changes the runner makes in one handling come as one
+ * snapshot, so two steps may be met by the same.
  */
 export const through = async (
-  terminal: DeckTerminal,
+  terminal: Pick<DeckTerminal, "reached">,
   steps: readonly Reach[],
   { after = 0, timeoutMs }: ReachOptions = {},
 ): Promise<Snapshot | undefined> => {
@@ -55,7 +57,7 @@ export const through = async (
   for (const step of steps) {
     // eslint-disable-next-line no-await-in-loop -- Each step is looked for after the one before.
     last = await terminal.reached(step, {
-      after: last ? last.index + 1 : after,
+      after: last ? last.index : after,
       ...(timeoutMs !== undefined && { timeoutMs }),
     })
   }
