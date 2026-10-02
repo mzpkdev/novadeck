@@ -59,6 +59,9 @@ export type WorkspaceAction =
       initialSession?: WorkspaceSession
       enabledViews?: ViewMode[]
     }
+  // The person removes a project, closing its terminals. The last one stays: the
+  // workspace always has a project.
+  | { type: "project/remove"; projectId: string; now: number; enabledViews?: ViewMode[] }
   | { type: "session/add"; projectId: string; session: WorkspaceSession; activate?: boolean }
   | {
       type: "session/select"
@@ -221,6 +224,10 @@ const restoreView = (state: WorkspaceState, enabledViews?: ViewMode[]): Workspac
   return views.includes(state.view) ? state : { ...state, view: views[0]! }
 }
 
+// When the person was last in any of the project's sessions.
+const lastVisit = (project: WorkspaceProject): number =>
+  Math.max(...project.history.map((session) => session.visitedAt))
+
 const visit = (project: WorkspaceProject, id: string, now: number): WorkspaceProject => ({
   ...project,
   history: project.history.map((session) =>
@@ -310,6 +317,30 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
           : item
       })
       return { ...workspace, projects, activeProjectId: action.projectId }
+    }
+    case "project/remove": {
+      const others = workspace.projects.filter((project) => project.id !== action.projectId)
+      if (others.length === workspace.projects.length || !others.length) return workspace
+      // Removing the open project opens the one visited last, as the switcher would.
+      const next =
+        action.projectId === workspace.activeProjectId
+          ? others
+              .filter((project) => project.history.length)
+              .toSorted((a, b) => lastVisit(b) - lastVisit(a))[0]
+          : undefined
+      if (action.projectId === workspace.activeProjectId && !next) return workspace
+      const selected = next
+        ? workspaceReducer(workspace, {
+            type: "project/select",
+            projectId: next.id,
+            now: action.now,
+            ...(action.enabledViews ? { enabledViews: action.enabledViews } : {}),
+          })
+        : workspace
+      return {
+        ...selected,
+        projects: selected.projects.filter((project) => project.id !== action.projectId),
+      }
     }
     case "session/add":
       return updateProject(workspace, action.projectId, (project) => {

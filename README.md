@@ -203,6 +203,10 @@ out cannot replace what it saved while they ran.
 
 ## Zen mode
 
+The project switcher in the top bar removes a project from its row's trash icon, after
+you confirm; its terminals close, and the folder on disk stays. The last project stays.
+The backends don't remove projects yet: on the runner it comes back on the next reload.
+
 Choose **Enter Zen mode** in the top bar to hide the header, sidebar, rail, and footer
 without leaving the current Focus, Grid, or Canvas view. The floating dock provides
 New terminal, enabled view choices, and Exit Zen. At rest it folds to New terminal and a

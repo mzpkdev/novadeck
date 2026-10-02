@@ -37,6 +37,8 @@ export type WorkspaceCommands = ShellCommands &
     readonly switchProject: (next: Project) => void
     // Asks the backend for a folder and opens it as a new project; no-op without one.
     readonly openFolder: () => Promise<void>
+    // Removes a project and closes its terminals; the last project stays.
+    readonly removeProject: (id: string) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -206,6 +208,17 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           project,
           activate: true,
           initialSession,
+          enabledViews: preferences().enabledViews,
+        },
+      ])
+    },
+    removeProject: (id) => {
+      if (workspace.getSnapshot().projects.length < 2) return
+      navigateWorkspace([
+        {
+          type: "project/remove",
+          projectId: id,
+          now: effects.now(),
           enabledViews: preferences().enabledViews,
         },
       ])

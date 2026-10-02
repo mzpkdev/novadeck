@@ -977,10 +977,13 @@ export const runnerBackend = (
     }
     registry.reconcile(workspace, actions)
     saves.note(workspace)
-    // The person's renames go to the runner, which owns every terminal's title.
-    for (const action of actions)
+    for (const action of actions) {
+      // The person's renames go to the runner, which owns every terminal's title.
       if (action.type === "terminal/rename")
         void track(renameOnRunner({ ...action.target, terminalId: action.terminalId }, action.name))
+      // TODO: on "project/remove", remove the project on the runner. Until then only its
+      // terminals close, as the registry finds them gone, and it returns on reload.
+    }
     // The first commit renders the page and must start nothing; `start` covers it.
     // Reviving reports to the store, which cannot take a transaction inside its
     // commit, so it runs once the commit is done.
