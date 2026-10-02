@@ -1,4 +1,5 @@
-import { delimiter, join } from "node:path"
+// POSIX paths whatever runs the tests: a network namespace is Linux's alone.
+import { delimiter, join } from "node:path/posix"
 
 /**
  * How the command gets a network namespace of its own:
