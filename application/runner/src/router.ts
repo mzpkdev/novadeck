@@ -79,7 +79,7 @@ export const createRouter = (options: {
       }),
     },
     projects: {
-      list: authorized.projects.list.handler(() => store.projects()),
+      list: authorized.projects.list.handler(() => projects.list()),
       create: authorized.projects.create.handler(({ input }) =>
         store.createProject({ ...input, cwd: input.cwd ?? homedir() }),
       ),

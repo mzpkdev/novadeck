@@ -1,3 +1,5 @@
+import type { Project } from "@novadeck/protocol"
+
 import { DomainError } from "../errors.js"
 import type { Terminals } from "../terminals/index.js"
 import type { WorkspaceStore } from "./store.js"
@@ -17,6 +19,11 @@ export class Projects {
     private readonly store: WorkspaceStore,
     private readonly terminals: Terminals,
   ) {}
+
+  /** Every project, in order, but those being removed, which are as good as gone. */
+  list(): Project[] {
+    return this.store.projects().filter(({ id }) => !this.removing.has(id))
+  }
 
   /** A project being removed is already `NOT_FOUND` for anything new in it. */
   open(projectId: string): void {

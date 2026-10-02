@@ -168,7 +168,8 @@ running or kept only as saved, whichever connection controls them, so watchers s
 each `removed`; then it deletes the project, its sessions and what the runner kept of
 their terminals, and its agents' messages. Its folder on disk stays. Terminals being
 created in the project as it begins finish first and close with the rest; while it
-goes, creating a session or terminal in it rejects with `NOT_FOUND`. A second call
+goes, `projects.list` leaves it out and creating a session or terminal in it rejects
+with `NOT_FOUND`, as does restarting one of its terminals. A second call
 while it goes shares the first, and one after it, like one for a project the runner
 never had, rejects with `NOT_FOUND`.
 `sessions.save({ sessionId, state })` replaces a session's `state`, a string the

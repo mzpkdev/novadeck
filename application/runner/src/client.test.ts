@@ -522,6 +522,26 @@ describe("runner client project removal", () => {
     })
   })
 
+  it.skipIf(process.platform === "win32")(
+    "leaves the project out of listings and refuses sessions in it while it goes",
+    async ({ resources }) => {
+      // A shell that ignores a hangup holds the removal open for about a second.
+      const app = await deployed(resources, {
+        terminals: { shell: "/bin/sh", shellArgs: ["-c", "trap '' HUP; exec cat"] },
+      })
+      const client = await app.connect()
+      const { id: sessionId, projectId } = await session(client, app.directory)
+      await client.terminals.create(shell(sessionId))
+      const removing = client.projects.remove({ projectId })
+      // Asked once the removal began, long before its shell is gone.
+      await expect(client.projects.list()).resolves.toEqual([])
+      await expect(
+        client.sessions.create({ id: crypto.randomUUID(), projectId, name: "Late" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" })
+      await removing
+    },
+  )
+
   it("closes terminals created as it begins, refusing new ones, and shares a second call", async ({
     resources,
   }) => {
