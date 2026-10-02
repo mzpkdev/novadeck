@@ -3083,6 +3083,29 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(tui.received()).toHaveLength(2)
     })
 
+    it("types only the constant doorbell line into a terminal whose title holds @ and quotes", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell)
+      await tui.first()
+      const title = `@src/a.ts "quoted" 'single' $HOME !1 #x`
+      tui.manager.rename({ terminalId: tui.idle.id, title })
+      await expect.poll(() => tui.manager.get(tui.idle.id).title).toBe(title)
+      const before = tui.raw().length
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true, route: "ringing it now" })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await quiet()
+      // The test paste of the line, then its Enter: nothing of the title, nor of the message.
+      expect(tui.raw().slice(before)).toEqual([
+        expect.stringMatching(
+          // eslint-disable-next-line no-control-regex -- A bracketed paste's markers.
+          /^\x1b\[200~\[NovaDeck: automatic notice, agent messages waiting, [A-Za-z0-9]+\]\x1b\[201~$/,
+        ),
+        "\r",
+      ])
+      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+    })
+
     it("wakes a Claude Code TUI idle at its prompt since it started, before any turn", async ({
       shell,
     }) => {
