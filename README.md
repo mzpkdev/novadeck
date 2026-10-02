@@ -115,6 +115,9 @@ switch for every project and session. It all updates as messages move. The conte
 (`pnpm dev:previews`) shows a thread between its two agents; the behaviour specs' demo
 (`?demo=messages`) has every state, a held thread and the pause.
 
+Right-click a window's header for the same menu as its sidebar tab: Rename, Reset to
+automatic for a name you gave, Dock in for an undocked window, and Close.
+
 Use the eye on a terminal tab to hide it from Grid and Canvas without closing it.
 Hidden tabs stay in the list with a faded label. While selected, a hidden terminal
 appears at 50% opacity in Grid and Canvas, then disappears when it is no longer active.

@@ -6,11 +6,13 @@ import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
 import { UndockedWindow } from "../terminals/companion/UndockedWindow"
 import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
+import { windowMenu } from "../terminals/window-menu"
 import {
   WindowShell,
   type TerminalLayoutControls,
   type WindowShellProps,
 } from "../terminals/WindowShell"
+import { useCompanionDock } from "./companion-dock"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import {
   currentContext,
@@ -32,7 +34,7 @@ export const WorkspaceTerminal = ({
 }): React.JSX.Element => {
   const { backend, commands } = useWorkspaceServices()
   const { setSelected, openWindowed, openFocus, close, startRename, openSwitcher } = commands
-  const { undock } = commands
+  const { undock, resetTitle } = commands
   const { changeRenameDraft, saveRename, cancelRename, setKeyboardFocus } = commands
   const terminalId = terminal.id
   // Each terminal selects only what concerns it, so a rename keystroke or a keyboard
@@ -84,6 +86,7 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
+  const dockIn = useCompanionDock(terminal)
   // What of this terminal's companion is undocked in windows of its own now.
   const undockedKey = useWorkspaceState((workspace) =>
     currentState(workspace)
@@ -114,6 +117,13 @@ export const WorkspaceTerminal = ({
     onRenameDraft: (draft) => changeRenameDraft(terminal.id, draft),
     onRenameSave: () => saveRename(terminal.id),
     onRenameCancel: () => cancelRename(terminal.id),
+    menu: windowMenu({
+      terminal,
+      onRename: () => startRename(terminal, "header"),
+      onResetTitle: backend.resetTitle ? () => resetTitle(terminal.id) : undefined,
+      dockIn,
+      onClose: () => close(terminal.id),
+    }),
     compact,
     switcher: { onOpen: (button) => openSwitcher(terminal.id, button) },
     onClose: () => close(terminal.id),
