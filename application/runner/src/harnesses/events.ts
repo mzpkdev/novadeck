@@ -65,7 +65,10 @@ export type PromptShown = {
  * turn already running, or NovaDeck's `doorbell`: a prompt that is exactly its line. It ends `completed` only when its harness says so (a root
  * Stop, which may leave work it started running in the `background`); `turn-idle` says
  * the agent shows idle however its turn ended, which without such a Stop was an Esc or a
- * denial. `file-touched` names a file an actor wrote or edited. A request has no id of its own
+ * denial. `turn-working` says it shows working, which starts no turn: it only resumes one
+ * a `turn-idle` older than it ended, never one a Stop did. A request asked `midTurn`
+ * waits on the person only while a turn runs, so a stale one after a Stop asks nothing.
+ * `file-touched` names a file an actor wrote or edited. A request has no id of its own
  * in any harness, so `requestId` is derived from the tool call it asks about and the
  * actor that asks: the root agent, or a subagent by its id. A result marked `loose`
  * resolves the actor's oldest request of that tool when its call changed on the way, as
@@ -96,6 +99,13 @@ export type ActivityEvent = {
       /** Whether work the turn started, as a subagent, still runs. */
       readonly background: boolean
     }
+  | { readonly type: "turn-working" }
+  /**
+   * The person pressed Escape while the root turn ran, as their keys tell delivery (see
+   * docs/agent-messaging.md, "States"): it may have cancelled the turn, which no hook
+   * says, as Claude Code's Escape before its first reply. Started when the key came.
+   */
+  | { readonly type: "turn-escaped" }
   | { readonly type: "file-touched"; readonly actor: string | null; readonly path: string }
   | {
       readonly type: "attention-requested"
@@ -106,6 +116,12 @@ export type ActivityEvent = {
       /** What it asks about, and the answers it offers, where its call names them. */
       readonly subject: string | null
       readonly choices: readonly string[]
+      /**
+       * Whether only a root turn running asks it, and only a snapshot that may lag behind
+       * the turn's end tells it, as Antigravity's status line shows a confirmation: it
+       * counts only while a turn runs, or one a `turn-working` resumed.
+       */
+      readonly midTurn?: boolean
     }
   | {
       readonly type: "attention-resolved"

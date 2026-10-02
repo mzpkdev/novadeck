@@ -123,10 +123,16 @@ import { judgedFirst, workAfter, type Work } from "./work.js"
 const { Terminal } = headless
 const OUTPUT_CHARS = 4096
 
+/** How long after the person's last key an untrusted agent's hooks are asked about again. */
+export const trustRecheckMs = 1000
+
 export type TerminalOptions = {
   shell?: string
   shellArgs?: readonly string[]
+  /** Variables shells get on top of `baseEnv`. */
   env?: NodeJS.ProcessEnv
+  /** The environment shells start from: the runner's own when omitted. */
+  baseEnv?: NodeJS.ProcessEnv
   /** Running and retained terminals together; unlimited when omitted. */
   maxTerminals?: number
   /** Exited, unattached records kept for viewing or restart; the oldest go first. */
@@ -180,9 +186,9 @@ export type TerminalOptions = {
   /**
    * Whether NovaDeck's hooks run for the harness in a folder, where it runs them only
    * once the person trusts them (`Harness.hooksTrusted`); asked of the harness itself when
-   * omitted, and untrusted where it can't be asked.
+   * omitted. Undefined, or a failure, is unknown.
    */
-  hooksTrusted?: (agent: AgentName, cwd: string) => Promise<boolean>
+  hooksTrusted?: (agent: AgentName, cwd: string) => Promise<boolean | undefined>
 }
 
 type Create = {
@@ -248,6 +254,10 @@ type Record = {
   promptedAt: number | null
   /** How many titles that may tell a harness's prompt the terminal set, so a stale check is dropped. */
   titles?: number
+  /** The latest title the terminal set, which a trust check may read again. */
+  title?: string
+  /** Reads the latest title again once the person's keys pause, while hooks are untrusted. */
+  recheck?: NodeJS.Timeout | undefined
   /** What its agents showed the person, oldest first, by id; kept across its shells, never saved. */
   shown: ReadonlyMap<string, Artifact>
   /** What names it: the person's title, an agent's, and its agent's summary of its work. */
@@ -320,6 +330,23 @@ const alive = (pid: string): boolean => {
     return true
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+/**
+ * Resumes a process group hung up as its terminal closed, once the shell has exited. On
+ * its own hangup bash takes the terminal back for itself before it exits, so a program
+ * still restoring the terminal then, as an agent's TUI does on its way out, is stopped
+ * by SIGTTIN or SIGTTOU. Should that stop not have finished as bash exits, the kernel
+ * doesn't send the orphaned group its SIGHUP and SIGCONT, and the program stays stopped
+ * for good. Once the shell is gone the terminal answers with an error instead, so the
+ * resumed program finishes exiting. A group already gone is skipped.
+ */
+const resumeGroup = (group: number): void => {
+  try {
+    process.kill(-group, "SIGCONT")
+  } catch {
+    // Gone.
   }
 }
 
@@ -433,6 +460,7 @@ export class Terminals {
     Omit<
       TerminalOptions,
       | "env"
+      | "baseEnv"
       | "shellArgs"
       | "shellFiles"
       | "records"
@@ -455,7 +483,7 @@ export class Terminals {
     shims: () => Promise<readonly AgentName[]>
     connected: (agent: AgentName) => Promise<boolean>
     install: (agent: AgentName) => Promise<Install | undefined>
-    hooksTrusted: ((agent: AgentName, cwd: string) => Promise<boolean>) | undefined
+    hooksTrusted: ((agent: AgentName, cwd: string) => Promise<boolean | undefined>) | undefined
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
@@ -486,7 +514,7 @@ export class Terminals {
           ? (process.env.COMSPEC ?? "cmd.exe")
           : (process.env.SHELL ?? "/bin/sh")),
       shellArgs: options.shellArgs,
-      env: { ...process.env, ...options.env, TERM: "xterm-256color" },
+      env: { ...(options.baseEnv ?? process.env), ...options.env, TERM: "xterm-256color" },
       maxTerminals:
         options.maxTerminals === undefined
           ? Number.POSITIVE_INFINITY
@@ -876,6 +904,8 @@ export class Terminals {
         keys.map(({ kind }) => kind),
         (record.activity?.pending.length ?? 0) > 0,
       )
+      this.escaped(record)
+      if (this.messaging.untrustedAgent(input.terminalId)) this.recheckTrust(record)
     }
     // While the doorbell's test paste is on screen, the person's input waits its turn.
     if (record.held) {
@@ -898,6 +928,7 @@ export class Terminals {
       settledSince: (terminalId) => this.messaging.settledSince(terminalId),
       ring: (terminalId, nonce) => this.messaging.ring(terminalId, nonce),
       ringing: (terminalId) => this.messaging.ringing(terminalId),
+      ready: (terminalId) => this.messaging.ready(terminalId),
       ringFailed: (terminalId, nonce) => this.messaging.ringFailed(terminalId, nonce),
       screen: async (terminalId) => {
         const record = live(terminalId)
@@ -2133,7 +2164,10 @@ export class Terminals {
         if (!record.exitQueued) child.write(data)
       }),
       // A harness may tell by the title it sets that its prompt shows.
-      screen.onTitleChange((title) => this.screenTitled(record, child, title)),
+      screen.onTitleChange((title) => {
+        record.title = title
+        this.screenTitled(record, child, title)
+      }),
       // The shell integration reports the directory at each prompt: OSC 7 from bash, zsh
       // and fish, OSC 9;9 from PowerShell and cmd. A directory on another machine, as
       // from a shell over SSH, is not this shell's prompt.
@@ -2238,15 +2272,15 @@ export class Terminals {
       connected,
       platform: process.platform,
     }
-    // Its prompt shows, as the agent holding the terminal tells, as for a session it names.
-    if (
-      shown &&
-      foreground !== true &&
-      (process.platform !== "win32" || record.submitted) &&
-      (await this.promptCounts(record, report.agent)) &&
-      record.process === child
-    )
-      this.showPrompt(record, shown)
+    // Its prompt shows, as the agent holding the terminal tells, as for a session it names;
+    // one whose hooks its harness says don't run there can take no message.
+    if (shown && foreground !== true && (process.platform !== "win32" || record.submitted)) {
+      const trust = await this.promptTrust(record, report.agent)
+      if (record.process === child && shown.startedAt > (record.promptedAt ?? 0)) {
+        if (trust === "counts") this.showPrompt(record, shown)
+        else if (trust === "untrusted") this.messaging.untrusted(record.summary.id, report.agent)
+      }
+    }
     if (events.length === 0) return silent
     const cwd = record.summary.cwd
     // Every fact applies before messaging sees the report: a turn's start clears the
@@ -2308,6 +2342,7 @@ export class Terminals {
     if (this.tallyWork(record, told, changes) || changed) this.save(record, false)
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
+      this.escaped(record)
       this.judgeFirst(record)
       return silent
     }
@@ -2317,6 +2352,7 @@ export class Terminals {
       events: told,
       deadline,
     })
+    this.escaped(record)
     this.judgeFirst(record)
     return this.nudged(record, report, told, answer, deadline)
   }
@@ -2473,14 +2509,16 @@ export class Terminals {
     const { root, transcript } = record
     const typedEntry = root && harnesses[root.agent].messaging.typedEntry
     if (!root || !typedEntry || !transcript) return events
+    // The person's Enter, judged by when the turn's hook started, as delivery judges it.
+    const started = events.find((event) => event.type === "turn-started")
     const told = await typedPromptStart(events, {
       root,
       typedEntry,
       transcript,
       // What was seen of this transcript, not another's.
       seen: record.seenEntry?.transcript === transcript ? record.seenEntry.id : undefined,
-      enteredAt: this.messaging.pendingSubmission(id),
-      waiting: this.messaging.ringing(id) !== undefined,
+      enteredAt: started && this.messaging.pendingSubmission(id, started.startedAt),
+      ringing: this.messaging.ringing(id),
       startedWith: record.startedWith,
     })
     if (told.seen !== undefined) record.seenEntry = { transcript, id: told.seen }
@@ -2520,9 +2558,30 @@ export class Terminals {
       const epoch = delivery?.epoch
       // Asked before it joins the terminal's queue, so a slow answer from the harness
       // never holds the terminal's reports up.
+      // Still the terminal's latest title, from the same process, with no session bound, no
+      // binding ended and no root turn started since, nor the shell's prompt back.
+      const current = () =>
+        record.titles === seq &&
+        record.process === child &&
+        !record.exitQueued &&
+        this.messaging.delivery(record.summary.id)?.epoch === epoch
       void (async () => {
         const found = await this.harnessIn(record, child, agent)
-        if (!found || !(await this.promptCounts(record, agent, found.where))) return
+        if (!found) return
+        const trust = await this.promptTrust(record, agent, found.where)
+        // Hooks its harness says don't run there: no message can reach it, as long as this
+        // title still stands. A late answer marks no terminal the agent has left.
+        if (trust === "untrusted" && !binding)
+          return this.queue(
+            record.summary.id,
+            () => {
+              if (current() && shown.startedAt > (record.promptedAt ?? 0))
+                this.messaging.untrusted(record.summary.id, agent)
+              return Promise.resolve()
+            },
+            undefined,
+          )
+        if (trust !== "counts") return
         // Another session's id ends the bound one only once the harness says it started
         // it as a new root; otherwise that session's own hooks tell, at its first prompt.
         if (binding) {
@@ -2538,13 +2597,7 @@ export class Terminals {
         await this.queue(
           record.summary.id,
           () => {
-            if (
-              record.titles === seq &&
-              record.process === child &&
-              !record.exitQueued &&
-              this.messaging.delivery(record.summary.id)?.epoch === epoch
-            )
-              this.showPrompt(record, shown, replaced)
+            if (current()) this.showPrompt(record, shown, replaced)
             return Promise.resolve()
           },
           undefined,
@@ -2606,24 +2659,36 @@ export class Terminals {
 
   /**
    * Whether a prompt the harness shows counts: it is connected, and NovaDeck's hooks run
-   * for it there, as `where` (see `harnessIn`) asks it.
+   * for it there, as `where` (see `harnessIn`) asks it. `untrusted` only when the harness
+   * answered that they don't run there, as nothing could deliver to that agent; `unknown`
+   * when it couldn't answer, or nothing could ask it.
    */
-  private async promptCounts(
+  private async promptTrust(
     record: Record,
     agent: AgentName,
     where?: Install & { readonly program?: string },
-  ): Promise<boolean> {
-    if (!(await this.connected(agent))) return false
+  ): Promise<"counts" | "untrusted" | "unknown"> {
+    if (!(await this.connected(agent))) return "unknown"
+    const trusted = await this.hooksTrustedIn(record, agent, where).catch(() => undefined)
+    return trusted === true ? "counts" : trusted === false ? "untrusted" : "unknown"
+  }
+
+  /** Whether NovaDeck's hooks run for the agent in the terminal's folder; undefined unknown. */
+  private hooksTrustedIn(
+    record: Record,
+    agent: AgentName,
+    where?: Install & { readonly program?: string },
+  ): Promise<boolean | undefined> {
     const { cwd } = record.summary
-    if (this.options.hooksTrusted) return this.options.hooksTrusted(agent, cwd).catch(() => false)
+    if (this.options.hooksTrusted) return this.options.hooksTrusted(agent, cwd)
     const trusted = harnesses[agent].hooksTrusted
-    if (!trusted) return true
-    return where ? trusted(where, cwd).catch(() => false) : false
+    if (!trusted) return Promise.resolve(true)
+    return where ? trusted(where, cwd) : Promise.resolve(undefined)
   }
 
   /**
    * A connected harness's own empty prompt shows, before a session it names in full binds,
-   * and NovaDeck's hooks run for it there (`promptCounts`; see docs/agent-messaging.md,
+   * and NovaDeck's hooks run for it there (`promptTrust`; see docs/agent-messaging.md,
    * "States"): messages wait for the session it starts there, and the doorbell may ring
    * it. One the shell's prompt came after is stale: the agent left. With a session of
    * that agent bound, it changes nothing, unless it `replaces` it, as the harness started
@@ -2686,7 +2751,41 @@ export class Terminals {
       // What only its records say, as an interrupted turn, reaches messaging too.
       if (this.trackRoot(record, [fact], false)) this.save(record, false)
       this.messaging.observe(record.summary.id, [fact])
+      this.escaped(record)
     }).catch((error: unknown) => console.error("NovaDeck stopped following an agent:", error))
+  }
+
+  /**
+   * The person may trust the agent's hooks in the agent itself (Codex's `/hooks`), which
+   * sets no new title (probed with Codex 0.159.3): once their keys pause, the latest title
+   * is read again, asking about the hooks afresh.
+   */
+  private recheckTrust(record: Record): void {
+    if (record.recheck) clearTimeout(record.recheck)
+    const child = record.process
+    record.recheck = setTimeout(() => {
+      record.recheck = undefined
+      const { title } = record
+      if (
+        title === undefined ||
+        record.process !== child ||
+        record.exitQueued ||
+        !this.messaging.untrustedAgent(record.summary.id)
+      )
+        return
+      this.screenTitled(record, child, title)
+    }, trustRecheckMs)
+    record.recheck.unref()
+  }
+
+  /**
+   * The person's Escape that may have cancelled the root turn, as delivery took it, ends
+   * the turn for the agent's activity too, so the two tell the same.
+   */
+  private escaped(record: Record): void {
+    const { binding } = record
+    const event = binding && this.messaging.escaped(record.summary.id, binding)
+    if (event && this.applyFact(record, event)) this.publishAgent(record, false)
   }
 
   /** Applies what the bound session's hooks or records said; true when it changed. */
@@ -2854,7 +2953,7 @@ export class Terminals {
     // The second signal bounds shutdown even for shells that ignore SIGHUP.
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      await this.hangUp(record.process)
+      const group = await this.hangUp(record.process)
       try {
         record.process.kill()
       } catch {
@@ -2868,25 +2967,29 @@ export class Terminals {
         }
       }, 1000)
       await record.exited
+      if (group !== undefined) resumeGroup(group)
     } finally {
       if (timer) clearTimeout(timer)
     }
   }
 
   /**
-   * Hangs up the program in the terminal's foreground, as closing a real terminal does.
+   * Hangs up the program in the terminal's foreground, as closing a real terminal does,
+   * and returns its process group; undefined when there is none to hang up, as on Windows,
+   * where no foreground group is known.
    * A shell passes its own hangup on to the jobs it started, but not always: bash does
    * not to a command its prompt hook ran, as a resumed agent is, and would leave it
    * running without a terminal, still holding its session.
    */
-  private async hangUp(child: pty.IPty): Promise<void> {
+  private async hangUp(child: pty.IPty): Promise<number | undefined> {
     const group = await terminalForeground(child.pid)
-    if (group === undefined || group === child.pid) return
+    if (group === undefined || group === child.pid) return undefined
     try {
       process.kill(-group, "SIGHUP")
     } catch {
       // Gone meanwhile.
     }
+    return group
   }
 
   /**

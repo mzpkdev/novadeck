@@ -44,6 +44,7 @@ const maxText = 256
  * says when each stopped, and `interrupted` spans the latest interrupted turn, whose
  * subagents stopped with it, so a start that arrives late is not taken for a new run.
  * `planning` is what the latest hook to name the agent's mode said, at `planningAt`.
+ * `idled` says an idle status line, not a Stop, ended the latest turn, at `turnAt`.
  */
 export type Activity = {
   readonly state: "working" | "idle"
@@ -56,6 +57,7 @@ export type Activity = {
   /** Each actor's latest plan, in the order the actors first planned. */
   readonly plans: readonly Plan[]
   readonly turnAt: number
+  readonly idled: boolean
 }
 
 /** A freshly bound agent waits for its first prompt. */
@@ -69,6 +71,7 @@ export const started = (at: number): Activity => ({
   planningAt: at,
   plans: [],
   turnAt: at,
+  idled: false,
 })
 
 const end = (ended: Activity["ended"], ids: readonly string[], at: number): Activity["ended"] =>
@@ -180,13 +183,25 @@ export const apply = (
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
-      return { ...activity, state: "working", pending: [], turnAt: event.startedAt }
+      return { ...activity, state: "working", pending: [], turnAt: event.startedAt, idled: false }
     case "turn-idle":
       // Idle after the turn's Stop says nothing new; without one, the turn ended abnormally.
       if (activity.state !== "working") return undefined
-      return { ...activity, state: "idle", pending: [], turnAt: event.startedAt }
+      return { ...activity, state: "idle", pending: [], turnAt: event.startedAt, idled: true }
+    case "turn-escaped":
+      // The turn may be over, as delivery takes it: idle, its requests settled, until a
+      // later hook moves it on. No working status line resumes it.
+      if (activity.state !== "working") return undefined
+      return { ...activity, state: "idle", pending: [], turnAt: event.startedAt, idled: false }
+    case "turn-working":
+      // Working after the idle that ended its turn, and newer than it: that idle was stale,
+      // and the turn goes on. After a Stop it says nothing new. The turn's fence stays at the
+      // idle, so a Stop whose hook started before this snapshot still ends it.
+      if (activity.state !== "idle" || !activity.idled || event.startedAt <= activity.turnAt)
+        return undefined
+      return { ...activity, state: "working", idled: false }
     case "turn-ended": {
-      const turn = { state: "idle", pending: [], turnAt: event.startedAt } as const
+      const turn = { state: "idle", pending: [], turnAt: event.startedAt, idled: false } as const
       if (event.outcome !== "interrupted") return { ...activity, ...turn }
       const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
       return {
@@ -210,6 +225,9 @@ export const apply = (
     }
     case "attention-requested": {
       if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
+      // One only a turn asks, shown while none runs, is a stale snapshot of the turn a Stop
+      // ended: a turn running, or one a working resumed, is the only one it can be.
+      if (event.midTurn === true && activity.state !== "working") return undefined
       // Asked by a subagent before it stopped, it waits on the person no longer.
       const stopped = event.actor === null ? undefined : endOf(activity.ended, event.actor)
       if (stopped !== undefined && event.startedAt < stopped) return undefined

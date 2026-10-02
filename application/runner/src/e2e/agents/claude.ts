@@ -1,0 +1,142 @@
+import { mkdir, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+
+import { anthropic } from "../model/anthropic.js"
+import type { Call } from "../model/script.js"
+import type { AgentSetup } from "./agent.js"
+
+// What the prompt of the background subagent a scenario starts holds, and nothing else.
+const marker = "novadeck-e2e-background-work"
+
+/**
+ * Claude Code against the fake model: its own config folder in the sandbox, seeded past
+ * onboarding, the theme picker, folder trust and the custom API key's approval, with
+ * NovaDeck's MCP tools allowed so a `send` asks nothing. Its permission mode is the
+ * manual one, auto mode turned off: 2.1.287 defaults to auto mode, whose classifier
+ * decides what asks, and shows a notice about its billing through a gateway, or with
+ * `defaultMode` alone an offer to make it the default, either of which waits on Enter.
+ */
+export const claude: AgentSetup = {
+  agent: "claude",
+  name: "Claude Code",
+  dialect: anthropic,
+  // The name its first screen's header gives, beside its version.
+  banner: "Claude Code",
+  bindsAtReady: true,
+  refused: [],
+  watch: {
+    searched: [
+      ".claude/settings.json",
+      ".claude/plugins/installed_plugins.json",
+      ".claude/plugins/known_marketplaces.json",
+    ],
+    // Its projects, each named after its path with every other character a dash, which
+    // keeps the sandbox's name whole: that holds only letters, digits and dashes.
+    listed: [".claude/projects"],
+    stamped: [],
+  },
+  hosts: ["api.anthropic.com", "claude.ai", "console.anthropic.com", "statsig.anthropic.com"],
+  // A command that writes, which no setting allows: a read-only one such as `ls` runs
+  // without asking. Its dialog's first option is selected as it shows, and "3", its "No",
+  // refuses by its number alone, as Esc does, which also ends the turn: a key other than
+  // Escape, so NovaDeck must learn of the refusal from the harness, not the keystroke.
+  approval: {
+    request: () => ({
+      calls: [
+        {
+          name: "Bash",
+          input: { command: "touch approved.txt", description: "Make a file" },
+        },
+      ],
+    }),
+    shows: /❯ 1\. Yes/,
+    deny: "3",
+    denied: /Interrupted · What should Claude do instead\?/,
+  },
+  // Escape before any reply came drops the turn and puts its prompt back in the box,
+  // between the box's rules, with no word of the interruption (probed 2026-10-02, 2.1.287).
+  interrupted: (prompt) =>
+    new RegExp(`─\\n❯\\s+${prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n─`),
+  // A subagent run in the background: its Stop lists it as a running background task, and
+  // once it finishes Claude Code starts a turn by itself, with a task notification.
+  background: {
+    start: () => ({
+      calls: [
+        {
+          name: "Agent",
+          input: {
+            description: "Background work",
+            prompt: `${marker}: reply when done.`,
+            subagent_type: "general-purpose",
+            run_in_background: true,
+          },
+        },
+      ],
+    }),
+    // Its conversation opens with that prompt; the root's never does, though its later
+    // turns may quote it, as a task notification can.
+    owns: (call: Call) =>
+      !call.side &&
+      (call.turns.find((turn) => turn.role === "user")?.text.includes(marker) ?? false),
+  },
+  // Its folder-trust question shows "No, exit" selected, trusting the folder below it.
+  trust: {
+    folder: {
+      shows: /Is this a project you created or one you trust\?/,
+      select: "\x1b[B",
+      trusts: /❯ Yes, I trust this folder/,
+    },
+  },
+  absent: {
+    "trust.hooks":
+      "it runs a plugin's hooks with no review: every scenario's session binds unasked (2.1.287)",
+  },
+  prepare: async (sandbox, model, installed, seed = {}) => {
+    const config = join(sandbox.home, ".claude")
+    await mkdir(config, { recursive: true, mode: 0o700 })
+    // With CLAUDE_CONFIG_DIR set, Claude Code keeps its global state in the folder too.
+    await writeFile(
+      join(config, ".claude.json"),
+      JSON.stringify({
+        hasCompletedOnboarding: true,
+        lastOnboardingVersion: installed.version,
+        lastReleaseNotesSeen: installed.version,
+        theme: "dark",
+        autoUpdates: false,
+        officialMarketplaceAutoInstall: false,
+        // It asks once about a key from the environment, by the key's last 20 characters.
+        customApiKeyResponses: { approved: [model.credential.slice(-20)], rejected: [] },
+        projects: {
+          [sandbox.project]: {
+            hasTrustDialogAccepted: seed.folderTrusted ?? true,
+            hasCompletedProjectOnboarding: true,
+            projectOnboardingSeenCount: 1,
+            allowedTools: [],
+          },
+        },
+      }),
+    )
+    await writeFile(
+      join(config, "settings.json"),
+      JSON.stringify({
+        permissions: {
+          allow: ["mcp__plugin_novadeck_novadeck"],
+          defaultMode: "default",
+          disableAutoMode: "disable",
+        },
+      }),
+    )
+    return {
+      CLAUDE_CONFIG_DIR: config,
+      ANTHROPIC_BASE_URL: model.url,
+      ANTHROPIC_API_KEY: model.credential,
+      DISABLE_AUTOUPDATER: "1",
+      DISABLE_UPDATES: "1",
+      DISABLE_TELEMETRY: "1",
+      DISABLE_ERROR_REPORTING: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: "1",
+      CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
+    }
+  },
+}
