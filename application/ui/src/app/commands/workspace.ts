@@ -1,6 +1,7 @@
 import type { TerminalRequest } from "../../backend/port"
-import type { CompanionWindow } from "../../model/companion"
+import type { CompanionWindow, UndockPlace } from "../../model/companion"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
+import { canvasPresetSize } from "../../model/layout/terminal-size"
 import { activeProject, type WorkspaceAction } from "../../model/state"
 import type {
   PreferencesValue,
@@ -44,7 +45,7 @@ export type WorkspaceCommands = ShellCommands &
     // Undocks part of the companion of the terminal `from`, a plan, something its agent
     // showed or its messages, into a window of its own beside it, or brings that window
     // forward.
-    readonly undock: (from: string, item: CompanionWindow["item"]) => void
+    readonly undock: (from: string, item: CompanionWindow["item"], place?: UndockPlace) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -229,7 +230,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
         },
       ])
     },
-    undock: (from, item) => {
+    undock: (from, item, place) => {
       const snapshot = workspace.getSnapshot()
       const { roster, layout } = currentState(snapshot)
       const same = (other: CompanionWindow["item"]): boolean =>
@@ -241,7 +242,29 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const open = roster.terminals.find(
         (terminal) => terminal.companion?.from === from && same(terminal.companion.item),
       )
-      if (open) return select(open.id)
+      const target = currentTarget(snapshot)
+      // Dropped on the canvas: its window opens there, at its usual size, or the one open
+      // moves there.
+      const geometry = place && { position: place.canvas, ...canvasPresetSize("small") }
+      if (open) {
+        if (geometry)
+          workspace.transact([
+            {
+              type: "canvas/layout",
+              target,
+              layout: (canvas) => ({
+                ...canvas,
+                geometry: {
+                  ...canvas.geometry,
+                  [open.id]: { ...canvas.geometry[open.id], ...geometry },
+                },
+              }),
+            },
+          ])
+        // Placed where the person dropped it, in view: it's selected without bringing
+        // the camera to it.
+        return geometry ? setSelected(open.id) : select(open.id)
+      }
       const origin = roster.terminals.find((terminal) => terminal.id === from)
       if (!origin) return
       // A window, not a shell: nothing runs in it, so it's idle and has no program.
@@ -264,15 +287,16 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
         [
           {
             type: "terminal/add",
-            target: currentTarget(snapshot),
+            target,
             terminal,
             gridLayouts: addCompactGridTerminal(roster.terminals, layout.grid, terminal),
             anchor: from,
+            ...(geometry ? { canvasGeometry: geometry } : {}),
           },
         ],
         { panel: "terminals" },
       )
-      pulse()
+      if (!geometry) pulse()
     },
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()

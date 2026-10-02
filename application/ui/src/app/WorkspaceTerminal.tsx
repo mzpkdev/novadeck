@@ -171,7 +171,7 @@ export const WorkspaceTerminal = ({
           onReveal={onReveal}
           minimized={minimize?.minimized}
           clipContent={minimize?.clipContent}
-          undock={(item) => undock(terminal.id, item)}
+          undock={(item, place) => undock(terminal.id, item, place)}
           undocked={undocked}
           terminalOf={terminalOf}
         >

@@ -264,6 +264,19 @@ describe("workspace commands", () => {
       expect(app.state().selected).toBe(windows[0]!.id)
     })
 
+    it("opens a window dropped on the canvas there, and moves one already open there", () => {
+      const app = openCommands()
+      app.commands.undock("01", image, { canvas: { x: 400, y: 240 } })
+      const shown = app.state().roster.terminals.find((each) => each.companion)!
+      expect(app.state().layout.canvas.geometry[shown.id]).toMatchObject({
+        position: { x: 400, y: 240 },
+      })
+      app.commands.undock("01", image, { canvas: { x: 80, y: 960 } })
+      expect(app.state().layout.canvas.geometry[shown.id]).toMatchObject({
+        position: { x: 80, y: 960 },
+      })
+    })
+
     it("opens nothing for a terminal the session doesn't have", () => {
       const app = openCommands()
       const before = app.state()

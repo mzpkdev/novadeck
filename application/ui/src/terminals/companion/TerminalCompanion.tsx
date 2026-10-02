@@ -5,6 +5,7 @@ import {
   type CompanionKey,
   type CompanionWindow,
   type Companions,
+  type UndockPlace,
 } from "../../model/companion"
 import type { Messages } from "../../model/messages"
 import type { ViewMode } from "../../model/types"
@@ -43,9 +44,9 @@ const clamp = (value: number): number => Math.min(0.7, Math.max(0.22, value))
 type MailProps = {
   mail: MailHandle
   peerName: (handle: string) => string | undefined
-  openWindow: ((artifact: Shown) => void) | undefined
-  undockMessages: (() => void) | undefined
-  undockPlan: ((plan: PlanDoc) => void) | undefined
+  openWindow: ((artifact: Shown, place?: UndockPlace) => void) | undefined
+  undockMessages: ((place?: UndockPlace) => void) | undefined
+  undockPlan: ((plan: PlanDoc, place?: UndockPlace) => void) | undefined
   // Other terminals' items placed on this one's bar, and the messages they read from.
   guests: readonly Guest[]
   messages: Messages | undefined
@@ -193,8 +194,9 @@ export const TerminalCompanion = ({
   children: ReactNode
   minimized?: boolean | undefined
   clipContent?: boolean | undefined
-  // Undocks something the agent showed, or the messages, into a window of its own.
-  undock?: ((item: CompanionWindow["item"]) => void) | undefined
+  // Undocks a plan, something the agent showed, or the messages, into a window of its
+  // own; `place`, where it opens when it was dropped on the canvas.
+  undock?: ((item: CompanionWindow["item"], place?: UndockPlace) => void) | undefined
   // What of the companion is undocked now, by its id in the pane: plan tabs, artifact
   // ids, the messages' tab.
   undocked?: readonly string[] | undefined
@@ -275,12 +277,14 @@ export const TerminalCompanion = ({
   const mail = out.has(mailTab) ? { ...terminalMail, present: false } : terminalMail
   const moveToWindow =
     undock &&
-    (({ fresh: _fresh, at: _at, ...ref }: Shown): void => undock({ kind: "artifact", ref }))
-  const undockMessages = undock && ((): void => undock({ kind: "messages" }))
+    (({ fresh: _fresh, at: _at, ...ref }: Shown, place?: UndockPlace): void =>
+      undock({ kind: "artifact", ref }, place))
+  const undockMessages =
+    undock && ((place?: UndockPlace): void => undock({ kind: "messages" }, place))
   const undockPlan =
     undock &&
-    ((plan: PlanDoc): void =>
-      undock({ kind: "plan", ref: plan.ref, name: titleOf(plan.path, plan.text) }))
+    ((plan: PlanDoc, place?: UndockPlace): void =>
+      undock({ kind: "plan", ref: plan.ref, name: titleOf(plan.path, plan.text) }, place))
   const trigger = useRef<HTMLButtonElement>(null)
   const presentation = presentationOf(view)
   const present = companion.present || mail.present || guests.length > 0

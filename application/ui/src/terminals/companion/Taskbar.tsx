@@ -10,11 +10,14 @@ import { isSortable, useSortable } from "@dnd-kit/react/sortable"
 import { FileStack, FileText, MessagesSquare, Pause } from "lucide-react"
 import { useRef, useState, type ReactNode } from "react"
 
-import type { ArtifactKind, CompanionKey } from "../../model/companion"
+import type { ArtifactKind, CompanionKey, UndockPlace } from "../../model/companion"
+import { canvasPointPosition } from "../../model/layout/canvas-placement"
+import { canvasPresetSize } from "../../model/layout/terminal-size"
 import { mailBadgeLabel, type Messages } from "../../model/messages"
 import { ContextMenu, type ContextMenuItem } from "../../ui-toolkit/ContextMenu"
 import { HoverCard } from "../../ui-toolkit/HoverCard"
 import type { Presence } from "../../ui-toolkit/presence"
+import { dropPreview, dropSpaceAt, requestDropPlace } from "../drop-space"
 import { ArtifactThumb, kindIcons } from "./ArtifactViewer"
 import { dragOver, dragTargetAt } from "./drag-over"
 import type { Guest } from "./guests"
@@ -178,6 +181,9 @@ const feedback = Feedback.configure({
 })
 const cursor = Cursor.configure({ cursor: "grabbing" })
 
+// How far below the pointer a window dropped on the canvas has its top: its header.
+const headerOffset = 24
+
 // One slot as the taskbar's drag reorders it: its own box, a direct child of the bar,
 // so the drag moves the whole slot. Its icon button is the handle, which carries what
 // dnd-kit tells assistive technology, so no second button wraps the first.
@@ -230,9 +236,10 @@ export const Taskbar = ({
   peerName: (handle: string) => string | undefined
   // Undock something shown, or the messages, into a window of its own; absent where
   // there's no such window.
-  openWindow: ((artifact: Shown) => void) | undefined
-  undockMessages: (() => void) | undefined
-  undockPlan: ((plan: PlanDoc) => void) | undefined
+  // `place`, where its window opens when it was dropped on the empty canvas.
+  openWindow: ((artifact: Shown, place?: UndockPlace) => void) | undefined
+  undockMessages: ((place?: UndockPlace) => void) | undefined
+  undockPlan: ((plan: PlanDoc, place?: UndockPlace) => void) | undefined
   trigger: React.RefObject<HTMLButtonElement | null>
   open: boolean
   // How the bar comes and goes with what the terminal has to show.
@@ -295,6 +302,23 @@ export const Taskbar = ({
     companion.update((next) => reorderBar(next, moveSlot(bar, from, to)))
   // Ends following the pointer once a drag ends.
   const stopFollowing = useRef<(() => void) | undefined>(undefined)
+  // Where the dragged slot's window would open on the empty canvas, if it's over it.
+  const space = useRef<UndockPlace | null>(null)
+  // What a drop on the empty canvas undocks: one plan, one thing shown, or the messages.
+  // A group would be several windows; another terminal's item isn't this bar's to undock.
+  const undockable = (entry: BarSlot): boolean =>
+    entry.kind === "plan"
+      ? Boolean(undockPlan)
+      : entry.kind === "mail"
+        ? Boolean(undockMessages)
+        : entry.kind === "one" && Boolean(openWindow)
+  const undockAt = (entry: BarSlot, place: UndockPlace): void => {
+    if (entry.kind === "plan") {
+      const plan = pane.plans.find((each) => planTab(each.ref) === entry.tab)
+      if (plan) undockPlan?.(plan, place)
+    } else if (entry.kind === "mail") undockMessages?.(place)
+    else if (entry.kind === "one") openWindow?.(entry.artifact, place)
+  }
   // Dropped on another terminal's bar, a slot shows there: each of a group, one by one; a
   // guest dropped on its own terminal's bar goes home.
   const placeSlot = (entry: BarSlot, terminalId: string): void => {
@@ -450,7 +474,7 @@ export const Taskbar = ({
                 {
                   value: "window-mail",
                   label: "Undock to its own window",
-                  onSelect: undockMessages,
+                  onSelect: () => undockMessages(),
                 },
               ]
             : []),
@@ -564,13 +588,35 @@ export const Taskbar = ({
       <DragDropProvider
         sensors={sensors}
         plugins={(defaults) => [...defaults, accessibility, feedback, cursor]}
-        onDragStart={() => {
-          // Where the pointer is on screen: over which terminal, and on its bar. The drag's
-          // own position is the dragged slot's, and it keeps the pointer's moves to itself,
-          // so this listens ahead of it.
+        onDragStart={(event) => {
+          // Where the pointer is on screen: over which terminal, and on its bar, or over the
+          // empty canvas. The drag's own position is the dragged slot's, and it keeps the
+          // pointer's moves to itself, so this listens ahead of it.
           const source = pane.key.terminalId
+          const dragged = bar.find((each) => slotKey(each) === String(event.operation.source?.id))
+          const { width, height } = canvasPresetSize("small")
           const follow = (pointer: PointerEvent): void => {
-            dragOver.update(() => ({ source, ...dragTargetAt(pointer.clientX, pointer.clientY) }))
+            const target = dragTargetAt(pointer.clientX, pointer.clientY)
+            dragOver.update(() => ({ source, ...target }))
+            const free =
+              !target.terminal && dragged && undockable(dragged)
+                ? dropSpaceAt(pointer.clientX, pointer.clientY)
+                : null
+            // Its window would open with its header under the pointer, at its usual size,
+            // snapped to the canvas's grid as the canvas places it.
+            const corner = free && { x: free.x - width / 2, y: free.y - headerOffset }
+            const snapped = corner && canvasPointPosition(corner)
+            space.current = snapped ? { canvas: snapped } : null
+            dropPreview.update(() =>
+              free && corner && snapped
+                ? {
+                    left: pointer.clientX + (snapped.x - free.x) * free.zoom,
+                    top: pointer.clientY + (snapped.y - free.y) * free.zoom,
+                    width: width * free.zoom,
+                    height: height * free.zoom,
+                  }
+                : null,
+            )
           }
           window.addEventListener("pointermove", follow, { capture: true })
           stopFollowing.current = () =>
@@ -581,6 +627,9 @@ export const Taskbar = ({
           stopFollowing.current = undefined
           const over = dragOver.getSnapshot()
           dragOver.update(() => null)
+          const place = space.current
+          space.current = null
+          dropPreview.update(() => null)
           if (event.canceled) return
           const { source } = event.operation
           if (!isSortable(source)) return
@@ -589,6 +638,11 @@ export const Taskbar = ({
           const entry = bar.find((each) => slotKey(each) === String(source.id))
           if (entry && over?.onBar && over.terminal && over.terminal !== pane.key.terminalId)
             placeSlot(entry, over.terminal)
+          // Dropped on the empty canvas: it undocks, its window where it was dropped.
+          else if (entry && place && undockable(entry)) {
+            requestDropPlace(place.canvas)
+            undockAt(entry, place)
+          }
         }}
       >
         <span className="plan-tb-slots">

@@ -87,6 +87,10 @@ export type CompanionWindow = {
     | { readonly kind: "messages" }
 }
 
+// Where an undocked window opens, when it was dropped somewhere: a point on the canvas,
+// its top left.
+export type UndockPlace = { readonly canvas: { readonly x: number; readonly y: number } }
+
 // A terminal's companion, as it stands.
 export type CompanionSnapshot = {
   readonly key: CompanionKey

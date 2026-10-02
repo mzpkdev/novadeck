@@ -371,7 +371,12 @@ that terminal's handle, its peek, menu and pane say whose it is, a plan's edits 
 to that agent, and a placed Messages is that agent's conversation beside the terminal's
 own. A new version shown by its agent updates it where it is. **Send back to** its
 terminal, on its right-click, or a drag onto that terminal's bar, returns it. Placements
-are the UI's alone for now: the backends don't keep them (`terminals/companion/placement.ts`). In
+are the UI's alone for now: the backends don't keep them (`terminals/companion/placement.ts`).
+
+On Canvas, drop a plan, a single artifact or Messages on the empty canvas to undock it
+right there: a dashed outline shows where its window opens, with its header under the
+pointer, snapped to the canvas's grid. Grid packs its windows upward, so there it isn't
+offered. In
 “Build Studio”, type `show` to have Codex show the next thing, or `open` to play
 asking it to open it; it opens `projects.json` for you as the demo starts. Files are
 syntax-highlighted by their extension (JSON, JavaScript and TypeScript with JSX, CSS,
