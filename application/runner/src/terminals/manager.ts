@@ -326,6 +326,23 @@ const alive = (pid: string): boolean => {
   }
 }
 
+/**
+ * Resumes a process group hung up as its terminal closed, once the shell has exited. On
+ * its own hangup bash takes the terminal back for itself before it exits, so a program
+ * still restoring the terminal then, as an agent's TUI does on its way out, is stopped
+ * by SIGTTIN or SIGTTOU. Should that stop not have finished as bash exits, the kernel
+ * doesn't send the orphaned group its SIGHUP and SIGCONT, and the program stays stopped
+ * for good. Once the shell is gone the terminal answers with an error instead, so the
+ * resumed program finishes exiting. A group already gone is skipped.
+ */
+const resumeGroup = (group: number): void => {
+  try {
+    process.kill(-group, "SIGCONT")
+  } catch {
+    // Gone.
+  }
+}
+
 // Variables of NovaDeck's own shells and of agent sessions, which a runner started from
 // inside one must not pass on.
 const inherited = [
@@ -2858,7 +2875,7 @@ export class Terminals {
     // The second signal bounds shutdown even for shells that ignore SIGHUP.
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      await this.hangUp(record.process)
+      const group = await this.hangUp(record.process)
       try {
         record.process.kill()
       } catch {
@@ -2872,25 +2889,29 @@ export class Terminals {
         }
       }, 1000)
       await record.exited
+      if (group !== undefined) resumeGroup(group)
     } finally {
       if (timer) clearTimeout(timer)
     }
   }
 
   /**
-   * Hangs up the program in the terminal's foreground, as closing a real terminal does.
+   * Hangs up the program in the terminal's foreground, as closing a real terminal does,
+   * and returns its process group; undefined when there is none to hang up, as on Windows,
+   * where no foreground group is known.
    * A shell passes its own hangup on to the jobs it started, but not always: bash does
    * not to a command its prompt hook ran, as a resumed agent is, and would leave it
    * running without a terminal, still holding its session.
    */
-  private async hangUp(child: pty.IPty): Promise<void> {
+  private async hangUp(child: pty.IPty): Promise<number | undefined> {
     const group = await terminalForeground(child.pid)
-    if (group === undefined || group === child.pid) return
+    if (group === undefined || group === child.pid) return undefined
     try {
       process.kill(-group, "SIGHUP")
     } catch {
       // Gone meanwhile.
     }
+    return group
   }
 
   /**

@@ -189,12 +189,13 @@ network:
   `/proc/<pid>/cwd` points, then, unless that is inside the sandbox, `/proc/<pid>/environ`,
   searched only for `HOME=<sandbox home>` and neither kept nor printed, and last
   `/proc/<pid>/comm` for its name. A harness the deck's hangup reached may take a moment
-  to exit (Claude Code takes about 100 ms), so each gets three seconds to end by itself.
+  to exit (Claude Code takes about 200 to 250 ms), so each gets three seconds to end by itself.
   One still running then is ended with SIGTERM, then SIGKILL two seconds later, each
   signal sent only once the process is checked to be the same one, and fails the test,
-  named by its command. It looks again, up to five times, until it finds no process it
-  hasn't seen. Should the test end early, its teardown does the same, and fails the test
-  for any process it had to end.
+  named by its command and pid, and marked `stopped` should job control have stopped it.
+  It looks again, up to five times, until it finds no process it hasn't seen. Should the
+  test end early, its teardown does the same, and fails the test for any process it had
+  to end.
 - **Enter only on text seen to land.** A deck terminal's `submit` types the text, waits
   until the screen shows it once more than it did before, and only then presses Enter.
   `press` refuses anything holding a carriage return or line feed, the keypad's Enter

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
@@ -139,6 +139,16 @@ const read = async (
 const untilPid = async (manager: Terminals, stream: AsyncGenerator<TerminalEvent>) => {
   const events = await until(manager, stream, "owner", (_event, text) => /PID=\d+\r?\n/.test(text))
   return events.map((event) => ("data" in event ? event.data : "")).join("")
+}
+
+/** A process's state as Linux reports it (`S`, `T`, `Z`…), or "gone". */
+const processState = (pid: number): string => {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0] ?? "gone"
+  } catch {
+    return "gone"
+  }
 }
 
 describe.skipIf(process.platform === "win32")("terminal manager", () => {
@@ -453,6 +463,85 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
       manager.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
     ).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
   })
+
+  // bash takes the terminal back as it hangs up, so a TUI still restoring the terminal is
+  // stopped by SIGTTIN or SIGTTOU, and may be orphaned stopped. Only some of these
+  // programs are each time, so two dozen run at once: unless the runner resumes them, at
+  // least one was left stopped in each of 20 runs.
+  it.skipIf(process.platform !== "linux" || !existsSync("/bin/bash"))(
+    "never leaves a program stopped that restores the terminal as it is hung up",
+    async ({ terminals, resources }) => {
+      const directory = mkdtempSync(join(tmpdir(), "novadeck-hangup-"))
+      resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+      const tui = join(directory, "tui.mjs")
+      // Threads, as a TUI's runtime has, make the stop take long enough to outlast bash.
+      writeFileSync(
+        tui,
+        `import { Worker } from "node:worker_threads"
+for (let i = 0; i < 8; i++) new Worker("setInterval(() => {}, 1000)", { eval: true }).unref()
+process.stdin.setRawMode(true)
+process.stdin.resume()
+process.stdin.on("error", () => {})
+process.stdout.on("error", () => {})
+process.stdout.write("TUI=" + process.pid + "\\n")
+process.on("SIGHUP", () => {
+  const end = Date.now() + 60
+  const toggle = () => {
+    try {
+      process.stdin.setRawMode(false)
+      process.stdin.setRawMode(true)
+    } catch {}
+    if (Date.now() < end) return setImmediate(toggle)
+    process.exit(0)
+  }
+  toggle()
+})
+`,
+      )
+      const manager = terminals.manager({
+        shell: "/bin/bash",
+        shellArgs: ["--norc", "--noprofile", "-i"],
+        env: { PS1: "$ ", PATH: "/usr/bin:/bin", HOME: directory },
+      })
+      const pids = await Promise.all(
+        Array.from({ length: 24 }, async () => {
+          const terminal = await manager.create(
+            { id: randomUUID(), sessionId: "session", cwd: directory, cols: 80, rows: 24 },
+            "owner",
+          )
+          const stream = terminals.attach(manager, terminal.id, "owner")
+          await read(manager, stream, "owner", (_event, text) => text.includes("$ "))
+          manager.write(
+            { terminalId: terminal.id, data: `'${process.execPath}' '${tui}'\r` },
+            "owner",
+          )
+          let pid = 0
+          await read(manager, stream, "owner", (_event, text) => {
+            pid = Number(/TUI=(\d+)\r?\n/.exec(text)?.[1] ?? 0)
+            return pid > 0
+          })
+          return pid
+        }),
+      )
+      resources.defer(() => {
+        for (const pid of pids.filter((one) => processState(one) !== "gone"))
+          try {
+            process.kill(pid, "SIGKILL")
+          } catch {
+            // Gone meanwhile.
+          }
+      })
+
+      await manager.shutdown()
+
+      // A program resumed finishes exiting within moments; a stopped one never does.
+      await vi.waitFor(
+        () =>
+          expect(pids.map(processState).filter((one) => one !== "gone" && one !== "Z")).toEqual([]),
+        { timeout: 3_000, interval: 50 },
+      )
+    },
+  )
 })
 
 /** The fixture child before it renames itself or is sampled; Windows reports none. */
