@@ -1,15 +1,17 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { constants, tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
   chooseMode,
   findTool,
   parseRequest,
+  restoreFolder,
   signalCode,
   sudoArgs,
+  tempFolder,
   type Tools,
   type User,
   userArgs,
@@ -97,11 +99,17 @@ const runWithSudo = async (command: readonly string[]): Promise<number> => {
   }
 }
 
-// Inside the namespace, as the user again: the environment back from its file, which is
-// deleted first, then the command.
+// Inside the namespace, as the user again: the environment back from its file, whose
+// folder is deleted first, then the command. sudo dropped TMPDIR, so the folder is looked
+// for where the user's own environment, the one in the file, puts temporary folders.
 const restore = (envFile: string, command: readonly string[]): Promise<number> => {
-  const env = JSON.parse(readFileSync(envFile, "utf8")) as NodeJS.ProcessEnv
-  rmSync(dirname(envFile), { recursive: true, force: true })
+  const parsed: unknown = JSON.parse(readFileSync(envFile, "utf8"))
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    throw new Error(`isolated: --restore takes an environment as a JSON object, not ${envFile}`)
+  const env = parsed as NodeJS.ProcessEnv
+  const folder = restoreFolder(envFile, tempFolder(env), realpathSync)
+  if (folder instanceof Error) throw folder
+  rmSync(folder, { recursive: true, force: true })
   const [file, ...args] = command
   return run(file!, args, env)
 }

@@ -919,6 +919,7 @@ export class Terminals {
       settledSince: (terminalId) => this.messaging.settledSince(terminalId),
       ring: (terminalId, nonce) => this.messaging.ring(terminalId, nonce),
       ringing: (terminalId) => this.messaging.ringing(terminalId),
+      ready: (terminalId) => this.messaging.ready(terminalId),
       ringFailed: (terminalId, nonce) => this.messaging.ringFailed(terminalId, nonce),
       screen: async (terminalId) => {
         const record = live(terminalId)

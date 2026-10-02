@@ -71,9 +71,10 @@ describe("Antigravity's status line, as captured", () => {
       // The status line names the root conversation; hooks name subagents' alike.
       root: true,
     })
-    // Working never starts a turn, as it may come just after the turn's Stop: it only
-    // settles a confirmation the turn waited on.
+    // Working never starts a turn, as it may come just after the turn's Stop: it resumes
+    // only one an older idle ended, and settles a confirmation the turn waited on.
     expect(activity(working!)).toEqual([
+      { type: "turn-working", ...conversation, startedAt: 5 },
       {
         type: "attention-resolved",
         ...conversation,
@@ -86,6 +87,7 @@ describe("Antigravity's status line, as captured", () => {
       },
     ])
     expect(activity(confirming!)).toEqual([
+      { type: "turn-working", ...conversation, startedAt: 5 },
       {
         type: "attention-requested",
         ...conversation,
@@ -177,6 +179,7 @@ describe("Antigravity's status line, as captured", () => {
               "turn-started",
               "turn-ended",
               "turn-idle",
+              "turn-working",
               "attention-requested",
               "attention-resolved",
             ].includes(event.type),
@@ -203,6 +206,38 @@ describe("Antigravity's status line, as captured", () => {
     // An idle snapshot whose hook started before the turn's does not end it.
     expect(run([report(idle!, 1), preInvocation(2)])).toMatchObject({ state: "working" })
     expect(run([preInvocation(2), report(idle!, 1)])).toMatchObject({ state: "working" })
+    // A stale idle snapshot mid-turn: the working one after it says the turn goes on.
+    expect(run([preInvocation(1), report(idle!, 2), report(working!, 3)])).toEqual({
+      state: "working",
+      ...quiet,
+    })
+    // As after a Stop, working after an idle that followed the Stop resumes nothing.
+    expect(run([preInvocation(1), stop(2), report(idle!, 3), report(working!, 4)])).toMatchObject({
+      state: "idle",
+    })
+  })
+
+  it("keeps a turn the person's Esc ended over against a working snapshot older than its idle", () => {
+    const [, , , working, , idle] = payloads
+    const conversationId = working!.conversation_id as string
+    const binding = { agent: "agy", sessionId: conversationId, instance: "7" } as const
+    const preInvocation: Report = {
+      ...report({ conversationId, invocationNum: 0 }, 1),
+      event: "PreInvocation",
+    }
+    const run = (reports: Report[]) =>
+      reports
+        .flatMap((reported) => decode(reported))
+        .filter((event): event is ActivityEvent =>
+          ["turn-started", "turn-idle", "turn-working"].includes(event.type),
+        )
+        .reduce((state, event) => applyActivity(state, binding, event) ?? state, started(0)).state
+    // An Esc shows only as idle; a working snapshot drawn before it, arriving after,
+    // resumes nothing.
+    expect(run([preInvocation, report(idle!, 3), report(working!, 2)])).toBe("idle")
+    expect(run([preInvocation, report(idle!, 3), report(working!, 3)])).toBe("idle")
+    // One drawn after it is taken at its word, as the idle may have been the stale one.
+    expect(run([preInvocation, report(idle!, 3), report(working!, 4)])).toBe("working")
   })
 })
 type Fixture = { root: string; install: Install; settings: string }

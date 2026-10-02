@@ -57,6 +57,12 @@ const same = (a: string | undefined, b: string | undefined): boolean =>
 /** Whether a row shows nothing. */
 const blank = (row: string | undefined): boolean => (row ?? "").trim() === ""
 
+/** Whether a row shows only text it showed before, where it was: some of it erased. */
+const erased = (row: string, was: string | undefined): boolean => {
+  const kept = [...(was ?? "")]
+  return [...row].every((char, index) => /\s/.test(char) || char === kept[index])
+}
+
 /** What a test paste showed: accepted, with the rows the line took; or why not. */
 export type PasteCheck =
   | { readonly accepted: true; readonly first: number; readonly last: number }
@@ -68,18 +74,23 @@ export type PasteCheck =
  * within `nearRows` of them. Where the box grew a row, the rows above it may have moved
  * up one and those below down one; they are compared moved.
  *
- * Failing that, it is still accepted where the line replaced the box's empty state and,
- * away from it, text only vanished, whole, as a TUI may draw something only while its box
- * is empty (Codex its logo). For one of the same moves: before the paste, the line's row
- * showed what now precedes the line and more (a placeholder, where text the line was
- * appended to shows no more); every far row is the one it came from, or blank; and at
- * least one went blank, none beside a row with text that stayed (a list filtered down to
- * some of its items is no block that vanished).
+ * Failing that, and only where `vanish` allows it, as for a ring of a Ready terminal (its
+ * first screen), it is still accepted where the line replaced the box's empty state and,
+ * away from it, one isolated block of text vanished whole, as a TUI may draw something
+ * only while its box is empty (Codex its logo). For one of the same moves: before the
+ * paste, the line's row showed what now precedes the line, which is not nothing, and more
+ * (a placeholder, where text the line was appended to shows no more); every far row is
+ * the one it came from, or blank; the rows that went blank are one contiguous block, with
+ * blank rows or the screen's edge on both sides of it before; and no near row shows
+ * anything it didn't, each the one it came from or with some of its text erased in place
+ * (Codex's footer hint). A list filtered down to some of its items keeps text beside the
+ * block, or leaves several; a footer moved up shows text a near row didn't.
  */
 export const checkPaste = (
   before: readonly string[],
   after: readonly string[],
   line: string,
+  { vanish = false }: { readonly vanish?: boolean } = {},
 ): PasteCheck => {
   if (findLine(before, line).length > 0) return { accepted: false, reason: "before" }
   const found = findLine(after, line)
@@ -107,23 +118,25 @@ export const checkPaste = (
       return from === undefined || same(row, before[from])
     })
   if (moves.some(([up, down]) => unchanged(up, down))) return accepted
+  if (!vanish) return { accepted: false, reason: "elsewhere" }
   // What precedes the line on its row: the box's prompt, or text it was appended to.
   const lead = compact(after[first]!.slice(0, column))
   const emptied = (up: number, down: number): boolean => {
+    if (!lead) return false
     const shown = compact(before[first + up] ?? "")
     if (!shown.startsWith(lead) || shown.length <= lead.length) return false
-    const kept = new Set<number>()
-    const gone = new Set<number>()
+    const gone: number[] = []
     for (const [index, row] of after.entries()) {
-      const from = origin(index, up, down)
-      if (from === undefined) continue
-      if (same(row, before[from])) kept.add(from)
-      else if (blank(row)) gone.add(from)
-      else return false
+      if (index >= first && index <= last) continue
+      const from = index < first ? index + up : index - down
+      if (same(row, before[from])) continue
+      const far = origin(index, up, down) !== undefined
+      if (far && blank(row)) gone.push(from)
+      else if (far || !erased(row, before[from])) return false
     }
-    const besideKept = (from: number) =>
-      [from - 1, from + 1].some((next) => kept.has(next) && !blank(before[next]))
-    return gone.size > 0 && ![...gone].some(besideKept)
+    if (gone.length === 0) return false
+    const [top, bottom] = [gone[0]!, gone.at(-1)!]
+    return bottom - top === gone.length - 1 && blank(before[top - 1]) && blank(before[bottom + 1])
   }
   return moves.some(([up, down]) => emptied(up, down))
     ? accepted

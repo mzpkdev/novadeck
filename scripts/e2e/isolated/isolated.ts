@@ -1,5 +1,5 @@
 // POSIX paths whatever runs the tests: a network namespace is Linux's alone.
-import { delimiter, join } from "node:path/posix"
+import { basename, delimiter, dirname, join } from "node:path/posix"
 
 /**
  * How the command gets a network namespace of its own:
@@ -73,11 +73,13 @@ export const findTool = (
 
 /**
  * Run by `sh` as root of the new namespace, with `ip` as `$1`: brings loopback up,
- * refuses to go on unless loopback is the only interface, then runs the rest.
+ * refuses to go on unless loopback is the only interface, then runs the rest. It counts
+ * the interfaces with the shell's builtins, so root runs no program found on PATH.
  */
 export const loopbackOnly = [
   '"$1" link set lo up || exit 125',
-  'if [ "$("$1" -o link show | wc -l)" -ne 1 ]; then',
+  'links=$("$1" -o link show | { n=0; while read -r _; do n=$((n + 1)); done; echo "$n"; })',
+  'if [ "$links" -ne 1 ]; then',
   '  echo "isolated: the namespace has an interface besides loopback" >&2',
   "  exit 125",
   "fi",
@@ -134,6 +136,34 @@ export const userArgs = (tools: Tools, user: User, command: readonly string[]): 
     ...command,
   ]),
 ]
+
+/** The folder `os.tmpdir()` names in the environment, as Node finds it outside Windows. */
+export const tempFolder = (env: NodeJS.ProcessEnv): string => {
+  const folder = env.TMPDIR || env.TMP || env.TEMP || "/tmp"
+  return folder.length > 1 && folder.endsWith("/") ? folder.slice(0, -1) : folder
+}
+
+/**
+ * The folder holding the environment's file, which `--restore` deletes, by its real path:
+ * only one the script made, a `novadeck-isolated-*` folder directly in `temp`, so a
+ * mistaken `--restore` deletes nothing else.
+ */
+export const restoreFolder = (
+  envFile: string,
+  temp: string,
+  realpath: (path: string) => string,
+): string | Error => {
+  const refused = new Error(
+    `isolated: --restore takes a file in a novadeck-isolated-* folder in ${temp}, not ${envFile}`,
+  )
+  try {
+    const folder = realpath(dirname(envFile))
+    if (dirname(folder) !== realpath(temp)) return refused
+    return basename(folder).startsWith("novadeck-isolated-") ? folder : refused
+  } catch {
+    return refused
+  }
+}
 
 /** The exit code for a child that ended by a signal, as a shell reports it. */
 export const signalCode = (signal: number): number => 128 + signal

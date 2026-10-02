@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -141,9 +142,19 @@ const untilPid = async (manager: Terminals, stream: AsyncGenerator<TerminalEvent
   return events.map((event) => ("data" in event ? event.data : "")).join("")
 }
 
-/** A process's state as Linux reports it (`S`, `T`, `Z`…), or "gone". */
+/**
+ * A process's state as one letter (`S`, `T` when stopped, `Z`…), or "gone": from /proc on
+ * Linux, from `ps` on macOS, which has no /proc and fails for a process that has gone.
+ */
 const processState = (pid: number): string => {
   try {
+    if (process.platform !== "linux") {
+      const stat = execFileSync("/bin/ps", ["-o", "stat=", "-p", String(pid)], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      return stat.trim()[0] ?? "gone"
+    }
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
     return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0] ?? "gone"
   } catch {
@@ -467,8 +478,8 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
   // bash takes the terminal back as it hangs up, so a TUI still restoring the terminal is
   // stopped by SIGTTIN or SIGTTOU, and may be orphaned stopped. Only some of these
   // programs are each time, so two dozen run at once: unless the runner resumes them, at
-  // least one was left stopped in each of 20 runs.
-  it.skipIf(process.platform !== "linux" || !existsSync("/bin/bash"))(
+  // least one was left stopped in each of 20 runs on Linux.
+  it.skipIf(!["linux", "darwin"].includes(process.platform) || !existsSync("/bin/bash"))(
     "never leaves a program stopped that restores the terminal as it is hung up",
     async ({ terminals, resources }) => {
       const directory = mkdtempSync(join(tmpdir(), "novadeck-hangup-"))
@@ -501,7 +512,13 @@ process.on("SIGHUP", () => {
       const manager = terminals.manager({
         shell: "/bin/bash",
         shellArgs: ["--norc", "--noprofile", "-i"],
-        env: { PS1: "$ ", PATH: "/usr/bin:/bin", HOME: directory },
+        // macOS's bash would otherwise open by recommending zsh.
+        env: {
+          PS1: "$ ",
+          PATH: "/usr/bin:/bin",
+          HOME: directory,
+          BASH_SILENCE_DEPRECATION_WARNING: "1",
+        },
       })
       const pids = await Promise.all(
         Array.from({ length: 24 }, async () => {
@@ -960,10 +977,14 @@ describe.skipIf(process.platform === "win32")("terminal message watches", () => 
     terminals,
   }) => {
     const manager = terminals.manager({ shellArgs: ["-c", "exit 0"], maxRetained: 1 })
+    const changes = terminals.watch(manager, "watcher")
+    await changes.until((change) => change.type === "synced")
     const first = await createIn(manager)
     const watch = manager.watchMessages(first.id)
     await expect(watch.next()).resolves.toMatchObject({ value: { terminalId: first.id } })
-    // A second exited terminal pushes the first out.
+    // A second exited terminal pushes the first out, once the first has exited: the one
+    // that exited first goes, and a loaded machine can end the second shell first.
+    await changes.until((change) => changed(first.id)(change) && change.terminal.exit !== null)
     await createIn(manager)
     await expect(watch.next()).resolves.toEqual({ done: true, value: undefined })
     await expect(manager.watchMessages(first.id).next()).rejects.toMatchObject({

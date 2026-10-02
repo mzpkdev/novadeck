@@ -65,21 +65,21 @@ const sessionStarted = (bound: Binding, source: string): HarnessEvent[] => [
   }),
 ]
 
-// Antigravity's status line report, as its hook hands it on.
-const agyReport = (conversation: string, state: string) => ({
+// Antigravity's status line report, as its hook hands it on, started at `seq`.
+const agyReport = (conversation: string, state: string, seq = 1) => ({
   terminalId: "x",
   token: "0".repeat(48),
   agent: "agy" as const,
   event: "StatusLine",
-  seq: 1,
+  seq,
   instance: "4",
   env: { cursor: false },
   payload: { conversation_id: conversation, agent_state: state },
 })
 
 // What Antigravity's status line says of a conversation, decoded by its own adapter.
-const agyStatus = (bound: Binding, state: string): HarnessEvent[] => [
-  ...harnesses.agy.decode({ ...agyReport(bound.sessionId, state), instance: bound.instance }),
+const agyStatus = (bound: Binding, state: string, seq = 1): HarnessEvent[] => [
+  ...harnesses.agy.decode({ ...agyReport(bound.sessionId, state, seq), instance: bound.instance }),
 ]
 
 type Clock = { now: number }
@@ -921,9 +921,9 @@ describe("Antigravity's root conversation", () => {
   })
 
   // One of its hooks, decoded by its own adapter.
-  const hook = (bound: Binding, event: string, payload: Record<string, unknown>) => [
+  const hook = (bound: Binding, event: string, payload: Record<string, unknown>, seq = 1) => [
     ...harnesses.agy.decode({
-      ...agyReport(bound.sessionId, "idle"),
+      ...agyReport(bound.sessionId, "idle", seq),
       event,
       instance: bound.instance,
       payload: { conversationId: bound.sessionId, ...payload },
@@ -1006,6 +1006,30 @@ describe("Antigravity's root conversation", () => {
     observe("G", root, agyStatus(root, "working"), true)
     observe("G", root, agyStatus(root, "idle"), true)
     expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("goes on working when its status line says working after a stale idle, until the Stop", () => {
+    const { messaging, ask, observe, root } = agyTerminal()
+    observe("G", root, agyStatus(root, "idle", 1), true)
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }, 2))
+    const { epoch } = messaging.delivery("G")!
+    // An idle snapshot mid-turn, then a newer one saying working: the idle was stale.
+    observe("G", root, agyStatus(root, "idle", 3), true)
+    expect(messaging.delivery("G")?.state).toBe("unknown")
+    observe("G", root, agyStatus(root, "working", 4), true)
+    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "turn", epoch })
+    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }, 5))
+    expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("stays Unknown after an Esc when a working snapshot older than its idle arrives", () => {
+    const { messaging, ask, observe, root } = agyTerminal()
+    observe("G", root, agyStatus(root, "idle", 1), true)
+    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }, 2))
+    // The Esc shows only as idle; a working snapshot drawn before it arrives after it.
+    observe("G", root, agyStatus(root, "idle", 4), true)
+    observe("G", root, agyStatus(root, "working", 3), true)
+    expect(messaging.delivery("G")?.state).toBe("unknown")
   })
 
   it("stays working at a Stop while a subagent still runs", () => {
@@ -1359,6 +1383,8 @@ describe("ringing", () => {
     expect(messaging.ringable("B")).toBe(false)
     sent(send("A", "t2", "hello"))
     expect(messaging.ringable("B")).toBe(true)
+    // Settled, not Ready: its test paste is held to strict acceptance.
+    expect(messaging.ready("B")).toBe(false)
     expect(messaging.ring("B", "n1")).toBe(true)
     expect(messaging.ringing("B")).toBe("n1")
     expect(messaging.ringable("B")).toBe(false)
@@ -1534,8 +1560,11 @@ describe("a new agent session at its own prompt", () => {
     expect(messaging.delivery("N")).toMatchObject({ state: "ready", since: time.now })
     expect(messaging.settledSince("N")).toBe(time.now)
     expect(messaging.ringable("N")).toBe(true)
+    // Ready, its first screen: the doorbell's test paste may see a block vanish there.
+    expect(messaging.ready("N")).toBe(true)
     expect(sent(send("B", "t3", "And b.ts"))).toMatchObject({ route: "ringing it now" })
     expect(messaging.ring("N", "n1")).toBe(true)
+    expect(messaging.ready("N")).toBe(false)
     const answer = ask("N", launched, "UserPromptSubmit", [doorbellStarted(launched, "n1")])
     expect(answer.stdout).toContain(">Review a.ts</message>")
     expect(answer.stdout).toContain(">And b.ts</message>")
