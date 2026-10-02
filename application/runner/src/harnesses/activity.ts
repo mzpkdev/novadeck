@@ -315,8 +315,9 @@ const asked = (
   )
   return {
     ...activity,
-    // A subagent's request from before the root's turn ended doesn't resume it.
-    ...(startedAt >= activity.turnAt && { state: "working" }),
+    // The root asks only while its turn runs; a subagent's request, as a background one
+    // asks after the root's Stop, neither starts nor resumes the root's turn.
+    ...(actor === null && { state: "working" }),
     pending: [...kept, { requestId, actor, toolName, kind, subject, choices, askedAt: startedAt }],
   }
 }

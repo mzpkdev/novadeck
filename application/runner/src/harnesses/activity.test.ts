@@ -429,6 +429,19 @@ describe("applying activity", () => {
     expect(apply(ended, binding, request("gone:Edit:1", "gone", 9))).toBeUndefined()
   })
 
+  it("leaves the root idle when a background subagent asks after its Stop", () => {
+    // As Codex's spawned agent asks after the root's turn ended (probed 2026-10-03, 0.159.3).
+    const ended = apply(
+      asking(),
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+    )!
+    const asked = apply(ended, binding, request("bg:Bash:2", "bg", 12))!
+    expect(summary(asked)).toMatchObject({ state: "idle", attention: { pending: 1 } })
+    // The root's own request still says its turn runs.
+    expect(apply(started(0), binding, request("root:Bash:1", null, 12))?.state).toBe("working")
+  })
+
   it("leaves a request asked again after a result whose hook started before it", () => {
     const again = apply(started(0), binding, request("a:Bash:1", "a", 10))!
     // The first time's result, its hook started before the second ask's.
