@@ -627,6 +627,31 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await expect.poll(() => manager.reportedSession(terminal.id, "claude")).toBe("two")
   })
 
+  it("binds no late report of a session whose process was found gone", async ({ shell }) => {
+    // As Antigravity's status line drawn as it exits: the hook outlives it, and can't
+    // tell its process. The session ended with its process; the report brings it back no more.
+    const gone = String(spawnSync(process.execPath, ["-e", ""]).pid)
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "one", seq: 1, source: "startup", instance: gone },
+      { agent: "claude", sessionId: "one", seq: 2, source: "resume" },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    // Both reports taken, in turn: the later one recorded for resuming, binding nothing.
+    await expect
+      .poll(
+        () =>
+          manager.get(terminal.id).agent === null && manager.reportedSession(terminal.id, "claude"),
+      )
+      .toBe("one")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(manager.get(terminal.id).agent).toBeNull()
+  })
+
   it("refuses another live process of the bound agent", async ({ shell }) => {
     const bin = reporter(shell.home, [
       {
@@ -3061,6 +3086,52 @@ const agyStarted = async (tui: Awaited<ReturnType<typeof ringing>>) => {
   await expect.poll(tui.delivery).toBe("settled")
 }
 
+/**
+ * A sender, and a terminal whose one command line runs a stand-in Claude Code, then `next`,
+ * so no shell prompt shows between them; it waits until Claude Code is bound. `leave`
+ * makes Claude Code exit by itself and waits until its process is gone.
+ */
+const leaving = async (shell: Fixture, next: string) => {
+  const bin = standIn(shell.home)
+  standInTui(shell.home)
+  const manager = shell.manager({
+    env: {
+      HOME: shell.home,
+      PS1: "$ ",
+      PATH: `${bin}:${process.env.PATH}`,
+      CODEX_HOME: join(shell.home, ".codex"),
+    },
+    doorbell: { calmMs: 200, settleMs: 300 },
+    hooksTrusted: () => Promise.resolve(true),
+  })
+  const sender = await create(manager, shell)
+  const idle = await create(manager, shell)
+  const { start, step } = driver(shell, manager)
+  await start(sender.id, "claude", "s-claude")
+  const file = (name: string) => join(shell.home, name)
+  const type = (data: string) => manager.write({ terminalId: idle.id, data }, "owner")
+  type(`tui claude s-old '${file("old.jsonl")}' '${file("old-raw.jsonl")}' '' ; ${next}\r`)
+  await shell.until(manager, idle.id, "claude ready")
+  await expect.poll(() => manager.get(idle.id).agent).toBe("claude")
+  const pid = Number(readFileSync(file("old-raw.jsonl.pid"), "utf8"))
+  return {
+    manager,
+    idle,
+    type,
+    file,
+    send: async (text: string) =>
+      JSON.parse(await step(sender.id, { call: "send", request: { to: idle.handle, text } })) as {
+        ok: boolean
+        id: string
+        gone?: { id: string }[]
+      },
+    leave: async () => {
+      process.kill(pid, "SIGUSR2")
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 10_000 })
+    },
+  }
+}
+
 const pastes = (raw: readonly string[]) => raw.filter((data) => data.startsWith("\x1b[200~"))
 const quiet = () => new Promise((resolve) => setTimeout(resolve, 1_500))
 
@@ -3426,6 +3497,48 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await quiet()
       expect(await screen(tui.manager, tui.idle.id)).not.toContain("automatic notice")
       expect(tui.delivery()).toBe("ready")
+    })
+
+    it("ends a bound agent that left unseen once another agent's title shows, its messages gone", async ({
+      shell,
+    }) => {
+      // Claude Code, then Codex, in one command line: no shell prompt shows between them.
+      const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
+      const { manager, idle, send, file, leave } = await leaving(
+        shell,
+        `named codex ${thread} '${join(shell.home, "new.jsonl")}' '${join(shell.home, "new-raw.jsonl")}' shown`,
+      )
+      // Paused, the message waits for Claude Code's session rather than ringing it.
+      manager.pauseMessages(true)
+      const first = await send("For the old session")
+      await leave()
+      await shell.until(manager, idle.id, "codex ready")
+      // Codex's title shows its prompt: Claude Code's binding ended, its message gone.
+      await expect.poll(() => manager.messages(idle.id).threads[0]?.messages[0]?.state).toBe("gone")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("ready")
+      expect(manager.get(idle.id).agent).toBeNull()
+      manager.pauseMessages(false)
+      const second = await send("For the new session")
+      expect(second.gone).toEqual([expect.objectContaining({ id: first.id })])
+      await vi.waitFor(() => expect(lines(file("new.jsonl"))).toHaveLength(1), { timeout: 10_000 })
+      const [rung] = lines<{ printed: string }>(file("new.jsonl"))
+      expect(rung!.printed).toContain(">For the new session</message>")
+      expect(rung!.printed).not.toContain("For the old session")
+    })
+
+    it("rings no bound agent that left unseen, and ends its binding, its messages gone", async ({
+      shell,
+    }) => {
+      // Claude Code leaves, and the line goes on with a program of no agent's: no prompt.
+      const { manager, idle, send, leave } = await leaving(shell, "sleep 60")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("ready")
+      await leave()
+      const { id } = await send("For the old session")
+      await quiet()
+      expect(await screen(manager, idle.id)).not.toContain("automatic notice")
+      expect(manager.messages(idle.id).threads[0]?.messages[0]).toMatchObject({ id, state: "gone" })
+      expect(manager.messages(idle.id).delivery).toBe("unbound")
+      expect(manager.get(idle.id).agent).toBeNull()
     })
 
     it("keeps a Codex binding when its title names a /side conversation, which no new lock confirms", async ({

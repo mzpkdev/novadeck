@@ -77,7 +77,14 @@ export const observe = (
   return event.startedAt > (facts.promptedAt ?? 0)
     ? {
         sessions,
-        binding: { agent: event.agent, sessionId: event.sessionId, instance: event.instance },
+        binding: {
+          agent: event.agent,
+          sessionId: event.sessionId,
+          // A report that can't tell its process, as from a hook outliving its agent, is
+          // of the bound one where one is (`replaces`): what is known of it stays, so its
+          // exit can still be told.
+          instance: event.instance ?? state.binding?.instance ?? null,
+        },
         cwd: event.cwd ?? state.cwd,
       }
     : { ...state, sessions }

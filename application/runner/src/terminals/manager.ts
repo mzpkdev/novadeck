@@ -240,6 +240,12 @@ type Record = {
   agents: { [agent in AgentName]?: AgentReport }
   /** The harness session holding the current shell's foreground; `summary.agent` shows it. */
   binding: Binding | null
+  /**
+   * The last binding ended as its process was found gone (`endExited`): a late report of
+   * that session from no process or from that one, as from a hook that outlived it, binds
+   * it no more.
+   */
+  left?: Binding
   /** What the bound agent is doing, as its hooks said; null without a binding. */
   activity: Activity | null
   /** The bound agent's tokens and quotas, as its records said; null until they did. */
@@ -954,8 +960,22 @@ export class Terminals {
         // terminal, as the shell's prompt may have come back unseen (a nested shell).
         const shown = record.binding ? undefined : this.messaging.shownAgent(terminalId)
         if (shown) return foregroundRuns(record.process.pid, shown)
-        const instance = record.binding?.instance
+        const { binding } = record
+        const instance = binding?.instance
         if (!instance) return undefined
+        // The bound agent left unseen: no ring for its session, whatever holds the terminal
+        // now, and its binding ends, in turn with the reports.
+        if (!alive(instance)) {
+          void this.queue(
+            terminalId,
+            () => {
+              if (record.binding === binding) this.endExited(record)
+              return Promise.resolve()
+            },
+            undefined,
+          )
+          return false
+        }
         const [held, own] = await Promise.all([
           terminalForeground(record.process.pid),
           processGroup(Number(instance)),
@@ -2273,7 +2293,7 @@ export class Terminals {
     // The bound agent process may have exited without the shell showing a prompt, as in
     // tmux or a nested shell: its binding ended with it, and a later process may bind.
     let changed = false
-    if (record.binding?.instance && !alive(record.binding.instance)) this.endBinding(record)
+    this.endExited(record)
     const facts = {
       promptedAt: record.promptedAt,
       shellInForeground: foreground,
@@ -2302,6 +2322,7 @@ export class Terminals {
         this.applyFact(record, event)
         continue
       }
+      if (this.late(record, event)) continue
       // The bound session's transcript, from a later report when the one that bound it
       // named none, as Antigravity's status line does.
       const { binding: bound } = record
@@ -2591,9 +2612,11 @@ export class Terminals {
             undefined,
           )
         if (trust !== "counts") return
+        // The bound agent left unseen, as its own process is gone: this prompt is another's.
+        const exited = binding?.instance ? !alive(binding.instance) : false
         // Another session's id ends the bound one only once the harness says it started
         // it as a new root; otherwise that session's own hooks tell, at its first prompt.
-        if (binding) {
+        if (binding && !exited) {
           if (replaced === undefined || prefix === undefined || turning) return
           const started = await harnesses[agent].startedSession?.(
             found.where,
@@ -2606,7 +2629,10 @@ export class Terminals {
         await this.queue(
           record.summary.id,
           () => {
-            if (current()) this.showPrompt(record, shown, replaced)
+            if (!current()) return Promise.resolve()
+            // Ended in turn with the reports, so a session bound since is never touched.
+            if (exited && record.binding === binding) this.endExited(record)
+            this.showPrompt(record, shown, exited ? undefined : replaced)
             return Promise.resolve()
           },
           undefined,
@@ -2717,6 +2743,30 @@ export class Terminals {
     // Judged as the title came, not after what was asked since.
     this.messaging.shown(id, agent, sessionPrefix ?? null, true, shown.startedAt)
     this.endBinding(record, replaced)
+  }
+
+  /**
+   * Ends the binding of an agent process known to have exited without the shell showing
+   * its prompt, as in tmux, a nested shell or `claude ; codex`: whatever shows or binds
+   * there next is another agent's. Whether it ended one. Where the platform hides the
+   * process (Windows), nothing tells, and the binding stays until the shell's prompt.
+   */
+  private endExited(record: Record): boolean {
+    const { binding } = record
+    if (!binding?.instance || alive(binding.instance)) return false
+    record.left = binding
+    return this.endBinding(record)
+  }
+
+  /** Whether an observation is a late one of the session whose process was found gone. */
+  private late(record: Record, event: SessionObserved): boolean {
+    const { left } = record
+    return (
+      left !== undefined &&
+      left.agent === event.agent &&
+      left.sessionId === event.sessionId &&
+      (event.instance === null || event.instance === left.instance)
+    )
   }
 
   /**

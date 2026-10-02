@@ -128,6 +128,19 @@ describe("observing a harness session", () => {
     })
   })
 
+  it("keeps the bound process when a report of its session can't tell which process made it", () => {
+    // As Antigravity's status line drawn as it exits: its hook outlives it, and finds no
+    // process of its name above it. Unknown is not another process, so the one known stays,
+    // and its exit can still be told.
+    const bound = { ...running, binding: { agent: "agy" as const, sessionId: "a", instance: "7" } }
+    const late = seen({ agent: "agy", startedAt: 3_000, evidence: "conversation-observed" })
+    expect(observe(bound, late, facts)?.binding).toEqual({
+      agent: "agy",
+      sessionId: "a",
+      instance: "7",
+    })
+  })
+
   it("refreshes the bound session's directory when it reports again", () => {
     expect(observe(running, seen({ startedAt: 3_000, cwd: "/elsewhere" }), facts)?.cwd).toBe(
       "/elsewhere",
