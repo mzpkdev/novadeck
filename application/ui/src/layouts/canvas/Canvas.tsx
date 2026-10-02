@@ -27,6 +27,7 @@ import { canvasPointPosition, viewportCanvasPosition } from "../../model/layout/
 import { canvasNewTerminalSize, canvasPresetSize } from "../../model/layout/terminal-size"
 import type { TerminalMetadata, CanvasLayout } from "../../model/types"
 import { provideDropSpace, takeDropPlace, useDropPreview } from "../../terminals/drop-space"
+import { DropGhost } from "../../terminals/DropGhost"
 import { ContextMenu } from "../../ui-toolkit/ContextMenu"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
@@ -151,7 +152,25 @@ const TerminalCanvas = ({
       const under = document.elementsFromPoint(x, y)
       if (!under.some((element) => element.classList.contains("react-flow__pane"))) return null
       if (under.some((element) => element.closest(".react-flow__node"))) return null
-      return { ...screenToFlowPosition({ x, y }), zoom: getViewport().zoom }
+      // Its window opens with its header under the pointer, at its usual size, snapped
+      // to the canvas's grid as the canvas places it.
+      const point = screenToFlowPosition({ x, y })
+      const { zoom } = getViewport()
+      const { width, height } = canvasPresetSize("small")
+      const corner = canvasPointPosition({
+        x: point.x - width / 2,
+        y: point.y - terminalHeaderHeight / 2,
+      })
+      return {
+        place: { canvas: corner },
+        outline: {
+          left: x + (corner.x - point.x) * zoom,
+          top: y + (corner.y - point.y) * zoom,
+          width: width * zoom,
+          height: height * zoom,
+          scale: zoom,
+        },
+      }
     })
     return () => provideDropSpace(null)
   }, [screenToFlowPosition, getViewport])
@@ -490,9 +509,7 @@ const TerminalCanvas = ({
       }}
     >
       {/* Where a window dropped from a taskbar would open. */}
-      {dropOutline && (
-        <div className="canvas-drop-preview" aria-hidden="true" style={dropOutline} />
-      )}
+      {dropOutline && <DropGhost outline={dropOutline} />}
       <TerminalContent.Provider value={contentOf}>
         <ReactFlow<TerminalNode>
           defaultNodes={terminals.map((terminal) => nodeFrom(terminal, geometry[terminal.id]))}

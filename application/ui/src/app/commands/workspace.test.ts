@@ -277,6 +277,28 @@ describe("workspace commands", () => {
       })
     })
 
+    it("opens a window dropped on the grid in the layout it made there", () => {
+      const app = openCommands()
+      const cell = { x: 6, y: 24, w: 6, h: 18 }
+      app.commands.undock("01", image, {
+        grid: { breakpoint: "desktop", layout: [{ i: "dropped", ...cell }] },
+      })
+      const shown = app.state().roster.terminals.find((each) => each.companion)!
+      expect(app.state().layout.grid.desktop).toEqual([{ i: shown.id, ...cell }])
+      // Dropped again, the window already open takes the new place and no other.
+      const moved = { x: 0, y: 48, w: 6, h: 18 }
+      app.commands.undock("01", image, {
+        grid: {
+          breakpoint: "desktop",
+          layout: [
+            { i: shown.id, ...cell },
+            { i: "dropped", ...moved },
+          ],
+        },
+      })
+      expect(app.state().layout.grid.desktop).toEqual([{ i: shown.id, ...moved }])
+    })
+
     it("opens nothing for a terminal the session doesn't have", () => {
       const app = openCommands()
       const before = app.state()

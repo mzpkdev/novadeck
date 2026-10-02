@@ -111,26 +111,3 @@
   user-select: text;
   cursor: text;
 }
-
-/* Where a window dragged off a taskbar would open on the empty canvas: its outline,
-   following the pointer. */
-.canvas-drop-preview {
-  position: fixed;
-  z-index: 40;
-  border: 1.5px dashed var(--color-line-strong);
-  border-radius: var(--radius-panel);
-  background: color-mix(in srgb, var(--color-paper) 55%, transparent);
-  pointer-events: none;
-  animation: canvas-drop-preview-in var(--motion-feedback) var(--ease-interface);
-}
-@keyframes canvas-drop-preview-in {
-  from {
-    opacity: 0;
-    scale: 0.97;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .canvas-drop-preview {
-    animation: none;
-  }
-}

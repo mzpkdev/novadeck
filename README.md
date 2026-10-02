@@ -373,10 +373,12 @@ own. A new version shown by its agent updates it where it is. **Send back to** i
 terminal, on its right-click, or a drag onto that terminal's bar, returns it. Placements
 are the UI's alone for now: the backends don't keep them (`terminals/companion/placement.ts`).
 
-On Canvas, drop a plan, a single artifact or Messages on the empty canvas to undock it
-right there: a dashed outline shows where its window opens, with its header under the
-pointer, snapped to the canvas's grid. Grid packs its windows upward, so there it isn't
-offered. In
+Drop a plan, a single artifact or Messages in a view to undock it right there. On Canvas,
+over its empty space, a ghost of the window shows where it opens, its header under the
+pointer, snapped to the canvas's grid. On Grid, a placeholder window joins the grid under
+the pointer as soon as the icon is over it, and the grid makes room for it like any
+window: the window it's over moves aside. It goes as the icon leaves the grid; dropped,
+the window takes its place. In
 “Build Studio”, type `show` to have Codex show the next thing, or `open` to play
 asking it to open it; it opens `projects.json` for you as the demo starts. Files are
 syntax-highlighted by their extension (JSON, JavaScript and TypeScript with JSX, CSS,

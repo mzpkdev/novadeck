@@ -1,9 +1,10 @@
 import type { TerminalRequest } from "../../backend/port"
-import type { CompanionWindow, UndockPlace } from "../../model/companion"
+import { droppedWindow, type CompanionWindow, type UndockPlace } from "../../model/companion"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
 import { canvasPresetSize } from "../../model/layout/terminal-size"
 import { activeProject, type WorkspaceAction } from "../../model/state"
 import type {
+  GridItem,
   PreferencesValue,
   Project,
   TerminalMetadata,
@@ -244,9 +245,30 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       )
       const target = currentTarget(snapshot)
       // Dropped on the canvas: its window opens there, at its usual size, or the one open
-      // moves there.
-      const geometry = place && { position: place.canvas, ...canvasPresetSize("small") }
+      // moves there. Dropped on the grid: the layout it made there, with the window in it.
+      const geometry = place &&
+        "canvas" in place && {
+          position: place.canvas,
+          ...canvasPresetSize("small"),
+        }
+      const gridPlace = place && "grid" in place ? place.grid : undefined
+      // The window in its dropped place, and nowhere else in that layout.
+      const gridWith = (id: string): readonly GridItem[] =>
+        gridPlace!.layout
+          .filter((cell) => cell.i !== id)
+          .map((cell) => (cell.i === droppedWindow ? { ...cell, i: id } : cell))
       if (open) {
+        if (gridPlace)
+          workspace.transact([
+            {
+              type: "grid/layouts",
+              target,
+              layouts: (layouts) => ({
+                ...layouts,
+                [gridPlace.breakpoint]: gridWith(open.id),
+              }),
+            },
+          ])
         if (geometry)
           workspace.transact([
             {
@@ -263,7 +285,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           ])
         // Placed where the person dropped it, in view: it's selected without bringing
         // the camera to it.
-        return geometry ? setSelected(open.id) : select(open.id)
+        return geometry || gridPlace ? setSelected(open.id) : select(open.id)
       }
       const origin = roster.terminals.find((terminal) => terminal.id === from)
       if (!origin) return
@@ -289,14 +311,19 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
             type: "terminal/add",
             target,
             terminal,
-            gridLayouts: addCompactGridTerminal(roster.terminals, layout.grid, terminal),
+            gridLayouts: gridPlace
+              ? {
+                  ...addCompactGridTerminal(roster.terminals, layout.grid, terminal),
+                  [gridPlace.breakpoint]: gridWith(terminal.id),
+                }
+              : addCompactGridTerminal(roster.terminals, layout.grid, terminal),
             anchor: from,
             ...(geometry ? { canvasGeometry: geometry } : {}),
           },
         ],
         { panel: "terminals" },
       )
-      if (!geometry) pulse()
+      if (!geometry && !gridPlace) pulse()
     },
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()

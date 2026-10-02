@@ -1,4 +1,4 @@
-import type { WorkspaceTarget } from "./types"
+import type { GridBreakpoint, GridItem, WorkspaceTarget } from "./types"
 
 // What agents put in front of the user beside their terminals: the plans they write,
 // and images, project files and preview-browser pages they show. A backend reports
@@ -88,8 +88,18 @@ export type CompanionWindow = {
 }
 
 // Where an undocked window opens, when it was dropped somewhere: a point on the canvas,
-// its top left.
-export type UndockPlace = { readonly canvas: { readonly x: number; readonly y: number } }
+// its top left; or, on the grid, the layout it makes at the grid's width then, with the
+// window in it as `droppedWindow`.
+export type UndockPlace =
+  | { readonly canvas: { readonly x: number; readonly y: number } }
+  | {
+      readonly grid: {
+        readonly breakpoint: GridBreakpoint
+        readonly layout: readonly GridItem[]
+      }
+    }
+
+export const droppedWindow = "dropped"
 
 // A terminal's companion, as it stands.
 export type CompanionSnapshot = {
