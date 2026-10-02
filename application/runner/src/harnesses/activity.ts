@@ -220,6 +220,9 @@ export const apply = (
     }
     case "attention-requested": {
       if (activity.pending.some(({ requestId }) => requestId === event.requestId)) return undefined
+      // One only a turn asks, shown while none runs, is a stale snapshot of the turn a Stop
+      // ended: a turn running, or one a working resumed, is the only one it can be.
+      if (event.midTurn === true && activity.state !== "working") return undefined
       // Asked by a subagent before it stopped, it waits on the person no longer.
       const stopped = event.actor === null ? undefined : endOf(activity.ended, event.actor)
       if (stopped !== undefined && event.startedAt < stopped) return undefined

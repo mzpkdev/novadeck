@@ -2,10 +2,10 @@ import type { AgentName, MessageState } from "@novadeck/protocol"
 
 import { doorbell } from "../harnesses/harness.js"
 import type { AgentSetup } from "./agents/agent.js"
-import type { DeckTerminal } from "./deck.js"
+import { poll, withScreen, type DeckTerminal } from "./deck.js"
 import type { E2E } from "./fixture.js"
 import { named, wanted, type Reach, type ReachOptions, type Snapshot } from "./history.js"
-import { asked, latest, tool, type Call, type Rule } from "./model/script.js"
+import { asked, latest, tool, type Call, type Reply, type Rule } from "./model/script.js"
 
 /**
  * What the scenarios share, whichever harness they run: starting a terminal and taking a
@@ -13,10 +13,75 @@ import { asked, latest, tool, type Call, type Rule } from "./model/script.js"
  * call delivered.
  */
 
-/** Opens a terminal running the harness and waits until NovaDeck sees it Ready. */
+/** The traits a scenario may need of a setup, which a harness may not have yet. */
+export type Trait = "approval" | "background" | "trust.folder" | "trust.hooks"
+
+const has = (setup: AgentSetup, trait: Trait): boolean => {
+  if (trait === "trust.folder") return setup.trust?.folder !== undefined
+  if (trait === "trust.hooks") return setup.trust?.hooks !== undefined
+  return setup[trait] !== undefined
+}
+
+/**
+ * Why the setup can't run a scenario that needs `traits`, as its skipped test says, or
+ * undefined when it has them all. A scenario skips on this, never on which harness it is.
+ */
+export const lacking = (setup: AgentSetup, ...traits: readonly Trait[]): string | undefined => {
+  const missing = traits.filter((trait) => !has(setup, trait))
+  return missing.length > 0 ? `${setup.name} has no ${missing.join(" or ")} trait` : undefined
+}
+
+/**
+ * The setup's folder-trust question, as a scenario answers it: what it shows, the keys
+ * that select trusting the folder (none when it shows that selected), and that option
+ * selected, which `confirm` takes.
+ */
+export const folderQuestion = (
+  setup: AgentSetup,
+): { readonly shows: RegExp; readonly select: string; readonly trusts: RegExp } | undefined => {
+  const folder = setup.trust?.folder
+  if (folder === undefined) return undefined
+  return folder instanceof RegExp ? { shows: folder, select: "", trusts: folder } : folder
+}
+
+/**
+ * Waits until the terminal shows the harness at its prompt, ready for one to be typed: its
+ * `banner` on screen, with none of its startup questions (folder trust, hooks review)
+ * still there. Ready alone doesn't say the prompt reads keys: once its folder is trusted,
+ * Claude Code 2.1.287 reports its session about 190 ms before its prompt draws, while the
+ * terminal still echoes what's typed, so a prompt typed then looks landed and its Enter
+ * is lost. A scenario submits only after this, which `start` waits for.
+ */
+export const prompted = async (
+  terminal: Pick<DeckTerminal, "handle" | "screen">,
+  setup: AgentSetup,
+  timeoutMs = 60_000,
+): Promise<void> => {
+  const { banner } = setup
+  const questions = [folderQuestion(setup)?.shows, setup.trust?.hooks?.shows].filter(
+    (question) => question !== undefined,
+  )
+  await poll(
+    async () => {
+      const shown = await terminal.screen()
+      const at = typeof banner === "string" ? shown.includes(banner) : banner.test(shown)
+      return at && !questions.some((question) => question.test(shown)) ? true : undefined
+    },
+    `${terminal.handle} to show its prompt (${String(banner)}), past any startup question`,
+    timeoutMs,
+  ).catch(async (error: unknown) => {
+    throw await withScreen(error, terminal.screen)
+  })
+}
+
+/**
+ * Opens a terminal running the harness and waits until NovaDeck sees it Ready and its
+ * prompt shows (`prompted`), so a prompt can be submitted at once.
+ */
 export const start = async ({ deck }: E2E, setup: AgentSetup): Promise<DeckTerminal> => {
   const terminal = await deck.open(setup.agent)
   await terminal.reached("ready", { timeoutMs: 60_000 })
+  await prompted(terminal, setup)
   return terminal
 }
 
@@ -106,6 +171,19 @@ export const opens = (text: string, agent: AgentName, message: string): Rule =>
     if (!open || !asked(call, text)) return undefined
     return { calls: [{ name: open, input: { agent, message } }] }
   })
+
+/**
+ * Answers the agent's first look at a user turn holding `text` with `reply`, a reply that
+ * depends on the call, such as an `approval`'s request or a `background`'s start.
+ */
+export const answers = (text: string, reply: (call: Call) => Reply): Rule =>
+  own((call) => (asked(call, text) ? reply(call) : undefined))
+
+/** What the tool the agent last called answered, when the call is its look at that answer. */
+export const result = (call: Call): string | undefined => {
+  const last = call.turns.at(-1)
+  return last?.role === "tool" ? last.text : undefined
+}
 
 /** Whether the call is the agent's next look after its `open_terminal` opened `handle`. */
 export const opened = (call: Call, handle: string): boolean => {

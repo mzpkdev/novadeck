@@ -41,7 +41,15 @@ import {
   type Message,
   type Thread,
 } from "./mailbox.js"
-import { lastBetween, peerOf, renderAgents, unknownHandle, type About, type Peer } from "./peers.js"
+import {
+  lastBetween,
+  peerOf,
+  renderAgents,
+  unknownHandle,
+  untrustedNote,
+  type About,
+  type Peer,
+} from "./peers.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
 
 /** Which terminals see each other: those of one project and one NovaDeck session. */
@@ -65,6 +73,12 @@ type Live = Scope & {
    * first session of that agent to bind, or for that session. None once one binds.
    */
   shown: { readonly agent: AgentName; readonly prefix: string | null } | null
+  /**
+   * The agent whose own prompt showed there with no session bound, but whose hooks
+   * NovaDeck found untrusted there (Codex's `/hooks`): nothing can deliver to it, so
+   * `send` refuses. None once its prompt counts, a session binds, or it leaves.
+   */
+  untrusted: AgentName | null
   /** The prompt that started the current root turn, by its delivery epoch; null before any. */
   prompt: { readonly epoch: number; readonly text: string } | null
 }
@@ -85,7 +99,12 @@ export type SendAnswer =
       /** This terminal's own session never bound, so replies can't reach it. */
       readonly unbound?: true
     }
-  | { readonly ok: false; readonly reason: string }
+  | {
+      readonly ok: false
+      readonly reason: string
+      /** This terminal's own session never bound, so replies can't reach it. */
+      readonly unbound?: true
+    }
 
 /** What `agents` answers: the listing, rendered once, as agents read it. */
 export type AgentsAnswer =
@@ -234,6 +253,7 @@ export class Messaging {
       delivery: unbound,
       expecting: null,
       shown: null,
+      untrusted: null,
       prompt: null,
     })
   }
@@ -286,6 +306,7 @@ export class Messaging {
     if (!live || (live.root && !replaces)) return
     const learned = live.shown?.agent !== agent || live.shown.prefix !== prefix
     live.shown = { agent, prefix }
+    live.untrusted = null
     this.step(live, { type: "shown", at, replaces })
     // A prefix it learns later may make other messages its own.
     if (learned) this.changed(terminalId)
@@ -297,9 +318,22 @@ export class Messaging {
     return live && !live.root ? live.shown?.agent : undefined
   }
 
+  /**
+   * The agent's own prompt shows in the terminal with no session bound, but NovaDeck's
+   * hooks aren't trusted for it there, as Codex's app-server says: until its prompt counts,
+   * a session binds or it leaves, `send` refuses it, as nothing could deliver.
+   */
+  untrusted(terminalId: string, agent: AgentName): void {
+    const live = this.live.get(terminalId)
+    if (!live || live.root || live.untrusted === agent) return
+    live.untrusted = agent
+    this.changed(terminalId)
+  }
+
   /** The agent whose prompt showed left before any session bound, as the shell's prompt says. */
   unshown(terminalId: string): void {
     const live = this.live.get(terminalId)
+    if (live) live.untrusted = null
     if (!live?.shown) return
     live.shown = null
     if (!live.root && live.delivery.state !== "unbound") this.step(live, { type: "unbound" })
@@ -499,12 +533,12 @@ export class Messaging {
   }
 
   /**
-   * When the person's bare Enter came, if a root turn starting now would be their
-   * submission: within the window, with nothing typed since.
+   * When the person's bare Enter came, if a root turn whose hook started at `startedAt`
+   * would be their submission: within the window, before anything they typed after it.
    */
-  pendingSubmission(terminalId: string): number | undefined {
+  pendingSubmission(terminalId: string, startedAt: number): number | undefined {
     const delivery = this.live.get(terminalId)?.delivery
-    return delivery && pendingEnter(delivery, this.now())
+    return delivery && pendingEnter(delivery, startedAt)
   }
 
   /** The doorbell starts ringing the terminal with its nonce; false when it may not now. */
@@ -546,6 +580,13 @@ export class Messaging {
   send(terminalId: string, request: unknown, about: About = () => undefined): SendAnswer {
     const live = this.live.get(terminalId)
     if (!live) return refused("NovaDeck couldn't send the message.")
+    const answer = this.sendFrom(live, request, about)
+    // Refused too, a sender whose own session never bound learns replies can't reach it.
+    return answer.ok || !this.unbound(live) ? answer : { ...answer, unbound: true }
+  }
+
+  private sendFrom(live: Live, request: unknown, about: About): SendAnswer {
+    const { terminalId } = live
     const parsed = sendRequest.safeParse(request)
     if (!parsed.success)
       return refused("A message needs `to`, a terminal's handle, and its `text`.")
@@ -558,6 +599,11 @@ export class Messaging {
         unknownHandle(parsed.data.to, live.handle, this.peers(live, about), this.now()),
       )
     const root = recipient.root
+    if (!root && !recipient.shown && recipient.untrusted)
+      return refused(
+        `${recipient.handle} has no agent NovaDeck can deliver to: ` +
+          `${untrustedNote(recipient.untrusted)}.`,
+      )
     const agent = root?.agent ?? recipient.shown?.agent ?? recipient.expecting
     if (!agent)
       return refused(`${recipient.handle} has no agent running there that NovaDeck can deliver to.`)
@@ -873,6 +919,7 @@ export class Messaging {
         handle: peer.handle,
         agent: peer.root?.agent ?? peer.shown?.agent ?? null,
         expecting: peer.root || peer.shown ? null : peer.expecting,
+        untrusted: peer.root || peer.shown ? null : peer.untrusted,
         busy: peer.delivery.state === "working",
         where: about(peer.terminalId),
         withYou: lastBetween(this.messages.values(), live.terminalId, peer),
@@ -910,8 +957,13 @@ export class Messaging {
       ...(gone.length > 0 && {
         gone: gone.map((message) => ({ id: message.id, to: message.to.handle })),
       }),
-      ...(live.root === null && !live.shown && { unbound: true as const }),
+      ...(this.unbound(live) && { unbound: true as const }),
     }
+  }
+
+  /** Whether the terminal's own session never bound, so replies can't reach it. */
+  private unbound(live: Live): boolean {
+    return live.root === null && !live.shown
   }
 
   private holdOf(message: Message): "paused" | "release" | null {
@@ -1020,6 +1072,7 @@ export class Messaging {
     // Its first session came: from now on, only a bound session takes messages.
     live.expecting = null
     live.shown = null
+    live.untrusted = null
     this.step(live, { type: "bound", ready, at: this.now() })
     for (const message of this.messages.values()) {
       if (message.to.terminalId !== live.terminalId) continue
@@ -1079,6 +1132,7 @@ export class Messaging {
           by: event.cause,
           ...(event.nonce !== undefined && { nonce: event.nonce }),
           at: this.now(),
+          startedAt: event.startedAt,
         })
         // A new root turn: the prompt that started it, if a prompt with text did.
         if (live.delivery.epoch !== epoch)

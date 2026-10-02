@@ -2495,13 +2495,15 @@ export class Terminals {
     const { root, transcript } = record
     const typedEntry = root && harnesses[root.agent].messaging.typedEntry
     if (!root || !typedEntry || !transcript) return events
+    // The person's Enter, judged by when the turn's hook started, as delivery judges it.
+    const started = events.find((event) => event.type === "turn-started")
     const told = await typedPromptStart(events, {
       root,
       typedEntry,
       transcript,
       // What was seen of this transcript, not another's.
       seen: record.seenEntry?.transcript === transcript ? record.seenEntry.id : undefined,
-      enteredAt: this.messaging.pendingSubmission(id),
+      enteredAt: started && this.messaging.pendingSubmission(id, started.startedAt),
       ringing: this.messaging.ringing(id),
       startedWith: record.startedWith,
     })
@@ -2628,7 +2630,8 @@ export class Terminals {
 
   /**
    * Whether a prompt the harness shows counts: it is connected, and NovaDeck's hooks run
-   * for it there, as `where` (see `harnessIn`) asks it.
+   * for it there, as `where` (see `harnessIn`) asks it. Hooks the harness says aren't
+   * trusted there, messaging learns, as nothing could deliver to that agent.
    */
   private async promptCounts(
     record: Record,
@@ -2636,11 +2639,23 @@ export class Terminals {
     where?: Install & { readonly program?: string },
   ): Promise<boolean> {
     if (!(await this.connected(agent))) return false
+    const trusted = await this.hooksTrustedIn(record, agent, where)
+    if (trusted === false) this.messaging.untrusted(record.summary.id, agent)
+    // Unasked, as with no program to ask, it doesn't count either.
+    return trusted === true
+  }
+
+  /** Whether NovaDeck's hooks run for the agent in the terminal's folder; undefined unasked. */
+  private async hooksTrustedIn(
+    record: Record,
+    agent: AgentName,
+    where?: Install & { readonly program?: string },
+  ): Promise<boolean | undefined> {
     const { cwd } = record.summary
     if (this.options.hooksTrusted) return this.options.hooksTrusted(agent, cwd).catch(() => false)
     const trusted = harnesses[agent].hooksTrusted
     if (!trusted) return true
-    return where ? trusted(where, cwd).catch(() => false) : false
+    return where ? trusted(where, cwd).catch(() => false) : undefined
   }
 
   /**

@@ -135,6 +135,10 @@ const beginHeaderRename = (container: HTMLElement): HTMLInputElement => {
 
 describe("process windows", () => {
   context("when the foreground process changes", () => {
+    // The file's first render pays for the whole workspace's cold start, CPU-bound work
+    // with no wait in it: 0.4s on macOS CI and 0.6s on an idle Linux machine, the next
+    // test 0.1s, but 0.8-3.1s on Windows CI when it passes, and 5.6s in a macOS run that
+    // slowed every test about tenfold.
     it("presents Claude and Codex in the same window and returns to the terminal without remounting the surface", async () => {
       const page = await open("02")
       try {
@@ -163,7 +167,7 @@ describe("process windows", () => {
       } finally {
         page.unmount()
       }
-    })
+    }, 20_000)
 
     it("keeps other programs in the plain terminal window", async () => {
       const page = await open("02")
