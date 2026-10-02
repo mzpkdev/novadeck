@@ -5,19 +5,20 @@ import {
   PointerActivationConstraints,
   PointerSensor,
 } from "@dnd-kit/dom"
-import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable, useSortable } from "@dnd-kit/react/sortable"
 import { FileStack, FileText, MessagesSquare, Pause } from "lucide-react"
-import { useMemo, useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 
-import type { ArtifactKind } from "../../model/companion"
-import { mailBadgeLabel } from "../../model/messages"
+import type { ArtifactKind, CompanionKey } from "../../model/companion"
+import { mailBadgeLabel, type Messages } from "../../model/messages"
 import { ContextMenu, type ContextMenuItem } from "../../ui-toolkit/ContextMenu"
 import { HoverCard } from "../../ui-toolkit/HoverCard"
 import type { Presence } from "../../ui-toolkit/presence"
 import { ArtifactThumb, kindIcons } from "./ArtifactViewer"
-import type { MailHandle } from "./mail"
+import { dragOver, dragTargetAt } from "./drag-over"
+import type { Guest } from "./guests"
+import { useMail, type MailHandle } from "./mail"
 import {
   arrange,
   dismiss,
@@ -83,6 +84,33 @@ const MailThumb = ({
     </span>
   )
 }
+
+// Another terminal's messages, placed on this bar: what waits for its agent, and its
+// threads in miniature.
+const GuestMailCount = ({
+  messages,
+  from,
+}: {
+  messages: Messages
+  from: CompanionKey
+}): React.JSX.Element | null => {
+  const { badge } = useMail(messages, from)
+  return badge ? (
+    <b className="plan-tb-count" data-mail={badge.kind} aria-hidden="true">
+      {badge.count}
+    </b>
+  ) : null
+}
+
+const GuestMailThumb = ({
+  messages,
+  from,
+  peerName,
+}: {
+  messages: Messages
+  from: CompanionKey
+  peerName: (handle: string) => string | undefined
+}): React.JSX.Element => <MailThumb mail={useMail(messages, from)} peerName={peerName} />
 
 // An artifact in miniature, once it loads; a held one is never loaded for a peek, which
 // a passing pointer opens.
@@ -192,6 +220,10 @@ export const Taskbar = ({
   openWindow,
   undockMessages,
   undockPlan,
+  guests,
+  messages,
+  placeOn,
+  dropTarget,
 }: {
   companion: CompanionHandle
   mail: MailHandle
@@ -205,9 +237,20 @@ export const Taskbar = ({
   open: boolean
   // How the bar comes and goes with what the terminal has to show.
   presence: Presence
+  // Other terminals' items placed on this bar, and the messages they read from.
+  guests: readonly Guest[]
+  messages: Messages | undefined
+  // Shows an item, this bar's own or a guest, on another terminal's bar by its id.
+  placeOn: (from: CompanionKey, item: string, terminalId: string) => void
+  // An icon from another terminal's bar is over this one: a drop lands here.
+  dropTarget: boolean
 }): React.JSX.Element => {
   const { pane } = companion
-  const current = shownTab(pane, mail.present)
+  const current = shownTab(
+    pane,
+    mail.present,
+    guests.map((guest) => guest.id),
+  )
   const showing = (tab: string): boolean => open && current === tab
   const state = (tab: string, fresh: boolean): Indicator =>
     fresh ? "new" : showing(tab) ? "open" : "seen"
@@ -246,12 +289,22 @@ export const Taskbar = ({
     ...pane.plans.map((plan): BarSlot => ({ kind: "plan", tab: planTab(plan.ref) })),
     ...slotsOf(pane.artifacts),
     ...(mail.present ? [{ kind: "mail" } as const] : []),
+    ...guests.map((guest): BarSlot => ({ kind: "guest", guest })),
   ])
   const move = (from: number, to: number): void =>
     companion.update((next) => reorderBar(next, moveSlot(bar, from, to)))
-  // Dragging stays within the bar.
-  const [slotsBar, setSlotsBar] = useState<HTMLSpanElement | null>(null)
-  const modifiers = useMemo(() => [RestrictToElement.configure({ element: slotsBar })], [slotsBar])
+  // Ends following the pointer once a drag ends.
+  const stopFollowing = useRef<(() => void) | undefined>(undefined)
+  // Dropped on another terminal's bar, a slot shows there: each of a group, one by one; a
+  // guest dropped on its own terminal's bar goes home.
+  const placeSlot = (entry: BarSlot, terminalId: string): void => {
+    const own = pane.key
+    if (entry.kind === "guest") placeOn(entry.guest.from, entry.guest.item, terminalId)
+    else if (entry.kind === "plan") placeOn(own, entry.tab, terminalId)
+    else if (entry.kind === "mail") placeOn(own, mailTab, terminalId)
+    else if (entry.kind === "one") placeOn(own, entry.artifact.id, terminalId)
+    else for (const shown of entry.artifacts) placeOn(own, shown.id, terminalId)
+  }
 
   // One slot's menu, icon and peek, where it stands on the bar.
   const render = (entry: BarSlot, index: number): React.JSX.Element => {
@@ -265,6 +318,79 @@ export const Taskbar = ({
         ? [{ value: "move-right", label: "Move right", onSelect: () => move(index, index + 1) }]
         : []),
     ]
+    if (entry.kind === "guest") {
+      const { guest } = entry
+      const from = `from ${guest.origin.name}`
+      const Icon =
+        guest.kind === "plan"
+          ? FileText
+          : guest.kind === "mail"
+            ? MessagesSquare
+            : kindIcons[guest.artifact.kind]
+      const name =
+        guest.kind === "plan"
+          ? guest.plan.path.split("/").at(-1)!
+          : guest.kind === "mail"
+            ? "Messages"
+            : guest.artifact.name
+      const label =
+        guest.kind === "plan"
+          ? `Plan: ${titleOf(guest.plan.path, guest.plan.text)}`
+          : guest.kind === "mail"
+            ? "Messages"
+            : guest.artifact.name
+      return slot(
+        guest.id,
+        `${name} ${from}`,
+        [
+          opening(guest.id),
+          {
+            value: `send-back-${guest.id}`,
+            label: `Send back to ${guest.origin.name}`,
+            onSelect: () => placeOn(guest.from, guest.item, guest.from.terminalId),
+          },
+          ...moving,
+        ],
+        <button
+          ref={buttonRef}
+          className="plan-tb-item"
+          data-state={state(guest.id, guest.kind === "artifact" && guest.artifact.fresh)}
+          data-guest=""
+          aria-label={`${label}, ${from}`}
+          aria-pressed={showing(guest.id)}
+          onClick={() => activate(guest.id)}
+        >
+          <Icon size={20} strokeWidth={1.5} />
+          {guest.kind === "mail" && messages && (
+            <GuestMailCount messages={messages} from={guest.from} />
+          )}
+          <b className="plan-tb-origin" aria-hidden="true">
+            {guest.origin.handle ?? guest.origin.name.slice(0, 2)}
+          </b>
+        </button>,
+        <Peek
+          entries={[
+            {
+              id: guest.id,
+              name: `${name} · ${from}`,
+              icon: <Icon size={13} strokeWidth={1.5} />,
+              preview:
+                guest.kind === "plan" ? (
+                  <PlanThumb plan={guest.plan} />
+                ) : guest.kind === "mail" ? (
+                  messages && (
+                    <GuestMailThumb messages={messages} from={guest.from} peerName={peerName} />
+                  )
+                ) : (
+                  <ArtifactPreview companion={guest.companion} artifact={guest.artifact} />
+                ),
+              state: state(guest.id, false),
+              onOpen: () => companion.update((next) => openTab(next, guest.id)),
+            },
+          ]}
+        />,
+      )
+    }
     if (entry.kind === "plan") {
       const plan = pane.plans.find((each) => planTab(each.ref) === entry.tab)!
       const { tab } = entry
@@ -421,6 +547,7 @@ export const Taskbar = ({
     <div
       {...presence.props}
       className="plan-taskbar nodrag nopan"
+      data-drop-target={dropTarget || undefined}
       data-workspace-companion
       role="group"
       aria-label={`What ${agent} showed you`}
@@ -436,16 +563,35 @@ export const Taskbar = ({
     >
       <DragDropProvider
         sensors={sensors}
-        modifiers={modifiers}
         plugins={(defaults) => [...defaults, accessibility, feedback, cursor]}
+        onDragStart={() => {
+          // Where the pointer is on screen: over which terminal, and on its bar. The drag's
+          // own position is the dragged slot's, and it keeps the pointer's moves to itself,
+          // so this listens ahead of it.
+          const source = pane.key.terminalId
+          const follow = (pointer: PointerEvent): void => {
+            dragOver.update(() => ({ source, ...dragTargetAt(pointer.clientX, pointer.clientY) }))
+          }
+          window.addEventListener("pointermove", follow, { capture: true })
+          stopFollowing.current = () =>
+            window.removeEventListener("pointermove", follow, { capture: true })
+        }}
         onDragEnd={(event) => {
+          stopFollowing.current?.()
+          stopFollowing.current = undefined
+          const over = dragOver.getSnapshot()
+          dragOver.update(() => null)
           if (event.canceled) return
           const { source } = event.operation
-          if (!isSortable(source) || source.initialIndex === source.index) return
-          move(source.initialIndex, source.index)
+          if (!isSortable(source)) return
+          // Where the bar's own drag left it, so the bar stays as its DOM shows it.
+          if (source.initialIndex !== source.index) move(source.initialIndex, source.index)
+          const entry = bar.find((each) => slotKey(each) === String(source.id))
+          if (entry && over?.onBar && over.terminal && over.terminal !== pane.key.terminalId)
+            placeSlot(entry, over.terminal)
         }}
       >
-        <span className="plan-tb-slots" ref={setSlotsBar}>
+        <span className="plan-tb-slots">
           {bar.map((entry, index) => (
             <SortableSlot key={slotKey(entry)} id={slotKey(entry)} index={index}>
               {render(entry, index)}

@@ -362,7 +362,16 @@ a card per thing behind it, each a preview, its name and the same mark, with no
 copy. Click an icon or a card to open it, click the icon again (or press Escape) to
 hide the pane, and dismiss from a card's corner button or the icon's right-click. Icons
 line up in the order they came, plans and Messages among them; drag any icon to reorder
-the bar, a group moving as one, or use Move left and Move right on its right-click. In
+the bar, a group moving as one, or use Move left and Move right on its right-click.
+
+Drag any icon onto another terminal's bottom bar to show it there instead (Grid and
+Canvas, where both are on screen); a terminal with nothing to show grows an empty bar
+while an icon is dragged over it. What's placed stays its own terminal's: its icon wears
+that terminal's handle, its peek, menu and pane say whose it is, a plan's edits still save
+to that agent, and a placed Messages is that agent's conversation beside the terminal's
+own. A new version shown by its agent updates it where it is. **Send back to** its
+terminal, on its right-click, or a drag onto that terminal's bar, returns it. Placements
+are the UI's alone for now: the backends don't keep them (`terminals/companion/placement.ts`). In
 “Build Studio”, type `show` to have Codex show the next thing, or `open` to play
 asking it to open it; it opens `projects.json` for you as the demo starts. Files are
 syntax-highlighted by their extension (JSON, JavaScript and TypeScript with JSX, CSS,

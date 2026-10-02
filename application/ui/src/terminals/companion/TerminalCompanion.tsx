@@ -1,20 +1,40 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
-import type { CompanionKey, CompanionWindow, Companions } from "../../model/companion"
+import {
+  companionKeyId,
+  type CompanionKey,
+  type CompanionWindow,
+  type Companions,
+} from "../../model/companion"
 import type { Messages } from "../../model/messages"
 import type { ViewMode } from "../../model/types"
 import { usePresence, type Presence } from "../../ui-toolkit/presence"
 import type { TerminalLayoutControls } from "../WindowShell"
 import { CompanionPane } from "./CompanionPane"
+import { useDragOver } from "./drag-over"
+import type { Guest } from "./guests"
 import { useMail, type MailHandle } from "./mail"
 import { arrived, mailTab, planTab, type Shown } from "./pane"
+import { guestId, usePlacements } from "./placement"
 import { titleOf } from "./plan-text"
-import { presentationOf, shownTab, useCompanion, type CompanionHandle, type PlanDoc } from "./state"
+import {
+  companionActions,
+  placeItem,
+  presentationOf,
+  shownTab,
+  useCompanion,
+  useCompanionPanes,
+  type CompanionHandle,
+  type PlanDoc,
+} from "./state"
 import { Taskbar } from "./Taskbar"
 
 import "./companion.css"
 
 const noneUndocked: readonly string[] = []
+
+// A terminal as it's named: its title, and its handle where it has one.
+export type TerminalName = { readonly name: string; readonly handle?: string | undefined }
 
 const clamp = (value: number): number => Math.min(0.7, Math.max(0.22, value))
 
@@ -26,6 +46,9 @@ type MailProps = {
   openWindow: ((artifact: Shown) => void) | undefined
   undockMessages: (() => void) | undefined
   undockPlan: ((plan: PlanDoc) => void) | undefined
+  // Other terminals' items placed on this one's bar, and the messages they read from.
+  guests: readonly Guest[]
+  messages: Messages | undefined
 }
 
 // Terminal left, plan right, inside the terminal's own window. The divider drags.
@@ -36,6 +59,8 @@ const SplitPlan = ({
   openWindow,
   undockMessages,
   undockPlan,
+  guests,
+  messages,
   view,
   presence,
   children,
@@ -91,6 +116,8 @@ const SplitPlan = ({
           openWindow={openWindow}
           undockMessages={undockMessages}
           undockPlan={undockPlan}
+          guests={guests}
+          messages={messages}
         />
       </div>
     </div>
@@ -109,6 +136,8 @@ const AttachedPlan = ({
   openWindow,
   undockMessages,
   undockPlan,
+  guests,
+  messages,
   onReveal,
   presence,
 }: MailProps & {
@@ -129,6 +158,8 @@ const AttachedPlan = ({
         openWindow={openWindow}
         undockMessages={undockMessages}
         undockPlan={undockPlan}
+        guests={guests}
+        messages={messages}
       />
     </div>
   )
@@ -150,6 +181,7 @@ export const TerminalCompanion = ({
   clipContent,
   undock,
   undocked = noneUndocked,
+  terminalOf,
 }: {
   companions: Companions
   messages?: Messages | undefined
@@ -166,13 +198,25 @@ export const TerminalCompanion = ({
   // What of the companion is undocked now, by its id in the pane: plan tabs, artifact
   // ids, the messages' tab.
   undocked?: readonly string[] | undefined
+  // A terminal in this session by its id, as it's named, for what's placed from it.
+  terminalOf?: ((terminalId: string) => TerminalName | undefined) | undefined
 }): React.JSX.Element => {
   const terminalCompanion = useCompanion(companions, companionKey)
-  // What's undocked lives in its window, not the pane, until it docks back or its window
-  // closes: the pane neither lists nor shows it.
+  const placements = usePlacements(companions)
+  const panes = useCompanionPanes(companions)
+  const own = companionKeyId(companionKey)
+  // What's out lives elsewhere until it comes back: undocked in its window, or placed on
+  // another terminal's bar. The pane neither lists nor shows it.
+  const out = useMemo(
+    () =>
+      new Set([
+        ...undocked,
+        ...placements.filter((each) => companionKeyId(each.from) === own).map((each) => each.item),
+      ]),
+    [undocked, placements, own],
+  )
   const companion = useMemo(() => {
-    if (!undocked.length) return terminalCompanion
-    const out = new Set(undocked)
+    if (!out.size) return terminalCompanion
     const { pane } = terminalCompanion
     const plans = pane.plans.filter((plan) => !out.has(planTab(plan.ref)))
     const artifacts = pane.artifacts.filter((shown) => !out.has(shown.id))
@@ -181,7 +225,45 @@ export const TerminalCompanion = ({
       pane: { ...pane, plans, artifacts },
       present: plans.length > 0 || artifacts.length > 0,
     }
-  }, [terminalCompanion, undocked])
+  }, [terminalCompanion, out])
+  // Other terminals' items placed on this one's bar, as their terminals have them now.
+  const guests = useMemo(
+    (): readonly Guest[] =>
+      placements.flatMap((placement): Guest[] => {
+        if (companionKeyId(placement.to) !== own) return []
+        const pane = panes[companionKeyId(placement.from)]
+        const origin = terminalOf?.(placement.from.terminalId)
+        if (!origin) return []
+        const base = {
+          id: guestId(placement.from, placement.item),
+          from: placement.from,
+          item: placement.item,
+          origin,
+          companion: {
+            ...companionActions(companions, placement.from),
+            pane: pane ?? terminalCompanion.pane,
+            present: true,
+          },
+        }
+        if (placement.item === mailTab) return messages ? [{ ...base, kind: "mail" }] : []
+        if (!pane) return []
+        const plan = pane.plans.find((each) => planTab(each.ref) === placement.item)
+        if (plan) return [{ ...base, kind: "plan", plan }]
+        const artifact = pane.artifacts.find((each) => each.id === placement.item)
+        return artifact ? [{ ...base, kind: "artifact", artifact }] : []
+      }),
+    [placements, panes, own, terminalOf, companions, messages, terminalCompanion.pane],
+  )
+  const guestIds = useMemo(() => guests.map((guest) => guest.id), [guests])
+  // Places one of this bar's items, or a guest, on another terminal's bar by its id.
+  const placeOn = (from: CompanionKey, item: string, terminalId: string): void =>
+    placeItem(companions, from, item, { ...companionKey, terminalId })
+  // An icon dragged over this terminal: the bar a drop would land on.
+  const over = useDragOver()
+  const hovered =
+    over !== null &&
+    over.source !== companionKey.terminalId &&
+    over.terminal === companionKey.terminalId
   const terminalMail = useMail(messages, companionKey)
   // The messages join the taskbar's order when the terminal first has them, after what
   // came before.
@@ -190,7 +272,7 @@ export const TerminalCompanion = ({
     if (terminalMail.present && !mailKnown)
       terminalCompanion.update((pane) => arrived(pane, mailTab))
   }, [terminalMail.present, mailKnown, terminalCompanion])
-  const mail = undocked.includes(mailTab) ? { ...terminalMail, present: false } : terminalMail
+  const mail = out.has(mailTab) ? { ...terminalMail, present: false } : terminalMail
   const moveToWindow =
     undock &&
     (({ fresh: _fresh, at: _at, ...ref }: Shown): void => undock({ kind: "artifact", ref }))
@@ -201,9 +283,10 @@ export const TerminalCompanion = ({
       undock({ kind: "plan", ref: plan.ref, name: titleOf(plan.path, plan.text) }))
   const trigger = useRef<HTMLButtonElement>(null)
   const presentation = presentationOf(view)
-  const present = companion.present || mail.present
+  const present = companion.present || mail.present || guests.length > 0
   // Open while there's something to show, the messages among it.
-  const open = companion.pane.open && !minimized && shownTab(companion.pane, mail.present) !== ""
+  const open =
+    companion.pane.open && !minimized && shownTab(companion.pane, mail.present, guestIds) !== ""
   // The pane stays while it animates out. Only the pane animates: the terminal beside
   // it takes its new size once, never frame by frame.
   const shown = usePresence(open)
@@ -233,6 +316,8 @@ export const TerminalCompanion = ({
           openWindow={moveToWindow}
           undockMessages={undockMessages}
           undockPlan={undockPlan}
+          guests={guests}
+          messages={messages}
           view={view}
           presence={shown}
         >
@@ -251,10 +336,23 @@ export const TerminalCompanion = ({
           openWindow={moveToWindow}
           undockMessages={undockMessages}
           undockPlan={undockPlan}
+          guests={guests}
+          messages={messages}
+          placeOn={placeOn}
+          dropTarget={hovered && over.onBar}
           trigger={trigger}
           open={open}
           presence={bar}
         />
+      )}
+      {/* Nothing to show yet, but an icon is dragged over: an empty bar to drop it on. */}
+      {hovered && !bar.mounted && (
+        <div
+          className="plan-taskbar plan-taskbar-empty nodrag nopan"
+          data-drop-target={over.onBar || undefined}
+        >
+          <span className="plan-tb-empty-hint">Drop here to show it on this terminal</span>
+        </div>
       )}
       {shown.mounted && presentation === "attached" && (
         <AttachedPlan
@@ -264,6 +362,8 @@ export const TerminalCompanion = ({
           openWindow={moveToWindow}
           undockMessages={undockMessages}
           undockPlan={undockPlan}
+          guests={guests}
+          messages={messages}
           onReveal={onReveal}
           presence={shown}
         />

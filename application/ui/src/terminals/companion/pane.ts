@@ -1,4 +1,5 @@
 import type { ArtifactKind, ArtifactRef } from "../../model/companion"
+import type { Guest } from "./guests"
 
 // What a terminal's companion pane holds besides its plans: what the agent showed, in
 // the order it came, and which tab is open.
@@ -105,26 +106,31 @@ export type BarSlot =
   | Slot
   | { readonly kind: "plan"; readonly tab: string }
   | { readonly kind: "mail" }
+  | { readonly kind: "guest"; readonly guest: Guest }
 
 // The items a slot stands for in the taskbar's order.
 const itemsOf = (slot: BarSlot): readonly string[] =>
-  slot.kind === "plan"
-    ? [slot.tab]
-    : slot.kind === "mail"
-      ? [mailTab]
-      : slot.kind === "one"
-        ? [slot.artifact.id]
-        : slot.artifacts.map((shown) => shown.id)
+  slot.kind === "guest"
+    ? [slot.guest.id]
+    : slot.kind === "plan"
+      ? [slot.tab]
+      : slot.kind === "mail"
+        ? [mailTab]
+        : slot.kind === "one"
+          ? [slot.artifact.id]
+          : slot.artifacts.map((shown) => shown.id)
 
 // A slot's identity on the taskbar, which stays the same as it moves.
 export const slotKey = (slot: BarSlot): string =>
-  slot.kind === "plan"
-    ? slot.tab
-    : slot.kind === "mail"
-      ? mailTab
-      : slot.kind === "one"
-        ? slot.artifact.id
-        : `group-${slot.of}`
+  slot.kind === "guest"
+    ? slot.guest.id
+    : slot.kind === "plan"
+      ? slot.tab
+      : slot.kind === "mail"
+        ? mailTab
+        : slot.kind === "one"
+          ? slot.artifact.id
+          : `group-${slot.of}`
 
 // The slots in the taskbar's order: each where its earliest item is, a group where its
 // first one came; anything the order doesn't know yet follows, as given.

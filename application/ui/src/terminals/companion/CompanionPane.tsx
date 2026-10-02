@@ -2,8 +2,10 @@ import { AppWindow } from "lucide-react"
 import { lazy, Suspense, useRef, type ReactNode } from "react"
 
 import { notePattern, notesIn } from "../../model/companion"
+import type { Messages } from "../../model/messages"
 import { ArtifactViewer } from "./ArtifactViewer"
-import type { MailHandle } from "./mail"
+import type { Guest } from "./guests"
+import { useMail, type MailHandle } from "./mail"
 import { MessagesView } from "./MessagesView"
 import { mailTab, planRefOf, type Shown } from "./pane"
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
@@ -163,6 +165,45 @@ export const PlanTab = ({
   )
 }
 
+const noGuests: readonly Guest[] = []
+
+// Another terminal's item placed on this bar, as its own terminal's pane shows it, loading
+// and saving through that terminal, with a line saying whose it is.
+const GuestTab = ({
+  guest,
+  messages,
+  peerName,
+}: {
+  guest: Guest
+  messages: Messages | undefined
+  peerName: (handle: string) => string | undefined
+}): React.JSX.Element => (
+  <div className="guest-tab">
+    <p className="guest-from">From {guest.origin.name}</p>
+    {guest.kind === "plan" ? (
+      <PlanTab
+        key={`${guest.plan.ref}:${guest.plan.writable}`}
+        companion={guest.companion}
+        plan={guest.plan}
+      />
+    ) : guest.kind === "artifact" ? (
+      <ArtifactTab companion={guest.companion} artifact={guest.artifact} openWindow={undefined} />
+    ) : (
+      messages && <GuestMessages messages={messages} guest={guest} peerName={peerName} />
+    )}
+  </div>
+)
+
+const GuestMessages = ({
+  messages,
+  guest,
+  peerName,
+}: {
+  messages: Messages
+  guest: Guest
+  peerName: (handle: string) => string | undefined
+}): React.JSX.Element => <MessagesView mail={useMail(messages, guest.from)} peerName={peerName} />
+
 // A terminal's companion pane, wherever it is presented: one of its plans, edited where
 // it's read, one of the other things its agent showed the user, or its messages.
 export const CompanionPane = ({
@@ -173,6 +214,8 @@ export const CompanionPane = ({
   openWindow,
   undockMessages,
   undockPlan,
+  guests = noGuests,
+  messages: messageStore,
 }: {
   companion: CompanionHandle
   mail: MailHandle
@@ -182,9 +225,17 @@ export const CompanionPane = ({
   openWindow?: ((artifact: Shown) => void) | undefined
   undockMessages?: (() => void) | undefined
   undockPlan?: ((plan: PlanDoc) => void) | undefined
+  // Other terminals' items placed on this terminal's bar, and the messages they read.
+  guests?: readonly Guest[] | undefined
+  messages?: Messages | undefined
 }): React.JSX.Element => {
   const { pane } = companion
-  const tab = shownTab(pane, mail.present)
+  const tab = shownTab(
+    pane,
+    mail.present,
+    guests.map((guest) => guest.id),
+  )
+  const guest = guests.find((each) => each.id === tab)
   const messages = tab === mailTab
   const ref = planRefOf(tab)
   const plan = pane.plans.find((candidate) => candidate.ref === ref)
@@ -207,7 +258,9 @@ export const CompanionPane = ({
         if (plan && !event.currentTarget.contains(event.relatedTarget)) companion.flush(plan.ref)
       }}
     >
-      {messages ? (
+      {guest ? (
+        <GuestTab key={guest.id} guest={guest} messages={messageStore} peerName={peerName} />
+      ) : messages ? (
         <MessagesView
           mail={mail}
           peerName={peerName}

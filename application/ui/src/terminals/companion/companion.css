@@ -132,6 +132,32 @@
     transform: translateY(-2px);
   }
 }
+/* Where a placed item is from: its terminal's handle, at the icon's lower right. */
+.plan-tb-origin {
+  position: absolute;
+  right: 3px;
+  bottom: 5px;
+  padding: 0 3px;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: var(--color-paper);
+  color: var(--color-muted);
+  font: 500 8px/11px var(--font-mono);
+}
+/* An icon from another terminal's bar is over this one: a drop lands here. */
+.plan-taskbar[data-drop-target] {
+  background: var(--color-soft);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+/* A terminal with nothing to show, hovered while an icon is dragged: an empty bar to drop
+   it on. */
+.plan-taskbar-empty {
+  justify-content: center;
+}
+.plan-tb-empty-hint {
+  font-size: 11px;
+  color: var(--color-muted);
+}
 .plan-tb-count {
   position: absolute;
   top: 4px;
@@ -1420,5 +1446,29 @@
   place-items: center;
   border: 1px solid var(--color-line);
   background: var(--color-paper);
+  color: var(--color-muted);
+}
+
+/* Another terminal's item, placed on this one's bar: as its own pane shows it, under a
+   line saying whose it is. */
+.guest-tab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.guest-tab > .plan-reader-body,
+.guest-tab > .artifact-viewer,
+.guest-tab > .mail-view {
+  flex: 1;
+  min-height: 0;
+}
+.guest-from {
+  margin: 0;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-shell);
+  font-size: 11px;
   color: var(--color-muted);
 }

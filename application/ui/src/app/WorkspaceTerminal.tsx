@@ -55,6 +55,26 @@ export const WorkspaceTerminal = ({
     shallowEqual,
   )
   const { projectId, workspaceSessionId } = useWorkspaceState(currentTarget, sameTarget)
+  // The session's terminals by id, as they're named, for what's placed from one to another.
+  const terminalNames = useWorkspaceState(
+    (workspace) =>
+      Object.fromEntries(
+        currentState(workspace).roster.terminals.map((each) => [
+          each.id,
+          `${each.name}\n${each.handle ?? ""}`,
+        ]),
+      ) as Readonly<Record<string, string>>,
+    shallowEqual,
+  )
+  const terminalOf = useCallback(
+    (id: string) => {
+      const named = terminalNames[id]
+      if (named === undefined) return undefined
+      const [name = "", handle = ""] = named.split("\n")
+      return handle ? { name, handle } : { name }
+    },
+    [terminalNames],
+  )
   // The session's terminals by handle, which name the agents its messages are with.
   const names = useWorkspaceState(
     (workspace) =>
@@ -153,6 +173,7 @@ export const WorkspaceTerminal = ({
           clipContent={minimize?.clipContent}
           undock={(item) => undock(terminal.id, item)}
           undocked={undocked}
+          terminalOf={terminalOf}
         >
           {Body ? <Body>{content}</Body> : content}
         </TerminalCompanion>

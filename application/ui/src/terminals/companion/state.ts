@@ -22,6 +22,7 @@ import {
   type Companion,
   type Shown,
 } from "./pane"
+import { forgetTerminal, guestId, isGuest, place } from "./placement"
 
 // Where the pane opens: beside the terminal inside its window, or hanging off a canvas
 // node.
@@ -126,10 +127,16 @@ export const unread = (plan: PlanDoc): boolean => plan.seen < plan.writes
 
 // What the pane shows: its tab, while that still exists, or else its home, or else the
 // first thing shown that may be shown unpicked: never a held one. The messages tab
-// exists while the terminal has messages to show (`mail`). Nothing, when that's "".
-export const shownTab = (pane: PaneState, mail: boolean): string => {
+// exists while the terminal has messages to show (`mail`), and another terminal's item
+// while it's placed here (`guests`, by their ids on this bar). Nothing, when that's "".
+export const shownTab = (
+  pane: PaneState,
+  mail: boolean,
+  guests: readonly string[] = [],
+): string => {
   const exists = (tab: string): boolean => {
     if (tab === mailTab) return mail
+    if (isGuest(tab)) return guests.includes(tab)
     const ref = planRefOf(tab)
     return ref === null
       ? pane.artifacts.some((shown) => shown.id === tab)
@@ -223,9 +230,13 @@ const change = (
     if (!pane) return current
     const updated = update(pane)
     // A pane left with nothing to show closes, so nothing reopens it on its own later. The
-    // messages tab still shows.
+    // messages tab still shows, and so does another terminal's item placed here.
     const next =
-      updated.open && updated.tab !== mailTab && !updated.plans.length && !updated.artifacts.length
+      updated.open &&
+      updated.tab !== mailTab &&
+      !isGuest(updated.tab) &&
+      !updated.plans.length &&
+      !updated.artifacts.length
         ? { ...updated, open: false }
         : updated
     if (next === pane) return current
@@ -449,6 +460,7 @@ const sessionOf = (companions: Companions): Session => {
     const id = companionKeyId(event.key)
     if (event.type === "companion/closed") {
       panes.update(({ [id]: _closed, ...rest }) => rest)
+      forgetTerminal(companions, event.key)
       return
     }
     ensure(event.key)
@@ -554,6 +566,30 @@ export const companionActions = (companions: Companions, key: CompanionKey): Com
       return loading
     },
   }
+}
+
+// Every terminal's pane, for a bar showing items placed on it from others.
+export const useCompanionPanes = (companions: Companions): Readonly<Record<string, PaneState>> => {
+  const { panes } = sessionOf(companions)
+  return useSyncExternalStore(panes.subscribe, panes.getSnapshot)
+}
+
+// Shows a terminal's item on another terminal's bar, at its end, or back on its own.
+export const placeItem = (
+  companions: Companions,
+  from: CompanionKey,
+  item: string,
+  to: CompanionKey,
+): void => {
+  place(companions, from, item, to)
+  if (companionKeyId(from) === companionKeyId(to)) return
+  const session = sessionOf(companions)
+  const id = companionKeyId(to)
+  // A terminal that had nothing to show gets a pane to show it in.
+  session.panes.update((current) =>
+    current[id] ? current : { ...current, [id]: emptyPane(session, to) },
+  )
+  change(session, to, (pane) => arrived(pane, guestId(from, item)))
 }
 
 export const useCompanion = (companions: Companions, key: CompanionKey): CompanionHandle => {
