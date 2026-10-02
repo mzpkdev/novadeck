@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, statSync, symlinkSync } from "node:fs"
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+} from "node:fs"
 import { tmpdir, userInfo } from "node:os"
 import { basename, delimiter, join } from "node:path"
 
@@ -16,7 +25,7 @@ export type Sandbox = {
   /**
    * The environment every sandboxed process gets: HOME, XDG folders, a PATH of the pinned
    * harnesses and system tools, a dead D-Bus address so no keyring is reachable, the fake
-   * model as HTTP(S)_PROXY with loopback exempt, and npm's prefix inside the sandbox so a
+   * model as HTTP(S)_PROXY with loopback exempt (Node's fetch included), and npm's prefix inside the sandbox so a
    * harness that updates itself can't touch a global install.
    */
   readonly env: Readonly<Record<string, string>>
@@ -74,23 +83,37 @@ export const createSandbox = (options: SandboxOptions): Sandbox => {
     all_proxy: proxy,
     NO_PROXY: loopback,
     no_proxy: loopback,
+    // Node's own fetch takes the proxy only when told to.
+    NODE_USE_ENV_PROXY: "1",
   }
   return { root, home, project, env }
 }
 
-// The developer's own harness homes. Only their entries' names, times and sizes are
-// read, never their contents.
-const homes = [".claude", ".claude.json", ".codex", ".gemini"]
+// What the tripwire watches in the developer's home: the files and folders a harness
+// writes when it is configured, connected to a plugin or signed in. Busy files the
+// developer's own running agents change all the time, such as histories, sessions,
+// sockets and state, aren't on the list, so a real session beside the tests can't trip it.
+const watched = [
+  // Claude Code: its settings, and the plugins and marketplaces it has installed.
+  ".claude/settings.json",
+  ".claude/plugins/installed_plugins.json",
+  ".claude/plugins/known_marketplaces.json",
+  // Codex: its configuration, which also lists its plugins and marketplaces, its login,
+  // and the folder its installed plugins are copied into, NovaDeck's among them.
+  ".codex/config.toml",
+  ".codex/auth.json",
+  ".codex/plugins/cache",
+  ".codex/plugins/cache/novadeck",
+  // Antigravity: the plugins NovaDeck installs into, its settings, and the folders its
+  // MCP servers, plugins' data and programs live in.
+  ".gemini/config/plugins",
+  ".gemini/antigravity-cli/settings.json",
+  ".gemini/antigravity-cli/mcp",
+  ".gemini/antigravity-cli/plugin_data",
+  ".gemini/antigravity-cli/bin",
+]
 
-// Entries the developer's own running agents change all the time, which would trip the
-// wire whenever a real session runs beside the tests: their histories, sessions,
-// caches, logs and databases. Their settings, plugins' configuration and logins stay
-// watched. `.claude.json` is one of them: Claude Code rewrites it as it runs.
-const busy =
-  /^(\.claude\.json|history\.jsonl|projects|sessions?|session-env|shell[-_]snapshots|file-history|todos|tasks|plans|backups|statsig|debug|ide|logs?|telemetry|cache|paste-cache|feedback|plugins|\.last-cleanup|thread-writer-locks|tui-.*|.*\.sqlite.*|logs_.*|models_cache\.json|version\.json|tmp|history|antigravity-cli|config|\.tmp)$/
-
-type Entry = { readonly path: string; readonly stamp: string }
-
+// A path's modification time and size, never its contents, or nothing when it's absent.
 const stamp = (path: string): string | undefined => {
   try {
     const stats = statSync(path)
@@ -100,38 +123,25 @@ const stamp = (path: string): string | undefined => {
   }
 }
 
-const entries = (user: string): Entry[] =>
-  homes.flatMap((name) => {
-    const path = join(user, name)
-    if (stamp(path) === undefined) return []
-    let names: string[]
-    try {
-      names = readdirSync(path)
-    } catch {
-      // A file, as ~/.claude.json is.
-      return busy.test(name) ? [] : [{ path, stamp: stamp(path) ?? "" }]
-    }
-    return names
-      .filter((one) => !busy.test(one))
-      .map((one) => ({ path: join(path, one), stamp: stamp(join(path, one)) ?? "gone" }))
-  })
+const stamps = (user: string): ReadonlyMap<string, string | undefined> =>
+  new Map(watched.map((path) => [join(user, path), stamp(join(user, path))]))
 
 /**
  * A tripwire over the developer's real harness homes: call it before a test, and call
- * what it returns after, for the entries that changed or appeared. Besides each watched
- * entry's time and size, it looks for a Claude Code project named after the sandbox,
- * which only a harness that ran in the sandbox with the real home would have made. On a
- * machine with none of those homes, as in CI, it finds nothing.
+ * what it returns after, for the watched paths that changed, appeared or went. Besides
+ * them it looks for a Claude Code project named after the sandbox, which only a harness
+ * that ran in the sandbox with the real home would have made. A path absent both times,
+ * as all are in CI, is skipped.
  */
 export const tripwire = (sandbox: Pick<Sandbox, "root">): (() => readonly string[]) => {
   const user = userInfo().homedir
-  const before = new Map(entries(user).map((entry) => [entry.path, entry.stamp]))
+  const before = stamps(user)
   // Claude Code names a project's folder after its path, every other character a dash.
   const named = basename(sandbox.root).replace(/[^a-zA-Z0-9]/g, "-")
   return () => {
-    const changed = entries(user)
-      .filter((entry) => before.get(entry.path) !== entry.stamp)
-      .map((entry) => entry.path)
+    const changed = [...stamps(user)]
+      .filter(([path, after]) => before.get(path) !== after)
+      .map(([path]) => path)
     let projects: string[] = []
     try {
       projects = readdirSync(join(user, ".claude", "projects"))
@@ -142,4 +152,70 @@ export const tripwire = (sandbox: Pick<Sandbox, "root">): (() => readonly string
     }
     return [...changed, ...projects]
   }
+}
+
+// What a process is, from /proc: its command's name, its working folder and its HOME.
+// Only the HOME entry of its environment is looked at, and nothing of it is kept.
+type Process = { readonly pid: number; readonly comm: string }
+
+const processes = (sandbox: Pick<Sandbox, "root" | "home">): Process[] => {
+  const home = `HOME=${sandbox.home}`
+  const inside = (path: string) => path === sandbox.root || path.startsWith(`${sandbox.root}/`)
+  return readdirSync("/proc")
+    .filter((name) => /^\d+$/.test(name) && Number(name) !== process.pid)
+    .flatMap((name) => {
+      try {
+        const cwd = readlinkSync(`/proc/${name}/cwd`)
+        const homed =
+          !inside(cwd) && readFileSync(`/proc/${name}/environ`, "latin1").split("\0").includes(home)
+        if (!inside(cwd) && !homed) return []
+        return [{ pid: Number(name), comm: readFileSync(`/proc/${name}/comm`, "utf8").trim() }]
+      } catch {
+        // Gone, or another user's, which a sandbox's process never is.
+        return []
+      }
+    })
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const signal = (pid: number, name: NodeJS.Signals) => {
+  try {
+    process.kill(pid, name)
+  } catch {
+    // Already gone.
+  }
+}
+
+// Waits until none of them is alive or the time is up.
+const ended = async (found: readonly Process[], ms: number): Promise<void> => {
+  const deadline = Date.now() + ms
+  while (found.some((one) => alive(one.pid)) && Date.now() < deadline)
+    // eslint-disable-next-line no-await-in-loop -- Waits for them to end.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+}
+
+/**
+ * Ends the processes still running in the sandbox once its deck has closed: those whose
+ * working folder is inside it, or whose HOME is its home. A harness the deck's hangup
+ * reached may take a moment to exit, so each gets three seconds to end by itself; one
+ * still running then gets SIGTERM, then SIGKILL if it outlives two seconds more. Returns
+ * those that had to be ended, by their commands' names, as a leak the test reports.
+ * Linux only, as it reads /proc.
+ */
+export const reap = async (sandbox: Pick<Sandbox, "root" | "home">): Promise<string[]> => {
+  const found = processes(sandbox)
+  await ended(found, 3000)
+  const leftover = found.filter((one) => alive(one.pid))
+  for (const one of leftover) signal(one.pid, "SIGTERM")
+  await ended(leftover, 2000)
+  for (const one of leftover) if (alive(one.pid)) signal(one.pid, "SIGKILL")
+  return leftover.map((one) => `${one.comm} (${one.pid})`)
 }

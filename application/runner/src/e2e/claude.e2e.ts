@@ -1,6 +1,6 @@
 import { claude } from "./agents/claude.js"
 import type { DeckTerminal } from "./deck.js"
-import { describe, e2e, expect } from "./fixture.js"
+import { describe, e2e, expect, supported } from "./fixture.js"
 import { asked, latest, tool, type Call, type Rule } from "./model/script.js"
 
 const it = e2e(claude)
@@ -28,7 +28,7 @@ const delivered = (from: string) => (call: Call) =>
 const messages = (terminal: DeckTerminal) =>
   terminal.messages().threads.flatMap((thread) => thread.messages)
 
-describe("Claude Code", () => {
+describe.skipIf(!supported)("Claude Code", () => {
   it("starts at its own prompt, which NovaDeck sees as Ready", async ({ e2e: { deck } }) => {
     const t1 = await deck.open("claude")
 
@@ -98,6 +98,8 @@ describe("Claude Code", () => {
     await t1.delivery(["settled"])
 
     expect(model.foreign).toBe(0)
-    expect(model.strays.filter((stray) => /anthropic\.com|claude\.ai/.test(stray))).toEqual([])
+    // 2.1.287 sends nothing through the proxy, and every request to the fake model is one
+    // the dialect answered: there is no stray at all.
+    expect(model.strays).toEqual([])
   })
 })

@@ -1,6 +1,6 @@
 import { codex } from "./agents/codex.js"
 import type { DeckTerminal } from "./deck.js"
-import { describe, e2e, expect, type E2E } from "./fixture.js"
+import { describe, e2e, expect, type E2E, supported } from "./fixture.js"
 import { latest, tool, type Call, type Rule } from "./model/script.js"
 
 const it = e2e(codex)
@@ -31,7 +31,7 @@ const delivered = (call: Call, from: string): boolean =>
 // Whether the model's last call in this turn has had its output.
 const answered = (call: Call): boolean => call.turns.at(-1)?.role === "tool"
 
-describe("codex", () => {
+describe.skipIf(!supported)("Codex", () => {
   it("starts straight at its prompt, which NovaDeck sees as Ready", async ({ e2e: run }) => {
     const t1 = await start(run)
     const screen = await t1.screen()
@@ -79,8 +79,8 @@ describe("codex", () => {
     )
     const t1 = await start(run)
     const t2 = await start(run)
-    // A first turn, so t2 is Settled. Ready, its first screen's art vanishes as the
-    // doorbell's line lands, which fails the ring (see the report on this suite).
+    // A first turn, so t2 is Settled: Ready, at its first screen, it can't be rung yet
+    // (see the known gap below).
     await t2.submit("keep the code word")
     await t2.until("Kept.")
     await t2.delivery(["settled"])
@@ -102,11 +102,13 @@ describe("codex", () => {
     expect(states).toEqual(["delivered", "delivered", "delivered", "delivered"])
   })
 
-  // A known gap, kept here so it can't go unnoticed: a Codex at its first screen, wide and
-  // tall enough to draw its logo, erases the logo as anything lands in its input box, so
-  // the doorbell's test paste changes rows far from its line and the ring fails. Once it
-  // rings, this fails: drop `fails` and the first turn the test above gives t2.
-  it.fails("rings a Codex still at its first screen", async ({ e2e: run }) => {
+  // A known gap, kept here so it can't go unnoticed (see docs/e2e-testing.md, "Known
+  // gaps"): a Codex at its first screen, wide and tall enough to draw its logo, erases the
+  // logo as anything lands in its input box, so the doorbell's test paste changes rows far
+  // from its line and the ring fails, leaving t2 Unknown with the message still queued.
+  // Once the doorbell rings such a Codex, this fails: assert that t2 is Working and the
+  // message delivered, and drop the first turn the round trip above gives t2.
+  it("can't ring a Codex still at its first screen", async ({ e2e: run }) => {
     run.model.use(
       own((call) => {
         const send = tool(call, "send")
@@ -119,7 +121,10 @@ describe("codex", () => {
     const t1 = await start(run)
     const t2 = await start(run)
     await t1.submit("ask t2 for the code word")
-    expect(await t2.delivery(["working", "unknown"], 60_000)).toBe("working")
+    expect(await t2.delivery(["working", "unknown"], 60_000)).toBe("unknown")
+    expect(
+      t2.messages().threads.flatMap((thread) => thread.messages.map((one) => one.state)),
+    ).toEqual(["queued"])
   })
 
   it("reaches no model or login but the fake one", async ({ e2e: run }) => {

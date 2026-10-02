@@ -45,11 +45,15 @@ export type DeckTerminal = {
   /** Waits until its screen shows the text, and returns the screen. */
   readonly until: (text: string | RegExp, timeoutMs?: number) => Promise<string>
   /**
-   * Types the text, waits for it to show, then presses Enter: Enter only ever follows text
-   * seen to land, so it can't confirm a dialog or pick from a menu.
+   * Types the text, waits for it to show once more than it did before, then presses
+   * Enter: Enter only ever follows text seen to land, so it can't confirm a dialog or
+   * pick from a menu.
    */
   readonly submit: (text: string) => Promise<void>
-  /** Sends keys other than Enter, such as Escape (`\x1b`), as typed. */
+  /**
+   * Sends keys other than Enter, such as Escape (`\x1b`), as typed. Anything holding a
+   * carriage return or line feed, or the keypad's Enter (`\x1bOM`), is refused.
+   */
   readonly press: (keys: string) => void
   /** What a client's terminal listing says of it now: its agent and that agent's activity. */
   readonly summary: () => TerminalSummary
@@ -81,6 +85,9 @@ export type DeckOptions = {
   /** The whole environment of every process the deck starts. */
   readonly env: Readonly<Record<string, string>>
 }
+
+// How many times the text appears on the screen.
+const occurrences = (shown: string, text: string): number => shown.split(text).length - 1
 
 /**
  * Polls `read` until it gives a value, and returns it; fails with `what` after the
@@ -130,9 +137,14 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
   const store = new WorkspaceStore(join(options.data, "workspace.sqlite"))
   const shell = installShellFiles(join(options.data, "shell"))
   await shell
-  // The harness service reads the login environment from a login shell, which with the
-  // sandbox's HOME finds none of the developer's startup files.
-  const harnesses = createHarnesses(() => shell, { env: options.env, home: options.env.HOME! })
+  // Plugin commands run with the sandbox's environment as it is: a login shell's startup
+  // files, even the system's own in /etc/profile, could put another PATH before the
+  // pinned harnesses.
+  const harnesses = createHarnesses(() => shell, {
+    env: options.env,
+    home: options.env.HOME!,
+    login: false,
+  })
   const terminals = terminalsFor(options, store, shell, harnesses)
   const project = await store.createProject({ id: randomUUID(), name: "E2E", cwd: options.project })
   const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "E2E" })
@@ -155,19 +167,24 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
 
   const terminal = (summary: TerminalSummary): DeckTerminal => {
     const id = summary.id
-    const until = (text: string | RegExp, timeoutMs = 30_000) =>
+    // Waits until the screen passes `shows`, and returns it.
+    const showing = (shows: (shown: string) => boolean, what: string, timeoutMs = 30_000) =>
       poll(
         async () => {
           const shown = await screen(id)
-          return (typeof text === "string" ? shown.includes(text) : text.test(shown))
-            ? shown
-            : undefined
+          return shows(shown) ? shown : undefined
         },
-        `${summary.handle} to show ${String(text)}`,
+        `${summary.handle} to show ${what}`,
         timeoutMs,
       ).catch(async (error: unknown) => {
         throw new Error(`${(error as Error).message}. Its screen:\n${await screen(id)}`)
       })
+    const until = (text: string | RegExp, timeoutMs = 30_000) =>
+      showing(
+        (shown) => (typeof text === "string" ? shown.includes(text) : text.test(shown)),
+        String(text),
+        timeoutMs,
+      )
     return {
       id,
       handle: summary.handle,
@@ -175,12 +192,16 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       until,
       submit: async (text) => {
         if (/[\r\n]/.test(text)) throw new Error("A prompt is one line")
+        // The text may be on screen already, as an earlier prompt: only one more of it
+        // shows that this one landed.
+        const before = occurrences(await screen(id), text)
         terminals.write({ terminalId: id, data: text }, owner)
-        await until(text)
+        await showing((shown) => occurrences(shown, text) > before, `${text} once more`)
         terminals.write({ terminalId: id, data: "\r" }, owner)
       },
       press: (keys) => {
-        if (keys.includes("\r")) throw new Error("Enter only follows text: use submit")
+        if (/[\r\n]/.test(keys) || keys.includes("\x1bOM"))
+          throw new Error("Enter only follows text: use submit")
         terminals.write({ terminalId: id, data: keys }, owner)
       },
       summary: () => terminals.get(id),

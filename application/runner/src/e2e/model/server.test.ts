@@ -26,9 +26,21 @@ const echo: Dialect = {
   },
 }
 
+// A dialect that fails on every request to /broken, as one that misreads a harness would.
+const broken: Dialect = {
+  api: "anthropic",
+  matches: (request) => request.path.startsWith("/broken"),
+  handle: () => {
+    throw new Error("no messages in this request\nwith a second line")
+  },
+}
+
 const it = base.extend<{ model: FakeModel }>({
   model: async ({ resources }, use) => {
-    const model = await startFakeModel({ dialects: [echo], rules: [() => ({ text: "first" })] })
+    const model = await startFakeModel({
+      dialects: [echo, broken],
+      rules: [() => ({ text: "first" })],
+    })
     resources.defer(() => model.close())
     await use(model)
   },
@@ -101,6 +113,27 @@ describe("startFakeModel", () => {
     expect(JSON.stringify([model.strays, refused])).not.toMatch(/real/)
   })
 
+  it("takes a `key` query parameter as a credential, and refuses any but its own", async ({
+    model,
+  }) => {
+    const own = await fetch(`${model.url}/chat?key=${model.credential}`, {
+      method: "POST",
+      body: "a",
+    })
+    const other = await fetch(`${model.url}/chat?key=real-key`, { method: "POST", body: "b" })
+
+    expect([own.status, other.status]).toEqual([200, 401])
+    expect(model.foreign).toBe(1)
+    expect(model.calls).toHaveLength(1)
+  })
+
+  it("passes on a credential header left empty", async ({ model }) => {
+    const empty = await chat(model, "a", { "x-api-key": "", authorization: "" })
+
+    expect(empty.status).toBe(200)
+    expect(model.foreign).toBe(0)
+  })
+
   it("refuses a tunnel through it, recording only its host", async ({ model }) => {
     const status = await raw(
       model,
@@ -121,8 +154,33 @@ describe("startFakeModel", () => {
     expect(model.strays).toEqual(["GET example.com"])
   })
 
+  it("records the host of a request for another server that carried a foreign credential", async ({
+    model,
+  }) => {
+    const status = await raw(
+      model,
+      "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nAuthorization: Bearer real-token\r\nConnection: close\r\n\r\n",
+    )
+
+    expect(status).toBe("HTTP/1.1 403 Forbidden")
+    expect(model.strays).toEqual(["GET example.com"])
+    expect(model.foreign).toBe(1)
+  })
+
+  it("records a dialect's failure by its request's method and path and its message's first line", async ({
+    model,
+  }) => {
+    const response = await fetch(`${model.url}/broken?key=${model.credential}`, {
+      method: "POST",
+      body: "a secret body",
+    })
+
+    expect(response.status).toBe(500)
+    expect(model.errors).toEqual(["POST /broken: no messages in this request"])
+  })
+
   it("records a request no dialect answers by its path, without its query", async ({ model }) => {
-    const response = await fetch(`${model.url}/v1/unknown?key=1`)
+    const response = await fetch(`${model.url}/v1/unknown?page=1`)
 
     expect(response.status).toBe(404)
     expect(model.strays).toEqual(["GET /v1/unknown"])

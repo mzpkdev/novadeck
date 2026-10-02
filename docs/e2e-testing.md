@@ -9,13 +9,25 @@ give the same result every time.
 
 ## Running
 
+The suite runs on Linux only. Its keyring cut is a dead D-Bus address, which doesn't
+keep a harness from the macOS Keychain, and its leftover-process check reads `/proc`.
+On anything else the fixture fails each test, saying so; a scenario file can skip
+instead with `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
+
 ```sh
-npm run test:e2e                  # from the repository root
+npm run test:e2e                  # from the repository root; builds the protocol first
+pnpm --filter @novadeck/protocol build
 pnpm --filter @novadeck/runner test:e2e
 pnpm --filter @novadeck/runner test:e2e src/e2e/claude.e2e.ts
 ```
 
+The runner's own script doesn't build `@novadeck/protocol`, so build it first when
+running the suite from `application/runner`, as the root script does.
+
 The first run installs the pinned harnesses (a few hundred MB). Later runs reuse them.
+Each file installs its harnesses once, before its tests, so a download counts against
+the hook timeout (ten minutes) rather than a test's.
+
 `npm run test` never runs the suite: its files end in `.e2e.ts`, and only
 `application/runner/vitest.e2e.config.ts` includes them. The unit tests for its parts
 (`src/e2e/**/*.test.ts`) run with the rest.
@@ -24,6 +36,11 @@ The first run installs the pinned harnesses (a few hundred MB). Later runs reuse
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME |
 | `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest npm release instead of its pin, as a drift check                                     |
+
+In CI (`.github/workflows/e2e.yml`) each harness runs in a job of its own. Its pinned
+installs are restored from a cache keyed by `harnesses.json` and `install.ts`, without
+npm's own cache (`<cache>/home`) or unfinished staging, and saved even when the tests
+fail, so the next run needn't install again.
 
 ## What is pinned
 
@@ -36,9 +53,16 @@ The first run installs the pinned harnesses (a few hundred MB). Later runs reuse
 | Antigravity | an archive, by its address and SHA-512 (Linux x86-64) | 1.2.14  |
 
 `install.ts` installs each harness into `<cache>/<harness>-<version>`, staging it first
-so an interrupted install never counts as done, and returns the folder holding its
-program. npm runs with a home inside the cache, so neither npm nor a package's install
-script reads or writes the developer's. Antigravity isn't on npm: its archive is
+in a folder with a random name so an interrupted install never counts as done, and
+returns the folder holding its program. Should another run finish the same version
+first, its folder is kept, as that run may be using it, and the staging is discarded;
+an installed folder is never removed. Within a process each harness is installed once,
+and `latest` looked up once. npm is the one beside the node running the tests, or the
+first on PATH, and the install fails saying so when there is none. npm runs with a home
+inside the cache (`<cache>/home`, which also holds npm's own cache) and a dead D-Bus
+address, so neither npm nor a package's install script reads or writes the developer's
+home or reaches their keyring. A version from `npm view`, from Antigravity's manifest or
+from a pin must match `^[\w.+-]+$` before it names a folder. Antigravity isn't on npm: its archive is
 downloaded from the address its own installer's manifest gives, checked against the
 pinned SHA-512 before anything of it runs, and only its program is kept, as `agy`. With
 `NOVADECK_E2E_HARNESS=latest` it reads that manifest for the newest release instead. A
@@ -55,28 +79,59 @@ network:
   Every process the test starts gets only the sandbox's environment, with nothing copied
   from the developer's. Its PATH is the pinned harnesses, a folder holding just `node`,
   and `/usr/bin:/bin`. The deck gives the runner's terminals the sandbox's environment
-  as their `baseEnv`, so they don't start from the runner's own as they do in the app.
+  as their `baseEnv`, so they don't start from the runner's own as they do in the app,
+  and runs plugin commands with it as it is (`createHarnesses`'s `login: false`), so no
+  login shell's startup files, `/etc/profile` included, can put another PATH first.
 - **No keyring.** `DBUS_SESSION_BUS_ADDRESS` points at a socket that doesn't exist, so
   no harness finds a login in the secret service.
-- **No network.** The fake model is also every process's `HTTP(S)_PROXY`. It refuses
-  each tunnel and each request for another server and records its host, never its path.
-  Only loopback is exempt.
+- **No network, as far as harnesses honour the proxy.** The fake model is also every
+  process's `HTTP(S)_PROXY`, with `NODE_USE_ENV_PROXY=1` so Node's own `fetch` takes it
+  too. It refuses each tunnel and each request for another server and records its host,
+  never its path. Only loopback is exempt. This blocks egress only for programs that
+  honour the proxy: one that connects directly isn't stopped, and is caught only if it
+  reaches a host whose failure shows. Running CI in an OS-level network namespace with no
+  route out is a known follow-up.
 - **No real credential.** Each harness gets a fake key that the fake model accepts. A
-  request carrying any other credential is refused and counted, and its value is never
-  stored. That fails the test, as does any request that tried a harness's real API
-  host.
+  request carrying any other credential, in a credential header or a `key` query
+  parameter, is refused and counted, and its value is never stored; an empty header
+  carries none. A request for another server is recorded by its host before it is
+  refused, whatever it carried. A foreign credential fails the test, as does any request
+  that tried a harness's real API host, and any request a dialect failed on, which the
+  fake model records by its method, path and error message (`model.errors`), never its
+  body or headers.
 - **No updates.** Update checks are switched off, and npm's prefix points into the
   sandbox, so a harness that updates itself can't touch a global install.
-- **A tripwire.** Before each test, the fixture notes the time and size of the entries
-  in the developer's `~/.claude`, `~/.claude.json`, `~/.codex` and `~/.gemini`, and checks
-  them again afterwards. It also looks for a Claude Code project named after the
-  sandbox. Entries that the developer's own running agents change constantly
-  (histories, sessions, logs, caches, databases, `~/.claude.json`) are left out, so the
-  wire watches settings, plugins' configuration and logins. A machine without those
-  folders, such as CI, has nothing to check.
+- **A tripwire.** Before each test, the fixture notes the modification time and size of
+  a list of paths in the developer's home, never their contents, and checks them again
+  afterwards; a path absent both times is skipped, so CI, which has none, has nothing to
+  check. It also looks for a Claude Code project named after the sandbox. The list holds
+  only what a harness writes when it is configured, connected or signed in:
+  - Claude Code: `~/.claude/settings.json`, `~/.claude/plugins/installed_plugins.json`
+    and `~/.claude/plugins/known_marketplaces.json`.
+  - Codex: `~/.codex/config.toml` (which also lists its plugins and marketplaces),
+    `~/.codex/auth.json`, and the folders `~/.codex/plugins/cache` and
+    `~/.codex/plugins/cache/novadeck`, where installed plugins are copied.
+  - Antigravity: `~/.gemini/config/plugins` (where NovaDeck installs its plugin),
+    `~/.gemini/antigravity-cli/settings.json`, and the folders
+    `~/.gemini/antigravity-cli/mcp`, `plugin_data` and `bin`.
+
+  Busy files that the developer's own running agents change constantly, such as
+  histories, sessions, session indexes, sockets, logs and state, aren't on the list, so
+  a real session beside the tests can't trip it.
+
+- **Checked once the deck closes.** The fixture closes the deck, then runs its checks
+  while the fake model still listens, so whatever a harness sends on its way out, such as
+  telemetry flushed on exit, counts too; only then does the model close. It also looks
+  in `/proc` for processes still running in the sandbox, by a working folder inside it or
+  `HOME` set to its home (only that entry of a process's environment is read, and none
+  of it is printed). A harness the deck's hangup reached may take a moment to exit
+  (Claude Code takes about 100 ms), so each gets three seconds to end by itself. One
+  still running then is ended with SIGTERM, then SIGKILL two seconds later, and fails
+  the test, named by its command.
 - **Enter only on text seen to land.** A deck terminal's `submit` types the text, waits
-  until the screen shows it, and only then presses Enter. `press` refuses Enter
-  outright, so a test can't confirm a dialog or pick from a menu.
+  until the screen shows it once more than it did before, and only then presses Enter.
+  `press` refuses anything holding a carriage return or line feed, and the keypad's
+  Enter (`\x1bOM`), so a test can't confirm a dialog or pick from a menu.
 
 ## Writing a scenario
 
@@ -102,8 +157,8 @@ describe("Claude Code", () => {
 ```
 
 - `e2e(...setups)` gives each test a fake model, a sandbox and a deck, with each
-  setup's harness installed, seeded and connected to NovaDeck through its own plugin
-  commands.
+  setup's harness installed (once per file, before its tests), seeded and connected to
+  NovaDeck through its own plugin commands. Call it at the top of the file.
 - The fake model answers each call with the first rule that replies. `model.use` adds
   rules ahead of the earlier ones, and with none it answers "OK.". A `Call` is the same
   shape for every API. Its latest user turn includes whatever a hook added beside the
@@ -186,7 +241,10 @@ describe("Claude Code", () => {
   route stays untested.
 - **Seeding.** `~/.gemini/antigravity-cli/settings.json` in the sandbox marks
   onboarding complete, trusts the project, picks the Gemini provider and allows
-  NovaDeck's MCP tools (`mcp(novadeck_novadeck/*)`) to run without asking.
+  NovaDeck's MCP tools (`mcp(novadeck_novadeck/*)`) to run without asking. It also
+  allows one command by its exact path, `wait-for`, a script the setup writes into the
+  sandbox that waits until a given file exists (see Known gaps); Antigravity asks before
+  running any compound shell command, so the wait can't be written inline.
   `AGY_CLI_DISABLE_AUTO_UPDATE` stops it updating itself.
 - **What it calls.** 1.2.14 streams each model call from
   `POST /v1beta/models/<model>:streamGenerateContent?alt=sse`; its session's title is a
@@ -202,17 +260,24 @@ describe("Claude Code", () => {
 
 ## Known gaps
 
+Each is pinned by a test that asserts today's wrong behaviour, so it can't pass
+unnoticed: once fixed, that test fails and says what to assert instead.
+
 - **A Codex at its first screen can't be rung.** Wide and tall enough, Codex draws a
   logo on its first screen and erases it as soon as anything lands in its input box.
   The doorbell's test paste then changes rows far from its line, and the ring fails as
-  it should when it can't tell what the paste did. `codex.e2e.ts` keeps this as an
-  expected failure (`it.fails`), and its round trip gives the recipient one turn first.
-  Once the doorbell rings such a Codex, the expected failure fails: drop `fails` and
+  it should when it can't tell what the paste did. `codex.e2e.ts` asserts it ("can't
+  ring a Codex still at its first screen": the recipient ends Unknown, its message
+  still queued), and its round trip gives the recipient one turn first. Once the
+  doorbell rings such a Codex, assert it Working with the message delivered, and drop
   that first turn.
 - **Antigravity often ends a turn Unknown.** Its status line still says it is working
   10 to 60 ms after its Stop hook, which NovaDeck takes for the turn going on; the idle
-  that follows then leaves the terminal Unknown, never rung, in about 40% of turns.
-  `agy.e2e.ts` keeps this as an expected failure (ten turns that all settle), and its
-  other scenarios accept Unknown. In its round trip the sender keeps its turn open
-  (a background `sleep`), so the answer comes as its Stop continuation rather than a
-  ring. Once fixed, drop `fails`, wait for Settled alone, and remove the `sleep`.
+  that follows then leaves the terminal Unknown, never rung, in about two turns in five.
+  The race is pinned deterministically in `src/messaging/messaging.test.ts` ("is left
+  Unknown when its status line says working just after a Stop, then idle"), and
+  `agy.e2e.ts`'s scenarios accept Settled or Unknown. In its round trip the sender keeps
+  its turn open with the sandbox's `wait-for` script until the test sees the answer
+  sent, so the answer comes as its Stop continuation rather than a ring. Once fixed,
+  assert Settled in that unit test, wait for Settled alone, and let the sender's turn
+  end so the doorbell brings the answer.

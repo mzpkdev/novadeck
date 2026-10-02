@@ -68,7 +68,8 @@ type Message = { readonly id?: unknown; readonly result?: unknown; readonly erro
 
 /**
  * A session with Codex's app-server over stdio, as its TUI and NovaDeck talk to it: each
- * request resolves to its result, or fails with its error or after `timeoutMs`.
+ * request resolves to its result, or fails with its error, after `timeoutMs`, or as soon
+ * as the app-server can't answer, as it failed to start or exited.
  */
 const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) => {
   const child = spawn("codex", ["app-server"], {
@@ -76,7 +77,18 @@ const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) =>
     cwd: env.HOME,
     stdio: ["pipe", "pipe", "ignore"],
   })
-  const pending = new Map<number, (message: Message) => void>()
+  const pending = new Map<number, (message: Message | Error) => void>()
+  // Why the app-server can't answer any more, once it can't.
+  let gone: Error | undefined
+  const fail = (error: Error) => {
+    gone ??= error
+    for (const settle of pending.values()) settle(gone)
+  }
+  child.on("error", (error) => fail(new Error(`Codex's app-server failed: ${error.message}`)))
+  // Once its output is all read, so an answer it gave before exiting still counts.
+  child.on("close", (code, signal) =>
+    fail(new Error(`Codex's app-server exited (${signal ?? `code ${code}`})`)),
+  )
   let buffered = ""
   let next = 1
   child.stdout.setEncoding("utf8")
@@ -97,6 +109,10 @@ const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) =>
   const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`)
   const request = (method: string, params: object): Promise<unknown> =>
     new Promise((resolve, reject) => {
+      if (gone) {
+        reject(gone)
+        return
+      }
       const id = next++
       const timer = setTimeout(() => {
         pending.delete(id)
@@ -105,7 +121,8 @@ const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) =>
       pending.set(id, (message) => {
         clearTimeout(timer)
         pending.delete(id)
-        if (message.error !== undefined)
+        if (message instanceof Error) reject(message)
+        else if (message.error !== undefined)
           reject(new Error(`${method} failed: ${JSON.stringify(message.error)}`))
         else resolve(message.result)
       })

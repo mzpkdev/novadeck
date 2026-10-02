@@ -1,6 +1,9 @@
-import { agy } from "./agents/agy.js"
+import { writeFile } from "node:fs/promises"
+import { join } from "node:path"
+
+import { agy, waiter } from "./agents/agy.js"
 import type { DeckTerminal } from "./deck.js"
-import { describe, e2e, expect, type E2E } from "./fixture.js"
+import { describe, e2e, expect, type E2E, supported } from "./fixture.js"
 import { asked, latest, tool, type Call, type Rule } from "./model/script.js"
 
 const it = e2e(agy)
@@ -49,11 +52,13 @@ const delivered = (from: string) => (call: Call) =>
 const messages = (terminal: DeckTerminal) =>
   terminal.messages().threads.flatMap((thread) => thread.messages)
 
-// A turn's end as NovaDeck sees it: Settled, or Unknown when it misread Antigravity's
-// status line at the turn's end (see the known gap below).
+// A turn's end as NovaDeck sees it: Settled, or Unknown when its status line still says
+// working just after the turn's Stop, as about two turns in five here. That known gap is
+// pinned in messaging/messaging.test.ts (see docs/e2e-testing.md, "Known gaps"). Once
+// fixed, wait for Settled alone, and let t1's turn in the round trip end without its wait.
 const ended = ["settled", "unknown"] as const
 
-describe("Antigravity", () => {
+describe.skipIf(!supported)("Antigravity", () => {
   it("starts straight at its prompt, which NovaDeck sees as Ready", async ({ e2e: run }) => {
     const t1 = await start(run)
 
@@ -87,20 +92,22 @@ describe("Antigravity", () => {
   it("rings an idle agent for a message, and its answer reaches the sender", async ({
     e2e: run,
   }) => {
+    // t1 keeps its turn open until t2 has answered, so the answer comes with its Stop: a
+    // turn that ended could be left Unknown and never rung (see `ended` above).
+    const answered = join(run.sandbox.root, "answered")
     run.model.use(
       sends("Ask t2 for its colour", "t2", "What is your colour?"),
-      // Once sent, t1 starts a sleep in the background, so its turn stays open until the
-      // sleep ends and the answer comes with its Stop: a turn that ended could be left
-      // Unknown and never rung (see the known gap below).
+      // Once sent, t1 waits in the background for the file the test makes once t2 has
+      // answered.
       own((call) => {
         const last = call.turns.at(-1)
         if (last?.role !== "tool" || !last.text.includes("to t2 is queued")) return undefined
         const command = {
-          CommandLine: "sleep 15",
+          CommandLine: `${waiter(run.sandbox)} ${answered}`,
           Cwd: run.sandbox.project,
           WaitMsBeforeAsync: 500,
-          toolSummary: "Pause",
-          toolAction: "Pausing",
+          toolSummary: "Wait",
+          toolAction: "Waiting",
         }
         return { calls: [{ name: "run_command", input: command }] }
       }),
@@ -118,9 +125,18 @@ describe("Antigravity", () => {
     const rung = await run.model.waitFor(delivered("t1"), 60_000)
     expect(latest(rung)).toContain(doorbell)
     expect(latest(rung)).toContain("What is your colour?")
+    // Once t2's send has its answer, t1 may end its turn. That answer needn't be the
+    // call's last turn: t2's hook injects t1's message into each of its model calls.
+    await run.model.waitFor(
+      (call) =>
+        !call.side &&
+        call.turns.some((turn) => turn.role === "tool" && turn.text.includes("to t1 is queued")),
+      60_000,
+    )
+    await writeFile(answered, "")
     // Its answer comes back to t1, whose Stop continues the turn with it.
-    const answered = await run.model.waitFor(delivered("t2"), 60_000)
-    expect(latest(answered)).toContain("Mine is teal.")
+    const answer = await run.model.waitFor(delivered("t2"), 60_000)
+    expect(latest(answer)).toContain("Mine is teal.")
 
     expect(messages(t1).map((one) => [one.from, one.to, one.state])).toEqual([
       ["t1", "t2", "delivered"],
@@ -128,38 +144,6 @@ describe("Antigravity", () => {
     ])
     expect(messages(t2)).toEqual(messages(t1))
     await t1.until("t2 says teal.")
-  })
-
-  // A known gap, kept here so it can't go unnoticed: Antigravity's status line still says
-  // working for a moment after its Stop hook starts, so NovaDeck often (about two turns
-  // in five against the fake model) takes the turn as resumed, and the idle line after as
-  // a turn that ended without a Stop: the terminal is left Unknown, and messages for it
-  // are never rung. Ten turns all Settled is then unlikely enough to fail every run. Once
-  // NovaDeck reads that line right, this passes: drop `fails`, have the scenarios above
-  // wait for Settled alone, and let t1 above end its turn without its sleep.
-  it.fails("settles after every turn", async ({ e2e: run }) => {
-    run.model.use(
-      own((call) => {
-        const turn = /Turn (\d+)/.exec(latest(call))?.[1]
-        return turn ? { text: `Done ${turn}.` } : undefined
-      }),
-    )
-    const t1 = await start(run)
-
-    const states: string[] = []
-    for (let turn = 1; turn <= 10; turn++) {
-      // eslint-disable-next-line no-await-in-loop -- One turn after another, as typed.
-      await t1.submit(`Turn ${turn}`)
-      // eslint-disable-next-line no-await-in-loop -- As above.
-      await t1.until(`Done ${turn}.`)
-      // eslint-disable-next-line no-await-in-loop -- As above.
-      await t1.delivery(ended)
-      // The misread comes within a status line's refresh after the turn ends.
-      // eslint-disable-next-line no-await-in-loop -- As above.
-      await new Promise((resolve) => setTimeout(resolve, 1_000))
-      states.push(t1.messages().delivery)
-    }
-    expect(states).toEqual(Array.from({ length: 10 }, () => "settled"))
   })
 
   it("reaches no model or login but the fake one", async ({ e2e: run }) => {

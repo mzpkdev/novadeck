@@ -28,6 +28,11 @@ export type FakeModel = {
   readonly strays: readonly string[]
   /** How many requests carried a credential other than `credential`. */
   readonly foreign: number
+  /**
+   * Requests a dialect failed on, by method, path and the error's message, never their
+   * body or headers. Any fails the test: the fake model misread a harness.
+   */
+  readonly errors: readonly string[]
   /** Waits for a call that matches, including one already made. */
   readonly waitFor: (match: (call: Call) => boolean, timeoutMs?: number) => Promise<Call>
   /** Adds rules ahead of the ones given before. */
@@ -43,6 +48,21 @@ export type FakeModelOptions = {
 // Headers that carry a credential, by name, whatever the API: an Authorization or
 // Proxy-Authorization, and the API keys, tokens and cookies APIs take in headers of their own.
 const credentialHeader = /authorization|api[-_]?key|token|secret|cookie|credential/i
+
+// The credentials a request carries: its credential headers' values, and the `key` query
+// parameter the Gemini API also takes. An empty value carries none.
+const credentials = (request: IncomingMessage): string[] => {
+  const headers = Object.entries(request.headers)
+    .filter(([name]) => credentialHeader.test(name))
+    .flatMap(([, value]) => [value ?? ""].flat())
+  let key: string | null = null
+  try {
+    key = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("key")
+  } catch {
+    // A target no URL can be made of carries no key.
+  }
+  return [...headers, ...(key === null ? [] : [key])].filter((value) => value.trim() !== "")
+}
 
 /**
  * Whether a header's value is the fake credential, alone or after an auth scheme such as
@@ -86,25 +106,24 @@ const outline = (calls: readonly Call[]): string =>
     .join("\n") || "  (none)"
 
 /**
- * Starts the fake model on a free loopback port. Every request is checked for a
- * credential first; then a proxy's request (CONNECT, or one for an absolute URL) is
- * refused and recorded by its host, one a dialect matches is answered by it, and
- * anything else is recorded and answered 404.
+ * Starts the fake model on a free loopback port. A proxy's request (CONNECT, or one for
+ * an absolute URL) is recorded by its host and refused. Any other request is checked for
+ * a credential, in its headers or a `key` query parameter; then one a dialect matches is
+ * answered by it, and anything else is recorded and answered 404. Every request's
+ * credential that isn't the fake one is counted.
  */
 export const startFakeModel = async (options: FakeModelOptions): Promise<FakeModel> => {
   const credential = `novadeck-e2e-${randomBytes(16).toString("hex")}`
   const calls: Call[] = []
   const strays: string[] = []
+  const errors: string[] = []
   let foreign = 0
   let rules: readonly Rule[] = options.rules ?? []
   const waiters = new Set<(call: Call) => void>()
 
   // Counts a request carrying a credential that isn't the fake one, and says so.
   const trespasses = (request: IncomingMessage): boolean => {
-    const carried = Object.entries(request.headers).filter(([name]) => credentialHeader.test(name))
-    const other = carried.some(([, value]) =>
-      [value ?? ""].flat().some((one) => !isCredential(one, credential)),
-    )
+    const other = credentials(request).some((one) => !isCredential(one, credential))
     if (other) foreign += 1
     return other
   }
@@ -116,16 +135,18 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
   }
 
   const respond = async (incoming: IncomingMessage, outgoing: ServerResponse) => {
+    const target = incoming.url ?? "/"
+    const method = incoming.method ?? "GET"
+    // A request for another server is recorded by its host whatever it carried.
+    if (!target.startsWith("/")) {
+      strays.push(`${method} ${hostOf(target)}`)
+      trespasses(incoming)
+      outgoing.writeHead(403).end()
+      return
+    }
     if (trespasses(incoming)) {
       outgoing.writeHead(401, { "content-type": "application/json" })
       outgoing.end(JSON.stringify({ error: { type: "authentication_error", message: "foreign" } }))
-      return
-    }
-    const target = incoming.url ?? "/"
-    const method = incoming.method ?? "GET"
-    if (!target.startsWith("/")) {
-      strays.push(`${method} ${hostOf(target)}`)
-      outgoing.writeHead(403).end()
       return
     }
     const request: Request = {
@@ -155,6 +176,11 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
 
   const server = createServer((incoming, outgoing) => {
     respond(incoming, outgoing).catch((error: unknown) => {
+      // Its first line alone, which names what went wrong rather than quoting the body.
+      const message = (error instanceof Error ? error.message : String(error)).split("\n")[0]
+      errors.push(
+        `${incoming.method ?? "GET"} ${(incoming.url ?? "/").split("?")[0]}: ${message?.slice(0, 200)}`,
+      )
       if (outgoing.headersSent) return outgoing.destroy()
       outgoing.writeHead(500, { "content-type": "application/json" })
       outgoing.end(JSON.stringify({ error: { type: "api_error", message: String(error) } }))
@@ -185,6 +211,9 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     },
     get foreign() {
       return foreign
+    },
+    get errors() {
+      return errors
     },
     waitFor: (match, timeoutMs = 60_000) => {
       const made = calls.find(match)

@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 import { promisify } from "node:util"
 
 import type { AgentName } from "@novadeck/protocol"
@@ -12,10 +12,20 @@ import { z } from "zod"
 /** The harnesses an end-to-end test can run: those `harnesses.json` pins. */
 export type HarnessName = AgentName
 
+// A version as it may appear in a folder's name: no path separator in it.
+const versionPattern = /^[\w.+-]+$/
+
+/** The version, once it is known to be safe in a path; `from` names where it came from. */
+const safeVersion = (version: string, from: string): string => {
+  if (!versionPattern.test(version) || /^\.+$/.test(version))
+    throw new Error(`${from} gave ${JSON.stringify(version.slice(0, 80))}, which is no version`)
+  return version
+}
+
 // A harness published on npm: its package and the version the tests run.
 const npmPin = z.strictObject({
   package: z.string().min(1),
-  version: z.string().min(1),
+  version: z.string().regex(versionPattern),
   bin: z.string().min(1),
 })
 
@@ -26,7 +36,7 @@ const archivePin = z.strictObject({
   archive: z.url(),
   sha512: z.string().regex(/^[0-9a-f]{128}$/),
   manifest: z.url(),
-  version: z.string().min(1),
+  version: z.string().regex(versionPattern),
   member: z.string().min(1),
   bin: z.string().min(1),
 })
@@ -52,15 +62,23 @@ const pinOf = (name: HarnessName): z.infer<typeof pin> => {
 export const cacheFolder = (env: NodeJS.ProcessEnv = process.env): string =>
   env.NOVADECK_E2E_CACHE || join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "novadeck", "e2e")
 
-// npm beside the node running the tests, so whatever else is on PATH plays no part.
+// npm beside the node running the tests, so whatever else is on PATH plays no part, or
+// the first on the tests' own PATH when that node has none beside it.
 const npm = (): string => {
-  const beside = join(dirname(process.execPath), process.platform === "win32" ? "npm.cmd" : "npm")
-  return existsSync(beside) ? beside : "npm"
+  const name = process.platform === "win32" ? "npm.cmd" : "npm"
+  const found = [dirname(process.execPath), ...(process.env.PATH ?? "").split(delimiter)]
+    .filter(Boolean)
+    .map((folder) => join(folder, name))
+    .find((path) => existsSync(path))
+  if (!found)
+    throw new Error(`No npm beside ${process.execPath} or on PATH, so no harness can be installed`)
+  return found
 }
 
 /**
  * The environment npm installs with: a home of the cache's own, so neither npm nor a
- * package's install script reads or writes the developer's, and their proxy, should the
+ * package's install script reads or writes the developer's, a D-Bus address that leads
+ * nowhere, so no install script reaches their keyring, and their proxy, should the
  * registry be reachable only through it.
  */
 const installEnvironment = (cache: string): NodeJS.ProcessEnv => {
@@ -71,6 +89,7 @@ const installEnvironment = (cache: string): NodeJS.ProcessEnv => {
     ...Object.fromEntries(proxies),
     HOME: join(cache, "home"),
     USERPROFILE: join(cache, "home"),
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(cache, "no-bus")}`,
     PATH: [dirname(process.execPath), "/usr/bin", "/bin"].join(
       process.platform === "win32" ? ";" : ":",
     ),
@@ -92,16 +111,41 @@ const run = (args: readonly string[], cache: string) =>
 const npmVersion = async (found: z.infer<typeof npmPin>, cache: string): Promise<string> => {
   if (process.env.NOVADECK_E2E_HARNESS !== "latest") return found.version
   const { stdout } = await run(["view", found.package, "version"], cache)
-  return stdout.trim()
+  return safeVersion(stdout.trim(), `npm view ${found.package} version`)
 }
+
+// Each harness's install in this process, by harness and which version it runs, so a
+// file's tests and its setup share one, and `latest` is looked up once.
+const installs = new Map<string, Promise<string>>()
 
 /**
  * Installs the harness's pinned version into the cache, once, and returns the folder
  * holding its program. It never uses a copy installed elsewhere on the machine.
  */
-export const installHarness = async (name: HarnessName): Promise<string> => {
+export const installHarness = (name: HarnessName): Promise<string> => {
+  const key = `${name}:${process.env.NOVADECK_E2E_HARNESS === "latest" ? "latest" : "pinned"}`
+  const known = installs.get(key)
+  if (known) return known
   const found = pinOf(name)
-  return "archive" in found ? installArchive(name, found) : installPackage(name, found)
+  const install = "archive" in found ? installArchive(name, found) : installPackage(name, found)
+  installs.set(key, install)
+  return install
+}
+
+// A staging folder beside the final one, named so no other run picks the same.
+const stagingFor = (folder: string): string => `${folder}.${randomBytes(6).toString("hex")}.tmp`
+
+/**
+ * Moves a staged install into place whole. Should another run have put the same version
+ * there meanwhile, its folder is kept, as that run may be using it, and the staging goes.
+ */
+const settle = async (staging: string, folder: string, program: string): Promise<void> => {
+  if (existsSync(program)) return
+  try {
+    await rename(staging, folder)
+  } catch (error) {
+    if (!existsSync(program)) throw error
+  }
 }
 
 const installPackage = async (
@@ -117,8 +161,7 @@ const installPackage = async (
   if (existsSync(join(bins, bin))) return bins
   // Installed beside it first, then moved into place whole, so a run stopped halfway
   // leaves nothing that looks installed.
-  const staging = `${folder}.${process.pid}.tmp`
-  await rm(staging, { recursive: true, force: true })
+  const staging = stagingFor(folder)
   await mkdir(staging, { recursive: true })
   try {
     await run(
@@ -137,8 +180,7 @@ const installPackage = async (
     )
     if (!existsSync(join(staging, "node_modules", ".bin", bin)))
       throw new Error(`${spec}@${wanted} installed no ${bin} program`)
-    await rm(folder, { recursive: true, force: true })
-    await rename(staging, folder)
+    await settle(staging, folder, join(bins, bin))
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
@@ -156,9 +198,10 @@ const archiveRelease = async (found: z.infer<typeof archivePin>): Promise<Releas
     return { version: found.version, url: found.archive, sha512: found.sha512 }
   const response = await fetch(found.manifest)
   if (!response.ok) throw new Error(`${found.manifest} answered ${response.status}`)
-  return z
+  const release = z
     .looseObject({ version: z.string(), url: z.url(), sha512: z.string() })
     .parse(await response.json())
+  return { ...release, version: safeVersion(release.version, found.manifest) }
 }
 
 /**
@@ -177,8 +220,7 @@ const installArchive = async (
   const bins = join(folder, "bin")
   if (existsSync(join(bins, found.bin))) return bins
   // Unpacked beside it first, then moved into place whole, as a package is.
-  const staging = `${folder}.${process.pid}.tmp`
-  await rm(staging, { recursive: true, force: true })
+  const staging = stagingFor(folder)
   await mkdir(join(staging, "bin"), { recursive: true })
   try {
     const response = await fetch(wanted.url)
@@ -191,8 +233,7 @@ const installArchive = async (
     await promisify(execFile)("tar", ["-xzf", "release.tar.gz", found.member], { cwd: staging })
     await rename(join(staging, found.member), join(staging, "bin", found.bin))
     await rm(join(staging, "release.tar.gz"))
-    await rm(folder, { recursive: true, force: true })
-    await rename(staging, folder)
+    await settle(staging, folder, join(bins, found.bin))
   } finally {
     await rm(staging, { recursive: true, force: true })
   }

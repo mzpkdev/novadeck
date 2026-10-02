@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     include: ["src/e2e/**/*.e2e.ts"],
     testTimeout: 180_000,
-    // Installing a harness the first time downloads it.
+    // Installing a harness the first time downloads it, in each file's beforeAll.
     hookTimeout: 600_000,
     fileParallelism: false,
   },
