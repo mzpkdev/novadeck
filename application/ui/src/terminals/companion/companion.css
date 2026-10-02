@@ -1218,6 +1218,12 @@
   flex-direction: column;
   min-height: 0;
 }
+/* The switch centred on its label, the pair on the header's baseline by the label's. */
+.mail-pause {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .mail-pause-label {
   color: var(--color-ink);
 }

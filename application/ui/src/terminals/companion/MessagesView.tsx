@@ -157,19 +157,21 @@ export const MessagesView = ({
         <code>Messages</code>
         {mail.mail && <span>{mail.mail.handle}</span>}
         <span className="artifact-meta-push" />
-        <span id={label} className="mail-pause-label">
-          Pause all agents' messages
+        <span className="mail-pause">
+          <span id={label} className="mail-pause-label">
+            Pause all agents' messages
+          </span>
+          <span id={hint} className="sr-only">
+            In every project and session, until you resume.
+          </span>
+          <Switch
+            checked={mail.paused}
+            onChange={mail.pause}
+            labelledBy={label}
+            describedBy={hint}
+            pending={mail.pending}
+          />
         </span>
-        <span id={hint} className="sr-only">
-          In every project and session, until you resume.
-        </span>
-        <Switch
-          checked={mail.paused}
-          onChange={mail.pause}
-          labelledBy={label}
-          describedBy={hint}
-          pending={mail.pending}
-        />
       </div>
       {mail.error && (
         <p className="mail-error" role="alert">
