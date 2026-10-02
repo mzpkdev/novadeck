@@ -1,5 +1,5 @@
 import { AppWindow } from "lucide-react"
-import { lazy, Suspense, useRef } from "react"
+import { lazy, Suspense, useRef, type ReactNode } from "react"
 
 import { notePattern, notesIn } from "../../model/companion"
 import { ArtifactViewer } from "./ArtifactViewer"
@@ -94,12 +94,17 @@ const ArtifactTab = ({
   />
 )
 
-const PlanTab = ({
+// One plan, edited where it's read, with its outline: in the pane, or in a window of its
+// own once undocked.
+export const PlanTab = ({
   companion,
   plan,
+  actions,
 }: {
   companion: CompanionHandle
   plan: PlanDoc
+  // What the place showing the plan offers, at the end of its header.
+  actions?: ReactNode
 }): React.JSX.Element => {
   const editor = useRef<PlanEditorHandle | null>(null)
   const marks = currentMarks(plan)
@@ -139,6 +144,7 @@ const PlanTab = ({
               {plan.agent} doesn't have NovaDeck's skill. Ask it to re-read the plan.
             </span>
           )}
+          {actions && <span className="plan-meta-actions">{actions}</span>}
         </div>
         <Suspense fallback={null}>
           <PlanEditor
@@ -166,6 +172,7 @@ export const CompanionPane = ({
   presentation,
   openWindow,
   undockMessages,
+  undockPlan,
 }: {
   companion: CompanionHandle
   mail: MailHandle
@@ -174,6 +181,7 @@ export const CompanionPane = ({
   // Undocks what's shown into a window of its own; absent where there's no such window.
   openWindow?: ((artifact: Shown) => void) | undefined
   undockMessages?: (() => void) | undefined
+  undockPlan?: ((plan: PlanDoc) => void) | undefined
 }): React.JSX.Element => {
   const { pane } = companion
   const tab = shownTab(pane, mail.present)
@@ -206,7 +214,12 @@ export const CompanionPane = ({
           actions={undockMessages && <UndockButton onUndock={undockMessages} />}
         />
       ) : plan ? (
-        <PlanTab key={`${plan.ref}:${plan.writable}`} companion={companion} plan={plan} />
+        <PlanTab
+          key={`${plan.ref}:${plan.writable}`}
+          companion={companion}
+          plan={plan}
+          actions={undockPlan && <UndockButton onUndock={() => undockPlan(plan)} />}
+        />
       ) : artifact ? (
         <ArtifactTab
           key={`${artifact.id}@${artifact.version}`}

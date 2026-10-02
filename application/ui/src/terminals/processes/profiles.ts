@@ -1,4 +1,4 @@
-import { MessagesSquare, Terminal, type LucideIcon } from "lucide-react"
+import { FileText, MessagesSquare, Terminal, type LucideIcon } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
 
 import type { TerminalMetadata } from "../../model/types"
@@ -31,10 +31,18 @@ const profiles: ReadonlyMap<string, ProcessProfile> = new Map([
 export const presentedProgram = (terminal: TerminalMetadata): string | undefined =>
   terminal.state === "running" && profiles.has(terminal.process) ? terminal.process : undefined
 
-// A window undocked from a terminal's companion presents as what it shows: an image,
-// file or page, or messages.
+// A window undocked from a terminal's companion presents as what it shows: a plan, an
+// image, file or page, or messages.
 export const terminalProfile = (terminal: TerminalMetadata): ProcessProfile => {
   const item = terminal.companion?.item
-  if (item) return { icon: item.kind === "messages" ? MessagesSquare : kindIcons[item.ref.kind] }
+  if (item)
+    return {
+      icon:
+        item.kind === "messages"
+          ? MessagesSquare
+          : item.kind === "plan"
+            ? FileText
+            : kindIcons[item.ref.kind],
+    }
   return profiles.get(presentedProgram(terminal) ?? "") ?? fallback
 }

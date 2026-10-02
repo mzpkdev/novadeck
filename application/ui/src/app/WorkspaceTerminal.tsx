@@ -3,7 +3,7 @@ import { useCallback, useMemo, type ReactNode } from "react"
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
 import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
-import { UndockedWindow } from "../terminals/companion/UndockedWindow"
+import { paneItemOf, UndockedWindow } from "../terminals/companion/UndockedWindow"
 import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
 import { windowMenu } from "../terminals/window-menu"
@@ -87,23 +87,16 @@ export const WorkspaceTerminal = ({
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
   const dockIn = useCompanionDock(terminal)
-  // What of this terminal's companion is undocked in windows of its own now.
+  // What of this terminal's companion is undocked in windows of its own now, by its id
+  // in the pane: a plan's tab, an artifact's id, the messages' tab.
   const undockedKey = useWorkspaceState((workspace) =>
     currentState(workspace)
       .roster.terminals.flatMap(({ companion }) =>
-        companion?.from !== terminalId
-          ? []
-          : [companion.item.kind === "messages" ? "\n" : companion.item.ref.id],
+        companion?.from !== terminalId ? [] : [paneItemOf(companion.item)],
       )
-      .join("\0"),
+      .join("\n"),
   )
-  const undocked = useMemo(() => {
-    const items = undockedKey ? undockedKey.split("\0") : []
-    return {
-      artifacts: items.filter((item) => item !== "\n"),
-      messages: items.includes("\n"),
-    }
-  }, [undockedKey])
+  const undocked = useMemo(() => (undockedKey ? undockedKey.split("\n") : []), [undockedKey])
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
   const frame: Omit<WindowShellProps, "children"> = {

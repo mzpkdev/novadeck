@@ -243,6 +243,16 @@ describe("workspace commands", () => {
       })
     })
 
+    it("names a plan's window after the plan, one window per plan", () => {
+      const app = openCommands()
+      const plan = { kind: "plan" as const, ref: "root", name: "A home for Studio" }
+      app.commands.undock("01", plan)
+      app.commands.undock("01", plan)
+      const windows = app.state().roster.terminals.filter((each) => each.companion)
+      expect(windows).toHaveLength(1)
+      expect(windows[0]).toMatchObject({ name: "A home for Studio", companion: { item: plan } })
+    })
+
     it("brings the window already open forward rather than opening another", () => {
       const app = openCommands()
       app.commands.undock("01", image)

@@ -41,8 +41,9 @@ export type WorkspaceCommands = ShellCommands &
     readonly openFolder: () => Promise<void>
     // Removes a project and closes its terminals; the last project stays.
     readonly removeProject: (id: string) => void
-    // Undocks part of the companion of the terminal `from`, something its agent showed or
-    // its messages, into a window of its own beside it, or brings that window forward.
+    // Undocks part of the companion of the terminal `from`, a plan, something its agent
+    // showed or its messages, into a window of its own beside it, or brings that window
+    // forward.
     readonly undock: (from: string, item: CompanionWindow["item"]) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
@@ -234,7 +235,9 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const same = (other: CompanionWindow["item"]): boolean =>
         other.kind === "messages"
           ? item.kind === "messages"
-          : item.kind === "artifact" && other.ref.id === item.ref.id
+          : other.kind === "plan"
+            ? item.kind === "plan" && other.ref === item.ref
+            : item.kind === "artifact" && other.ref.id === item.ref.id
       const open = roster.terminals.find(
         (terminal) => terminal.companion?.from === from && same(terminal.companion.item),
       )
@@ -244,7 +247,12 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       // A window, not a shell: nothing runs in it, so it's idle and has no program.
       const terminal: TerminalMetadata = {
         id: effects.newId(),
-        name: item.kind === "messages" ? `${origin.name} messages` : item.ref.name,
+        name:
+          item.kind === "messages"
+            ? `${origin.name} messages`
+            : item.kind === "plan"
+              ? item.name
+              : item.ref.name,
         directory: origin.directory,
         command: "",
         process: "",

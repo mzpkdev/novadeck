@@ -7,11 +7,14 @@ import { usePresence, type Presence } from "../../ui-toolkit/presence"
 import type { TerminalLayoutControls } from "../WindowShell"
 import { CompanionPane } from "./CompanionPane"
 import { useMail, type MailHandle } from "./mail"
-import { arrived, mailTab, type Shown } from "./pane"
-import { presentationOf, shownTab, useCompanion, type CompanionHandle } from "./state"
+import { arrived, mailTab, planTab, type Shown } from "./pane"
+import { titleOf } from "./plan-text"
+import { presentationOf, shownTab, useCompanion, type CompanionHandle, type PlanDoc } from "./state"
 import { Taskbar } from "./Taskbar"
 
 import "./companion.css"
+
+const noneUndocked: readonly string[] = []
 
 const clamp = (value: number): number => Math.min(0.7, Math.max(0.22, value))
 
@@ -22,6 +25,7 @@ type MailProps = {
   peerName: (handle: string) => string | undefined
   openWindow: ((artifact: Shown) => void) | undefined
   undockMessages: (() => void) | undefined
+  undockPlan: ((plan: PlanDoc) => void) | undefined
 }
 
 // Terminal left, plan right, inside the terminal's own window. The divider drags.
@@ -31,6 +35,7 @@ const SplitPlan = ({
   peerName,
   openWindow,
   undockMessages,
+  undockPlan,
   view,
   presence,
   children,
@@ -85,6 +90,7 @@ const SplitPlan = ({
           presentation="split"
           openWindow={openWindow}
           undockMessages={undockMessages}
+          undockPlan={undockPlan}
         />
       </div>
     </div>
@@ -102,6 +108,7 @@ const AttachedPlan = ({
   peerName,
   openWindow,
   undockMessages,
+  undockPlan,
   onReveal,
   presence,
 }: MailProps & {
@@ -121,6 +128,7 @@ const AttachedPlan = ({
         presentation="attached"
         openWindow={openWindow}
         undockMessages={undockMessages}
+        undockPlan={undockPlan}
       />
     </div>
   )
@@ -141,7 +149,7 @@ export const TerminalCompanion = ({
   minimized,
   clipContent,
   undock,
-  undocked,
+  undocked = noneUndocked,
 }: {
   companions: Companions
   messages?: Messages | undefined
@@ -155,24 +163,25 @@ export const TerminalCompanion = ({
   clipContent?: boolean | undefined
   // Undocks something the agent showed, or the messages, into a window of its own.
   undock?: ((item: CompanionWindow["item"]) => void) | undefined
-  // What of the companion is undocked now: the artifacts by id, and whether the messages.
-  undocked?: { readonly artifacts: readonly string[]; readonly messages: boolean } | undefined
+  // What of the companion is undocked now, by its id in the pane: plan tabs, artifact
+  // ids, the messages' tab.
+  undocked?: readonly string[] | undefined
 }): React.JSX.Element => {
   const terminalCompanion = useCompanion(companions, companionKey)
-  const { artifacts: undockedArtifacts = [], messages: messagesUndocked = false } = undocked ?? {}
   // What's undocked lives in its window, not the pane, until it docks back or its window
   // closes: the pane neither lists nor shows it.
   const companion = useMemo(() => {
-    if (!undockedArtifacts.length) return terminalCompanion
-    const artifacts = terminalCompanion.pane.artifacts.filter(
-      (shown) => !undockedArtifacts.includes(shown.id),
-    )
+    if (!undocked.length) return terminalCompanion
+    const out = new Set(undocked)
+    const { pane } = terminalCompanion
+    const plans = pane.plans.filter((plan) => !out.has(planTab(plan.ref)))
+    const artifacts = pane.artifacts.filter((shown) => !out.has(shown.id))
     return {
       ...terminalCompanion,
-      pane: { ...terminalCompanion.pane, artifacts },
-      present: terminalCompanion.pane.plans.length > 0 || artifacts.length > 0,
+      pane: { ...pane, plans, artifacts },
+      present: plans.length > 0 || artifacts.length > 0,
     }
-  }, [terminalCompanion, undockedArtifacts])
+  }, [terminalCompanion, undocked])
   const terminalMail = useMail(messages, companionKey)
   // The messages join the taskbar's order when the terminal first has them, after what
   // came before.
@@ -181,11 +190,15 @@ export const TerminalCompanion = ({
     if (terminalMail.present && !mailKnown)
       terminalCompanion.update((pane) => arrived(pane, mailTab))
   }, [terminalMail.present, mailKnown, terminalCompanion])
-  const mail = messagesUndocked ? { ...terminalMail, present: false } : terminalMail
+  const mail = undocked.includes(mailTab) ? { ...terminalMail, present: false } : terminalMail
   const moveToWindow =
     undock &&
     (({ fresh: _fresh, at: _at, ...ref }: Shown): void => undock({ kind: "artifact", ref }))
   const undockMessages = undock && ((): void => undock({ kind: "messages" }))
+  const undockPlan =
+    undock &&
+    ((plan: PlanDoc): void =>
+      undock({ kind: "plan", ref: plan.ref, name: titleOf(plan.path, plan.text) }))
   const trigger = useRef<HTMLButtonElement>(null)
   const presentation = presentationOf(view)
   const present = companion.present || mail.present
@@ -219,6 +232,7 @@ export const TerminalCompanion = ({
           peerName={peerName}
           openWindow={moveToWindow}
           undockMessages={undockMessages}
+          undockPlan={undockPlan}
           view={view}
           presence={shown}
         >
@@ -236,6 +250,7 @@ export const TerminalCompanion = ({
           peerName={peerName}
           openWindow={moveToWindow}
           undockMessages={undockMessages}
+          undockPlan={undockPlan}
           trigger={trigger}
           open={open}
           presence={bar}
@@ -248,6 +263,7 @@ export const TerminalCompanion = ({
           peerName={peerName}
           openWindow={moveToWindow}
           undockMessages={undockMessages}
+          undockPlan={undockPlan}
           onReveal={onReveal}
           presence={shown}
         />

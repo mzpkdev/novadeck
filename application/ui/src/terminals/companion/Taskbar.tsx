@@ -191,6 +191,7 @@ export const Taskbar = ({
   presence,
   openWindow,
   undockMessages,
+  undockPlan,
 }: {
   companion: CompanionHandle
   mail: MailHandle
@@ -199,6 +200,7 @@ export const Taskbar = ({
   // there's no such window.
   openWindow: ((artifact: Shown) => void) | undefined
   undockMessages: (() => void) | undefined
+  undockPlan: ((plan: PlanDoc) => void) | undefined
   trigger: React.RefObject<HTMLButtonElement | null>
   open: boolean
   // How the bar comes and goes with what the terminal has to show.
@@ -273,7 +275,19 @@ export const Taskbar = ({
       return slot(
         tab,
         kind,
-        [opening(tab), ...moving],
+        [
+          opening(tab),
+          ...(undockPlan
+            ? [
+                {
+                  value: `window-${tab}`,
+                  label: "Undock to its own window",
+                  onSelect: () => undockPlan(plan),
+                },
+              ]
+            : []),
+          ...moving,
+        ],
         <button
           ref={buttonRef}
           className="plan-tb-item"

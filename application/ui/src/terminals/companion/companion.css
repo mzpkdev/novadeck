@@ -708,6 +708,12 @@
   font-size: 11px;
   color: var(--color-muted);
 }
+/* The plan header's actions sit at its far end. */
+.plan-meta-actions {
+  display: flex;
+  margin-left: auto;
+  align-self: stretch;
+}
 .plan-editor .cm-content {
   padding: 14px 44px 64px 20px;
 }

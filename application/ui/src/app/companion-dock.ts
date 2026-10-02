@@ -1,5 +1,5 @@
 import type { TerminalMetadata } from "../model/types"
-import { mailTab, show } from "../terminals/companion/pane"
+import { mailTab, planTab, show } from "../terminals/companion/pane"
 import { companionActions, openTab } from "../terminals/companion/state"
 import type { DockTarget } from "../terminals/window-menu"
 import { useWorkspaceServices, useWorkspaceState } from "./controller/context"
@@ -29,7 +29,11 @@ export const useCompanionDock = (terminal: TerminalMetadata): DockTarget | undef
         ? undefined
         : () => {
             companionActions(companions, { ...target, terminalId: undocked.from }).update((pane) =>
-              item.kind === "messages" ? openTab(pane, mailTab) : show(pane, item.ref, true),
+              item.kind === "messages"
+                ? openTab(pane, mailTab)
+                : item.kind === "plan"
+                  ? openTab(pane, planTab(item.ref))
+                  : show(pane, item.ref, true),
             )
             commands.close(terminal.id)
             commands.select(undocked.from)
