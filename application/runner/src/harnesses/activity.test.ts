@@ -140,6 +140,9 @@ describe("activity from captured hooks", () => {
 const fact = (fields: Partial<ActivityEvent> & Pick<ActivityEvent, "type">) =>
   ({ agent: "claude", sessionId: "s", instance: "7", startedAt: 5, ...fields }) as ActivityEvent
 
+/** The ids of the requests waiting. */
+const ids = (activity: Activity) => activity.pending.map(({ requestId }) => requestId)
+
 describe("applying activity", () => {
   const binding: Binding = { agent: "claude", sessionId: "s", instance: "7" }
 
@@ -193,7 +196,7 @@ describe("applying activity", () => {
     expect(apply(over, binding, request("a", null, 9))).toBeUndefined()
   })
 
-  it("settles every request still waiting when the turn ends, as a faked Stop would too", () => {
+  it("settles the root's own requests when its turn ends, as a faked Stop would too", () => {
     const working = apply(started(0), binding, fact({ type: "turn-started", startedAt: 1 }))!
     const waiting = apply(working, binding, request("a", null, 5))!
     const ended = apply(
@@ -241,6 +244,56 @@ describe("applying activity", () => {
     expect(summary(apply(next, binding, subagent("subagent-stopped", "a", 7))!).subagents).toEqual(
       [],
     )
+  })
+
+  // A background subagent from before the turn, and the root, each asking.
+  const asking = () => {
+    const background = apply(started(0), binding, subagent("subagent-started", "bg", 3))!
+    const turn = apply(background, binding, fact({ type: "turn-started", startedAt: 4 }))!
+    return apply(
+      apply(turn, binding, request("bg:Bash:1", "bg", 6))!,
+      binding,
+      request("root:Bash:1", null, 7),
+    )!
+  }
+
+  it("keeps a background subagent's request past the root's turn start, end, idle and escape", () => {
+    for (const boundary of [
+      fact({ type: "turn-started", startedAt: 10 }),
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+      fact({ type: "turn-idle", startedAt: 10 }),
+      fact({ type: "turn-escaped", startedAt: 10 }),
+    ]) {
+      const next = apply(asking(), binding, boundary)!
+      expect(ids(next), boundary.type).toEqual(["bg:Bash:1"])
+      expect(summary(next).attention, boundary.type).toEqual({ pending: 1, kind: "permission" })
+    }
+  })
+
+  it("settles a background subagent's request at its own resolution or stop", () => {
+    const ended = apply(
+      asking(),
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
+    )!
+    expect(apply(ended, binding, result("bg:Bash:1", "bg"))?.pending).toEqual([])
+    expect(apply(ended, binding, subagent("subagent-stopped", "bg", 12))?.pending).toEqual([])
+  })
+
+  it("settles the requests of the subagents an interrupted turn ended, and of none running", () => {
+    const running = apply(asking(), binding, subagent("subagent-started", "fg", 5))!
+    const both = apply(
+      apply(running, binding, request("fg:Bash:1", "fg", 8))!,
+      binding,
+      // A subagent never seen starting, or already stopped: nothing else would settle it.
+      request("gone:Bash:1", "gone", 8),
+    )!
+    const stopped = apply(
+      both,
+      binding,
+      fact({ type: "turn-ended", outcome: "interrupted", startedAt: 10 }),
+    )!
+    expect(ids(stopped)).toEqual(["bg:Bash:1"])
   })
 
   it("ignores a stop for a subagent never seen starting, as internal agents send", () => {

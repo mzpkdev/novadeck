@@ -105,12 +105,23 @@ const resolved = (
 }
 
 /**
+ * The requests a root turn's start or end leaves waiting: a running subagent's, as a
+ * background one's outlives the turn. The root's own, and those of a subagent no longer
+ * running, are settled.
+ */
+const outliving = (
+  pending: readonly Request[],
+  subagents: readonly Subagent[],
+): readonly Request[] =>
+  pending.filter(({ actor }) => actor !== null && subagents.some(({ id }) => id === actor))
+
+/**
  * The activity after an event, or undefined when it changes nothing: another session's,
- * or from a turn already over. A turn's start or end settles every request still
- * waiting: no harness ends a root turn normally while its own dialog waits, a denial ends
- * it abnormally, and one answered with no report, as another hook's denial, would
- * otherwise wait forever.
- * An interrupted turn ends the subagents it started, which report no stop then; a
+ * or from a turn already over. A root turn's start or end settles the root's own requests
+ * still waiting: no harness ends a root turn normally while its own dialog waits, a
+ * denial ends it abnormally, and one answered with no report, as another hook's denial,
+ * would otherwise wait forever. A running subagent's requests wait for their own
+ * resolution or its stop. An interrupted turn ends the subagents it started, which report no stop then; a
  * background one from an earlier turn runs on.
  */
 export const apply = (
@@ -181,20 +192,49 @@ export const apply = (
         ended: end(ended, [actor], startedAt),
       }
     }
+    case "attention-resolved": {
+      const index = resolved(activity.pending, event)
+      // A subagent's request outlives the root's turn, and so does its result; the root's
+      // own results answer to its turns.
+      if (
+        index < 0 ||
+        (event.startedAt < activity.turnAt && activity.pending[index]!.actor === null)
+      )
+        return undefined
+      return { ...activity, pending: activity.pending.toSpliced(index, 1) }
+    }
   }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
-      return { ...activity, state: "working", pending: [], turnAt: event.startedAt, idled: false }
+      return {
+        ...activity,
+        state: "working",
+        pending: outliving(activity.pending, activity.subagents),
+        turnAt: event.startedAt,
+        idled: false,
+      }
     case "turn-idle":
       // Idle after the turn's Stop says nothing new; without one, the turn ended abnormally.
       if (activity.state !== "working") return undefined
-      return { ...activity, state: "idle", pending: [], turnAt: event.startedAt, idled: true }
+      return {
+        ...activity,
+        state: "idle",
+        pending: outliving(activity.pending, activity.subagents),
+        turnAt: event.startedAt,
+        idled: true,
+      }
     case "turn-escaped":
       // The turn may be over, as delivery takes it: idle, its requests settled, until a
       // later hook moves it on. No working status line resumes it.
       if (activity.state !== "working") return undefined
-      return { ...activity, state: "idle", pending: [], turnAt: event.startedAt, idled: false }
+      return {
+        ...activity,
+        state: "idle",
+        pending: outliving(activity.pending, activity.subagents),
+        turnAt: event.startedAt,
+        idled: false,
+      }
     case "turn-working":
       // Working after the idle that ended its turn, and newer than it: that idle was stale,
       // and the turn goes on. After a Stop it says nothing new. The turn's fence stays at the
@@ -203,13 +243,17 @@ export const apply = (
         return undefined
       return { ...activity, state: "working", idled: false }
     case "turn-ended": {
-      const turn = { state: "idle", pending: [], turnAt: event.startedAt, idled: false } as const
-      if (event.outcome !== "interrupted") return { ...activity, ...turn }
+      const turn = { state: "idle", turnAt: event.startedAt, idled: false } as const
+      if (event.outcome !== "interrupted")
+        return { ...activity, ...turn, pending: outliving(activity.pending, activity.subagents) }
       const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
+      const subagents = activity.subagents.filter((subagent) => !stopped.includes(subagent))
       return {
         ...activity,
         ...turn,
-        subagents: activity.subagents.filter((subagent) => !stopped.includes(subagent)),
+        // The subagents it ended wait on the person no longer.
+        pending: outliving(activity.pending, subagents),
+        subagents,
         ended: end(
           activity.ended,
           stopped.map(({ id }) => id),
@@ -247,11 +291,6 @@ export const apply = (
           { requestId, actor, toolName, kind, subject, choices, askedAt: event.startedAt },
         ],
       }
-    }
-    case "attention-resolved": {
-      const index = resolved(activity.pending, event)
-      if (index < 0) return undefined
-      return { ...activity, pending: activity.pending.toSpliced(index, 1) }
     }
   }
 }
