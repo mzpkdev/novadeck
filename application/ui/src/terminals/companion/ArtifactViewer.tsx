@@ -1,13 +1,14 @@
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
-import type {
-  CompanionItem,
-  FileContent,
-  ImageContent,
-  ItemContent,
-  PageContent,
-  UnavailableReason,
+import {
+  pathOf,
+  type CompanionItem,
+  type FileContent,
+  type ImageContent,
+  type ItemContent,
+  type PageContent,
+  type UnavailableReason,
 } from "../../model/companion"
 import { isMarkdown } from "./artifact-icons"
 import { DocumentViewer } from "./DocumentViewer"
@@ -285,7 +286,7 @@ export const Unavailable = ({
   onReveal,
   actions,
 }: Actions & {
-  item: Pick<CompanionItem, "name" | "path">
+  item: Pick<CompanionItem, "name" | "path" | "plan">
   reason: UnavailableReason
   size: number | null
   onReveal?: (() => void) | undefined
@@ -298,7 +299,7 @@ export const Unavailable = ({
           Show it
         </button>
       )}
-      {item.path && <CopyPath path={item.path} />}
+      {pathOf(item) !== null && <CopyPath path={pathOf(item)!} />}
       {actions}
     </div>
   </div>

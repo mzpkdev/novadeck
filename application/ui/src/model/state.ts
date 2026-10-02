@@ -223,7 +223,6 @@ export const createTerminalState = (
   items: [],
   bars: {},
   fresh: {},
-  waiting: [],
 })
 
 export const createWorkspace = ({
@@ -441,10 +440,6 @@ const undockItem = (
   }
 }
 
-// Windows that waited for this item show it now.
-const unwait = (state: WorkspaceState, id: ItemId): WorkspaceState =>
-  state.waiting.filter((window) => window.itemId === id).reduce(upsertWindow, state)
-
 // What the backend says of an item. Something new, or shown again, comes to its bar: it
 // opens there when the person asked for it, unless it may hold secrets, and is new
 // otherwise, unless the pane is already showing it. A hidden one is back on the bar.
@@ -471,20 +466,15 @@ const upsertItem = (state: WorkspaceState, item: CompanionItem): WorkspaceState 
 
 // What the backend says of a window. One the person didn't just undock here, as from
 // another of their windows, is laid out like a new terminal, without taking the selection.
-// It shows only once its item is known; until then it waits, unseen.
 const upsertWindow = (state: WorkspaceState, window: CompanionWindowMeta): WorkspaceState => {
   if (hasWindow(state.roster, window.id)) {
     const roster = updateWindow(state.roster, window)
     return roster === state.roster ? state : { ...state, roster }
   }
   if (hasTerminal(state.roster, window.id)) return state
-  const others = state.waiting.filter((each) => each.id !== window.id)
-  if (!state.items.some((item) => item.id === window.itemId))
-    return { ...state, waiting: [...others, window] }
   const tiles = tilesOf(state.roster)
   return {
     ...state,
-    waiting: others.length === state.waiting.length ? state.waiting : others,
     roster: addWindow(state.roster, window),
     layout: placeTerminal(state.layout, {
       terminal: window,
@@ -665,19 +655,15 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
     case "item/remove":
       return updateTarget(workspace, action.target, (state) => removeItem(state, action.itemId))
     case "item/upsert":
-      return updateTarget(workspace, action.target, (state) =>
-        unwait(upsertItem(state, action.item), action.item.id),
-      )
+      return updateTarget(workspace, action.target, (state) => upsertItem(state, action.item))
     case "window/upsert":
       return updateTarget(workspace, action.target, (state) => upsertWindow(state, action.window))
     case "window/remove":
-      return updateTarget(workspace, action.target, (state) => {
-        const waiting = state.waiting.filter((window) => window.id !== action.windowId)
-        const left = waiting.length === state.waiting.length ? state : { ...state, waiting }
-        return hasWindow(left.roster, action.windowId)
-          ? dropTile(left, action.windowId, removeWindow(left.roster, action.windowId))
-          : left
-      })
+      return updateTarget(workspace, action.target, (state) =>
+        hasWindow(state.roster, action.windowId)
+          ? dropTile(state, action.windowId, removeWindow(state.roster, action.windowId))
+          : state,
+      )
     case "bar/open":
       return updateTarget(workspace, action.target, (state) => {
         const opened = withBar(state, action.terminalId, (bar) => openTab(bar, action.key))

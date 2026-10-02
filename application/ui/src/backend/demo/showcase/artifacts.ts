@@ -356,8 +356,9 @@ export const devServerArtifacts: readonly SampleArtifact[] = [
     {
       kind: "plan",
       name: "old-migration.md",
-      path: "~/.codex/plans/old-migration.md",
-      plan: { agent: "Codex", role: "subagent" },
+      detail: "In Codex's conversation",
+      path: "~/.codex/sessions/2026/09/rollout-old-migration.jsonl",
+      plan: { agent: "Codex", role: "subagent", source: "text" },
     },
     cannot("gone"),
   ),

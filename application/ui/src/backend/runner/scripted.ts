@@ -7,7 +7,8 @@ import type {
 } from "@novadeck/protocol/client"
 
 import { workspaceFromSeed } from "../../model/seed"
-import { createTerminalState } from "../../model/state"
+import { createTerminalState, workspaceReducer, type WorkspaceAction } from "../../model/state"
+import type { Workspace } from "../../model/types"
 import type { BackendAction } from "../port"
 import { runnerBackend, type RunnerApi } from "./backend"
 import { startingTerminal, type ListedCompanions, type RunnerListing } from "./seed"
@@ -116,6 +117,7 @@ export const scripted = ({
   respond = async () => undefined,
   content = () => channel<never>().iterator,
   createSession = unused,
+  apply = false,
 }: {
   shown: readonly Saved[]
   background?: readonly Saved[]
@@ -130,6 +132,8 @@ export const scripted = ({
   content?: Runner["companions"]["content"]
   // How the runner answers creating a session this window adds.
   createSession?: () => Promise<unknown>
+  // Whether what the backend reports reaches the workspace it sees, as in the app.
+  apply?: boolean
 }) => {
   const changes = channel<TerminalWatchItem>()
   const items = channel<CompanionWatchItem>()
@@ -221,16 +225,39 @@ export const scripted = ({
     ],
     welcomed: false,
   })
-  created.backend.commit(
-    workspaceFromSeed(created.backend.seed, { view: "grid", windowedView: "grid", now: 1 }),
-    [],
-  )
+  let workspace = workspaceFromSeed(created.backend.seed, {
+    view: "grid",
+    windowedView: "grid",
+    now: 1,
+  })
+  created.backend.commit(workspace, [])
+  // Commits as the store would, with the backend seeing each commit.
+  const commit = (...actions: WorkspaceAction[]): Workspace => {
+    workspace = actions.reduce(workspaceReducer, workspace)
+    created.backend.commit(workspace, actions)
+    return workspace
+  }
   const stop = created.backend.start!({
-    dispatch: (actions) => received.push(...actions),
+    dispatch: (actions) => {
+      received.push(...actions)
+      if (apply) commit(...actions)
+    },
     open: () => {},
   })
   statuses.push({ state: "connected", runnerId: "runner-1" })
   const of = (call: string) => calls.filter((item) => item.call === call).map((item) => item.input)
   const key = (terminalId: string) => ({ projectId: "p", workspaceSessionId: id(8), terminalId })
-  return { ...created, changes, items, received, calls, of, stop, key, listing }
+  return {
+    ...created,
+    changes,
+    items,
+    received,
+    calls,
+    of,
+    stop,
+    key,
+    listing,
+    commit,
+    workspace: () => workspace,
+  }
 }

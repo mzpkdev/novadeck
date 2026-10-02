@@ -71,8 +71,10 @@ describe("Something that can't show", () => {
       .element(pane.getByText("screen-recording.png is too large to preview (14.0 MB)."))
       .toBeVisible()
 
+    // A plan in its agent's conversation has no file of its own to copy.
     await taskbarIcon("Dev server", "Subagent plan: old-migration.md").click()
     await expect.element(pane.getByText("old-migration.md is gone.")).toBeVisible()
+    await expect.element(pane.getByRole("button", { name: "Copy path" })).not.toBeInTheDocument()
   })
 
   it("shows what may hold secrets once the person picks it, and never in a peek", async () => {

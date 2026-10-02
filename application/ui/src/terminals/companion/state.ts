@@ -323,6 +323,30 @@ const unfollow = (session: Session, id: ItemId): void => {
   entry.stop()
 }
 
+// Nothing shows it any more: what it last held goes, so a large image doesn't stay in
+// memory. It loads again when something shows it.
+const release = (session: Session, id: ItemId): void => {
+  unfollow(session, id)
+  session.panes.update((state) => {
+    if (!(id in state.content)) return state
+    const { [id]: _gone, ...content } = state.content
+    return { ...state, content }
+  })
+}
+
+// A plan that's gone: its saves stop, and what they kept goes.
+const forgetPlan = (session: Session, id: ItemId): void => {
+  clearTimeout(session.waiting.get(id))
+  for (const each of [
+    session.saving,
+    session.waiting,
+    session.pending,
+    session.failures,
+    session.unconfirmed,
+  ])
+    each.delete(id)
+}
+
 // Follows every plan in the workspace, stops following what's gone, and forgets it.
 const reconcile = (session: Session, workspace: Workspace): void => {
   const present = new Map<ItemId, { readonly target: WorkspaceTarget; readonly plan: boolean }>()
@@ -338,9 +362,17 @@ const reconcile = (session: Session, workspace: Workspace): void => {
     if (!found) unfollow(session, id)
     else if (entry.plan && !found.plan) {
       entry.plan = false
-      if (entry.watchers === 0) unfollow(session, id)
+      if (entry.watchers === 0) release(session, id)
     }
   }
+  const planned = new Set([
+    ...session.saving.keys(),
+    ...session.waiting.keys(),
+    ...session.pending.keys(),
+    ...session.failures.keys(),
+    ...session.unconfirmed.keys(),
+  ])
+  for (const id of planned) if (!present.has(id)) forgetPlan(session, id)
   for (const [id, { target, plan }] of present) {
     if (!plan) continue
     const entry = session.followed.get(id)
@@ -424,7 +456,7 @@ export const createPanes = ({
       released = true
       entry.watchers -= 1
       if (entry.watchers === 0 && !entry.plan && session.followed.get(id) === entry)
-        unfollow(session, id)
+        release(session, id)
     }
   }
   const reveal = (target: WorkspaceTarget, id: ItemId): void => {

@@ -30,7 +30,7 @@ export const agentNames: Record<AgentName, string> = {
 export const itemOf = ({ sessionId: _session, plan, id, ...item }: RunnerItem): CompanionItem => ({
   ...item,
   id: itemIdOf(id),
-  plan: plan && { agent: agentNames[plan.agent], role: plan.role },
+  plan: plan && { agent: agentNames[plan.agent], role: plan.role, source: plan.source },
 })
 
 export const windowOf = ({
@@ -78,8 +78,11 @@ export const createRunnerCompanions = (
     void (async () => {
       try {
         for await (const content of stream) if (!stopped) on(contentOf(content, livePages))
+        // The stream ends on its own once the runner has the item no longer, as when it
+        // was never there: it's gone.
+        if (!stopped) on(gone)
       } catch (error) {
-        // An item the runner doesn't have shows as gone; anything else ends with the link.
+        // Anything else ends with the link.
         if (!stopped && hasCode(error, "NOT_FOUND")) on(gone)
       }
     })()

@@ -1,7 +1,7 @@
 import { maxClientStateLength } from "@novadeck/protocol"
 
 import { isOnBar } from "../../model/companion"
-import { emptyBar, messagesKey, settle, type Bar, type BarKey } from "../../model/companion-bar"
+import { messagesKey, settle, type Bar, type BarKey } from "../../model/companion-bar"
 import type { RestoredView } from "../../model/seed"
 import type { TerminalLayout, ViewMode, WorkspaceSession, WorkspaceState } from "../../model/types"
 
@@ -34,11 +34,9 @@ const settled = (layout: TerminalLayout): TerminalLayout => ({
   },
 })
 
-const sameBar = (a: Bar, b: Bar): boolean =>
-  a.order.length === b.order.length &&
-  a.hidden.length === b.hidden.length &&
-  a.tab === b.tab &&
-  a.open === b.open
+// A bar that says nothing a fresh one wouldn't.
+const isEmpty = (bar: Bar): boolean =>
+  !bar.order.length && !bar.hidden.length && bar.tab === null && !bar.open
 
 // Each terminal's bar, as far as it holds what's still there: items on that bar and its
 // messages. A bar with nothing to say is left out.
@@ -51,13 +49,15 @@ const keptBars = ({ roster, items, bars }: WorkspaceState): Record<string, Bar> 
         items.flatMap((item) => (isOnBar(item, terminal.id) ? [item.id] : [])),
       )
       const kept = settle(bar, (key) => key === messagesKey || held.has(key))
-      return sameBar(kept, emptyBar) ? [] : [[terminal.id, kept]]
+      return isEmpty(kept) ? [] : [[terminal.id, kept]]
     }),
   )
 
 // The runner caps a saved state at `maxClientStateLength`. A layout stays far below it,
 // but bars hold as many items as agents showed: past the cap, the largest bars lose
-// their order and what they hid first, and their items then line up as they came.
+// their order and what they hid first, and their items then line up as they came. A
+// state still over the cap once every bar has lost them is returned as it is, and the
+// runner refuses that save; the session keeps its last saved state.
 export const encodeSession = (
   session: WorkspaceSession,
   rank: number,

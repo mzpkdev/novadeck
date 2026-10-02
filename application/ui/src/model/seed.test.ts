@@ -284,12 +284,6 @@ describe("workspace from a backend seed", () => {
         "01": { order: [older.id], hidden: [], tab: null, open: false },
       })
     })
-
-    it("keeps a window listed without its item waiting, unseen", () => {
-      const state = seeded({ items: [older] })
-      expect(state.roster.windows).toEqual([])
-      expect(state.waiting).toEqual([window])
-    })
   })
 
   context("with nothing to open", () => {

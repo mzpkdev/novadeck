@@ -69,6 +69,8 @@ export type TerminalMetadata = {
   handle?: string
   // Who its name is from, where its backend tells.
   titleSource?: TitleSource
+  // Never present: a window has one, which tells tiles apart (see `isWindow`).
+  itemId?: never
 } & TerminalStatus
 
 export type CanvasLayout = {
@@ -154,8 +156,6 @@ export type WorkspaceState = {
   readonly bars: Readonly<Record<string, Bar>>
   // Items shown again or anew since the person last looked; never saved.
   readonly fresh: Readonly<Record<ItemId, true>>
-  // Windows the backend reported before the item they show: kept, unseen, until it comes.
-  readonly waiting: readonly CompanionWindowMeta[]
 }
 export type WorkspaceSession = {
   id: string

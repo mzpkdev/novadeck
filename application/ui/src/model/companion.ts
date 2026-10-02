@@ -59,8 +59,13 @@ export type CompanionItem = {
   // The person asked to see it: it opens rather than waits.
   readonly asked: boolean
   readonly shownAt: number
-  // A plan's agent, by the name the person knows it by, and whose plan it is.
-  readonly plan: { readonly agent: string; readonly role: "root" | "subagent" } | null
+  // A plan's agent, by the name the person knows it by, whose plan it is, and whether
+  // it's a file or text in the agent's own conversation, which `path` then names.
+  readonly plan: {
+    readonly agent: string
+    readonly role: "root" | "subagent"
+    readonly source: "file" | "text"
+  } | null
 }
 
 export const isOnBar = (
@@ -68,6 +73,11 @@ export const isOnBar = (
   terminalId: string,
 ): item is CompanionItem & { readonly holder: { readonly terminalId: string } } =>
   "terminalId" in item.holder && item.holder.terminalId === terminalId
+
+// The file the person can open for it, where it has one of its own: a text plan's path
+// is its agent's conversation record, which isn't the plan.
+export const pathOf = (item: Pick<CompanionItem, "path" | "plan">): string | null =>
+  item.plan?.source === "text" ? null : item.path
 
 export const windowOfItem = (item: CompanionItem): string | undefined =>
   "windowId" in item.holder ? item.holder.windowId : undefined

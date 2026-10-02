@@ -103,7 +103,10 @@ const sessionSeed = (
     name: session.name,
     terminals,
     items: companions.items.map(itemOf),
-    windows: companions.windows.map(windowOf),
+    // A window shows once its item is known; the adapter holds back the others.
+    windows: companions.windows
+      .filter((window) => companions.items.some((item) => item.id === window.itemId))
+      .map(windowOf),
   }
   // Visit times are epoch milliseconds, so -1 sorts a session never saved last.
   if (!saved) return { seed: listed, order: [-1, 0] }

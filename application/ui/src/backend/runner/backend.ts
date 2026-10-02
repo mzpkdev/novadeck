@@ -916,6 +916,8 @@ export const runnerBackend = (
     listing,
     latest: () => latest,
     ready: (sessionId) => sessions.get(sessionId) ?? created,
+    // A terminal this window created exists on the runner once its create answered.
+    terminalReady: (terminalId) => entries.get(terminalId)?.ready ?? created,
     call: (operation, done) => track(untilAnswered(operation, { done })),
     dispatch: (actions) => dispatch(actions),
     consume,
@@ -1034,7 +1036,7 @@ export const runnerBackend = (
     items.commit(actions)
     for (const action of actions) {
       // The person's renames go to the runner, which owns every terminal's title.
-      if (action.type === "terminal/rename" && !items.isWindow(action.target, action.terminalId))
+      if (action.type === "terminal/rename" && !items.holdsWindow(action.target, action.terminalId))
         void track(renameOnRunner({ ...action.target, terminalId: action.terminalId }, action.name))
     }
     // The first commit renders the page and must start nothing; `start` covers it.
@@ -1229,7 +1231,8 @@ export const runnerBackend = (
     messages,
     resetTitle: (key) => {
       const { terminalId } = key
-      if (items.isWindow(target(key), terminalId)) return items.resetWindow(target(key), terminalId)
+      if (items.holdsWindow(target(key), terminalId))
+        return items.resetWindow(target(key), terminalId)
       // The person's name goes here too, so nothing sends it to the runner again, and a
       // rename still on its way is called off.
       titles.delete(terminalId)

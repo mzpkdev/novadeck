@@ -9,9 +9,9 @@ import type {
   TerminalMetadata,
   Workspace,
 } from "../../model/types"
-import type { CreateBackend, TerminalKey } from "../port"
+import type { BackendSink, CreateBackend, TerminalKey } from "../port"
 import { createDemoEngine, type DemoEngine } from "./engine"
-import { demoBackend } from "./index"
+import { demoBackend, windowReset } from "./index"
 import { createDemoMessages, studioMailbox } from "./messages"
 import { authAgent, studioAgent, type SampleAgent } from "./showcase/agents"
 import { devServerArtifacts } from "./showcase/artifacts"
@@ -117,6 +117,7 @@ export const createContentDemo: CreateBackend = () => {
   }
   const backend = demoBackend(engine, false, (_terminal, key) => agentAt(key)?.transcript)
   let latest: Workspace | undefined
+  let reset: BackendSink["dispatch"] | undefined
   // The showcase session's items as they stand, which an agent showing something again
   // finds its own in.
   const current = () =>
@@ -133,7 +134,32 @@ export const createContentDemo: CreateBackend = () => {
         if (action.type === "terminal/close")
           showcase.closed({ ...action.target, terminalId: action.terminalId })
     },
-    start: (sink) => showcase.start(sink.dispatch, current),
+    start: (sink) => {
+      reset = sink.dispatch
+      const stop = showcase.start(sink.dispatch, current)
+      return () => {
+        if (reset === sink.dispatch) reset = undefined
+        stop()
+      }
+    },
+    // A window's name goes back to what it shows, a terminal's to its default.
+    resetTitle: (key) => {
+      const { projectId, workspaceSessionId, terminalId } = key
+      const window = windowReset(latest, key)
+      reset?.(
+        window.length
+          ? window
+          : [
+              {
+                type: "terminal/update",
+                target: { projectId, workspaceSessionId },
+                terminalId,
+                name: `Terminal ${terminalId}`,
+                titleSource: { kind: "default" },
+              },
+            ],
+      )
+    },
     companions: showcase,
     messages: createDemoMessages([studioMailbox(Date.now(), session)]),
     seed: {

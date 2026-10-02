@@ -17,7 +17,7 @@ import {
 const image = (id: string, item: Partial<CompanionItem> = {}) =>
   itemFixture(id, "01", { kind: "image", name: `${id}.png`, path: `/p/${id}.png`, ...item })
 const plan = (id: string, role: "root" | "subagent" = "root") =>
-  itemFixture(id, "01", { kind: "plan", name: id, plan: { agent: "Codex", role } })
+  itemFixture(id, "01", { kind: "plan", name: id, plan: { agent: "Codex", role, source: "file" } })
 const root = plan("root")
 const home = itemFixture("home", "01")
 const preview = itemFixture("preview", "01", { kind: "page", path: null, url: "http://x/" })

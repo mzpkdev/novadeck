@@ -22,7 +22,7 @@ const planItem = itemFixture("plan", "01", {
   kind: "plan",
   name: "Plan",
   path: "plan.md",
-  plan: { agent: "Codex", role: "root" },
+  plan: { agent: "Codex", role: "root", source: "file" },
 })
 const hero = itemFixture("hero", "01", { kind: "image", name: "hero.png", path: "/p/hero.png" })
 const first = "# Plan\n\nalpha\nbeta\ngamma\n"
@@ -302,6 +302,8 @@ describe("following items", () => {
     expect(stopped).toEqual([])
     again()
     expect(stopped).toEqual([hero.id])
+    // What it held goes with the last place showing it.
+    expect(panes.store.getSnapshot().content).not.toHaveProperty(hero.id)
   })
 
   it("follows again, revealed, once the person asks to see what may hold secrets", () => {
@@ -311,6 +313,27 @@ describe("following items", () => {
     panes.reveal(target, hero.id)
     expect(follows.at(-1)).toEqual({ id: hero.id, reveal: true })
     expect(panes.store.getSnapshot().revealed).toEqual({ [hero.id]: true })
+  })
+
+  it("forgets a gone plan's failed saves, so one put back starts afresh", async () => {
+    const { companions, saves } = backend()
+    const { actions, workspace } = connected(companions)
+    actions.edit(`${first}No blog.\n`, [])
+    actions.flush()
+    saves[0]!.fail()
+    await settle()
+    workspace.dispatch({ type: "item/close", target, itemId: planItem.id })
+    // The runner refused the close: the plan is back, and its save fails once more.
+    workspace.dispatch({ type: "item/upsert", target, item: planItem })
+    await settle()
+    actions.edit(`${first}Later.\n`, [])
+    actions.flush()
+    saves.at(-1)!.fail()
+    await settle()
+    const sent = saves.length
+    // A first failure waits two seconds before trying again, not four.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(saves.length).toBe(sent + 1)
   })
 
   it("stops following what's gone, and forgets it", () => {

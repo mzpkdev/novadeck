@@ -10,7 +10,7 @@ const target = { projectId: "project", workspaceSessionId: "initial" }
 const plan = itemFixture("plan", "01", {
   kind: "plan",
   name: "A home for Studio",
-  plan: { agent: "Codex", role: "root" },
+  plan: { agent: "Codex", role: "root", source: "file" },
 })
 const hero = itemFixture("hero", "01", { kind: "image", name: "hero.png", path: "/p/hero.png" })
 

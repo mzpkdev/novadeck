@@ -52,6 +52,10 @@ type Running = Holder & {
   file: string
   writes: number
   version: number
+  // Its plan's item on its own bar, and every item it ever had for its plan: one moved
+  // or undocked away stays the person's, and still shows the plan.
+  planId: string
+  planIds: Set<string>
   // How many of `artifacts.next` it has shown.
   shown: number
 }
@@ -87,9 +91,9 @@ const itemOf = (
 })
 
 const planItemOf = (agent: Running, shownAt: number): CompanionItem => {
-  const { id, path, agent: name } = agent.sample.plan
+  const { path, agent: name } = agent.sample.plan
   return {
-    id: itemIdOf(id),
+    id: itemIdOf(agent.planId),
     holder: { terminalId: agent.key.terminalId },
     kind: "plan",
     name: titleOf(path, agent.file),
@@ -103,7 +107,7 @@ const planItemOf = (agent: Running, shownAt: number): CompanionItem => {
     version: agent.version,
     asked: false,
     shownAt,
-    plan: { agent: name, role: "root" },
+    plan: { agent: name, role: "root", source: "file" },
   }
 }
 
@@ -149,15 +153,15 @@ export const createShowcase = (
         file: sample.text,
         writes: 1,
         version: 1,
+        planId: sample.plan.id,
+        planIds: new Set([sample.plan.id]),
         shown: 0,
       },
     ]),
   )
   const agentAt = (key: CompanionKey): Running | undefined => running.get(companionKeyId(key))
   const planOf = (target: WorkspaceTarget, id: ItemId): Running | undefined =>
-    [...running.values()].find(
-      (agent) => sameSession(agent.key, target) && agent.sample.plan.id === id,
-    )
+    [...running.values()].find((agent) => sameSession(agent.key, target) && agent.planIds.has(id))
   // What every sample item holds, by its id.
   const samples = new Map<string, SampleArtifact>(
     [
@@ -176,16 +180,26 @@ export const createShowcase = (
   let started = false
 
   const written = (agent: Running): void => {
-    const id = itemIdOf(agent.sample.plan.id)
-    for (const listener of following.get(id) ?? []) listener(contentOf(agent))
+    for (const id of agent.planIds)
+      for (const listener of following.get(itemIdOf(id)) ?? []) listener(contentOf(agent))
   }
   const write = (agent: Running, text: string): void => {
     agent.file = text
     agent.writes += 1
     written(agent)
   }
-  // The agent wrote its plan: a new version, which its bar marks.
+  // The agent wrote its plan: a new version, which its bar marks. As the runner does, it
+  // updates the plan on its own bar; one the person moved or undocked stays where it is,
+  // and the plan comes to its own bar anew.
   const wrote = (agent: Running, text: string): void => {
+    const own = current().find((item) => item.id === agent.planId)
+    const away =
+      own && !("terminalId" in own.holder && own.holder.terminalId === agent.key.terminalId)
+    if (away || (started && !own)) {
+      agent.planId = `${agent.sample.plan.id}-${agent.planIds.size + 1}`
+      agent.planIds.add(agent.planId)
+      agent.version = 0
+    }
     agent.version += 1
     write(agent, text)
     report?.([{ type: "item/upsert", target: agent.key, item: planItemOf(agent, now()) }])

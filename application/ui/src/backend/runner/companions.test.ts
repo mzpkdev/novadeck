@@ -1,10 +1,15 @@
+import { mkdtemp, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import type { ItemContent as RunnerContent } from "@novadeck/protocol"
-import { RunnerError } from "@novadeck/protocol/client"
+import { vi } from "vitest"
 
 import { itemIdOf, type ItemContent } from "../../model/companion"
 import { context, describe, expect, it } from "../../test"
 import { createRunnerCompanions, itemOf, windowOf } from "./companions"
 import { channel } from "./scripted"
+import { startTestRunner } from "./testing"
 
 const target = { projectId: "p", workspaceSessionId: "s" }
 const hero = itemIdOf("hero")
@@ -14,21 +19,13 @@ const following = ({ livePages = false } = {}) => {
   const streams = new Map<string, ReturnType<typeof channel<RunnerContent>>>()
   const asked: { readonly itemId: string; readonly reveal: boolean | undefined }[] = []
   const attached: unknown[] = []
-  let failure: unknown
   const companions = createRunnerCompanions(
     {
       content: (itemId, options) => {
         asked.push({ itemId, reveal: options?.reveal })
         const stream = channel<RunnerContent>()
         streams.set(itemId, stream)
-        if (failure === undefined) return stream.iterator
-        const error = failure
-        return {
-          [Symbol.asyncIterator]() {
-            return this
-          },
-          next: () => Promise.reject(error),
-        } as unknown as AsyncIterableIterator<RunnerContent, undefined>
+        return stream.iterator
       },
       attach: async (input) => {
         attached.push(input)
@@ -47,7 +44,6 @@ const following = ({ livePages = false } = {}) => {
     seen,
     follow,
     push: (content: RunnerContent) => streams.get(hero)?.push(content),
-    failWith: (error: unknown) => (failure = error),
   }
 }
 
@@ -137,13 +133,42 @@ describe("the runner's companion content", () => {
     expect(app.seen).toEqual(reasons.map((reason) => ({ state: "unavailable", reason, size: 12 })))
   })
 
-  context("when the runner doesn't have the item", () => {
-    it("shows it as gone", async () => {
-      const app = following()
-      app.failWith(new RunnerError("NOT_FOUND", "No such item"))
-      app.follow()
-      await settle()
-      expect(app.seen).toEqual([{ state: "unavailable", reason: "gone", size: null }])
+  context("on a real runner", () => {
+    it("shows an item it doesn't have, or one deleted since, as gone", async () => {
+      const runner = await startTestRunner()
+      try {
+        const seen: ItemContent[] = []
+        const companions = createRunnerCompanions(runner.client.companions)
+        companions.follow(target, itemIdOf(crypto.randomUUID()), { reveal: false }, (content) =>
+          seen.push(content),
+        )
+        await vi.waitFor(() =>
+          expect(seen).toEqual([{ state: "unavailable", reason: "gone", size: null }]),
+        )
+        const terminal = await runner.client.terminals.create({
+          id: crypto.randomUUID(),
+          sessionId: runner.listing[0]!.sessions[0]!.session.id,
+          cols: 80,
+          rows: 24,
+        })
+        const directory = await mkdtemp(join(tmpdir(), "novadeck-content-"))
+        await writeFile(join(directory, "notes.md"), "# Notes\n")
+        const item = await runner.client.companions.attach({
+          terminalId: terminal.id,
+          path: join(directory, "notes.md"),
+        })
+        const later: ItemContent[] = []
+        companions.follow(target, itemIdOf(item.id), { reveal: false }, (content) =>
+          later.push(content),
+        )
+        await vi.waitFor(() => expect(later[0]).toMatchObject({ state: "ready" }))
+        await runner.client.companions.close(item.id)
+        await vi.waitFor(() =>
+          expect(later.at(-1)).toEqual({ state: "unavailable", reason: "gone", size: null }),
+        )
+      } finally {
+        await runner.close()
+      }
     })
   })
 
@@ -185,7 +210,7 @@ describe("the runner's items and windows", () => {
       plan: { agent: "codex", role: "root", source: "text" },
     })
     expect(item).not.toHaveProperty("sessionId")
-    expect(item.plan).toEqual({ agent: "Codex", role: "root" })
+    expect(item.plan).toEqual({ agent: "Codex", role: "root", source: "text" })
   })
 
   it("name a window by its title", () => {

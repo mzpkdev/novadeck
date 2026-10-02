@@ -57,7 +57,10 @@ const running = (
     const content = contentOf(id)
     return content?.state === "ready" ? content.stamp : ""
   }
-  return { showcase, reported, started, stop, contentOf, planText, stampOf }
+  // The person moved an item somewhere else, as undocking does.
+  const hold = (id: string, holder: CompanionItem["holder"]) =>
+    void (items = items.map((item) => (item.id === id ? { ...item, holder } : item)))
+  return { showcase, reported, started, stop, contentOf, planText, stampOf, hold }
 }
 
 describe("showcase agents", () => {
@@ -76,7 +79,7 @@ describe("showcase agents", () => {
       kind: "plan",
       name: "A home for Studio",
       from: { terminalId: "01", handle: "t1" },
-      plan: { agent: "Codex", role: "root" },
+      plan: { agent: "Codex", role: "root", source: "file" },
     })
   })
 
@@ -197,6 +200,20 @@ describe("showcase agents", () => {
       await showcase.save(session, studioPlan, `${studioAgent.text}${note}\n`, stampOf(studioPlan))
       showcase.told(studio, "y")
       expect(planText(studioPlan)).toBe(studioAgent.text)
+    })
+
+    it("leaves a plan the person undocked where it is, and writes its plan anew on its bar", () => {
+      const { showcase, reported, hold, planText } = running()
+      hold(studioPlan, { windowId: "w1" })
+      showcase.told(studio, "use a grotesk")
+      expect(reported).toMatchObject([
+        {
+          type: "item/upsert",
+          item: { id: `${studioPlan}-2`, version: 1, holder: { terminalId: "01" } },
+        },
+      ])
+      // The undocked one still shows the plan as it now stands.
+      expect(planText(studioPlan)).toContain("confident grotesk")
     })
 
     it("starts without writing again when there's nothing to apply", () => {

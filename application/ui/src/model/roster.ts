@@ -17,7 +17,7 @@ export const hasTerminal = (roster: TerminalRoster, terminalId: string): boolean
   roster.terminals.some((terminal) => terminal.id === terminalId)
 
 // A window undocked from a terminal's companion, rather than a terminal.
-export const isWindow = (tile: Tile): tile is CompanionWindowMeta => "itemId" in tile
+export const isWindow = (tile: Tile): tile is CompanionWindowMeta => tile.itemId !== undefined
 
 export const hasWindow = (roster: TerminalRoster, windowId: string): boolean =>
   roster.windows.some((window) => window.id === windowId)

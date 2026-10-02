@@ -511,7 +511,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `model/companion.ts`                               | Companion items, their content, the `companions` port, and the plan note format.        |
 | `model/companion-bar.ts`                           | A bar as the person arranged it: order, hidden plans and Messages, the open tab.        |
 | `model/messages.ts`                                | The contract for agents' messages: threads, states, the pause, and a tab's count.       |
-| `model/roster.ts`                                  | A session's terminals, their sidebar order, and their status.                           |
+| `model/roster.ts`                                  | A session's terminals and undocked windows, laid out as tiles, their order and status.  |
 | `model/layout/workspace-layout.ts`                 | Where each terminal sits and how big it is in each view.                                |
 | `terminals/`                                       | Terminal frame, tabs, rename state, and the recent-terminal switcher.                   |
 | `terminals/companion/`                             | Taskbar and pane: the panes' store, `bar.ts` rules, viewers, `plan-editor/`.            |

@@ -55,6 +55,3 @@ export const docOf = ({ stamp, plan }: PlanVersion): PlanDoc => ({
 // The latest rewrite's marks, while the text is still the one they describe.
 export const currentMarks = (plan: PlanDoc): readonly Mark[] =>
   plan.marked === plan.text ? plan.marks : []
-
-// A plan as its file is named, as the taskbar names everything.
-export const fileOf = (path: string): string => path.split("/").at(-1)!

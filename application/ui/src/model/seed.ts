@@ -24,10 +24,7 @@ import type {
 // How the UI showed a session's terminals and windows, as it saved it: only its own view
 // state, by id, never the terminals, windows or companion items themselves, which their
 // backend reports. What's new isn't kept: nothing is new after a reload.
-export type RestoredView = Omit<
-  WorkspaceState,
-  "roster" | "items" | "bars" | "fresh" | "waiting"
-> & {
+export type RestoredView = Omit<WorkspaceState, "roster" | "items" | "bars" | "fresh"> & {
   readonly order: readonly string[]
   // Each terminal's bar as the person arranged it, where the view kept them.
   readonly bars?: WorkspaceState["bars"]
@@ -38,7 +35,6 @@ export const viewOf = ({
   roster,
   items: _items,
   fresh: _fresh,
-  waiting: _waiting,
   ...view
 }: WorkspaceState): RestoredView => ({
   ...view,
@@ -50,7 +46,8 @@ export type SessionSeed = {
   readonly name: string
   // The session's terminals, as the backend reports them, oldest first.
   readonly terminals: readonly TerminalMetadata[]
-  // Its windows undocked from companions, and what agents showed and the person attached.
+  // Its windows undocked from companions, each with its item among `items`, and what
+  // agents showed and the person attached.
   readonly windows: readonly CompanionWindowMeta[]
   readonly items: readonly CompanionItem[]
   readonly canvasLayout?: CanvasLayout
@@ -162,7 +159,6 @@ const restoredState = (
     items: [],
     bars: {},
     fresh: {},
-    waiting: [],
   }
   const laid = tiles.filter((tile) => !laidOut.has(tile.id)).reduce(appendTile, base)
   return withItems(laid, items, bars)
@@ -186,27 +182,20 @@ export const workspaceFromSeed = (seed: WorkspaceSeed, defaults: SeedDefaults): 
     (workspace, project) =>
       project.sessions.reduceRight((next, session) => {
         const terminals = [...session.terminals]
-        const { items } = session
-        // A window shows once its item is known; one listed without it waits for it.
-        const known = new Set<string>(items.map((item) => item.id))
-        const windows = session.windows.filter((window) => known.has(window.itemId))
-        const waiting = session.windows.filter((window) => !known.has(window.itemId))
-        const state = {
-          ...(session.restored
-            ? restoredState(session.restored, terminals, windows, items)
-            : withItems(
-                windows.reduce(
-                  appendTile,
-                  createTerminalState(terminals, defaults.view, defaults.windowedView, {
-                    ...(session.canvasLayout ? { canvasLayout: session.canvasLayout } : {}),
-                    gridLayouts: initialGridLayouts(terminals, session.canvasLayout?.geometry),
-                  }),
-                ),
-                items,
-                {},
-              )),
-          waiting,
-        }
+        const { items, windows } = session
+        const state = session.restored
+          ? restoredState(session.restored, terminals, windows, items)
+          : withItems(
+              windows.reduce(
+                appendTile,
+                createTerminalState(terminals, defaults.view, defaults.windowedView, {
+                  ...(session.canvasLayout ? { canvasLayout: session.canvasLayout } : {}),
+                  gridLayouts: initialGridLayouts(terminals, session.canvasLayout?.geometry),
+                }),
+              ),
+              items,
+              {},
+            )
         return workspaceReducer(next, {
           type: "session/add",
           projectId: project.id,

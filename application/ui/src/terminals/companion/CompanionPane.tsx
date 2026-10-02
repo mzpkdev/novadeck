@@ -1,7 +1,7 @@
 import { AppWindow } from "lucide-react"
 import { lazy, Suspense, useRef, type ReactNode } from "react"
 
-import { notePattern, notesIn, type CompanionItem } from "../../model/companion"
+import { pathOf, notePattern, notesIn, type CompanionItem } from "../../model/companion"
 import type { WorkspaceTarget } from "../../model/types"
 import { ArtifactViewer, Unavailable } from "./ArtifactViewer"
 import type { BarMember } from "./bar"
@@ -112,7 +112,11 @@ const PlanBody = ({
       <PlanOutline plan={plan} jump={(at) => editor.current?.jumpTo(at)} />
       <div className="plan-document-scroll" data-changes={plan.showChanges}>
         <div className="plan-meta">
-          <code className="plan-meta-path">{item.path ?? item.name}</code>
+          {pathOf(item) === null ? (
+            <span>{item.detail || item.name}</span>
+          ) : (
+            <code className="plan-meta-path">{pathOf(item)}</code>
+          )}
           <span>v{item.version}</span>
           {marks.length > 0 && (
             <button

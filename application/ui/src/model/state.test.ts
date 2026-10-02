@@ -97,7 +97,7 @@ describe("companion items in the workspace", () => {
     it("brings a hidden plan back, last", () => {
       const plan = itemFixture("plan", "01", {
         kind: "plan",
-        plan: { agent: "Codex", role: "root" },
+        plan: { agent: "Codex", role: "root", source: "file" },
       })
       const hidden = apply(shown(plan, notes), {
         type: "bar/hide",
@@ -296,39 +296,12 @@ describe("companion items in the workspace", () => {
       expect(state.selected).toBe("01")
     })
 
-    it("keeps one whose item hasn't come yet waiting, unseen, and shows it once it does", () => {
-      const early = apply(workspaceFixture(), {
-        type: "window/upsert",
-        target,
-        window: windowFor(hero),
-      })
-      expect(stateOf(early).roster.windows).toEqual([])
-      expect(stateOf(early).waiting).toEqual([windowFor(hero)])
-      const state = run(early, {
-        type: "item/upsert",
-        target,
-        item: { ...hero, holder: { windowId: "w1" } },
-      })
-      expect(state.roster.windows).toEqual([windowFor(hero)])
-      expect(state.waiting).toEqual([])
-      expect(state.layout.canvas.geometry).toHaveProperty("w1")
-    })
-
     it("keeps an item held by a window not known yet on no bar, until the window comes", () => {
       const early = shown({ ...hero, holder: { windowId: "w1" } })
       expect(stateOf(early).items).toHaveLength(1)
       expect(stateOf(early).bars).toEqual({})
       const state = run(early, { type: "window/upsert", target, window: windowFor(hero) })
       expect(state.roster.windows).toEqual([windowFor(hero)])
-    })
-
-    it("forgets a waiting window that's removed", () => {
-      const early = apply(workspaceFixture(), {
-        type: "window/upsert",
-        target,
-        window: windowFor(hero),
-      })
-      expect(run(early, { type: "window/remove", target, windowId: "w1" }).waiting).toEqual([])
     })
 
     it("renames one it knows, and forgets one that's gone", () => {
