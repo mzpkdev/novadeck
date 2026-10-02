@@ -68,7 +68,7 @@ driven in a PTY. Hook names are the ones NovaDeck's plugins already register.
 | Enter with a menu open                                                                           | Picked the highlighted item (saved a setting)                                                                          | Picked a model                                                                                                                                                                                                                    | Picked a menu item                                                                                     |
 | Enter with an approval open                                                                      | Not tested                                                                                                             | Approved the command                                                                                                                                                                                                              | Approved the tool call                                                                                 |
 | Half-typed draft                                                                                 | The doorbell appends; both are sent                                                                                    | The same                                                                                                                                                                                                                          | The same                                                                                               |
-| Doorbell typed mid-turn                                                                          | Queued; hook fires as it is queued                                                                                     | Enter steers, Tab queues; hook fires when submitted                                                                                                                                                                               | Queued; hook fires when it runs                                                                        |
+| Doorbell typed mid-turn                                                                          | Queued; hook fires when it runs, after the Stop (2.1.287)                                                              | Enter steers, Tab queues; hook fires when submitted                                                                                                                                                                               | Queued; hook fires when it runs                                                                        |
 | Tells its own empty prompt shows, before any turn (probed again 2026-10-01, see Before building) | `SessionStart` at a `startup`, `clear`, `resume` or `fork`; never behind its trust dialog, onboarding or resume picker | Its terminal title, its shim's `status` and `thread-id` items, saying Ready; never behind its trust, hooks review, sign-in, update or resume picker screens, and counted only once `hooks/list` says NovaDeck's hooks are trusted | Its status line saying `idle`; "initializing" behind its trust dialog, "authenticating" behind sign-in |
 
 So every harness can receive a message through a hook without it appearing as the
@@ -94,6 +94,7 @@ All three harnesses get every path. Where one falls short, the design accepts it
 | Antigravity   | No `SessionStart`, and no conversation until its first prompt                                             | Its status line saying idle tells that its prompt shows: with no conversation, Ready, messages waiting for the conversation it starts there; naming one (a resume, a `/clear`), that conversation is Ready                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Claude Code   | Esc and `StopFailure` end a turn without a normal Stop                                                    | Unknown until the next prompt; no doorbell meanwhile                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Codex         | A failed turn sends nothing                                                                               | Stays Working until its next turn event; `send`'s route says so                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Codex         | A `/side` conversation's hooks fire as its own session's, from its first prompt                           | Its thread is ephemeral, so its hooks name no transcript: its `SessionStart` (`fork`) binds nothing, its turns are no root turn, and the root stays bound                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Codex         | Its hooks run only once trusted in its "Hooks need review" screen                                         | Until then no session binds: it looks like no agent is there, it can send but not receive, and a task started there reaches the model as a bare notice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Antigravity   | Its hooks can't tell the person's prompt from a subagent's message waking it                              | Its transcript can: a typed prompt is a `USER_EXPLICIT` `USER_INPUT` step, while a subagent's message, a Stop hook's continuation or a notice is a `SYSTEM_MESSAGE` step. A turn after the person's bare Enter is theirs only when a new typed step, no doorbell line, is there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Antigravity   | Its status line, drawn about every 300 ms, can miss a confirmation answered within one tick               | Enter on a box known empty during a turn is neutral, so an Enter that answered it leaves the box empty. Answering it with Down or a digit leaves a draft: a missed ring, never a wrong one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -213,8 +214,8 @@ terminals.
   - `refused`, with why: no current handle there (with the full `agents()` listing, and
     a request to pick by title, folder and work, or ask the person), no agent there (or
     one whose prompt showed while NovaDeck's hooks aren't trusted for it there, as a
-    Codex whose hooks review was skipped: nothing could deliver to it), or a rate or size
-    limit. While that review is still open, a message to it waits, as the person may yet
+    Codex whose hooks review was skipped: nothing could deliver to it), a rate or size
+    limit, or the runner stopping, which keeps no message from then on. While that review is still open, a message to it waits, as the person may yet
     trust the hooks there; once they trust them in `/hooks`, it waits again.
 
   It never claims delivery. A terminal whose own session never bound (Codex with its
@@ -307,10 +308,24 @@ the opener's, and `describe` names the caller's own terminal (see
   mid-turn, before its Stop, so one its status line shows counts only while a root turn
   runs, or one a working status line resumed: a snapshot drawn just after the Stop,
   still showing the confirmation, asks nothing.
-- **A request resolves** when its harness says so: `PostToolUse` for the call, Codex's
-  `Interrupt`, Claude Code's transcript recording the call as interrupted or denied,
-  Antigravity's status line no longer showing a confirmation, or a root prompt the
-  person submitted. A turn ending alone resolves nothing.
+- **A request resolves** when its harness says so: `PostToolUse` for the call (its hook
+  started after the request's: an earlier one answered an earlier ask), Codex's
+  `Interrupt`, Claude Code's transcript recording the call as interrupted or denied, or
+  Antigravity's status line no longer showing a confirmation. A root turn starting or
+  ending settles the root's own requests still waiting. No harness ends a root turn
+  normally while its own dialog waits, since each blocks the call on it, and a denial
+  ends the turn abnormally in all three. A request answered with no report, such as
+  another `PermissionRequest` hook's denial, would otherwise wait forever. A request
+  asked after the turn's Stop waits for its own resolution or the next turn, and no
+  doorbell rings meanwhile. A running subagent's request, as a background one's,
+  survives its parent's turn ending, as does one whose hook started before that end
+  and reported after it (see [Harness adapters](harness-adapters.md)). It clears at its
+  own resolution, that subagent's next request (a subagent shows one dialog at a time,
+  and one answered with no report would otherwise wait as long as it runs), its stop,
+  or, for a Codex subagent whose dialog Esc dismissed with no hook, its own rollout
+  recording the turn aborted; it keeps the doorbell from ringing until then. Its result for another call clears
+  nothing, as that call may have run alongside the one asked about. An interrupted turn ends the subagents it started, and their
+  requests with them.
 - **The person's input** is everything a client sends to the terminal except the
   terminal's own reports (`keysOf` in the runner's `terminals/keys.ts` is the one rule):
   focus reports, and the mouse's scroll and motion reports, while the TUI has turned
@@ -527,6 +542,15 @@ Transitions:
 | Ringing                                  | The test paste fails, or no confirmation within 5 s                              | Unknown               |
 | Ringing                                  | Another root prompt, an abnormal end, or the binding ends                        | As from Settled       |
 
+The binding ends as the shell's prompt shows, or, where the platform tells the agent's
+process (all but Windows), once that process is found gone: at the terminal's next report,
+title or status line, or as a ring would start, which then pastes nothing. So an agent that
+leaves with no prompt between it and the next (tmux, a nested shell, `claude ; codex`)
+never has the next one's prompt or session taken for its own: its messages are gone before
+anything is rung. A report that can't tell its process, as from a hook outliving its agent,
+keeps the process known for the bound session, and once that process is found gone, a
+late report of its session from no process or from that one binds it no more.
+
 A background subagent finishing can start a root turn by itself (see
 [Harness coverage](harness-coverage.md)); that is a turn like any other, though it
 doesn't make the prompt known empty.
@@ -672,7 +696,12 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    pressed; a line left visible somewhere unexpected stays where it is. A picker the
    person opened, by typing or by a shortcut such as Ctrl-R, never gets this far: the
    paste check is not what stops it, Untouched is, as every key but Escape, Left, Home
-   and End counts as a draft. One residual case passes, and is accepted: on a Ready
+   and End counts as a draft. One opened with Escape alone does get this far, as Escape
+   is neutral: Esc-Esc at an idle prompt leaves the terminal Settled. Claude Code's
+   Rewind picker (2.1.287) swallows the paste, so the ring fails, nothing is pressed and
+   the picker stays as it was: Unknown. Codex's transcript browsing (0.159.3) is left by
+   the paste, which lands in its composer, so the ring goes on and delivers, rewinding
+   nothing. Antigravity's Esc-Esc (1.2.14) opens nothing; its `/rewind` is typed. One residual case passes, and is accepted: on a Ready
    terminal, a picker the harness raised itself, its field showing a placeholder, whose
    one isolated block of text vanished whole as the line landed in it, as a list emptied
    by the line would. Enter then goes to that field, not to a prompt: on an emptied list
@@ -724,7 +753,12 @@ field could take it alone and let Enter through.
 
 For Codex and Antigravity, also unprobed: Codex's in-app `/resume` and `/new` (whose
 titles should name their threads as `/clear`'s did), and Antigravity's in-app `/resume`
-and `/fork` (whose status lines should name their conversations as `/clear`'s did). A
+(whose status line should name its conversation as `/clear`'s did). Their forks were
+probed in the e2e sandbox (2026-10-03, Codex 0.159.3, Antigravity 1.2.14): `codex fork`
+and Claude Code's `--resume --fork-session` start at a picker with no title or
+`SessionStart` until a session is picked, then the fork shows its prompt as a start does,
+Ready, the terminal's waiting messages its own; Codex's `/fork` and Antigravity's `/fork`
+name the fork in place as `/clear` does, the parent's messages gone. A
 Codex whose title holds no `status` and `thread-id` (the person's own `-c
 tui.terminal_title` replacing the shim's, or one run by its full path past the shim, whose
 default title is the project's name) tells nothing and isn't rung before its first turn;
@@ -739,10 +773,10 @@ a definite answer that NovaDeck's hooks aren't trusted, for a title still curren
 reading the latest title anew. On Windows a prompt shown before any session counts with no
 foreground check, as for every ring there (see [Per harness](#per-harness)).
 
-Also accepted, as Codex shows them: a Settled Codex while the person views a `/side`
-conversation is rung into that conversation's composer, as before NovaDeck read Codex's
-title; the line reaches the side conversation's model, no hook of the root confirms the
-ring, and it fails. On macOS, NovaDeck can't read a process's environment, so a
+A Codex showing a `/side` conversation is never rung there: the keys that opened it
+leave the terminal Drafting until the person next submits a prompt at the root, and the
+side conversation's own turns, whose hooks name no transcript, are no root turn events
+(probed 2026-10-02, 0.159.3). On macOS, NovaDeck can't read a process's environment, so a
 `CODEX_HOME` set only in the person's shell (not their login) isn't seen: NovaDeck asks
 the Codex its login names, and looks for its locks there. NovaDeck asks whether its hooks
 run in the folder the shell last showed its prompt in, not one Codex was started in with
@@ -794,9 +828,10 @@ output, not that the model acted on it.
 - The terminal's token now leads to a keypress. The `instance` a hook reports is the
   hook's own claim, so a process with the token could fake a Stop. What stops a faked
   turn end from pressing Enter into a dialog is the test paste: a dialog swallows the
-  line, so it never appears, and nothing is pressed. A pending request is cleared only by its own
-  resolution, never by a turn ending. This is a residual risk, as for anything that can
-  read the terminal's environment.
+  line, so it never appears, and nothing is pressed. A turn ending clears the root's
+  pending requests, so a faked Stop clears them too. That adds nothing, as the same token could
+  fake the call's `PostToolUse`. This is a residual risk, as for anything that can read
+  the terminal's environment.
 - Another process without a terminal's token can't send, read or list.
 - The person outranks every peer, in the wrapper and in the tools' rules.
 
@@ -1087,7 +1122,8 @@ resume probes sent it one prompt:
   whole chat view for an agent or side thread it switches to (`select_agent_thread`,
   `replace_chat_widget` in its source, 0.159.3), and a `/side` conversation, a fork,
   turned the title to its own thread's id (its `SessionStart`, at its first prompt, said
-  `fork`). No hook fires at `/clear` (no `SessionEnd`), but Codex writes and holds a lock
+  `fork`, and every hook of it gave `transcript_path` as null, as its thread is
+  ephemeral; probed again 2026-10-02 in the e2e sandbox). No hook fires at `/clear` (no `SessionEnd`), but Codex writes and holds a lock
   in `thread-writer-locks/<thread id>.lock` for each thread it starts, as at a plain start
   and at `/clear`, and none for a `/side` fork. Its source (0.159.3) shows every
   non-ephemeral thread takes one, a spawned agent's too (`live_writer::create_thread`,
@@ -1103,7 +1139,9 @@ resume probes sent it one prompt:
   sign-in screen, and "authenticating" then "initializing" for 10 s behind its first-run
   colour-scheme picker (no `onboardingComplete`, nothing pressed), never "idle". A plain start's idle names no conversation until the
   first prompt starts one; after a `/clear` it names the new conversation at once, idle,
-  and `--conversation <id>` and `--continue` name the resumed one, idle.
+  and `--conversation <id>` and `--continue` name the resumed one, idle. Its `/fork`
+  (probed 2026-10-03 in the e2e sandbox) names the fork the same way, idle, and
+  `/resume <parent>` the parent again.
 
 ## Acceptance scenarios
 
@@ -1116,6 +1154,7 @@ resume probes sent it one prompt:
 | Codex asks permission when a message arrives                                                | No doorbell; the Stop after it delivers                                                                                                                                                                                                       |
 | The person presses Esc mid-turn with messages waiting                                       | Unknown; no doorbell; the next turn event delivers                                                                                                                                                                                            |
 | A harness shows its own popup after Stop                                                    | The test paste is swallowed or changes far rows; nothing is pressed; Unknown                                                                                                                                                                  |
+| The person opened a picker with Esc-Esc when a message arrives                              | Settled still, so rung: a picker that swallows the paste gets nothing pressed, Unknown; one the paste leaves takes the line in the prompt, and the ring delivers                                                                              |
 | A nested `claude -p` runs inside Claude's turn                                              | Its hooks get nothing; the mailbox is untouched                                                                                                                                                                                               |
 | The hook times out after the runner leased messages                                         | The lease lapses; the messages return to queued and arrive later, by id                                                                                                                                                                       |
 | The runner restarts while messages are leased                                               | They return to queued                                                                                                                                                                                                                         |
@@ -1127,7 +1166,7 @@ resume probes sent it one prompt:
 | `send` to "codex"                                                                           | Refused: no handle; every terminal there described, to pick by title, folder and work                                                                                                                                                         |
 | Codex's hooks aren't trusted                                                                | No session ever binds there. While its hooks review is open, a `send` to it waits; once the review was skipped, it shows as having no agent and a `send` to it is refused. Its own agent can still send, told replies can't reach it          |
 | A background subagent finishes and starts a root turn                                       | Working, then its Stop delivers                                                                                                                                                                                                               |
-| The person types their next prompt while Codex works                                        | Drafting at Stop; their prompt carries the messages                                                                                                                                                                                           |
+| The person types their next prompt while Codex works                                        | Having submitted nothing, its Stop still continues the turn with what waits, then Drafting; what arrives after waits, never rung, and their prompt carries it                                                                                 |
 | The person answers an approval with Enter during the turn                                   | Not a submission; Stop still delivers                                                                                                                                                                                                         |
 | A steady stream of messages to a working agent                                              | The turn continues at most twice, then ends; the rest wait                                                                                                                                                                                    |
 | Codex or Antigravity resumed after a runner restart, messages waiting                       | Ready once its title or status line shows its prompt; rung; the session its ring binds takes them                                                                                                                                             |
@@ -1136,11 +1175,13 @@ resume probes sent it one prompt:
 | The person runs `/clear` in Codex or Antigravity, then a message arrives                    | Codex's title names another thread, a new root its fresh, held writer lock confirms, so the old binding ends; Antigravity's status line binds the new conversation; Ready unless the box may hold text; rung; the new session's hook delivers |
 | A title naming a new thread is still being checked when that thread's first prompt binds it | The new binding stays; the stale title changes nothing                                                                                                                                                                                        |
 | Codex's title names a thread it started during a running turn, as a spawned agent's         | No new root: the binding stays                                                                                                                                                                                                                |
-| The person opens a `/side` conversation in Codex                                            | Its title names the fork, which no new lock confirms: the binding stays, and its own `SessionStart` tells at its first prompt                                                                                                                 |
+| The person opens a `/side` conversation in Codex                                            | Its title names the fork, which no new lock confirms: the binding stays, also past the fork's `SessionStart` at its first prompt, which names no transcript. Drafting meanwhile; never rung there; their next root prompt delivers            |
 | An agent shown at its prompt, no session bound, leaves unseen (a nested shell)              | The ring's foreground check finds no process of its name: nothing is pasted                                                                                                                                                                   |
+| A bound agent exits with no shell prompt after it (`claude ; codex`, tmux)                  | Its binding ends once its process is found gone, never rung meanwhile; its messages are gone, the sender told; the next agent's prompt or session is its own                                                                                  |
 | Codex's hooks review was skipped, so NovaDeck's hooks aren't trusted                        | Its Ready title doesn't count; nothing binds; a `send` to it is refused, while its own agent can still send                                                                                                                                   |
 | Claude Code resumed after a runner restart, messages waiting                                | Ready at its resume's `SessionStart`; rung once its screen settles; its hook delivers                                                                                                                                                         |
-| A forked Claude Code session, messages waiting                                              | Ready at its `fork`'s `SessionStart`; rung; its hook delivers                                                                                                                                                                                 |
+| A forked session, messages waiting (Claude Code's `--resume --fork-session`, `codex fork`)  | Messages for its terminal's first session wait while its picker shows; Ready once the fork shows its prompt; rung; its hook delivers. Its parent's messages stay its parent's                                                                 |
+| A session forked in place (Codex's or Antigravity's `/fork`), messages waiting              | As a `/clear`: the parent's messages are gone; the fork is Ready, rung for what comes next, and its hook delivers                                                                                                                             |
 | The person types in a Ready terminal                                                        | Drafting; no ring; their prompt carries the messages                                                                                                                                                                                          |
 | The person types while Claude Code starts, before it binds                                  | Drafting at its binding, even when the last agent's end is noticed only then; no ring                                                                                                                                                         |
 | A session replaces Claude Code's long after an Enter that started no turn (a newline)       | Drafting; no ring                                                                                                                                                                                                                             |
