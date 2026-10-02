@@ -6,9 +6,9 @@ import type { Terminals } from "../terminals/index.js"
 import type { WorkspaceStore } from "./store.js"
 
 /**
- * Removing projects, which spans the store, the terminals and their companion items. While a project goes, no
- * session or terminal is created in it; terminals already being created finish first,
- * so its removal closes them too, before its records are deleted.
+ * Removing projects, which spans the store, the terminals and their companion items.
+ * While a project goes, no session or terminal is created in it; terminals already being
+ * created finish first, so its removal closes them too, before its records are deleted.
  */
 export class Projects {
   /** Each project being removed, and its removal. */
