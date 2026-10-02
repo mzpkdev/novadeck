@@ -1015,6 +1015,41 @@
 .artifact-code div[data-pointed="true"] {
   background: var(--color-soft);
 }
+/* Tokens, as ./highlight.ts classes them. */
+.artifact-code :is(.tok-keyword, .tok-meta) {
+  color: var(--color-syntax-keyword);
+}
+.artifact-code :is(.tok-string, .tok-string2, .tok-url) {
+  color: var(--color-syntax-string);
+}
+.artifact-code :is(.tok-number, .tok-bool, .tok-atom, .tok-literal) {
+  color: var(--color-syntax-number);
+}
+.artifact-code .tok-propertyName {
+  color: var(--color-syntax-property);
+}
+.artifact-code :is(.tok-typeName, .tok-className, .tok-namespace, .tok-macroName) {
+  color: var(--color-syntax-type);
+}
+.artifact-code .tok-definition {
+  color: var(--color-syntax-definition);
+}
+.artifact-code .tok-comment {
+  color: var(--color-syntax-comment);
+  font-style: italic;
+}
+.artifact-code :is(.tok-heading, .tok-strong) {
+  font-weight: 600;
+}
+.artifact-code .tok-emphasis {
+  font-style: italic;
+}
+.artifact-code .tok-link {
+  text-decoration: underline;
+}
+.artifact-code .tok-invalid {
+  color: var(--color-danger-fg);
+}
 .artifact-browser {
   display: flex;
   flex-direction: column;

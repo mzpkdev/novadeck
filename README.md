@@ -355,8 +355,11 @@ a card per thing behind it, each a preview, its name and the same mark, with no
 copy. Click an icon or a card to open it, click the icon again (or press Escape) to
 hide the pane, and dismiss from a card's corner button or the icon's right-click. In
 “Build Studio”, type `show` to have Codex show the next thing, or `open` to play
-asking it to open it. Files show without highlighting, and a page shows as a
-snapshot until the pane hosts a browser.
+asking it to open it; it opens `projects.json` for you as the demo starts. Files are
+syntax-highlighted by their extension (JSON, JavaScript and TypeScript with JSX, CSS,
+HTML, XML, Markdown, YAML, Python, Rust, Go, Java and C/C++), with each language's
+parser loading the first time one of its files opens; any other file shows as plain
+text. A page shows as a snapshot until the pane hosts a browser.
 
 The pane reads everything from the backend's optional `companions` capability
 (`model/companion.ts`): each terminal's plans and what its agent has shown, as terminals

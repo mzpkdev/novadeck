@@ -77,7 +77,7 @@ const vendors: Record<string, readonly string[]> = {
   "@ark-ui": ["ui-toolkit/"],
   "@xyflow/react": ["layouts/canvas/"],
   "@codemirror": ["terminals/companion/plan-editor/"],
-  "@lezer": ["terminals/companion/plan-editor/"],
+  "@lezer": ["terminals/companion/plan-editor/", "terminals/companion/highlight.ts"],
   "react-grid-layout": ["layouts/grid/"],
   allotment: ["shell/"],
   "@dnd-kit": ["terminals/"],

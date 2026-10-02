@@ -10,6 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react"
 
 import type { ArtifactContent, ArtifactKind } from "../../model/companion"
+import type { HighlightedLine } from "./highlight"
 import type { Shown } from "./pane"
 import type { ArtifactLoad } from "./state"
 import { createWebview, type WebviewElement } from "./webview"
@@ -24,7 +25,8 @@ export const kindIcons: Record<ArtifactKind, typeof Image> = {
   page: Globe,
 }
 
-// Viewers for what an agent shows beside its terminal. Files show without highlighting.
+// Viewers for what an agent shows beside its terminal. Files show as plain text at
+// once, then highlighted when their language is one NovaDeck knows (see ./highlight.ts).
 // A page loads live where the backend's host allows, in Electron's <webview>, which the
 // desktop app locks down (no Node, its own session, http(s) only; see ./webview.ts);
 // elsewhere it's a link to open in the browser, with a snapshot when the backend has
@@ -64,27 +66,65 @@ const ImageViewer = ({
 const pointedLines = (file: FileContent): readonly string[] =>
   file.lines.slice(file.from - file.firstLine, file.to - file.firstLine + 1)
 
-const FileViewer = ({ content: artifact }: { content: FileContent }): React.JSX.Element => (
-  <>
-    <div className="artifact-meta">
-      <code>{artifact.path}</code>
-      <span>
-        lines {artifact.from}–{artifact.to} · read-only
-      </span>
-    </div>
-    <div className="artifact-code" role="region" aria-label={artifact.path} tabIndex={0}>
-      {artifact.lines.map((line, index) => {
-        const number = artifact.firstLine + index
-        return (
-          <div key={number} data-pointed={number >= artifact.from && number <= artifact.to}>
-            <span aria-hidden="true">{number}</span>
-            <span>{line}</span>
-          </div>
-        )
-      })}
-    </div>
-  </>
-)
+// The file's lines highlighted, once its parser has loaded; null until then, or for a
+// language NovaDeck doesn't highlight.
+const useHighlighted = (file: FileContent): readonly HighlightedLine[] | null => {
+  const [highlighted, setHighlighted] = useState<{
+    readonly of: FileContent
+    readonly lines: readonly HighlightedLine[] | null
+  } | null>(null)
+  useEffect(() => {
+    let current = true
+    import("./highlight")
+      .then(({ highlightLines }) => highlightLines(file.path, file.lines))
+      .then(
+        (lines) => {
+          if (current) setHighlighted({ of: file, lines })
+        },
+        // Plain text is the fallback when a parser can't load.
+        () => undefined,
+      )
+    return () => {
+      current = false
+    }
+  }, [file])
+  return highlighted?.of === file ? highlighted.lines : null
+}
+
+const FileViewer = ({ content: artifact }: { content: FileContent }): React.JSX.Element => {
+  const highlighted = useHighlighted(artifact)
+  return (
+    <>
+      <div className="artifact-meta">
+        <code>{artifact.path}</code>
+        <span>
+          lines {artifact.from}–{artifact.to} · read-only
+        </span>
+      </div>
+      <div className="artifact-code" role="region" aria-label={artifact.path} tabIndex={0}>
+        {artifact.lines.map((line, index) => {
+          const number = artifact.firstLine + index
+          return (
+            <div key={number} data-pointed={number >= artifact.from && number <= artifact.to}>
+              <span aria-hidden="true">{number}</span>
+              <span>
+                {highlighted?.[index]?.map((run) =>
+                  run.classes ? (
+                    <span key={run.from} className={run.classes}>
+                      {run.text}
+                    </span>
+                  ) : (
+                    run.text
+                  ),
+                ) ?? line}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
 
 // Where the page is, and where it can go.
 type Place = { readonly url: string; readonly back: boolean; readonly forward: boolean }
