@@ -15,7 +15,7 @@ import { CompanionPane } from "./CompanionPane"
 import { useDragOver } from "./drag-over"
 import type { Guest } from "./guests"
 import { useMail, type MailHandle } from "./mail"
-import { arrived, mailTab, planTab, type Shown } from "./pane"
+import { arrived, mailTab, planTab, reopen, type Shown } from "./pane"
 import { guestId, usePlacements } from "./placement"
 import { titleOf } from "./plan-text"
 import {
@@ -207,15 +207,17 @@ export const TerminalCompanion = ({
   const placements = usePlacements(companions)
   const panes = useCompanionPanes(companions)
   const own = companionKeyId(companionKey)
-  // What's out lives elsewhere until it comes back: undocked in its window, or placed on
-  // another terminal's bar. The pane neither lists nor shows it.
+  // What's out lives elsewhere until it comes back: undocked in its window, placed on
+  // another terminal's bar, or closed until it reopens. The pane neither lists nor shows it.
+  const closed = terminalCompanion.pane.closed
   const out = useMemo(
     () =>
       new Set([
         ...undocked,
         ...placements.filter((each) => companionKeyId(each.from) === own).map((each) => each.item),
+        ...(closed ?? []),
       ]),
-    [undocked, placements, own],
+    [undocked, placements, own, closed],
   )
   const companion = useMemo(() => {
     if (!out.size) return terminalCompanion
@@ -274,6 +276,16 @@ export const TerminalCompanion = ({
     if (terminalMail.present && !mailKnown)
       terminalCompanion.update((pane) => arrived(pane, mailTab))
   }, [terminalMail.present, mailKnown, terminalCompanion])
+  // Closed, the messages come back with the next message.
+  const received = (terminalMail.mail?.threads ?? []).reduce(
+    (count, thread) => count + thread.messages.length,
+    0,
+  )
+  const lastReceived = useRef(received)
+  useEffect(() => {
+    if (received > lastReceived.current) terminalCompanion.update((pane) => reopen(pane, mailTab))
+    lastReceived.current = received
+  }, [received, terminalCompanion])
   const mail = out.has(mailTab) ? { ...terminalMail, present: false } : terminalMail
   const moveToWindow =
     undock &&

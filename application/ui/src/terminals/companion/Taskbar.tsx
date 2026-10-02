@@ -23,7 +23,7 @@ import type { Guest } from "./guests"
 import { useMail, type MailHandle } from "./mail"
 import {
   arrange,
-  dismiss,
+  close,
   mailTab,
   moveSlot,
   pickFromGroup,
@@ -211,7 +211,7 @@ const SortableSlot = ({
 // The pane's taskbar along the terminal's bottom: its plans, what the agent showed, an
 // icon each with images and files grouped, and its messages, in the order they came or
 // the person dragged them into. Hover peeks, click opens or hides, the menu opens or
-// dismisses. Nothing opens on its own.
+// closes. Nothing opens on its own.
 export const Taskbar = ({
   companion,
   mail,
@@ -269,10 +269,12 @@ export const Taskbar = ({
     openWindow
       ? [{ value: `window-${artifact.id}`, label, onSelect: () => openWindow(artifact) }]
       : []
-  const dismissing = (id: string, label = "Dismiss"): ContextMenuItem => ({
-    value: `dismiss-${id}`,
+  // Closed, it leaves the bar until the agent shows it again: a plan's next iteration, the
+  // next message.
+  const closing = (id: string, label = "Close"): ContextMenuItem => ({
+    value: `close-${id}`,
     label,
-    onSelect: () => companion.update((next) => dismiss(next, id)),
+    onSelect: () => companion.update((next) => close(next, id)),
   })
   const peekOf = (artifact: Shown): PeekEntry => {
     const Icon = kindIcons[artifact.kind]
@@ -283,7 +285,7 @@ export const Taskbar = ({
       preview: <ArtifactPreview companion={companion} artifact={artifact} />,
       state: state(artifact.id, artifact.fresh),
       onOpen: () => companion.update((next) => openTab(next, artifact.id)),
-      onDismiss: () => companion.update((next) => dismiss(next, artifact.id)),
+      onClose: () => companion.update((next) => close(next, artifact.id)),
     }
   }
   const agent = pane.plans[0]?.agent ?? "The agent"
@@ -350,6 +352,11 @@ export const Taskbar = ({
     ]
     if (entry.kind === "guest") {
       const { guest } = entry
+      // It's its terminal's to close: it goes home, closed there.
+      const closeGuest = (): void => {
+        placeOn(guest.from, guest.item, guest.from.terminalId)
+        guest.companion.update((next) => close(next, guest.item))
+      }
       const from = `from ${guest.origin.name}`
       const Icon =
         guest.kind === "plan"
@@ -380,6 +387,7 @@ export const Taskbar = ({
             onSelect: () => placeOn(guest.from, guest.item, guest.from.terminalId),
           },
           ...moving,
+          { value: `close-${guest.id}`, label: "Close", onSelect: closeGuest },
         ],
         <button
           ref={buttonRef}
@@ -416,6 +424,7 @@ export const Taskbar = ({
                 ),
               state: state(guest.id, false),
               onOpen: () => companion.update((next) => openTab(next, guest.id)),
+              onClose: closeGuest,
             },
           ]}
         />,
@@ -443,6 +452,7 @@ export const Taskbar = ({
               ]
             : []),
           ...moving,
+          closing(tab),
         ],
         <button
           ref={buttonRef}
@@ -464,6 +474,7 @@ export const Taskbar = ({
               preview: <PlanThumb plan={plan} />,
               state: state(tab, fresh),
               onOpen: () => companion.update((next) => openTab(next, tab)),
+              onClose: () => companion.update((next) => close(next, tab)),
             },
           ]}
         />,
@@ -485,6 +496,7 @@ export const Taskbar = ({
               ]
             : []),
           ...moving,
+          closing(mailTab),
         ],
         <button
           ref={buttonRef}
@@ -516,6 +528,7 @@ export const Taskbar = ({
               preview: <MailThumb mail={mail} peerName={peerName} />,
               state: state(mailTab, false),
               onOpen: () => companion.update((next) => openTab(next, mailTab)),
+              onClose: () => companion.update((next) => close(next, mailTab)),
             },
           ]}
         />,
@@ -526,7 +539,7 @@ export const Taskbar = ({
       return slot(
         artifact.id,
         artifact.name,
-        [opening(artifact.id), ...windowing(artifact), ...moving, dismissing(artifact.id)],
+        [opening(artifact.id), ...windowing(artifact), ...moving, closing(artifact.id)],
         <button
           ref={buttonRef}
           className="plan-tb-item"
@@ -552,7 +565,7 @@ export const Taskbar = ({
         ...group.flatMap((shown) => [
           opening(shown.id, `Open ${shown.name}`),
           ...windowing(shown, `Undock ${shown.name} to its own window`),
-          dismissing(shown.id, `Dismiss ${shown.name}`),
+          closing(shown.id, `Close ${shown.name}`),
         ]),
         ...moving,
       ],

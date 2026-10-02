@@ -8,8 +8,12 @@ import type {
   CompanionSnapshot,
   Companions,
 } from "../../model/companion"
+import { noMail, type AgentMessage, type MailState, type Messages } from "../../model/messages"
+import { createStore } from "../../model/store"
 import { context, describe, expect, it } from "../../test"
 import { render } from "../../test/render"
+import { close, mailTab } from "./pane"
+import { companionActions } from "./state"
 import { TerminalCompanion } from "./TerminalCompanion"
 
 // jsdom has no layout and no resizes; the taskbar's drag-to-reorder asks for them.
@@ -46,9 +50,10 @@ const companionsOf = (shown: readonly ArtifactRef[]) => {
   return { companions, emit }
 }
 
-const renderTerminal = (companions: Companions): HTMLElement => {
+const renderTerminal = (companions: Companions, messages?: Messages): HTMLElement => {
   const props: ComponentProps<typeof TerminalCompanion> = {
     companions,
+    messages,
     peerName: () => undefined,
     companionKey: key,
     view: "focus",
@@ -58,6 +63,29 @@ const renderTerminal = (companions: Companions): HTMLElement => {
   unmounts.push(unmount)
   return container
 }
+
+// A message for the terminal from its peer, and the terminal's messages holding them.
+const message = (id: string): AgentMessage => ({
+  id,
+  hop: 1,
+  from: "t2",
+  to: "t1",
+  text: "Ready for review",
+  sentAt: 0,
+  state: "delivered",
+  held: null,
+  deliveredAt: 0,
+})
+const mailOf = (messages: readonly AgentMessage[]): MailState => ({
+  ...noMail,
+  terminals: {
+    "p/s/01": {
+      handle: "t1",
+      agent: true,
+      threads: [{ id: "th", peer: "t2", hops: 1, allowed: 4, held: false, messages }],
+    },
+  },
+})
 
 const taskbar = (container: HTMLElement) => container.querySelector(".plan-taskbar")
 
@@ -78,6 +106,23 @@ describe("a terminal's taskbar", () => {
       const container = renderTerminal(companions)
       expect(taskbar(container)).not.toBeNull()
       expect(taskbar(container)?.hasAttribute("data-state")).toBe(false)
+    })
+  })
+
+  context("when the person closed the messages", () => {
+    it("brings them back with the next message", async () => {
+      const { companions } = companionsOf([hero])
+      const state = createStore(mailOf([message("m1")]))
+      const container = renderTerminal(companions, { state, pause: () => {}, release: () => {} })
+      const icon = () => container.querySelector(".plan-tb-item[aria-label^='Messages']")
+      expect(icon()).not.toBeNull()
+      // As its menu's Close does.
+      await act(async () =>
+        companionActions(companions, key).update((pane) => close(pane, mailTab)),
+      )
+      expect(icon()).toBeNull()
+      await act(async () => state.update(() => mailOf([message("m1"), message("m2")])))
+      expect(icon()).not.toBeNull()
     })
   })
 })

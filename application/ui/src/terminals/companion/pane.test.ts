@@ -1,6 +1,7 @@
 import type { ArtifactRef } from "../../model/companion"
 import { context, describe, expect, it } from "../../test"
 import {
+  close,
   dismiss,
   freshCount,
   moveSlot,
@@ -10,6 +11,7 @@ import {
   openCompanion,
   pickFromGroup,
   planTab,
+  reopen,
   reorderBar,
   arrange,
   type BarSlot,
@@ -66,6 +68,35 @@ describe("companion pane", () => {
   context("when a tab is looked at", () => {
     it("is no longer new", () => {
       expect(freshCount(selectTab(show(companion, home, false), home.id))).toBe(0)
+    })
+  })
+
+  context("when the user closes something from the taskbar", () => {
+    const ordered: Companion = { ...companion, tab: mailTab, order: [root, "home", mailTab] }
+
+    it("lets what was shown go, as dismissing does", () => {
+      const closed = close(show(ordered, home, false), "home")
+      expect(closed.artifacts).toEqual([])
+      expect(closed.closed).toBeUndefined()
+    })
+
+    it("keeps a plan or the messages, off the bar, the pane falling back", () => {
+      const closed = close(close(ordered, mailTab), root)
+      expect(closed.closed).toEqual([mailTab, root])
+      expect(closed.order).toEqual(["home"])
+    })
+
+    it("hides the pane when it closes what the pane shows", () => {
+      const open = { ...ordered, open: true }
+      expect(close(open, mailTab).open).toBe(false)
+      expect(close(open, root).open).toBe(true)
+    })
+
+    it("brings it back last when it reopens", () => {
+      const reopened = reopen(close(ordered, root), root)
+      expect(reopened.closed).toEqual([])
+      expect(reopened.order).toEqual(["home", mailTab, root])
+      expect(reopen(ordered, root)).toBe(ordered)
     })
   })
 

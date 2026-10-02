@@ -12,13 +12,13 @@ export type PeekEntry = {
   readonly preview: ReactNode
   readonly state: Indicator
   readonly onOpen: () => void
-  // Absent for what can't be dismissed, such as the plan.
-  readonly onDismiss?: () => void
+  // Absent for what can't be closed from here, such as another terminal's item.
+  readonly onClose?: () => void
 }
 
 // A peek above a taskbar icon: a card for each thing behind it, one or many. The card
 // says it all without words: its preview, its name, the same mark as the taskbar, and a
-// dismiss button that shows on hover.
+// close button that shows on hover.
 export const Peek = ({ entries }: { entries: readonly PeekEntry[] }): React.JSX.Element => (
   <div
     className="plan-peek"
@@ -43,11 +43,11 @@ export const Peek = ({ entries }: { entries: readonly PeekEntry[] }): React.JSX.
             <span>{entry.name}</span>
           </span>
         </button>
-        {entry.onDismiss && (
+        {entry.onClose && (
           <button
-            className="plan-peek-dismiss"
-            aria-label={`Dismiss ${entry.name}`}
-            onClick={entry.onDismiss}
+            className="plan-peek-close"
+            aria-label={`Close ${entry.name}`}
+            onClick={entry.onClose}
           >
             <X size={12} />
           </button>

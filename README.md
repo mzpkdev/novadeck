@@ -360,9 +360,13 @@ mark under an icon says whether it's new, showing, or seen; something new hops
 once, and nothing opens on its own unless you asked for it. Hover an icon to peek:
 a card per thing behind it, each a preview, its name and the same mark, with no
 copy. Click an icon or a card to open it, click the icon again (or press Escape) to
-hide the pane, and dismiss from a card's corner button or the icon's right-click. Icons
-line up in the order they came, plans and Messages among them; drag any icon to reorder
-the bar, a group moving as one, or use Move left and Move right on its right-click.
+hide the pane, and close from a card's corner button or the icon's right-click. Anything
+closes, plans and Messages too: a closed plan comes back with the agent's next version of
+it, Messages with the next message, and something shown when it's shown again, last on
+the bar each time. (The agent can't yet reopen what you closed when asked; nothing tells
+the backend.) Icons line up in the order they came, plans and Messages among them; drag
+any icon to reorder the bar, a group moving as one, or use Move left and Move right on its
+right-click.
 
 Drag any icon onto another terminal's bottom bar to show it there instead (Grid and
 Canvas, where both are on screen); a terminal with nothing to show grows an empty bar

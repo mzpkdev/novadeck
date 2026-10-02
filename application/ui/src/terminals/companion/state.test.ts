@@ -10,7 +10,7 @@ import {
   type PlanSnapshot,
 } from "../../model/companion"
 import { context, describe, expect, it } from "../../test"
-import { mailTab, planTab } from "./pane"
+import { close, mailTab, planTab } from "./pane"
 import { companionActions, openTab, shownTab, type CompanionActions } from "./state"
 
 const key: CompanionKey = { projectId: "p", workspaceSessionId: "s", terminalId: "t" }
@@ -116,6 +116,24 @@ describe("companion store", () => {
       saves[0]!.answer({ saved: true, revision: "2" })
       await settle()
       expect(plan(actions)).toMatchObject({ text: edited, base: edited, writes: 0 })
+    })
+  })
+
+  context("when the user closed the plan", () => {
+    it("brings it back with the agent's next iteration, not with their own save", async () => {
+      const { companions, saves, emit } = backend()
+      const actions = companionActions(companions, key)
+      actions.update((pane) => close(pane, planTab("root")))
+      actions.edit("root", `${first}Mine.\n`, [])
+      await vi.advanceTimersByTimeAsync(400)
+      saves[0]!.answer({ saved: true, revision: "2" })
+      emit({ type: "plan/changed", key, plan: snapshot(`${first}Mine.\n`, "2") })
+      await settle()
+      expect(actions.current().closed).toEqual([planTab("root")])
+      emit({ type: "plan/changed", key, plan: snapshot(`${first}Mine.\nTheirs.\n`, "3") })
+      await settle()
+      expect(actions.current().closed).toEqual([])
+      expect(actions.current().order?.at(-1)).toBe(planTab("root"))
     })
   })
 

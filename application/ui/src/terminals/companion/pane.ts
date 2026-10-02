@@ -25,6 +25,9 @@ export type Companion = {
   // The taskbar's items, plan tabs, what was shown and the messages, by id, in the order
   // they first came or the person since dragged them into.
   readonly order?: readonly string[]
+  // What the person closed from the taskbar that the pane still keeps: plan tabs and the
+  // messages' tab. What the agent showed goes when closed, and comes back when shown again.
+  readonly closed?: readonly string[]
 }
 
 // Something came to the taskbar: it joins the end of its order, unless it has a place.
@@ -80,6 +83,26 @@ export const dismiss = <C extends Companion>(companion: C, id: string): C => ({
   // Shown again, it comes last, as anything new does.
   ...(companion.order ? { order: companion.order.filter((each) => each !== id) } : {}),
 })
+
+// The person closed it from the taskbar: something shown goes; a plan or the messages
+// leave the bar until they reopen. Closing what the pane shows hides the pane, so nothing
+// takes its place, and nothing opens when it comes back.
+// TODO: tell the backend, so the agent can reopen what was closed when asked.
+export const close = <C extends Companion>(companion: C, id: string): C => {
+  const hidden = companion.tab === id ? { ...companion, open: false } : companion
+  if (companion.artifacts.some((shown) => shown.id === id)) return dismiss(hidden, id)
+  const dismissed = dismiss(hidden, id)
+  return companion.closed?.includes(id)
+    ? dismissed
+    : { ...dismissed, closed: [...(companion.closed ?? []), id] }
+}
+
+// What was closed is back on the taskbar, last, as anything new is: a plan the agent
+// rewrote, the messages when one comes, or what the agent was asked to reopen.
+export const reopen = <C extends Companion>(companion: C, id: string): C =>
+  companion.closed?.includes(id)
+    ? arrived({ ...companion, closed: companion.closed.filter((each) => each !== id) }, id)
+    : companion
 
 // The kinds the taskbar groups. Each page keeps its own slot, as a browser window would.
 export const groupedKinds: ReadonlySet<ArtifactKind> = new Set(["image", "file"])

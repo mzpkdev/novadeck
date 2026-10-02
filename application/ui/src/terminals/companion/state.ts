@@ -17,6 +17,7 @@ import {
   openCompanion,
   planRefOf,
   planTab,
+  reopen,
   selectTab,
   show,
   type Companion,
@@ -375,8 +376,8 @@ const revise = async (
   const { distance, merge } = await import("./plan-editor/sync")
   const unconfirmed = session.unconfirmed.get(id) ?? []
   const echo = inFlight === theirs || unconfirmed.includes(theirs)
-  change(session, key, (pane) =>
-    withPlan(pane, snapshot.ref, (plan) => {
+  change(session, key, (pane) => {
+    const revised = withPlan(pane, snapshot.ref, (plan) => {
       if (
         snapshot.revision === plan.revision &&
         theirs === plan.base &&
@@ -418,8 +419,12 @@ const revise = async (
         showChanges: true,
         resolved: Math.max(0, notesIn(plan.text) - notesIn(written.text)),
       }
-    }),
-  )
+    })
+    // A new iteration of a plan the person closed brings it back to the taskbar.
+    const rewrote = (from: PaneState): number =>
+      from.plans.find((plan) => plan.ref === snapshot.ref)?.writes ?? 0
+    return rewrote(revised) > rewrote(pane) ? reopen(revised, planTab(snapshot.ref)) : revised
+  })
   // This version settles what the file holds; saves still unanswered no longer matter.
   session.unconfirmed.delete(id)
   persist(session, key, snapshot.ref)
@@ -483,7 +488,7 @@ const sessionOf = (companions: Companions): Session => {
       change(session, event.key, (pane) => {
         const plans = ordered([...pane.plans, docOf(event.plan)])
         return {
-          ...arrived(pane, planTab(event.plan.ref)),
+          ...arrived(reopen(pane, planTab(event.plan.ref)), planTab(event.plan.ref)),
           plans,
           home: homeOf(plans),
           tab: pane.tab || homeOf(plans),

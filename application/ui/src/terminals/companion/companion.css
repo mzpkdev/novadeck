@@ -277,7 +277,7 @@
 .plan-peek-open[aria-pressed="true"] .plan-peek-name {
   color: var(--color-ink);
 }
-.plan-peek-dismiss {
+.plan-peek-close {
   position: absolute;
   top: 10px;
   right: 10px;
@@ -292,11 +292,11 @@
   color: var(--color-muted);
   opacity: 0;
 }
-.plan-peek-dismiss:hover {
+.plan-peek-close:hover {
   color: var(--color-ink);
 }
-.plan-peek-card:hover .plan-peek-dismiss,
-.plan-peek-card:focus-within .plan-peek-dismiss {
+.plan-peek-card:hover .plan-peek-close,
+.plan-peek-card:focus-within .plan-peek-close {
   opacity: 1;
 }
 
