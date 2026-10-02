@@ -7,7 +7,7 @@ import {
   Image,
   RotateCw,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import type { ArtifactContent, ArtifactKind } from "../../model/companion"
 import type { HighlightedLine } from "./highlight"
@@ -32,10 +32,14 @@ export const kindIcons: Record<ArtifactKind, typeof Image> = {
 // elsewhere it's a link to open in the browser, with a snapshot when the backend has
 // one.
 
+// What the place showing an artifact offers for it, at the end of its viewer's header.
+type Actions = { actions?: ReactNode }
+
 const ImageViewer = ({
   artifact,
   content,
-}: {
+  actions,
+}: Actions & {
   artifact: Shown
   content: ImageContent
 }): React.JSX.Element => {
@@ -54,6 +58,7 @@ const ImageViewer = ({
             100%
           </button>
         </div>
+        {actions}
       </div>
       <div className="artifact-image" data-actual={actual}>
         <img src={content.src} alt={artifact.name} />
@@ -91,7 +96,10 @@ const useHighlighted = (file: FileContent): readonly HighlightedLine[] | null =>
   return highlighted?.of === file ? highlighted.lines : null
 }
 
-const FileViewer = ({ content: artifact }: { content: FileContent }): React.JSX.Element => {
+const FileViewer = ({
+  content: artifact,
+  actions,
+}: Actions & { content: FileContent }): React.JSX.Element => {
   const highlighted = useHighlighted(artifact)
   return (
     <>
@@ -100,6 +108,8 @@ const FileViewer = ({ content: artifact }: { content: FileContent }): React.JSX.
         <span>
           lines {artifact.from}–{artifact.to} · read-only
         </span>
+        {actions && <span className="artifact-meta-push" />}
+        {actions}
       </div>
       <div className="artifact-code" role="region" aria-label={artifact.path} tabIndex={0}>
         {artifact.lines.map((line, index) => {
@@ -137,7 +147,7 @@ const OpenInBrowser = ({ url }: { url: string }): React.JSX.Element => (
   </a>
 )
 
-const LivePage = ({ url }: { url: string }): React.JSX.Element => {
+const LivePage = ({ url, actions }: Actions & { url: string }): React.JSX.Element => {
   const frame = useRef<HTMLDivElement>(null)
   const view = useRef<WebviewElement | null>(null)
   const [place, setPlace] = useState<Place>({ url, back: false, forward: false })
@@ -182,20 +192,25 @@ const LivePage = ({ url }: { url: string }): React.JSX.Element => {
         </button>
         <span className="artifact-url">{place.url}</span>
         <OpenInBrowser url={place.url} />
+        {actions}
       </div>
       <div ref={frame} className="artifact-webview-frame" />
     </div>
   )
 }
 
-const PageViewer = ({ content: artifact }: { content: PageContent }): React.JSX.Element =>
+const PageViewer = ({
+  content: artifact,
+  actions,
+}: Actions & { content: PageContent }): React.JSX.Element =>
   artifact.live ? (
-    <LivePage url={artifact.url} />
+    <LivePage url={artifact.url} actions={actions} />
   ) : (
     <div className="artifact-browser">
       <div className="artifact-browser-bar">
         <span className="artifact-url">{artifact.url}</span>
         <OpenInBrowser url={artifact.url} />
+        {actions}
       </div>
       {artifact.snapshot ? (
         <img className="artifact-page" src={artifact.snapshot} alt={`${artifact.url} as shown`} />
@@ -233,7 +248,8 @@ export const ArtifactThumb = ({ load }: { load: ArtifactLoad }): React.JSX.Eleme
 export const ArtifactViewer = ({
   artifact,
   load,
-}: {
+  actions,
+}: Actions & {
   artifact: Shown
   load: ArtifactLoad
 }): React.JSX.Element => (
@@ -243,11 +259,11 @@ export const ArtifactViewer = ({
     ) : load.status === "failed" ? (
       <div className="artifact-status">Couldn't load {artifact.name}.</div>
     ) : load.content.kind === "image" ? (
-      <ImageViewer artifact={artifact} content={load.content} />
+      <ImageViewer artifact={artifact} content={load.content} actions={actions} />
     ) : load.content.kind === "file" ? (
-      <FileViewer content={load.content} />
+      <FileViewer content={load.content} actions={actions} />
     ) : (
-      <PageViewer content={load.content} />
+      <PageViewer content={load.content} actions={actions} />
     )}
   </div>
 )

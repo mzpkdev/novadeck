@@ -16,7 +16,13 @@ import {
 
 import { createStore } from "../../model/store"
 import { sameTitleSource } from "../../model/title-source"
-import type { TerminalMetadata, TerminalStatus, TitleSource, Workspace } from "../../model/types"
+import type {
+  TerminalMetadata,
+  TerminalStatus,
+  TitleSource,
+  Workspace,
+  WorkspaceTarget,
+} from "../../model/types"
 import type {
   AgentConnection,
   Backend,
@@ -225,6 +231,18 @@ const target = ({ projectId, workspaceSessionId }: TerminalKey) => ({
 const defaultSaveDelay = 800
 const failedToCreate: TerminalStatus = { state: "failed", message: "Could not create the terminal" }
 const defaultSize: TerminalSize = { cols: 80, rows: 24 }
+// Whether a renamed window is undocked from a terminal's companion, not a terminal.
+const isCompanionWindow = (
+  workspace: Workspace,
+  renamed: { readonly target: WorkspaceTarget; readonly terminalId: string },
+): boolean =>
+  Boolean(
+    workspace.projects
+      .find((project) => project.id === renamed.target.projectId)
+      ?.history.find((session) => session.id === renamed.target.workspaceSessionId)
+      ?.state.roster.terminals.find((terminal) => terminal.id === renamed.terminalId)?.companion,
+  )
+
 // More runner restarts than this within the window stop fresh shells from starting on
 // their own; each terminal then waits for Enter.
 const restartLimit = 3
@@ -978,8 +996,10 @@ export const runnerBackend = (
     registry.reconcile(workspace, actions)
     saves.note(workspace)
     for (const action of actions) {
-      // The person's renames go to the runner, which owns every terminal's title.
-      if (action.type === "terminal/rename")
+      // The person's renames go to the runner, which owns every terminal's title; a
+      // companion window is no terminal of the runner's, so its name stays in the UI.
+      // TODO: keep companion windows' names once the runner keeps the windows.
+      if (action.type === "terminal/rename" && !isCompanionWindow(workspace, action))
         void track(renameOnRunner({ ...action.target, terminalId: action.terminalId }, action.name))
       // TODO: on "project/remove", remove the project on the runner. Until then only its
       // terminals close, as the registry finds them gone, and it returns on reload.

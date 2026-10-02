@@ -1150,6 +1150,38 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* What an agent showed, in a window of its own: the viewer fills the window. */
+.artifact-window {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--color-paper);
+}
+/* What the place showing an artifact offers for it, at the end of the viewer's header:
+   centred on the header's text, and no taller than its line, so the row keeps its
+   height. */
+.artifact-actions {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 2px;
+}
+.artifact-actions button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  margin-block: -3px;
+  border-radius: var(--radius-control);
+  color: var(--color-muted);
+}
+.artifact-actions button:hover {
+  background: var(--color-soft);
+  color: var(--color-ink);
+}
 .artifact-browser-bar button:disabled {
   opacity: 0.4;
   pointer-events: none;

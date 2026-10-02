@@ -216,6 +216,52 @@ describe("workspace commands", () => {
     })
   })
 
+  context("when undocking part of a terminal's companion", () => {
+    const hero = { id: "hero", kind: "image" as const, name: "hero.png", detail: "", version: 1 }
+    const image = { kind: "artifact" as const, ref: hero }
+
+    it("adds an idle window beside the terminal, naming what it shows and where from", () => {
+      const app = openCommands()
+      app.commands.undock("01", image)
+      const shown = app.state().roster.terminals.find((each) => each.companion)!
+      expect(shown).toMatchObject({
+        name: "hero.png",
+        state: "idle",
+        process: "",
+        directory: "~/project",
+        companion: { from: "01", item: image },
+      })
+      expect(app.state().selected).toBe(shown.id)
+    })
+
+    it("names a messages window after its terminal", () => {
+      const app = openCommands()
+      app.commands.undock("01", { kind: "messages" })
+      expect(app.state().roster.terminals.find((each) => each.companion)).toMatchObject({
+        name: "Terminal 01 messages",
+        companion: { from: "01", item: { kind: "messages" } },
+      })
+    })
+
+    it("brings the window already open forward rather than opening another", () => {
+      const app = openCommands()
+      app.commands.undock("01", image)
+      app.commands.undock("01", { kind: "messages" })
+      app.commands.setSelected("02")
+      app.commands.undock("01", image)
+      const windows = app.state().roster.terminals.filter((each) => each.companion)
+      expect(windows).toHaveLength(2)
+      expect(app.state().selected).toBe(windows[0]!.id)
+    })
+
+    it("opens nothing for a terminal the session doesn't have", () => {
+      const app = openCommands()
+      const before = app.state()
+      app.commands.undock("99", image)
+      expect(app.state()).toBe(before)
+    })
+  })
+
   context("when closing a terminal a program runs in", () => {
     it("asks first and keeps the terminal until the person answers", () => {
       const app = openCommands({ workspace: running() })

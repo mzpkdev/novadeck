@@ -22,7 +22,8 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const { count, running } = useWorkspaceState((workspace) => {
     const { terminals } = currentState(workspace).roster
     return {
-      count: terminals.length,
+      // Windows undocked from a terminal's companion aren't terminals.
+      count: terminals.filter((terminal) => !terminal.companion).length,
       running: terminals.filter((terminal) => terminal.state === "running").length,
     }
   }, shallowEqual)

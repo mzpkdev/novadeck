@@ -116,10 +116,16 @@ export const Taskbar = ({
   trigger,
   open,
   presence,
+  openWindow,
+  undockMessages,
 }: {
   companion: CompanionHandle
   mail: MailHandle
   peerName: (handle: string) => string | undefined
+  // Undock something shown, or the messages, into a window of its own; absent where
+  // there's no such window.
+  openWindow: ((artifact: Shown) => void) | undefined
+  undockMessages: (() => void) | undefined
   trigger: React.RefObject<HTMLButtonElement | null>
   open: boolean
   // How the bar comes and goes with what the terminal has to show.
@@ -138,6 +144,10 @@ export const Taskbar = ({
     label,
     onSelect: () => companion.update((next) => openTab(next, tab)),
   })
+  const windowing = (artifact: Shown, label = "Undock to its own window"): ContextMenuItem[] =>
+    openWindow
+      ? [{ value: `window-${artifact.id}`, label, onSelect: () => openWindow(artifact) }]
+      : []
   const dismissing = (id: string, label = "Dismiss"): ContextMenuItem => ({
     value: `dismiss-${id}`,
     label,
@@ -220,7 +230,7 @@ export const Taskbar = ({
           return slot(
             artifact.id,
             artifact.name,
-            [opening(artifact.id), dismissing(artifact.id)],
+            [opening(artifact.id), ...windowing(artifact), dismissing(artifact.id)],
             <button
               ref={pane.plans.length || entry !== firstSlot ? undefined : trigger}
               className="plan-tb-item"
@@ -244,6 +254,7 @@ export const Taskbar = ({
           names.many,
           group.flatMap((shown) => [
             opening(shown.id, `Open ${shown.name}`),
+            ...windowing(shown, `Undock ${shown.name} to its own window`),
             dismissing(shown.id, `Dismiss ${shown.name}`),
           ]),
           <button
@@ -266,7 +277,18 @@ export const Taskbar = ({
         slot(
           mailTab,
           "Messages",
-          [opening(mailTab)],
+          [
+            opening(mailTab),
+            ...(undockMessages
+              ? [
+                  {
+                    value: "window-mail",
+                    label: "Undock to its own window",
+                    onSelect: undockMessages,
+                  },
+                ]
+              : []),
+          ],
           <button
             // Focus comes back here when the pane hides, when nothing else is shown.
             ref={pane.plans.length || slots.length ? undefined : trigger}

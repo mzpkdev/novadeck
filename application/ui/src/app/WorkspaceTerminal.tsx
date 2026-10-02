@@ -3,6 +3,7 @@ import { useCallback, useMemo, type ReactNode } from "react"
 import { activeProject } from "../model/state"
 import type { TerminalMetadata } from "../model/types"
 import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
+import { UndockedWindow } from "../terminals/companion/UndockedWindow"
 import { presentedProgram, terminalProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
 import {
@@ -31,6 +32,7 @@ export const WorkspaceTerminal = ({
 }): React.JSX.Element => {
   const { backend, commands } = useWorkspaceServices()
   const { setSelected, openWindowed, openFocus, close, startRename, openSwitcher } = commands
+  const { undock } = commands
   const { changeRenameDraft, saveRename, cancelRename, setKeyboardFocus } = commands
   const terminalId = terminal.id
   // Each terminal selects only what concerns it, so a rename keystroke or a keyboard
@@ -82,6 +84,23 @@ export const WorkspaceTerminal = ({
     [projectId, workspaceSessionId, terminalId],
   )
   const onInputFocused = useCallback(() => setKeyboardFocus(null), [setKeyboardFocus])
+  // What of this terminal's companion is undocked in windows of its own now.
+  const undockedKey = useWorkspaceState((workspace) =>
+    currentState(workspace)
+      .roster.terminals.flatMap(({ companion }) =>
+        companion?.from !== terminalId
+          ? []
+          : [companion.item.kind === "messages" ? "\n" : companion.item.ref.id],
+      )
+      .join("\0"),
+  )
+  const undocked = useMemo(() => {
+    const items = undockedKey ? undockedKey.split("\0") : []
+    return {
+      artifacts: items.filter((item) => item !== "\n"),
+      messages: items.includes("\n"),
+    }
+  }, [undockedKey])
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
   const frame: Omit<WindowShellProps, "children"> = {
@@ -129,6 +148,8 @@ export const WorkspaceTerminal = ({
           onReveal={onReveal}
           minimized={minimize?.minimized}
           clipContent={minimize?.clipContent}
+          undock={(item) => undock(terminal.id, item)}
+          undocked={undocked}
         >
           {Body ? <Body>{content}</Body> : content}
         </TerminalCompanion>
@@ -139,6 +160,20 @@ export const WorkspaceTerminal = ({
       )}
     </WindowShell>
   )
+  // A window undocked from a terminal's companion: the same frame, with what it shows
+  // where a terminal's content would be, loading from that terminal.
+  if (terminal.companion)
+    return (
+      <WindowShell {...frame}>
+        <UndockedWindow
+          companions={backend.companions}
+          messages={backend.messages}
+          origin={{ projectId, workspaceSessionId, terminalId: terminal.companion.from }}
+          window={terminal.companion}
+          peerName={(handle) => names[handle]}
+        />
+      </WindowShell>
+    )
   return (
     <backend.TerminalSurface
       terminalKey={terminalKey}

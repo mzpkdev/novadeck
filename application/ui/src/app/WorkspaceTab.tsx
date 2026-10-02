@@ -2,6 +2,7 @@ import type { TerminalMetadata } from "../model/types"
 import { useMailBadge } from "../terminals/companion/mail"
 import { renameView } from "../terminals/rename-state"
 import { TerminalTab } from "../terminals/TerminalTab"
+import { useCompanionDock } from "./companion-dock"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { currentContext, currentState, currentTarget, sameTarget, shallowEqual } from "./selectors"
 
@@ -31,6 +32,7 @@ export const WorkspaceTab = ({
     shallowEqual,
   )
   const badge = useMailBadge(backend.messages, { ...target, terminalId: id })
+  const dockIn = useCompanionDock(terminal)
   return (
     <TerminalTab
       terminal={terminal}
@@ -47,6 +49,7 @@ export const WorkspaceTab = ({
       onRenameCancel={() => commands.cancelRename(id)}
       onClose={() => commands.close(id)}
       {...(backend.resetTitle ? { onResetTitle: () => commands.resetTitle(id) } : {})}
+      dockIn={dockIn}
     />
   )
 }

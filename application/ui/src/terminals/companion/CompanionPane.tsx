@@ -1,3 +1,4 @@
+import { AppWindow } from "lucide-react"
 import { lazy, Suspense, useRef } from "react"
 
 import { notePattern, notesIn } from "../../model/companion"
@@ -63,14 +64,34 @@ const PlanOutline = ({
   )
 }
 
+// Undocks what the pane shows into a window of its own, at the end of its header.
+const UndockButton = ({ onUndock }: { onUndock: () => void }): React.JSX.Element => (
+  <span className="artifact-actions">
+    <button
+      type="button"
+      aria-label="Undock to its own window"
+      title="Undock to its own window"
+      onClick={onUndock}
+    >
+      <AppWindow size={13} strokeWidth={1.75} aria-hidden />
+    </button>
+  </span>
+)
+
 const ArtifactTab = ({
   companion,
   artifact,
+  openWindow,
 }: {
   companion: CompanionHandle
   artifact: Shown
+  openWindow: ((artifact: Shown) => void) | undefined
 }): React.JSX.Element => (
-  <ArtifactViewer artifact={artifact} load={useArtifactContent(companion, artifact)} />
+  <ArtifactViewer
+    artifact={artifact}
+    load={useArtifactContent(companion, artifact)}
+    actions={openWindow && <UndockButton onUndock={() => openWindow(artifact)} />}
+  />
 )
 
 const PlanTab = ({
@@ -143,11 +164,16 @@ export const CompanionPane = ({
   mail,
   peerName,
   presentation,
+  openWindow,
+  undockMessages,
 }: {
   companion: CompanionHandle
   mail: MailHandle
   peerName: (handle: string) => string | undefined
   presentation: PlanPresentation
+  // Undocks what's shown into a window of its own; absent where there's no such window.
+  openWindow?: ((artifact: Shown) => void) | undefined
+  undockMessages?: (() => void) | undefined
 }): React.JSX.Element => {
   const { pane } = companion
   const tab = shownTab(pane, mail.present)
@@ -174,7 +200,11 @@ export const CompanionPane = ({
       }}
     >
       {messages ? (
-        <MessagesView mail={mail} peerName={peerName} />
+        <MessagesView
+          mail={mail}
+          peerName={peerName}
+          actions={undockMessages && <UndockButton onUndock={undockMessages} />}
+        />
       ) : plan ? (
         <PlanTab key={`${plan.ref}:${plan.writable}`} companion={companion} plan={plan} />
       ) : artifact ? (
@@ -182,6 +212,7 @@ export const CompanionPane = ({
           key={`${artifact.id}@${artifact.version}`}
           companion={companion}
           artifact={artifact}
+          openWindow={openWindow}
         />
       ) : (
         // All that's left may hold secrets, which shows only once picked.

@@ -1,3 +1,5 @@
+import type { CompanionWindow } from "./companion"
+
 export type ViewMode = "focus" | "grid" | "canvas"
 export type WindowedView = Exclude<ViewMode, "focus">
 export type PreferencesValue = { fontSize: number; enabledViews: ViewMode[] }
@@ -66,6 +68,8 @@ export type TerminalMetadata = {
   handle?: string
   // Who its name is from, where its backend tells.
   titleSource?: TitleSource
+  // Present on a window showing part of a terminal's companion rather than a shell.
+  companion?: CompanionWindow
 } & TerminalStatus
 
 export type CanvasLayout = {

@@ -365,6 +365,17 @@ HTML, XML, Markdown, YAML, Python, Rust, Go, Java and C/C++), with each language
 parser loading the first time one of its files opens; any other file shows as plain
 text. A page shows as a snapshot until the pane hosts a browser.
 
+**Undock to its own window**, in a viewer's or the messages' header or an icon's
+right-click, moves what the agent showed, or the terminal's messages, out of the pane
+into a window of its own beside the terminal. It joins the sidebar and every view like a
+terminal: rename, hide, minimize, resize, reorder, Focus and close all work. While it's
+undocked, the terminal's taskbar leaves it out. **Dock in** its terminal, on the window's
+right-click, closes the window and opens it in that terminal's pane again; closing the
+window puts it back on the taskbar without opening it. Nothing runs in it; it loads from
+its terminal, so once that terminal closes nothing new loads, and Dock in shows
+disabled. The backends neither keep nor restore these windows yet (`CompanionWindow` in
+`model/companion.ts`; the terminal registry skips them).
+
 The pane reads everything from the backend's optional `companions` capability
 (`model/companion.ts`): each terminal's plans and what its agent has shown, as terminals
 and plans come and go; content loaded on demand; and a save that writes the user's

@@ -1,9 +1,11 @@
 import type { TerminalRequest } from "../../backend/port"
+import type { CompanionWindow } from "../../model/companion"
 import { addCompactGridTerminal } from "../../model/layout/grid-placement"
 import { activeProject, type WorkspaceAction } from "../../model/state"
 import type {
   PreferencesValue,
   Project,
+  TerminalMetadata,
   ViewMode,
   Workspace,
   WorkspaceProject,
@@ -39,6 +41,9 @@ export type WorkspaceCommands = ShellCommands &
     readonly openFolder: () => Promise<void>
     // Removes a project and closes its terminals; the last project stays.
     readonly removeProject: (id: string) => void
+    // Undocks part of the companion of the terminal `from`, something its agent showed or
+    // its messages, into a window of its own beside it, or brings that window forward.
+    readonly undock: (from: string, item: CompanionWindow["item"]) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -222,6 +227,44 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           enabledViews: preferences().enabledViews,
         },
       ])
+    },
+    undock: (from, item) => {
+      const snapshot = workspace.getSnapshot()
+      const { roster, layout } = currentState(snapshot)
+      const same = (other: CompanionWindow["item"]): boolean =>
+        other.kind === "messages"
+          ? item.kind === "messages"
+          : item.kind === "artifact" && other.ref.id === item.ref.id
+      const open = roster.terminals.find(
+        (terminal) => terminal.companion?.from === from && same(terminal.companion.item),
+      )
+      if (open) return select(open.id)
+      const origin = roster.terminals.find((terminal) => terminal.id === from)
+      if (!origin) return
+      // A window, not a shell: nothing runs in it, so it's idle and has no program.
+      const terminal: TerminalMetadata = {
+        id: effects.newId(),
+        name: item.kind === "messages" ? `${origin.name} messages` : item.ref.name,
+        directory: origin.directory,
+        command: "",
+        process: "",
+        state: "idle",
+        companion: { from, item },
+      }
+      markCreated({ context: currentContext(snapshot), id: terminal.id })
+      navigateWorkspace(
+        [
+          {
+            type: "terminal/add",
+            target: currentTarget(snapshot),
+            terminal,
+            gridLayouts: addCompactGridTerminal(roster.terminals, layout.grid, terminal),
+            anchor: from,
+          },
+        ],
+        { panel: "terminals" },
+      )
+      pulse()
     },
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()

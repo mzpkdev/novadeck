@@ -73,6 +73,19 @@ export type ArtifactContent =
       readonly snapshot?: string
     }
 
+// Part of a terminal's companion undocked into a window of its own: something its agent
+// showed, or its messages, and the terminal in the same session it belongs to, where it
+// loads from and docks back in. The window lives in the session's roster beside the
+// terminals, so the sidebar and every view treat it as one, but no backend runs
+// anything for it.
+// TODO: connect to the backends, which neither keep nor restore these windows yet.
+export type CompanionWindow = {
+  readonly from: string
+  readonly item:
+    | { readonly kind: "artifact"; readonly ref: ArtifactRef }
+    | { readonly kind: "messages" }
+}
+
 // A terminal's companion, as it stands.
 export type CompanionSnapshot = {
   readonly key: CompanionKey

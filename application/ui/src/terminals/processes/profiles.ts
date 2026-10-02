@@ -1,9 +1,10 @@
-import { Terminal, type LucideIcon } from "lucide-react"
+import { MessagesSquare, Terminal, type LucideIcon } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
 
 import type { TerminalMetadata } from "../../model/types"
 import { ClaudeIcon } from "../../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../../ui-toolkit/icons/CodexIcon"
+import { kindIcons } from "../companion/ArtifactViewer"
 import { ClaudeBody } from "./ClaudeBody"
 import { CodexBody } from "./CodexBody"
 
@@ -30,5 +31,10 @@ const profiles: ReadonlyMap<string, ProcessProfile> = new Map([
 export const presentedProgram = (terminal: TerminalMetadata): string | undefined =>
   terminal.state === "running" && profiles.has(terminal.process) ? terminal.process : undefined
 
-export const terminalProfile = (terminal: TerminalMetadata): ProcessProfile =>
-  profiles.get(presentedProgram(terminal) ?? "") ?? fallback
+// A window undocked from a terminal's companion presents as what it shows: an image,
+// file or page, or messages.
+export const terminalProfile = (terminal: TerminalMetadata): ProcessProfile => {
+  const item = terminal.companion?.item
+  if (item) return { icon: item.kind === "messages" ? MessagesSquare : kindIcons[item.ref.kind] }
+  return profiles.get(presentedProgram(terminal) ?? "") ?? fallback
+}
