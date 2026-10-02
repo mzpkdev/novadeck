@@ -91,6 +91,9 @@ export const agy: AgentSetup = {
     }),
     nested: (prompt) => `agy -p '${prompt}'`,
   },
+  // `/fork` forks in place, its status line naming the fork, saying "Forked conversation"
+  // and how to go back (probed 2026-10-03, 1.2.14).
+  fork: { inPlace: "/fork" },
   // Escape mid-turn says so (probed 2026-10-02, 1.2.14).
   interrupted: () => /⎿ {2}Interrupted · What should Antigravity CLI do instead\?/,
   // A subagent of its own type `self` runs in a conversation of its own, its model calls
@@ -123,6 +126,8 @@ export const agy: AgentSetup = {
     },
   },
   absent: {
+    "fork.picker":
+      "no command line forks a conversation: its flags only resume one (`--conversation`, `--continue`), and its fork is the in-place /fork (probed 2026-10-03, 1.2.14)",
     popup:
       "nothing shows after a turn on its Gemini API route, the screen still for 15 s, and its program holds no dialog for after one; its quota screens belong to the Code Assist route (probed 2026-10-02, 1.2.14)",
     rewind:

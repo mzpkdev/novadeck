@@ -97,6 +97,15 @@ export const claude: AgentSetup = {
     }),
     nested: (prompt) => `claude -p '${prompt}'`,
   },
+  // `--resume --fork-session` picks the session to fork in its "Resume session" picker,
+  // each session named by its first prompt. Its `/fork` copies the conversation into a
+  // background session and keeps the terminal's (probed 2026-10-03, 2.1.287).
+  fork: {
+    picker: {
+      command: "claude --resume --fork-session",
+      picked: (prompt) => new RegExp(`❯ ${prompt}`),
+    },
+  },
   // Its folder-trust question shows "No, exit" selected, trusting the folder below it.
   trust: {
     folder: {
@@ -106,6 +115,8 @@ export const claude: AgentSetup = {
     },
   },
   absent: {
+    "fork.inPlace":
+      "its /fork copies the conversation into a background session and keeps working in the terminal's own, whose binding stays (probed 2026-10-03, 2.1.287)",
     "trust.hooks":
       "it runs a plugin's hooks with no review: every scenario's session binds unasked (2.1.287)",
   },

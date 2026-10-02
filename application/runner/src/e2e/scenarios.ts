@@ -16,6 +16,8 @@ import { asked, latest, tool, type Call, type Reply, type Rule } from "./model/s
 const has = (setup: AgentSetup, trait: Trait): boolean => {
   if (trait === "trust.folder") return setup.trust?.folder !== undefined
   if (trait === "trust.hooks") return setup.trust?.hooks !== undefined
+  if (trait === "fork.picker") return setup.fork?.picker !== undefined
+  if (trait === "fork.inPlace") return setup.fork?.inPlace !== undefined
   return setup[trait] !== undefined
 }
 

@@ -59,6 +59,8 @@ export type Trait =
   | "shell"
   | "rewind"
   | "popup"
+  | "fork.picker"
+  | "fork.inPlace"
 
 /**
  * How a scenario makes the harness ask the person before a tool runs, and what that
@@ -108,6 +110,22 @@ export type Shell = {
    * plain words, with no quotes.
    */
   readonly nested: (prompt: string) => string
+}
+
+/**
+ * How the person forks a session: its conversation goes on in a session of its own, the
+ * parent left as it was.
+ */
+export type Fork = {
+  /**
+   * Starting the harness with `command` in a new terminal shows a picker of the project's
+   * sessions, latest first, Down selecting the next, and forks the one picked.
+   * `picked(prompt)` matches, as selected, the row of the session whose first prompt was
+   * `prompt`, for `confirm`.
+   */
+  readonly picker?: { readonly command: string; readonly picked: (prompt: string) => RegExp }
+  /** The command, typed at its prompt, that forks its conversation in place. */
+  readonly inPlace?: string
 }
 
 /**
@@ -196,6 +214,8 @@ export type AgentSetup = {
   readonly background?: Background
   /** How its agent runs a command, a nested run of the harness, without asking. */
   readonly shell?: Shell
+  /** How the person forks a session, in a new terminal or in place. */
+  readonly fork?: Fork
   /** What Esc-Esc opens at its idle prompt, and what it does with a paste. */
   readonly rewind?: Rewind
   /** A popup it raises by itself after its Stop, seeded `popup: true`. */

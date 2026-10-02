@@ -105,6 +105,13 @@ export const codex: AgentSetup = {
     }),
     nested: (prompt) => `codex exec --skip-git-repo-check '${prompt}'`,
   },
+  // `codex fork` picks the session to fork in its "Fork a previous session" picker, each
+  // session named by its first prompt; `/fork` forks in place, saying "Fork created"
+  // (probed 2026-10-03, 0.159.3).
+  fork: {
+    picker: { command: "codex fork", picked: (prompt) => new RegExp(`› .*${prompt}`) },
+    inPlace: "/fork",
+  },
   // No `background`: nothing a Codex agent starts wakes it once its turn has ended (probed
   // 2026-10-02, 0.159.3). A subagent from `spawn_agent` (`multi_agent_v1`, the default,
   // and `collaboration` with `features.multi_agent_v2`) and a command `exec_command` left
