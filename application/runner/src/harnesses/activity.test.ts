@@ -442,6 +442,26 @@ describe("applying activity", () => {
     expect(apply(started(0), binding, request("root:Bash:1", null, 12))?.state).toBe("working")
   })
 
+  it("settles a subagent's request its rollout says it aborted, and none it asked after", () => {
+    // Codex fires no hook when Esc dismisses a spawned agent's request; its own rollout's
+    // `turn_aborted` comes as its stop, at the abort's time.
+    const turn = apply(
+      apply(asking(), binding, fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }))!,
+      binding,
+      fact({ type: "turn-started", startedAt: 11 }),
+    )!
+    expect(ids(turn)).toEqual(["bg:Bash:1"])
+    const aborted = apply(turn, binding, subagent("subagent-stopped", "bg", 12))!
+    expect(ids(aborted)).toEqual([])
+    // Its next turn's request, asked after the abort, waits.
+    expect(ids(apply(aborted, binding, request("bg:Bash:2", "bg", 13))!)).toEqual(["bg:Bash:2"])
+    // One asked after the abort, reported before it, outlives it.
+    const later = apply(turn, binding, request("bg:Bash:3", "bg", 14))!
+    expect(ids(apply(later, binding, subagent("subagent-stopped", "bg", 12))!)).toEqual([
+      "bg:Bash:3",
+    ])
+  })
+
   it("leaves a request asked again after a result whose hook started before it", () => {
     const again = apply(started(0), binding, request("a:Bash:1", "a", 10))!
     // The first time's result, its hook started before the second ask's.

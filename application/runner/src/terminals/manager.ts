@@ -252,6 +252,11 @@ type Record = {
   telemetry: Telemetry | null
   /** Stops following the bound session's own sources, as its transcript. */
   watching: AbortController | null
+  /**
+   * Stops following each of its subagents with a request waiting, by its id, in its own
+   * sources, from when its oldest such request was asked.
+   */
+  actorWatches: Map<string, { readonly controller: AbortController; readonly since: number }>
   /** The bound session's transcript, where its hooks named one. */
   transcript: string | null
   /** Ends the `agents.transcript` and `agents.plan` streams reading the bound session's. */
@@ -714,6 +719,7 @@ export class Terminals {
         activity: null,
         telemetry: null,
         watching: null,
+        actorWatches: new Map(),
         transcript: null,
         sourceReaders: new Set(),
         promptedAt: saved?.promptedAt ?? null,
@@ -2806,12 +2812,17 @@ export class Terminals {
     }
     void watch(run, controller.signal, (fact) => {
       if (record.watching !== controller || fact.type === "session-observed") return
-      if (this.applyFact(record, fact)) this.publishAgent(record, false)
-      // What only its records say, as an interrupted turn, reaches messaging too.
-      if (this.trackRoot(record, [fact], false)) this.save(record, false)
-      this.messaging.observe(record.summary.id, [fact])
-      this.escaped(record)
+      this.sourceFact(record, fact)
     }).catch((error: unknown) => console.error("NovaDeck stopped following an agent:", error))
+  }
+
+  /** Applies what the bound session's own sources said, as its hooks' reports apply. */
+  private sourceFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): void {
+    if (this.applyFact(record, fact)) this.publishAgent(record, false)
+    // What only its records say, as an interrupted turn, reaches messaging too.
+    if (this.trackRoot(record, [fact], false)) this.save(record, false)
+    this.messaging.observe(record.summary.id, [fact])
+    this.escaped(record)
   }
 
   /**
@@ -2858,7 +2869,41 @@ export class Terminals {
       this.messaging.askedCleared(record.summary.id)
       this.doorbell?.changed(record.summary.id)
     }
+    if (applied) this.watchActors(record)
     return applied
+  }
+
+  /**
+   * Follows each running subagent with a request waiting in its own sources, where its
+   * harness reads them, for what ends its turn that no hook reports (Codex's rollout
+   * recording Esc on its request): from its oldest request's ask, until it has none
+   * waiting or the binding ends. What they say applies like its hooks' reports.
+   */
+  private watchActors(record: Record): void {
+    const { binding, activity, transcript, actorWatches } = record
+    const watchActor = binding && harnesses[binding.agent].watchActor
+    const waiting = new Map<string, number>()
+    if (binding && activity && transcript !== null && watchActor)
+      for (const { actor, askedAt } of activity.pending)
+        if (actor !== null && activity.subagents.some(({ id }) => id === actor))
+          waiting.set(actor, Math.min(askedAt, waiting.get(actor) ?? Number.POSITIVE_INFINITY))
+    for (const [actor, { controller, since }] of actorWatches)
+      if (waiting.get(actor) !== since) {
+        controller.abort()
+        actorWatches.delete(actor)
+      }
+    if (!binding || !watchActor || transcript === null) return
+    const run = { sessionId: binding.sessionId, instance: binding.instance, transcript }
+    for (const [actor, since] of waiting) {
+      if (actorWatches.has(actor)) continue
+      const controller = new AbortController()
+      actorWatches.set(actor, { controller, since })
+      void watchActor(run, actor, since, controller.signal, (fact) => {
+        if (actorWatches.get(actor)?.controller !== controller) return
+        if (fact.type === "session-observed") return
+        this.sourceFact(record, fact)
+      }).catch((error: unknown) => console.error("NovaDeck stopped following a subagent:", error))
+    }
   }
 
   private appliedFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): boolean {
@@ -2876,6 +2921,8 @@ export class Terminals {
   private unwatch(record: Record): void {
     record.watching?.abort()
     record.watching = null
+    for (const { controller } of record.actorWatches.values()) controller.abort()
+    record.actorWatches.clear()
     record.transcript = null
     for (const reader of record.sourceReaders) reader.abort()
     record.sourceReaders.clear()

@@ -2763,8 +2763,13 @@ const hook = (event, payload, done) => {
   let printed = ""
   child.stdout.on("data", (chunk) => (printed += chunk))
   child.on("close", () => done(printed))
-  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: current, cwd: process.cwd(), ...payload }))
+  child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: current, cwd: process.cwd(), ...rollout, ...payload }))
 }
+// With "subabort", Codex's hooks name its rollout, filed by day as Codex files it.
+const rollout =
+  mode === "subabort"
+    ? { transcript_path: received + ".sessions/2026/10/03/rollout-2026-10-03T00-00-00-" + session + ".jsonl" }
+    : {}
 let box = ""
 let last = ""
 let dialog = null
@@ -2827,6 +2832,14 @@ const turn = (prompt, typed = true) => {
           hook("PermissionRequest", input, () => {
             dialog = () => hook("PostToolUse", { ...input, tool_response: {} }, () => {})
           })
+        }
+        // With "subabort", a spawned agent asks a permission after its first turn's Stop;
+        // Esc on it fires no hook, and only its own rollout records the turn aborted.
+        if (mode === "subabort" && turns === 1) {
+          const spawned = { agent_id: "a1", agent_type: "default" }
+          hook("SubagentStart", spawned, () =>
+            hook("PermissionRequest", { ...spawned, tool_name: "Bash", tool_input: { command: "ls" } }, () => {}),
+          )
         }
         // Antigravity's status line, which keeps running, names the conversation idle.
         if (agent === "agy" && showing)
@@ -3203,6 +3216,31 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         .poll(() => tui.manager.messages(tui.idle.id).threads[0]?.messages[0]?.state)
         .toBe("delivered")
       await expect.poll(tui.delivery).toBe("settled")
+    })
+
+    it("rings no Codex TUI while its spawned agent's request waits, until its rollout records Esc on it", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "subabort")
+      await tui.first()
+      const pending = () => tui.manager.get(tui.idle.id).activity?.attention.pending
+      await expect.poll(pending).toBe(1)
+      expect(tui.delivery()).toBe("settled")
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true })
+      await quiet()
+      expect(pastes(tui.raw())).toEqual([])
+      expect(tui.received()).toHaveLength(1)
+      // Esc dismissed its dialog: no hook, but its own rollout, beside the root's, says so.
+      const day = join(shell.home, "received.jsonl.sessions", "2026", "10", "03")
+      mkdirSync(day, { recursive: true })
+      writeFileSync(
+        join(day, "rollout-2026-10-03T00-00-01-a1.jsonl"),
+        `${JSON.stringify({ timestamp: new Date().toISOString(), type: "event_msg", payload: { type: "turn_aborted", reason: "interrupted" } })}\n`,
+      )
+      await expect.poll(pending, { timeout: 5_000 }).toBe(0)
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
+      expect(pastes(tui.raw())).toHaveLength(1)
     })
 
     it("rings no Settled TUI while a request asked after its Stop waits, and rings once it resolves", async ({
