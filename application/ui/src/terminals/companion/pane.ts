@@ -167,6 +167,12 @@ export const openPane = (pane: Pane): Pane => {
 
 export const closePane = (pane: Pane): Pane => (pane.open ? { ...pane, open: false } : pane)
 
+// An item leaves the bar, undocked, placed elsewhere or sent home: a pane opened to it
+// hides, so it neither shows something else in its place nor opens on its own when the
+// item comes back.
+export const hideShowing = (pane: Pane, key: string): Pane =>
+  pane.tab === key ? closePane(pane) : pane
+
 // The agent put something in front of the user, or showed it again with new content.
 // It waits in the taskbar unless the user asked for it, and then it opens. Something
 // shown `before` this session is listed and nothing more.

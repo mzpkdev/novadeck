@@ -1,5 +1,5 @@
 import type { ArtifactRef, CompanionKey, Companions } from "../../model/companion"
-import { mailTab, planTab, placedKey } from "../../terminals/companion/pane"
+import { mailTab, openTab, planTab, placedKey } from "../../terminals/companion/pane"
 import { createPanes } from "../../terminals/companion/state"
 import { context, describe, expect, it } from "../../test"
 import { openCommands } from "../../test/commands"
@@ -197,6 +197,39 @@ describe("companion commands", () => {
       app.commands.undock("01", plan)
       app.commands.place([{ from: "01", item: image, to: app.windows()[0]!.id }])
       expect(app.state().placements).toEqual([])
+    })
+  })
+
+  context("when what a pane shows leaves its bar", () => {
+    const showing = (app: ReturnType<typeof open>, id: string, tab: string) =>
+      app.panes.of(key(id)).update((pane) => openTab(pane, tab))
+
+    it("hides the pane, which stays hidden when the item comes back from its window", () => {
+      const app = open()
+      showing(app, "01", "hero")
+      app.commands.undock("01", image)
+      expect(app.pane("01").open).toBe(false)
+      app.commands.close(app.windows()[0]!.id)
+      expect(app.pane("01")).toMatchObject({ open: false, order: expect.arrayContaining(["hero"]) })
+    })
+
+    it("hides the pane it leaves, and the bar's it's sent home from", () => {
+      const app = open()
+      showing(app, "01", "hero")
+      app.commands.place([{ from: "01", item: image, to: "02" }])
+      expect(app.pane("01").open).toBe(false)
+      showing(app, "02", placedKey("01", image))
+      app.commands.place([{ from: "01", item: image, to: "01" }])
+      expect(app.pane("02").open).toBe(false)
+      expect(app.pane("01").open).toBe(false)
+    })
+
+    it("hides the bar's pane when it's closed there", () => {
+      const app = open()
+      app.commands.place([{ from: "01", item: plan, to: "02" }])
+      showing(app, "02", placedKey("01", plan))
+      app.commands.closeItem("01", planTab("root"))
+      expect(app.pane("02").open).toBe(false)
     })
   })
 

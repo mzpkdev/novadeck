@@ -209,11 +209,6 @@ export const TerminalCompanion = ({
       .find((each) => each.id === id && each.placed)
     if (placed) panes.of(placed.source).update((current) => seen(current, placed.key))
   }
-  // Something placed here leaves the bar: if the pane shows it, the pane hides rather than
-  // showing something else in its place, as closing what it shows does.
-  const leave = (each: BarMember): void => {
-    if (each.placed && each.id === showing) pane.update(closePane)
-  }
   const originOf = (each: BarMember): string =>
     terminalName(each.source.terminalId) ?? "another terminal"
   const undockMember = (each: BarMember, place?: WindowPlace): void => {
@@ -229,14 +224,10 @@ export const TerminalCompanion = ({
     // Clicking what the pane is showing hides it, as a taskbar minimizes the active window.
     activate: (id) => (id === showing ? pane.update(closePane) : openMember(id)),
     open: openMember,
-    close: (each) => {
-      leave(each)
-      items.closeItem(each.source.terminalId, each.key)
-    },
+    close: (each) => items.closeItem(each.source.terminalId, each.key),
     sendBack: (each) => {
       const item = movableOf(each.key)
       const home = each.source.terminalId
-      leave(each)
       if (item) items.place([{ from: home, item, to: home }])
     },
     undock: (each) => undockMember(each),

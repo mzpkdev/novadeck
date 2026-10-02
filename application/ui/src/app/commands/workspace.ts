@@ -10,6 +10,7 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
+import { hideShowing, itemKey } from "../../terminals/companion/pane"
 import {
   currentContext,
   currentState,
@@ -128,6 +129,14 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     const { view, selected } = currentState(snapshot)
     const active = rename.activeRename()
     if (active?.id === terminalId) rename.finishRename(active, false)
+    // A window undocked from a terminal puts its item back on that terminal's bar, unopened.
+    const window = currentState(snapshot).roster.terminals.find(
+      (terminal) => terminal.id === terminalId,
+    )?.companion
+    if (window)
+      ctx.panes
+        ?.of({ ...currentTarget(snapshot), terminalId: window.from })
+        .update((pane) => hideShowing(pane, itemKey(window.item)))
     navigateWorkspace(
       [{ type: "terminal/close", target: currentTarget(snapshot), terminalId }],
       {},

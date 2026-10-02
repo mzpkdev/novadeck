@@ -438,6 +438,13 @@ describe("a terminal's messages on its taskbar", () => {
     expect(actions.current().order).toEqual([mailTab])
   })
 
+  it("stay off the bar while closed, whatever else changes", () => {
+    const { state, actions } = following(mailOf(1))
+    actions.update((pane) => close(pane, mailTab))
+    state.update((mail) => ({ ...mail, paused: true }))
+    expect(actions.current()).toMatchObject({ closed: [mailTab], order: [] })
+  })
+
   it("come back with the next message once closed, whether the terminal is on screen or not", () => {
     const { state, actions } = following(mailOf(1))
     actions.update((pane) => close(pane, mailTab))

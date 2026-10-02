@@ -311,8 +311,13 @@ const mailFollower = (session: Session) => {
       const more = count > (counts.get(id) ?? count)
       counts.set(id, count)
       if (!hasMail(mail)) continue
+      // Closed, they stay off the bar until a message comes.
       change(session, companionKeyOf(id), (pane) =>
-        arrived(reopening && more ? reopen(pane, mailTab) : pane, mailTab),
+        !pane.closed.includes(mailTab)
+          ? arrived(pane, mailTab)
+          : reopening && more
+            ? reopen(pane, mailTab)
+            : pane,
       )
     }
   }

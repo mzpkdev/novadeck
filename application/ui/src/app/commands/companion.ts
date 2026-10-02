@@ -11,6 +11,7 @@ import type { TerminalMetadata } from "../../model/types"
 import {
   arrivedAgain,
   close,
+  hideShowing,
   itemKey,
   movableOf,
   openTab,
@@ -76,6 +77,15 @@ export const createCompanionCommands = (
   const paneOf = (terminalId: string) =>
     panes?.of({ ...currentTarget(workspace.getSnapshot()), terminalId })
 
+  // Terminal `from`'s item leaves the bar it's on: its own, or the one it's placed on.
+  const leaving = (from: string, item: MovableItem): void => {
+    paneOf(from)?.update((pane) => hideShowing(pane, itemKey(item)))
+    const placed = currentState(workspace.getSnapshot()).placements.find(
+      (each) => each.from === from && sameItem(each.item, item),
+    )
+    if (placed) paneOf(placed.to)?.update((pane) => hideShowing(pane, placedKey(from, item)))
+  }
+
   const moveTo = (id: string, place: WindowPlace): void => {
     const snapshot = workspace.getSnapshot()
     const target = currentTarget(snapshot)
@@ -116,6 +126,7 @@ export const createCompanionCommands = (
         ...shows,
       }
       const grid = addCompactGridTerminal(roster.terminals, layout.grid, terminal)
+      leaving(from, item)
       markCreated({ context: currentContext(snapshot), id: terminal.id })
       navigation.navigateWorkspace(
         [
@@ -152,6 +163,7 @@ export const createCompanionCommands = (
       select(window.from)
     },
     place: (placements) => {
+      for (const { from, item } of placements) leaving(from, item)
       const target = currentTarget(workspace.getSnapshot())
       workspace.transact([{ type: "companion/place", target, placements }])
       const now = currentState(workspace.getSnapshot()).placements
@@ -163,6 +175,7 @@ export const createCompanionCommands = (
     closeItem: (from, key) => {
       const item = movableOf(key)
       if (item) {
+        leaving(from, item)
         const target = currentTarget(workspace.getSnapshot())
         workspace.transact([
           { type: "companion/place", target, placements: [{ from, item, to: from }] },
