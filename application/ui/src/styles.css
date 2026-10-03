@@ -13,6 +13,7 @@
 @import "./ui-toolkit/button.css" layer(components);
 @import "./ui-toolkit/icon-button.css" layer(components);
 @import "./ui-toolkit/badge.css" layer(components);
+@import "./ui-toolkit/label.css" layer(components);
 @import "./ui-toolkit/surface.css" layer(components);
 @import "./ui-toolkit/overlay.css" layer(components);
 @import "./ui-toolkit/item.css" layer(components);

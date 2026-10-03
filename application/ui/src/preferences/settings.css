@@ -4,8 +4,8 @@
    `.preferences-heading`: the dialog's title and tabs, over a hairline.
    `.preferences-panels`: the settings ground the sections sit on; each
    `.preferences-panel` (a tab's panel) shows its focus inside its edge.
-   `.settings-label`: a section's small capitalised title. `.settings-description`: the
-   muted text under a title or beside a setting. `.settings-note`: a setting's state
+   A section's title is a `.section-label` (the label recipe).
+   `.settings-description`: the muted text under a title or beside a setting. `.settings-note`: a setting's state
    beside its control, which reads its tone as text when marked data-tone="danger".
    `.settings-card`: a `.card` holding settings, one `.settings-row` per setting, each
    after the first under a hairline. `.settings-fieldset`: a fieldset that draws no box.
@@ -18,7 +18,7 @@
    Tokens, each optional (its fallback in brackets):
    --region-settings-bg (shell): the settings ground.
    --separator-bg (line): the heading's and the rows' hairlines.
-   --settings-label-fg (muted), --settings-description-fg (muted).
+   --settings-description-fg (muted).
    --settings-card-shadow (card-shadow, else shadow-control): a card of settings.
    --choice-card-bg (paper at 60%), --choice-card-fg (muted),
    --choice-card-border-color (line), --choice-card-radius (radius-panel): a choice at
@@ -44,11 +44,6 @@
   outline-offset: calc(var(--focus-ring-width) * -1);
 }
 
-.settings-label {
-  color: var(--settings-label-fg, var(--color-muted));
-  letter-spacing: 1.3px;
-  text-transform: uppercase;
-}
 .settings-description,
 .settings-note {
   color: var(--settings-description-fg, var(--color-muted));

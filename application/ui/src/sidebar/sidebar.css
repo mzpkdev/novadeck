@@ -1,5 +1,5 @@
 /* The sidebar's panels and rows. A `.sidebar-panel` slides in when it becomes the active
-   one; its title is a `.section-label`, small capitals over the panel, with a
+   one; its title is a `.section-label` (the label recipe) over the panel, with a
    `.sidebar-panel-count` beside it. Rows are items (the item recipe), each a
    `.sidebar-item` holding a `.sidebar-item-select` button with a `.sidebar-item-icon`
    and the row's `.item-detail`; a row being dragged is raised like a selected one. The
@@ -10,7 +10,6 @@
    `.dragging` class while it is dragged; `:focus-within` tints a row as hovering does.
 
    Tokens, each optional (its fallback in brackets):
-   --section-label-fg (muted): a section label.
    --sidebar-create-border-color (line): the create button's edge, at rest and hovered.
    Rows take the item recipe's tokens: --item-hover-bg, the --item-selected-* tokens
    (also while dragged) and --item-icon-fg. */
@@ -21,11 +20,6 @@
     visibility var(--motion-view);
 }
 
-.section-label {
-  color: var(--section-label-fg, var(--color-muted));
-  letter-spacing: 1.3px;
-  text-transform: uppercase;
-}
 .sidebar-panel-count {
   letter-spacing: normal;
 }

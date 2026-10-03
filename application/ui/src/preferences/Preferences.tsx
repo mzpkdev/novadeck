@@ -27,7 +27,7 @@ const viewLabels = { focus: "Focus", grid: "Grid", canvas: "Canvas" } as const
 const viewIcons = { focus: PanelLeft, grid: LayoutGrid, canvas: SquareDashedMousePointer } as const
 
 // Section titles match the sidebar's panel titles.
-const sectionTitleClasses = "settings-label m-0 text-[9px] font-medium"
+const sectionTitleClasses = "section-label m-0 text-[9px] font-medium"
 const sectionDescriptionClasses = "settings-description m-0 mt-1.5 text-[11px] leading-relaxed"
 const panelClasses =
   "preferences-panel col-start-1 row-start-1 flex flex-col gap-6 px-6 py-5 data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0 max-[480px]:px-4"
