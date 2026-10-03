@@ -2463,19 +2463,23 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           "Agents closed as many terminals as they may in the last minute; try again shortly, " +
           "or leave the rest for the user to close.",
       }
-      // One terminal's agents: five, then the next waits.
-      await expect(closes(1, [2, 3, 4, 5, 6, 7])).resolves.toEqual([
-        ...[2, 3, 4, 5, 6].map(closed),
-        spent,
-      ])
-      expect(manager.get(terminals[6]!.id).exit).toBeNull()
-      // A terminal its agents opened shares that budget, so a chain can't close more.
+      // One terminal's agents close four.
+      await expect(closes(1, [2, 3, 4, 5])).resolves.toEqual([2, 3, 4, 5].map(closed))
+      // A terminal its agents opened shares their budgets, so a chain can't do more, even
+      // once it closed the terminal that began it.
       const controller = new AbortController()
       const client = (async () => {
+        let opening = true
         for await (const { requestId, sessionId, cwd } of manager.requests(
           "client",
           controller.signal,
         )) {
+          // This client opens only the first terminal asked for.
+          if (!opening) {
+            manager.answerRequest({ requestId, reason: "Not now." }, "client")
+            continue
+          }
+          opening = false
           const id = randomUUID()
           // eslint-disable-next-line no-await-in-loop -- Requests are opened in turn.
           await manager.create({ id, sessionId, cwd, cols: 100, rows: 20, requestId }, "client")
@@ -2486,13 +2490,22 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const [opened] = (await present(shell, manager, terminals[0]!.id, [open({})])) as {
           terminalId: string
         }[]
-        await expect(
-          present(shell, manager, opened!.terminalId, [close("t8")], "client"),
-        ).resolves.toEqual([spent])
+        const chained = (calls: { request: object; type: "open" | "close" }[]) =>
+          present(shell, manager, opened!.terminalId, calls, "client")
+        await expect(chained([close("t1"), close("t6")])).resolves.toEqual([closed(1), spent])
+        await expect(chained(Array.from({ length: 5 }, () => open({})))).resolves.toEqual([
+          ...Array.from({ length: 4 }, () => ({ ok: false, reason: "Not now." })),
+          {
+            ok: false,
+            reason:
+              "Agents opened as many terminals as they may in the last minute; try again shortly.",
+          },
+        ])
       } finally {
         controller.abort()
         await client
       }
+      expect(manager.get(terminals[5]!.id).exit).toBeNull()
       // Refusals cost nothing: a handle not there, or its own.
       await expect(closes(7, [99, 7])).resolves.toMatchObject([{ ok: false }, { ok: false }])
       // Others' budgets are their own, until all agents closed twenty this minute.

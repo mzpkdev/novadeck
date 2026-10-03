@@ -71,6 +71,7 @@ import {
 } from "../shell/reports.js"
 import {
   allowClose,
+  closeLimit,
   readCloseRequest,
   runnerCloseLimit,
   selfRefusal,
@@ -108,6 +109,8 @@ import {
 import { atPrompt, described, fired, noNudges, nudgeText, type Nudges } from "./nudges.js"
 import {
   allowOpen,
+  openLimit,
+  prune,
   runnerOpenLimit,
   OpenRequests,
   readOpenRequest,
@@ -487,7 +490,11 @@ export class Terminals {
   private readonly mail = new Map<string, Set<Latest<TerminalMessages>>>()
   /** Agents' requests for a new terminal, on their way to the client. */
   private readonly opens = new OpenRequests()
-  /** When each terminal's agents opened terminals lately, for `openLimit`. */
+  /**
+   * When each chain's agents opened terminals lately, for `openLimit`. A chain's times
+   * outlive the terminal that began it, until they pass out of the window, so the
+   * terminals it opened can't start afresh by closing it; `prune` lets them go then.
+   */
   private readonly opened = new Map<string, readonly number[]>()
   // Which terminal a terminal opened on request is charged to: the one that began the
   // chain, so terminals opening terminals share one budget rather than each get theirs.
@@ -496,7 +503,8 @@ export class Terminals {
   private allOpened: readonly number[] = []
   /**
    * When each chain's agents closed terminals lately, for `closeLimit`: charged as opens
-   * are, to the terminal that began the chain, from a budget apart from theirs.
+   * are, to the terminal that began the chain, from a budget apart from theirs, and kept
+   * as theirs are.
    */
   private readonly closed = new Map<string, readonly number[]>()
   // Every close's time, for the runner's own limit across all chains.
@@ -1282,8 +1290,6 @@ export class Terminals {
     this.messaging.unregister(terminalId)
     this.doorbell?.forget(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
-    this.opened.delete(terminalId)
-    this.closed.delete(terminalId)
     this.openers.delete(terminalId)
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
   }
@@ -1633,6 +1639,7 @@ export class Terminals {
     if (this.stopping || this.records.get(call.terminalId) !== record) return unansweredCalls.open
     const now = Date.now()
     const charged = this.openers.get(call.terminalId) ?? call.terminalId
+    prune(this.opened, now, openLimit.windowMs)
     const times = allowOpen(this.opened.get(charged) ?? [], now)
     const all = allowOpen(this.allOpened, now, runnerOpenLimit)
     if (!times || !all)
@@ -1743,6 +1750,7 @@ export class Terminals {
       return unansweredCalls.close
     const now = Date.now()
     const charged = this.openers.get(call.terminalId) ?? call.terminalId
+    prune(this.closed, now, closeLimit.windowMs)
     const times = allowClose(this.closed.get(charged) ?? [], now)
     const all = allowClose(this.allClosed, now, runnerCloseLimit)
     if (!times || !all) return refused(spentRefusal)
@@ -3315,9 +3323,8 @@ export class Terminals {
         if (saved) watcher.changed(this.savedSummary(saved))
         else watcher.removed(record.summary)
       this.undetail(record.summary.id)
-      // Its share of what agents opened, as `forget` drops it on close.
-      this.opened.delete(record.summary.id)
-      this.closed.delete(record.summary.id)
+      // Which chain it belongs to, as `forget` drops it on close; the chain's own times
+      // stay until they pass out of the window.
       this.openers.delete(record.summary.id)
     }
   }

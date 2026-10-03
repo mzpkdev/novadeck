@@ -378,6 +378,9 @@ with every safety check again at that time:
   agents close five a minute, a terminal opened on request sharing the budget of the
   one that began the chain, and all agents twenty a minute across the runner, each
   budget apart from the one for opening, so a runaway loop can't empty the workspace.
+  A chain's times, for opening and closing alike, outlive the terminal that began it
+  until they pass out of the minute, so its terminals can't start afresh by closing
+  it.
 - **Messages** between agents come from the same server's `send` and `agents` tools,
   listed only inside NovaDeck's terminals like the others: an agent messages another
   terminal of its project and session by its handle, such as `t3`, which `open_terminal` also
