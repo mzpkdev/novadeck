@@ -26,6 +26,9 @@
 @import "./terminals/companion/companion.css" layer(components);
 @import "./shell/region.css" layer(components);
 @import "./shell/panels.css" layer(components);
+@import "./shell/empty-state.css" layer(components);
+@import "./sidebar/sidebar.css" layer(components);
+@import "./projects/workspace-switcher.css" layer(components);
 @import "./terminals/window.css" layer(components);
 @import "./terminals/tabs.css" layer(components);
 @import "./layouts/workspace.css" layer(components);
