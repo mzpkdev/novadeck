@@ -136,6 +136,7 @@ The shared recipes, and what they cover:
 | `workspace`   | The ground behind Focus, Grid and Canvas                                                             | `--workspace-{bg,glow-bg,dots-image,grain-image}`                                                                                                                                        |
 | `prose`       | Plans, documents, mail and the plan editor's decorations                                             | `--prose-{heading,code,link,quote}-{fg,bg}`, `--prose-changed-bg`                                                                                                                        |
 | `syntax`      | `.tok-*` highlighting in files an agent shows                                                        | read straight from the syntax tokens                                                                                                                                                     |
+| `settings`    | Preferences: its cards and rows, labels, notes; `.choice-card`, shared with the welcome              | `--settings-{label,description}-fg`, `--settings-card-shadow`, `--choice-card-{bg,fg,border-color}`, `--choice-card-checked-{bg,fg,border-color,shadow}`                                 |
 
 ## Hooks
 
