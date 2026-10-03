@@ -109,6 +109,8 @@
   --workspace-zen-grain-opacity: 0;
   --workspace-dots-fg: transparent;
   --welcome-stage-dots-fg: transparent;
+  /* A window's resize grip: a flat corner, not a hatch. */
+  --workspace-grip-image: linear-gradient(currentColor, currentColor);
   /* The phase line, heavier on a flat page, as heavy as the attention line. */
   --window-phase-border-width: 2px;
   /* Pill switches. */
