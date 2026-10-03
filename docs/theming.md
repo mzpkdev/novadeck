@@ -138,6 +138,7 @@ The shared recipes, and what they cover:
 | `syntax`      | `.tok-*` highlighting in files an agent shows                                                        | read straight from the syntax tokens                                                                                                                                                     |
 | `settings`    | Preferences: its cards and rows, labels, notes; `.choice-card`, shared with the welcome              | `--settings-{label,description}-fg`, `--settings-card-shadow`, `--choice-card-{bg,fg,border-color}`, `--choice-card-checked-{bg,fg,border-color,shadow}`                                 |
 | `welcome`     | The welcome dialog, its start button and its miniature workspace                                     | `--welcome-{intro-bg,pattern-fg,caret-bg,skip-fg}`, `--welcome-stage-{border-color,dots-fg}`; reads `--brand-tile-*`, `--window-*`, `--workspace-*`                                      |
+| `search`      | The terminal search dialog: result details, the empty state, the footnote                            | `--search-action-opacity`, `--search-empty-fg`, `--search-footnote-{bg,fg}`                                                                                                              |
 
 ## Hooks
 

@@ -397,7 +397,6 @@ const scriptsWithLooks: readonly string[] = [
   "backend/runner/RunnerTerminal.tsx",
   "layouts/canvas/Canvas.tsx",
   "layouts/focus/Focus.tsx",
-  "search/TerminalSearch.tsx",
   "terminals/MailCount.tsx",
   "terminals/TerminalSwitcher.tsx",
   "terminals/TerminalTab.tsx",
