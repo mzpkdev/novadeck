@@ -211,8 +211,10 @@ export const useBarDrag = ({
       if (pointer.pointerId !== start.pointerId) return
       stop()
       if (!dragging) return
-      if (pointer.type === "pointerup") follow(members, pointer.clientX, pointer.clientY)
-      settle(finish(members, false))
+      // A cancelled pointer lands nowhere, as a cancelled icon drag goes back.
+      const lost = pointer.type === "pointercancel"
+      if (!lost) follow(members, pointer.clientX, pointer.clientY)
+      settle(finish(members, lost))
     }
     const cancelled = (key: KeyboardEvent): void => {
       if (key.key !== "Escape" || !dragging) return

@@ -126,3 +126,24 @@ export const dragIconToFreeSpace = async (
 ): Promise<void> => {
   await drag(taskbarIcon(from, label), view, freeSpaceIn(view), one ? 1 : 12)
 }
+
+/**
+ * Has the browser cancel the pointer, as it does when the system takes it over, once a
+ * drag carries it over `target`: the drag that's under way gets a `pointercancel`, and
+ * the release that follows ends nothing.
+ */
+export const cancelPointerOver = (target: Locator): void => {
+  const moved = (pointer: PointerEvent): void => {
+    const box = target.query()?.getBoundingClientRect()
+    if (!box) return
+    const { clientX: x, clientY: y } = pointer
+    if (x < box.left || x > box.right || y < box.top || y > box.bottom) return
+    window.removeEventListener("pointermove", moved, true)
+    // After the app has followed this move.
+    setTimeout(() => {
+      const cancel = { pointerId: pointer.pointerId, pointerType: pointer.pointerType }
+      window.dispatchEvent(new PointerEvent("pointercancel", { ...cancel, clientX: x, clientY: y }))
+    })
+  }
+  window.addEventListener("pointermove", moved, true)
+}

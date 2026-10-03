@@ -3,6 +3,7 @@ import { page } from "vitest/browser"
 
 import { boxOf, canvasView, dragBackground, viewBox } from "./support/canvas"
 import {
+  cancelPointerOver,
   chooseFromIconMenu,
   companionPane,
   dragCardToBar,
@@ -107,6 +108,16 @@ describe("Placing an item on another terminal's taskbar", () => {
       await expect
         .element(taskbarIcon("Refactor auth", "hero.png, from Build Studio"))
         .not.toBeInTheDocument()
+    })
+  })
+
+  context("when the pointer is cancelled while an image is dragged over it", () => {
+    it("stays where it was", async () => {
+      await openShowcase()
+      cancelPointerOver(taskbar("Refactor auth"))
+      await dragCardToBar("Build Studio", "2 images", "hero.png", "Refactor auth")
+      await expectStaysAbsent(taskbarIcon("Refactor auth", "hero.png, from Build Studio"))
+      await expect.element(taskbarIcon("Build Studio", "2 images")).toBeVisible()
     })
   })
 
