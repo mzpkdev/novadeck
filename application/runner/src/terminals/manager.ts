@@ -291,7 +291,10 @@ type Record = {
    * latest size the app asked for, as a resize redraws the screen the paste is checked on;
    * null otherwise.
    */
-  held: { readonly input: string[]; size: { cols: number; rows: number } | null } | null
+  held: {
+    readonly input: string[]
+    size: { readonly cols: number; readonly rows: number; readonly owner: string } | null
+  } | null
   /** When its window was last resized, in epoch milliseconds; 0 before any resize. */
   resizedAt: number
   /** The handle of the terminal whose agent opened this one; null otherwise. */
@@ -1012,7 +1015,14 @@ export class Terminals {
           record.held = null
           if (live(terminalId) !== record) return
           if (held.input.length > 0) record.process.write(held.input.join(""))
-          if (held.size) this.applySize(record, held.size)
+          // Only for the window still in control: another that took over meanwhile was
+          // told the size in force and asks for its own.
+          if (!held.size || record.controller !== held.size.owner) return
+          try {
+            this.applySize(record, held.size)
+          } catch {
+            // A shell that exited meanwhile takes no size; its exit is handled in turn.
+          }
         }
         // A ring takes well under this; should it not, the person's keys go on.
         const timer = setTimeout(release, holdCapMs)
@@ -1031,14 +1041,13 @@ export class Terminals {
   resize(input: { terminalId: string; cols: number; rows: number }, ownerId: string): void {
     const record = this.control(input.terminalId, ownerId)
     this.running(record)
-    const size = { cols: input.cols, rows: input.rows }
     // While the doorbell's test paste is on screen, a resize would redraw it and fail the
     // ring: the latest waits for the ring's hold to end.
     if (record.held) {
-      record.held.size = size
+      record.held.size = { cols: input.cols, rows: input.rows, owner: ownerId }
       return
     }
-    this.applySize(record, size)
+    this.applySize(record, input)
   }
 
   private applySize(record: Record, { cols, rows }: { cols: number; rows: number }): void {

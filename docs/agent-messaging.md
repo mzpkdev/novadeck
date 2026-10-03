@@ -118,14 +118,14 @@ flowchart LR
   R --> U[Runner API: messages, pause, release]
 ```
 
-| Part         | Where                                                                                 | Owns                                                                    |
-| ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| MCP tools    | `shell/mcp.ts`, beside `show` and `open_terminal`                                     | `send`, `agents` and `describe`; the terminal's token on every call     |
-| Mailbox      | Runner, stored with the workspace (`WorkspaceStore`)                                  | Messages, threads, guards, pause, retention                             |
-| Delivery     | Runner, one state machine per recipient terminal                                      | When and how a recipient notices: leases to hooks and the doorbell      |
-| Hook answers | `shell/hook.ts` asks the runner; the runner returns stdout                            | Each harness's output encoding, in its adapter beside its decoder       |
-| Doorbell     | `terminals/doorbell.ts`, behind `DoorbellHost`; the manager owns every PTY and screen | The settle window, the calm check, the test paste, Enter, holding input |
-| Runner API   | Protocol and router                                                                   | Listing messages, pause and release, for the UI to come                 |
+| Part         | Where                                                                                 | Owns                                                                                |
+| ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| MCP tools    | `shell/mcp.ts`, beside `show` and `open_terminal`                                     | `send`, `agents` and `describe`; the terminal's token on every call                 |
+| Mailbox      | Runner, stored with the workspace (`WorkspaceStore`)                                  | Messages, threads, guards, pause, retention                                         |
+| Delivery     | Runner, one state machine per recipient terminal                                      | When and how a recipient notices: leases to hooks and the doorbell                  |
+| Hook answers | `shell/hook.ts` asks the runner; the runner returns stdout                            | Each harness's output encoding, in its adapter beside its decoder                   |
+| Doorbell     | `terminals/doorbell.ts`, behind `DoorbellHost`; the manager owns every PTY and screen | The settle window, the calm check, the test paste, Enter, holding input and resizes |
+| Runner API   | Protocol and router                                                                   | Listing messages, pause and release, for the UI to come                             |
 
 Messaging is an application operation like `present` and `open_terminal`: the MCP
 server only forwards calls with the terminal's token, and the runner decides.

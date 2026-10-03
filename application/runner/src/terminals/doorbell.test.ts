@@ -38,6 +38,8 @@ const terminal = (
   const failed: string[] = []
   let holds = 0
   let held = false
+  let rings = 0
+  let pastedAt: number | undefined
   let resizedAt = 0
   let resizeAtForeground = options.resizeAtForeground ?? false
   const host: DoorbellHost = {
@@ -46,6 +48,7 @@ const terminal = (
     ready: () => options.ready ?? false,
     ring: (_, nonce) => {
       if (!ringable) return false
+      rings += 1
       ringable = false
       ringing = nonce
       return true
@@ -86,6 +89,7 @@ const terminal = (
       written.push(data)
       // eslint-disable-next-line no-control-regex -- A bracketed paste's markers.
       const pasted = /^\x1b\[200~(.*)\x1b\[201~$/.exec(data)?.[1]
+      if (pasted) pastedAt ??= Date.now()
       if (pasted && options.takes !== "nothing") rows[6] = `> ${pasted}`
       if (pasted && options.takes === "elsewhere") rows[0] = "popup closed"
       if (pasted && options.logo) rows[2] = ""
@@ -97,7 +101,7 @@ const terminal = (
     rows,
     written,
     failed,
-    state: () => ({ ringing, holds, held }),
+    state: () => ({ ringing, holds, held, rings, pastedAt, resizedAt }),
     // The app resized its window now.
     resize: () => (resizedAt = Date.now()),
     // The ring's prompt arrived: messaging leaves Ringing.
@@ -188,13 +192,15 @@ describe("the doorbell", () => {
 
   it("puts off, untried, a ring whose terminal was resized after its calm, and rings once calm again", async () => {
     const { host, written, failed, state } = terminal({ resizeAtForeground: true })
-    const doorbell = new Doorbell(host, fast)
+    const doorbell = new Doorbell(host, { ...fast, calmMs: 100 })
     doorbell.changed("t")
-    await vi.waitFor(() => expect(enters(written)).toBe(1))
+    await vi.waitFor(() => expect(enters(written)).toBe(1), { timeout: 1_000 })
+    const { rings, pastedAt, resizedAt } = state()
+    // One ring, begun only once the screen had been calm again since the resize.
+    expect(rings).toBe(1)
+    expect(pastedAt! - resizedAt).toBeGreaterThanOrEqual(100)
     expect(written).toHaveLength(2)
     expect(failed).toEqual([])
-    // The ring put off took a hold and gave it back at once; the next ring took its own.
-    expect(state()).toMatchObject({ holds: 2, held: false })
     doorbell.close()
   })
 

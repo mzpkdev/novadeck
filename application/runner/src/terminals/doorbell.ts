@@ -179,7 +179,7 @@ export class Doorbell {
    * Rings once: the test paste, with the person's input and the app's resizes held for the
    * whole ring; Enter only once the line shows alone, twice running, and while the hold is
    * still in force; then a wait for its doorbell prompt. A resize since the calm began
-   * (`calmSince`), before the hold took it, puts the ring off untried. A ring abandoned on
+   * (`calmSince`) puts the ring off untried. A ring abandoned on
    * the way fails, leaving its line, if it landed, as the person's draft.
    */
   private async ring(terminalId: string, calmSince: number): Promise<void> {
@@ -187,12 +187,9 @@ export class Doorbell {
     const line = doorbellLine(nonce)
     // Only a Ready terminal may lose a block of text as the line lands, as Codex's logo.
     const vanish = this.host.ready(terminalId)
+    if (this.host.resizedAt(terminalId) > calmSince) return this.later(terminalId, this.calmMs)
+    if (!this.host.ring(terminalId, nonce)) return
     const hold = this.host.hold(terminalId)
-    if (this.host.resizedAt(terminalId) > calmSince) {
-      hold.release()
-      return this.later(terminalId, this.calmMs)
-    }
-    if (!this.host.ring(terminalId, nonce)) return hold.release()
     let pressed = false
     try {
       const before = await this.host.screen(terminalId)
