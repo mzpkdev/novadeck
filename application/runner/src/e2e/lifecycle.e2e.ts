@@ -61,6 +61,18 @@ const cleared = (terminal: DeckTerminal) =>
   )
 
 /**
+ * Waits until the turn of the prompt submitted since `from` has ended, Settled, its reply
+ * `shows` on screen: the person's next prompt goes to an idle agent. One submitted while the
+ * turn still runs is the person's to steer into it, and one that lands just as it ends is
+ * dropped by Codex (0.159.3, probed 2026-10-03: shown in its history, never sent to the
+ * model), so a scenario that means a new turn waits for this first.
+ */
+const ended = async (terminal: DeckTerminal, from: number, shows: string): Promise<void> => {
+  await terminal.until(shows)
+  await through(terminal, ["working", "settled"], { after: from })
+}
+
+/**
  * Waits until the screen shows the harness's banner once more than the fewest times it
  * has since the call: the next instance's, drawn as it starts. One that clears its screen
  * as it exits (Claude Code, Codex) draws it again from none, one that leaves it there
@@ -157,6 +169,7 @@ for (const setup of setups) {
       const before = (await t1.detail()).sessionId
       const t2 = await start(run, setup)
       const mark = t1.mark()
+      const asking = t2.mark()
 
       // The person types /clear; while it waits in the box, Drafting, t2's message comes
       // for the session there, and waits for the person's prompt. They submit the clear.
@@ -172,6 +185,7 @@ for (const setup of setups) {
       const [first] = messages(t1)
       expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })
       expect((await t1.detail()).sessionId).not.toBe(before)
+      await ended(t2, asking, "Asked.")
       const calls = run.model.mark()
       const from1 = t1.mark()
 
@@ -213,6 +227,7 @@ for (const setup of setups) {
       const before = (await t1.detail()).sessionId
       const t2 = await start(run, setup)
       const mark = t1.mark()
+      const asking = t2.mark()
 
       // The person types /exit; while it waits in the box, t2's message comes for the
       // session there. They submit it, and the agent leaves; its terminal's command then
@@ -238,6 +253,7 @@ for (const setup of setups) {
       await prompted(t1, setup)
       const [first] = messages(t1)
       expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })
+      await ended(t2, asking, "Asked.")
       const calls = run.model.mark()
       const from1 = t1.mark()
 
