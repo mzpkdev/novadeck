@@ -385,8 +385,6 @@ const classLooks = (file: string): string[] =>
 
 // Files whose class strings still draw. Shrink only.
 const scriptsWithLooks: readonly string[] = [
-  "app/BootFailure.tsx",
-  "app/BootSplash.tsx",
   "ui-toolkit/SegmentGroup.tsx",
 ]
 
@@ -466,7 +464,6 @@ const importantDeclarations = (file: string): string[] =>
 // Stylesheets that still use `!important`. Shrink only. runner.css overrides styles
 // xterm sets inline, and accessibility.css stills motion that utilities in the TSX set.
 const stylesheetsWithImportant: readonly string[] = [
-  "app/BootSplash.module.css",
   "backend/runner/runner.css",
   "theme/accessibility.css",
 ]
