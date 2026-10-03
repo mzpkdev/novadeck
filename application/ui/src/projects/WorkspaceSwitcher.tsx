@@ -100,7 +100,7 @@ export const WorkspaceSwitcher = ({
         </div>
         <div className="workspace-switcher-footer p-[5px]">
           <button
-            className="button ghost workspace-switcher-new h-auto w-full justify-start gap-2.25 px-[9px] py-2 text-left text-[11px] disabled:pointer-events-auto disabled:cursor-not-allowed"
+            className="button quiet workspace-switcher-new h-auto w-full justify-start gap-2.25 px-[9px] py-2 text-left text-[11px] disabled:cursor-not-allowed"
             type="button"
             disabled={!onOpenFolder}
             title={onOpenFolder ? undefined : "Unavailable"}

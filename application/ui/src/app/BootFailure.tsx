@@ -24,7 +24,7 @@ const copyText = async (text: string): Promise<boolean> => {
 }
 
 const primary = "button primary"
-const quiet = "boot-failure-link px-1.5 py-0.5 text-[11px]"
+const quiet = "button link boot-failure-link px-1.5 py-0.5 text-[11px]"
 
 // What failed on the way in, in place of the phase line: why, what happens next, and
 // the details for a bug report.

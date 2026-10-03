@@ -3,14 +3,13 @@
    tinted as the keyboard or the pointer reaches it, with the project's folder as its
    `.item-detail` in the mono face; a `.workspace-switcher-remove` icon button shows on
    the row under the pointer. Under a rule, `.workspace-switcher-new` opens a folder: a
-   quiet ghost button.
+   `.button.quiet`.
 
    Hooks: on the trigger, data-state="open" while the popover is open; on a row,
    aria-current="true" for the current project.
 
    Tokens, each optional (its fallback in brackets):
    --workspace-switcher-icon-fg (muted): the trigger's folder and chevron.
-   --workspace-switcher-new-fg (muted): the open-folder button at rest.
    The trigger takes the ghost button's tokens; rows take --item-highlighted-bg under the
    pointer or the keyboard, and the rule above the open-folder button --separator-bg. */
 .workspace-switcher-trigger > svg {
@@ -48,9 +47,4 @@
 
 .workspace-switcher-footer {
   border-top: var(--border-width) solid var(--separator-bg, var(--color-line));
-}
-.button.ghost.workspace-switcher-new:not(:hover),
-.button.ghost.workspace-switcher-new:disabled {
-  --_bg: transparent;
-  --_fg: var(--workspace-switcher-new-fg, var(--color-muted));
 }

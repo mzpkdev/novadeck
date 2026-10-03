@@ -2,7 +2,7 @@
    camera eases back over empty terminal slots that jack in one by one. Decorative apart
    from the hairline and the status line, which follow real progress. The markup lays it
    out; this draws it, moves it, and draws a failure in its place, with the failure's
-   details and quiet link buttons.
+   details and its `.button.link`s.
 
    Hooks: data-state="booting" | "settled" | "failed" on `.boot-splash` (settled: a
    failure was shown during this boot, so the lockup stands finished). The hairline's
@@ -10,7 +10,7 @@
    `.boot-splash-field`, `-slot`, `-terminal` (a `.panel`), `-titlebar`, `-bar`
    (`.lead` for a slot's first line, `.title` for its name), `-cursor`, `-flash`,
    `-hero`, `-word`, `-tag`, `-hairline`, `-lines`, `-phase`, `-failure`;
-   `.boot-failure-details`, `.boot-failure-link`.
+   `.boot-failure-details`, `.boot-failure-link` (a `.button.link`).
 
    Tokens, each optional (its fallback in brackets):
    --boot-splash-bg (paper), --boot-splash-fg (muted): the ground, and the tag and phase.
@@ -23,7 +23,7 @@
    progress hairline; a failure fills it in danger-fg.
    --boot-splash-failed-field-opacity (0.22): the field behind a failure.
    --boot-failure-details-bg (shell), --boot-failure-details-border-color (line),
-   --boot-failure-fg (muted): the failure's details, its notes and its links. */
+   --boot-failure-fg (muted): the failure's notes and details. */
 .boot-splash {
   background-color: var(--boot-splash-bg, var(--color-paper));
   transition: opacity 400ms var(--ease-interface);
@@ -174,8 +174,7 @@
   }
 }
 
-/* What failed on the way in: its notes, its details and the quiet buttons beside its
-   main action. */
+/* What failed on the way in: its notes and its details. */
 .boot-failure-note,
 .boot-failure-details dl {
   color: var(--boot-failure-fg, var(--color-muted));
@@ -190,13 +189,4 @@
 }
 .boot-failure-details dd {
   color: var(--color-ink);
-}
-.boot-failure-link {
-  border-radius: var(--radius-control);
-  color: var(--boot-failure-fg, var(--color-muted));
-  text-underline-offset: 2px;
-}
-.boot-failure-link:hover {
-  color: var(--color-ink);
-  text-decoration: underline;
 }

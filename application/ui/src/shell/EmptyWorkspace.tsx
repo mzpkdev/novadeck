@@ -42,7 +42,7 @@ export const EmptyWorkspace = ({
           Terminal
         </button>
         <button
-          className="button ghost empty-sessions-link h-auto px-[11px] py-[7px] text-[11px]"
+          className="button quiet empty-sessions-link h-auto px-[11px] py-[7px] text-[11px]"
           onClick={onShowSessions}
         >
           Browse sessions
