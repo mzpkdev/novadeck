@@ -1,0 +1,17 @@
+/* The accessibility layer: it comes after every theme, so no theme can defeat it.
+   Imported into `layer(accessibility)`; see docs/theming.md. */
+
+/* Forced colours: the focus ring and selected text use the system's colours, whatever
+   a theme set. */
+@media (forced-colors: active) {
+  :root {
+    --focus-ring-color: Highlight;
+  }
+  :focus-visible {
+    outline-color: Highlight;
+  }
+  ::selection {
+    background: Highlight;
+    color: HighlightText;
+  }
+}

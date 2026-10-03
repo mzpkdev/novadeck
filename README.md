@@ -524,10 +524,13 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                                     |
 | `test/`                                            | Unit-test fixtures, a jsdom render helper, a command harness, and the port contract.    |
 | `assets/`                                          | Static files referenced from CSS.                                                       |
-| `styles.css`                                       | Theme tokens, global primitives, and shared workspace styles.                           |
+| `theme/`                                           | The theming contract: token defaults, theme files, the theme list, and `apply.ts`.      |
+| `styles.css`                                       | The cascade layer order and imports, global primitives, and shared workspace styles.    |
 | `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                                |
 
-Imports point down the layers. `model/` imports nothing else, not even packages.
+Imports point down the layers. `model/` imports nothing else, not even packages,
+and neither does `theme/`, which every feature layer, `app/`, `main.tsx` and the
+specs may use; [docs/theming.md](docs/theming.md) is its contract with components.
 `backend/` builds on `model/` and uses React only for the port's types; adapters
 may add `ui-toolkit/`. `interaction/` builds on `model/` and imports no packages;
 features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use

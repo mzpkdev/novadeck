@@ -6,10 +6,13 @@ import { describe, expect, it } from "./test"
 // Every source file belongs to a layer: a folder ("model/") or a single file
 // ("main.tsx"). Each layer lists what it may import from src. Every folder in
 // backend/ is an adapter layer; see `adapterRule`.
-const base = ["model/", "interaction/", "ui-toolkit/"]
+// theme/ (the theme list and how a theme is applied) is open to every layer that
+// composes the page; it imports nothing but itself.
+const base = ["model/", "interaction/", "ui-toolkit/", "theme/"]
 const features = ["sidebar/", "projects/", "preferences/", "search/"]
 const rules: Record<string, readonly string[]> = {
   "model/": ["model/"],
+  "theme/": ["theme/"],
   "backend/": ["backend/", "model/"],
   "ui-toolkit/": ["ui-toolkit/", "class-name.ts"],
   "interaction/": ["interaction/", "model/"],
@@ -35,9 +38,9 @@ const rules: Record<string, readonly string[]> = {
     "terminals/companion/state.ts",
     "layouts/canvas/types.ts",
   ],
-  "specs/": ["specs/", "app/App.tsx", "styles.css"],
+  "specs/": ["specs/", "app/App.tsx", "theme/", "styles.css"],
   // Entry point and support modules outside the feature layers.
-  "main.tsx": ["app/", "styles.css"],
+  "main.tsx": ["app/", "theme/", "styles.css"],
   "test/": [
     "test/",
     "test.ts",
@@ -63,11 +66,12 @@ const adapterRule = (layer: string): readonly string[] => [
 const adapterSelection = "app/backend.ts"
 const adapterSelectionExports = ["selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
-// adapter or test code. model/, interaction/ and app/commands/ use none; core
+// adapter or test code. model/, theme/, interaction/ and app/commands/ use none; core
 // backend/ uses React types only.
 const everywherePackages = new Set(["react", "lucide-react"])
 const typeOnlyPackages: Record<string, readonly string[]> = {
   "model/": [],
+  "theme/": [],
   "backend/": ["react"],
   "app/commands/": [],
   "interaction/": [],

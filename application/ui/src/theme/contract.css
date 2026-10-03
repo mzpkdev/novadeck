@@ -1,0 +1,60 @@
+/* Tailwind's theme. It is meant to hold only the layout scale (spacing, breakpoints,
+   type sizes); see docs/theming.md.
+
+   Transitional: the colour, radius, shadow, font and motion entries below keep
+   Tailwind's colour, radius and shadow utilities working while components move to
+   recipes. Themes set these tokens in `theme/themes/*.css`, which win over these
+   values; once no TSX or @apply uses those utilities, the entries leave this file. */
+@theme {
+  /* Graphite, one colour: a near-black with greys carrying a trace of blue. Black is
+     for primary actions, on states (filled buttons, switches, checkboxes), what is
+     selected, and focus rings; everything else stays grey. */
+  --color-paper: #ffffff;
+  --color-shell: #f8f9fa;
+  --color-canvas: #f2f3f5;
+  --color-ink: #1a1d21;
+  --color-muted: #676c74;
+  --color-line: #e4e6e9;
+  --color-line-strong: #cdd1d6;
+  --color-scrim: rgb(21 24 28 / 0.18);
+  --color-soft: #eef0f2;
+  --color-strong: #15181c;
+  --color-strong-hover: #2b2f35;
+  /* Behind selected text, in the page and in terminals. */
+  --color-selection: #d6dbe1;
+  /* Status colours: soft tints for surfaces such as the footer while the runner is
+     away, each with a dark text colour of the same hue (every pair meets WCAG AA). */
+  --color-success: #dcebdd;
+  --color-success-fg: #24593a;
+  --color-warning: #f5e6b8;
+  --color-warning-fg: #6b4e0a;
+  --color-danger: #f6d5d1;
+  --color-danger-fg: #8a2a22;
+  /* Notes the user leaves for an agent: a warm tint apart from the greys and from the
+     warning amber that marks what an agent changed, with a mark colour of its hue. */
+  --color-note: #fdf2eb;
+  --color-note-fg: #a85f3a;
+  /* Syntax colours for the files an agent shows: muted hues that each meet WCAG AA on
+     paper and on soft, where the lines the agent pointed at sit. */
+  --color-syntax-keyword: #8b3a8f;
+  --color-syntax-string: #2f6b3a;
+  --color-syntax-number: #a1460f;
+  --color-syntax-property: #1d5c94;
+  --color-syntax-definition: #4a4fb0;
+  --color-syntax-type: #8a5300;
+  --color-syntax-comment: var(--color-muted);
+  --font-sans: "Inter Variable", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --radius-control: 2px;
+  --radius-panel: 3px;
+  --radius-popover: 4px;
+  --shadow-control: 0 1px 3px rgb(21 24 28 / 0.04);
+  --shadow-panel: 0 1px 2px rgb(21 24 28 / 0.025), 0 4px 12px -6px rgb(21 24 28 / 0.08);
+  --shadow-floating: 0 2px 5px -2px rgb(21 24 28 / 0.06), 0 10px 24px -12px rgb(21 24 28 / 0.16);
+  --shadow-modal: 0 2px 6px -2px rgb(21 24 28 / 0.05), 0 20px 60px -20px rgb(21 24 28 / 0.14);
+  --motion-feedback: 120ms;
+  --motion-state: 180ms;
+  --motion-layout: 200ms;
+  --motion-view: 140ms;
+  --ease-interface: cubic-bezier(0.2, 0, 0, 1);
+}

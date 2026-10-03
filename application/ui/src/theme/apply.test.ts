@@ -1,0 +1,155 @@
+import { vi } from "vitest"
+
+import { context, describe, expect, it } from "../test"
+import {
+  applyAppearance,
+  bootRecordKey,
+  parseBootRecord,
+  resolveAppearance,
+  startingAppearance,
+  themeChangeEvent,
+} from "./apply"
+import { themes, type ThemeManifest } from "./themes"
+
+const manifest: ThemeManifest = [
+  { id: "graphite", name: "Graphite", schemes: ["light", "dark"] },
+  { id: "night", name: "Night", schemes: ["dark"] },
+]
+
+describe("resolveAppearance", () => {
+  it("shows the chosen theme in the chosen scheme", () => {
+    expect(resolveAppearance({ theme: "graphite", scheme: "dark" }, false, manifest)).toEqual({
+      theme: "graphite",
+      scheme: "dark",
+    })
+  })
+
+  context("when the scheme follows the system", () => {
+    it("uses the system's scheme", () => {
+      expect(resolveAppearance({ theme: "graphite", scheme: "system" }, true, manifest)).toEqual({
+        theme: "graphite",
+        scheme: "dark",
+      })
+      expect(resolveAppearance({ theme: "graphite", scheme: "system" }, false, manifest)).toEqual({
+        theme: "graphite",
+        scheme: "light",
+      })
+    })
+  })
+
+  context("when the theme offers one scheme", () => {
+    it("always uses that scheme", () => {
+      expect(resolveAppearance({ theme: "night", scheme: "light" }, false, manifest)).toEqual({
+        theme: "night",
+        scheme: "dark",
+      })
+      expect(resolveAppearance({ theme: "night", scheme: "system" }, false, manifest)).toEqual({
+        theme: "night",
+        scheme: "dark",
+      })
+    })
+  })
+
+  context("when the theme is unknown", () => {
+    it("falls back to the first theme, Graphite", () => {
+      expect(themes[0].id).toBe("graphite")
+      expect(resolveAppearance({ theme: "retired", scheme: "dark" }, false, themes)).toEqual({
+        theme: "graphite",
+        scheme: "dark",
+      })
+    })
+  })
+})
+
+describe("parseBootRecord", () => {
+  it("reads the theme and the chosen scheme", () => {
+    const record = JSON.stringify({ theme: "graphite", scheme: "system", schemes: ["light"] })
+    expect(parseBootRecord(record)).toEqual({ theme: "graphite", scheme: "system" })
+  })
+
+  it("ignores a missing or malformed record", () => {
+    expect(parseBootRecord(null)).toBeUndefined()
+    expect(parseBootRecord("{")).toBeUndefined()
+    expect(parseBootRecord("null")).toBeUndefined()
+    expect(parseBootRecord(JSON.stringify({ theme: "graphite", scheme: "dim" }))).toBeUndefined()
+    expect(parseBootRecord(JSON.stringify({ theme: 1, scheme: "light" }))).toBeUndefined()
+  })
+})
+
+describe("startingAppearance", () => {
+  it("is Graphite light without a boot record", () => {
+    expect(startingAppearance(window, themes)).toEqual({ theme: "graphite", scheme: "light" })
+  })
+
+  it("follows a saved boot record", () => {
+    localStorage.setItem(bootRecordKey, JSON.stringify({ theme: "graphite", scheme: "dark" }))
+    try {
+      expect(startingAppearance(window, themes)).toEqual({ theme: "graphite", scheme: "dark" })
+    } finally {
+      localStorage.removeItem(bootRecordKey)
+    }
+  })
+})
+
+const fresh = (): HTMLElement => document.createElement("html")
+
+describe("applyAppearance", () => {
+  it("marks the root with the theme and scheme and announces the change", () => {
+    const root = fresh()
+    const changes: unknown[] = []
+    const listen = (event: Event): void => {
+      changes.push((event as CustomEvent).detail)
+    }
+    window.addEventListener(themeChangeEvent, listen)
+    try {
+      applyAppearance(root, { theme: "graphite", scheme: "dark" })
+    } finally {
+      window.removeEventListener(themeChangeEvent, listen)
+    }
+
+    expect(root.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
+    expect(changes).toEqual([{ theme: "graphite", scheme: "dark" }])
+  })
+
+  it("does not still transitions for the first theme", () => {
+    const root = fresh()
+    applyAppearance(root, { theme: "graphite", scheme: "light" })
+
+    expect(root.hasAttribute("data-theme-switching")).toBe(false)
+  })
+
+  context("when a theme is already shown", () => {
+    it("stills transitions for one frame while it changes", () => {
+      const frames: FrameRequestCallback[] = []
+      vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+        frames.push(callback)
+        return frames.length
+      })
+      const root = fresh()
+      applyAppearance(root, { theme: "graphite", scheme: "light" })
+      applyAppearance(root, { theme: "graphite", scheme: "dark" })
+
+      expect(root.hasAttribute("data-theme-switching")).toBe(true)
+      frames.forEach((frame) => frame(0))
+      expect(root.hasAttribute("data-theme-switching")).toBe(false)
+    })
+
+    it("does nothing when the appearance is unchanged", () => {
+      const root = fresh()
+      applyAppearance(root, { theme: "graphite", scheme: "light" })
+      const changes: Event[] = []
+      const listen = (event: Event): void => {
+        changes.push(event)
+      }
+      window.addEventListener(themeChangeEvent, listen)
+      try {
+        applyAppearance(root, { theme: "graphite", scheme: "light" })
+      } finally {
+        window.removeEventListener(themeChangeEvent, listen)
+      }
+
+      expect(root.hasAttribute("data-theme-switching")).toBe(false)
+      expect(changes).toEqual([])
+    })
+  })
+})
