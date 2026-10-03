@@ -346,7 +346,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
     const { box } = delivery
     if (delivery.state === "unbound" || box.typedSinceEnter) return delivery
     if (event.asked) return asked(delivery)
-    if (box.enteredAt === null && !box.queuing && !box.queued)
+    // Only an Enter still within its window can have a prompt to keep the person's: one
+    // that started none is long past, and the key is input as anywhere else.
+    if (pendingEnter(delivery, event.at) === undefined && !box.queuing && !box.queued)
       return keyed(delivery, false, event.at)
     return drafted(delivery, { ...box, empty: false, strayed: true })
   }
@@ -407,7 +409,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
     if (event.type !== "key" || event.asked) return delivery
     const submits = event.key === "enter" || event.key === "queue"
     const after = keyed(delivery, submits, event.at)
-    return submits ? { ...after, box: { ...after.box, draftWhileAsked: false } } : after
+    return submits
+      ? { ...after, box: { ...after.box, draftWhileAsked: false, strayed: false } }
+      : after
   }
   const phase = phaseOf(delivery)
   const { box } = delivery

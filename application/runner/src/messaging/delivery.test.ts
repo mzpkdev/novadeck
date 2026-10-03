@@ -119,6 +119,22 @@ describe("a terminal's delivery state", () => {
     expect(run(settled, enter, prompted(), stop).state).toBe("settled")
   })
 
+  it("lets a stray Left after an Enter that started no prompt cost no later submission", () => {
+    // The Enter's window long gone, the key is input as anywhere else, and the person's next
+    // submission empties the box again.
+    const stale = run(settled, enter, key("neutral", at + 5_000))
+    expect(stale.state).toBe("drafting")
+    const next = run(stale, key("enter", at + 6_000), prompted(at + 6_100))
+    expect(next.byPerson).toBe(true)
+    expect(transition(next, stop).state).toBe("settled")
+  })
+
+  it("forgets a stray key once the agent it strayed in has gone and another starts", () => {
+    // The Left's view went with its agent: the Enter that starts the next one clears it.
+    const gone = run(settled, enter, key("neutral"), { type: "unbound" })
+    expect(run(gone, key("enter", at + 5_000), announced).state).toBe("ready")
+  })
+
   it("leaves a draft for Left, Home or End while a stale request waits, its dialog gone", () => {
     // A request answered with no report: the key lands at the prompt, as Claude Code's
     // Left opens its agents view there, and the request clears later.
