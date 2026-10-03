@@ -120,7 +120,7 @@ flowchart LR
 
 | Part         | Where                                                                                 | Owns                                                                    |
 | ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| MCP tools    | `shell/mcp.ts`, beside `show` and `open_terminal`                                     | `send`, `agents` and `describe`; the terminal's token on every call     |
+| MCP tools    | `shell/mcp.ts`, beside `show`, `open_terminal` and `close_terminal`                   | `send`, `agents` and `describe`; the terminal's token on every call     |
 | Mailbox      | Runner, stored with the workspace (`WorkspaceStore`)                                  | Messages, threads, guards, pause, retention                             |
 | Delivery     | Runner, one state machine per recipient terminal                                      | When and how a recipient notices: leases to hooks and the doorbell      |
 | Hook answers | `shell/hook.ts` asks the runner; the runner returns stdout                            | Each harness's output encoding, in its adapter beside its decoder       |
@@ -177,11 +177,11 @@ agent session; never a name the model passes.
   or the agent it resumes) that hasn't bound yet, or one where an agent's own prompt
   shows before any session of its has bound (Codex's title, Antigravity's status line;
   see [States](#states)): its message is for the first session of that agent to bind
-  there. It outlasts the runner's restore; it is `gone` if a
-  different agent binds there, or the terminal closes first. The expectation ends once
-  any session binds there: from then on only a bound session takes messages, and one
-  that waited is never handed to a later session. `agents()` shows such a terminal as
-  "expecting Codex, not started yet".
+  there. It outlasts the runner's restore; it is `gone` if a different agent binds
+  there, or the terminal closes first, by the person or an agent's `close_terminal`.
+  The expectation ends once any session binds there: from then on only a bound session
+  takes messages, and one that waited is never handed to a later session. `agents()`
+  shows such a terminal as "expecting Codex, not started yet".
 - **Threads.** A message continues the thread of the latest message between the same
   two handles, in either direction, within the last ten minutes; otherwise it starts
   one. Agents never name threads.
@@ -198,8 +198,8 @@ agent session; never a name the model passes.
 
 ## Agent interface
 
-Two tools join `show` and `open_terminal`, listed, like them, only inside NovaDeck's
-terminals.
+Two tools join `show`, `open_terminal` and `close_terminal`, listed, like them, only
+inside NovaDeck's terminals.
 
 - **`send(to, text)`** answers with the recipient's handle, the message id and one of:
   - `queued`, with the route it will take: "when its current turn ends", "when its next
@@ -904,7 +904,8 @@ its agent is Ready. So that a task arrives at once, before any ring, in every ha
    be empty, and the message in the opener's `agents()` as not yet
    delivered while no session has bound (a login through the browser can take minutes;
    for Codex, with a hint that its hooks may need trusting with `/hooks`). A different
-   agent binding there makes it `gone`, as does the terminal closing first.
+   agent binding there makes it `gone`, as does the terminal closing first (the
+   person's close, or the opener's `close_terminal` once the work is done).
 
 The task is never typed and never the person's prompt. The person sees it in the new
 terminal's Messages view, like any other message.

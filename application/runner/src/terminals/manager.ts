@@ -65,6 +65,14 @@ import {
   type Reports,
 } from "../shell/reports.js"
 import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
+import {
+  allowClose,
+  readCloseRequest,
+  runnerCloseLimit,
+  selfRefusal,
+  spentRefusal,
+  type CloseAnswer,
+} from "./closes.js"
 import { coalesced } from "./coalesce.js"
 import { expectedAgent, promptIn } from "./commands.js"
 import { readDescribeRequest, type DescribeAnswer } from "./describe.js"
@@ -469,6 +477,13 @@ export class Terminals {
   private readonly openers = new Map<string, string>()
   // Every request's time, for the runner's own limit across all chains.
   private allOpened: readonly number[] = []
+  /**
+   * When each chain's agents closed terminals lately, for `closeLimit`: charged as opens
+   * are, to the terminal that began the chain, from a budget apart from theirs.
+   */
+  private readonly closed = new Map<string, readonly number[]>()
+  // Every close's time, for the runner's own limit across all chains.
+  private allClosed: readonly number[] = []
   private sampler: ReturnType<typeof setInterval> | undefined
   private saver: ReturnType<typeof setInterval> | undefined
   private readonly options: Required<
@@ -1160,6 +1175,7 @@ export class Terminals {
     this.doorbell?.forget(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
     this.opened.delete(terminalId)
+    this.closed.delete(terminalId)
     this.openers.delete(terminalId)
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
   }
@@ -1588,6 +1604,51 @@ export class Terminals {
     }
   }
 
+  /**
+   * Closes another terminal of the caller's project and session, as an agent asked
+   * through NovaDeck's MCP server by the terminal's exact handle: as the person's close
+   * does, it ends the shell, then forgets the terminal, whatever window controls it, and
+   * messages still waiting for it are gone. Never the caller's own terminal; a handle
+   * not there is refused with every terminal there described. A chain of terminals'
+   * agents close a few at most each minute, and all agents a few more. A call without
+   * the shell's own token learns nothing more.
+   */
+  async closePeer(call: Call): Promise<CloseAnswer> {
+    const record = this.records.get(call.terminalId)
+    if (!record || record.exitQueued || !sameToken(record.token, call.token))
+      return unansweredCalls.close
+    const read = readCloseRequest(call.request)
+    if (!read.ok) return read
+    const { to } = read.request
+    if (to === record.summary.handle) return refused(selfRefusal(to))
+    const target = await this.peers.target(record, to)
+    if (!target.ok) return target
+    // Closed, or the runner stopped, while the terminals were described.
+    const closing = this.records.get(target.terminalId)
+    if (this.stopping || this.records.get(call.terminalId) !== record || !closing)
+      return unansweredCalls.close
+    const now = Date.now()
+    const charged = this.openers.get(call.terminalId) ?? call.terminalId
+    const times = allowClose(this.closed.get(charged) ?? [], now)
+    const all = allowClose(this.allClosed, now, runnerCloseLimit)
+    if (!times || !all) return refused(spentRefusal)
+    this.closed.set(charged, times)
+    this.allClosed = all
+    const { agent } = target
+    const others = this.messaging.waitingFor(target.terminalId, call.terminalId)
+    await this.terminate(closing)
+    this.remove(closing)
+    this.forget(target.terminalId)
+    const gone = this.messaging.goneFrom(call.terminalId)
+    return {
+      ok: true,
+      handle: target.handle,
+      ...(agent !== null && { ran: agentLabel(agent) }),
+      ...(gone.length > 0 && { gone }),
+      ...(others > 0 && { others }),
+    }
+  }
+
   /** A tool call from NovaDeck's MCP server, to the operation it names. */
   private call(call: Call): Promise<unknown> {
     switch (call.type) {
@@ -1595,6 +1656,8 @@ export class Terminals {
         return this.present(call)
       case "open":
         return this.open(call)
+      case "close":
+        return this.closePeer(call)
       case "send":
         return this.send(call)
       case "agents":
@@ -3151,6 +3214,7 @@ export class Terminals {
       this.undetail(record.summary.id)
       // Its share of what agents opened, as `forget` drops it on close.
       this.opened.delete(record.summary.id)
+      this.closed.delete(record.summary.id)
       this.openers.delete(record.summary.id)
     }
   }
