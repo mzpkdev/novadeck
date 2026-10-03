@@ -66,7 +66,7 @@ const ChoiceCard = ({
   readonly onChange: (checked: boolean) => void
 }): React.JSX.Element => (
   <label
-    className={`choice-card flex min-h-[60px] items-center gap-3 px-3 py-2.5 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+    className={`choice-card solid flex min-h-[60px] items-center gap-3 px-3 py-2.5 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
     data-state={checked ? "checked" : "unchecked"}
     data-disabled={disabled || undefined}
   >

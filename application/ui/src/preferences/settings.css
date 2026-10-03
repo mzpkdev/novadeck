@@ -10,8 +10,10 @@
    when marked data-tone="danger".
    `.settings-card`: a `.card` holding settings, one `.settings-row` per setting, each
    after the first under a hairline. `.settings-fieldset`: a fieldset that draws no box.
-   `.choice-card`: a choice drawn as a card that is checked or not, with an optional
-   `.choice-card-tile` holding its icon, which takes the brand tile once checked.
+   `.choice-card`: a choice drawn as a card that is checked or not, muted at rest, with
+   an optional `.choice-card-tile` holding its icon, which takes the brand tile once
+   checked. `.choice-card.solid`: a choice at full strength at rest that fills under the
+   pointer and when checked, as the welcome's are; disabled, it is muted.
 
    Hooks: on a choice card, data-state="checked" | "unchecked", data-disabled, and the
    focus of the input inside it (:has(:focus-visible)).
@@ -27,6 +29,10 @@
    under the pointer. --choice-card-checked-bg (paper), --choice-card-checked-fg (ink),
    --choice-card-checked-border-color (line-strong), --choice-card-checked-shadow
    (shadow-control): checked.
+   --choice-card-solid-bg (paper), --choice-card-solid-fg (ink): a solid choice at rest.
+   --choice-card-solid-hover-bg (shell): under the pointer.
+   --choice-card-solid-checked-bg (shell), --choice-card-solid-checked-shadow
+   (shadow-panel): checked. --choice-card-disabled-fg (muted): disabled.
    --choice-card-tile-bg (shell), --choice-card-tile-fg (ink),
    --choice-card-tile-border-color (line): the icon tile at rest. Checked, it takes
    --brand-tile-bg, --brand-tile-fg and --brand-tile-border-color, like the Deck mark.
@@ -95,6 +101,20 @@
   --_fg: var(--choice-card-checked-fg, var(--color-ink));
   --_border-color: var(--choice-card-checked-border-color, var(--color-line-strong));
   --_shadow: var(--choice-card-checked-shadow, var(--shadow-control));
+}
+.choice-card.solid {
+  --_bg: var(--choice-card-solid-bg, var(--color-paper));
+  --_fg: var(--choice-card-solid-fg, var(--color-ink));
+}
+.choice-card.solid:hover:not([data-disabled]) {
+  --_bg: var(--choice-card-solid-hover-bg, var(--color-shell));
+}
+.choice-card.solid[data-state="checked"] {
+  --_bg: var(--choice-card-solid-checked-bg, var(--color-shell));
+  --_shadow: var(--choice-card-solid-checked-shadow, var(--shadow-panel));
+}
+.choice-card.solid[data-disabled] {
+  --_fg: var(--choice-card-disabled-fg, var(--color-muted));
 }
 .choice-card:has(:focus-visible) {
   outline: var(--focus-ring-width) solid var(--focus-ring-color, var(--color-strong));
