@@ -322,11 +322,15 @@ preference changes, and whenever the system's scheme does.
   the whole page changes at once instead of fading control by control. `apply.ts` reads
   a style right after, so the browser applies the new theme while transitions are
   still, whatever started the change, and clears the attribute once a frame has drawn it.
-- **Before the first paint**, `public/theme-boot.js` sets the same attributes. `apply.ts`
-  saves what the boot script needs under `novadeck.theme-boot` (the theme, the chosen
-  scheme and the theme's schemes), and the script only resolves `system` against
-  `matchMedia`. It is a plain script loaded in the head without `defer`, because the
-  Content Security Policy allows same-origin scripts but not inline ones.
+- **Before the first paint**, `public/theme-boot.js` sets the same attributes. It is a
+  plain script loaded in the head without `defer`, because the Content Security Policy
+  allows same-origin scripts but not inline ones. `apply.ts` saves what it needs under
+  `novadeck.theme-boot` (the theme, the chosen scheme and the theme's schemes), and the
+  script only resolves `system` against `matchMedia`. It also sets the scheme as
+  `<html>`'s inline `color-scheme`, so the browser's own ground matches it before the
+  stylesheets arrive; `apply.ts` removes that once the theme's file sets `color-scheme`.
+  A record naming a theme this version doesn't have shows unstyled until the app starts
+  and falls back to the first.
 - **Windows** stay in step: each listens for the `storage` event and takes up the
   preferences another window saved, theme included.
 - **The desktop host** follows the page. On every change the page reports its scheme

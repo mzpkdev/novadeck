@@ -93,6 +93,8 @@ export const parseBootRecord = (text: string | null): AppearancePreference | und
 // Changing a theme already shown stills transitions while it changes, so the page
 // changes at once; every change is announced on the window.
 export const applyAppearance = (root: HTMLElement, appearance: Appearance): void => {
+  // The boot script's color-scheme only stands in until the theme's stylesheet sets it.
+  root.style.removeProperty("color-scheme")
   const { theme, scheme } = root.dataset
   if (theme === appearance.theme && scheme === appearance.scheme) return
   const view = root.ownerDocument.defaultView

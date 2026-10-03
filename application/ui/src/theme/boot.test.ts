@@ -5,10 +5,12 @@ import { afterEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../test"
 import {
+  applyAppearance,
   bootRecordKey,
   bootRecordOf,
   defaultPreference,
   resolveAppearance,
+  startingAppearance,
   type Appearance,
 } from "./apply"
 import { themes, type ThemeManifest } from "./themes"
@@ -21,6 +23,7 @@ const boot = (saved: string | null, systemDark: boolean): Appearance => {
   const root = document.documentElement
   root.removeAttribute("data-theme")
   root.removeAttribute("data-scheme")
+  root.removeAttribute("style")
   if (saved === null) localStorage.removeItem(bootRecordKey)
   else localStorage.setItem(bootRecordKey, saved)
   Object.defineProperty(window, "matchMedia", {
@@ -37,6 +40,8 @@ afterEach(() => {
   delete (window as { matchMedia?: unknown }).matchMedia
   document.documentElement.removeAttribute("data-theme")
   document.documentElement.removeAttribute("data-scheme")
+  document.documentElement.removeAttribute("data-theme-switching")
+  document.documentElement.removeAttribute("style")
 })
 
 const systems = [false, true]
@@ -63,6 +68,29 @@ describe("the boot script", () => {
         const record = JSON.stringify(bootRecordOf(preference, manifest))
         expect(boot(record, systemDark)).toEqual({ theme: "night", scheme: "dark" })
       }
+  })
+
+  it("gives <html> the scheme's color-scheme until the app shows the theme", () => {
+    const root = document.documentElement
+    const record = JSON.stringify(bootRecordOf({ theme: "graphite", scheme: "system" }, themes))
+    boot(record, true)
+    expect(root.style.colorScheme).toBe("dark")
+
+    applyAppearance(root, startingAppearance(window, themes))
+
+    expect(root.style.colorScheme).toBe("")
+  })
+
+  context("with a record naming a theme this version no longer has", () => {
+    it("shows it until the app starts, which shows the first theme instead", () => {
+      const root = document.documentElement
+      const record = JSON.stringify({ theme: "retired", scheme: "dark", schemes: ["dark"] })
+      expect(boot(record, false)).toEqual({ theme: "retired", scheme: "dark" })
+
+      applyAppearance(root, startingAppearance(window, themes))
+
+      expect(root.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
+    })
   })
 
   context("without a usable record", () => {

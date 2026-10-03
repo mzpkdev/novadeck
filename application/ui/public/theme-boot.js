@@ -1,7 +1,9 @@
 // Shows the saved theme before the first paint: sets data-theme and data-scheme on
 // <html> from the boot record theme/apply.ts saves, resolving "system" against the
-// system's scheme. A file of its own, because the Content Security Policy allows no
-// inline scripts; see docs/theming.md.
+// system's scheme, and the scheme as <html>'s color-scheme, so the browser's own ground
+// matches it before the theme's stylesheet arrives. apply.ts hands color-scheme back to
+// the theme. A file of its own, because the Content Security Policy allows no inline
+// scripts; see docs/theming.md.
 ;(() => {
   const known = new Set(["light", "dark"])
   const isScheme = (value) => known.has(value)
@@ -28,7 +30,9 @@
     // Without media queries the system counts as light.
   }
   const wanted = record.scheme === "system" ? (dark ? "dark" : "light") : record.scheme
+  const scheme = record.schemes.includes(wanted) ? wanted : record.schemes[0]
   const root = document.documentElement
   root.setAttribute("data-theme", record.theme)
-  root.setAttribute("data-scheme", record.schemes.includes(wanted) ? wanted : record.schemes[0])
+  root.setAttribute("data-scheme", scheme)
+  root.style.colorScheme = scheme
 })()
