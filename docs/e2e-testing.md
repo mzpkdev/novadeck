@@ -262,7 +262,8 @@ for (const setup of setups) {
   `popup`, `fork`) or a known gap in
   `known-gaps.ts`, which picks the documented detour (see [Known gaps](#known-gaps)). A
   `<harness>.e2e.ts` holds only what is truly that harness's own, such as Codex's logo
-  on its first screen and its `/side` conversation (`codex.e2e.ts`), or a known gap's pin.
+  on its first screen, its `/side` conversation and its spawned agent's dialog
+  (`codex.e2e.ts`), or a known gap's pin.
 - **Traits a harness may not have** (`approval`, `background`, `trust.folder`,
   `trust.hooks`, `rewind`, `popup`, `shell`, `fork.picker`, `fork.inPlace`) gate the scenarios that need them: `gated(it, lacking(setup, "approval"))`
   runs the test, or skips it with its name saying which trait the harness lacks and why.
@@ -410,6 +411,11 @@ for (const setup of setups) {
   connect again to acknowledge it. The restart scenario does so: the new runner's first
   listing of the terminal, restored, holds the message queued, and the resumed session
   is rung for it again.
+- **NovaDeck's shell files.** `deck.shell` is where NovaDeck's shells read their files,
+  the same across restarts. A scenario reads it only as a readiness signal for the
+  person's _while it starts_ scenario, a peek at the shell's resume files
+  (`deck.shell.resume` empty once the shell has taken the command starting the agent),
+  never to drive or assert NovaDeck's state.
 - **Agents' requests for a terminal.** Without a client answering them, an agent's
   `open_terminal` opens nothing. `deck.answerRequests()` answers them as the app does,
   from the call on and across restarts: it opens a terminal in the request's folder,
@@ -543,14 +549,28 @@ for (const setup of setups) {
     delivered, and the fork is Ready; t2's next message rings it, its hook delivering
     that one alone in the conversation carried over, and the session bound is no longer
     the parent's. Claude Code's `/fork` doesn't fork in place (its `absent` says why).
-- **Codex's own** (`codex.e2e.ts`): its first screen's logo, rung through (the doorbell's
-  paste erases it); and a `/side` conversation. With `/side` open, t2's message waits,
-  t1 Drafting from the person's keys, never Ringing nor Unbound, and no call holds the
-  doorbell's line past the settle window. The side conversation's first prompt carries
-  nothing; t1's session and agent stay, the message queued. Back at the root (Ctrl-C
-  closes the side view), the person's next prompt carries the message, in the root's
-  own conversation, which never held the side question, and t1 settles, still bound to
-  the root.
+- **Codex's own** (`codex.e2e.ts`), behaviour only Codex has:
+  - _First screen_: its logo shows as t2 is rung, and the ring goes through (the
+    doorbell's paste erases it).
+  - _`/side`_: with a side conversation open, t2's message waits, t1 Drafting from the
+    person's keys, never Ringing nor Unbound, and no call holds the doorbell's line past
+    the settle window. The side conversation's first prompt carries nothing; t1's
+    session and agent stay, the message queued. Back at the root (Ctrl-C closes the side
+    view), the person's next prompt carries the message, in the root's own conversation,
+    which never held the side question, and t1 settles, still bound to the root.
+  - _A spawned agent's dialog dismissed with Esc_: t1's root spawns an agent
+    (`spawn_agent`, `multi_agent_v1`) and its turn ends; the agent's escalated
+    `exec_command` asks (its `approval` request), the dialog showing in the root's screen
+    as "Thread: Agent (<id>)". NovaDeck sees the request waiting (`detail().requests`,
+    `activity.attention`) from a subagent it lists as running. t2's message waits queued
+    past the settle window, t1 never rung and no call holding the doorbell's line. The
+    person presses Esc on the dialog (`escape()`, never Enter), which fires no hook:
+    NovaDeck's request goes to none by following the agent's own rollout, the subagent
+    still listed as running, and t1 is then rung and its hook delivers. Codex's own
+    evidence that it aborted: the dialog's thread line leaves the screen, the agent's
+    rollout (`rollout-<time>-<agent id>.jsonl` under `CODEX_HOME/sessions`) holds
+    `turn_aborted`, and no call of its conversation ever looks at the command's result.
+    It pins the undocumented rollout naming and record NovaDeck relies on there.
 - Prefer asserting on what the model received and on NovaDeck's state over reading the
   screen; read the screen for what only it shows, such as a reply rendered, or the
   harness's own first screen (`banner`).
