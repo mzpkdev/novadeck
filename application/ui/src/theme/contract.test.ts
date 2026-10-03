@@ -384,7 +384,7 @@ const classLooks = (file: string): string[] =>
     .flatMap(({ text }) => lookUtilities(text))
 
 // Files whose class strings still draw. Shrink only.
-const scriptsWithLooks: readonly string[] = ["ui-toolkit/SegmentGroup.tsx"]
+const scriptsWithLooks: readonly string[] = []
 
 // ---- (b) No colour literals outside theme files.
 

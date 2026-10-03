@@ -5,7 +5,7 @@
    ground with an edge toward the workspace. A `kbd.hint` is a shortcut set quietly
    inside a control, as on the header's search and the sidebar's create buttons.
 
-   Hooks: on a rail toggle, aria-checked="true" for the open panel's; on the footer,
+   The rail's toggles are segments (the segmented recipe). Hooks: on the footer,
    data-tone="success" | "warning" | "danger" while the backend link is in trouble or
    has just recovered: the tone recipe then paints the whole bar, and its edges, in that
    tone.
@@ -82,15 +82,6 @@
   border-right: var(--border-width) solid var(--_border-color);
   background-color: var(--_bg);
   color: var(--_fg);
-}
-/* The rail's toggles are segments. Their tooltips take over data-state, so the open
-   panel's toggle is known by its aria-checked; it takes the segmented recipe's active
-   look. */
-.sidebar-tools .segment[aria-checked="true"] {
-  --_bg: var(--segmented-active-bg, var(--color-paper));
-  --_fg: var(--segmented-active-fg, var(--color-ink));
-  --_border-color: var(--segmented-active-border-color, var(--color-line));
-  --_shadow: var(--segmented-active-shadow, var(--shadow-control));
 }
 
 .sidebar {

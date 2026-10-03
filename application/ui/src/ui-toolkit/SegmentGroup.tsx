@@ -10,10 +10,6 @@ export type SegmentOption = {
   icon?: ReactNode
 }
 
-// While callers draw their items' look with utilities (text-muted, hover:bg-soft), the
-// active item needs utilities to override it; the segmented recipe draws it otherwise.
-const segmentActiveCompatClasses = "text-ink hover:bg-transparent"
-
 export type SegmentGroupProps = {
   label: string
   tooltips?: boolean
@@ -21,10 +17,10 @@ export type SegmentGroupProps = {
   value: string
   onValueChange: (value: string) => void
   className?: string
+  // Arranges each item; the segmented recipe draws it.
   itemClassName?: string
   // Draws the active item's look behind the items, sliding between them, instead of on
-  // the active item; the class places it. Older callers pass the indicator's look here
-  // too, with their items' look in `itemClassName`.
+  // the active item; the class places it.
   indicatorClassName?: string
 }
 
@@ -57,12 +53,7 @@ export const SegmentGroup = ({
           <ArkSegmentGroup.Item
             id={itemId(item.value)}
             value={item.value}
-            className={cn(
-              "segment relative z-1 cursor-pointer",
-              itemClassName,
-              // Keeps the active item's text over a look callers still give their items.
-              value === item.value && indicatorClassName && segmentActiveCompatClasses,
-            )}
+            className={cn("segment relative z-1 cursor-pointer", itemClassName)}
           >
             {item.icon}
             <ArkSegmentGroup.ItemText>{item.label}</ArkSegmentGroup.ItemText>
