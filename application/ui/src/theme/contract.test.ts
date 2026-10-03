@@ -422,7 +422,6 @@ const scriptsWithLooks: readonly string[] = [
   "ui-toolkit/Checkbox.tsx",
   "ui-toolkit/ConfirmDialog.tsx",
   "ui-toolkit/ContextMenu.tsx",
-  "ui-toolkit/DeckLogo.tsx",
   "ui-toolkit/HoverCard.tsx",
   "ui-toolkit/Popover.tsx",
   "ui-toolkit/SearchCombobox.tsx",
@@ -497,7 +496,6 @@ const stylesheetsWithColours: readonly string[] = [
   "preferences/WelcomePreview.module.css",
   "terminals/companion/companion.css",
   "theme/contract.css",
-  "ui-toolkit/DeckLogo.module.css",
 ]
 
 // ---- (c) No `!important` outside theme/base.css.

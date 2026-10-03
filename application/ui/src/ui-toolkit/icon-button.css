@@ -1,11 +1,53 @@
-/* The icon-button recipe: header, window, tab and sidebar actions. */
+/* The icon-button recipe: header, window, tab and sidebar actions, and the icon select's
+   trigger. `.dim` keeps its icon faint until the pointer or focus reaches it.
+
+   Tokens, each optional (its fallback in brackets):
+   --icon-button-bg (transparent), --icon-button-fg (muted),
+   --icon-button-radius (radius-control): at rest.
+   --icon-button-hover-bg (soft), --icon-button-hover-fg (ink): under the pointer, and
+   while the select, menu or popover it opens is open (Ark's data-state="open").
+   --icon-button-dim-opacity (0.25): a `.dim` button's icon at rest.
+   --icon-button-disabled-opacity (0.25): a disabled button. */
 .icon-button {
-  @apply inline-flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
+  --_bg: var(--icon-button-bg, transparent);
+  --_fg: var(--icon-button-fg, var(--color-muted));
+  @apply inline-flex size-8 shrink-0 items-center justify-center p-2;
+  border-radius: var(--icon-button-radius, var(--radius-control));
+  background-color: var(--_bg);
+  color: var(--_fg);
+}
+.icon-button:is(
+    [data-scope="select"],
+    [data-scope="menu"],
+    [data-scope="popover"]
+  )[data-state="open"] {
+  --_bg: var(--icon-button-hover-bg, var(--color-soft));
+  --_fg: var(--icon-button-hover-fg, var(--color-ink));
+}
+@media (hover: hover) {
+  .icon-button:hover {
+    --_bg: var(--icon-button-hover-bg, var(--color-soft));
+    --_fg: var(--icon-button-hover-fg, var(--color-ink));
+  }
 }
 .icon-button:disabled {
-  @apply cursor-default bg-transparent text-muted;
-  opacity: 0.25;
+  @apply cursor-default;
+  --_bg: var(--icon-button-bg, transparent);
+  --_fg: var(--icon-button-fg, var(--color-muted));
+  opacity: var(--icon-button-disabled-opacity, 0.25);
 }
 .icon-button > svg {
   @apply shrink-0;
+}
+.icon-button.dim > svg {
+  opacity: var(--icon-button-dim-opacity, 0.25);
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+.icon-button.dim:focus-visible > svg {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .icon-button.dim:hover > svg {
+    opacity: 1;
+  }
 }
