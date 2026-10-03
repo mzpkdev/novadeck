@@ -3,9 +3,8 @@ import { useEffect, useRef } from "react"
 
 import { isWindow } from "../model/roster"
 import type { Tile } from "../model/types"
+import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { searchResultClasses } from "../ui-toolkit/SearchCombobox"
-
-import motion from "../ui-toolkit/ModalMotion.module.css"
 
 export const TerminalSwitcher = ({
   terminals,

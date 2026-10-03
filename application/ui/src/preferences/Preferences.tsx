@@ -8,14 +8,13 @@ import type { PreferencesValue } from "../model/types"
 import { themes, type ThemeEntry, type ThemeId } from "../theme/themes"
 import { Checkbox } from "../ui-toolkit/Checkbox"
 import { Dialog } from "../ui-toolkit/Dialog"
+import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { SegmentGroup } from "../ui-toolkit/SegmentGroup"
 import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
 import { AgentSwitches, agentsExplanation, type AgentSwitch } from "./AgentSwitches"
 import { settingRowClasses, settingsCardClasses } from "./settings"
-
-import motion from "../ui-toolkit/ModalMotion.module.css"
 
 const themeItems = themes.map(({ id, name }) => ({ label: name, value: id }))
 const schemeItems = [

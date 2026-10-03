@@ -6,10 +6,10 @@ import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/Dec
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
+import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { agentLabels, agentNote, type AgentSwitch } from "./AgentSwitches"
 import { WelcomePreview } from "./WelcomePreview"
 
-import motion from "../ui-toolkit/ModalMotion.module.css"
 import styles from "./WelcomeDialog.module.css"
 
 type Choices = Record<AgentSwitch["agent"], boolean>

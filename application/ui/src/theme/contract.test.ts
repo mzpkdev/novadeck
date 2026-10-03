@@ -420,16 +420,12 @@ const scriptsWithLooks: readonly string[] = [
   "terminals/TerminalTabs.tsx",
   "terminals/WindowShell.tsx",
   "ui-toolkit/Checkbox.tsx",
-  "ui-toolkit/ConfirmDialog.tsx",
   "ui-toolkit/ContextMenu.tsx",
-  "ui-toolkit/HoverCard.tsx",
-  "ui-toolkit/Popover.tsx",
   "ui-toolkit/SearchCombobox.tsx",
   "ui-toolkit/SegmentGroup.tsx",
   "ui-toolkit/Select.tsx",
   "ui-toolkit/Switch.tsx",
   "ui-toolkit/Tabs.tsx",
-  "ui-toolkit/Tooltip.tsx",
 ]
 
 // ---- (b) No colour literals outside theme files.

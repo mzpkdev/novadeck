@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import { isWindow } from "../model/roster"
 import type { Tile } from "../model/types"
 import { Dialog } from "../ui-toolkit/Dialog"
+import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { SearchCombobox } from "../ui-toolkit/SearchCombobox"
-
-import motion from "../ui-toolkit/ModalMotion.module.css"
 
 // What a result says of where it runs. A window runs nothing, so only its name finds it.
 const detail = (tile: Tile): { readonly command: string; readonly directory: string } =>
