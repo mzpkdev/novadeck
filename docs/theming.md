@@ -186,7 +186,8 @@ selected, the DOM says so in an attribute.
 - **JS reads tokens, never colours.** Code that needs a colour outside CSS, such as the
   xterm theme, resolves the token through a hidden probe element (`color:
 var(--terminal-bg)` read back with `getComputedStyle`), because a token can hold
-  `color-mix()`, and reads again on `novadeck:themechange`.
+  `color-mix()`, and reads again on `novadeck:themechange`. `tokenColors` in
+  `theme/probe.ts` does this.
 
 ## Themes
 
@@ -241,10 +242,14 @@ its file defines. To add a theme:
 ## Choosing a theme
 
 Preferences holds `appearance: { theme, scheme }`, where `scheme` is `system`, `light`
-or `dark`. `theme/apply.ts` resolves it against the system's scheme and the schemes the
-theme offers; a theme with one scheme always uses it, and an unknown theme falls back
-to the first in the list, Graphite. It then sets `data-theme` and
-`data-scheme` on `<html>` and dispatches `novadeck:themechange`.
+or `dark`; it starts as Graphite following the system. Preferences shows a Theme list
+from `theme/themes.ts` and a Mode choice (System, Light, Dark), disabled with a note for
+a theme with one scheme. `theme/apply.ts` resolves the preference against the system's
+scheme and the schemes the theme offers; a theme with one scheme always uses it, and
+an unknown theme falls back to the first in the list, Graphite. It then sets
+`data-theme` and `data-scheme` on `<html>` and dispatches `novadeck:themechange`.
+`app/appearance.ts` is the one place that does this while the app runs: whenever the
+preference changes, and whenever the system's scheme does.
 
 - **Switching** sets `data-theme-switching` on `<html>` for one frame, which stills
   transitions so the whole page changes at once instead of fading control by control.
@@ -253,9 +258,13 @@ to the first in the list, Graphite. It then sets `data-theme` and
   scheme and the theme's schemes), and the script only resolves `system` against
   `matchMedia`. It is a plain script loaded in the head without `defer`, because the
   Content Security Policy allows same-origin scripts but not inline ones.
-- **Windows** stay in step: each listens for the `storage` event and applies a theme
-  another window chose.
-- **The desktop host** follows the page. On every change the page reports the resolved
-  scheme and its `--color-canvas`; the host sets `nativeTheme.themeSource` so native
-  menus and `prefers-color-scheme` agree, and opens new windows with that ground so a
-  dark theme never flashes white.
+- **Windows** stay in step: each listens for the `storage` event and takes up the
+  preferences another window saved, theme included.
+- **The desktop host** follows the page. On every change the page reports its scheme
+  and its `--color-canvas` as `#rrggbb` through the preload bridge; the host sets
+  `nativeTheme.themeSource` so native menus and `prefers-color-scheme` agree, sets the
+  window's background, and keeps that ground to open new windows on, so a dark theme
+  never flashes white. While the page follows the system it reports `system`, not the
+  scheme it resolved: a fixed `themeSource` would hide the system's own scheme from
+  `matchMedia`. The host accepts only `system`, `light` or `dark` and an opaque hex
+  colour. In a browser there is no host, and nothing is reported.
