@@ -33,7 +33,7 @@
 /* In a list Ark manages, the highlight shows where the keyboard is; an item that is a
    plain button takes the ring, inside its edge so a list's neighbours don't cover it. */
 .item:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color, var(--color-strong));
   outline-offset: calc(var(--focus-ring-width) * -1);
 }
 .item::before {

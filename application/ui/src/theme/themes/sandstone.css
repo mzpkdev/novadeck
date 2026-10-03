@@ -149,7 +149,6 @@
    the region's own grounds. */
 [data-theme="sandstone"],
 [data-theme="sandstone"] :is(.sidebar, .sidebar-tools, .sidebar-drawer) {
-  --focus-ring-color: var(--color-strong);
   /* Selected: a full-width soft terracotta tint. */
   --item-selected-bg: color-mix(in srgb, var(--color-strong) 18%, var(--color-shell));
   --item-highlighted-border-color: transparent;

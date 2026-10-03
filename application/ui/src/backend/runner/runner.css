@@ -103,7 +103,7 @@
     --_bg: var(--runner-restart-hover-bg, var(--color-soft));
   }
   .runner-restart:focus-visible {
-    outline: 2px solid var(--focus-ring-color);
+    outline: 2px solid var(--focus-ring-color, var(--color-strong));
     outline-offset: 1px;
   }
   .runner-restart[aria-disabled="true"] {

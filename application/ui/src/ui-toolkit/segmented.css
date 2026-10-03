@@ -43,7 +43,7 @@
     border-color var(--motion-feedback) var(--ease-interface);
 }
 .segment[data-focus-visible] {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color, var(--color-strong));
   outline-offset: var(--focus-ring-offset);
 }
 @media (hover: hover) {

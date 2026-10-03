@@ -97,7 +97,7 @@
   --_shadow: var(--choice-card-checked-shadow, var(--shadow-control));
 }
 .choice-card:has(:focus-visible) {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color, var(--color-strong));
   outline-offset: var(--focus-ring-offset);
 }
 
@@ -115,11 +115,15 @@
     color var(--motion-state) var(--ease-interface);
 }
 .choice-card[data-state="checked"] .choice-card-tile {
-  --_highlight: inset 0 1px 0 color-mix(in srgb, var(--brand-tile-fg) 8%, transparent);
+  --_highlight: inset 0 1px 0
+    color-mix(in srgb, var(--brand-tile-fg, var(--color-on-strong)) 8%, transparent);
   --_drop: 0 6px 14px -8px color-mix(in srgb, var(--color-shadow) 50%, transparent);
   border-color: var(--brand-tile-border-color);
-  background: var(--brand-tile-bg);
-  color: var(--brand-tile-fg);
+  background: var(
+    --brand-tile-bg,
+    linear-gradient(180deg, var(--color-strong-hover), var(--color-strong))
+  );
+  color: var(--brand-tile-fg, var(--color-on-strong));
 }
 .choice-card[data-disabled] .choice-card-tile {
   color: var(--color-muted);

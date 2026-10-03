@@ -42,15 +42,19 @@
   );
 }
 .deck-face {
-  --_highlight: inset 0 1px 0 color-mix(in srgb, var(--brand-tile-fg) 8%, transparent);
+  --_highlight: inset 0 1px 0
+    color-mix(in srgb, var(--brand-tile-fg, var(--color-on-strong)) 8%, transparent);
   --_edge: inset 0 0 0 1px var(--brand-tile-border-color);
   --_drop: 0 1px 2px color-mix(in srgb, var(--color-shadow) 12%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  color: var(--brand-tile-fg);
-  background: var(--brand-tile-bg);
+  color: var(--brand-tile-fg, var(--color-on-strong));
+  background: var(
+    --brand-tile-bg,
+    linear-gradient(180deg, var(--color-strong-hover), var(--color-strong))
+  );
   box-shadow: var(--_edge), var(--_highlight), var(--_drop);
 }
 .deck-mark.large .deck-face {
@@ -73,7 +77,7 @@
   opacity: 0;
   background: linear-gradient(
     transparent,
-    color-mix(in srgb, var(--brand-tile-fg) 30%, transparent) 50%,
+    color-mix(in srgb, var(--brand-tile-fg, var(--color-on-strong)) 30%, transparent) 50%,
     transparent
   );
 }

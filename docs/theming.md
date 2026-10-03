@@ -76,14 +76,16 @@ recipe inside the sidebar.
 A token whose value reads another token is resolved where it is declared, and its
 descendants inherit the result. So an `--item-selected-bg` that a theme mixes from
 `--color-strong` on `[data-theme]` keeps the root's strong colour inside a restyled
-region, and so do the defaults `theme/base.css` derives on `:root`, such as
-`--focus-ring-color` and `--brand-tile-*`. A theme that restyles a region declares each
-such token again on the region, in the same rule as on its root, so it reads the
-region's own foundation tokens; `theme/themes/sandstone.css` does this for its dark
-sidebar.
+region. A theme that restyles a region declares each such token again on the region,
+in the same rule as on its root, so it reads the region's own foundation tokens;
+`theme/themes/sandstone.css` does this for its dark sidebar.
 
-Optional foundation tokens get their defaults in `theme/base.css`, on `:root` in the
-`base` layer, never in Tailwind's `@theme`, which would turn them back into utilities.
+Optional foundation tokens with a plain value get their defaults in `theme/base.css`,
+on `:root` in the `base` layer, never in Tailwind's `@theme`, which would turn them
+back into utilities. An optional token whose default reads other tokens
+(`--focus-ring-color`, `--brand-tile-bg`, `--brand-tile-fg`) has no `:root` default:
+each recipe that reads it carries the default as its fallback, so it resolves on the
+element and follows a restyled region.
 
 ### Foundation tokens
 
@@ -101,7 +103,8 @@ Required in every scheme a theme offers:
 | Terminal | `--terminal-{bg,fg,cursor,selection}`; `--terminal-ansi-{black,red,green,yellow,blue,magenta,cyan,white}`, and each again as `--terminal-ansi-{black,red,green,yellow,blue,magenta,cyan,white}-bright` |
 | Depth    | `--shadow-control`, `--shadow-panel`, `--shadow-floating`, `--shadow-modal`                                                                                                                            |
 
-Optional, with defaults in `theme/base.css`:
+Optional, with defaults in `theme/base.css` or, for those that read other tokens, in
+each recipe's fallback:
 
 | Group   | Tokens                                                                                                         |
 | ------- | -------------------------------------------------------------------------------------------------------------- |
