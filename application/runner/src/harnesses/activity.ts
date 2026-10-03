@@ -83,6 +83,21 @@ const end = (ended: Activity["ended"], ids: readonly string[], at: number): Acti
 const endOf = (ended: Activity["ended"], actor: string): number | undefined =>
   ended.find(({ id }) => id === actor)?.at
 
+/**
+ * Whether a subagent may start running at `startedAt`: not running already, room for it,
+ * and no later stop of it, nor the interrupted turn that ended it, says it is over.
+ */
+const startable = (
+  { subagents, ended, interrupted }: Activity,
+  id: string,
+  startedAt: number,
+): boolean =>
+  id.length <= maxText &&
+  subagents.length < maxSubagents &&
+  !subagents.some((subagent) => subagent.id === id) &&
+  startedAt >= (endOf(ended, id) ?? Number.NEGATIVE_INFINITY) &&
+  !(interrupted && startedAt >= interrupted.from && startedAt < interrupted.to)
+
 /** Whether an event belongs to the bound session, from its own process where known. */
 export const bound = (
   binding: Binding,
@@ -129,9 +144,9 @@ const outliving = (
  * still waiting: no harness ends a root turn normally while its own dialog waits, a
  * denial ends it abnormally, and one answered with no report, as another hook's denial,
  * would otherwise wait forever. A running subagent's requests answer to no root turn: each
- * waits for its own resolution, that subagent's next request or its stop. An interrupted
- * turn ends the subagents it started, which report no stop then; a background one from an
- * earlier turn runs on.
+ * waits for its own resolution, its turn's abort or its stop. An interrupted turn ends the
+ * subagents it started, which report no stop then; a background one from an earlier turn
+ * runs on.
  */
 export const apply = (
   activity: Activity,
@@ -170,18 +185,10 @@ export const apply = (
       if (event.startedAt < activity.planningAt) return undefined
       return { ...activity, planning: event.planning, planningAt: event.startedAt }
     case "subagent-started": {
-      const { subagents, ended, interrupted } = activity
       const { actor: id, startedAt } = event
-      if (
-        id.length > maxText ||
-        subagents.length >= maxSubagents ||
-        subagents.some((subagent) => subagent.id === id) ||
-        startedAt < (endOf(ended, id) ?? Number.NEGATIVE_INFINITY) ||
-        (interrupted && startedAt >= interrupted.from && startedAt < interrupted.to)
-      )
-        return undefined
+      if (!startable(activity, id, startedAt)) return undefined
       const type = event.actorType?.slice(0, maxText) ?? null
-      return { ...activity, subagents: [...subagents, { id, type, startedAt }] }
+      return { ...activity, subagents: [...activity.subagents, { id, type, startedAt }] }
     }
     case "subagent-stopped": {
       const { subagents, ended } = activity
@@ -201,6 +208,14 @@ export const apply = (
         ended: end(ended, [actor], startedAt),
       }
     }
+    case "subagent-turn-aborted": {
+      // Its dialogs closed with the turn; its thread, and so the subagent, runs on.
+      const { actor, startedAt } = event
+      const pending = activity.pending.filter(
+        (request) => request.actor !== actor || request.askedAt > startedAt,
+      )
+      return pending.length === activity.pending.length ? undefined : { ...activity, pending }
+    }
     case "attention-resolved": {
       const index = resolved(activity.pending, event)
       // A subagent's request outlives the root's turn, and so does its result; the root's
@@ -212,10 +227,19 @@ export const apply = (
         return undefined
       return { ...activity, pending: activity.pending.toSpliced(index, 1) }
     }
-    case "attention-requested":
-      // A running subagent's request answers to no root turn, as its result doesn't.
-      if (event.actor !== null && activity.subagents.some(({ id }) => id === event.actor))
-        return asked(activity, event)
+    case "attention-requested": {
+      // A subagent's request answers to no root turn, as its result doesn't. One not seen
+      // running, as its start came before the binding or its harness reported its stop at
+      // a turn's end (Codex), runs from its request on, unless it is known to be over.
+      const { actor, startedAt } = event
+      if (actor === null) break
+      if (activity.subagents.some(({ id }) => id === actor)) return asked(activity, event)
+      if (startable(activity, actor, startedAt)) {
+        const next = asked(activity, event)
+        const subagent = { id: actor, type: null, startedAt }
+        return next && { ...next, subagents: [...next.subagents, subagent] }
+      }
+    }
   }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
@@ -288,12 +312,10 @@ export const apply = (
 }
 
 /**
- * The activity once a request is asked, or undefined when it asks nothing new. A subagent
- * shows one dialog at a time, and a hook that answers no reports nothing, so its newest
- * request stands for it: one it asked later settles its older ones, whatever answered
- * them, and an older one arriving later asks nothing. A result of another call proves
- * nothing, as it may come from a call that ran alongside the one asked about. The root's
- * requests, which may arrive in any order, wait for the turn's end.
+ * The activity once a request is asked, or undefined when it asks nothing new. Requests
+ * arrive in any order, and a subagent's parallel calls may show several dialogs at once,
+ * so none settles another: a subagent's waits for its own result, its turn's abort or its
+ * stop, as one answered with no report must (a denial); the root's, for the turn's end.
  */
 const asked = (
   activity: Activity,
@@ -307,11 +329,9 @@ const asked = (
   // Asked by a subagent before it stopped, it waits on the person no longer.
   const stopped = actor === null ? undefined : endOf(activity.ended, actor)
   if (stopped !== undefined && startedAt < stopped) return undefined
-  const own = (each: Request) => actor !== null && each.actor === actor
-  if (activity.pending.some((each) => own(each) && each.askedAt > startedAt)) return undefined
   // An actor shows one plan for review at a time: a revised one replaces it.
   const kept = activity.pending.filter(
-    (each) => !own(each) && (kind !== "plan" || each.kind !== "plan" || each.actor !== actor),
+    (each) => kind !== "plan" || each.kind !== "plan" || each.actor !== actor,
   )
   return {
     ...activity,

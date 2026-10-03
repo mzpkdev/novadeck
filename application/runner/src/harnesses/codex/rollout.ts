@@ -145,9 +145,9 @@ export const followRollout: NonNullable<Harness["watch"]> = (run, signal, emit) 
 /**
  * What one line of a subagent's own rollout says that no hook does: its turn aborted, as
  * Esc on its request does, firing neither `Interrupt` nor `SubagentStop` (probed
- * 2026-10-03, 0.159.3). Its turn over, it waits on the person no longer, so it counts as
- * that subagent's stop, at the abort's time; only one from `since` on, when its request
- * was asked, counts.
+ * 2026-10-03, 0.159.3). Its turn over, it waits on the person no longer, though its
+ * thread stays open, so it runs on; only an abort from `since` on, when its request was
+ * asked, counts.
  */
 export const subagentEvents = (
   line: string,
@@ -168,7 +168,7 @@ export const subagentEvents = (
   if ((payload as { type?: unknown } | null)?.type !== "turn_aborted") return []
   const startedAt = Date.parse(timestamp)
   if (!Number.isFinite(startedAt) || startedAt < since) return []
-  return [{ type: "subagent-stopped", agent: "codex", sessionId, instance, actor, startedAt }]
+  return [{ type: "subagent-turn-aborted", agent: "codex", sessionId, instance, actor, startedAt }]
 }
 
 // How often a subagent's rollout is looked for until it is found.

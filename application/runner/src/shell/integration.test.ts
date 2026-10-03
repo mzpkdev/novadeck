@@ -28,6 +28,7 @@ import type {
 } from "@novadeck/protocol"
 import { vi } from "vitest"
 
+import { codex as codexHarness } from "../harnesses/codex/index.js"
 import { Terminals, type TerminalOptions } from "../terminals/index.js"
 import { Latest } from "../terminals/latest.js"
 import type { TerminalRecords } from "../terminals/records.js"
@@ -641,7 +642,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const terminal = await create(manager, shell)
     manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
     await shell.until(manager, terminal.id, "reports sent")
-    // Both reports taken, in turn: the later one recorded for resuming, binding nothing.
+    // Both reports taken, in turn: the first recorded for resuming, its binding ended with
+    // its gone process; the later one, of that same session, skipped as late, binding nothing.
     await expect
       .poll(
         () =>
@@ -2765,9 +2767,9 @@ const hook = (event, payload, done) => {
   child.on("close", () => done(printed))
   child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: current, cwd: process.cwd(), ...rollout, ...payload }))
 }
-// With "subabort", Codex's hooks name its rollout, filed by day as Codex files it.
+// With "subabort" or "subagain", Codex's hooks name its rollout, filed by day as Codex files it.
 const rollout =
-  mode === "subabort"
+  mode === "subabort" || mode === "subagain"
     ? { transcript_path: received + ".sessions/2026/10/03/rollout-2026-10-03T00-00-00-" + session + ".jsonl" }
     : {}
 let box = ""
@@ -2840,6 +2842,18 @@ const turn = (prompt, typed = true) => {
           hook("SubagentStart", spawned, () =>
             hook("PermissionRequest", { ...spawned, tool_name: "Bash", tool_input: { command: "ls" } }, () => {}),
           )
+        }
+        // With "subagain", it asks again after each later turn's Stop, its thread still open
+        // (no new SubagentStart): Enter allows that one.
+        if (mode === "subagain") {
+          const spawned = { agent_id: "a1", agent_type: "default" }
+          const input = { ...spawned, tool_name: "Bash", tool_input: { command: "ls " + turns } }
+          if (turns === 1)
+            hook("SubagentStart", spawned, () => hook("PermissionRequest", input, () => {}))
+          else
+            hook("PermissionRequest", input, () => {
+              dialog = () => hook("PostToolUse", { ...input, tool_response: {} }, () => {})
+            })
         }
         // Antigravity's status line, which keeps running, names the conversation idle.
         if (agent === "agy" && showing)
@@ -3243,6 +3257,81 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(pastes(tui.raw())).toHaveLength(1)
     })
 
+    it("follows a Codex spawned agent's next request after its rollout records Esc on one, its thread still open", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "subagain")
+      await tui.first()
+      const activity = () => tui.manager.get(tui.idle.id).activity
+      const pending = () => activity()?.attention.pending
+      await expect.poll(pending).toBe(1)
+      const own = join(
+        shell.home,
+        "received.jsonl.sessions/2026/10/03/rollout-2026-10-03T00-00-01-a1.jsonl",
+      )
+      mkdirSync(dirname(own), { recursive: true })
+      const abort = () =>
+        appendFileSync(
+          own,
+          `${JSON.stringify({ timestamp: new Date().toISOString(), type: "event_msg", payload: { type: "turn_aborted", reason: "interrupted" } })}\n`,
+        )
+      // Esc on its first request ends that turn only: it still runs.
+      abort()
+      await expect.poll(pending, { timeout: 5_000 }).toBe(0)
+      expect(activity()?.subagents).toHaveLength(1)
+      // Rung, the root's turn ends, and the spawned agent asks again: followed again.
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
+      await expect.poll(pending, { timeout: 5_000 }).toBe(1)
+      abort()
+      await expect.poll(pending, { timeout: 5_000 }).toBe(0)
+    })
+
+    it("stops following a spawned agent once its request settles or resolves, and when the binding ends", async ({
+      shell,
+    }) => {
+      const watch = vi.spyOn(codexHarness, "watchActor")
+      try {
+        const tui = await ringing(shell, "subagain")
+        const signals = () => watch.mock.calls.map((call) => call[3])
+        const pending = () => tui.manager.get(tui.idle.id).activity?.attention.pending
+        await tui.first()
+        await expect.poll(pending).toBe(1)
+        await expect.poll(() => signals().length).toBe(1)
+        expect(signals()[0]!.aborted).toBe(false)
+        // Esc on it, as its rollout records: settled, no longer followed.
+        const own = join(
+          shell.home,
+          "received.jsonl.sessions/2026/10/03/rollout-2026-10-03T00-00-01-a1.jsonl",
+        )
+        mkdirSync(dirname(own), { recursive: true })
+        writeFileSync(
+          own,
+          `${JSON.stringify({ timestamp: new Date().toISOString(), type: "event_msg", payload: { type: "turn_aborted" } })}\n`,
+        )
+        await expect.poll(pending, { timeout: 5_000 }).toBe(0)
+        expect(signals()[0]!.aborted).toBe(true)
+        // Its next request, allowed with Enter: resolved, no longer followed.
+        await tui.send("Review a.ts")
+        await expect.poll(pending, { timeout: 10_000 }).toBe(1)
+        await expect.poll(() => signals().length).toBe(2)
+        expect(signals()[1]!.aborted).toBe(false)
+        tui.type("\r")
+        await expect.poll(pending, { timeout: 5_000 }).toBe(0)
+        expect(signals()[1]!.aborted).toBe(true)
+        // Another, then the agent exits: the binding ends, and its follower with it.
+        await tui.send("Review b.ts")
+        await expect.poll(pending, { timeout: 10_000 }).toBe(1)
+        await expect.poll(() => signals().length).toBe(3)
+        expect(signals()[2]!.aborted).toBe(false)
+        tui.leave()
+        await expect.poll(() => tui.manager.get(tui.idle.id).agent, { timeout: 5_000 }).toBeNull()
+        expect(signals()[2]!.aborted).toBe(true)
+      } finally {
+        watch.mockRestore()
+      }
+    })
+
     it("rings no Settled TUI while a request asked after its Stop waits, and rings once it resolves", async ({
       shell,
     }) => {
@@ -3562,6 +3651,59 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const [rung] = lines<{ printed: string }>(file("new.jsonl"))
       expect(rung!.printed).toContain(">For the new session</message>")
       expect(rung!.printed).not.toContain("For the old session")
+    })
+
+    it("shows another agent's title prompt though a ring check ended the binding it found while it asked", async ({
+      shell,
+    }) => {
+      // As `leaving`, but whether Codex's hooks run there takes a while to tell, and the
+      // doorbell isn't paused: its check finds Claude Code gone and ends that binding
+      // while the title's question is out.
+      const bin = standIn(shell.home)
+      standInTui(shell.home)
+      const manager = shell.manager({
+        env: {
+          HOME: shell.home,
+          PS1: "$ ",
+          PATH: `${bin}:${process.env.PATH}`,
+          CODEX_HOME: join(shell.home, ".codex"),
+        },
+        doorbell: { calmMs: 200, settleMs: 300 },
+        hooksTrusted: (agent) =>
+          agent === "codex"
+            ? new Promise((resolve) => setTimeout(() => resolve(true), 2_000))
+            : Promise.resolve(true),
+      })
+      const sender = await create(manager, shell)
+      const idle = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(sender.id, "claude", "s-claude")
+      const file = (name: string) => join(shell.home, name)
+      const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
+      manager.write(
+        {
+          terminalId: idle.id,
+          data: `tui claude s-old '${file("old.jsonl")}' '${file("old-raw.jsonl")}' '' ; named codex ${thread} '${file("new.jsonl")}' '${file("new-raw.jsonl")}' shown\r`,
+        },
+        "owner",
+      )
+      await shell.until(manager, idle.id, "claude ready")
+      await expect.poll(() => manager.get(idle.id).agent).toBe("claude")
+      await expect.poll(() => manager.messages(idle.id).delivery).toBe("ready")
+      const pid = Number(readFileSync(file("old-raw.jsonl.pid"), "utf8"))
+      process.kill(pid, "SIGUSR2")
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 10_000 })
+      // Codex's title is out, its question pending, while Claude Code's binding stands.
+      await shell.until(manager, idle.id, "codex ready")
+      expect(manager.get(idle.id).agent).toBe("claude")
+      await step(sender.id, {
+        call: "send",
+        request: { to: idle.handle, text: "For the old session" },
+      })
+      await expect.poll(() => manager.get(idle.id).agent).toBeNull()
+      expect(manager.messages(idle.id).delivery).toBe("unbound")
+      // The title's answer, once it comes, shows Codex's prompt as from no binding.
+      await expect.poll(() => manager.messages(idle.id).delivery, { timeout: 5_000 }).toBe("ready")
     })
 
     it("rings no bound agent that left unseen, and ends its binding, its messages gone", async ({

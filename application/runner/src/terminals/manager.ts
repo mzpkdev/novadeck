@@ -2595,12 +2595,21 @@ export class Terminals {
       // Asked before it joins the terminal's queue, so a slow answer from the harness
       // never holds the terminal's reports up.
       // Still the terminal's latest title, from the same process, with no session bound, no
-      // binding ended and no root turn started since, nor the shell's prompt back.
-      const current = () =>
-        record.titles === seq &&
-        record.process === child &&
-        !record.exitQueued &&
-        this.messaging.delivery(record.summary.id)?.epoch === epoch
+      // binding ended and no root turn started since, nor the shell's prompt back. Only the
+      // binding it found, ended since as its process was found gone (by a ring's check or a
+      // report while this asked), and nothing after: its prompt shows as from no binding.
+      const current = () => {
+        if (record.titles !== seq || record.process !== child || record.exitQueued) return false
+        const now = this.messaging.delivery(record.summary.id)?.epoch
+        if (now === epoch) return true
+        return (
+          binding !== null &&
+          epoch !== undefined &&
+          now === epoch + 1 &&
+          record.left === binding &&
+          record.binding === null
+        )
+      }
       void (async () => {
         const found = await this.harnessIn(record, child, agent)
         if (!found) return

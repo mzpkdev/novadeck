@@ -141,7 +141,7 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 - `PermissionRequest` carries `tool_name` and `tool_input` but no id. It follows the call's `PreToolUse`, the same as for Claude Code (probed).
 - Approval shows as that call's `PostToolUse` (probed). A denial (Esc) fires `Interrupt` for the turn (probed), which resolves the request and ends the turn.
-- A spawned subagent's request (`multi_agent_v1`, under `--no-daemon`) shows in the root's TUI as "Thread: Agent (<id>)". Its `PermissionRequest` and, once allowed, its `PostToolUse` carry its `agent_id`, and its turn's end fires `SubagentStop`, not `Stop`. Esc on it closes the dialog and fires no hook at all, neither `Interrupt` nor `SubagentStop`: only the subagent's own rollout records `turn_aborted`, and the subagent stays open (probed 2026-10-03, 0.159.3). NovaDeck follows that rollout while the subagent's request waits, and takes the abort as its stop.
+- A spawned subagent's request (`multi_agent_v1`, under `--no-daemon`) shows in the root's TUI as "Thread: Agent (<id>)". Its `PermissionRequest` and, once allowed, its `PostToolUse` carry its `agent_id`, and its turn's end fires `SubagentStop`, not `Stop`. Esc on it closes the dialog and fires no hook at all, neither `Interrupt` nor `SubagentStop`: only the subagent's own rollout records `turn_aborted`, and the subagent stays open (probed 2026-10-03, 0.159.3). NovaDeck follows that rollout while the subagent's request waits, and takes the abort as the end of that subagent's turn: its requests settle, and it still runs.
 - Approvals are not written to the rollout.
 - `request_user_input` is a function tool, and whether it reaches `PreToolUse` needs a probe.
 - `PermissionRequest` can answer `allow` or `deny`.
