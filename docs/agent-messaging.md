@@ -699,9 +699,11 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    or the terminal's messages.
 5. **Test paste.** With the person's input to the terminal held for the whole ring,
    until after its Enter, and the app's resizes of it too, the latest applied once the
-   hold ends, as a resize redraws the screen mid-check and would fail the ring (a pane
-   changing size, the companion bar opening, a font size; a safety cap releases the hold
-   after 3 s whatever happened): snapshot
+   ring is confirmed or fails, as a resize redraws the screen mid-check and would fail the
+   ring (a pane changing size, the companion bar opening, a font size), and one landing as
+   the doorbell's turn starts crashed Codex 0.159.3 (`index outside of buffer`, in about a
+   fifth of e2e runs; none once held to the confirmation); safety caps release the input
+   after 3 s and the resizes after 8 s whatever happened: snapshot
    the screen text, write the line as one bracketed paste, and poll the screen for up to
    1.5 s, which leaves room in the cap for the last looks and the Enter. It is accepted
    only when:

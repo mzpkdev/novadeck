@@ -302,12 +302,14 @@ type Record = {
   /** What the root session worked on, kept with the terminal; null before any did. */
   work: Work | null
   /**
-   * What waits while the doorbell's test paste is on screen: the person's input, and the
-   * latest size the app asked for, as a resize redraws the screen the paste is checked on;
-   * null otherwise.
+   * What waits while the doorbell rings: the person's input, while its test paste is on
+   * screen (null once that's let go, after its Enter), and the latest size the app asked
+   * for, until its prompt confirms the ring or the ring fails, as a resize redraws the
+   * screen the paste is checked on, and one landing as the doorbell's turn starts crashed
+   * Codex (0.159.3); null otherwise.
    */
   held: {
-    readonly input: string[]
+    input: string[] | null
     size: {
       readonly cols: number
       readonly rows: number
@@ -437,6 +439,10 @@ const sameToken = (a: string, b: string): boolean =>
 // The longest the doorbell holds the person's input, in milliseconds: a safety cap,
 // well beyond a ring's test paste.
 const holdCapMs = 3_000
+
+// The longest it holds the app's resizes, in milliseconds: a safety cap beyond the wait
+// for the ring's prompt to confirm it.
+const sizeCapMs = 8_000
 
 // How much time a prompt's hook must have left for drift to be read, in milliseconds:
 // a git branch and a plan's file, each with its own short timeout.
@@ -968,7 +974,7 @@ export class Terminals {
       if (this.messaging.untrustedAgent(input.terminalId)) this.recheckTrust(record)
     }
     // While the doorbell's test paste is on screen, the person's input waits its turn.
-    if (record.held) {
+    if (record.held?.input) {
       record.held.input.push(input.data)
       return
     }
@@ -1040,15 +1046,23 @@ export class Terminals {
       hold: (terminalId) => {
         const record = live(terminalId)
         // A hold already in force is another ring's: this one has none.
-        if (!record || record.held) return { release: () => {}, holding: () => false }
+        if (!record || record.held)
+          return { release: () => {}, settle: () => {}, holding: () => false }
         const held: NonNullable<Record["held"]> = { input: [], size: null }
         record.held = held
         const release = () => {
-          clearTimeout(timer)
+          clearTimeout(inputCap)
+          const { input } = held
+          if (record.held !== held || !input) return
+          held.input = null
+          if (input.length > 0 && live(terminalId) === record) record.process.write(input.join(""))
+        }
+        const settle = () => {
+          release()
+          clearTimeout(sizeCap)
           if (record.held !== held) return
           record.held = null
           if (live(terminalId) !== record) return
-          if (held.input.length > 0) record.process.write(held.input.join(""))
           // Only for the attachment still in control: one that took over meanwhile, or
           // the same window attached anew, was told the size in force and asks its own.
           const { size } = held
@@ -1064,10 +1078,17 @@ export class Terminals {
             // A shell that exited meanwhile takes no size; its exit is handled in turn.
           }
         }
-        // A ring takes well under this; should it not, the person's keys go on.
-        const timer = setTimeout(release, holdCapMs)
-        timer.unref()
-        return { release, holding: () => record.held === held && live(terminalId) === record }
+        // A ring takes well under these; should it not, the person's keys, then the app's
+        // sizes, go on.
+        const inputCap = setTimeout(release, holdCapMs)
+        inputCap.unref()
+        const sizeCap = setTimeout(settle, sizeCapMs)
+        sizeCap.unref()
+        return {
+          release,
+          settle,
+          holding: () => record.held === held && held.input !== null && live(terminalId) === record,
+        }
       },
       write: (terminalId, data) => {
         const record = live(terminalId)
@@ -1081,8 +1102,8 @@ export class Terminals {
   resize(input: { terminalId: string; cols: number; rows: number }, ownerId: string): void {
     const record = this.control(input.terminalId, ownerId)
     this.running(record)
-    // While the doorbell's test paste is on screen, a resize would redraw it and fail the
-    // ring: the latest waits for the ring's hold to end.
+    // While the doorbell rings, a resize would redraw the screen its paste is checked on,
+    // or land as its turn starts: the latest waits for the ring's hold to settle.
     if (record.held) {
       record.held.size = {
         cols: input.cols,
