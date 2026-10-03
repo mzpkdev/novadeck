@@ -385,18 +385,14 @@ const classLooks = (file: string): string[] =>
 
 // Files whose class strings still draw. Shrink only.
 const scriptsWithLooks: readonly string[] = [
-  "app/App.tsx",
   "app/BootFailure.tsx",
   "app/BootSplash.tsx",
-  "app/WorkspaceStage.tsx",
   "backend/demo/AgentOutput.tsx",
   "backend/demo/DemoTerminal.tsx",
   "backend/demo/TerminalOutput.tsx",
   "backend/demo/showcase/agents.tsx",
   "backend/runner/DebugPanel.tsx",
   "backend/runner/RunnerTerminal.tsx",
-  "layouts/canvas/Canvas.tsx",
-  "layouts/focus/Focus.tsx",
   "ui-toolkit/SegmentGroup.tsx",
 ]
 

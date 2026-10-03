@@ -34,7 +34,7 @@
     height: 54px;
   }
   .grid-terminal.minimized .terminal-header {
-    border-bottom-color: transparent;
+    --_border-color: transparent;
   }
   .terminal-grid .terminal-header {
     touch-action: none;
@@ -43,15 +43,10 @@
   .terminal-grid .react-draggable-dragging .terminal-header {
     cursor: grabbing;
   }
-  .terminal-grid .react-grid-placeholder {
-    @apply rounded-panel border border-line bg-soft;
-    opacity: 1;
-  }
+  /* The placeholder's and the handle's looks are the workspace recipe's. */
   .terminal-grid .react-resizable-handle {
-    @apply size-7 text-muted;
-    opacity: 0.35;
+    @apply size-7;
     user-select: none;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
   }
   .terminal-grid:has(.grid-terminal.resizing),
   .terminal-grid:has(.grid-terminal.resizing) * {
@@ -64,16 +59,8 @@
   .terminal-grid .grid-terminal.minimized .react-resizable-handle::after {
     right: 3px;
   }
-  .terminal-grid .react-resizable-handle:hover {
-    opacity: 0.8;
-  }
   .terminal-grid .react-resizable-handle::after {
     right: 7px;
     bottom: 7px;
-    width: 11px;
-    height: 11px;
-    border: 0;
-    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
-    clip-path: polygon(100% 0, 100% 100%, 0 100%);
   }
 }

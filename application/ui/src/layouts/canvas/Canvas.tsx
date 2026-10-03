@@ -506,7 +506,7 @@ const TerminalCanvas = ({
   const canvas = (
     <div
       data-workspace-viewport
-      className="canvas-viewport relative min-h-0 flex-1 overflow-hidden bg-canvas touch-none workspace-background"
+      className="canvas-viewport relative min-h-0 flex-1 overflow-hidden touch-none workspace-background"
       ref={container}
       style={
         {
@@ -606,7 +606,6 @@ const TerminalCanvas = ({
             className="canvas-grid"
             gap={canvasStep}
             size={1.6}
-            color="var(--color-muted)"
             bgColor="transparent"
           />
           <Background
@@ -614,7 +613,6 @@ const TerminalCanvas = ({
             className="canvas-grid-spotlight"
             gap={canvasStep}
             size={1.6}
-            color="var(--color-muted)"
             bgColor="transparent"
           />
           {ghost && (

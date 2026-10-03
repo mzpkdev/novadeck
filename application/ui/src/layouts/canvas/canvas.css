@@ -26,23 +26,17 @@
     opacity: 0.5;
   }
   .canvas-node .terminal-resize-grip {
-    @apply absolute right-px bottom-px z-10 flex size-7 items-end justify-end border-0 bg-transparent p-1.5 text-muted;
+    /* Its look is the workspace recipe's, shared with Grid's resize handle. */
+    @apply absolute right-px bottom-px z-10 flex size-7 items-end justify-end p-1.5;
     top: auto;
     left: auto;
+    border: 0;
+    background: transparent;
     translate: none;
     transform: scale(var(--canvas-chrome-scale));
     transform-origin: bottom right;
-    opacity: 0.35;
-    transition: opacity var(--motion-feedback) var(--ease-interface);
-  }
-  .terminal-resize-grip:hover {
-    opacity: 0.8;
   }
   .terminal-resize-pattern {
-    width: 11px;
-    height: 11px;
-    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px);
-    clip-path: polygon(100% 0, 100% 100%, 0 100%);
     pointer-events: none;
   }
   .canvas-node .terminal-heading {
@@ -85,7 +79,7 @@
     padding: 0;
   }
   .canvas-node.minimized .terminal-header {
-    border-bottom-color: transparent;
+    --_border-color: transparent;
   }
   .canvas-node.minimized .terminal-resize-grip {
     width: 16px;
