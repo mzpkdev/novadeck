@@ -25,6 +25,8 @@ const terminal = (
     ready?: boolean
     /** Whether its first screen draws a logo, far from its box, only while the box is empty. */
     logo?: boolean
+    /** Resizes it as the foreground is looked at, once: after the calm, before the ring. */
+    resizeAtForeground?: boolean
   } = {},
 ) => {
   const rows = options.logo
@@ -36,6 +38,8 @@ const terminal = (
   const failed: string[] = []
   let holds = 0
   let held = false
+  let resizedAt = 0
+  let resizeAtForeground = options.resizeAtForeground ?? false
   const host: DoorbellHost = {
     ringable: () => ringable && ringing === undefined,
     settledSince: () => options.settledAt,
@@ -57,7 +61,14 @@ const terminal = (
       if (options.screenMs) await sleep(options.screenMs)
       return text
     },
-    foreground: () => Promise.resolve(options.foreground),
+    foreground: () => {
+      if (resizeAtForeground) {
+        resizeAtForeground = false
+        resizedAt = Date.now()
+      }
+      return Promise.resolve(options.foreground)
+    },
+    resizedAt: () => resizedAt,
     hold: () => {
       holds += 1
       held = true
@@ -87,6 +98,8 @@ const terminal = (
     written,
     failed,
     state: () => ({ ringing, holds, held }),
+    // The app resized its window now.
+    resize: () => (resizedAt = Date.now()),
     // The ring's prompt arrived: messaging leaves Ringing.
     confirm: () => (ringing = undefined),
   }
@@ -158,6 +171,30 @@ describe("the doorbell", () => {
     await sleep(150)
     expect(written).toEqual([])
     await vi.waitFor(() => expect(enters(written)).toBe(1), { timeout: 1_000 })
+    doorbell.close()
+  })
+
+  it("counts a resize as an end to the calm, as the screen may not have redrawn for it yet", async () => {
+    const { host, written, resize } = terminal()
+    const doorbell = new Doorbell(host, { ...fast, calmMs: 200 })
+    doorbell.changed("t")
+    await sleep(100)
+    resize()
+    await sleep(150)
+    expect(written).toEqual([])
+    await vi.waitFor(() => expect(enters(written)).toBe(1), { timeout: 1_000 })
+    doorbell.close()
+  })
+
+  it("puts off, untried, a ring whose terminal was resized after its calm, and rings once calm again", async () => {
+    const { host, written, failed, state } = terminal({ resizeAtForeground: true })
+    const doorbell = new Doorbell(host, fast)
+    doorbell.changed("t")
+    await vi.waitFor(() => expect(enters(written)).toBe(1))
+    expect(written).toHaveLength(2)
+    expect(failed).toEqual([])
+    // The ring put off took a hold and gave it back at once; the next ring took its own.
+    expect(state()).toMatchObject({ holds: 2, held: false })
     doorbell.close()
   })
 

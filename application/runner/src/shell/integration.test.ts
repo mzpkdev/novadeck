@@ -3882,9 +3882,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect.poll(tui.delivery).toBe("drafting")
     })
 
-    it("presses nothing when the terminal is resized mid-ring, and takes its line as a draft", async ({
-      shell,
-    }) => {
+    it("holds a resize during the ring, submits its line, and resizes after", async ({ shell }) => {
       const tui = await ringing(shell)
       await tui.first()
       await tui.send("Review a.ts")
@@ -3892,15 +3890,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
         { timeout: 10_000, interval: 5 },
       )
+      // A pane changing size mid-ring would redraw the screen the line is checked on.
       tui.manager.resize({ terminalId: tui.idle.id, cols: 70, rows: 20 }, "owner")
-      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("unknown")
-      expect(tui.raw().filter((data) => data === "\r")).toHaveLength(1)
-      // A turn that starts by itself and ends: the line is still in the box, so no ring.
-      tui.kick()
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
-      await expect.poll(tui.delivery).toBe("drafting")
-      await quiet()
+      expect(tui.received()[1]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
       expect(pastes(tui.raw())).toHaveLength(1)
+      await expect.poll(() => tui.manager.get(tui.idle.id)).toMatchObject({ cols: 70, rows: 20 })
     })
 
     // The turn the TUI starts by itself may reach NovaDeck before the doorbell's Enter, or
