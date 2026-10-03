@@ -96,9 +96,8 @@
   --window-ended-image: none;
   --window-ended-border-style: dashed;
   --window-ended-content-opacity: 0.5;
-  /* The selection is a tint, not a bar. */
+  /* The selection is an edged tint, not a bar. */
   --item-selected-indicator-bg: transparent;
-  --item-selected-border-color: transparent;
   --window-indicator-bg: transparent;
   /* The workspace: one flat ground, no glow, grain or dots. */
   --workspace-image: none;
@@ -152,8 +151,10 @@
    the region's own grounds. */
 [data-theme="sandstone"],
 [data-theme="sandstone"] :is(.sidebar, .sidebar-tools, .sidebar-drawer) {
-  /* Selected: a full-width soft terracotta tint. */
+  /* Selected: a full-width soft terracotta tint inside a terracotta edge, so it reads
+     as selected by more than its fill. */
   --item-selected-bg: color-mix(in srgb, var(--color-strong) 18%, var(--color-shell));
+  --item-selected-border-color: var(--color-strong);
   --item-highlighted-border-color: transparent;
   --window-selected-header-bg: color-mix(in srgb, var(--color-strong) 9%, var(--color-paper));
   --window-selected-border-color: var(--color-strong);
