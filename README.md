@@ -522,11 +522,11 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell state transitions.                   |
 | `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                                     |
 | `interaction/`                                     | Shortcut records, the keymap, and shared DOM focus/overlay contracts.                   |
-| `ui-toolkit/`                                      | Reusable styled controls and direct Ark UI imports.                                     |
+| `ui-toolkit/`                                      | Reusable controls, direct Ark UI imports, and the shared recipes they draw with.        |
 | `test/`                                            | Unit-test fixtures, a jsdom render helper, a command harness, and the port contract.    |
 | `assets/`                                          | Static files referenced from CSS.                                                       |
-| `theme/`                                           | The theming contract: token defaults, theme files, the theme list, and `apply.ts`.      |
-| `styles.css`                                       | The cascade order, and every recipe, theme and vendor sheet imported into its layer.    |
+| `theme/`                                           | Tailwind's layout-only theme, token defaults, theme files, the theme list, `apply.ts`.  |
+| `styles.css`                                       | The cascade order, every recipe, theme and vendor sheet in its layer, Tailwind sources. |
 | `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                                |
 
 Imports point down the layers. `model/` imports nothing else, not even packages,
@@ -681,8 +681,11 @@ Keep vendor-specific types and CSS inside their adapters, and use
 application-owned types for saved layouts.
 
 Keep direct Ark UI imports in `ui-toolkit/`; features own their content and state.
-Use Tailwind utilities for ordinary component styling. See [CODING.md](CODING.md)
-for broader conventions.
+Use Tailwind utilities in TSX only to arrange elements: layout, spacing, sizes, and
+the size and flow of type. How a component looks comes from its recipe, a stylesheet
+beside it that reads theme tokens; see [docs/theming.md](docs/theming.md), which
+`theme/contract.test.ts` enforces. See [CODING.md](CODING.md) for broader
+conventions.
 
 ### UI behaviour specs
 
