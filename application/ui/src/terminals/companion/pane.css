@@ -35,7 +35,7 @@
 /* Split: the plan shares the terminal's window. */
 .plan-split {
   display: grid;
-  grid-template-columns: var(--plan-terminal) 0 minmax(0, 1fr);
+  grid-template-columns: var(--_plan-terminal) 0 minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
@@ -90,7 +90,7 @@
   /* Stacked under the terminal, the pane rises from below as it opens, its top edge
      the line between them, so the line comes and goes with it. */
   .plan-split-reader {
-    --plan-enter: 0 16px;
+    --_plan-enter: 0 16px;
     border-top: var(--border-width) solid var(--pane-stacked-border-color, var(--color-line-strong));
     border-left: none;
   }
@@ -138,7 +138,7 @@
 @keyframes plan-split-in {
   from {
     opacity: 0;
-    translate: var(--plan-enter, 16px 0);
+    translate: var(--_plan-enter, 16px 0);
   }
 }
 @keyframes plan-attach {

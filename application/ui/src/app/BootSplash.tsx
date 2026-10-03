@@ -44,7 +44,7 @@ export const BootSplash = ({
                 top: `calc(${slot.top}% + 0.8cqmin)`,
                 width: `calc(${slot.width}% - 1.6cqmin)`,
                 height: `calc(${slot.height}% - 1.6cqmin)`,
-                "--order": slot.order,
+                "--_order": slot.order,
               } as CSSProperties
             }
           >

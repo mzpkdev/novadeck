@@ -127,7 +127,7 @@
   border-top: 1px solid transparent;
   pointer-events: none;
 }
-@property --terminal-sweep {
+@property --_terminal-sweep {
   syntax: "<percentage>";
   inherits: false;
   initial-value: -35%;
@@ -137,10 +137,10 @@
   --_sweep: var(--window-phase-running-border-color, var(--color-strong));
   border-image: linear-gradient(
       to right,
-      var(--_track) calc(var(--terminal-sweep) - 25%),
-      var(--_sweep) calc(var(--terminal-sweep) - 10%),
-      var(--_sweep) calc(var(--terminal-sweep) + 10%),
-      var(--_track) calc(var(--terminal-sweep) + 25%)
+      var(--_track) calc(var(--_terminal-sweep) - 25%),
+      var(--_sweep) calc(var(--_terminal-sweep) - 10%),
+      var(--_sweep) calc(var(--_terminal-sweep) + 10%),
+      var(--_track) calc(var(--_terminal-sweep) + 25%)
     )
     1;
   animation: terminal-sweep 2.2s var(--ease-interface) infinite;
@@ -165,7 +165,7 @@
 }
 @keyframes terminal-sweep {
   to {
-    --terminal-sweep: 135%;
+    --_terminal-sweep: 135%;
   }
 }
 @keyframes terminal-pulse {

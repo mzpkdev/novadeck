@@ -26,7 +26,7 @@ export const editorTheme = EditorView.theme({
   ".cm-plan-item-task": { paddingLeft: "44px" },
   ".cm-plan-quote": { paddingLeft: "16px" },
   ".cm-plan-codeblock": { padding: "0 14px" },
-  ".cm-plan-note-line": { padding: "14px 12px 8px calc(var(--note-indent) + 10px)" },
+  ".cm-plan-note-line": { padding: "14px 12px 8px calc(var(--_note-indent) + 10px)" },
   "@container plan-reader (max-width: 560px)": {
     ".cm-content": { padding: "10px 20px 40px 20px" },
   },

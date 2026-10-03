@@ -108,7 +108,7 @@ export const WorkspacePanels = ({
     <div
       className={`workspace-panels relative min-h-0 min-w-0 flex-1${motion.active ? " sidebar-transition" : ""}`}
       ref={container}
-      style={{ "--sidebar-expanded-width": `${preferred}px` } as CSSProperties}
+      style={{ "--_sidebar-expanded-width": `${preferred}px` } as CSSProperties}
     >
       <Allotment
         ref={panels}

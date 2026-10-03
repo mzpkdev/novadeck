@@ -131,7 +131,7 @@ export const TerminalTab = ({
           : {})}
         data-terminal-hidden={hidden}
 
-        className={`terminal-tab [--sidebar-actions-space:76px] ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
+        className={`terminal-tab [--_sidebar-actions-space:76px] ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}
         editing={editing}
         editor={
           rename ? (
@@ -158,7 +158,7 @@ export const TerminalTab = ({
                   onCancel={onRenameCancel}
                   className="terminal-rename-input w-full text-[12px] leading-[18px] font-medium"
                 />
-                <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center overflow-hidden pr-(--sidebar-actions-space) whitespace-nowrap text-[10px] leading-[18px]">
+                <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center overflow-hidden pr-(--_sidebar-actions-space) whitespace-nowrap text-[10px] leading-[18px]">
                   <span className="terminal-tab-process truncate">{process}</span>
                 </span>
               </div>

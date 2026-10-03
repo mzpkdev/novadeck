@@ -25,7 +25,7 @@ export const Peek = ({ entries }: { entries: readonly PeekEntry[] }): React.JSX.
     className="plan-peek"
     // Escape here closes the peek, not whatever the workspace would do with it.
     data-workspace-companion
-    style={{ "--peek-columns": Math.min(entries.length, 3) } as React.CSSProperties}
+    style={{ "--_peek-columns": Math.min(entries.length, 3) } as React.CSSProperties}
   >
     {entries.map((entry) => (
       <div key={entry.id} className="plan-peek-card">

@@ -199,7 +199,7 @@
   font-weight: 500;
 }
 .plan-editor .cm-plan-note-line {
-  --note-indent: 0px;
+  --_note-indent: 0px;
   /* Its own stacking context, so the bubble drawn behind the text stays in the line. */
   position: relative;
   z-index: 0;
@@ -218,23 +218,23 @@
   pointer-events: none;
 }
 .plan-editor .cm-plan-note-line::before {
-  inset: 9px 0 3px var(--note-indent);
+  inset: 9px 0 3px var(--_note-indent);
   border-radius: var(--radius-popover);
 }
 /* The tail: a turned square whose top corner points up at the line above. */
 .plan-editor .cm-plan-note-line::after {
   top: 5px;
-  left: calc(var(--note-indent) + 14px);
+  left: calc(var(--_note-indent) + 14px);
   width: 8px;
   height: 8px;
   transform: rotate(45deg);
 }
 /* Under a list item, the rule lines up with the item's text. */
 .plan-editor .cm-plan-item.cm-plan-note-line {
-  --note-indent: 22px;
+  --_note-indent: 22px;
 }
 .plan-editor .cm-plan-item-task.cm-plan-note-line {
-  --note-indent: 44px;
+  --_note-indent: 44px;
 }
 /* What the agent's latest revision wrote, while changes are shown. */
 [data-changes="true"] .cm-plan-changed {

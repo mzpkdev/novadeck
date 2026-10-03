@@ -71,7 +71,7 @@ export const SidebarItem = ({
         ) : (
           <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
         )}
-        <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[var(--sidebar-actions-space,52px)]">
+        <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[var(--_sidebar-actions-space,52px)]">
           {detail}
         </span>
       </span>

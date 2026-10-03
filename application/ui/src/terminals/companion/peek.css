@@ -22,7 +22,7 @@
    --peek-page-dot-bg (line-strong): a page's browser frame in miniature. */
 .plan-peek {
   display: grid;
-  grid-template-columns: repeat(var(--peek-columns), 176px);
+  grid-template-columns: repeat(var(--_peek-columns), 176px);
   gap: 2px;
 }
 .plan-peek-card {

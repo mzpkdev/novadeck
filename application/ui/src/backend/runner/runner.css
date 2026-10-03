@@ -144,8 +144,8 @@
   }
 
   /* Canvas scales its resize grip (28px, at the node's bottom-right corner) with
-     --canvas-chrome-scale; the end-of-session bar keeps its Restart button clear of it. */
+     --_canvas-chrome-scale; the end-of-session bar keeps its Restart button clear of it. */
   .canvas-node .runner-ending {
-    padding-right: calc(28px * var(--canvas-chrome-scale, 1) + 4px);
+    padding-right: calc(28px * var(--_canvas-chrome-scale, 1) + 4px);
   }
 }

@@ -58,7 +58,7 @@ const SplitPane = ({
     <div
       ref={frame}
       className="plan-split"
-      style={{ "--plan-terminal": `${ratio * 100}%` } as React.CSSProperties}
+      style={{ "--_plan-terminal": `${ratio * 100}%` } as React.CSSProperties}
     >
       <div className="plan-split-terminal">{children}</div>
       <div
