@@ -654,7 +654,10 @@ binding ends. A Claude Code background subagent needs none: a denial reaches it 
 call's result, and it runs on to its `SubagentStop`. A subagent asking that NovaDeck
 never saw start, as its start came before the binding or its harness reported its
 stop at a turn's end, counts as running from that request on, unless a stop after the
-request says it is over.
+request says it is over. At most 32 subagents are followed; once that many run, the one
+whose turn aborted longest ago, with no request since, makes room for another, which it
+joins again as one never seen starting if it asks later; with none such, a further
+subagent isn't followed, and its request settles at the root's next turn start or end.
 Claude Code's `AskUserQuestion` goes through
 `PermissionRequest` too, so the attention kind comes from the tool name.
 

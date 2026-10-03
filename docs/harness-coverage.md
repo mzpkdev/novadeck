@@ -68,7 +68,7 @@ In the probe, a background subagent's result began a second turn with its own `U
 **Attention.**
 
 - `PermissionRequest` fires as the prompt opens. It carries `tool_name`, `tool_input` and `permission_suggestions`, but no `tool_use_id` or request id.
-- `PreToolUse` fires just before it with the `tool_use_id` (probed), so the request correlates with the preceding tool call.
+- `PreToolUse` fires just before it with the `tool_use_id` (probed), but nothing ties the two, so NovaDeck derives the request's id from the actor, the tool and a hash of the call's input, as the call's `PostToolUse` derives it too (see [Harness adapters](harness-adapters.md)).
 - Approval shows only when the tool finishes, as that call's `PostToolUse` (probed): nothing fires between the approval and the result. While an approved long command runs, the request looks pending; `claude agents --json` reporting `busy` rather than `waiting` is the only other source (documented).
 - A denial by the person fires nothing, not even `Stop` or `PostToolBatch` (probed interactively with every event registered). `PermissionDenied` covers auto mode only. The transcript records the call's `tool_result` with `is_error`, the interruption and `turn_duration`, so the transcript ends the request and the turn. An approved call interrupted with Esc leaves the same records, so the outcome stays unknown.
 - A background subagent's request denied by the person, with Esc or its "No" key, fires no hook either, but the subagent gets the denial as the call's `tool_result` ("Permission for this tool use was denied…", in `subagents/agent-<id>.jsonl`) and runs on: here it answered and ended with `SubagentStop` (probed 2026-10-03, 2.1.287).
@@ -233,10 +233,10 @@ It also carries the account's `email`, which must not leave the adapter.
 
    A status line is a single user-level setting. For feature parity NovaDeck installs a bridge command that forwards to the person's own status line command, so their status line keeps working. For Claude Code, NovaDeck's shells can pass `--settings` at launch, as the Codex shim does for its flag, so the bridge applies only to NovaDeck's terminals. See [the design](harness-adapters.md#native-sources).
 
-2. **Permissions have no request ids, and approval is seen only at completion.** Requests correlate with the preceding `PreToolUse`: its `tool_use_id` for Claude Code and Codex, its `stepIdx` for Antigravity. A matching `PostToolUse` means allowed, but it fires when the tool finishes, so an approved long command keeps its request looking pending. Claude Code's `claude agents --json` (`busy` versus `waiting`) and Antigravity's `tool_confirmation_pending` can close that gap; Codex exposes approval state only through its app-server.
+2. **Permissions have no request ids, and approval is seen only at completion.** A request's id is derived from its actor, its tool and a hash of the call's input, which the call's `PostToolUse` derives too; Antigravity's one confirmation at a time is the fixed `confirmation` (see [Harness adapters](harness-adapters.md)). A matching `PostToolUse` means allowed, but it fires when the tool finishes, so an approved long command keeps its request looking pending. Claude Code's `claude agents --json` (`busy` versus `waiting`) and Antigravity's `tool_confirmation_pending` can close that gap; Codex exposes approval state only through its app-server.
    - A denial fires nothing in Claude Code and Antigravity. Claude Code's transcript records an interruption, which an approved call interrupted with Esc also leaves, so it ends the request without saying which.
    - A denial fires `Interrupt` in Codex.
-   - Otherwise the next tool, turn or session event resolves the request with an `unknown` outcome.
+   - Otherwise the actor moving on resolves the request with an `unknown` outcome: the root's next turn start or end, or a subagent's stop or its turn's abort. A subagent's next request or its result for another call does not, and one answered with no report waits until its subagent stops (see [Harness adapters](harness-adapters.md) for the per-actor rules).
 3. **NovaDeck's Antigravity hook must answer `PreToolUse` with `{"decision": "ask"}`.** An empty answer denies every tool.
 4. **Interruption is harness-specific.**
    - Codex fires `Interrupt`.

@@ -362,7 +362,11 @@ the opener's, and `describe` names the caller's own terminal (see
      bare Enter followed by a root prompt turn whose hook started within about 2 s,
      nothing typed before that.
      Content keys are all but bare Enter, Escape, Left, Right, Home, End and Tab: a
-     paste, Up and Down, a key that types (a hotkey too) or Backspace. Outside a
+     paste, Up and Down, a key that types (a hotkey too) or Backspace. Left, Right,
+     Home, End and Tab leave such a draft too: a request answered with no report stays
+     pending with its dialog gone, so they may land at the prompt, where Claude Code's
+     Left opens its agents view and Right or Tab takes a suggestion. Only a bare Enter
+     and Escape leave none. Outside a
      request, Right and Tab are content too: in an empty box they take Claude Code's
      prompt suggestion as typed text. Down stays
      content: no probe showed that Down in an empty prompt box changes nothing in all
@@ -371,16 +375,18 @@ the opener's, and `describe` names the caller's own terminal (see
      usual rules go on from there.
 
   A request answered with Enter alone leaves the box as it was. One navigated with
-  any other key (an arrow, a hotkey such as Claude Code's "1" or Codex's "y"), and any
-  multi-question form, ends Drafting: its messages wait for the person's next prompt,
-  which only delays a ring.
+  any other key (an arrow, Home or End, Tab, a hotkey such as Claude Code's "1" or
+  Codex's "y"), and any multi-question form, ends Drafting: its messages wait for the
+  person's next prompt, which only delays a ring.
 
 - **A bare Enter** is a carriage return of its own: not Alt or Shift+Enter (`\x1b\r`,
   a newline in the box), nor one inside a bracketed paste. Nothing else submits, but
   Codex's Tab, its profile's queue key.
 - **The person submits** when their bare Enter is followed by a root turn whose hook
   started within about 2 s of it, with no other input from them after that Enter and
-  before that hook started, and the turn's decoder says a prompt started it. A hook
+  before that hook started, and the turn's decoder says a prompt started it. Left, Home
+  and End there break no submission: the prompt stays theirs, and the box after its
+  turn a draft (see below). A hook
   reports when its process started (Node's `performance.timeOrigin`), before Node
   booted: on a loaded machine that boot takes seconds, so the window is measured to the
   hook's start, never to when the runner heard it. Keys the person typed after the hook
@@ -403,9 +409,9 @@ the opener's, and `describe` names the caller's own terminal (see
   turn, which it submits as the turn ends, counts too, when the person typed nothing
   after queuing it: the next root prompt after that Stop is theirs.
 - **The prompt is known empty** after one of these, with no input from the person
-  since (apart from answers to a request, Left, Home and End moving the caret through a
-  draft, and Escape outside a running turn: one during it may cancel the turn and put
-  its prompt back, so it leaves a draft): the person's submission (not of a stale doorbell
+  since (apart from a bare Enter answering a request, and Escape outside a running turn:
+  one during it may cancel the turn and put its prompt back, so it leaves a draft): the
+  person's submission (not of a stale doorbell
   line: an Enter can leave text behind, as a newline or a suggestion does); a confirmed ring, its doorbell
   prompt carrying the ring's own nonce; or the session binding, when the person typed
   nothing after their last Enter before it. Keys typed as an agent starts were dropped in
@@ -429,12 +435,19 @@ the opener's, and `describe` names the caller's own terminal (see
   prompt outside a ring, as that start's or a failed ring's late one, empties nothing
   the person typed. NovaDeck
   sees every input the person sends, so the box is empty when they sent nothing since
-  that may change it. Left, Home and End on a box known empty, outside a request, are
-  input too: no caret moves there, so what they do is the harness's own, as Claude Code's
-  Left (2.1.287) opens its agents view, moving the conversation to the background, whose
-  "describe a task for a new session" field would take a ring's line like an empty prompt,
-  and its Enter start a new session with it. Codex's and Antigravity's change nothing
-  there; they draft all the same, a ring missed until the person next submits.
+  that may change it. Left, Home and End are input too, unless the person has a draft of
+  their own, typed since their last Enter: only through one does a caret move. Anywhere
+  else the harness's box may be empty, even where NovaDeck doesn't know it so: mid-ring,
+  as the key is held until after the doorbell's Enter submitted the line; after the
+  person's Enter, before its prompt's hook; or after a prompt they queued mid-turn,
+  which Claude Code takes out of its box. What they do there is the harness's own, as
+  Claude Code's Left (2.1.287) opens its agents view, moving the conversation to the
+  background, whose "describe a task for a new session" field would take a ring's line
+  like an empty prompt, and its Enter start a new session with it. One after the
+  person's Enter, or while a prompt they queued waits, keeps that prompt theirs, but its
+  turn leaves a draft; one mid-ring leaves the ring's prompt a draft. Codex's and
+  Antigravity's change nothing there; they draft all the same, a ring missed until the
+  person next submits.
   Untouched errs toward Drafting: any doubt (keys after an Enter, a turn nobody can
   attribute, a ring that didn't finish) counts as a draft. That costs a ring until the
   person next submits, never a wrong Enter.
@@ -549,6 +562,7 @@ Transitions:
 | Settled, Ready                           | Messages waiting and the gate passes                                             | Ringing               |
 | Ringing                                  | Confirmed: a doorbell prompt with its nonce                                      | Working               |
 | Ringing                                  | The test paste fails, or no confirmation within 5 s                              | Unknown               |
+| Ringing                                  | A request is asked, before or after its Enter                                    | Unknown               |
 | Ringing                                  | Another root prompt or an abnormal end (the binding ending: Unbound, as above)   | As from Settled       |
 
 The binding ends as the shell's prompt shows, or, where the platform tells the agent's
@@ -588,7 +602,9 @@ the runner, over the same endpoint and token `show` uses, and print what it retu
    the next) and
    returns the exact stdout that harness expects, built by its adapter. It leases only
    if at least 300 ms remain before the hook's deadline, so the hook can print and
-   acknowledge. Otherwise it returns what the hook prints today (nothing, or
+   acknowledge, and never once it is stopping: it saves nothing from then on, so no
+   acknowledgement could mark a delivery, and the next runner would deliver again what
+   the hook printed. Otherwise it returns what the hook prints today (nothing, or
    Antigravity's `{}`), and Antigravity gets `{}` or its `ask` answer on any failure.
    A prompt-time ask whose prompt is a doorbell with nothing waiting gets one line of
    context instead: nothing is waiting, and the notice can be ignored. Antigravity's
@@ -657,8 +673,9 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    no turn yet. Messages wait for its root session.
 2. **Untouched.** The prompt is known empty (see [What counts](#what-counts)): the
    person sent no input since their last submission, a confirmed ring, the command-line
-   prompt or the session binding, where Left, Home and End count as input as well, as a
-   harness's own view may take them. A draft can exist only if the person typed, so it
+   prompt or the session binding, where Left, Home and End count as input as well
+   (they move a caret only through the person's own draft), as a harness's own view may
+   take them. A draft can exist only if the person typed, so it
    never reaches the screen checks.
 3. **Settled for a while.** At least 6 s have passed since the root turn ended, or the
    Ready session bound, for every harness: screens change for a while after a turn, as
@@ -720,12 +737,16 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    or not (an always-shown "New session", say), it may pick that entry. Either way no
    turn starts with the line, the ring goes unconfirmed, and the terminal goes Unknown.
 
-6. **Enter**, only while the hold is still in force; a hold that lapsed abandons the
-   ring.
+6. **Enter**, only while the hold is still in force and no request was asked since the
+   ring began; a hold that lapsed abandons the ring, and a request asked meanwhile (a
+   background subagent's, say) fails it, Unknown, as its dialog may hold the line and
+   would take the Enter.
 7. **Confirm.** A root turn starts within 5 s of the Enter, and its prompt-time hook
    sees the line with the ring's own nonce: Claude Code and Codex in the hook's `prompt`,
    Antigravity in the transcript's new typed entry. A doorbell prompt with another
-   nonce, as a stale line submitted alone, is no confirmation. Its lease delivers.
+   nonce, as a stale line submitted alone, is no confirmation. Its lease delivers. A
+   request asked after the Enter, before the confirmation, fails the ring too: the Enter
+   may have answered its dialog.
 
 A ring that fails presses no further key, ever, and leaves the terminal Unknown; the
 messages wait for the next root turn event, and the person sees them as undelivered.
@@ -1195,6 +1216,9 @@ resume probes sent it one prompt:
 | A session forked in place (Codex's or Antigravity's `/fork`), messages waiting              | As a `/clear`: the parent's messages are gone; the fork is Ready, rung for what comes next, and its hook delivers                                                                                                                             |
 | The person types in a Ready terminal                                                        | Drafting; no ring; their prompt carries the messages                                                                                                                                                                                          |
 | The person presses Left, Home or End at an empty prompt                                     | Drafting; no ring, so nothing lands in a view the key opened (Claude Code's agents view); their prompt carries the messages                                                                                                                   |
+| The person presses Left, Home or End mid-ring, or between their Enter and its prompt's hook | The confirmed ring's or their own prompt's turn ends Drafting; no ring after it                                                                                                                                                               |
+| A request is asked between the ring's test paste and its Enter                              | No Enter; the ring fails, Unknown; the messages wait for the next root turn event                                                                                                                                                             |
+| A hook asks while the runner stops                                                          | Nothing leased; the next runner delivers                                                                                                                                                                                                      |
 | The person types while Claude Code starts, before it binds                                  | Drafting at its binding, even when the last agent's end is noticed only then; no ring                                                                                                                                                         |
 | A session replaces Claude Code's long after an Enter that started no turn (a newline)       | Drafting; no ring                                                                                                                                                                                                                             |
 | Codex or Antigravity started plain, idle at its prompt                                      | Ready once its title or status line shows its prompt, no session yet; rung; its ring's prompt starts and binds the session, whose hook delivers                                                                                               |

@@ -85,8 +85,15 @@ export type Box = {
    * the prompt's hook started may have cancelled its turn, as no hook tells.
    */
   readonly escapedAt: number | null
-  /** Whether the person typed since their last bare Enter. */
+  /** Whether the person typed since their last bare Enter: a draft of their own. */
   readonly typedSinceEnter: boolean
+  /**
+   * Whether Left, Home or End came, with no draft of the person's, while their Enter waited
+   * for its prompt or a prompt they queued waited: no caret moved, so the harness may have
+   * taken it as its own (Claude Code's Left opens its agents view). That prompt stays
+   * theirs, but leaves no box known empty.
+   */
+  readonly strayed: boolean
   /**
    * Whether the turn that last ended left a prompt the person queued during it, which the
    * harness submits next, with nothing typed after it.
@@ -126,10 +133,10 @@ export const submitWindowMs = 2_000
 
 /**
  * A key the person sent, as `terminals/keys.ts` tells it: a bare Enter, a harness's queue
- * key, one that never changes a draft (Left, Home, End: input only on a box known empty,
- * where no caret moves and what it does is the harness's own), Escape, which never changes it
- * either but may interrupt the agent's turn, one that may take a prompt suggestion into
- * an empty box, though never in a request's dialog (Right, Tab), or content.
+ * key, one that never changes a draft (Left, Home, End: input wherever the person has no
+ * draft of their own, as no caret moves there and what it does is the harness's own),
+ * Escape, which never changes it either but may interrupt the agent's turn, one that may
+ * take a prompt suggestion into an empty box (Right, Tab), or content.
  */
 export type KeyKind = "enter" | "queue" | "neutral" | "escape" | "accept" | "content"
 
@@ -196,6 +203,7 @@ const emptyBox: Box = {
   typedAt: null,
   escapedAt: null,
   typedSinceEnter: false,
+  strayed: false,
   queued: false,
   draftWhileAsked: false,
 }
@@ -288,7 +296,10 @@ const typed = (box: Box): Box => ({
 const arrived = (delivery: Delivery): Counts => {
   // A ring's line may be in the box too.
   const draft =
-    delivery.box.typedSinceEnter || delivery.box.draftWhileAsked || delivery.state === "ringing"
+    delivery.box.typedSinceEnter ||
+    delivery.box.strayed ||
+    delivery.box.draftWhileAsked ||
+    delivery.state === "ringing"
   return {
     epoch: delivery.epoch + 1,
     continued: 0,
@@ -323,12 +334,21 @@ const atPrompt = (delivery: Delivery, at: number): Delivery => {
 
 /** The delivery after an event; the same delivery when it changes nothing. */
 export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery => {
-  // Left, Home and End move a caret, which a box known empty doesn't have: there, outside
-  // a request's dialog, what they do is the harness's own (Claude Code's Left opens its
-  // agents view, whose field would take a ring's line and its Enter), so they are input.
+  // Left, Home and End move a caret only through a draft the person typed since their last
+  // Enter. Anywhere else the harness's box may be empty, even where NovaDeck doesn't know
+  // it so (a ring's line its Enter just submitted, the person's Enter whose hook hasn't
+  // come, a prompt queued mid-turn), and what they do there is the harness's own (Claude
+  // Code's Left opens its agents view, whose field would take a ring's line and its
+  // Enter): input. One while the person's Enter or queued prompt waits keeps that prompt
+  // theirs, but the box after it is a draft. In a request's dialog, it leaves a draft for
+  // once the request clears, as one answered with no report has no dialog left.
   if (event.type === "key" && event.key === "neutral") {
-    const empty = delivery.box.empty && delivery.state !== "unbound" && !event.asked
-    return empty ? keyed(delivery, false, event.at) : delivery
+    const { box } = delivery
+    if (delivery.state === "unbound" || box.typedSinceEnter) return delivery
+    if (event.asked) return asked(delivery)
+    if (box.enteredAt === null && !box.queuing && !box.queued)
+      return keyed(delivery, false, event.at)
+    return drafted(delivery, { ...box, empty: false, strayed: true })
   }
   // The person's Escape may interrupt a root turn, which no hook may tell (Claude Code's
   // before its first reply, which puts the prompt back in its box): Unknown, the box a
@@ -373,6 +393,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       box: {
         ...unbound.box,
         typedSinceEnter: delivery.box.typedSinceEnter,
+        strayed: delivery.box.strayed,
         draftWhileAsked: delivery.box.draftWhileAsked,
       },
     }
@@ -406,7 +427,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
           epoch: delivery.epoch + 1,
           continued: 0,
           byPerson: false,
-          box: { ...box, empty, queuing: false, enteredAt: null, typedAt: null },
+          box: { ...box, empty, queuing: false, enteredAt: null, typedAt: null, strayed: false },
         })
       }
       // A later model call of the running turn only moves its fence, as its activity's
@@ -436,8 +457,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
               enteredAt: null,
               typedAt: null,
               queued: false,
+              strayed: false,
               ...(person && {
-                empty: box.typedAt === null,
+                empty: box.typedAt === null && !box.strayed,
                 queuing: false,
                 draftWhileAsked: false,
               }),
@@ -526,11 +548,11 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         : delivery
     case "key": {
       // While a request waits on the person, no key is a submission, and a bare Enter
-      // confirms nothing: a key that may change the box leaves a draft for later.
+      // confirms nothing: a key that may change the box leaves a draft for later. Right
+      // and Tab may too, as the request may have been answered with no report, its
+      // dialog gone, and the prompt take a suggestion.
       if (event.asked)
-        return event.key === "content" && !box.draftWhileAsked
-          ? { ...delivery, box: { ...box, draftWhileAsked: true } }
-          : delivery
+        return event.key === "content" || event.key === "accept" ? asked(delivery) : delivery
       // A bare Enter on a box known empty (no draft typed while asked either) while a root
       // turn runs queues nothing in any harness: it answered something NovaDeck didn't see
       // (a confirmation between two of Antigravity's status lines), or did nothing. At the
@@ -565,6 +587,23 @@ export const pendingEnter = (delivery: Delivery, now: number): number | undefine
   return typedAt === null || typedAt > now ? at : undefined
 }
 
+/**
+ * The delivery after a key, while a request waits on the person, that may change the box
+ * should the request be stale, its dialog gone: a draft, applied once the request clears.
+ */
+const asked = (delivery: Delivery): Delivery =>
+  delivery.box.draftWhileAsked
+    ? delivery
+    : { ...delivery, box: { ...delivery.box, draftWhileAsked: true } }
+
+/** The delivery with the person's key changing the box to `box`: no longer ringable. */
+const drafted = (delivery: Delivery, box: Box): Delivery => {
+  if (delivery.state === "settled" || delivery.state === "ready")
+    return { ...counts(delivery), box, state: "drafting" }
+  if (delivery.state === "ringing") return { ...delivery, box, touched: true }
+  return { ...delivery, box }
+}
+
 /** The delivery after the person's key outside a request: a bare Enter `submits`. */
 const keyed = (delivery: Delivery, submits: boolean, at: number | null): Delivery => {
   const { box } = delivery
@@ -580,10 +619,7 @@ const keyed = (delivery: Delivery, submits: boolean, at: number | null): Deliver
     queuing: box.queuing || (mayRun(delivery) && submits),
     queuingSince: box.queuing ? box.queuingSince : mayRun(delivery) && submits ? at : null,
   }
-  if (delivery.state === "settled" || delivery.state === "ready")
-    return { ...counts(delivery), box: after, state: "drafting" }
-  if (delivery.state === "ringing") return { ...delivery, box: after, touched: true }
-  return { ...delivery, box: after }
+  return drafted(delivery, after)
 }
 
 /**

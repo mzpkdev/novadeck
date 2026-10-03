@@ -244,8 +244,8 @@ export class Messaging {
   }
 
   /**
-   * Stops its timers and changes no message from then on: leases left, and every message
-   * waiting, wait again with the next runner, for their sessions resumed there.
+   * Stops its timers and changes no message from then on, nor leases one: leases left, and
+   * every message waiting, wait again with the next runner, for their sessions resumed there.
    */
   close(): void {
     this.closed = true
@@ -1031,6 +1031,9 @@ export class Messaging {
     kind: Lease["kind"],
     background: boolean,
   ): Lease | undefined {
+    // Once closed, nothing is saved, so no ack could record a delivery: the next runner
+    // would deliver again what a hook printed now. Its messages wait for that runner.
+    if (this.closed) return undefined
     const queued = [...this.messages.values()]
       .filter(({ state, ...message }) => state === "queued" && this.addressed(message, root))
       .filter(({ to }) => to.terminalId === live.terminalId)

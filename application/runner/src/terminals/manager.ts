@@ -243,7 +243,11 @@ type Record = {
   /**
    * The last binding ended as its process was found gone (`endExited`): a late report of
    * that session from no process or from that one, as from a hook that outlived it, binds
-   * it no more.
+   * it no more. It stays past later bindings, until another such end replaces it: what it
+   * drops is only that session's reports from no process or from its dead pid, and an
+   * outliving hook of it may still come after the next session of the same agent bound,
+   * which it would otherwise replace. A resume of that session in a new process names its
+   * own pid, so it binds all the same.
    */
   left?: Binding
   /** What the bound agent is doing, as its hooks said; null without a binding. */
@@ -2874,10 +2878,16 @@ export class Terminals {
     // A request no longer waits on the person: what they typed meanwhile counts now, at
     // once, before the report's prompt reaches messaging. The doorbell looks again too, as
     // the request kept it from ringing and its screen may not change.
-    if (waited && (record.activity?.pending.length ?? 0) === 0) {
+    const waits = (record.activity?.pending.length ?? 0) > 0
+    if (waited && !waits) {
       this.messaging.askedCleared(record.summary.id)
       this.doorbell?.changed(record.summary.id)
     }
+    // A request asked while a ring is under way (none waited as it began) may show its
+    // dialog where the ring's Enter would land: the ring fails, pressing nothing more, as
+    // its line may already be in that dialog.
+    const nonce = waits ? this.messaging.ringing(record.summary.id) : undefined
+    if (nonce !== undefined) this.messaging.ringFailed(record.summary.id, nonce)
     if (applied) this.watchActors(record)
     return applied
   }

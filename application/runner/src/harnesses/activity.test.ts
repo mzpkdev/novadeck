@@ -495,6 +495,34 @@ describe("applying activity", () => {
     expect(activity.subagents).toHaveLength(32)
   })
 
+  it("makes room at 32 subagents for a new one's request, the one whose turn aborted longest ago giving way", () => {
+    // Codex keeps a subagent's thread open after Esc aborted its turn: it may never run
+    // again, and must not crowd a live one's request out of the subagents it follows.
+    let full = started(0)
+    for (let index = 0; index < 32; index += 1)
+      full = apply(full, binding, subagent("subagent-started", `a${index}`, 1))!
+    const abort = (activity: Activity, actor: string, at: number) =>
+      apply(
+        apply(activity, binding, request(`${actor}:Bash:1`, actor, at))!,
+        binding,
+        fact({ type: "subagent-turn-aborted", actor, startedAt: at + 1 }),
+      )!
+    const aborted = abort(abort(full, "a7", 4), "a3", 6)
+    const asked = apply(aborted, binding, request("n:Bash:1", "n", 9))!
+    const running = asked.subagents.map(({ id }) => id)
+    expect(running).toHaveLength(32)
+    expect(running).toContain("n")
+    expect(running).not.toContain("a7")
+    expect(running).toContain("a3")
+    // Its request, a running subagent's, outlives the root's turns.
+    expect(ids(apply(asked, binding, fact({ type: "turn-started", startedAt: 10 }))!)).toEqual([
+      "n:Bash:1",
+    ])
+    // A subagent that asked again since its abort runs: none gives way, and a start waits.
+    const again = apply(abort(full, "a7", 4), binding, request("a7:Bash:2", "a7", 8))!
+    expect(apply(again, binding, subagent("subagent-started", "m", 9))).toBeUndefined()
+  })
+
   it("keeps a Codex subagent running when its rollout says its turn aborted, settling what it asked by then", () => {
     // Esc on a Codex spawned agent's request fires no hook, and its thread stays open: its
     // rollout's `turn_aborted` ends only that turn.

@@ -2741,7 +2741,8 @@ describe.runIf(process.platform === "win32")("Windows shell integration", () => 
  * the tool for a while; `bg` runs it in the background, starting a turn by itself;
  * `mouse` turns on mouse and focus reporting, as a fullscreen TUI does. It skips mouse and
  * focus reports, as such a TUI does. `named` is the same TUI under its harness's name, so
- * its hooks find its instance. `askafter` asks a permission after its first turn's Stop.
+ * its hooks find its instance. `askafter` asks a permission after its first turn's Stop;
+ * `askpaste` asks one as a paste comes after it, drawing the paste once told to.
  */
 const standInTui = (home: string): string => {
   const bin = join(home, "bin")
@@ -2778,6 +2779,7 @@ let dialog = null
 let busy = true
 let menu = false
 let turns = 0
+let pasteAsked = false
 const draw = () => process.stdout.write(menu ? "\r\x1b[2K  [menu] pick an item" : "\r\x1b[2K> " + box)
 // Antigravity's hooks name no prompt: it records what was typed in its transcript, as a
 // USER_EXPLICIT USER_INPUT step, and what woke it by itself as a SYSTEM_MESSAGE one.
@@ -2918,6 +2920,23 @@ if (mode !== "bg") {
     }
     // Ctrl-D quits, as an agent's exit does.
     if (data === "\x04") process.exit(0)
+    // With "askpaste", a paste after its first turn's Stop makes it ask a permission, as a
+    // background task's may, and the paste draws only once "<raw>.go" exists: the request
+    // comes between a ring's test paste and its Enter, which its dialog would take.
+    if (data.startsWith("\x1b[200~") && mode === "askpaste" && turns === 1 && !pasteAsked) {
+      pasteAsked = true
+      const pasted = data.slice(6, -6)
+      const input = { tool_name: "Bash", tool_input: { command: "ls" } }
+      return hook("PermissionRequest", input, () => {
+        const go = () => {
+          if (!fs.existsSync(raw + ".go")) return setTimeout(go, 20)
+          box += pasted
+          dialog = () => hook("PostToolUse", { ...input, tool_response: {} }, () => {})
+          draw()
+        }
+        go()
+      })
+    }
     if (data.startsWith("\x1b[200~")) box += data.slice(6, -6)
     else if (data === "\r") {
       // A dialog takes Enter; a backslash before it makes it a newline in the box.
@@ -3255,6 +3274,26 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
       expect(tui.received()[1]!.printed).toContain(">Review a.ts</message>")
       expect(pastes(tui.raw())).toHaveLength(1)
+    })
+
+    it("fails a ring whose request came after its test paste, pressing no Enter into that dialog", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "askpaste")
+      await tui.first()
+      const pending = () => tui.manager.get(tui.idle.id).activity?.attention.pending
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true })
+      // The test paste went out, and its request was asked before the line showed.
+      await expect.poll(pending, { timeout: 10_000 }).toBe(1)
+      expect(pastes(tui.raw())).toHaveLength(1)
+      writeFileSync(join(shell.home, "raw.jsonl.go"), "")
+      await expect.poll(tui.delivery).toBe("unknown")
+      await quiet()
+      // Nothing after the paste: its dialog was never answered, and the message waits.
+      const raw = tui.raw()
+      expect(raw.slice(raw.findIndex((data) => data.startsWith("\x1b[200~")) + 1)).toEqual([])
+      expect(pending()).toBe(1)
+      expect(tui.received()).toHaveLength(1)
     })
 
     it("follows a Codex spawned agent's next request after its rollout records Esc on one, its thread still open", async ({

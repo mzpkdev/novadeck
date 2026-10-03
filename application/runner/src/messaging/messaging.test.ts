@@ -843,6 +843,20 @@ describe("delivery through hooks", () => {
     expect(messages(second, "B").map((one) => one.state)).toEqual(["queued", "queued"])
   })
 
+  it("leases nothing once the runner closed it, as no ack could then record a delivery", () => {
+    const records = memoryMailbox()
+    const { messaging, send, prompt, stop, codex } = create(records)
+    sent(send("A", "t2", "hello"))
+    messaging.close()
+    // A hook of a turn as the shells end: its messages would be printed, then delivered
+    // again by the next runner, as the closed mailbox can't save the ack.
+    const answer = prompt("B", codex)
+    expect(answer.leaseId).toBeNull()
+    expect(answer.stdout ?? "").not.toContain("hello")
+    expect(stop("B", codex).leaseId).toBeNull()
+    expect(records.messages().map((one) => one.state)).toEqual(["queued"])
+  })
+
   it("refuses a message sent while the runner stops, which it could no longer keep", () => {
     const records = memoryMailbox()
     const first = create(records)
