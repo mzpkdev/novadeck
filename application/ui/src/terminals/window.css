@@ -14,22 +14,27 @@
    --window-selected-border-color (line-strong): the selected window's outline.
    --window-header-bg (the window's bg), --window-header-border-color (line): the header
    and its hairline. --window-header-icon-fg (muted): the icons in it.
+   --window-selected-header-bg (the header's bg): the selected window's header.
    --window-metadata-fg (muted), --window-metadata-font (mono): planning, subagents and
    usage beside the name.
    --window-indicator-bg (the sidebar item's --item-selected-indicator-bg, then strong):
    the selection bar at the header's leading edge.
+   --window-phase-border-width (1px): the phase line's weight.
    --window-phase-track-border-color (line): the line the running sweep travels along.
    --window-phase-running-border-color (strong), --window-phase-starting-border-color
    (muted), --window-phase-attention-border-color (warning-fg),
    --window-phase-ended-border-color (strong): the phase line in each phase.
+   --window-phase-attention-border-width (2px): its weight while an agent waits.
    --window-ended-image (a faint ink hatch): laid over an ended window.
+   --window-ended-border-style (solid): an ended window's outline.
    --window-ended-content-opacity (0.55): an ended terminal's output.
    --window-new-ring-color (line-strong): the outline a new window flashes once. */
 
 /* The window's and its header's size, which the views and modes below override. */
 .terminal-window {
   --_border-color: var(--window-border-color, var(--color-line));
-  border: var(--border-width) solid var(--_border-color);
+  --_border-style: solid;
+  border: var(--border-width) var(--_border-style) var(--_border-color);
   border-radius: var(--window-radius, var(--radius-panel));
   background-color: var(--window-bg, var(--color-paper));
   color: var(--window-fg, var(--color-ink));
@@ -37,9 +42,10 @@
   transition: border-color var(--motion-state) var(--ease-interface);
 }
 .terminal-header {
+  --_bg: var(--window-header-bg, var(--window-bg, var(--color-paper)));
   --_border-color: var(--window-header-border-color, var(--color-line));
   border-bottom: var(--border-width) solid var(--_border-color);
-  background-color: var(--window-header-bg, var(--window-bg, var(--color-paper)));
+  background-color: var(--_bg);
 }
 .terminal-header svg {
   flex-shrink: 0;
@@ -72,6 +78,14 @@
 .canvas-node.selected .terminal-window {
   --_border-color: var(--window-selected-border-color, var(--color-line-strong));
 }
+.terminal-focused .terminal-header,
+.grid-terminal.selected .terminal-header,
+.canvas-node.selected .terminal-header {
+  --_bg: var(
+    --window-selected-header-bg,
+    var(--window-header-bg, var(--window-bg, var(--color-paper)))
+  );
+}
 /* The selection bar is one size in every view, centred on the header whatever its
    height; Canvas scales it with the rest of the header chrome. */
 .terminal-heading::before {
@@ -97,6 +111,7 @@
    is drawn on an opaque canvas, and lets clicks through. The hatch is drawn from ink,
    so it reads on a light ground and a dark one alike. */
 .terminal-window[data-terminal-phase="ended"] {
+  --_border-style: var(--window-ended-border-style, solid);
   position: relative;
 }
 .terminal-window[data-terminal-phase="ended"]::after {
@@ -124,7 +139,7 @@
   left: 0;
   z-index: 1;
   height: 0;
-  border-top: 1px solid transparent;
+  border-top: var(--window-phase-border-width, 1px) solid transparent;
   pointer-events: none;
 }
 @property --_terminal-sweep {
@@ -153,7 +168,8 @@
 /* Waiting on the person: a steady line in the warning colour, which a slow pulse draws
    the eye to unless motion is reduced. */
 .terminal-window[data-terminal-phase="attention"] .terminal-heading::after {
-  border-top: 2px solid var(--window-phase-attention-border-color, var(--color-warning-fg));
+  border-top: var(--window-phase-attention-border-width, 2px) solid
+    var(--window-phase-attention-border-color, var(--color-warning-fg));
   animation: terminal-pulse 1.6s ease-in-out infinite;
 }
 .terminal-window[data-terminal-phase="ended"] .terminal-heading::after {
