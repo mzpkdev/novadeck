@@ -36,11 +36,14 @@ const terminalTokens = [
   "--color-muted",
 ]
 
-// The theme's terminal tokens as the emulator's colours, resolved where the terminal
-// draws so a theme that restyles a region reaches it.
+// Where a terminal's tokens resolve: where it draws, so a theme that restyles a region
+// reaches it, or the page's body while it has no place yet.
+const scopeOf = (element: Element): Element =>
+  element.isConnected ? element : element.ownerDocument.body
+
+// The theme's terminal tokens as the emulator's colours.
 const themeOf = (element: Element): ITheme => {
-  const scope = element.isConnected ? element : element.ownerDocument.body
-  const colors: Partial<Record<string, string>> = tokenColors(scope, terminalTokens)
+  const colors: Partial<Record<string, string>> = tokenColors(scopeOf(element), terminalTokens)
   const entries: [keyof ITheme, string | undefined][] = [
     ["background", colors["--terminal-bg"]],
     ["foreground", colors["--terminal-fg"]],
@@ -58,8 +61,9 @@ const themeOf = (element: Element): ITheme => {
   return Object.fromEntries(entries.filter(([, color]) => color !== undefined))
 }
 
+// The theme's monospace font.
 const monospace = (element: Element): string =>
-  getComputedStyle(element).getPropertyValue("--font-mono").trim() || "monospace"
+  getComputedStyle(scopeOf(element)).getPropertyValue("--font-mono").trim() || "monospace"
 
 // How long a terminal's size stays still before it refits after a resize. Each refit
 // forces a layout and may tell the runner, so a zoom or a drag refits once it pauses,
@@ -191,11 +195,17 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     // Some mouse reports arrive as binary; they go to the shell the same way.
     const binary = xterm.onBinary(send)
     let settling: ReturnType<typeof setTimeout> | undefined
+    // A theme sets the colours and the font; a new font changes the cell size, so the
+    // terminal fits again.
     const retheme = (): void => {
       xterm.options.theme = themeOf(element)
+      const font = monospace(element)
+      if (xterm.options.fontFamily === font) return
+      xterm.options.fontFamily = font
+      followed.refit()
     }
-    // A host opened before it had a slot took the page's colours; once in one, it takes
-    // its region's.
+    // A host opened before it had a slot took the page's colours and font; once in one,
+    // it takes its region's.
     let placed = element.isConnected
     const resizes = new ResizeObserver(() => {
       if (!placed && element.isConnected) {
