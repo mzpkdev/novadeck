@@ -445,7 +445,7 @@ const colourLiterals = (file: string): string[] =>
   })
 
 // Stylesheets that still hold colour literals. Shrink only.
-const stylesheetsWithColours: readonly string[] = ["theme/contract.css"]
+const stylesheetsWithColours: readonly string[] = []
 
 // ---- (c) No `!important` outside theme/base.css.
 
@@ -486,8 +486,8 @@ const unlayered = (file: string): string[] => {
   const loose = cssNodes(css)
     .filter((node) => {
       if (node.body !== undefined) return !/^@layer\s+[\w.-]+$/.test(node.prelude)
-      // `@reference` only lets Tailwind read another stylesheet; it emits nothing.
-      if (/^@(layer|charset|reference)\s/.test(node.prelude)) return false
+      // `@reference` and `@source` only tell Tailwind what to read; they emit nothing.
+      if (/^@(layer|charset|reference|source)\s/.test(node.prelude)) return false
       return !node.prelude.startsWith("@import")
     })
     .map((node) => node.prelude.split("\n")[0]!.slice(0, 40))

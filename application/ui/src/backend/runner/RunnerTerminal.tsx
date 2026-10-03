@@ -159,11 +159,8 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
     )
 
     useLayoutEffect(() => {
-      host.setAttribute(
-        "class",
-        `min-h-0 flex-1 transition-[filter,margin-bottom] duration-(--motion-state) ease-interface ${locked ? "grayscale delay-200" : ""} ${ending ? "mb-7" : ""}`,
-      )
-    }, [host, locked, ending])
+      host.setAttribute("class", `runner-screen min-h-0 flex-1 ${ending ? "mb-7" : ""}`)
+    }, [host, ending])
 
     useEffect(
       () => () => {

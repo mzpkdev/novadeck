@@ -7,7 +7,7 @@
 
    Hooks: data-locked on `.runner-terminal`; data-terminal-ending="success" | "warning" |
    "danger" on `.runner-ending`; aria-disabled on `.runner-restart`. Parts:
-   `.runner-lock`, `.runner-lock-notice`, `.runner-ending`, `.runner-ending-reason`,
+   `.runner-screen` (where xterm draws, greyed after a moment while locked), `.runner-lock`, `.runner-lock-notice`, `.runner-ending`, `.runner-ending-reason`,
    `.runner-restart` (with its `kbd`), `.debug-panel`, `.debug-meta`, `.debug-heading`,
    `.debug-action`, `.debug-hint`, `.debug-close`.
 
@@ -49,7 +49,17 @@
     border-radius: var(--radius-control);
   }
 
-  /* While typing is paused the surface dims, after a moment, under a notice. */
+  /* While typing is paused the screen greys and the surface dims, after a moment, under
+     a notice. The screen also eases up out of the ending bar's way. */
+  .runner-screen {
+    transition:
+      filter var(--motion-state) var(--ease-interface),
+      margin-bottom var(--motion-state) var(--ease-interface);
+  }
+  .runner-terminal[data-locked] .runner-screen {
+    filter: grayscale(1);
+    transition-delay: 200ms;
+  }
   .runner-lock {
     background-color: var(
       --runner-lock-bg,

@@ -51,3 +51,10 @@
 
 @import "./theme/themes/graphite.css" layer(themes);
 @import "./theme/accessibility.css" layer(accessibility);
+
+/* Only utilities the TSX arranges with: unit tests name utilities without using them,
+   and the code uses these words in other senses (a document's outline, an array's
+   filter, a view's transition); built, they would be look utilities no recipe
+   controls. */
+@source not "./**/*.test.ts";
+@source not inline("border filter outline transition");

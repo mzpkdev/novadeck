@@ -64,6 +64,13 @@ body {
   font-size: 13px;
   user-select: none;
 }
+/* Tailwind's own defaults would set code in a face the theme never chose. */
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
 button,
 input,
 select {
