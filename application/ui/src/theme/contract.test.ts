@@ -6,10 +6,10 @@
 // for each scheme the manifest lists. The first scheme lives on `[data-theme="<id>"]`,
 // each other one on `[data-theme="<id>"][data-scheme="<scheme>"]`.
 //
-// Ratchets: rules (a) to (c) below have files that still break them while components
-// move to recipes. Each rule lists those files. A file not listed must follow the rule,
-// and a listed file that now follows it fails the check until it is removed from the
-// list, so the lists only shrink. Rule (d) holds for every file.
+// Rules: (a) to (d) below hold for every file. Rule (c) has a short list of
+// exceptions, each with its reason, which the guide's "Exceptions" section repeats; an
+// exception the source no longer needs fails the check until it leaves both lists. A
+// failure names the rule, the file and what breaks it, and says how to fix it.
 //
 // (a) TSX arranges, recipes draw. Every string literal in the UI's .ts and .tsx
 //     source is split into class tokens; a token whose utility (after its variants,
@@ -24,12 +24,15 @@
 //     between 0 and 1, fill, stroke, filters and backdrops, font family
 //     (`font-mono`), letter spacing, text transform and decoration, and motion
 //     (`transition*`, `duration-*`, `ease-*`, `animate-*`). An arbitrary property
-//     (`[overflow-wrap:anywhere]`) follows the same split by its property name.
+//     (`[overflow-wrap:anywhere]`) follows the same split by its property name. Class
+//     strings are those in a `className`, a `cn()` call, a constant named `…Class`,
+//     `…Classes` or `…ClassName`, and `setAttribute("class", …)`.
 // (b) No colour literals in CSS outside theme files: hex, colour functions (`rgb()`,
 //     `hsl()`, `oklch()`, …), named colours, Tailwind palette colours in `@apply`, and
 //     system colours outside `accessibility.css`. `transparent`, `currentColor` and
 //     `color-mix()` over tokens are fine.
-// (c) No `!important` (or an `@apply` important modifier) outside `theme/base.css`.
+// (c) No `!important` (or an `@apply` important modifier), except where
+//     `importantExceptions` says why: it turns the layer order around.
 // (d) Every stylesheet is layered. Each `@import` in `styles.css` carries `layer(…)`,
 //     except Tailwind itself and `theme/contract.css`, which hold only what Tailwind
 //     layers. Any other CSS file is imported from `styles.css` into a layer or wraps
@@ -120,21 +123,16 @@ const declarations = (body: string): Map<string, string> =>
     }),
   )
 
-// ---- The ratchet: violations by file against the files allowed to have them.
+// ---- Reporting: what breaks a rule, by file, with how to fix it.
 
-const ratchet = (found: Map<string, string[]>, allowed: readonly string[]): string[] => [
-  ...[...found]
-    .filter(([file]) => !allowed.includes(file))
-    .map(([file, problems]) => {
-      const shown = problems.slice(0, 8).join(", ")
-      return problems.length > 8
-        ? `${file}: ${shown} (${problems.length - 8} more)`
-        : `${file}: ${shown}`
-    }),
-  ...allowed
-    .filter((file) => !found.has(file))
-    .map((file) => `${file} now follows the rule: remove it from the allowlist`),
-]
+type Rule = { readonly broken: string; readonly fix: string }
+
+const report = (rule: Rule, found: Map<string, string[]>): string[] =>
+  [...found].map(([file, problems]) => {
+    const shown = problems.slice(0, 8).join(", ")
+    const more = problems.length > 8 ? ` (${problems.length - 8} more)` : ""
+    return `${file} ${rule.broken}: ${shown}${more}. ${rule.fix}`
+  })
 
 const byFile = (entries: readonly (readonly [string, string[]])[]): Map<string, string[]> =>
   new Map(entries.filter(([, problems]) => problems.length > 0))
@@ -219,13 +217,17 @@ describe("theme contract", () => {
 // Each string and template-literal text in a script, with the code just before it;
 // strings end at a line break, so an apostrophe in JSX text cannot swallow the code
 // after it.
-type Literal = { readonly text: string; readonly before: string }
+type Literal = {
+  readonly text: string
+  readonly before: string
+  readonly previous: string | undefined
+}
 
 const literals = (code: string): Literal[] => {
   const found: Literal[] = []
   let plain = ""
   const take = (text: string): void => {
-    found.push({ text, before: plain.slice(-120) })
+    found.push({ text, before: plain.slice(-120), previous: found.at(-1)?.text })
   }
   for (let index = 0; index < code.length; index++) {
     const char = code[index]!
@@ -272,8 +274,10 @@ const literals = (code: string): Literal[] => {
 }
 
 // A class string is a literal in a `className` attribute or `…ClassName` prop, in a
-// constant named `…Class`, `…Classes` or `…ClassName`, or in an open `cn()` call.
-const classContext = (before: string): boolean => {
+// constant named `…Class`, `…Classes` or `…ClassName`, in an open `cn()` call, or the
+// value of `setAttribute("class", …)`.
+const classContext = ({ before, previous }: Literal): boolean => {
+  if (previous === "class" && /setAttribute\(\s*,\s*$/.test(before)) return true
   // Up to the end of the attribute or statement, and before the next JSX attribute.
   if (/(className|ClassName|Classes|Class)\s*[=:](?:(?![;>}])(?!\s[\w-]+=)[\s\S])*$/.test(before))
     return true
@@ -380,11 +384,13 @@ const lookUtilities = (text: string): string[] =>
 
 const classLooks = (file: string): string[] =>
   literals(read(file))
-    .filter(({ before }) => classContext(before))
+    .filter(classContext)
     .flatMap(({ text }) => lookUtilities(text))
 
-// Files whose class strings still draw. Shrink only.
-const scriptsWithLooks: readonly string[] = []
+const tsxLooks: Rule = {
+  broken: "draws with Tailwind utilities",
+  fix: "TSX may only arrange: move the look into the component's recipe, as a token-driven rule (docs/theming.md, Rules for components).",
+}
 
 // ---- (b) No colour literals outside theme files.
 
@@ -444,8 +450,10 @@ const colourLiterals = (file: string): string[] =>
     ].map((match) => match[0])
   })
 
-// Stylesheets that still hold colour literals. Shrink only.
-const stylesheetsWithColours: readonly string[] = []
+const colours: Rule = {
+  broken: "holds colour literals outside a theme file",
+  fix: "Read a foundation or component token instead, mixing tokens with color-mix() where a shade is needed (docs/theming.md, A recipe reads only tokens).",
+}
 
 // ---- (c) No `!important` outside theme/base.css.
 
@@ -457,12 +465,27 @@ const importantDeclarations = (file: string): string[] =>
       : [],
   )
 
-// Stylesheets that still use `!important`. Shrink only. runner.css overrides styles
-// xterm sets inline, and accessibility.css stills motion that utilities in the TSX set.
-const stylesheetsWithImportant: readonly string[] = [
-  "backend/runner/runner.css",
-  "theme/accessibility.css",
+// Where `!important` stays, and why. Each one beats a style no layer can: an inline
+// style or one a library sets. docs/theming.md lists the same files under Exceptions.
+const importantExceptions: readonly { readonly file: string; readonly reason: string }[] = [
+  {
+    file: "theme/base.css",
+    reason: "stills every transition, inline ones too, for the frame the theme changes",
+  },
+  {
+    file: "theme/accessibility.css",
+    reason: "reduced motion beats transitions libraries set inline or with !important",
+  },
+  {
+    file: "backend/runner/runner.css",
+    reason: "xterm sets its scrollbar slider's position and width inline",
+  },
 ]
+
+const important: Rule = {
+  broken: "uses !important",
+  fix: "It turns the layer order around: raise the selector's specificity or put the rule in a later layer. Only a style set inline, which nothing else beats, may need it: then add the file to importantExceptions with its reason, and to docs/theming.md's Exceptions.",
+}
 
 // ---- (d) Every stylesheet is layered.
 
@@ -510,6 +533,11 @@ const layeredFromStyles = new Set(
 
 const cssImportPattern = /^import\s+(?:[\w{}\s,*]+from\s+)?["']([^"']+\.css)["']/gm
 
+const layers: Rule = {
+  broken: "has CSS outside a layer, which beats every theme",
+  fix: "Import it from styles.css with layer(…), or wrap its rules in @layer (docs/theming.md, Layers).",
+}
+
 const unlayeredStylesheets = (): Map<string, string[]> =>
   byFile([
     ...stylesheets
@@ -528,10 +556,10 @@ const unlayeredStylesheets = (): Map<string, string[]> =>
     ),
   ])
 
-describe("theme ratchets", () => {
+describe("theme rules", () => {
   it("keeps visual utilities out of TSX class strings", () => {
     const found = byFile(scripts.map((file) => [file, classLooks(file)] as const))
-    expect(ratchet(found, scriptsWithLooks)).toEqual([])
+    expect(report(tsxLooks, found)).toEqual([])
   })
 
   it("keeps colour literals in theme files", () => {
@@ -540,19 +568,36 @@ describe("theme ratchets", () => {
         .filter((file) => !themeFile(file))
         .map((file) => [file, colourLiterals(file)] as const),
     )
-    expect(ratchet(found, stylesheetsWithColours)).toEqual([])
+    expect(report(colours, found)).toEqual([])
   })
 
-  it("keeps !important to the theme switch in theme/base.css", () => {
-    const found = byFile(
-      stylesheets
-        .filter((file) => file !== "theme/base.css")
-        .map((file) => [file, importantDeclarations(file)] as const),
+  it("keeps !important to its listed exceptions", () => {
+    const excepted = new Set(importantExceptions.map(({ file }) => file))
+    const found = byFile(stylesheets.map((file) => [file, importantDeclarations(file)] as const))
+    expect(report(important, new Map([...found].filter(([file]) => !excepted.has(file))))).toEqual(
+      [],
     )
-    expect(ratchet(found, stylesheetsWithImportant)).toEqual([])
+    expect(
+      importantExceptions
+        .filter(({ file }) => !found.has(file))
+        .map(
+          ({ file, reason }) =>
+            `${file} no longer uses !important (${reason}): remove it from importantExceptions and from docs/theming.md's Exceptions`,
+        ),
+    ).toEqual([])
+  })
+
+  it("lists its exceptions in the theming guide", () => {
+    const section = doc.slice(doc.indexOf("## Exceptions"))
+    const named = new Set([...section.matchAll(/`([^`]+)`/g)].map((match) => match[1]))
+    expect(
+      importantExceptions
+        .filter(({ file }) => !named.has(file))
+        .map(({ file }) => `docs/theming.md's Exceptions does not name ${file}`),
+    ).toEqual([])
   })
 
   it("puts every stylesheet in a layer", () => {
-    expect(ratchet(unlayeredStylesheets(), [])).toEqual([])
+    expect(report(layers, unlayeredStylesheets())).toEqual([])
   })
 })

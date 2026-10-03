@@ -1,9 +1,9 @@
 /* The accessibility layer: it comes after every theme, so no theme can defeat it.
    Imported into `layer(accessibility)`; see docs/theming.md. */
 
-/* Reduced motion: nothing moves. `!important` while utilities in the TSX still set
-   transitions and animations, which a later layer would otherwise win over; it goes
-   once every motion lives in a recipe. */
+/* Reduced motion: nothing moves. `!important`, one of the contract's exceptions, so it
+   beats the transitions libraries set inline or inject with `!important`, such as
+   dnd-kit's drag feedback. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
