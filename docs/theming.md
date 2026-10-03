@@ -28,7 +28,9 @@ This guide is the contract between the two sides. Change it when the contract ch
 Every stylesheet is layered, vendor CSS included: CSS outside a layer beats every
 layer, so one unlayered rule would override every theme. `styles.css` imports each
 stylesheet into a layer, except Tailwind and `theme/contract.css`, which Tailwind
-layers itself; CSS imported from a script wraps its rules in `@layer`. Recipes and
+layers itself; CSS imported from a script wraps its rules in `@layer`. This covers the
+stylesheets the app ships; styles a library injects while it runs are outside any
+layer, and [Exceptions](#exceptions) says how each is met. Recipes and
 themes never use `!important`, because it turns the layer order around; the few rules
 that must are listed under [Exceptions](#exceptions).
 
@@ -237,8 +239,8 @@ var(--terminal-bg)` read back with `getComputedStyle`), because a token can hold
 
 A few rules break the contract on purpose, each because it must beat a style no layer
 can: one set inline, by the app or a library. `theme/contract.test.ts` keeps the same
-list, pinned to the exact declarations, so a new `!important` in a listed file fails
-too, and fails when one is no longer needed.
+list of `!important`s, pinned to the exact declarations, so a new one in a listed file
+fails too, and fails when one is no longer needed.
 
 - `theme/base.css` uses `!important` in the rule that stills every transition, inline
   ones too, while the theme changes.
@@ -249,6 +251,11 @@ too, and fails when one is no longer needed.
   position and width xterm sets inline.
 - `theme/accessibility.css` may name system colours (`Canvas`, `Highlight`) for forced
   colours; no other stylesheet may.
+- CodeMirror, the plan editor, injects its own styles as CSS-in-JS at run time, outside
+  every layer, so no recipe can override them, and its base theme carries colours of its
+  own. `terminals/companion/plan-editor/editor-theme.ts` overrides the ones the plan
+  shows (the gutter, selection and caret) in an editor theme, which CodeMirror orders
+  after its base theme, with token `var()`s and their fallbacks.
 
 ## Themes
 
