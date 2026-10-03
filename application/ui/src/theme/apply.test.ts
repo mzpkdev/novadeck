@@ -177,18 +177,41 @@ describe("applyAppearance", () => {
   })
 
   context("when a theme is already shown", () => {
-    it("stills transitions for one frame while it changes", () => {
+    it("applies the new theme's styles at once, while transitions are still", () => {
+      const root = fresh()
+      applyAppearance(root, { theme: "graphite", scheme: "light" })
+      // A style read is what makes the browser apply styles now rather than at the next
+      // frame, after the stilling may have gone.
+      const reads: string[] = []
+      const read = window.getComputedStyle.bind(window)
+      vi.spyOn(window, "getComputedStyle").mockImplementation((element) => {
+        reads.push(
+          `${root.dataset.scheme}${root.hasAttribute("data-theme-switching") ? ", still" : ""}`,
+        )
+        return read(element)
+      })
+      vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0)
+
+      applyAppearance(root, { theme: "graphite", scheme: "dark" })
+
+      expect(reads).toEqual(["dark, still"])
+    })
+
+    it("keeps transitions still until a frame has drawn the new theme", () => {
       const frames: FrameRequestCallback[] = []
       vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
         frames.push(callback)
         return frames.length
       })
+      const frame = (): void => frames.splice(0).forEach((callback) => callback(0))
       const root = fresh()
       applyAppearance(root, { theme: "graphite", scheme: "light" })
       applyAppearance(root, { theme: "graphite", scheme: "dark" })
 
       expect(root.hasAttribute("data-theme-switching")).toBe(true)
-      frames.forEach((frame) => frame(0))
+      frame()
+      expect(root.hasAttribute("data-theme-switching")).toBe(true)
+      frame()
       expect(root.hasAttribute("data-theme-switching")).toBe(false)
     })
 

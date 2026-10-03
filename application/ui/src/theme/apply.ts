@@ -90,20 +90,27 @@ export const parseBootRecord = (text: string | null): AppearancePreference | und
 }
 
 // Shows an appearance on the page: `data-theme` and `data-scheme` on the root element.
-// Changing a theme already shown stills transitions for one frame, so the page changes
-// at once; every change is announced on the window.
+// Changing a theme already shown stills transitions while it changes, so the page
+// changes at once; every change is announced on the window.
 export const applyAppearance = (root: HTMLElement, appearance: Appearance): void => {
   const { theme, scheme } = root.dataset
   if (theme === appearance.theme && scheme === appearance.scheme) return
   const view = root.ownerDocument.defaultView
-  if (theme !== undefined && view) {
-    root.dataset.themeSwitching = ""
-    view.requestAnimationFrame(() => {
-      delete root.dataset.themeSwitching
-    })
-  }
+  const switching = theme !== undefined && view !== null
+  if (switching) root.dataset.themeSwitching = ""
   root.dataset.theme = appearance.theme
   root.dataset.scheme = appearance.scheme
+  if (switching) {
+    // Reading a style makes the browser apply the new theme now, while transitions are
+    // still; left to the next frame, the stilling could come and go before the browser
+    // looks, and every control would fade. It ends once a frame has drawn the theme.
+    void view.getComputedStyle(root).color
+    view.requestAnimationFrame(() =>
+      view.requestAnimationFrame(() => {
+        delete root.dataset.themeSwitching
+      }),
+    )
+  }
   view?.dispatchEvent(new CustomEvent(themeChangeEvent, { detail: appearance }))
 }
 

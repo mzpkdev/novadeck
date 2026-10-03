@@ -598,7 +598,7 @@ const importantExceptions: readonly {
 }[] = [
   {
     file: "theme/base.css",
-    reason: "stills every transition, inline ones too, for the frame the theme changes",
+    reason: "stills every transition, inline ones too, while the theme changes",
     declarations: [
       "[data-theme-switching] *, [data-theme-switching] *::before, [data-theme-switching] *::after { transition }",
     ],

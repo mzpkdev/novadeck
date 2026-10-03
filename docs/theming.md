@@ -241,7 +241,7 @@ list, pinned to the exact declarations, so a new `!important` in a listed file f
 too, and fails when one is no longer needed.
 
 - `theme/base.css` uses `!important` in the rule that stills every transition, inline
-  ones too, for the frame the theme changes.
+  ones too, while the theme changes.
 - `theme/accessibility.css` uses `!important` for reduced motion, to beat the
   transitions libraries set inline or inject with `!important`, such as dnd-kit's drag
   feedback.
@@ -311,8 +311,10 @@ an unknown theme falls back to the first in the list, Graphite. It then sets
 `app/appearance.ts` is the one place that does this while the app runs: whenever the
 preference changes, and whenever the system's scheme does.
 
-- **Switching** sets `data-theme-switching` on `<html>` for one frame, which stills
-  transitions so the whole page changes at once instead of fading control by control.
+- **Switching** sets `data-theme-switching` on `<html>`, which stills transitions so
+  the whole page changes at once instead of fading control by control. `apply.ts` reads
+  a style right after, so the browser applies the new theme while transitions are
+  still, whatever started the change, and clears the attribute once a frame has drawn it.
 - **Before the first paint**, `public/theme-boot.js` sets the same attributes. `apply.ts`
   saves what the boot script needs under `novadeck.theme-boot` (the theme, the chosen
   scheme and the theme's schemes), and the script only resolves `system` against
