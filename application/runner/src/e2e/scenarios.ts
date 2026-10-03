@@ -230,7 +230,11 @@ export const opened = (call: Call, handle: string): boolean => {
 /** Whether the call is the agent's next look after its `close_terminal` closed `handle`. */
 export const closed = (call: Call, handle: string): boolean => {
   const last = call.turns.at(-1)
-  return last?.role === "tool" && last.text.includes(`Closed ${handle}`)
+  // Its answer's first word for the terminal, as "Closed t2." or "Closed t2, which ran…",
+  // never another handle that begins the same, as t20.
+  return (
+    last?.role === "tool" && [".", ","].some((end) => last.text.includes(`Closed ${handle}${end}`))
+  )
 }
 
 /** Whether the call is the agent's next look after its send to `to` went. */
