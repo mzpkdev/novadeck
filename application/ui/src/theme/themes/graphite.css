@@ -86,8 +86,9 @@
   --artifact-webview-bg: #ffffff;
 }
 
-/* Draft: near-black grounds with a trace of blue. The strong colour turns light, so
-   on states, what is selected and focus read light on dark. */
+/* The dark scheme: near-black grounds with a trace of blue, stepping lighter from the
+   canvas to the paper. The strong colour turns light, so on states, what is selected
+   and focus read light on dark. */
 [data-theme="graphite"][data-scheme="dark"] {
   color-scheme: dark;
 
