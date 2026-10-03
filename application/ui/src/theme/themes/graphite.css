@@ -132,7 +132,8 @@
   --terminal-fg: var(--color-ink);
   --terminal-cursor: var(--color-ink);
   --terminal-selection: var(--color-selection);
-  --terminal-ansi-black: #2a2e34;
+  /* Black stays a step above the paper so text drawn in it still reads. */
+  --terminal-ansi-black: #4a4f57;
   --terminal-ansi-red: #e5807a;
   --terminal-ansi-green: #8cc796;
   --terminal-ansi-yellow: #e0c070;
@@ -140,7 +141,7 @@
   --terminal-ansi-magenta: #cf9ae0;
   --terminal-ansi-cyan: #7cc6cf;
   --terminal-ansi-white: #c9cdd2;
-  --terminal-ansi-black-bright: #6b7078;
+  --terminal-ansi-black-bright: #80868e;
   --terminal-ansi-red-bright: #f1a39d;
   --terminal-ansi-green-bright: #aedbb5;
   --terminal-ansi-yellow-bright: #ecd592;
