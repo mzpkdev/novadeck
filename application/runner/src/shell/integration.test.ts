@@ -2354,6 +2354,15 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const mine = await call(claude.id, "send", { to: "t2", text: "Review a.ts." })
       const theirs = await call(third.id, "send", { to: "t2", text: "And b.ts." })
       expect([mine.ok, theirs.ok]).toEqual([true, true])
+      // Its agent shows a file beside it, on its bar.
+      const notes = join(shell.home, "notes")
+      mkdirSync(notes)
+      writeFileSync(join(notes, "plan.txt"), "plan\n")
+      await expect(
+        call(codex.id, "present", { path: join(notes, "plan.txt") }),
+      ).resolves.toMatchObject({ ok: true })
+      const items = shell.items(manager)
+      expect(items.bar(codex.id)).toHaveLength(1)
 
       // A window controls it, so a close from anywhere else is refused.
       const window = new AbortController()
@@ -2408,6 +2417,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
       )
       expect(shell.store.terminal(codex.id)).toBeUndefined()
+      // What its bar held went with it.
+      expect(items.bar(codex.id)).toEqual([])
+      expect(shell.store.items().filter((item) => item.name === "plan.txt")).toEqual([])
       await expect
         .poll(() =>
           changes.some((change) => change.type === "removed" && change.terminalId === codex.id),
@@ -2436,6 +2448,50 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(manager.get(third.id).exit).toBeNull()
       watching.abort()
       await watched
+    })
+
+    it("refuses a terminal already closing, and closes none once the runner stops", async ({
+      shell,
+    }) => {
+      const manager = shell.manager()
+      const [first, second, target, last] = await Promise.all(
+        [1, 2, 3, 4].map(() => create(manager, shell)),
+      )
+      // Each caller's own token, as its shell has it, for calls made as its MCP server would.
+      const token = async (terminalId: string) => {
+        const file = join(shell.home, `token-${terminalId}`)
+        manager.write(
+          { terminalId, data: `echo "$NOVADECK_REPORT_TOKEN" > '${file}'; echo saved\r` },
+          "owner",
+        )
+        await shell.until(manager, terminalId, /^saved$/m)
+        return readFileSync(file, "utf8").trim()
+      }
+      const calls = {
+        first: { type: "close" as const, terminalId: first!.id, token: await token(first!.id) },
+        second: { type: "close" as const, terminalId: second!.id, token: await token(second!.id) },
+      }
+      // The terminals ignore hangups, so ending each takes its second signal, a second on.
+      for (const { id } of [target!, last!]) {
+        manager.write({ terminalId: id, data: "trap '' HUP; echo trapped\r" }, "owner")
+        // eslint-disable-next-line no-await-in-loop -- Each is readied in turn.
+        await shell.until(manager, id, /^trapped$/m)
+      }
+      const closing = manager.closePeer({ ...calls.first, request: { to: "t3" } })
+      await new Promise((resolve) => setImmediate(resolve))
+      await expect(manager.closePeer({ ...calls.second, request: { to: "t3" } })).resolves.toEqual({
+        ok: false,
+        reason: "t3 is already closing.",
+      })
+      await expect(closing).resolves.toEqual({ ok: true, handle: "t3" })
+      // The runner stops while a close ends the shell: it keeps the terminal, saved.
+      const stopped = manager.closePeer({ ...calls.first, request: { to: "t4" } })
+      await new Promise((resolve) => setImmediate(resolve))
+      const stopping = manager.shutdown()
+      await expect(stopped).resolves.toEqual(unansweredCalls.close)
+      await stopping
+      expect(shell.store.terminal(last!.id)).toBeDefined()
+      expect(shell.store.terminal(target!.id)).toBeUndefined()
     })
 
     it("lets a chain of terminals' agents close five a minute, and all agents twenty", async ({

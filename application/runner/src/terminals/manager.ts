@@ -1748,6 +1748,8 @@ export class Terminals {
     const closing = this.records.get(target.terminalId)
     if (this.stopping || this.records.get(call.terminalId) !== record || !closing)
       return unansweredCalls.close
+    // Already on its way out, as another close ended its shell: nothing more to charge.
+    if (closing.closing) return refused(`${target.handle} is already closing.`)
     const now = Date.now()
     const charged = this.openers.get(call.terminalId) ?? call.terminalId
     prune(this.closed, now, closeLimit.windowMs)
@@ -1759,6 +1761,8 @@ export class Terminals {
     const { agent } = target
     const others = this.messaging.waitingFor(target.terminalId, call.terminalId)
     await this.terminate(closing)
+    // The runner began to stop meanwhile: it keeps the terminal, saved, so it isn't closed.
+    if (this.stopping) return unansweredCalls.close
     this.remove(closing)
     this.forget(target.terminalId)
     const gone = this.messaging.goneFrom(call.terminalId)
