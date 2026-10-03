@@ -17,7 +17,12 @@ export const editorTheme = EditorView.theme({
     background: "var(--prose-selection-bg, var(--color-selection))",
   },
   ".cm-cursor": { borderLeftColor: "var(--prose-fg, var(--color-ink))" },
-  ".cm-gutters": { border: "0", background: "transparent" },
+  // The base theme's gutter is grey on light grey, in colours of its own.
+  ".cm-gutters": {
+    border: "0",
+    background: "transparent",
+    color: "var(--prose-muted-fg, var(--color-muted))",
+  },
   ".cm-activeLineGutter": { background: "transparent" },
   // Lines' own padding, in this order: a later one wins over an earlier one.
   ".cm-plan-h2": { paddingTop: "18px" },
