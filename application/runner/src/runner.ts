@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto"
 
+import { CompanionItems } from "./companions/items.js"
 import { createHarnesses, type HarnessesOptions } from "./harnesses/service.js"
 import { createRouter, type Connection } from "./router.js"
 import { installShellFiles } from "./shell/install.js"
 import { Terminals, type TerminalOptions } from "./terminals/index.js"
+import { Projects } from "./workspaces/projects.js"
 import { WorkspaceStore } from "./workspaces/store.js"
 
 export type RunnerOptions = {
@@ -46,8 +48,8 @@ export type Runner = {
 
 /**
  * The runner's parts, wired together: its metadata store, the shell files it writes once,
- * the agents that install NovaDeck's plugin, and the terminals, which keep their records
- * and mailboxes in the store. `createRunner` serves them; the end-to-end deck drives them
+ * the agents that install NovaDeck's plugin, the terminals, which keep their records and
+ * mailboxes in the store, and the items shown beside them. `createRunner` serves them; the end-to-end deck drives them
  * in process, so both run the same wiring. Internal: not exported from the package.
  */
 export const wire = (options: RunnerOptions) => {
@@ -61,6 +63,13 @@ export const wire = (options: RunnerOptions) => {
           return undefined
         })
   const agents = createHarnesses(() => shellFiles, options.agents)
+  // What agents show and the person attaches beside terminals, kept in the store; it
+  // asks the terminals where each one is.
+  const items = new CompanionItems({
+    records: store,
+    terminal: (terminalId) => terminals.place(terminalId),
+    livePlan: (item) => terminals.livePlan(item),
+  })
   const terminals = new Terminals({
     records: store,
     shellFiles,
@@ -74,15 +83,17 @@ export const wire = (options: RunnerOptions) => {
     // Agents message each other within a project, and the mailbox is kept with it.
     mailbox: store,
     projectOf: (sessionId) => store.session(sessionId).projectId,
+    items,
     ...options.terminals,
   })
-  return { store, shellFiles, agents, terminals }
+  const projects = new Projects(store, terminals, items)
+  return { store, shellFiles, agents, terminals, items, projects }
 }
 
 /** Owns shells and workspace metadata, independent of how clients reach it. */
 export const createRunner = (options: RunnerOptions = {}): Runner => {
   const id = randomUUID()
-  const { store, terminals, agents } = wire(options)
+  const { store, terminals, items, agents, projects } = wire(options)
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {
@@ -111,6 +122,8 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
       claim,
       store,
       terminals,
+      projects,
+      items,
       agents,
       closing: () => closing !== undefined,
     }),

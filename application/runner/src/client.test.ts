@@ -1,6 +1,7 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises"
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { MessageChannel } from "node:worker_threads"
 
 import type { TerminalEvent } from "@novadeck/protocol"
@@ -10,6 +11,7 @@ import {
   websocket,
   type AttachedTerminal,
   type Channel,
+  type CompanionWatchItem,
   type Runner,
   type RunnerStatus,
   type TerminalWatchItem,
@@ -21,6 +23,7 @@ import { startServer, type ServerOptions } from "./server.js"
 import { describe, expect, it } from "./test.js"
 import { command, ptyOptions } from "./testing/pty.js"
 import type { Resources } from "./testing/resources.js"
+import { WorkspaceStore } from "./workspaces/store.js"
 
 const token = "novadeck-client-tests-only-not-a-production-credential"
 const fast = { retryDelay: () => 10 }
@@ -407,6 +410,214 @@ describe("runner client terminal closing", () => {
   })
 })
 
+/** What the workspace database at `path` still holds of each table, by the column given. */
+const rows = (path: string) => {
+  const database = new DatabaseSync(path, { readOnly: true })
+  try {
+    const all = (sql: string) =>
+      (database.prepare(sql).all() as { value: string }[]).map(({ value }) => value).toSorted()
+    return {
+      projects: all("SELECT id AS value FROM projects"),
+      sessions: all("SELECT id AS value FROM sessions"),
+      terminals: all("SELECT id AS value FROM terminals"),
+      numbers: all("SELECT session_id AS value FROM terminal_numbers"),
+      messages: all("SELECT project_id AS value FROM messages"),
+      threads: all("SELECT project_id AS value FROM message_threads"),
+    }
+  } finally {
+    database.close()
+  }
+}
+
+describe("runner client project removal", () => {
+  it("takes its companion items and undocked windows along, telling watchers", async ({
+    resources,
+  }) => {
+    const app = await deployed(resources)
+    const client = await app.connect()
+    const { id: sessionId, projectId } = await session(client, app.directory)
+    const terminal = await client.terminals.create(shell(sessionId))
+    const directory = await realpath(app.directory)
+    await writeFile(join(directory, "a.md"), "# A\n")
+    await writeFile(join(directory, "b.md"), "# B\n")
+    const watch = client.companions.watch()
+    resources.defer(async () => {
+      await watch.return?.()
+    })
+    const seen: CompanionWatchItem[] = []
+    const until = async (predicate: (change: CompanionWatchItem) => boolean) => {
+      while (true) {
+        // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
+        const result = await watch.next()
+        if (result.done) throw new Error(`Watch ended; seen=${JSON.stringify(seen)}`)
+        seen.push(result.value)
+        if (predicate(result.value)) return result.value
+      }
+    }
+    await until((change) => change.type === "synced")
+    const onBar = await client.companions.attach({ terminalId: terminal.id, path: "a.md" })
+    const inWindow = await client.companions.attach({ terminalId: terminal.id, path: "b.md" })
+    const windowId = crypto.randomUUID()
+    await client.companions.undock(inWindow.id, windowId)
+    const content = client.companions.content(inWindow.id)
+    await expect(content.next()).resolves.toMatchObject({ value: { state: "ready" } })
+    const ending = content.next()
+
+    await client.projects.remove({ projectId })
+    const gone = (change: CompanionWatchItem) =>
+      (change.type === "itemRemoved" && change.itemId === inWindow.id) ||
+      (change.type === "windowRemoved" && change.windowId === windowId)
+    await until(gone)
+    await until(gone)
+    expect(seen).toContainEqual({ type: "itemRemoved", itemId: onBar.id, sessionId })
+    await expect(ending).resolves.toEqual({ done: true, value: undefined })
+    await expect(client.companions.list({ sessionId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    })
+  })
+
+  it("closes the project's terminals, running or kept, and forgets everything it kept", async ({
+    resources,
+  }) => {
+    const directory = await temporary(resources)
+    const database = join(directory, "workspace.sqlite")
+    // A project an earlier runner left a terminal and agents' messages in, beside another.
+    const earlier = new WorkspaceStore(database)
+    const ids = { removed: crypto.randomUUID(), kept: crypto.randomUUID() }
+    const sessions = { removed: crypto.randomUUID(), kept: crypto.randomUUID() }
+    for (const project of ["removed", "kept"] as const) {
+      // eslint-disable-next-line no-await-in-loop -- Each project before its session.
+      await earlier.createProject({ id: ids[project], name: project, cwd: directory })
+      earlier.createSession({ id: sessions[project], projectId: ids[project], name: project })
+      earlier.saveThread({
+        id: `t-${project}`,
+        projectId: ids[project],
+        between: ["a", "b"],
+        hops: 1,
+        allowed: 12,
+        lastAt: Date.now(),
+      })
+      earlier.saveMessage({
+        id: `m-${project}`,
+        projectId: ids[project],
+        thread: `t-${project}`,
+        hop: 1,
+        from: { terminalId: "a", handle: "t1", agent: null, sessionId: null },
+        to: { terminalId: "b", handle: "t2", agent: "codex", sessionId: null },
+        text: "Hello",
+        sentAt: Date.now(),
+        state: "delivered",
+        deliveredAt: Date.now(),
+        notified: false,
+      })
+    }
+    const saved = crypto.randomUUID()
+    earlier.saveTerminal({
+      id: saved,
+      sessionId: sessions.removed,
+      cwd: directory,
+      agents: {},
+      promptedAt: null,
+      handle: `t${earlier.nextTerminalNumber(sessions.removed)}`,
+      naming: { person: null, agent: null, summary: null },
+      openedBy: null,
+      command: null,
+      lastProgram: null,
+      work: null,
+    })
+    earlier.close()
+
+    const app = await deployed(resources, { database })
+    const client = await app.connect()
+    // Another window holds control of the running terminal; removing closes it anyway.
+    const other = await app.connect()
+    const running = await other.terminals.create(shell(sessions.removed))
+    const elsewhere = await client.terminals.create(shell(sessions.kept))
+    const watch = changes(client, resources)
+    await watch.synced()
+    await client.projects.remove({ projectId: ids.removed })
+    const removed = new Set<string>()
+    while (removed.size < 2) {
+      // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
+      const change = await watch.until((item) => item.type === "removed")
+      if (change.type === "removed") removed.add(change.terminalId)
+    }
+    expect(removed).toEqual(new Set([running.id, saved]))
+
+    await expect(client.projects.list()).resolves.toEqual([
+      { id: ids.kept, name: "kept", cwd: await realpath(directory) },
+    ])
+    for (const call of [
+      () => client.projects.remove({ projectId: ids.removed }),
+      () => client.projects.remove({ projectId: crypto.randomUUID() }),
+      () => client.sessions.list({ projectId: ids.removed }),
+      () => client.terminals.list({ sessionId: sessions.removed }),
+      () => client.terminals.create(shell(sessions.removed)),
+    ])
+      // eslint-disable-next-line no-await-in-loop -- One call at a time.
+      await expect(call()).rejects.toMatchObject({ code: "NOT_FOUND" })
+    await expect(client.terminals.list({ sessionId: sessions.kept })).resolves.toEqual([
+      expect.objectContaining({ id: elsewhere.id }),
+    ])
+    expect(rows(database)).toEqual({
+      projects: [ids.kept],
+      sessions: [sessions.kept],
+      terminals: [elsewhere.id],
+      numbers: [sessions.kept],
+      messages: [ids.kept],
+      threads: [ids.kept],
+    })
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "leaves the project out of listings and refuses sessions in it while it goes",
+    async ({ resources }) => {
+      // A shell that ignores a hangup holds the removal open for about a second, once it
+      // says it does.
+      const app = await deployed(resources, {
+        terminals: { shell: "/bin/sh", shellArgs: ["-c", "trap '' HUP; echo ready; exec cat"] },
+      })
+      const client = await app.connect()
+      const { id: sessionId, projectId } = await session(client, app.directory)
+      const terminal = await client.terminals.create(shell(sessionId))
+      await view(await client.terminals.attach(terminal.id), resources).until("ready")
+      const removing = client.projects.remove({ projectId })
+      // Asked once the removal began, long before its shell is gone.
+      await expect(client.projects.list()).resolves.toEqual([])
+      await expect(
+        client.sessions.create({ id: crypto.randomUUID(), projectId, name: "Late" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" })
+      await removing
+    },
+  )
+
+  it("closes terminals created as it begins, refusing new ones, and shares a second call", async ({
+    resources,
+  }) => {
+    const app = await deployed(resources)
+    const client = await app.connect()
+    const { id: sessionId, projectId } = await session(client, app.directory)
+    const watch = changes(client, resources)
+    await watch.synced()
+    const creating = client.terminals.create(shell(sessionId))
+    const removing = client.projects.remove({ projectId })
+    const again = client.projects.remove({ projectId })
+    const refused = expect(
+      client.sessions.create({ id: crypto.randomUUID(), projectId, name: "Late" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" })
+    const created = await creating
+    await expect(Promise.all([removing, again])).resolves.toEqual([undefined, undefined])
+    await refused
+    await watch.until((change) => change.type === "removed" && change.terminalId === created.id)
+    expect(rows(join(app.directory, "workspace.sqlite"))).toMatchObject({
+      projects: [],
+      sessions: [],
+      terminals: [],
+      numbers: [],
+    })
+  })
+})
+
 describe("runner client agent detail", () => {
   it("follows a terminal's agent, and ends once the terminal is gone", async ({ resources }) => {
     const app = await deployed(resources)
@@ -424,15 +635,10 @@ describe("runner client agent detail", () => {
         telemetry: null,
         actors: [],
         requests: [],
-        plans: [],
         coverage: null,
       },
     })
-    // No agent runs there, so no actor has a transcript or a plan.
-    await expect(client.agents.plan(terminal.id, "x".repeat(16)).next()).resolves.toEqual({
-      done: true,
-      value: undefined,
-    })
+    // No agent runs there, so no actor has a transcript.
     await expect(client.agents.transcript(terminal.id, "x".repeat(16)).next()).resolves.toEqual({
       done: true,
       value: undefined,
@@ -447,27 +653,94 @@ describe("runner client agent detail", () => {
   })
 })
 
-describe("runner client shown artifacts", () => {
-  it("follows what a terminal's agents showed, and ends once the terminal is gone", async ({
+describe("runner client companion items", () => {
+  it("attaches, undocks, renames, moves and closes items, as its watch reports", async ({
     resources,
   }) => {
     const app = await deployed(resources)
     const client = await app.connect()
     const { id: sessionId } = await session(client, app.directory)
-    const terminal = await client.terminals.create(shell(sessionId))
-    const shown = client.agents.shown(terminal.id)
-    await expect(shown.next()).resolves.toEqual({
-      done: false,
-      value: { terminalId: terminal.id, shown: [] },
+    const first = await client.terminals.create(shell(sessionId))
+    const second = await client.terminals.create(shell(sessionId))
+    const directory = await realpath(app.directory)
+    await writeFile(join(directory, "notes.md"), "# Notes\n")
+    const watch = client.companions.watch()
+    resources.defer(async () => {
+      await watch.return?.()
     })
-    await expect(client.agents.artifact(terminal.id, "nothing")).rejects.toMatchObject({
+    const seen: CompanionWatchItem[] = []
+    const until = async (predicate: (change: CompanionWatchItem) => boolean) => {
+      while (true) {
+        // eslint-disable-next-line no-await-in-loop -- Changes are read in order.
+        const result = await watch.next()
+        if (result.done) throw new Error(`Watch ended; seen=${JSON.stringify(seen)}`)
+        seen.push(result.value)
+        if (predicate(result.value)) return result.value
+      }
+    }
+    await until((change) => change.type === "synced")
+    expect(seen).toEqual([{ type: "reset" }, { type: "synced" }])
+
+    const item = await client.companions.attach({ terminalId: first.id, path: "notes.md" })
+    expect(item).toMatchObject({
+      sessionId,
+      holder: { terminalId: first.id },
+      kind: "file",
+      name: "notes.md",
+      path: join(directory, "notes.md"),
+      by: "person",
+      from: { terminalId: first.id, handle: "t1" },
+      version: 1,
+    })
+    await expect(
+      client.companions.attach({ terminalId: first.id, path: "." }),
+    ).rejects.toMatchObject({ code: "INVALID_FILE" })
+    await expect(
+      client.companions.attach({ terminalId: crypto.randomUUID(), path: "notes.md" }),
+    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+    const content = client.companions.content(item.id)
+    await expect(content.next()).resolves.toMatchObject({
+      value: { state: "ready", content: { kind: "file", lines: ["# Notes"], total: 1 } },
+    })
+
+    const windowId = crypto.randomUUID()
+    await expect(client.companions.undock(item.id, windowId)).resolves.toEqual({
+      id: windowId,
+      sessionId,
+      itemId: item.id,
+      title: "notes.md",
+      titleSource: { kind: "default" },
+    })
+    await client.companions.renameWindow(windowId, "Notes")
+    await expect(client.companions.list({ sessionId })).resolves.toMatchObject({
+      items: [{ id: item.id, holder: { windowId } }],
+      windows: [{ id: windowId, title: "Notes", titleSource: { kind: "person" } }],
+    })
+    await client.companions.resetWindowTitle(windowId)
+    await expect(client.companions.renameWindow(crypto.randomUUID(), "x")).rejects.toMatchObject({
       code: "NOT_FOUND",
     })
-    const ending = shown.next()
-    await client.terminals.close(terminal.id)
+
+    // Docked on the other terminal's bar, its window goes.
+    await expect(client.companions.move(item.id, second.id)).resolves.toMatchObject({
+      holder: { terminalId: second.id },
+    })
+    await expect(client.companions.list({ sessionId })).resolves.toMatchObject({
+      items: [{ id: item.id, holder: { terminalId: second.id } }],
+      windows: [],
+    })
+    await until((change) => change.type === "windowRemoved")
+
+    const ending = content.next()
+    await client.companions.close(item.id)
     await expect(ending).resolves.toEqual({ done: true, value: undefined })
-    await expect(client.agents.artifact(terminal.id, "nothing")).rejects.toMatchObject({
-      code: "TERMINAL_NOT_FOUND",
+    await until((change) => change.type === "itemRemoved")
+    await expect(client.companions.list({ sessionId })).resolves.toEqual({ items: [], windows: [] })
+    await expect(client.companions.list({ sessionId: crypto.randomUUID() })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    })
+    await expect(client.companions.move(item.id, first.id)).rejects.toMatchObject({
+      code: "NOT_FOUND",
     })
   })
 })

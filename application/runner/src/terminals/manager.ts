@@ -3,13 +3,10 @@ import { constants, rmSync, writeFileSync } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
 import { homedir, constants as system } from "node:os"
 import { basename, delimiter, isAbsolute, join, resolve as resolvePath } from "node:path"
-import { setTimeout as sleep } from "node:timers/promises"
 
 import type {
   AgentDetail,
   AgentName,
-  AgentShown,
-  ArtifactContent,
   ForegroundProcess,
   TerminalAttached,
   TerminalChange,
@@ -18,7 +15,6 @@ import type {
   TerminalRequest,
   TerminalRequestAnswer,
   TerminalSummary,
-  PlanContent,
   TranscriptChange,
 } from "@novadeck/protocol"
 import { SerializeAddon } from "@xterm/addon-serialize"
@@ -27,6 +23,10 @@ import headless from "@xterm/headless"
 import type { Terminal as Screen } from "@xterm/headless"
 import * as pty from "node-pty"
 
+import type { PlanText } from "../companions/content.js"
+import type { CompanionItems, TerminalPlace } from "../companions/items.js"
+import type { ItemRecord } from "../companions/records.js"
+import { readRequest, type PresentAnswer } from "../companions/request.js"
 import { DomainError } from "../errors.js"
 import {
   apply,
@@ -35,9 +35,14 @@ import {
   type Activity,
 } from "../harnesses/activity.js"
 import { observe, type Binding } from "../harnesses/bindings.js"
-import { actorOf, agentDetail, planOf } from "../harnesses/detail.js"
+import { actorOf, agentDetail } from "../harnesses/detail.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
-import type { HarnessEvent, PromptShown, SessionObserved } from "../harnesses/events.js"
+import type {
+  ActivityEvent,
+  HarnessEvent,
+  PromptShown,
+  SessionObserved,
+} from "../harnesses/events.js"
 import { doorbellLine, quotedLine, type Install } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
 import { followRoot, rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
@@ -64,7 +69,6 @@ import {
   type Report,
   type Reports,
 } from "../shell/reports.js"
-import { capture, readRequest, remember, type Artifact, type PresentAnswer } from "./artifacts.js"
 import {
   allowClose,
   readCloseRequest,
@@ -112,7 +116,6 @@ import {
   type OpenAnswer,
 } from "./opens.js"
 import { TerminalPeers } from "./peers.js"
-import { planContent, planStamp } from "./plans.js"
 import type {
   AgentReport,
   ListedTerminal,
@@ -125,7 +128,7 @@ import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
 import { transcriptChanges } from "./transcripts.js"
-import { Watcher } from "./watcher.js"
+import { TerminalWatcher } from "./watcher.js"
 import { judgedFirst, workAfter, type Work } from "./work.js"
 
 const { Terminal } = headless
@@ -171,8 +174,11 @@ export type TerminalOptions = {
   saveMs?: number
   /** The longest transcript kept per terminal, in characters. */
   transcriptChars?: number
-  /** How often a followed plan's file is looked at for changes, in milliseconds. */
-  planPollMs?: number
+  /**
+   * What agents show beside terminals, and the plans each terminal's agent keeps there;
+   * agents show nothing without it.
+   */
+  items?: CompanionItems
   /** The folder of the project a session belongs to, which names the files its agents show. */
   projectFolder?: (sessionId: string) => string | undefined
   /** How long an agent's request for a new terminal waits for the client's answer, in milliseconds. */
@@ -271,7 +277,7 @@ type Record = {
   actorWatches: Map<string, { readonly controller: AbortController; readonly since: number }>
   /** The bound session's transcript, where its hooks named one. */
   transcript: string | null
-  /** Ends the `agents.transcript` and `agents.plan` streams reading the bound session's. */
+  /** Ends the `agents.transcript` streams reading the bound session's. */
   sourceReaders: Set<AbortController>
   /** When the shell last showed its prompt, in epoch milliseconds. */
   promptedAt: number | null
@@ -281,8 +287,6 @@ type Record = {
   title?: string
   /** Reads the latest title again once the person's keys pause, while hooks are untrusted. */
   recheck?: NodeJS.Timeout | undefined
-  /** What its agents showed the person, oldest first, by id; kept across its shells, never saved. */
-  shown: ReadonlyMap<string, Artifact>
   /** What names it: the person's title, an agent's, and its agent's summary of its work. */
   naming: Naming
   /** When its agent is next nudged to describe its work; kept for this runner's lifetime. */
@@ -294,8 +298,23 @@ type Record = {
   root: Root | null
   /** What the root session worked on, kept with the terminal; null before any did. */
   work: Work | null
-  /** The person's input waiting while the doorbell's test paste is on screen; null otherwise. */
-  held: string[] | null
+  /**
+   * What waits while the doorbell's test paste is on screen: the person's input, and the
+   * latest size the app asked for, as a resize redraws the screen the paste is checked on;
+   * null otherwise.
+   */
+  held: {
+    readonly input: string[]
+    size: {
+      readonly cols: number
+      readonly rows: number
+      readonly owner: string
+      /** The owner's attachment that asked, as a window showing it anew attaches again. */
+      readonly attachment: Subscription | undefined
+    } | null
+  } | null
+  /** When its window was last resized, in epoch milliseconds; 0 before any resize. */
+  resizedAt: number
   /** The handle of the terminal whose agent opened this one; null otherwise. */
   openedBy: string | null
   /**
@@ -461,11 +480,9 @@ export class Terminals {
   private readonly draining = new Map<string, Record>()
   private readonly pendingOwners = new Map<string, Set<{ released: boolean }>>()
   /** Each `watch` stream and the owner whose release ends it. */
-  private readonly watchers = new Map<Watcher, string>()
+  private readonly watchers = new Map<TerminalWatcher, string>()
   /** Each terminal's `agents.detail` readers. */
   private readonly details = new Map<string, Set<Latest<AgentDetail>>>()
-  /** Each terminal's `agents.shown` readers. */
-  private readonly showings = new Map<string, Set<Latest<AgentShown>>>()
   /** Each terminal's `messages.watch` readers. */
   private readonly mail = new Map<string, Set<Latest<TerminalMessages>>>()
   /** Agents' requests for a new terminal, on their way to the client. */
@@ -503,6 +520,7 @@ export class Terminals {
       | "doorbell"
       | "install"
       | "hooksTrusted"
+      | "items"
     >
   > & {
     env: NodeJS.ProcessEnv
@@ -514,6 +532,7 @@ export class Terminals {
     connected: (agent: AgentName) => Promise<boolean>
     install: (agent: AgentName) => Promise<Install | undefined>
     hooksTrusted: ((agent: AgentName, cwd: string) => Promise<boolean | undefined>) | undefined
+    items: CompanionItems | undefined
   }
   private readonly integration: Promise<Integration | undefined>
   private transcripts: boolean
@@ -529,6 +548,8 @@ export class Terminals {
   private readonly doorbell: Doorbell | undefined
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
+  /** Sessions whose project is going, whose terminals no restart starts again. */
+  private readonly closingSessions = new Set<string>()
   /** How many times each harness was disconnected, so a report that waited meanwhile is dropped. */
   private readonly disconnections = new Map<AgentName, number>()
   private creating = 0
@@ -560,12 +581,12 @@ export class Terminals {
       connected: options.connected ?? (() => Promise.resolve(true)),
       saveMs: positive(options.saveMs, 5000),
       transcriptChars: positive(options.transcriptChars, 256 * 1024),
-      planPollMs: positive(options.planPollMs, 500),
       projectFolder: options.projectFolder,
       projectOf: options.projectOf,
       openMs: positive(options.openMs, 6_000),
       install: options.install ?? (() => Promise.resolve(undefined)),
       hooksTrusted: options.hooksTrusted,
+      items: options.items,
     }
     // Child programs do not need the runner's network capability, nor the identity of a
     // NovaDeck terminal the runner itself was started from.
@@ -742,7 +763,6 @@ export class Terminals {
         transcript: null,
         sourceReaders: new Set(),
         promptedAt: saved?.promptedAt ?? null,
-        shown: new Map(),
         changed: false,
         savedAt: 0,
         submitted: started.resumes,
@@ -751,6 +771,7 @@ export class Terminals {
         root: null,
         work,
         held: null,
+        resizedAt: 0,
         openedBy,
         openerCommand: opener?.command ?? null,
         // Only a session the opener's command started, running an agent, is the opener's.
@@ -940,7 +961,7 @@ export class Terminals {
     }
     // While the doorbell's test paste is on screen, the person's input waits its turn.
     if (record.held) {
-      record.held.push(input.data)
+      record.held.input.push(input.data)
       return
     }
     // node-pty accepts each write synchronously; no input is retried after an uncertain delivery.
@@ -1007,17 +1028,33 @@ export class Terminals {
         ])
         return held === undefined || own === undefined ? undefined : held === own
       },
+      resizedAt: (terminalId) => live(terminalId)?.resizedAt ?? 0,
       hold: (terminalId) => {
         const record = live(terminalId)
         // A hold already in force is another ring's: this one has none.
         if (!record || record.held) return { release: () => {}, holding: () => false }
-        const held: string[] = []
+        const held: NonNullable<Record["held"]> = { input: [], size: null }
         record.held = held
         const release = () => {
           clearTimeout(timer)
           if (record.held !== held) return
           record.held = null
-          if (held.length > 0 && live(terminalId) === record) record.process.write(held.join(""))
+          if (live(terminalId) !== record) return
+          if (held.input.length > 0) record.process.write(held.input.join(""))
+          // Only for the attachment still in control: one that took over meanwhile, or
+          // the same window attached anew, was told the size in force and asks its own.
+          const { size } = held
+          if (
+            !size ||
+            record.controller !== size.owner ||
+            record.subscribers.get(size.owner) !== size.attachment
+          )
+            return
+          try {
+            this.applySize(record, size)
+          } catch {
+            // A shell that exited meanwhile takes no size; its exit is handled in turn.
+          }
         }
         // A ring takes well under this; should it not, the person's keys go on.
         const timer = setTimeout(release, holdCapMs)
@@ -1036,12 +1073,29 @@ export class Terminals {
   resize(input: { terminalId: string; cols: number; rows: number }, ownerId: string): void {
     const record = this.control(input.terminalId, ownerId)
     this.running(record)
-    record.process.resize(input.cols, input.rows)
+    // While the doorbell's test paste is on screen, a resize would redraw it and fail the
+    // ring: the latest waits for the ring's hold to end.
+    if (record.held) {
+      record.held.size = {
+        cols: input.cols,
+        rows: input.rows,
+        owner: ownerId,
+        attachment: record.subscribers.get(ownerId),
+      }
+      return
+    }
+    this.applySize(record, input)
+  }
+
+  private applySize(record: Record, { cols, rows }: { cols: number; rows: number }): void {
+    // Only a new size redraws the screen, as a window attaching again may ask for the same.
+    if (cols !== record.summary.cols || rows !== record.summary.rows) record.resizedAt = Date.now()
+    record.process.resize(cols, rows)
     void this.enqueue(record, () => {
-      record.screen.resize(input.cols, input.rows)
-      record.summary = { ...record.summary, cols: input.cols, rows: input.rows }
+      record.screen.resize(cols, rows)
+      record.summary = { ...record.summary, cols, rows }
       this.announce(record)
-      this.emit(record, { type: "resized", cols: input.cols, rows: input.rows })
+      this.emit(record, { type: "resized", cols, rows })
     })
   }
 
@@ -1056,6 +1110,8 @@ export class Terminals {
   ): Promise<TerminalSummary> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     const record = this.record(input.terminalId)
+    if (this.closingSessions.has(record.summary.sessionId))
+      throw new DomainError("TERMINAL_NOT_FOUND")
     if (record.summary.exit === null || record.restarting)
       throw new DomainError("CONFLICT", "Only an exited terminal can restart.")
     if (record.controller !== undefined && record.controller !== ownerId)
@@ -1073,7 +1129,11 @@ export class Terminals {
       // The swap waits for the old shell's queued work, which still uses the old screen.
       return await this.enqueue(record, () => {
         if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-        if (this.records.get(input.terminalId) !== record)
+        // Closed meanwhile, or its project is closing: no shell starts in it again.
+        if (
+          this.records.get(input.terminalId) !== record ||
+          this.closingSessions.has(record.summary.sessionId)
+        )
           throw new DomainError("TERMINAL_NOT_FOUND")
         const resume =
           input.resume &&
@@ -1169,8 +1229,56 @@ export class Terminals {
     this.forget(input.terminalId)
   }
 
+  /**
+   * Closes every terminal of a project's sessions, running or kept only as saved, as
+   * `close` does but whoever controls them, then forgets its agents' messages: the
+   * project is going. Its records are the caller's to delete.
+   */
+  async closeProject(projectId: string, sessionIds: readonly string[]): Promise<void> {
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    const sessions = new Set(sessionIds)
+    // Marked first, so a restart under way can't swap a fresh shell in behind the close.
+    for (const sessionId of sessions) this.closingSessions.add(sessionId)
+    try {
+      await this.closeSessions(sessions)
+    } finally {
+      for (const sessionId of sessions) this.closingSessions.delete(sessionId)
+    }
+    // Shutting down meanwhile kept what the shells left saved: the project stays, for the
+    // next runner to remove.
+    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
+    this.messaging.forgetProject(projectId)
+  }
+
+  /** Closes every terminal of the sessions, running or kept, whoever controls them. */
+  private async closeSessions(sessions: ReadonlySet<string>): Promise<void> {
+    const running = [...this.records.values()].filter(({ summary }) =>
+      sessions.has(summary.sessionId),
+    )
+    await Promise.all(
+      running.map(async (record) => {
+        await this.terminate(record)
+        this.remove(record)
+        this.forget(record.summary.id)
+      }),
+    )
+    for (const sessionId of sessions) {
+      let kept: readonly ListedTerminal[] = []
+      this.persisting(() => {
+        kept = this.options.records?.terminals(sessionId) ?? []
+      })
+      for (const terminal of kept) {
+        this.forget(terminal.id)
+        for (const watcher of this.watchers.keys()) watcher.removed(terminal)
+      }
+      this.numbers.delete(sessionId)
+    }
+  }
+
   /** Forgets what restores the terminal, and the sessions it claimed. */
   private forget(terminalId: string): void {
+    // Its items go first, so watchers hear of each before its record cascades them away.
+    this.options.items?.terminalClosed(terminalId)
     this.messaging.unregister(terminalId)
     this.doorbell?.forget(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
@@ -1178,6 +1286,38 @@ export class Terminals {
     this.closed.delete(terminalId)
     this.openers.delete(terminalId)
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
+  }
+
+  /**
+   * Where a terminal kept by the runner is, running or saved, as items shown in it or
+   * placed on it need: its session, handle, directory and project folder.
+   */
+  place(terminalId: string): TerminalPlace | undefined {
+    const live = this.records.get(terminalId)
+    const terminal = live?.summary ?? this.saved(terminalId)
+    if (!terminal) return undefined
+    return {
+      terminalId,
+      sessionId: terminal.sessionId,
+      handle: terminal.handle,
+      cwd: terminal.cwd,
+      project: this.projectFolder(terminal.sessionId),
+    }
+  }
+
+  /**
+   * A plan presented as text, as the terminal it came from has it live while it still
+   * runs the plan's session: the latest its actor presented, and when.
+   */
+  livePlan(item: ItemRecord): PlanText | undefined {
+    const { plan } = item
+    const record = this.records.get(item.from.terminalId)
+    const { binding } = record ?? {}
+    if (!plan || !binding || binding.agent !== plan.agent || binding.sessionId !== plan.session)
+      return undefined
+    const live = record?.activity?.plans.find(({ actor }) => actor === plan.actor)
+    if (live?.source.kind !== "text") return undefined
+    return { text: live.source.text, truncated: live.source.truncated, changedAt: live.at }
   }
 
   /** The session `agent` last reported in the terminal, live or saved; null when none. */
@@ -1397,7 +1537,7 @@ export class Terminals {
    */
   async *watch(ownerId: string, signal?: AbortSignal): AsyncGenerator<TerminalChange> {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    const watcher = new Watcher(this.list())
+    const watcher = new TerminalWatcher(this.list())
     this.watchers.set(watcher, ownerId)
     const abort = () => watcher.finish()
     signal?.addEventListener("abort", abort, { once: true })
@@ -1427,26 +1567,8 @@ export class Terminals {
   }
 
   /**
-   * What the terminal's agents showed the person: a snapshot, then another on each
-   * change, until the terminal is gone or `signal` aborts.
-   */
-  async *shown(terminalId: string, signal?: AbortSignal): AsyncGenerator<AgentShown> {
-    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    const record = this.record(terminalId)
-    yield* this.snapshots(this.showings, terminalId, this.shownOf(record), signal)
-  }
-
-  /** One thing the terminal's agents showed, as captured; NOT_FOUND once it is not shown. */
-  artifact(terminalId: string, artifact: string): ArtifactContent {
-    const found = this.record(terminalId).shown.get(artifact)
-    if (!found) throw new DomainError("NOT_FOUND")
-    return found.content
-  }
-
-  /**
    * Shows the person what an agent asked to, through NovaDeck's MCP server in one of
-   * the terminal's shells: any file they can read, as a viewer would, or a page. It
-   * opens at once when the agent says they asked, unless it may hold secrets. A call
+   * the terminal's shells, on the terminal's own bar (see `CompanionItems.show`). A call
    * without the shell's own token learns nothing more.
    */
   async present(call: Call): Promise<PresentAnswer> {
@@ -1454,26 +1576,18 @@ export class Terminals {
     if (!record || record.exitQueued || !sameToken(record.token, call.token)) return unanswered
     const read = readRequest(call.request)
     if (!read.ok) return read
-    const { request } = read
-    const captured = await capture(request, {
-      cwd: record.summary.cwd,
-      project: this.projectFolder(record.summary.sessionId),
-    })
-    if (!captured.ok) return captured
-    // Closed, or the runner stopped, while the file was read.
-    if (this.stopping || this.records.get(call.terminalId) !== record) return unanswered
-    const opened = request.open === true && !captured.held
-    record.shown = remember(record.shown, captured, opened)
-    const shown = this.shownOf(record)
-    for (const reader of this.showings.get(call.terminalId) ?? []) reader.push(shown)
-    return {
-      ok: true,
-      id: captured.id,
-      kind: captured.content.kind,
-      name: captured.name,
-      opened,
-      ...(captured.held && { held: true }),
-    }
+    const place = this.place(call.terminalId)
+    if (!place || !this.options.items) return unanswered
+    return this.options.items.show(place, read.request)
+  }
+
+  /** What the caller's own terminal's bar holds, as its agent asked through NovaDeck's MCP server. */
+  private showing(call: Call): { ok: true; text: string } | typeof unansweredCalls.showing {
+    const record = this.records.get(call.terminalId)
+    if (!record || record.exitQueued || !sameToken(record.token, call.token))
+      return unansweredCalls.showing
+    if (!this.options.items) return unansweredCalls.showing
+    return { ok: true, text: this.options.items.listing(call.terminalId) }
   }
 
   /**
@@ -1654,6 +1768,8 @@ export class Terminals {
     switch (call.type) {
       case "present":
         return this.present(call)
+      case "showing":
+        return Promise.resolve(this.showing(call))
       case "open":
         return this.open(call)
       case "close":
@@ -1803,13 +1919,6 @@ export class Terminals {
     }
   }
 
-  private shownOf(record: Record): AgentShown {
-    return {
-      terminalId: record.summary.id,
-      shown: [...record.shown.values()].map((artifact) => artifact.shown),
-    }
-  }
-
   /**
    * A terminal's snapshots, from `first`, as they are pushed to `streams`' readers,
    * until they are finished or `signal` aborts.
@@ -1875,50 +1984,6 @@ export class Terminals {
     }
   }
 
-  /**
-   * A plan the bound session keeps as an actor's latest: its text as it stands, then
-   * again on each change, until another plan replaces it, the terminal's agent leaves
-   * the session, or `signal` aborts. A plan it does not keep is NOT_FOUND.
-   */
-  async *plan(terminalId: string, plan: string, signal?: AbortSignal): AsyncGenerator<PlanContent> {
-    if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
-    const record = this.record(terminalId)
-    const { binding } = record
-    if (!binding || !planOf(binding, record.activity, plan)) throw new DomainError("NOT_FOUND")
-    const reader = new AbortController()
-    record.sourceReaders.add(reader)
-    const abort = () => reader.abort()
-    signal?.addEventListener("abort", abort, { once: true })
-    if (signal?.aborted) reader.abort()
-    try {
-      let stamp: string | undefined
-      let sent = ""
-      while (!reader.signal.aborted && record.binding === binding) {
-        const current = planOf(binding, record.activity, plan)
-        if (!current) return
-        // eslint-disable-next-line no-await-in-loop -- Each look follows the one before.
-        const now = await planStamp(current.source)
-        if (now !== undefined && now !== stamp) {
-          // eslint-disable-next-line no-await-in-loop -- As above.
-          const content = await planContent(plan, current.source)
-          // A read that failed is tried again on the next look.
-          if (content) stamp = now
-          const key = JSON.stringify(content)
-          if (content && key !== sent && !reader.signal.aborted) {
-            sent = key
-            yield content
-          }
-        }
-        // eslint-disable-next-line no-await-in-loop -- As above.
-        await sleep(this.options.planPollMs, undefined, { signal: reader.signal }).catch(() => {})
-      }
-    } finally {
-      signal?.removeEventListener("abort", abort)
-      reader.abort()
-      record.sourceReaders.delete(reader)
-    }
-  }
-
   ack(input: { terminalId: string; sequence: number }, ownerId: string): void {
     // A closed terminal's viewers still acknowledge the events they drain.
     const record = this.draining.get(input.terminalId) ?? this.record(input.terminalId)
@@ -1938,6 +2003,7 @@ export class Terminals {
     }
     for (const [watcher, owner] of this.watchers) if (owner === ownerId) watcher.finish()
     this.opens.release(ownerId)
+    this.options.items?.release(ownerId)
   }
 
   shutdown(): Promise<void> {
@@ -1952,7 +2018,8 @@ export class Terminals {
     this.saver = undefined
     for (const watcher of this.watchers.keys()) watcher.finish()
     this.opens.finish()
-    for (const streams of [this.details, this.showings, this.mail])
+    this.options.items?.shutdown()
+    for (const streams of [this.details, this.mail])
       for (const readers of streams.values()) for (const reader of readers) reader.finish()
     for (const record of this.records.values()) this.unwatch(record)
     this.doorbell?.close()
@@ -2006,9 +2073,9 @@ export class Terminals {
     for (const reader of readers) reader.push(detail)
   }
 
-  /** Ends the terminal's detail, shown and messages streams, as it is closed. */
+  /** Ends the terminal's detail and messages streams, as it is closed. */
   private undetail(id: string): void {
-    for (const streams of [this.details, this.showings, this.mail]) {
+    for (const streams of [this.details, this.mail]) {
       for (const reader of streams.get(id) ?? []) reader.finish()
       streams.delete(id)
     }
@@ -2426,6 +2493,9 @@ export class Terminals {
         record.activity = next.binding ? fresh(event.startedAt) : null
         record.telemetry = null
         this.follow(record, event)
+        // The plans its bar mirrored of another session go; unbinding alone keeps them.
+        if (next.binding)
+          this.options.items?.sessionBound(record.summary.id, next.binding.sessionId)
       }
       record.summary = { ...record.summary, cwd: next.cwd }
     }
@@ -2997,7 +3067,40 @@ export class Terminals {
     }
     const next = record.activity && apply(record.activity, record.binding, fact)
     if (next) record.activity = next
+    if (next && fact.type === "plan-observed") void this.planned(record, record.binding, fact)
     return Boolean(next)
+  }
+
+  /**
+   * Mirrors a plan the bound session observed on the terminal's bar: its file, or for one
+   * presented as text, the transcript or rollout recording it, which reads it back once
+   * the terminal is gone. A text plan with no record to point at is not kept.
+   */
+  private async planned(
+    record: Record,
+    binding: Binding,
+    fact: Extract<ActivityEvent, { type: "plan-observed" }>,
+  ): Promise<void> {
+    const { items } = this.options
+    const place = this.place(record.summary.id)
+    if (!items || !place) return
+    const { plan, actor } = fact
+    const transcripts = harnesses[binding.agent].transcripts
+    const path =
+      plan.kind === "file"
+        ? plan.path
+        : record.transcript && transcripts
+          ? await transcripts
+              .locate(record.transcript, binding.sessionId, actor)
+              .catch(() => undefined)
+          : undefined
+    if (!path || this.stopping) return
+    await items.planObserved(
+      place,
+      { agent: binding.agent, agentSession: binding.sessionId, actor },
+      { source: plan, path },
+      fact.startedAt,
+    )
   }
 
   private unwatch(record: Record): void {

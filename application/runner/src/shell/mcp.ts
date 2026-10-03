@@ -2,12 +2,12 @@
  * NovaDeck's MCP server, run by a connected agent's plugin through the launcher on
  * NovaDeck's own runtime, so it needs no dependencies. It speaks MCP over stdio, one
  * JSON message per line, just enough for its tools: `show`, which puts an image, a text
- * file or a web page in front of the user, beside the terminal the agent runs in;
- * `open_terminal`, which opens a new terminal beside it, optionally starting a command
- * there; `close_terminal`, which closes another of the project's terminals by its handle;
- * `send` and `agents`, which message the agents in the project's other
- * terminals and list them; and `describe`, which names the agent's own terminal and says
- * what it works on (see docs/agent-messaging.md). It forwards each call to that
+ * file or a web page in front of the user, beside the terminal the agent runs in, and
+ * `showing`, which lists what is there now; `open_terminal`, which opens a new terminal
+ * beside it, optionally starting a command there; `close_terminal`, which closes another
+ * of the project's terminals by its handle; `send` and `agents`, which message the agents
+ * in the project's other terminals and list them; and `describe`, which names the agent's
+ * own terminal and says what it works on (see docs/agent-messaging.md). It forwards each call to that
  * terminal's runner over the endpoint the agent's hooks report to, with the terminal's
  * own token, and returns the runner's answer. Only Claude Code reads a server's own
  * instructions, so each tool's description carries its rules. Outside NovaDeck's
@@ -47,7 +47,8 @@ const show = {
     "beside the terminal they're talking to you in. Give either path or url. Use it when they " +
     "ask to see something, or when a screenshot, mockup, diagram, the lines you mean or the " +
     "running app (as a local dev server's address) would help them follow. Set open to true " +
-    "only when they asked to see it; otherwise it waits for them in NovaDeck, marked new.",
+    "only when they asked to see it; otherwise it waits for them in NovaDeck, marked new. " +
+    "Showing the same file or page again updates it beside you.",
   inputSchema: {
     type: "object",
     properties: {
@@ -84,14 +85,33 @@ const show = {
   call: "present",
   request: (args) => picked(args, ["path", "url", "lines", "title", "open"]),
   said: (answer) =>
-    answer.opened
-      ? "Showing " + answer.name + " to the user in NovaDeck."
+    (answer.opened
+      ? "Showing " + answer.name + (answer.again ? " again, updated," : "") +
+        " to the user in NovaDeck."
       : answer.held
         ? answer.name +
           " may hold secrets, so it doesn't open by itself: it's waiting for the user in " +
           "NovaDeck, marked new, to open if they choose."
-        : answer.name + " is waiting for the user in NovaDeck, marked new.",
+        : answer.name + (answer.again ? " is updated and" : " is") +
+          " waiting for the user in NovaDeck, marked new.") +
+    (answer.tooLarge
+      ? " It's too large to preview, so NovaDeck lists it by its name only."
+      : ""),
   failed: "NovaDeck couldn't show it.",
+}
+
+const showing = {
+  name: "showing",
+  description:
+    "List what is showing beside your terminal in NovaDeck now: each image, file, page " +
+    "and plan, with where it points and whether you showed it, the user attached it, or " +
+    "it was placed there from another terminal.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  call: "showing",
+  request: () => ({}),
+  // The runner renders the listing.
+  said: (answer) => answer.text,
+  failed: "NovaDeck couldn't list what is showing beside you.",
 }
 
 const openTerminal = {
@@ -348,7 +368,7 @@ const describe = {
   failed: "NovaDeck couldn't describe the terminal.",
 }
 
-const tools = [show, openTerminal, closeTerminal, send, agents, describe]
+const tools = [show, showing, openTerminal, closeTerminal, send, agents, describe]
 
 // The MCP versions this server speaks, newest first; it answers others with the newest.
 const versions = ${JSON.stringify(mcpVersions)}

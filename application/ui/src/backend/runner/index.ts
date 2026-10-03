@@ -1,6 +1,8 @@
+import type { Project } from "@novadeck/protocol"
 import {
   connectRunner,
   desktop,
+  hasCode,
   RunnerError,
   websocket,
   type Runner,
@@ -27,17 +29,14 @@ const transport = (): Transport => {
 
 // Lists what the runner holds. A first run gets a "Home" project in the runner's home
 // directory, and every project without a session gets one, so the workspace can open.
+// A project removed meanwhile, as from another window, is left out.
 export const loadListing = async (
-  runner: Pick<Runner, "projects" | "sessions" | "terminals">,
+  runner: Pick<Runner, "projects" | "sessions" | "terminals" | "companions">,
   newId: () => string,
   now: () => number,
 ): Promise<RunnerListing> => {
-  const listed = await runner.projects.list()
-  const projects = listed.length
-    ? listed
-    : [await runner.projects.create({ id: newId(), name: "Home" })]
-  return Promise.all(
-    projects.map(async (project) => {
+  const load = async (project: Project): Promise<RunnerListing[number] | undefined> => {
+    try {
       const found = await runner.sessions.list({ projectId: project.id })
       const sessions = found.length
         ? found
@@ -51,14 +50,26 @@ export const loadListing = async (
       return {
         project,
         sessions: await Promise.all(
-          sessions.map(async (session) => ({
-            session,
-            terminals: await runner.terminals.list({ sessionId: session.id }),
-          })),
+          sessions.map(async (session) => {
+            const [terminals, companions] = await Promise.all([
+              runner.terminals.list({ sessionId: session.id }),
+              runner.companions.list({ sessionId: session.id }),
+            ])
+            return { session, terminals, companions }
+          }),
         ),
       }
-    }),
-  )
+    } catch (error) {
+      if (hasCode(error, "NOT_FOUND")) return undefined
+      throw error
+    }
+  }
+  const listed = await Promise.all((await runner.projects.list()).map(load))
+  const loaded = listed.filter((item) => item !== undefined)
+  if (loaded.length) return loaded
+  const home = await load(await runner.projects.create({ id: newId(), name: "Home" }))
+  if (!home) throw new RunnerError("NOT_FOUND", "The runner removed the new Home project.")
+  return [home]
 }
 
 const newId = (): string => crypto.randomUUID()
