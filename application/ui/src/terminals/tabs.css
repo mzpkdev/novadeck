@@ -5,7 +5,7 @@
    "attention" | "ended", data-terminal-attention="question" | "permission",
    data-terminal-hidden="true" | "false". Parts: `.terminal-glyph`,
    `.terminal-tab-process`, `.terminal-tab-starting`, `.terminal-tab-action` (an
-   `.icon-button.dim`, aria-pressed while it hides the tab), `.terminal-tab-mail` (a
+   `.icon-button.small.dim`, pressed while it hides the tab), `.terminal-tab-mail` (a
    `.badge`, data-mail="waiting" | "held" | "paused"), `.terminal-tab-rename`,
    `.terminal-tab-empty`.
 
@@ -21,14 +21,8 @@
    --tab-mail-paused-bg (paper), --tab-mail-paused-fg (muted): the count of mail held
    while the agent is paused. Waiting mail is a plain badge, held mail a warning tone.
    --tab-empty-fg (muted): the note in an empty list. */
-.icon-button.terminal-tab-action {
-  @apply size-6 p-1.5;
-}
 .icon-button.terminal-tab-action:focus-visible {
   outline-offset: -2px;
-}
-.icon-button.dim.terminal-tab-action[aria-pressed="true"] > svg {
-  opacity: 1;
 }
 .icon-button.terminal-tab-action:disabled {
   pointer-events: none;

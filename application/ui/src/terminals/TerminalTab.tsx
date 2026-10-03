@@ -17,7 +17,7 @@ import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 import { useRenderAt } from "./use-render-at"
 import { windowMenu, type DockTarget } from "./window-menu"
 
-const actionClasses = "terminal-tab-action icon-button dim"
+const actionClasses = "terminal-tab-action icon-button small dim"
 
 export const TerminalTab = ({
   terminal: tile,

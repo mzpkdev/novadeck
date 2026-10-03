@@ -48,7 +48,7 @@ export const Peek = ({ entries }: { entries: readonly PeekEntry[] }): React.JSX.
           </span>
         </button>
         <button
-          className="plan-peek-close"
+          className="plan-peek-close icon-button raised"
           aria-label={`Close ${entry.name}`}
           onClick={entry.onClose}
         >

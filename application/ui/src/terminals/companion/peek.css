@@ -1,8 +1,9 @@
 /* The peek recipe: the cards above a taskbar icon (`.plan-peek`), one for each thing
    behind it, each a preview (`.plan-peek-thumb`), an icon and a name
-   (`.plan-peek-name`), the taskbar's own mark, and a close button (`.plan-peek-close`)
-   that shows on hover; and the previews in miniature (`.peek-*`). The peek itself is a
-   `.floating.peek` (see surface.css). A plan's miniature takes the prose tokens.
+   (`.plan-peek-name`), the taskbar's own mark, and a close button (`.plan-peek-close`,
+   an `.icon-button.raised`) that shows on hover; and the previews in miniature
+   (`.peek-*`). The peek itself is a `.floating.peek` (see surface.css). A plan's
+   miniature takes the prose tokens.
 
    Hooks: on a card's button (`.plan-peek-open`), aria-pressed="true" while the pane
    shows it, and data-state="new" | "open" | "seen" for its mark.
@@ -17,8 +18,6 @@
    --peek-mark-bg (ink): the mark.
    --peek-thumb-bg (paper), --peek-thumb-border-color (line),
    --peek-thumb-radius (radius-control): the preview.
-   --peek-close-bg (paper), --peek-close-fg (muted), --peek-close-border-color (line),
-   --peek-close-shadow (shadow-control), --peek-close-hover-fg (ink): the close button.
    --peek-page-bar-bg (paper), --peek-page-bar-border-color (line),
    --peek-page-dot-bg (line-strong): a page's browser frame in miniature. */
 .plan-peek {
@@ -102,23 +101,13 @@
   white-space: nowrap;
 }
 .plan-peek-close {
-  --_fg: var(--peek-close-fg, var(--color-muted));
   position: absolute;
   top: 10px;
   right: 10px;
-  display: grid;
-  place-items: center;
   width: 22px;
   height: 22px;
-  border: var(--border-width) solid var(--peek-close-border-color, var(--color-line));
-  border-radius: var(--radius-control);
-  background-color: var(--peek-close-bg, var(--color-paper));
-  box-shadow: var(--peek-close-shadow, var(--shadow-control));
-  color: var(--_fg);
+  padding: 0;
   opacity: 0;
-}
-.plan-peek-close:hover {
-  --_fg: var(--peek-close-hover-fg, var(--color-ink));
 }
 .plan-peek-card:hover .plan-peek-close,
 .plan-peek-card:focus-within .plan-peek-close {
