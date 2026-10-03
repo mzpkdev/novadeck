@@ -291,7 +291,11 @@ describe("appearance preference", () => {
 
       await expect.poll(pageScheme).toBe("dark")
       await closePreferences()
+      // As a fresh load finds it: nothing on <html> until the app shows what it saved.
+      document.documentElement.removeAttribute("data-theme")
+      document.documentElement.removeAttribute("data-scheme")
       await reloadWorkspace()
+      expect(document.documentElement.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
       await expect.poll(pageScheme).toBe("dark")
       await openPreferences()
       await expect.element(modeChoice("Dark")).toBeChecked()
