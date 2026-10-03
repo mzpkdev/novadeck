@@ -107,6 +107,7 @@
   --workspace-zen-dots-opacity: 0;
   --workspace-zen-spotlight-opacity: 0;
   --workspace-zen-grain-opacity: 0;
+  --workspace-dots-fg: transparent;
   --welcome-stage-dots-fg: transparent;
   /* The phase line, heavier on a flat page, as heavy as the attention line. */
   --window-phase-border-width: 2px;
