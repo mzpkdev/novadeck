@@ -123,6 +123,24 @@ const declarations = (body: string): Map<string, string> =>
     }),
   )
 
+// A selector list's selectors: split at its own commas, not those inside `:is()` or
+// another function.
+const selectorList = (prelude: string): string[] => {
+  const found: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < prelude.length; index++) {
+    const char = prelude[index]
+    if (char === "(" || char === "[") depth++
+    else if (char === ")" || char === "]") depth--
+    else if (char === "," && depth === 0) {
+      found.push(prelude.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  return [...found, prelude.slice(start).trim()]
+}
+
 // ---- Reporting: what breaks a rule, by file, with how to fix it.
 
 type Rule = { readonly broken: string; readonly fix: string }
@@ -177,7 +195,7 @@ describe("theme contract", () => {
             ? []
             : node.prelude.startsWith("@")
               ? selectors(node.body)
-              : node.prelude.split(",").map((selector) => selector.trim()),
+              : selectorList(node.prelude),
         )
       expect(
         selectors(uncomment(read(file))).filter((selector) => !selector.startsWith(prefix)),
