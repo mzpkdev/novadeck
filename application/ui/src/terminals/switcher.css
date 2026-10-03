@@ -1,18 +1,14 @@
 /* The switcher recipe: the terminal switcher, a `.modal` over an `.overlay` whose rows
-   are `.item`s. This draws only its header, its rows' parts and its footer of keys.
+   are `.item`s, with a `.modal-header` and a `.modal-footer` of keys. This draws only
+   what it adds to them.
 
    Parts: `.switcher-header`, `.switcher-count`, `.switcher-process`, `.switcher-go`
    (the arrow at a row's end, faint until the row is highlighted or under the pointer),
    `.switcher-footer`.
 
    Tokens, each optional (its fallback in brackets):
-   --switcher-header-fg (muted), --switcher-border-color (line): the header's icon and
-   count, and the hairlines that close off the header and the footer.
-   --switcher-footer-bg (shell), --switcher-footer-fg (muted): the footer of keys.
+   --switcher-header-fg (muted): the header's icon and count.
    --switcher-go-opacity (0.25): a row's arrow at rest. */
-.switcher-header {
-  border-bottom: var(--border-width) solid var(--switcher-border-color, var(--color-line));
-}
 .switcher-header > svg,
 .switcher-count {
   color: var(--switcher-header-fg, var(--color-muted));
@@ -32,11 +28,6 @@
   .item:hover .switcher-go {
     opacity: 1;
   }
-}
-.switcher-footer {
-  border-top: var(--border-width) solid var(--switcher-border-color, var(--color-line));
-  background-color: var(--switcher-footer-bg, var(--color-shell));
-  color: var(--switcher-footer-fg, var(--color-muted));
 }
 .switcher-footer strong {
   color: var(--color-ink);

@@ -5,13 +5,12 @@
    (`.search-result-path`) after a hairline; `.search-result-action`, the arrow that is
    faint until its result is under the pointer, highlighted or focused;
    `.search-empty`, what shows when nothing matches; `.search-footnote`, the strip
-   under the results.
+   under the results, a `.modal-footer`.
 
    Tokens, each optional (its fallback in brackets):
-   --separator-bg (line): the hairlines.
+   --separator-bg (line): the hairline before a result's directory.
    --search-action-opacity (0.25): the arrow at rest.
-   --search-empty-fg (muted).
-   --search-footnote-bg (shell), --search-footnote-fg (muted): the strip. */
+   --search-empty-fg (muted). */
 .search-result-meta {
   font-family: var(--font-mono);
 }
@@ -27,9 +26,4 @@
 }
 .search-empty {
   color: var(--search-empty-fg, var(--color-muted));
-}
-.search-footnote {
-  border-top: var(--border-width) solid var(--separator-bg, var(--color-line));
-  background-color: var(--search-footnote-bg, var(--color-shell));
-  color: var(--search-footnote-fg, var(--color-muted));
 }

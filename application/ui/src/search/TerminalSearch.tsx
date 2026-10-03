@@ -105,7 +105,7 @@ export const TerminalSearch = ({
           ),
         }))}
       />
-      <div className="search-footnote flex items-center justify-between px-5 py-3 text-[10px]">
+      <div className="modal-footer search-footnote flex items-center justify-between px-5 py-3 text-[10px]">
         <span>Open in {destination}</span>
         <span className="search-dismiss flex items-center gap-2">
           <kbd>esc</kbd> Close

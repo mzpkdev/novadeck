@@ -3,6 +3,8 @@
    list, tooltip or peek, and `.modal` a dialog over the overlay. A `.floating.peek`
    rises out of its trigger as it opens; a `.modal` drops in. Both key their motion on
    data-state="open" | "closed", which Ark sets and keeps through the closing animation.
+   Parts of a `.modal`: `.modal-title`, `.modal-description`, a `.modal-header` closed
+   off by a hairline and a `.modal-footer` strip under one.
 
    Tokens, each optional (its fallback in brackets):
    --panel-bg (paper), --panel-fg (ink), --panel-border-color (line),
@@ -13,7 +15,10 @@
    --floating-shadow (shadow-floating), --floating-radius (radius-popover).
    --modal-bg (paper), --modal-fg (ink), --modal-border-color (line-strong),
    --modal-shadow (shadow-modal), --modal-radius (radius-popover),
-   --modal-description-fg (muted): a dialog, and the text under its title. */
+   --modal-description-fg (muted): a dialog, and the text under its title.
+   --modal-header-border-color (line): the hairline under a dialog's header.
+   --modal-footer-bg (shell), --modal-footer-fg (muted),
+   --modal-footer-border-color (line): a dialog's footer. */
 .panel {
   --_bg: var(--panel-bg, var(--color-paper));
   --_fg: var(--panel-fg, var(--color-ink));
@@ -58,6 +63,14 @@
 }
 .modal-description {
   color: var(--modal-description-fg, var(--color-muted));
+}
+.modal-header {
+  border-bottom: var(--border-width) solid var(--modal-header-border-color, var(--color-line));
+}
+.modal-footer {
+  border-top: var(--border-width) solid var(--modal-footer-border-color, var(--color-line));
+  background-color: var(--modal-footer-bg, var(--color-shell));
+  color: var(--modal-footer-fg, var(--color-muted));
 }
 
 /* A peek rises out of its trigger as it opens and settles back as it closes; Ark sets

@@ -143,7 +143,7 @@ export const Preferences = ({
       className={`${motion.dialog} flex h-[min(640px,calc(100dvh-48px))] w-[min(540px,calc(100vw-32px))] flex-col overflow-hidden max-[480px]:w-[calc(100vw-24px)]`}
     >
       <Tabs value={tab} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
-        <div className="preferences-heading shrink-0 px-6 pt-5 max-[480px]:px-4">
+        <div className="modal-header preferences-heading shrink-0 px-6 pt-5 max-[480px]:px-4">
           <div className="flex items-center justify-between gap-4">
             <h2 id="preferences-title" className="modal-title m-0 text-[15px] font-medium">
               Preferences

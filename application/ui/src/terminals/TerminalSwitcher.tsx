@@ -55,7 +55,7 @@ export const TerminalSwitcher = ({
           else close.current?.focus()
         }}
       >
-        <header className="switcher-header flex min-h-17 shrink-0 items-center gap-3 px-5 py-3">
+        <header className="modal-header switcher-header flex min-h-17 shrink-0 items-center gap-3 px-5 py-3">
           <Layers size={16} className="shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <h2 className="m-0 text-sm font-medium">Switch terminal</h2>
@@ -107,7 +107,7 @@ export const TerminalSwitcher = ({
             )
           })}
         </div>
-        <footer className="switcher-footer shrink-0 px-5 py-3 text-[10px]">
+        <footer className="modal-footer switcher-footer shrink-0 px-5 py-3 text-[10px]">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
             <span>
               {mode === "held" ? (
