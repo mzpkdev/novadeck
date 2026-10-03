@@ -1,0 +1,17 @@
+/* The button recipe: dialog actions, empty states and create buttons. A grey outline,
+   or the strong fill when it is the primary action (`.primary`). */
+.small-button {
+  @apply flex h-9 items-center justify-center gap-2 rounded-control border border-line-strong bg-paper px-4 text-[11px] text-ink shadow-control hover:bg-soft;
+}
+.small-button.primary {
+  @apply border-strong bg-strong hover:border-strong-hover hover:bg-strong-hover;
+  color: var(--color-on-strong);
+}
+.small-button:disabled {
+  @apply pointer-events-none opacity-50;
+}
+@media (max-width: 700px) {
+  .small-button {
+    padding: 0 12px;
+  }
+}

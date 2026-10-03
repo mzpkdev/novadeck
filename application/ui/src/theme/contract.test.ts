@@ -6,10 +6,10 @@
 // for each scheme the manifest lists. The first scheme lives on `[data-theme="<id>"]`,
 // each other one on `[data-theme="<id>"][data-scheme="<scheme>"]`.
 //
-// Ratchets: the rules below have files that still break them while components move to
-// recipes. Each rule lists those files. A file not listed must follow the rule, and a
-// listed file that now follows it fails the check until it is removed from the list,
-// so the lists only shrink.
+// Ratchets: rules (a) to (c) below have files that still break them while components
+// move to recipes. Each rule lists those files. A file not listed must follow the rule,
+// and a listed file that now follows it fails the check until it is removed from the
+// list, so the lists only shrink. Rule (d) holds for every file.
 //
 // (a) TSX arranges, recipes draw. Every string literal in the UI's .ts and .tsx
 //     source is split into class tokens; a token whose utility (after its variants,
@@ -495,7 +495,6 @@ const colourLiterals = (file: string): string[] =>
 const stylesheetsWithColours: readonly string[] = [
   "preferences/WelcomeDialog.module.css",
   "preferences/WelcomePreview.module.css",
-  "styles.css",
   "terminals/companion/companion.css",
   "theme/contract.css",
   "ui-toolkit/DeckLogo.module.css",
@@ -511,14 +510,13 @@ const importantDeclarations = (file: string): string[] =>
       : [],
   )
 
-// Stylesheets that still use `!important`. Shrink only.
+// Stylesheets that still use `!important`. Shrink only. runner.css overrides styles
+// xterm sets inline, and accessibility.css stills motion that utilities in the TSX set.
 const stylesheetsWithImportant: readonly string[] = [
   "app/BootSplash.module.css",
   "backend/runner/runner.css",
-  "styles.css",
   "terminals/companion/companion.css",
-  "ui-toolkit/HoverCard.module.css",
-  "ui-toolkit/ModalMotion.module.css",
+  "theme/accessibility.css",
 ]
 
 // ---- (d) Every stylesheet is layered.
@@ -585,24 +583,6 @@ const unlayeredStylesheets = (): Map<string, string[]> =>
     ),
   ])
 
-// Files with CSS outside a layer. Shrink only.
-const unlayeredFiles: readonly string[] = [
-  "app/BootSplash.module.css",
-  "backend/demo/demo.css",
-  "backend/runner/RunnerTerminal.tsx",
-  "backend/runner/runner.css",
-  "layouts/canvas/canvas.css",
-  "layouts/grid/grid.css",
-  "preferences/WelcomeDialog.module.css",
-  "preferences/WelcomePreview.module.css",
-  "styles.css",
-  "terminals/companion/companion.css",
-  "ui-toolkit/Checkbox.module.css",
-  "ui-toolkit/DeckLogo.module.css",
-  "ui-toolkit/HoverCard.module.css",
-  "ui-toolkit/ModalMotion.module.css",
-]
-
 describe("theme ratchets", () => {
   it("keeps visual utilities out of TSX class strings", () => {
     const found = byFile(scripts.map((file) => [file, classLooks(file)] as const))
@@ -628,6 +608,6 @@ describe("theme ratchets", () => {
   })
 
   it("puts every stylesheet in a layer", () => {
-    expect(ratchet(unlayeredStylesheets(), unlayeredFiles)).toEqual([])
+    expect(ratchet(unlayeredStylesheets(), [])).toEqual([])
   })
 })

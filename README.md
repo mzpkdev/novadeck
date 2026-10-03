@@ -526,7 +526,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `test/`                                            | Unit-test fixtures, a jsdom render helper, a command harness, and the port contract.    |
 | `assets/`                                          | Static files referenced from CSS.                                                       |
 | `theme/`                                           | The theming contract: token defaults, theme files, the theme list, and `apply.ts`.      |
-| `styles.css`                                       | The cascade layer order and imports, global primitives, and shared workspace styles.    |
+| `styles.css`                                       | The cascade order, and every recipe, theme and vendor sheet imported into its layer.    |
 | `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                                |
 
 Imports point down the layers. `model/` imports nothing else, not even packages,

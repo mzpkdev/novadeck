@@ -110,7 +110,7 @@ export const TerminalTab = ({
             {/* One glyph wide in every phase, so the text beside it never shifts. */}
             <span
               aria-hidden
-              className="terminal-glyph inline-block w-[1ch] shrink-0 text-center font-mono text-ink"
+              className="terminal-glyph inline-block w-[1ch] shrink-0 text-center font-mono"
             />
             {phase === "starting" ? (
               <span className="terminal-tab-starting truncate font-mono italic">starting…</span>

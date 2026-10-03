@@ -47,7 +47,7 @@ export const Focus = ({
         .map((terminal) => (
           <div
             key={terminal.id}
-            className="terminal-visibility absolute inset-3 max-[701px]:inset-1.5 data-[hiding=false]:z-1"
+            className="terminal-visibility absolute data-[hiding=false]:z-1"
             data-hiding={hidden[terminal.id]}
             aria-hidden={hidden[terminal.id]}
             inert={hidden[terminal.id]}

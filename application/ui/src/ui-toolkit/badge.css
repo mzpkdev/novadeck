@@ -1,0 +1,4 @@
+/* The badge recipe: counts, `kbd` and small labels. */
+kbd {
+  @apply inline-flex min-h-5 items-center justify-center rounded-control border border-line bg-shell px-1.5 font-mono text-[9px];
+}

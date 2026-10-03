@@ -23,7 +23,7 @@ export const TerminalOutput = ({
   if (output === "shell")
     return (
       <>
-        <div className="terminal-meta mb-8 grid gap-x-5 gap-y-0.5 text-[11px] grid-cols-[max-content_auto] [&>span:nth-child(odd)]:text-muted">
+        <div className="terminal-meta grid grid-cols-[max-content_auto] [&>span:nth-child(odd)]:text-muted">
           <span>Last login</span>
           <span>Tue Sep 22, 09:41:08 on ttys001</span>
           <span>Workspace</span>
@@ -40,7 +40,7 @@ export const TerminalOutput = ({
         <p className="output-gap">
           <span className="prompt-arrow mr-2 font-semibold">❯</span> ls
         </p>
-        <p className="file-list mt-1 grid w-max max-w-full grid-cols-3 gap-x-10">
+        <p className="file-list mt-1 grid w-max max-w-full">
           <span>application/</span>
           <span>package.json</span>
           <span>README.md</span>

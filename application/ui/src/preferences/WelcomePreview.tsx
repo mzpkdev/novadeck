@@ -49,7 +49,7 @@ const lineClasses: Record<Line["kind"], string> = {
 // Each terminal card's title bar and output; the stage's layout rules restyle the output.
 const barClasses =
   "flex h-7 items-center gap-1.5 border-b border-line bg-shell px-[9px] text-[8px] whitespace-nowrap text-ink"
-const codeClasses = `${styles.code} flex flex-col gap-[7px] p-3 font-mono text-[8px] leading-[1.4] whitespace-nowrap`
+const codeClasses = `${styles.code} flex flex-col font-mono leading-[1.4] whitespace-nowrap`
 
 // Each line types itself in after the terminals are dealt, `at` ms after opening.
 const TypedLine = ({ text, kind, at }: Line & { readonly at: number }): React.JSX.Element => (
@@ -153,7 +153,7 @@ export const WelcomePreview = ({
     >
       <div
         ref={stage}
-        className={`${styles.stage} relative isolate h-[236px] overflow-hidden rounded-panel border border-line bg-canvas shadow-[inset_0_1px_2px_rgb(21_24_28/0.04)]`}
+        className={`${styles.stage} relative isolate overflow-hidden rounded-panel border border-line bg-canvas shadow-[inset_0_1px_2px_rgb(21_24_28/0.04)]`}
         data-view={view.id}
         aria-hidden="true"
         onPointerMove={follow}

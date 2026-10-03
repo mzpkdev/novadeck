@@ -1,6 +1,19 @@
 /* The accessibility layer: it comes after every theme, so no theme can defeat it.
    Imported into `layer(accessibility)`; see docs/theming.md. */
 
+/* Reduced motion: nothing moves. `!important` while utilities in the TSX still set
+   transitions and animations, which a later layer would otherwise win over; it goes
+   once every motion lives in a recipe. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 /* Forced colours: the focus ring and selected text use the system's colours, whatever
    a theme set. */
 @media (forced-colors: active) {

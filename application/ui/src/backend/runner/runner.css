@@ -1,22 +1,37 @@
-/* xterm.css paints its scroll viewport black under the themed screen. At fractional
-   display scales the screen's edges land between pixels and that black shows through
-   as thin lines, so the viewport takes the surface's own background. */
-.runner-terminal .xterm .xterm-viewport {
-  background-color: transparent;
-}
+/* xterm's own stylesheet sits in the base layer with the other vendor CSS. */
+@import "@xterm/xterm/css/xterm.css" layer(base);
+@reference "../../styles.css";
 
-/* xterm draws its own scrollbar with a wide slider; thin it to the app's scrollbar
-   (one spacing unit, control radius) against the right edge. The track keeps its width
-   so the slider stays easy to grab. */
-.runner-terminal .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
-  left: auto !important;
-  right: 2px;
-  width: var(--spacing) !important;
-  border-radius: var(--radius-control);
-}
+@layer components {
+  /* The surface's padding, and the end-of-session bar's, which views override. */
+  :where(.runner-terminal) {
+    @apply p-3;
+  }
+  :where(.runner-ending) {
+    @apply pr-6 pl-3;
+  }
 
-/* Canvas scales its resize grip (28px, at the node's bottom-right corner) with
-   --canvas-chrome-scale; the end-of-session bar keeps its Restart button clear of it. */
-.canvas-node .runner-ending {
-  padding-right: calc(28px * var(--canvas-chrome-scale, 1) + 4px);
+  /* xterm.css paints its scroll viewport black under the themed screen. At fractional
+     display scales the screen's edges land between pixels and that black shows through
+     as thin lines, so the viewport takes the surface's own background. */
+  .runner-terminal .xterm .xterm-viewport {
+    background-color: transparent;
+  }
+
+  /* xterm draws its own scrollbar with a wide slider; thin it to the app's scrollbar
+     (one spacing unit, control radius) against the right edge. The track keeps its
+     width so the slider stays easy to grab. xterm sets the slider's left and width
+     inline, which only `!important` overrides. */
+  .runner-terminal .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+    left: auto !important;
+    right: 2px;
+    width: var(--spacing) !important;
+    border-radius: var(--radius-control);
+  }
+
+  /* Canvas scales its resize grip (28px, at the node's bottom-right corner) with
+     --canvas-chrome-scale; the end-of-session bar keeps its Restart button clear of it. */
+  .canvas-node .runner-ending {
+    padding-right: calc(28px * var(--canvas-chrome-scale, 1) + 4px);
+  }
 }

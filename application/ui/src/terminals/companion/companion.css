@@ -45,7 +45,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .plan-taskbar {
-    animation: none !important;
     transition: none;
   }
 }
@@ -608,12 +607,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .plan-split-reader,
-  .plan-attached {
-    animation: none !important;
-  }
-}
 .plan-editor .cm-editor {
   max-width: 700px;
   margin: auto;
@@ -621,26 +614,10 @@
   color: var(--color-ink);
   font: 13px/1.75 var(--font-sans);
 }
-.plan-editor .cm-editor.cm-focused {
-  outline: none;
-}
-.plan-editor .cm-scroller {
-  font-family: inherit;
-  line-height: inherit;
-}
-.plan-editor .cm-content {
-  caret-color: var(--color-ink);
-}
-.plan-editor .cm-line {
-  padding: 0;
-}
-.plan-editor .cm-selectionBackground,
-.plan-editor .cm-focused .cm-selectionBackground {
-  background: var(--color-selection) !important;
-}
-.plan-editor .cm-cursor {
-  border-left-color: var(--color-ink);
-}
+/* What the plan editor changes of CodeMirror's own look (its focus outline, scroller
+   font, content and line padding, selection, cursor and gutters) is in
+   plan-editor/editor-theme.ts: CodeMirror's styles sit outside every layer, so only an
+   editor theme overrides them. */
 .cm-plan-h1 {
   font-size: 26px;
   font-weight: 550;
@@ -648,12 +625,10 @@
   letter-spacing: -0.8px;
 }
 .cm-plan-h2 {
-  padding-top: 18px !important;
   font-size: 15px;
   font-weight: 550;
 }
 .cm-plan-h3 {
-  padding-top: 10px !important;
   font-weight: 550;
 }
 .cm-plan-strong {
@@ -678,12 +653,10 @@
   color: var(--color-muted);
 }
 .cm-plan-quote {
-  padding-left: 16px !important;
   border-left: 2px solid var(--color-line-strong);
   color: var(--color-muted);
 }
 .cm-plan-codeblock {
-  padding: 0 14px !important;
   background: var(--color-shell);
   font: 11px/1.9 var(--font-mono);
 }
@@ -718,11 +691,9 @@
   color: color-mix(in srgb, var(--color-muted) 60%, transparent);
 }
 .plan-editor .cm-plan-item {
-  padding-left: 22px;
   text-indent: -22px;
 }
 .plan-editor .cm-plan-item-task {
-  padding-left: 44px;
   text-indent: -44px;
 }
 
@@ -748,13 +719,6 @@
   display: flex;
   margin-left: auto;
   align-self: stretch;
-}
-.plan-editor .cm-content {
-  padding: 14px 44px 64px 20px;
-}
-.plan-editor .cm-gutters {
-  border: 0;
-  background: transparent;
 }
 .cm-plan-note-gutter .cm-gutterElement {
   display: flex;
@@ -783,9 +747,6 @@
   background: var(--color-soft);
   color: var(--color-ink);
 }
-.plan-editor .cm-activeLineGutter {
-  background: transparent;
-}
 /* A note is a warm speech bubble: apricot, apart from NovaDeck's cool greys and from the
    butter amber that marks the agent's changes, with a tail up at what it's about. */
 .cm-plan-note-label {
@@ -808,7 +769,6 @@
   /* Sized to its text, which no Markdown element is. */
   width: fit-content;
   max-width: 100%;
-  padding: 14px 12px 8px calc(var(--note-indent) + 10px) !important;
   text-indent: 0;
   line-height: 1.6;
 }
@@ -848,9 +808,6 @@
 @container plan-reader (max-width: 560px) {
   .plan-meta {
     padding: 18px 20px 0 44px;
-  }
-  .plan-editor .cm-content {
-    padding: 10px 20px 40px 20px;
   }
 }
 

@@ -1,0 +1,103 @@
+/* The workspace's panels: the resizable sidebar beside the main area, and on narrow
+   screens the sidebar as a drawer over a scrim. */
+
+/* The sidebar's own width and edge, which the panels and the drawer override. */
+:where(.sidebar) {
+  @apply w-57 border-r border-line;
+}
+.workspace-panels {
+  --separator-border: var(--color-line);
+  --focus-border: var(--color-strong);
+  --sash-hover-size: 2px;
+}
+.workspace-panels .sidebar {
+  @apply h-full w-full border-r-0;
+}
+.workspace-panels .main-area {
+  @apply h-full;
+}
+.sidebar-transition .workspace-sidebar-pane,
+.sidebar-transition .workspace-main-pane {
+  transition:
+    width var(--motion-state) var(--ease-interface),
+    left var(--motion-state) var(--ease-interface);
+}
+.sidebar-transition .sidebar-content {
+  display: block;
+  width: var(--sidebar-expanded-width);
+}
+.sidebar-transition .sash,
+.sidebar-transition .sidebar-keyboard-resize {
+  pointer-events: none;
+  opacity: 0;
+}
+.sidebar-keyboard-resize:focus-visible {
+  outline: none;
+  background: linear-gradient(var(--color-strong), var(--color-strong)) center / 2px 100% no-repeat;
+}
+@media (max-width: 700px) {
+  .sidebar-positioner {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+  }
+  .sidebar-drawer {
+    pointer-events: auto;
+  }
+  .sidebar-drawer .sidebar {
+    flex: 1;
+    min-width: 0;
+    width: 228px;
+  }
+  .sidebar-drawer[data-state="open"] {
+    animation: sidebar-enter var(--motion-state) var(--ease-interface);
+  }
+  .sidebar-drawer[data-state="closed"] {
+    animation: sidebar-exit var(--motion-state) var(--ease-interface);
+  }
+  .sidebar-scrim {
+    z-index: 40;
+    position: fixed;
+    inset: 0;
+    background: var(--color-scrim);
+  }
+  .sidebar-scrim[data-state="open"] {
+    animation: sidebar-backdrop-enter var(--motion-state) var(--ease-interface);
+  }
+  .sidebar-scrim[data-state="closed"] {
+    animation: sidebar-backdrop-exit var(--motion-state) var(--ease-interface);
+  }
+}
+@keyframes sidebar-enter {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sidebar-exit {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sidebar-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sidebar-backdrop-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

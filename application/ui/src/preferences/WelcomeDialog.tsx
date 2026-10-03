@@ -72,7 +72,7 @@ const ChoiceCard = ({
     className={`group flex min-h-[60px] items-center gap-3 rounded-panel border px-3 py-2.5 transition-[background-color,border-color,box-shadow] duration-(--motion-state) has-focus-visible:outline-2 has-focus-visible:outline-strong has-focus-visible:outline-offset-2 ${checked ? "border-line-strong bg-shell shadow-panel" : "border-line bg-paper"} ${disabled ? "cursor-not-allowed" : "cursor-pointer hover:border-line-strong hover:bg-shell"}`}
   >
     <span
-      className={`${styles.tile} relative flex size-[38px] flex-none items-center justify-center rounded-panel border border-line bg-shell text-ink transition-[background-color,border-color,color] duration-(--motion-state) ease-interface`}
+      className={`${styles.tile} relative flex size-[38px] flex-none items-center justify-center rounded-panel border transition-[background-color,border-color,color] duration-(--motion-state) ease-interface`}
       data-selected={checked || undefined}
       data-disabled={disabled || undefined}
       aria-hidden="true"

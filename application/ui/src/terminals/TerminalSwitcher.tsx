@@ -48,7 +48,7 @@ export const TerminalSwitcher = ({
         aria-label="Terminal switcher"
         aria-modal={mode === "click"}
         data-state="open"
-        className={`${motion.dialog} pointer-events-auto relative flex max-h-[calc(84dvh-20px)] w-full max-w-130 flex-col overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal`}
+        className={`${motion.dialog} relative flex max-h-[calc(84dvh-20px)] w-full max-w-130 flex-col overflow-hidden rounded-popover border border-line-strong bg-paper shadow-modal`}
         onKeyDown={(event) => {
           if (mode !== "click" || event.key !== "Tab" || event.ctrlKey) return
           event.preventDefault()

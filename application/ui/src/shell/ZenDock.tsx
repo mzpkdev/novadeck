@@ -69,7 +69,7 @@ export const ZenDock = ({
         </button>
       </Tooltip>
       <button
-        className="zen-reveal flex h-8 w-5 shrink-0 items-center justify-center rounded-control text-muted hover:bg-soft hover:text-ink"
+        className="zen-reveal flex w-5 shrink-0 items-center justify-center rounded-control text-muted hover:bg-soft hover:text-ink"
         aria-label={open ? "Hide Zen controls" : "Show Zen controls"}
         aria-expanded={open}
         aria-controls={controls}
@@ -103,7 +103,7 @@ export const ZenDock = ({
 
           <div className="mx-0.5 h-3 w-px bg-line" aria-hidden="true" />
           <button
-            className="zen-exit flex h-8 items-center gap-1.5 rounded-control px-2 text-[11px] text-muted hover:bg-soft hover:text-ink"
+            className="zen-exit flex items-center gap-1.5 rounded-control px-2 text-[11px] text-muted hover:bg-soft hover:text-ink"
             onClick={onExit}
           >
             <X size={14} /> Exit Zen

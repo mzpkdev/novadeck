@@ -1,0 +1,111 @@
+/* The workspace recipe: the ground behind Focus, Grid and Canvas, its dot grid and the
+   spotlight that follows the pointer, how idle terminals fade, and the ghost of a window
+   a drop would open. */
+.workspace-dots {
+  background-image: radial-gradient(circle, var(--color-muted) 0.8px, transparent 0.8px);
+  background-size: 24px 24px;
+}
+.grid-terminal {
+  opacity: var(--terminal-idle-opacity);
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+.terminal-visibility {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity 180ms var(--ease-interface),
+    scale 180ms var(--ease-interface);
+}
+.terminal-visibility[data-hiding="true"] {
+  opacity: 0;
+  scale: 0.97;
+  pointer-events: none;
+}
+@starting-style {
+  .terminal-visibility {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+/* Focus's window sits inset from the stage, except in Zen. */
+:where(.focus-stage > .terminal-visibility) {
+  @apply inset-3 max-[701px]:inset-1.5;
+}
+.grid-terminal:not(.selected):hover,
+.canvas-node:not(.selected):hover {
+  opacity: var(--terminal-hover-opacity);
+}
+.workspace-background {
+  --terminal-idle-opacity: 0.5;
+  --terminal-hover-opacity: 0.75;
+  background-color: var(--color-canvas);
+  --canvas-grid-opacity: 0.16;
+  --canvas-grid-spotlight-opacity: 0.48;
+  --canvas-grid-spotlight-radius: 210px;
+  --canvas-grain-opacity: 0.045;
+  background-image: radial-gradient(
+    ellipse at 45% 32%,
+    var(--color-paper) 0%,
+    var(--color-canvas) 65%,
+    var(--color-soft) 100%
+  );
+}
+.workspace-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("../assets/canvas-grain.svg");
+  background-size: 192px 192px;
+  opacity: var(--canvas-grain-opacity);
+}
+.canvas-grid {
+  pointer-events: none;
+  opacity: var(--canvas-grid-opacity);
+}
+/* A mask reads only alpha, so the spotlight fades through any opaque token. */
+.canvas-grid-spotlight {
+  pointer-events: none;
+  opacity: 0;
+  mask-image: radial-gradient(
+    circle var(--canvas-grid-spotlight-radius) at var(--canvas-pointer-x, -1000px)
+      var(--canvas-pointer-y, -1000px),
+    var(--color-ink) 0%,
+    color-mix(in srgb, var(--color-ink) 75%, transparent) 30%,
+    color-mix(in srgb, var(--color-ink) 25%, transparent) 65%,
+    transparent 100%
+  );
+  transition: opacity 220ms ease-out;
+}
+@media (hover: hover) and (pointer: fine) {
+  .workspace-background[data-pointer-inside="true"] .canvas-grid-spotlight {
+    opacity: var(--canvas-grid-spotlight-opacity);
+  }
+}
+/* Where a window dragged off a taskbar would open in a view's free space: a ghost of it,
+   a node on the Canvas and a placeholder in the Grid, with a header strip saying what it
+   would show. It takes no pointer, so the view under it still reads as free. */
+.drop-ghost {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1.5px dashed color-mix(in srgb, var(--color-strong) 40%, transparent);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--color-paper) 78%, transparent);
+  box-shadow: var(--shadow-floating);
+  pointer-events: none;
+}
+.drop-ghost-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 48px;
+  padding-inline: 16px;
+  overflow: hidden;
+  border-bottom: 1px dashed color-mix(in srgb, var(--color-strong) 22%, transparent);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

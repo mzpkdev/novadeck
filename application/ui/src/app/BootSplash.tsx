@@ -99,7 +99,7 @@ export const BootSplash = ({
           aria-hidden="true"
         >
           <i
-            className="absolute inset-0 origin-left bg-strong transition-[transform,background-color] duration-300 ease-interface"
+            className="absolute inset-0 origin-left transition-[transform,background-color] duration-300 ease-interface"
             style={{ transform: `scaleX(${fill})` }}
           />
         </span>
@@ -112,7 +112,7 @@ export const BootSplash = ({
             {line}
           </span>
           <span
-            className={`${styles.failure} pointer-events-none absolute top-0 left-1/2 w-max max-w-[min(360px,calc(100vw-32px))] -translate-x-1/2 opacity-0 transition-opacity duration-300 ease-interface`}
+            className={`${styles.failure} absolute top-0 left-1/2 w-max max-w-[min(360px,calc(100vw-32px))] -translate-x-1/2 transition-opacity duration-300 ease-interface`}
           >
             {failure}
           </span>

@@ -68,7 +68,7 @@ const DemoTerminalSurface = ({
     <div
       ref={output}
       data-terminal-content
-      className="terminal-content min-h-0 flex-1 overflow-auto p-6 font-mono text-[length:var(--terminal-font-size,13px)] leading-[1.75] [&_strong]:font-semibold nodrag nopan"
+      className="terminal-content demo-output min-h-0 flex-1 overflow-auto font-mono [&_strong]:font-semibold nodrag nopan"
       hidden={minimized && !clipContent}
       aria-hidden={minimized}
       inert={minimized}
@@ -88,7 +88,7 @@ const DemoTerminalSurface = ({
         </div>
       ))}
       <form
-        className={`command-form mt-6 rounded-control border border-line bg-shell p-3 transition-[border-color] duration-(--motion-state) ease-interface focus-within:border-line-strong${agent ? " agent-command-form max-w-180 [&_input]:placeholder:text-muted" : ""}`}
+        className={`command-form rounded-control border border-line bg-shell p-3 transition-[border-color] duration-(--motion-state) ease-interface focus-within:border-line-strong${agent ? " agent-command-form max-w-180 [&_input]:placeholder:text-muted" : ""}`}
         onSubmit={(event) => {
           event.preventDefault()
           if (input.trim()) {

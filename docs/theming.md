@@ -29,7 +29,9 @@ layer, so one unlayered rule would override every theme. `styles.css` imports ea
 stylesheet into a layer, except Tailwind and `theme/contract.css`, which Tailwind
 layers itself; CSS imported from a script wraps its rules in `@layer`. Recipes and
 themes never use `!important`, because it turns the layer order around. The one
-exception is in `base`: the rule that stills transitions while the theme changes.
+exception is in `base`: the rule that stills transitions while the theme changes. Until
+no utility in the TSX sets motion, the reduced-motion rule in `accessibility` needs it
+too.
 
 Until every component draws through a recipe, `theme/contract.css` also keeps the
 colour, radius, shadow, font and motion entries that Tailwind's utilities and `@apply`

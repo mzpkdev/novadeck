@@ -37,7 +37,7 @@ export const WorkspaceSidebar = ({
 }: Props): React.JSX.Element => (
   <aside
     id="terminal-sidebar"
-    className="sidebar relative flex w-57 shrink-0 flex-col overflow-hidden border-r border-line bg-shell"
+    className="sidebar relative flex shrink-0 flex-col overflow-hidden bg-shell"
     aria-label={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
     aria-hidden={!sidebarVisible}
     inert={!sidebarVisible}

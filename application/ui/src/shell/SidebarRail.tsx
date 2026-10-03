@@ -19,7 +19,7 @@ export const SidebarRail = ({
   hideSidebar: () => void
 }): React.JSX.Element => (
   <ToggleGroup
-    className="sidebar-tools z-30 flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
+    className="sidebar-tools z-30 w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-shell px-1.5 py-3"
     aria-label="Sidebar actions"
     aria-hidden={Boolean(zen)}
     orientation="vertical"

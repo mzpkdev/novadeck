@@ -117,7 +117,7 @@ export const WindowShell = ({
   const headerDoubleAction = onFlyTo
   const header = (
     <header
-      className="terminal-header flex h-12 shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between gap-3 border-b border-line bg-paper px-4 text-xs whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
+      className="terminal-header flex shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between bg-paper whitespace-nowrap [&_svg]:shrink-0 [&_svg]:text-muted"
       onDoubleClick={(event) => {
         if (
           performance.now() < ignoreDoubleClickUntil.current ||
@@ -195,7 +195,7 @@ export const WindowShell = ({
         else headerDoubleAction?.()
       }}
     >
-      <div className="terminal-title flex min-w-0 items-center gap-2.5 [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">
+      <div className="terminal-title flex min-w-0 items-center [&>h1]:truncate [&>h1]:font-medium [&>h2]:truncate [&>h2]:font-medium">
         {switcher ? (
           <Tooltip content="Switch terminal">
             <button
@@ -256,7 +256,7 @@ export const WindowShell = ({
           )}
         </span>
       )}
-      <span className="terminal-actions flex shrink-0 items-center gap-1">
+      <span className="terminal-actions flex shrink-0 items-center">
         {minimize && (
           <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
             <button
@@ -341,7 +341,7 @@ export const WindowShell = ({
   )
   return (
     <section
-      className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-paper shadow-panel transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
+      className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-paper transition-[border-color] duration-(--motion-state) ease-interface ${compact ? "terminal-compact" : "terminal-focused"}`}
       aria-label={`${terminal.name} terminal`}
       data-terminal={terminal.id}
       data-terminal-phase={shell ? terminalPhase(shell) : "idle"}

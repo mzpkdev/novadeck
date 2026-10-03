@@ -1,0 +1,11 @@
+/* The icon-button recipe: header, window, tab and sidebar actions. */
+.icon-button {
+  @apply inline-flex size-8 shrink-0 items-center justify-center rounded-control p-2 text-muted hover:bg-soft hover:text-ink;
+}
+.icon-button:disabled {
+  @apply cursor-default bg-transparent text-muted;
+  opacity: 0.25;
+}
+.icon-button > svg {
+  @apply shrink-0;
+}

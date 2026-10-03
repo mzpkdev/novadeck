@@ -65,7 +65,7 @@ export const WorkspaceFooter = ({
     <footer
       hidden={hidden}
       data-status={current?.tone}
-      className={`app-footer max-[701px]:px-3 max-[701px]:text-[8px] flex h-7 shrink-0 items-center justify-between border-t px-4 text-[10px] transition-[background-color,border-color,color] duration-(--motion-state) ease-interface motion-reduce:transition-none ${current ? tones[current.tone].bar : "border-line bg-paper text-muted"}`}
+      className={`app-footer max-[701px]:px-3 max-[701px]:text-[8px] h-7 shrink-0 items-center justify-between border-t px-4 text-[10px] transition-[background-color,border-color,color] duration-(--motion-state) ease-interface motion-reduce:transition-none ${current ? tones[current.tone].bar : "border-line bg-paper text-muted"}`}
     >
       <span className="flex items-center gap-2">
         <span>

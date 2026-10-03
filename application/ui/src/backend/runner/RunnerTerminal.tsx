@@ -1,4 +1,3 @@
-import "@xterm/xterm/css/xterm.css"
 import "./runner.css"
 import {
   useCallback,
@@ -50,7 +49,7 @@ const EndingBar = ({
   if (ending && (ending.tone !== shown?.tone || endingText(ending) !== text)) setShown(ending)
   return (
     <div
-      className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t border-line bg-shell pr-6 pl-3 text-[11px] text-ink transition-[opacity,translate] duration-(--motion-state) ease-interface ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+      className={`runner-ending absolute inset-x-0 bottom-0 flex h-7 items-center justify-between gap-3 border-t border-line bg-shell text-[11px] text-ink transition-[opacity,translate] duration-(--motion-state) ease-interface ${ending ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
       inert={!ending}
       data-terminal-ending={ending?.tone}
     >
@@ -226,7 +225,7 @@ export const createRunnerTerminal = (runtime: SurfaceRuntime) => {
           <div
             ref={onRootMount}
             data-terminal-content
-            className="terminal-content runner-terminal nodrag nopan relative flex min-h-0 flex-1 flex-col p-3"
+            className="terminal-content runner-terminal nodrag nopan relative flex min-h-0 flex-1 flex-col"
             hidden={minimized && !clipContent}
             aria-hidden={minimized}
             inert={minimized}
