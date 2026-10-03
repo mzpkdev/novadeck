@@ -4281,6 +4281,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       )
       tui.manager.resize({ terminalId: tui.idle.id, cols: 70, rows: 20 }, "owner")
       // Its Enter went; its prompt's hook is still to report.
+      // eslint-disable-next-line no-control-regex -- A bracketed paste's end marker.
       await vi.waitFor(() => expect(tui.raw().join("")).toMatch(/\x1b\[201~[\s\S]*\r/), {
         timeout: 5_000,
       })
