@@ -2,7 +2,6 @@ import { Allotment, LayoutPriority, type AllotmentHandle } from "allotment"
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 
 import { Dialog } from "../ui-toolkit/Dialog"
-import { modalMotion } from "../ui-toolkit/modal-motion"
 import { useDesktop } from "./desktop"
 
 const storageKey = "novadeck.sidebar-width"
@@ -87,7 +86,7 @@ export const WorkspacePanels = ({
             onOpenChange={onMobileOpenChange}
             label={mobileLabel}
             className="sidebar-drawer fixed top-15 bottom-7 left-0 flex w-[272px] max-w-full"
-            backdropClassName={`${modalMotion.backdrop} sidebar-scrim`}
+            backdropClassName="overlay sidebar-scrim"
             positionerClassName="sidebar-positioner"
             initialFocusEl={() =>
               document.querySelector<HTMLButtonElement>(

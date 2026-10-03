@@ -8,7 +8,6 @@ import type { PreferencesValue } from "../model/types"
 import { themes, type ThemeEntry, type ThemeId } from "../theme/themes"
 import { Checkbox } from "../ui-toolkit/Checkbox"
 import { Dialog } from "../ui-toolkit/Dialog"
-import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { SegmentGroup } from "../ui-toolkit/SegmentGroup"
 import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
@@ -138,9 +137,9 @@ export const Preferences = ({
       }}
       contentRef={dialog}
       label="Preferences"
-      backdropClassName={`${motion.backdrop} fixed inset-0 z-50`}
+      backdropClassName="overlay fixed inset-0 z-50"
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center"
-      className={`${motion.dialog} flex h-[min(640px,calc(100dvh-48px))] w-[min(540px,calc(100vw-32px))] flex-col overflow-hidden max-[480px]:w-[calc(100vw-24px)]`}
+      className="modal flex h-[min(640px,calc(100dvh-48px))] w-[min(540px,calc(100vw-32px))] flex-col overflow-hidden max-[480px]:w-[calc(100vw-24px)]"
     >
       <Tabs value={tab} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
         <div className="modal-header preferences-heading shrink-0 px-6 pt-5 max-[480px]:px-4">

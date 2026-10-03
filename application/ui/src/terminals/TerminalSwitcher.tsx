@@ -3,7 +3,6 @@ import { useEffect, useRef } from "react"
 
 import { isWindow } from "../model/roster"
 import type { Tile } from "../model/types"
-import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { searchResultClasses } from "../ui-toolkit/SearchCombobox"
 
 export const TerminalSwitcher = ({
@@ -39,7 +38,7 @@ export const TerminalSwitcher = ({
       <div
         aria-hidden="true"
         data-state="open"
-        className={`${motion.backdrop} absolute inset-0`}
+        className="overlay absolute inset-0"
         onPointerDown={mode === "click" ? onClose : undefined}
       />
       <section
@@ -47,7 +46,7 @@ export const TerminalSwitcher = ({
         aria-label="Terminal switcher"
         aria-modal={mode === "click"}
         data-state="open"
-        className={`${motion.dialog} relative flex max-h-[calc(84dvh-20px)] w-full max-w-130 flex-col overflow-hidden`}
+        className="modal relative flex max-h-[calc(84dvh-20px)] w-full max-w-130 flex-col overflow-hidden"
         onKeyDown={(event) => {
           if (mode !== "click" || event.key !== "Tab" || event.ctrlKey) return
           event.preventDefault()

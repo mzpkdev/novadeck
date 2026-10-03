@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import { isWindow } from "../model/roster"
 import type { Tile } from "../model/types"
 import { Dialog } from "../ui-toolkit/Dialog"
-import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { SearchCombobox } from "../ui-toolkit/SearchCombobox"
 
 // What a result says of where it runs. A window runs nothing, so only its name finds it.
@@ -60,9 +59,9 @@ export const TerminalSearch = ({
           null
         )
       }}
-      backdropClassName={`${motion.backdrop} fixed inset-0 z-50`}
+      backdropClassName="overlay fixed inset-0 z-50"
       positionerClassName="fixed inset-0 z-50 flex items-start justify-center px-5 pt-[16vh]"
-      className={`${motion.dialog} w-full max-w-130 overflow-hidden`}
+      className="modal w-full max-w-130 overflow-hidden"
     >
       <SearchCombobox
         label="Search terminals"

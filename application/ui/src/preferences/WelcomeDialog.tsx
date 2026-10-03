@@ -6,7 +6,6 @@ import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/Dec
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
-import { modalMotion as motion } from "../ui-toolkit/modal-motion"
 import { agentLabels, agentNote, type AgentSwitch } from "./AgentSwitches"
 import { WelcomePreview } from "./WelcomePreview"
 
@@ -301,9 +300,9 @@ export const WelcomeDialog = ({
       }}
       label="Welcome to NovaDeck"
       initialFocusEl={() => heading.current}
-      backdropClassName={`${motion.backdrop} welcome-overlay fixed inset-0 z-50`}
+      backdropClassName="overlay welcome-overlay fixed inset-0 z-50"
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
-      className={`${motion.dialog} max-h-[calc(100dvh-32px)] w-[min(980px,calc(100vw-32px))] overflow-y-auto`}
+      className="modal max-h-[calc(100dvh-32px)] w-[min(980px,calc(100vw-32px))] overflow-y-auto"
     >
       <WelcomeForm
         agents={agents}
