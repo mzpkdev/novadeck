@@ -323,10 +323,11 @@ preference changes, and whenever the system's scheme does.
 - **Windows** stay in step: each listens for the `storage` event and takes up the
   preferences another window saved, theme included.
 - **The desktop host** follows the page. On every change the page reports its scheme
-  and its `--color-canvas` as `#rrggbb` through the preload bridge; the host sets
-  `nativeTheme.themeSource` so native menus and `prefers-color-scheme` agree, sets the
-  window's background, and keeps that ground to open new windows on, so a dark theme
-  never flashes white. While the page follows the system it reports `system`, not the
+  and its `--color-paper`, the ground `body` paints before anything draws on it, as
+  `#rrggbb` through the preload bridge, so the window and the first paint are one
+  colour. The host sets `nativeTheme.themeSource` so native menus and
+  `prefers-color-scheme` agree, sets the window's background, and keeps that ground to
+  open new windows on, so a dark theme never flashes white. While the page follows the system it reports `system`, not the
   scheme it resolved: a fixed `themeSource` would hide the system's own scheme from
   `matchMedia`. The host accepts only `system`, `light` or `dark` and an opaque hex
   colour. In a browser there is no host, and nothing is reported.

@@ -50,7 +50,8 @@ export const watchAppearance = (
       }
     }
     if (!showAppearance) return
-    const ground = tokenColors(view.document.body, ["--color-canvas"])["--color-canvas"]
+    // The ground the page paints first: the body's, before the workspace draws on it.
+    const ground = tokenColors(view.document.body, ["--color-paper"])["--color-paper"]
     if (!ground) return
     const look: WindowAppearance = {
       scheme: windowScheme(preference, appearance.scheme),
