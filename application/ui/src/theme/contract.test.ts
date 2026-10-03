@@ -465,7 +465,6 @@ const colourLiterals = (file: string): string[] =>
 
 // Stylesheets that still hold colour literals. Shrink only.
 const stylesheetsWithColours: readonly string[] = [
-  "terminals/companion/companion.css",
   "theme/contract.css",
 ]
 
@@ -484,7 +483,6 @@ const importantDeclarations = (file: string): string[] =>
 const stylesheetsWithImportant: readonly string[] = [
   "app/BootSplash.module.css",
   "backend/runner/runner.css",
-  "terminals/companion/companion.css",
   "theme/accessibility.css",
 ]
 

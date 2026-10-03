@@ -22,8 +22,13 @@
 @import "./ui-toolkit/tone.css" layer(components);
 @import "./ui-toolkit/separator.css" layer(components);
 @import "./ui-toolkit/deck-logo.css" layer(components);
-/* Before the recipes split from the old styles.css, which win a tie with it. */
-@import "./terminals/companion/companion.css" layer(components);
+/* The companion's recipes, before those split from the old styles.css, which win a tie
+   with them. */
+@import "./terminals/companion/taskbar.css" layer(components);
+@import "./terminals/companion/peek.css" layer(components);
+@import "./terminals/companion/pane.css" layer(components);
+@import "./terminals/companion/artifact.css" layer(components);
+@import "./terminals/companion/mail.css" layer(components);
 @import "./shell/region.css" layer(components);
 @import "./shell/panels.css" layer(components);
 @import "./shell/empty-state.css" layer(components);

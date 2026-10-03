@@ -2,18 +2,21 @@ import { EditorView } from "@codemirror/view"
 
 // What the plan editor changes of CodeMirror's own look. CodeMirror mounts its styles
 // outside every cascade layer, where no layered stylesheet can override them, so these
-// go in as an editor theme, which CodeMirror orders after its base theme. Everything
-// else of the plan's look is in companion.css.
+// go in as an editor theme, which CodeMirror orders after its base theme, and read the
+// prose recipe's tokens (see ../prose.css, which draws everything else of the plan).
 export const editorTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { fontFamily: "inherit", lineHeight: "inherit" },
-  ".cm-content": { caretColor: "var(--color-ink)", padding: "14px 44px 64px 20px" },
-  ".cm-line": { padding: "0" },
-  ".cm-selectionBackground": { background: "var(--color-selection)" },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-    background: "var(--color-selection)",
+  ".cm-content": {
+    caretColor: "var(--prose-fg, var(--color-ink))",
+    padding: "14px 44px 64px 20px",
   },
-  ".cm-cursor": { borderLeftColor: "var(--color-ink)" },
+  ".cm-line": { padding: "0" },
+  ".cm-selectionBackground": { background: "var(--prose-selection-bg, var(--color-selection))" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    background: "var(--prose-selection-bg, var(--color-selection))",
+  },
+  ".cm-cursor": { borderLeftColor: "var(--prose-fg, var(--color-ink))" },
   ".cm-gutters": { border: "0", background: "transparent" },
   ".cm-activeLineGutter": { background: "transparent" },
   // Lines' own padding, in this order: a later one wins over an earlier one.
