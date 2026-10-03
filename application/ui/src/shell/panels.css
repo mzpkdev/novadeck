@@ -5,9 +5,8 @@
 :where(.sidebar) {
   @apply w-57 border-r border-line;
 }
+/* Allotment's sash colours come from the separator recipe. */
 .workspace-panels {
-  --separator-border: var(--color-line);
-  --focus-border: var(--color-strong);
   --sash-hover-size: 2px;
 }
 .workspace-panels .sidebar {

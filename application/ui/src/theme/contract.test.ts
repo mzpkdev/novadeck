@@ -419,9 +419,7 @@ const scriptsWithLooks: readonly string[] = [
   "terminals/TerminalTab.tsx",
   "terminals/TerminalTabs.tsx",
   "terminals/WindowShell.tsx",
-  "ui-toolkit/Checkbox.tsx",
   "ui-toolkit/SegmentGroup.tsx",
-  "ui-toolkit/Switch.tsx",
 ]
 
 // ---- (b) No colour literals outside theme files.
