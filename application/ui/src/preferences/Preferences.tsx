@@ -5,8 +5,10 @@ import { shortcutGroups } from "../interaction/keymap"
 import { currentPlatform } from "../interaction/shortcuts"
 import { viewModes } from "../model/state"
 import type { PreferencesValue } from "../model/types"
+import { themes, type ThemeEntry, type ThemeId } from "../theme/themes"
 import { Checkbox } from "../ui-toolkit/Checkbox"
 import { Dialog } from "../ui-toolkit/Dialog"
+import { SegmentGroup } from "../ui-toolkit/SegmentGroup"
 import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
@@ -15,7 +17,12 @@ import { settingRowClasses, settingsCardClasses } from "./settings"
 
 import motion from "../ui-toolkit/ModalMotion.module.css"
 
-const themes = [{ label: "Monochrome", value: "monochrome" }]
+const themeItems = themes.map(({ id, name }) => ({ label: name, value: id }))
+const schemeItems = [
+  { label: "System", value: "system" },
+  { label: "Light", value: "light" },
+  { label: "Dark", value: "dark" },
+] as const
 const fontSizes = [12, 13, 15].map((size) => ({ label: `${size}px`, value: String(size) }))
 const viewLabels = { focus: "Focus", grid: "Grid", canvas: "Canvas" } as const
 const viewIcons = { focus: PanelLeft, grid: LayoutGrid, canvas: SquareDashedMousePointer } as const
@@ -112,6 +119,11 @@ export const Preferences = ({
     if (panels.current) panels.current.scrollTop = 0
   }
   const lastView = value.enabledViews.length === 1
+  const { appearance } = value
+  const theme: ThemeEntry<ThemeId> =
+    themes.find((entry) => entry.id === appearance.theme) ?? themes[0]
+  // A theme drawn in one scheme leaves nothing to choose.
+  const onlyScheme = theme.schemes.length === 1 ? theme.schemes[0] : undefined
   return (
     <Dialog
       open={open}
@@ -171,27 +183,47 @@ export const Preferences = ({
                 <Select
                   className={`preference-row ${settingRowClasses} [&_[data-part=trigger]]:w-36`}
                   label="Theme"
-                  items={themes}
-                  value="monochrome"
+                  items={themeItems}
+                  value={theme.id}
+                  onValueChange={(id) => {
+                    const chosen = themes.find((entry) => entry.id === id)
+                    if (chosen)
+                      onChange({ ...value, appearance: { ...appearance, theme: chosen.id } })
+                  }}
                   open={open && tab === "general" && openSelect === "theme"}
                   onOpenChange={(expanded) => setOpenSelect(expanded ? "theme" : null)}
                   portalContainer={dialog}
                 />
-                <div className={`preference-row ${settingRowClasses}`} title="Unavailable">
+                {/* A disabled fieldset disables the segment group inside it. */}
+                <fieldset
+                  className={`preference-row ${settingRowClasses} m-0 min-w-0 border-0`}
+                  aria-labelledby="theme-scheme-label"
+                  aria-describedby="theme-scheme-description"
+                  disabled={onlyScheme !== undefined}
+                >
                   <SettingText
-                    id="theme-mode-label"
-                    label="Dark mode"
-                    description="Coming soon"
-                    descriptionId="theme-mode-description"
+                    id="theme-scheme-label"
+                    label="Mode"
+                    description={
+                      onlyScheme
+                        ? `${theme.name} comes only in ${onlyScheme}.`
+                        : "Follow the system, or stay light or dark."
+                    }
+                    descriptionId="theme-scheme-description"
                   />
-                  <Switch
-                    checked={false}
-                    onChange={() => {}}
-                    labelledBy="theme-mode-label"
-                    describedBy="theme-mode-description"
-                    disabled
+                  <SegmentGroup
+                    label="Mode"
+                    items={[...schemeItems]}
+                    value={onlyScheme ?? appearance.scheme}
+                    onValueChange={(next) => {
+                      const scheme = schemeItems.find((item) => item.value === next)?.value
+                      if (scheme) onChange({ ...value, appearance: { ...appearance, scheme } })
+                    }}
+                    className="flex shrink-0 gap-1 rounded-control border border-line bg-shell p-0.5 shadow-control"
+                    itemClassName="flex h-7 min-w-14 items-center justify-center rounded-control border border-transparent px-2.5 text-[11px] text-muted hover:bg-soft hover:text-ink data-disabled:cursor-not-allowed data-disabled:opacity-60"
+                    indicatorClassName="rounded-control border border-line bg-paper shadow-control"
                   />
-                </div>
+                </fieldset>
               </div>
             </Section>
             <fieldset

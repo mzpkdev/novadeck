@@ -3,7 +3,10 @@ import { vi } from "vitest"
 import { context, describe, expect, it } from "../test"
 import {
   applyAppearance,
+  appearancePreferenceOf,
   bootRecordKey,
+  bootRecordOf,
+  defaultPreference,
   parseBootRecord,
   resolveAppearance,
   startingAppearance,
@@ -61,6 +64,50 @@ describe("resolveAppearance", () => {
   })
 })
 
+describe("appearancePreferenceOf", () => {
+  it("keeps a valid saved preference", () => {
+    expect(appearancePreferenceOf({ theme: "night", scheme: "light" }, manifest)).toEqual({
+      theme: "night",
+      scheme: "light",
+    })
+  })
+
+  it("replaces an unknown theme with the first and an invalid scheme with the system's", () => {
+    expect(appearancePreferenceOf({ theme: "retired", scheme: "dim" }, manifest)).toEqual({
+      theme: "graphite",
+      scheme: "system",
+    })
+    expect(appearancePreferenceOf({ theme: "night", scheme: 2 }, manifest)).toEqual({
+      theme: "night",
+      scheme: "system",
+    })
+  })
+
+  it("is the default when nothing was saved", () => {
+    expect(appearancePreferenceOf(undefined, manifest)).toEqual(defaultPreference(manifest))
+    expect(appearancePreferenceOf("dark", manifest)).toEqual(defaultPreference(manifest))
+    expect(defaultPreference(themes)).toEqual({ theme: "graphite", scheme: "system" })
+  })
+})
+
+describe("bootRecordOf", () => {
+  it("holds the theme, the chosen scheme and the schemes the theme offers", () => {
+    expect(bootRecordOf({ theme: "night", scheme: "system" }, manifest)).toEqual({
+      theme: "night",
+      scheme: "system",
+      schemes: ["dark"],
+    })
+  })
+
+  it("names the first theme for an unknown one", () => {
+    expect(bootRecordOf({ theme: "retired", scheme: "dark" }, manifest)).toEqual({
+      theme: "graphite",
+      scheme: "dark",
+      schemes: ["light", "dark"],
+    })
+  })
+})
+
 describe("parseBootRecord", () => {
   it("reads the theme and the chosen scheme", () => {
     const record = JSON.stringify({ theme: "graphite", scheme: "system", schemes: ["light"] })
@@ -77,8 +124,19 @@ describe("parseBootRecord", () => {
 })
 
 describe("startingAppearance", () => {
-  it("is Graphite light without a boot record", () => {
-    expect(startingAppearance(window, themes)).toEqual({ theme: "graphite", scheme: "light" })
+  context("without a boot record", () => {
+    it("is Graphite in the system's scheme", () => {
+      expect(startingAppearance(window, themes)).toEqual({ theme: "graphite", scheme: "light" })
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: (query: string) => ({ matches: query.includes("dark") }),
+      })
+      try {
+        expect(startingAppearance(window, themes)).toEqual({ theme: "graphite", scheme: "dark" })
+      } finally {
+        delete (window as { matchMedia?: unknown }).matchMedia
+      }
+    })
   })
 
   it("follows a saved boot record", () => {

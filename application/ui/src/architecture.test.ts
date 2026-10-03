@@ -7,11 +7,13 @@ import { describe, expect, it } from "./test"
 // ("main.tsx"). Each layer lists what it may import from src. Every folder in
 // backend/ is an adapter layer; see `adapterRule`.
 // theme/ (the theme list and how a theme is applied) is open to every layer that
-// composes the page; it imports nothing but itself.
+// composes the page; it imports nothing but itself. model/ takes only the theme list's
+// types, for the appearance preferences hold, and adapters resolve colour tokens with
+// it for what they paint outside CSS, such as the terminal emulator.
 const base = ["model/", "interaction/", "ui-toolkit/", "theme/"]
 const features = ["sidebar/", "projects/", "preferences/", "search/"]
 const rules: Record<string, readonly string[]> = {
-  "model/": ["model/"],
+  "model/": ["model/", "theme/themes.ts"],
   "theme/": ["theme/"],
   "backend/": ["backend/", "model/"],
   "ui-toolkit/": ["ui-toolkit/", "class-name.ts"],
@@ -61,6 +63,7 @@ const adapterRule = (layer: string): readonly string[] => [
   "backend/",
   "model/",
   "ui-toolkit/",
+  "theme/",
 ]
 // The only file that may import a backend adapter; it exports nothing else.
 const adapterSelection = "app/backend.ts"

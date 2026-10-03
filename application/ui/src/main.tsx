@@ -1,6 +1,5 @@
 // First, so its `@layer` order statement leads the bundle.
 import "./styles.css"
-
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 

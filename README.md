@@ -480,7 +480,8 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 
 The UI runs real shells through the runner. Projects, sessions and their terminals
 live in the runner's SQLite metadata, and each session saves its terminals' order and
-layouts there too; preferences and sidebar settings are stored locally. Unit tests
+layouts there too; preferences (the theme and its light, dark or system mode among
+them) and sidebar settings are stored locally. Unit tests
 and behaviour specs run on the demo adapter's sample data instead.
 
 See the [terminal backend plan](docs/backend-plan.md) for the proposed runner
@@ -529,8 +530,9 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `specs/`                                           | Behaviour specs for the whole UI, run in a real browser.                                |
 
 Imports point down the layers. `model/` imports nothing else, not even packages,
-and neither does `theme/`, which every feature layer, `app/`, `main.tsx` and the
-specs may use; [docs/theming.md](docs/theming.md) is its contract with components.
+apart from the theme list's types, and `theme/` imports nothing at all; every layer
+that composes the page may use it, adapters included, and
+[docs/theming.md](docs/theming.md) is its contract with components.
 `backend/` builds on `model/` and uses React only for the port's types; adapters
 may add `ui-toolkit/`. `interaction/` builds on `model/` and imports no packages;
 features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use
