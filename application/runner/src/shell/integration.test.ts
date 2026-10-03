@@ -2889,6 +2889,13 @@ const hook = (event, payload, done) => {
   child.on("close", () => done(printed))
   child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: current, cwd: process.cwd(), ...rollout, ...payload }))
 }
+// Asks a permission whose dialog Enter allows from the moment it is asked, as a TUI shows
+// its dialog then, however long the request's hook takes to return; the tool's result
+// follows the request's hook.
+const ask = (input) => {
+  const asked = new Promise((resolve) => hook("PermissionRequest", input, resolve))
+  dialog = () => asked.then(() => hook("PostToolUse", { ...input, tool_response: {} }, () => {}))
+}
 // With "subabort" or "subagain", Codex's hooks name its rollout, filed by day as Codex files it.
 const rollout =
   mode === "subabort" || mode === "subagain"
@@ -2953,10 +2960,7 @@ const turn = (prompt, typed = true) => {
         // background task's may: its dialog draws nothing, and Enter allows it, so only the
         // request's own resolution tells NovaDeck it no longer waits.
         if (mode === "askafter" && turns === 1) {
-          const input = { tool_name: "Bash", tool_input: { command: "ls" } }
-          hook("PermissionRequest", input, () => {
-            dialog = () => hook("PostToolUse", { ...input, tool_response: {} }, () => {})
-          })
+          ask({ tool_name: "Bash", tool_input: { command: "ls" } })
         }
         // With "subabort", a spawned agent asks a permission after its first turn's Stop;
         // Esc on it fires no hook, and only its own rollout records the turn aborted.
@@ -2973,10 +2977,7 @@ const turn = (prompt, typed = true) => {
           const input = { ...spawned, tool_name: "Bash", tool_input: { command: "ls " + turns } }
           if (turns === 1)
             hook("SubagentStart", spawned, () => hook("PermissionRequest", input, () => {}))
-          else
-            hook("PermissionRequest", input, () => {
-              dialog = () => hook("PostToolUse", { ...input, tool_response: {} }, () => {})
-            })
+          else ask(input)
         }
         // Antigravity's status line, which keeps running, names the conversation idle.
         if (agent === "agy" && showing)
