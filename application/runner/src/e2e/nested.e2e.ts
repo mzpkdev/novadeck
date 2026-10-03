@@ -1,6 +1,6 @@
 import { setups } from "./agents/index.js"
 import { describe, e2e, expect, gated, supported } from "./fixture.js"
-import { asked, gate, type Call } from "./model/script.js"
+import { asked, gate, latest, type Call } from "./model/script.js"
 import {
   deliveries,
   delivered,
@@ -8,10 +8,10 @@ import {
   lacking,
   own,
   result,
+  ring,
   sends,
   sent,
   start,
-  through,
 } from "./scenarios.js"
 
 // A nested agent inside an agent's turn, the same for every harness (see messaging.e2e.ts
@@ -79,12 +79,24 @@ for (const setup of setups) {
         // as its shell tool's output.
         const first = await run.model.waitFor(nested, { after: calls })
         expect(deliveries(first)).toEqual([])
+        // Its shell tool waits for the command up to 10 s (Antigravity), 30 s (Codex) or
+        // 2 min (Claude Code); a run past that would end the turn on the tool's "still
+        // running", which this wait's failure then shows on screen.
         await t1.until("The nested run said its word.", 60_000)
         expect(ran).toBeDefined()
 
-        // t1's own Stop then delivers the message, in t1's own conversation.
-        await through(t1, [holds("t2", "t1", "delivered"), "settled"], { after: queued.index })
+        // t1's own Stop then delivers the message, in t1's own conversation: a Stop
+        // continuing the turn, never a ring, and nothing settled before it.
+        const handed = await t1.reached(holds("t2", "t1", "delivered"), { after: queued.index })
+        const before = t1
+          .history()
+          .slice(queued.index, handed.index + 1)
+          .map((one) => one.delivery)
+        expect(before).not.toContain("ringing")
+        expect(before).not.toContain("settled")
+        await t1.reached("settled", { after: handed.index })
         const got = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
+        expect(latest(got)).not.toMatch(ring)
         expect(nested(got)).toBe(false)
         expect(
           got.turns.some(

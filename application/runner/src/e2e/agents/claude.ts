@@ -99,7 +99,12 @@ export const claude: AgentSetup = {
   },
   // `--resume --fork-session` picks the session to fork in its "Resume session" picker,
   // each session named by its first prompt. Its `/fork` copies the conversation into a
-  // background session and keeps the terminal's (probed 2026-10-03, 2.1.287).
+  // background session and keeps the terminal's (probed again 2026-10-03, 2.1.287): the
+  // terminal stays bound to its session, Drafting after the command as after any Enter
+  // that started no turn; the background session's own turn (`/fork <prompt>`) doesn't
+  // rebind it, and a message sent then waits for the terminal's own. That session runs
+  // under a daemon with no terminal, which outlives the deck, and its agents view's
+  // ctrl+x didn't end it.
   fork: {
     picker: {
       command: "claude --resume --fork-session",
@@ -116,7 +121,7 @@ export const claude: AgentSetup = {
   },
   absent: {
     "fork.inPlace":
-      "its /fork copies the conversation into a background session and keeps working in the terminal's own, whose binding stays (probed 2026-10-03, 2.1.287)",
+      "its /fork doesn't fork in place: it copies the conversation into a background session and the terminal keeps its own, whose binding stays; that session's daemon outlives the terminal, so the suite can't run it (probed 2026-10-03, 2.1.287)",
     "trust.hooks":
       "it runs a plugin's hooks with no review: every scenario's session binds unasked (2.1.287)",
   },

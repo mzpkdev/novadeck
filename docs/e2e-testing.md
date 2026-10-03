@@ -258,7 +258,8 @@ for (const setup of setups) {
 
 - **One rule for parity: a scenario never branches on `setup.agent`.** A difference
   between harnesses is either a trait of its setup (`name`, `banner`, `bindsAtReady`,
-  `refused`, `approval`, `background`, `trust`) or a known gap in
+  `refused`, `interrupted`, `approval`, `background`, `trust`, `shell`, `rewind`,
+  `popup`, `fork`) or a known gap in
   `known-gaps.ts`, which picks the documented detour (see [Known gaps](#known-gaps)). A
   `<harness>.e2e.ts` holds only what is truly that harness's own, such as Codex's logo
   on its first screen and its `/side` conversation (`codex.e2e.ts`), or a known gap's pin.
@@ -326,8 +327,8 @@ for (const setup of setups) {
   first, and `{ hooksTrusted: false }` leaves NovaDeck's hooks untrusted where the
   harness has that step (Codex), so they don't run. `{ popup: true }` seeds the account
   as one the harness's `popup` shows for, where it shows it only for some (Claude Code's
-  cost warning, only for a billing admin); no other test gets that account. A seed holds for every terminal of
-  the test, as both are settings of the project; a harness with no such step ignores it.
+  cost warning, only for a billing admin); no other test gets that account. A seed holds
+  for every terminal of the test, as both are settings of the project; a harness with no such step ignores it.
   A seeded test goes in its own `describe`, as `e2e.seeded` gives its own `it`.
 - `e2e(...setups)` gives each test a fake model, a sandbox and a deck, with each
   setup's harness installed (once, before its tests), seeded and connected to NovaDeck
@@ -365,7 +366,10 @@ for (const setup of setups) {
   prompt by starting an agent with a task (`open_terminal`), and `opened(call, handle)`
   tells the agent's next look once it did; `answers(text, reply)` answers a prompt with
   a reply built from the call, such as a trait's, and `result(call)` is the text of the
-  tool result the call looks at, if it looks at one.
+  tool result the call looks at, if it looks at one. `unrung` is how long a scenario
+  watches a terminal for a ring that mustn't come, past the doorbell's settle window;
+  `handing(run, first, then)` opens a terminal whose command runs `first`, then `then`
+  once it exits (`claude ; codex`), and waits until the first is at its prompt.
 - **NovaDeck's state** is recorded as it changes, not polled: each deck terminal keeps
   the history of its delivery state and its messages' states from the moment it opens.
   `t.mark()` and `t.reached(state or predicate, { after })` wait for a transition after
@@ -459,17 +463,19 @@ for (const setup of setups) {
   - _Ready_: the person types at the agent's first prompt; Drafting, never rung; their
     prompt carries the message.
   - _While it starts_: the person types once the shell has taken the command starting
-    the agent (its file in the shell folder's `resume` gone), as NovaDeck still sees it
-    Unbound and before the harness draws its `banner`. Its first state past Unbound is
-    Drafting, never Ready nor rung, whatever of the keys reached its box; the person's
-    prompt carries the message.
+    the agent (its file in `deck.shell.resume` gone), and NovaDeck, taking the keys in
+    the write itself, still sees it Unbound. Whether the harness had drawn its first
+    screen by then is a race a fast harness wins, so the scenario doesn't ask. Its first
+    state past Unbound is Drafting, never Ready nor rung, whatever of the keys reached
+    its box; the person's prompt carries the message.
 - **The requests' scenarios** (`requests.e2e.ts`), a message that comes while the agent
   waits on the person, asserting docs/agent-messaging.md's "Acceptance scenarios" for
   them. t2 sends t1 the message from its own prompt:
   - _Permission question open_: t1's tool waits on its `approval` question when the
     message comes; it waits queued past the doorbell's settle window, t1 never rung, its
     turn Working. `confirm` allows the tool, and the Stop after it delivers: the model's
-    call carrying the message comes after its look at the tool's result, in the same
+    call carrying the message comes after t1's look at the tool's result (a call of the
+    conversation holding t1's prompt, not t2's look at its send), in the same
     conversation, after its answer to it and with no prompt of anyone's, and t1 is only
     ever Working until it settles.
   - _Enter on a permission question_: with the turn's first model call held until the
@@ -505,11 +511,46 @@ for (const setup of setups) {
     harness twice), so the person leaving the first starts the second with no key
     pressed at the shell's prompt; NovaDeck expects the first, by the command's first
     word. With `/exit` typed and submitted as above, the message is `gone` and the second
-    start is Ready, another session. No Unbound need show between them: with no shell
+    start is Ready, another session, and draws its `banner` anew: once more than the
+    fewest times the screen showed it since the Enter, as Claude Code and Codex clear
+    their screen as they exit and Antigravity leaves its own, so the first's banner
+    can't pass for the second's. No Unbound need show between them: with no shell
     prompt in between, NovaDeck notices the first process gone only as the next reports,
     in the same handling as the session it binds. t2's next `send` says the first won't
     arrive, and the new session gets only the second. `lifecycle.mixed.e2e.ts` does the
     same with a different harness second, each harness's terminal starting the next's.
+- **The nested run's scenario** (`nested.e2e.ts`, `shell`): t1's turn runs the harness
+  itself once through its shell tool, started only once t2's message waits for t1. The
+  nested run's model call comes, carrying nothing, and its answer reaches t1's agent as
+  the tool's output. Then t1's own Stop delivers the message in t1's conversation: never
+  a ring (its call holds no doorbell line, and t1 is never Ringing) and nothing Settled
+  before it. No call of the nested run carries a message; while it ran, t1 stayed
+  Working and the message queued, never leased; t1's session and agent are as before.
+  The shell tool waits for the command up to its harness's ceiling (Antigravity 10 s,
+  Codex 30 s, Claude Code 2 minutes), far past the second a nested run takes.
+- **The forks' scenarios** (`forks.e2e.ts`), asserting docs/agent-messaging.md's
+  "Acceptance scenarios" for forks:
+  - _A fork from a picker_ (`fork.picker`): t1 takes a turn and t2 another; a third
+    terminal starts the picker, its latest session (t2's) selected. t2's message for t3
+    waits queued while it shows, t3 only ever Unbound and never rung past the settle
+    window. Once the person picks t1's session, the fork goes Ready, is rung, and its
+    hook delivers the message alone, in a call holding t1's conversation; the fork's
+    session is neither none nor t1's, and t1's is unchanged. A message for t1 then rings
+    t1, its hook delivering it in t1's own conversation, which holds nothing of the
+    fork's; both sessions stay as they were, and t3 has only its own message.
+  - _A fork in place_ (`fork.inPlace`): with the person's draft in t1's box, t2's message
+    waits; they erase it and submit the fork command. The message is `gone`, never
+    delivered, and the fork is Ready; t2's next message rings it, its hook delivering
+    that one alone in the conversation carried over, and the session bound is no longer
+    the parent's. Claude Code's `/fork` doesn't fork in place (its `absent` says why).
+- **Codex's own** (`codex.e2e.ts`): its first screen's logo, rung through (the doorbell's
+  paste erases it); and a `/side` conversation. With `/side` open, t2's message waits,
+  t1 Drafting from the person's keys, never Ringing nor Unbound, and no call holds the
+  doorbell's line past the settle window. The side conversation's first prompt carries
+  nothing; t1's session and agent stay, the message queued. Back at the root (Ctrl-C
+  closes the side view), the person's next prompt carries the message, in the root's
+  own conversation, which never held the side question, and t1 settles, still bound to
+  the root.
 - Prefer asserting on what the model received and on NovaDeck's state over reading the
   screen; read the screen for what only it shows, such as a reply rendered, or the
   harness's own first screen (`banner`).
@@ -531,7 +572,8 @@ for (const setup of setups) {
      fake credential. `connected(sandbox, model, seed)`, when given, runs once NovaDeck's
      plugin is connected and before any harness starts, for setup only the plugin's files
      make possible. Both honour the test's `Seed` (`folderTrusted: false`,
-     `hooksTrusted: false`) for each step the harness has, and ignore the rest.
+     `hooksTrusted: false`, `popup: true`) for each step the harness has, and ignore the
+     rest.
    - Its traits: `name`; `banner`, text on its first screen; `bindsAtReady`, whether
      its session binds before its first prompt; `hosts`, its real API and login hosts,
      which no request may try; and `refused`, hosts it tries that no setting turns off.
@@ -551,7 +593,9 @@ for (const setup of setups) {
      `clear` or `exit` trait.
    - `shell`, a reply running a command through its shell tool, and its own one-shot,
      non-interactive mode as the command, which its seed allows so it runs without
-     asking, unlike `approval`'s. A harness with no non-interactive mode has it `absent`.
+     asking, unlike `approval`'s, and which waits for the command as long as the tool
+     allows (its ceiling, found by a probe, as Antigravity's `run_command` caps its wait at
+     10 s). A harness with no non-interactive mode has it `absent`.
    - `fork`, how the person forks a session: `picker`, a command forking the session
      picked in its picker, and `inPlace`, a command forking the conversation in place.
    - The requests' traits: `rewind`, what Esc-Esc opens at its idle prompt and whether

@@ -16,6 +16,7 @@ import {
   start,
   through,
   turn,
+  unrung,
 } from "./scenarios.js"
 
 // What only Codex needs beyond the shared scenarios (messaging.e2e.ts).
@@ -27,10 +28,6 @@ const logo = /(?:^.*[⠀-⣿].*\n){10}/m
 
 // What its footer says while it shows a `/side` conversation (0.159.3).
 const side = /Side from main thread · ctrl\+\/ to switch · ctrl\+c to close/
-
-// How long a terminal is watched for a ring that mustn't come: past the doorbell's settle
-// window (6 s from when a terminal shows Ready), so a ring had every chance to start.
-const unrung = 8000
 
 // How long a terminal is watched for a binding that mustn't change once a turn is done.
 const quiet = 3000

@@ -1,12 +1,12 @@
-import { expectedAgent } from "../terminals/commands.js"
 import type { AgentSetup } from "./agents/agent.js"
 import { setups } from "./agents/index.js"
-import type { DeckTerminal } from "./deck.js"
-import { describe, e2e, expect, supported, type E2E } from "./fixture.js"
+import { occurrences, type DeckTerminal } from "./deck.js"
+import { describe, e2e, expect, supported } from "./fixture.js"
 import { latest, type Call } from "./model/script.js"
 import {
   deliveries,
   delivered,
+  handing,
   holds,
   messages,
   own,
@@ -61,22 +61,23 @@ const cleared = (terminal: DeckTerminal) =>
   )
 
 /**
- * Opens a terminal whose command runs `first`, then `then` once it exits, and waits until
- * the first is Ready at its prompt: the person leaving the first starts the second, with
- * no key pressed at the shell's prompt. NovaDeck expects the first there, by its command's
- * first word, which `;` set apart keeps whole.
+ * Waits until the screen shows the harness's banner once more than the fewest times it
+ * has since the call: the next instance's, drawn as it starts. One that clears its screen
+ * as it exits (Claude Code, Codex) draws it again from none, one that leaves it there
+ * (Antigravity) a second time, so the first's banner left on screen can't pass for it.
+ * Called once the person's command to leave is submitted.
  */
-const handing = async (
-  { deck }: E2E,
-  first: AgentSetup,
-  then: AgentSetup,
-): Promise<DeckTerminal> => {
-  const command = `${first.agent} ; ${then.agent}`
-  expect(expectedAgent(command, undefined)).toBe(first.agent)
-  const terminal = await deck.open(command)
-  await terminal.reached("ready", { timeoutMs: 60_000 })
-  await prompted(terminal, first)
-  return terminal
+const redrawn = (terminal: DeckTerminal, { banner, name }: AgentSetup): Promise<unknown> => {
+  let fewest = Number.POSITIVE_INFINITY
+  return terminal.poll(
+    async () => {
+      const shown = occurrences(await terminal.screen(), banner)
+      fewest = Math.min(fewest, shown)
+      return shown > fewest ? true : undefined
+    },
+    `${name} to draw its banner again as it starts anew`,
+    60_000,
+  )
 }
 
 for (const setup of setups) {
@@ -220,6 +221,9 @@ for (const setup of setups) {
         await t2.submit("Ask t1 for the word")
         await t1.reached(holds("t2", "t1", "queued"), { after: mark })
       })
+      const anew = redrawn(t1, setup)
+      // Awaited below, once NovaDeck has seen the new start; a failure before then is the test's.
+      anew.catch(() => {})
 
       // The agent left, and the message for its session won't arrive; then the new start is
       // Ready. With no shell prompt between the two, NovaDeck notices the first's process is
@@ -230,6 +234,7 @@ for (const setup of setups) {
         after: mark,
         timeoutMs: 60_000,
       })
+      await anew
       await prompted(t1, setup)
       const [first] = messages(t1)
       expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })

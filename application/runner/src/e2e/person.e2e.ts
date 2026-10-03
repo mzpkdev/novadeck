@@ -1,5 +1,4 @@
 import { readdirSync } from "node:fs"
-import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
 import { setups } from "./agents/index.js"
@@ -19,16 +18,13 @@ import {
   start,
   through,
   turn,
+  unrung,
 } from "./scenarios.js"
 
 // The person typing around messages, the same for every harness (see messaging.e2e.ts for
 // the rule on parity). What NovaDeck must do is docs/agent-messaging.md's ("What counts",
 // "States", "Acceptance scenarios"): while the box may hold the person's text it never
 // rings, and their next prompt's hook carries what waits.
-
-// How long a terminal is watched for a ring that mustn't come: past the doorbell's settle
-// window (6 s from when a terminal shows Ready or Settled), so a ring had every chance.
-const unrung = 8000
 
 /** Whether the call is the agent's look at a user turn holding `text`, a prompt of the person's. */
 const holding = (call: Call, text: string): boolean => !call.side && latest(call).includes(text)
@@ -266,19 +262,16 @@ for (const setup of setups) {
 
       // The person types once the shell has taken the command that starts the agent, from
       // the file NovaDeck left it in its shell folder (keys before then cancel the start,
-      // and reach the shell instead): before its prompt shows, before any session binds.
-      // NovaDeck takes keys as they are written, and has yet to see either.
-      const resume = join(run.sandbox.root, "data", "shell", "resume")
+      // and reach the shell instead): before any session binds. NovaDeck takes keys in the
+      // write itself, so the state read right after is what they met: Unbound. Whether the
+      // harness had drawn its first screen by then is a race a fast one wins, and what it
+      // takes of the keys is its own either way.
       await t2.poll(
-        () => (readdirSync(resume).length === 0 ? true : undefined),
+        () => (readdirSync(run.deck.shell.resume).length === 0 ? true : undefined),
         "the shell to take the command starting its agent",
       )
       t2.press("Hello")
       expect(t2.messages().delivery).toBe("unbound")
-      // Nor has the harness drawn its first screen: what it takes of the keys is its own.
-      const { banner } = setup
-      const shown = await t2.screen()
-      expect(typeof banner === "string" ? shown.includes(banner) : banner.test(shown)).toBe(false)
 
       // Its prompt shows (or its session binds) as Drafting, never Ready nor rung.
       const drafting = await t2.reached("drafting", { timeoutMs: 60_000 })

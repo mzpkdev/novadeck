@@ -98,7 +98,9 @@ export const codex: AgentSetup = {
     shows: /Approaching rate limits[\s\S]*› 1\. Switch to /,
   },
   // Its `exec_command`, running `codex exec`, which a rule of its execution policy allows
-  // (see `prepare`).
+  // (see `prepare`). It waits at most 30 s for the command, its cap (300000 waited 30 s,
+  // probed 2026-10-03, 0.159.3), then answers that it still runs; a nested run takes
+  // under a second.
   shell: {
     run: (_call, command) => ({
       calls: [{ name: "exec_command", input: { cmd: command, yield_time_ms: 30_000 } }],

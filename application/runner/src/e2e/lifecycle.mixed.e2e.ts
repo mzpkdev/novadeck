@@ -1,14 +1,12 @@
-import { expectedAgent } from "../terminals/commands.js"
-import type { AgentSetup } from "./agents/agent.js"
 import { agy } from "./agents/agy.js"
 import { claude } from "./agents/claude.js"
 import { codex } from "./agents/codex.js"
-import type { DeckTerminal } from "./deck.js"
-import { describe, e2e, expect, supported, type E2E } from "./fixture.js"
+import { describe, e2e, expect, supported } from "./fixture.js"
 import type { Call } from "./model/script.js"
 import {
   deliveries,
   delivered,
+  handing,
   holds,
   messages,
   own,
@@ -23,32 +21,14 @@ import {
 } from "./scenarios.js"
 
 // The person leaving an agent for a different one in its terminal, across harnesses (see
-// lifecycle.e2e.ts, where the same harness starts anew). Every harness leaves with
-// `/exit`, typed at its prompt.
+// lifecycle.e2e.ts, where the same harness starts anew, and `handing` in scenarios.ts).
+// Every harness leaves with `/exit`, typed at its prompt.
 
 const order = [claude, codex, agy]
 
 /** Whether the call is of t2's turn asking t1 once more. */
 const again = (call: Call): boolean =>
   call.turns.some((one) => one.role === "user" && one.text.includes("Ask t1 once more"))
-
-/**
- * Opens a terminal whose command runs `first`, then `then` once it exits, and waits until
- * the first is Ready at its prompt, as in lifecycle.e2e.ts: no key is pressed at the
- * shell's prompt.
- */
-const handing = async (
-  { deck }: E2E,
-  first: AgentSetup,
-  then: AgentSetup,
-): Promise<DeckTerminal> => {
-  const command = `${first.agent} ; ${then.agent}`
-  expect(expectedAgent(command, undefined)).toBe(first.agent)
-  const terminal = await deck.open(command)
-  await terminal.reached("ready", { timeoutMs: 60_000 })
-  await prompted(terminal, first)
-  return terminal
-}
 
 describe.skipIf(!supported)(order.map((setup) => setup.name).join(", "), () => {
   const it = e2e(...order)

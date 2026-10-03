@@ -17,16 +17,13 @@ import {
   start,
   through,
   turn,
+  unrung,
 } from "./scenarios.js"
 
 // The person forking a session, the same for every harness (see messaging.e2e.ts for the
 // rule on parity). A fork is a session of its own carrying its parent's conversation. A
 // message is for the session bound when it was sent, so the parent's never go to its fork
 // (docs/agent-messaging.md, "Messages" and "Message states").
-
-// How long a terminal is watched for a ring that mustn't come: past the doorbell's settle
-// window (6 s from when a terminal shows Ready), so a ring had every chance to start.
-const unrung = 8000
 
 // Whether the call's conversation holds a user turn with `text`.
 const holding = (
@@ -50,7 +47,14 @@ for (const setup of setups) {
           replies("Remember the word heron", "Remembered."),
           replies("Say ready", "Ready here."),
           sends("Tell t3 hello", "t3", "Hello, fork."),
+          sends("Tell t1 hello", "t1", "Hello, parent."),
           own((call) => (sent(call, "t3") ? { text: "Told t3." } : undefined)),
+          own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+          own((call) =>
+            deliveries(call).some((one) => one.text === "Hello, parent.")
+              ? { text: "The parent says hello back." }
+              : undefined,
+          ),
           own((call) =>
             delivered(call, "t2") ? { text: "The fork says hello back." } : undefined,
           ),
@@ -97,6 +101,40 @@ for (const setup of setups) {
         expect(forked).not.toBeNull()
         expect(forked).not.toBe(parent)
         expect((await t1.detail()).sessionId).toBe(parent)
+
+        // The parent's messages stay its parent's: one for t1 now rings t1, its hook
+        // delivering it in the parent's own conversation, which never had the fork's; the
+        // fork gets nothing more.
+        const later = run.model.mark()
+        const from1 = t1.mark()
+        await t2.submit("Tell t1 hello")
+        await through(
+          t1,
+          [
+            holds("t2", "t1", "queued"),
+            "ringing",
+            "working",
+            holds("t2", "t1", "delivered"),
+            "settled",
+          ],
+          {
+            after: from1,
+          },
+        )
+        const told = await run.model.waitFor(
+          (call) => deliveries(call).some((one) => one.text === "Hello, parent."),
+          { after: later },
+        )
+        expect(latest(told)).toMatch(ring)
+        expect(deliveries(told)).toEqual([{ from: "t2", text: "Hello, parent." }])
+        expect(holding(told, "Remember the word heron")).toBe(true)
+        expect(told.turns.some((one) => one.text.includes("Hello, fork."))).toBe(false)
+        await t1.until("The parent says hello back.")
+        expect((await t1.detail()).sessionId).toBe(parent)
+        expect((await t3.detail()).sessionId).toBe(forked)
+        expect(messages(t3).map((one) => [one.text, one.state])).toEqual([
+          ["Hello, fork.", "delivered"],
+        ])
       },
     )
 

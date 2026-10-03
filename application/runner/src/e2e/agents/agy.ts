@@ -74,6 +74,9 @@ export const agy: AgentSetup = {
     denied: /User declined the tool call/,
   },
   // `run_command` running its own print mode, which its settings allow (`command(agy -p)`).
+  // It waits at most 10 s for the command, its range's top (500 to 10000 ms; 30000 waited
+  // 10 s too, probed 2026-10-03, 1.2.14), then backgrounds it; a nested run takes under a
+  // second.
   shell: {
     run: (call, command) => ({
       calls: [
@@ -82,7 +85,7 @@ export const agy: AgentSetup = {
           input: {
             CommandLine: command,
             Cwd: workingDirectory(call),
-            WaitMsBeforeAsync: 30_000,
+            WaitMsBeforeAsync: 10_000,
             toolSummary: "Run a command",
             toolAction: "Running",
           },

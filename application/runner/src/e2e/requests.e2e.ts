@@ -21,6 +21,7 @@ import {
   start,
   through,
   turn,
+  unrung,
 } from "./scenarios.js"
 
 // What happens to a message that comes while its recipient waits on the person: a
@@ -29,10 +30,6 @@ import {
 // harness (see messaging.e2e.ts for the rule on parity), asserting what
 // docs/agent-messaging.md says ("What counts", "States", "The doorbell", "Acceptance
 // scenarios").
-
-// How long a terminal is watched for a ring that mustn't come: past the doorbell's settle
-// window (6 s), so a ring had every chance to start.
-const unrung = 8000
 
 // How long a terminal is watched for what a failed ring might still press.
 const quiet = 3000
@@ -86,9 +83,14 @@ const continued = async (
   t1: DeckTerminal,
   { calls, mark }: { readonly calls: number; readonly mark: number },
 ): Promise<void> => {
-  const looked = await model.waitFor((call) => !call.side && result(call) !== undefined, {
-    after: calls,
-  })
+  // t1's look at its tool's result, in the conversation of its prompt: not t2's at its send's.
+  const looked = await model.waitFor(
+    (call) =>
+      !call.side &&
+      result(call) !== undefined &&
+      call.turns.some((one) => one.role === "user" && one.text.includes("Make the file")),
+    { after: calls },
+  )
   const carrying = await model.waitFor((call) => delivered(call, "t2"), { after: calls })
   // The one message, which Claude Code's continuation quotes twice: as the Stop hook's
   // feedback and again as its blocking error (2.1.287).
