@@ -10,6 +10,10 @@ export type SegmentOption = {
   icon?: ReactNode
 }
 
+// While callers draw their items' look with utilities (text-muted, hover:bg-soft), the
+// active item needs utilities to override it; the segmented recipe draws it otherwise.
+const segmentActiveCompatClasses = "text-ink hover:bg-transparent"
+
 export type SegmentGroupProps = {
   label: string
   tooltips?: boolean
@@ -18,7 +22,9 @@ export type SegmentGroupProps = {
   onValueChange: (value: string) => void
   className?: string
   itemClassName?: string
-  // The active item's look, drawn behind the items and sliding between them.
+  // Draws the active item's look behind the items, sliding between them, instead of on
+  // the active item; the class places it. Older callers pass the indicator's look here
+  // too, with their items' look in `itemClassName`.
   indicatorClassName?: string
 }
 
@@ -40,7 +46,7 @@ export const SegmentGroup = ({
       ids={{ item: itemId }}
       orientation="horizontal"
       aria-label={label}
-      className={cn("relative", className)}
+      className={cn("segmented relative", className)}
       value={value}
       onValueChange={(details) => {
         if (details.value !== null) onValueChange(details.value)
@@ -52,12 +58,10 @@ export const SegmentGroup = ({
             id={itemId(item.value)}
             value={item.value}
             className={cn(
-              "relative z-1 cursor-pointer transition-[background-color,color,border-color] duration-(--motion-feedback) ease-interface data-focus-visible:outline data-focus-visible:outline-2 data-focus-visible:outline-strong data-focus-visible:outline-offset-2",
+              "segment relative z-1 cursor-pointer",
               itemClassName,
-              value === item.value &&
-                (indicatorClassName
-                  ? "active bg-transparent text-ink hover:bg-transparent"
-                  : "active border-line bg-paper text-ink shadow-control"),
+              // Keeps the active item's text over a look callers still give their items.
+              value === item.value && indicatorClassName && segmentActiveCompatClasses,
             )}
           >
             {item.icon}
@@ -70,7 +74,7 @@ export const SegmentGroup = ({
       {indicatorClassName && (
         <ArkSegmentGroup.Indicator
           className={cn(
-            "pointer-events-none top-(--top) z-0 h-(--height) w-(--width) [--transition-duration:var(--motion-state)] [--transition-timing-function:var(--ease-interface)]",
+            "segmented-indicator pointer-events-none top-(--top) z-0 h-(--height) w-(--width)",
             indicatorClassName,
           )}
         />
