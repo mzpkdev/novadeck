@@ -397,8 +397,6 @@ const scriptsWithLooks: readonly string[] = [
   "backend/runner/RunnerTerminal.tsx",
   "layouts/canvas/Canvas.tsx",
   "layouts/focus/Focus.tsx",
-  "preferences/WelcomeDialog.tsx",
-  "preferences/WelcomePreview.tsx",
   "search/TerminalSearch.tsx",
   "terminals/MailCount.tsx",
   "terminals/TerminalSwitcher.tsx",
@@ -468,8 +466,6 @@ const colourLiterals = (file: string): string[] =>
 
 // Stylesheets that still hold colour literals. Shrink only.
 const stylesheetsWithColours: readonly string[] = [
-  "preferences/WelcomeDialog.module.css",
-  "preferences/WelcomePreview.module.css",
   "terminals/companion/companion.css",
   "theme/contract.css",
 ]

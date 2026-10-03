@@ -137,6 +137,7 @@ The shared recipes, and what they cover:
 | `prose`       | Plans, documents, mail and the plan editor's decorations                                             | `--prose-{heading,code,link,quote}-{fg,bg}`, `--prose-changed-bg`                                                                                                                        |
 | `syntax`      | `.tok-*` highlighting in files an agent shows                                                        | read straight from the syntax tokens                                                                                                                                                     |
 | `settings`    | Preferences: its cards and rows, labels, notes; `.choice-card`, shared with the welcome              | `--settings-{label,description}-fg`, `--settings-card-shadow`, `--choice-card-{bg,fg,border-color}`, `--choice-card-checked-{bg,fg,border-color,shadow}`                                 |
+| `welcome`     | The welcome dialog, its start button and its miniature workspace                                     | `--welcome-{intro-bg,pattern-fg,caret-bg,skip-fg}`, `--welcome-stage-{border-color,dots-fg}`; reads `--brand-tile-*`, `--window-*`, `--workspace-*`                                      |
 
 ## Hooks
 

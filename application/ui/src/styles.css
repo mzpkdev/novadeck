@@ -37,6 +37,8 @@
 @import "./terminals/companion/prose.css" layer(components);
 @import "./terminals/companion/syntax.css" layer(components);
 @import "./preferences/settings.css" layer(components);
+@import "./preferences/welcome.css" layer(components);
+@import "./preferences/welcome-preview.css" layer(components);
 
 @import "./theme/themes/graphite.css" layer(themes);
 @import "./theme/accessibility.css" layer(accessibility);
