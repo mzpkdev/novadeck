@@ -5,17 +5,19 @@
    (`.artifact-browser`, its bar `.artifact-browser-bar` with `.icon-button`s, its
    address `.artifact-url` and a link to open it, `.artifact-open`); and a markdown
    document, which the prose recipe formats. `.artifact-status` says when there's
-   nothing to show yet. `.artifact-actions` holds what the place showing it offers, as
+   nothing to show yet; `.artifact-unavailable` says why something can't show, over
+   `.artifact-unavailable-actions`, what can be done about it. `.artifact-actions` holds what the place showing it offers, as
    `.icon-button`s; `.artifact-window` fills a window of its own.
 
    Hooks: data-actual="true" on the image at its actual size; data-pointed="true" on a
-   line the agent pointed at; data-live on a page that loads live, and data-document on
-   a viewer holding a markdown document.
+   line the agent pointed at; data-live on a page that loads live, data-document on
+   a viewer holding a markdown document, and data-reason on what can't show.
 
    Tokens, each optional (its fallback in brackets):
    --artifact-meta-fg (muted), --artifact-meta-border-color (line),
    --artifact-meta-code-fg (ink): the header, and its name or path.
    --artifact-status-fg (muted): what says there's nothing to show yet.
+   --artifact-unavailable-fg (muted): what says why something can't show.
    --artifact-image-image (a checker of soft and paper),
    --artifact-image-radius (radius-panel), --artifact-image-shadow (shadow-floating):
    the ground behind an image, and the image on it.
@@ -37,6 +39,29 @@
   min-height: 240px;
   font-size: 12px;
   color: var(--artifact-status-fg, var(--color-muted));
+}
+/* What can't show, and why, with what can be done about it. */
+.artifact-unavailable {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  min-height: 240px;
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--artifact-unavailable-fg, var(--color-muted));
+}
+.artifact-unavailable p {
+  max-width: 46ch;
+  margin: 0;
+}
+.artifact-unavailable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 .artifact-viewer {
   flex: 1;
