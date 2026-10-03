@@ -3223,6 +3223,9 @@ const turn = (prompt, typed = true) => {
   const perm = mode === "perm" && turns === 2
   // With "slowhook", its second turn's hook reports after the doorbell's confirmation lapsed.
   const slow = mode === "slowhook" && turns === 2
+  // With "latehook", its second turn's hook reports 1.5 s after the Enter, well within the
+  // doorbell's confirmation.
+  const latehook = mode === "latehook" && turns === 2
   // With "slowkick", a turn it starts by itself reports a while after it began, as a
   // loaded machine's hook does: it is busy, and ignores Enter, before NovaDeck knows.
   const late = mode === "slowkick" && !typed
@@ -3289,7 +3292,7 @@ const turn = (prompt, typed = true) => {
       process.stdout.write("\r\x1b[2Kapproved; running npm test\r\n")
       setTimeout(() => hook("PostToolUse", { tool_name: "Bash", tool_input: input, tool_response: {} }, finish), 1500)
     })
-  }), slow ? 6_000 : late ? 800 : 0)
+  }), slow ? 6_000 : latehook ? 1_500 : late ? 800 : 0)
 }
 process.on("SIGUSR1", () => turn("background result", false))
 // It exits by itself, as an agent that ends without a key from the person.
@@ -4262,6 +4265,31 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
       expect(tui.received()[1]!.prompt).toMatch(/^\[NovaDeck: automatic notice/)
       expect(pastes(tui.raw())).toHaveLength(1)
+      await expect.poll(() => tui.manager.get(tui.idle.id)).toMatchObject({ cols: 70, rows: 20 })
+    })
+
+    it("lets the person's keys go after the ring's Enter, and its held resize once its prompt confirms it", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "latehook")
+      await tui.first()
+      const { cols, rows } = tui.manager.get(tui.idle.id)
+      await tui.send("Review a.ts")
+      await vi.waitFor(
+        async () => expect(await screen(tui.manager, tui.idle.id)).toContain("automatic notice"),
+        { timeout: 10_000, interval: 5 },
+      )
+      tui.manager.resize({ terminalId: tui.idle.id, cols: 70, rows: 20 }, "owner")
+      // Its Enter went; its prompt's hook is still to report.
+      await vi.waitFor(() => expect(tui.raw().join("")).toMatch(/\x1b\[201~[\s\S]*\r/), {
+        timeout: 5_000,
+      })
+      tui.type("xyz")
+      await vi.waitFor(() => expect(tui.raw().join("")).toContain("xyz"))
+      expect(tui.received()).toHaveLength(1)
+      expect(tui.manager.get(tui.idle.id)).toMatchObject({ cols, rows })
+      // Its prompt confirms the ring: the size it held goes on.
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(2), { timeout: 10_000 })
       await expect.poll(() => tui.manager.get(tui.idle.id)).toMatchObject({ cols: 70, rows: 20 })
     })
 
