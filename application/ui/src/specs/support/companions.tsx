@@ -64,11 +64,17 @@ export const windowMenu = async (name: string): Promise<Locator> => {
   return menu
 }
 
-// A press, a drag past dnd-kit's 6px threshold in several moves, and a release.
-const drag = async (source: Locator, target: Locator, at?: { x: number; y: number }) => {
+// A press, a drag past dnd-kit's 6px threshold in several moves, or in the one move
+// that starts it, and a release.
+const drag = async (
+  source: Locator,
+  target: Locator,
+  at?: { x: number; y: number },
+  steps = 12,
+) => {
   await userEvent.dragAndDrop(source, target, {
     ...(at ? { targetPosition: at } : {}),
-    steps: 12,
+    steps,
     scroll: "none",
   })
 }
@@ -108,11 +114,15 @@ export const freeSpaceIn = (view: Locator): { x: number; y: number } => {
   throw new Error("No free space in the view")
 }
 
-/** Drags an icon off a terminal's taskbar into a view's free space, which undocks it there. */
+/**
+ * Drags an icon off a terminal's taskbar into a view's free space, which undocks it there:
+ * in several moves, or in `one` move, which starts the drag and is released where it ends.
+ */
 export const dragIconToFreeSpace = async (
   from: string,
   label: string,
   view: Locator,
+  { one = false }: { one?: boolean } = {},
 ): Promise<void> => {
-  await drag(taskbarIcon(from, label), view, freeSpaceIn(view))
+  await drag(taskbarIcon(from, label), view, freeSpaceIn(view), one ? 1 : 12)
 }

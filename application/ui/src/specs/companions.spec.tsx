@@ -178,4 +178,18 @@ describe("Undocking an item into a window of its own", () => {
         .not.toBeInTheDocument()
     })
   })
+
+  context("when dropped on the Grid's free space by the move that starts the drag", () => {
+    it("opens a window there", async () => {
+      await openShowcase()
+      await dragIconToFreeSpace("Refactor auth", "Plan: refactor-auth.md", gridView(), {
+        one: true,
+      })
+      await expect.element(terminal("refactor-auth.md")).toBeVisible()
+      await expect.element(terminalTab("refactor-auth.md")).toBeVisible()
+      await expect
+        .element(taskbarIcon("Refactor auth", "Plan: refactor-auth.md"))
+        .not.toBeInTheDocument()
+    })
+  })
 })
