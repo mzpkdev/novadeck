@@ -27,11 +27,6 @@
     --_bg: var(--item-highlighted-bg, var(--color-shell));
   }
 }
-/* The item recipe leaves focus to Ark's highlight; these rows are plain buttons. */
-.workspace-switcher-project:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: -2px;
-}
 /* The check that marks the current project is set in the row's text colour, not as a
    secondary icon. */
 .workspace-switcher-project > svg {

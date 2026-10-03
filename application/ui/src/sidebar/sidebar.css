@@ -42,12 +42,6 @@
   --_bg: var(--button-hover-bg, var(--color-soft));
 }
 
-.sidebar-item {
-  transition:
-    background-color var(--motion-feedback) var(--ease-interface),
-    border-color var(--motion-feedback) var(--ease-interface),
-    box-shadow var(--motion-feedback) var(--ease-interface);
-}
 .sidebar-item:focus-within {
   --_bg: var(--item-hover-bg, var(--color-soft));
 }

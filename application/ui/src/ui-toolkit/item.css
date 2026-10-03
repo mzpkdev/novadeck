@@ -1,10 +1,11 @@
 /* The item recipe: one row of a list, such as a sidebar row, a menu or select option, or
    a search result. A selected item is raised out of its list and marked with a bar at
    its leading edge; a highlighted one, under the keyboard or the pointer in a list Ark
-   manages, is tinted and outlined. Its icon is secondary and its detail text muted.
+   manages, is tinted and outlined. An item that takes focus itself, a plain button,
+   shows the focus ring inside its edge. Its icon is secondary and its detail text muted.
 
-   Hooks: :hover; data-highlighted (Ark's highlight); data-selected, present or "true";
-   data-disabled. Parts: a leading `svg`, `.item-detail`.
+   Hooks: :hover; :focus-visible; data-highlighted (Ark's highlight); data-selected,
+   present or "true"; data-disabled. Parts: a leading `svg`, `.item-detail`.
 
    Tokens, each optional (its fallback in brackets):
    --item-radius (radius-control), --item-icon-fg (muted), --item-detail-fg (muted).
@@ -24,10 +25,16 @@
   border-radius: var(--item-radius, var(--radius-control));
   background-color: var(--_bg);
   box-shadow: var(--_shadow);
+  transition:
+    background-color var(--motion-feedback) var(--ease-interface),
+    border-color var(--motion-feedback) var(--ease-interface),
+    box-shadow var(--motion-feedback) var(--ease-interface);
 }
-/* Items show where the keyboard is by their highlight. */
+/* In a list Ark manages, the highlight shows where the keyboard is; an item that is a
+   plain button takes the ring, inside its edge so a list's neighbours don't cover it. */
 .item:focus-visible {
-  outline: none;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-width) * -1);
 }
 .item::before {
   content: "";
