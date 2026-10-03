@@ -19,6 +19,7 @@ export type ThemeManifest<Id extends string = string> = readonly [
 
 export const themes = [
   { id: "graphite", name: "Graphite", schemes: ["light", "dark"] },
+  { id: "sandstone", name: "Sandstone", schemes: ["light"] },
 ] as const satisfies ThemeManifest
 
 export type ThemeId = (typeof themes)[number]["id"]

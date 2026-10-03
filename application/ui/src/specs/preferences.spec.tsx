@@ -311,6 +311,28 @@ describe("appearance preference", () => {
     })
   })
 
+  context("when a theme with only a light scheme is chosen", () => {
+    it("disables Mode and keeps the page light while the system is dark", async () => {
+      await systemScheme("dark")
+      await openWorkspace()
+      await expect.poll(pageScheme).toBe("dark")
+      await openPreferences()
+
+      await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
+      await preferencesDialog().getByRole("option", { name: "Sandstone" }).click()
+
+      await expect
+        .element(preferencesDialog().getByRole("combobox", { name: "Theme" }))
+        .toHaveTextContent("Sandstone")
+      await expect.element(modeChoice("Dark")).toBeDisabled()
+      await expect.element(modeChoice("Light")).toBeChecked()
+      await expect
+        .element(preferencesDialog().getByRole("group", { name: "Mode" }))
+        .toHaveAccessibleDescription("Sandstone comes only in light.")
+      await expect.poll(pageScheme).toBe("light")
+    })
+  })
+
   context("when following the system", () => {
     it("changes with the system's scheme while the app is open", async () => {
       await systemScheme("light")

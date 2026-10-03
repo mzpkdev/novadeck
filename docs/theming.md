@@ -3,7 +3,8 @@
 NovaDeck's look is a theme. Components give the interface its shape; a theme decides
 how that shape is drawn: colours, borders, depth, corners, type, and the texture of the
 workspace. Graphite, the app's own look, is a theme like any other, with a light and a
-dark scheme. A new theme is one CSS file and one line in the theme list.
+dark scheme; Sandstone, warm, flat and rounded, has a light scheme only and draws its
+sidebar on a dark ground. A new theme is one CSS file and one line in the theme list.
 
 This guide is the contract between the two sides. Change it when the contract changes.
 
@@ -71,6 +72,15 @@ the layers, so `.button { --button-bg: … }` in a recipe would hide the theme's
 `--button-bg` from every button. Reading tokens on the element also lets a theme
 restyle a region: `[data-theme="x"] .sidebar { --color-paper: … }` reaches every
 recipe inside the sidebar.
+
+A token whose value reads another token is resolved where it is declared, and its
+descendants inherit the result. So an `--item-selected-bg` that a theme mixes from
+`--color-strong` on `[data-theme]` keeps the root's strong colour inside a restyled
+region, and so do the defaults `theme/base.css` derives on `:root`, such as
+`--focus-ring-color` and `--brand-tile-*`. A theme that restyles a region declares each
+such token again on the region, in the same rule as on its root, so it reads the
+region's own foundation tokens; `theme/themes/sandstone.css` does this for its dark
+sidebar.
 
 Optional foundation tokens get their defaults in `theme/base.css`, on `:root` in the
 `base` layer, never in Tailwind's `@theme`, which would turn them back into utilities.
