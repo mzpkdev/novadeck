@@ -387,12 +387,6 @@ const classLooks = (file: string): string[] =>
 const scriptsWithLooks: readonly string[] = [
   "app/BootFailure.tsx",
   "app/BootSplash.tsx",
-  "backend/demo/AgentOutput.tsx",
-  "backend/demo/DemoTerminal.tsx",
-  "backend/demo/TerminalOutput.tsx",
-  "backend/demo/showcase/agents.tsx",
-  "backend/runner/DebugPanel.tsx",
-  "backend/runner/RunnerTerminal.tsx",
   "ui-toolkit/SegmentGroup.tsx",
 ]
 
