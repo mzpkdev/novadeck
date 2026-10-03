@@ -683,6 +683,41 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     expect(manager.reportedSession(terminal.id, "claude")).toBe("one")
   })
 
+  it("takes no other conversation from a report that can't tell its process mid-turn", async ({
+    shell,
+  }) => {
+    // As a nested `agy -p` run inside the root's turn: its status line, drawn as it exits,
+    // comes from a hook that outlived it and found no Antigravity above it.
+    const bin = reporter(shell.home, [
+      {
+        agent: "agy",
+        sessionId: "root",
+        seq: 1,
+        source: "",
+        instance: String(process.pid),
+        fields: { invocationNum: 0 },
+      },
+      {
+        agent: "agy",
+        sessionId: "nested",
+        seq: 2,
+        source: "",
+        event: "StatusLine",
+        fields: { conversation_id: "nested", agent_state: "working" },
+      },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    await expect.poll(() => manager.messages(terminal.id).delivery).toBe("working")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(manager.reportedSession(terminal.id, "agy")).toBe("root")
+    expect(manager.messages(terminal.id).delivery).toBe("working")
+  })
+
   it("shows what the agent is doing, and the requests waiting on the person", async ({ shell }) => {
     const call = { tool_name: "Bash", tool_input: { command: "touch x" } }
     const bin = reporter(shell.home, [

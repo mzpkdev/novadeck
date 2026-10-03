@@ -572,7 +572,10 @@ leaves with no prompt between it and the next (tmux, a nested shell, `claude ; c
 never has the next one's prompt or session taken for its own: its messages are gone before
 anything is rung. A report that can't tell its process, as from a hook outliving its agent,
 keeps the process known for the bound session, and once that process is found gone, a
-late report of its session from no process or from that one binds it no more.
+late report of its session from no process or from that one binds it no more. While the
+bound process is known, such a report never binds another session, nor names another root
+conversation: it may be a nested run's that just ended, as a nested `agy -p`'s status line
+drawn as it exits, inside the root's turn.
 
 A background subagent finishing can start a root turn by itself (see
 [Harness coverage](harness-coverage.md)); that is a turn like any other, though it

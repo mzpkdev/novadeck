@@ -106,7 +106,26 @@ describe("observing a harness session", () => {
     // Another Antigravity process, as one run from the agent in the foreground, does not.
     expect(observe(agy, { ...next, instance: "41" }, facts)).toBeUndefined()
     // Where the platform hides the process, its harness alone has to do.
-    expect(observe(agy, { ...next, instance: null }, facts)?.binding?.sessionId).toBe("two")
+    const hidden = { ...agy, binding: { agent: "agy" as const, sessionId: "one", instance: null } }
+    expect(observe(hidden, { ...next, instance: null }, facts)?.binding?.sessionId).toBe("two")
+  })
+
+  it("switches to no other session on a report that can't tell its process, while the bound one is known", () => {
+    // As a nested `agy -p`'s status line drawn as it exits, inside the root's turn: its hook
+    // outlives it and finds no Antigravity above it. Unknown may be that nested run's.
+    const agy: Sessions = {
+      sessions: { agy: { sessionId: "root", seq: 2_000 } },
+      binding: { agent: "agy", sessionId: "root", instance: "40" },
+      cwd: "/",
+    }
+    const nested = seen({
+      agent: "agy",
+      sessionId: "nested",
+      startedAt: 3_000,
+      evidence: "conversation-observed",
+      instance: null,
+    })
+    expect(observe(agy, nested, facts)).toBeUndefined()
   })
 
   it("refuses a switch announced by another process of the bound harness", () => {
