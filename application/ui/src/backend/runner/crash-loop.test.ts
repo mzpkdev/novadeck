@@ -7,7 +7,7 @@ import { createWorkspaceStore } from "../../model/store"
 import { describe, expect, it } from "../../test"
 import type { BackendAction } from "../port"
 import { runnerBackend, type RunnerApi } from "./backend"
-import { keptSummary } from "./scripted"
+import { keptSummary, noCompanions } from "./scripted"
 import { startingTerminal, type RunnerListing } from "./seed"
 import { encodeSession } from "./session-state"
 
@@ -63,7 +63,7 @@ const crashingRunner = () => {
   }
   const api = {
     watch: statuses,
-    projects: { list: unused, create: unused, rename: unused },
+    projects: { list: unused, create: unused, rename: unused, remove: unused },
     sessions: { list: unused, create: unused, rename: unused, save: async () => {} },
     terminals: {
       list: unused,
@@ -74,6 +74,7 @@ const crashingRunner = () => {
       close: async () => {},
       attach: () => Promise.reject(new RunnerError("DISCONNECTED")),
     },
+    companions: noCompanions,
   } as unknown as RunnerApi satisfies Pick<Runner, "watch">
   return {
     api,

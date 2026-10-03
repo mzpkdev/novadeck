@@ -8,6 +8,7 @@ import type { Workspace } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import type { BackendAction } from "../port"
 import { runnerBackend, type RunnerApi } from "./backend"
+import { noCompanions } from "./scripted"
 import { startingTerminal, type RunnerListing } from "./seed"
 import { encodeSession } from "./session-state"
 import { startTestRunner } from "./testing"
@@ -70,7 +71,7 @@ const scripted = (reported: TerminalSummary, lastProgram = "") => {
   const restarts: ((summary: TerminalSummary) => void)[] = []
   const api = {
     watch: () => statuses.iterator,
-    projects: { list: unused, create: unused, rename: unused },
+    projects: { list: unused, create: unused, rename: unused, remove: unused },
     sessions: { list: unused, create: unused, rename: unused, save: async () => {} },
     terminals: {
       list: unused,
@@ -82,6 +83,7 @@ const scripted = (reported: TerminalSummary, lastProgram = "") => {
       restart: () => new Promise<TerminalSummary>((resolve) => restarts.push(resolve)),
       attach: () => new Promise(() => {}),
     },
+    companions: noCompanions,
   } as unknown as RunnerApi
   const session = {
     id: "s",
