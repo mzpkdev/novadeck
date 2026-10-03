@@ -2,8 +2,7 @@
    link home), the footer (`.app-footer`, its `.footer-running` count, `.footer-status`
    and `.footer-action`), the rail of sidebar toggles (`.sidebar-tools`) and the sidebar
    (`.sidebar`), which on narrow screens opens as a `.sidebar-drawer`. Each region is a
-   ground with an edge toward the workspace. A `kbd.hint` is a shortcut set quietly
-   inside a control, as on the header's search and the sidebar's create buttons.
+   ground with an edge toward the workspace.
 
    The rail's toggles are segments (the segmented recipe). Hooks: on the footer,
    data-tone="success" | "warning" | "danger" while the backend link is in trouble or
@@ -19,8 +18,7 @@
    the rail.
    --region-sidebar-bg (shell), --region-sidebar-fg (ink),
    --region-sidebar-border-color (line): the sidebar.
-   --region-sidebar-shadow (shadow-panel): the sidebar as a drawer.
-   --kbd-hint-fg (muted), --kbd-hint-opacity (0.7): a hint's key. */
+   --region-sidebar-shadow (shadow-panel): the sidebar as a drawer. */
 .app-header {
   --_bg: var(--region-header-bg, var(--color-paper));
   --_fg: var(--region-header-fg, var(--color-ink));
@@ -96,14 +94,4 @@
   background-color: var(--region-sidebar-bg, var(--color-shell));
   color: var(--region-sidebar-fg, var(--color-ink));
   box-shadow: var(--region-sidebar-shadow, var(--shadow-panel));
-}
-
-kbd.hint {
-  --_bg: transparent;
-  --_fg: var(--kbd-hint-fg, var(--color-muted));
-  min-height: 0;
-  padding: 0;
-  border-width: 0;
-  box-shadow: none;
-  opacity: var(--kbd-hint-opacity, 0.7);
 }
