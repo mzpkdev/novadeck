@@ -1,3 +1,5 @@
+// @vitest-environment node -- esbuild, which compiles the scripts, needs Node's own TextEncoder
+
 // The theming contract in docs/theming.md, checked against the source.
 //
 // Themes: every theme in `themes.ts` has a file in `themes/`, imported into
@@ -11,7 +13,7 @@
 // exception the source no longer needs fails the check until it leaves both lists. A
 // failure names the rule, the file and what breaks it, and says how to fix it.
 //
-// (a) TSX arranges, recipes draw. Every string literal in the UI's .ts and .tsx
+// (a) TSX arranges, recipes draw. Every class string in the UI's .ts and .tsx
 //     source is split into class tokens; a token whose utility (after its variants,
 //     `!` and `-`) begins with a Tailwind utility root must match `layoutUtilities`.
 //     Allowed: display, flex and grid, gap, margin, padding, position and inset,
@@ -25,14 +27,15 @@
 //     (`font-mono`), letter spacing, text transform and decoration, and motion
 //     (`transition*`, `duration-*`, `ease-*`, `animate-*`). An arbitrary property
 //     (`[overflow-wrap:anywhere]`) follows the same split by its property name. Class
-//     strings are those in a `className`, a `cn()` call, a constant named `…Class`,
-//     `…Classes` or `…ClassName`, and `setAttribute("class", …)`.
+//     strings are found in each script's syntax tree; see `classStrings`. `@apply` in
+//     a stylesheet follows the same split.
 // (b) No colour literals in CSS outside theme files: hex, colour functions (`rgb()`,
 //     `hsl()`, `oklch()`, …), named colours, Tailwind palette colours in `@apply`, and
-//     system colours outside `accessibility.css`. `transparent`, `currentColor` and
+//     system colours, in any case, outside `accessibility.css`. `transparent`, `currentColor` and
 //     `color-mix()` over tokens are fine.
-// (c) No `!important` (or an `@apply` important modifier), except where
-//     `importantExceptions` says why: it turns the layer order around.
+// (c) No `!important` (or an `@apply` important modifier, after any variants), except
+//     the declarations `importantExceptions` lists and says why: it turns the layer
+//     order around.
 // (d) Every stylesheet is layered. Each `@import` in `styles.css` carries `layer(…)`,
 //     except Tailwind itself and `theme/contract.css`, which hold only what Tailwind
 //     layers. Any other CSS file is imported from `styles.css` into a layer or wraps
@@ -42,6 +45,8 @@
 
 import { readdirSync, readFileSync } from "node:fs"
 import { join, posix } from "node:path"
+
+import { parseAst, transformWithEsbuild } from "vite"
 
 import { describe, expect, it } from "../test"
 import { themes } from "./themes"
@@ -232,81 +237,156 @@ describe("theme contract", () => {
 
 // ---- (a) TSX arranges, recipes draw.
 
-// Each string and template-literal text in a script, with the code just before it;
-// strings end at a line break, so an apostrophe in JSX text cannot swallow the code
-// after it.
-type Literal = {
-  readonly text: string
-  readonly before: string
-  readonly previous: string | undefined
+// Class strings are found in the script's syntax tree, after esbuild has compiled its
+// TypeScript and JSX away (a `className` attribute becomes a `className` property). A
+// class context is the value of a `className`, `…ClassName`, `…Class` or `…Classes`
+// property, constant, function or assignment, the arguments of `cn()`, `clsx()` and
+// `classList.add()`, `.toggle()` or `.replace()`, and the value of
+// `setAttribute("class", …)`. Every string inside one counts, at any depth: in a
+// ternary, an arrow, an array, a template's `${…}` or a clsx object's keys. A name the
+// context reads that the file declares, such as a lookup map in
+// `className={tones[tone]}` or a helper it calls, is a class context too. Strings that
+// are only compared (`kind === "x"`), indexed by or matched in a `case` are not.
+type Node = { readonly type: string; readonly [key: string]: unknown }
+
+const isNode = (value: unknown): value is Node =>
+  typeof value === "object" && value !== null && typeof (value as Node).type === "string"
+
+const children = (node: Node): Node[] =>
+  Object.values(node).flatMap((value) =>
+    Array.isArray(value) ? value.filter(isNode) : isNode(value) ? [value] : [],
+  )
+
+const nameOf = (node: unknown): string | undefined => {
+  if (!isNode(node)) return undefined
+  if (node.type === "Identifier") return node.name as string
+  return node.type === "Literal" && typeof node.value === "string" ? node.value : undefined
 }
 
-const literals = (code: string): Literal[] => {
-  const found: Literal[] = []
-  let plain = ""
-  const take = (text: string): void => {
-    found.push({ text, before: plain.slice(-120), previous: found.at(-1)?.text })
+const classNamed = (node: unknown): boolean =>
+  /^(class|classes|className)$|(Class|Classes|ClassName)$/.test(nameOf(node) ?? "")
+
+const comparison = new Set(["===", "!==", "==", "!="])
+
+// The parts of a node that hold class strings because of what the node is.
+const classParts = (node: Node): Node[] => {
+  const parts = (...values: unknown[]): Node[] => values.filter(isNode)
+  switch (node.type) {
+    case "Property":
+    case "PropertyDefinition":
+      return !node.computed && classNamed(node.key) ? parts(node.value) : []
+    case "VariableDeclarator":
+      return classNamed(node.id) ? parts(node.init) : []
+    case "FunctionDeclaration":
+      return classNamed(node.id) ? parts(node.body) : []
+    case "AssignmentExpression": {
+      const target = node.left as Node
+      return target.type === "MemberExpression" && !target.computed && classNamed(target.property)
+        ? parts(node.right)
+        : []
+    }
+    case "CallExpression": {
+      const callee = node.callee as Node
+      const args = node.arguments as Node[]
+      if (callee.type === "Identifier") return /^(cn|clsx)$/.test(nameOf(callee)!) ? args : []
+      if (callee.type !== "MemberExpression" || callee.computed) return []
+      const method = nameOf(callee.property)
+      if (method === "setAttribute") return nameOf(args[0]) === "class" ? parts(args[1]) : []
+      const owner = callee.object as Node
+      return /^(add|toggle|replace)$/.test(method ?? "") &&
+        owner.type === "MemberExpression" &&
+        nameOf(owner.property) === "classList"
+        ? args
+        : []
+    }
+    default:
+      return []
   }
-  for (let index = 0; index < code.length; index++) {
-    const char = code[index]!
-    const next = code[index + 1]
-    if (char === "/" && next === "/") {
-      index = code.indexOf("\n", index)
-      if (index < 0) break
-    } else if (char === "/" && next === "*") {
-      index = code.indexOf("*/", index + 2) + 1
-      if (index <= 0) break
-    } else if (char === '"' || char === "'") {
-      let end = index + 1
-      while (end < code.length && code[end] !== char && code[end] !== "\n") {
-        if (code[end] === "\\") end++
-        end++
-      }
-      take(code.slice(index + 1, end))
-      plain += " "
-      index = end
-    } else if (char === "`") {
-      let end = index + 1
-      let text = ""
-      while (end < code.length && code[end] !== "`") {
-        if (code[end] === "\\") {
-          text += code.slice(end, end + 2)
-          end += 2
-        } else if (code[end] === "$" && code[end + 1] === "{") {
-          let depth = 1
-          end += 2
-          while (end < code.length && depth > 0) {
-            if (code[end] === "{") depth++
-            else if (code[end] === "}") depth--
-            end++
-          }
-          text += " "
-        } else text += code[end++]
-      }
-      take(text)
-      plain += " "
-      index = end
-    } else plain += char
+}
+
+// The strings in a class context, by the node that holds each, and the names it reads.
+const contents = (
+  node: Node,
+  strings: Map<Node, string> = new Map(),
+  names: Set<string> = new Set(),
+): { readonly strings: Map<Node, string>; readonly names: Set<string> } => {
+  if (node.type === "Literal") {
+    if (typeof node.value === "string") strings.set(node, node.value)
+  } else if (node.type === "TemplateLiteral") {
+    strings.set(
+      node,
+      (node.quasis as Node[]).map((quasi) => (quasi.value as { cooked: string }).cooked).join(" "),
+    )
+    for (const expression of node.expressions as Node[]) contents(expression, strings, names)
+  } else if (node.type === "Identifier") {
+    names.add(node.name as string)
+  } else if (node.type === "BinaryExpression" && comparison.has(node.operator as string)) {
+    // A comparison's strings are compared, not used as classes.
+  } else if (node.type === "MemberExpression") {
+    contents(node.object as Node, strings, names)
+    if (node.computed && (node.property as Node).type !== "Literal")
+      contents(node.property as Node, strings, names)
+  } else if (
+    node.type === "Property" &&
+    !node.computed &&
+    (node.key as Node).type === "Identifier"
+  ) {
+    contents(node.value as Node, strings, names)
+  } else if (node.type === "SwitchCase") {
+    for (const statement of node.consequent as Node[]) contents(statement, strings, names)
+  } else {
+    for (const child of children(node)) contents(child, strings, names)
   }
+  return { strings, names }
+}
+
+// What the file declares by name: constants and functions.
+const declaredNames = (program: Node): Map<string, Node[]> => {
+  const found = new Map<string, Node[]>()
+  const visit = (node: Node): void => {
+    const declared =
+      node.type === "VariableDeclarator"
+        ? [nameOf(node.id), node.init]
+        : node.type === "FunctionDeclaration"
+          ? [nameOf(node.id), node.body]
+          : []
+    const [name, value] = declared
+    if (typeof name === "string" && isNode(value))
+      found.set(name, [...(found.get(name) ?? []), value])
+    children(node).forEach(visit)
+  }
+  visit(program)
   return found
 }
 
-// A class string is a literal in a `className` attribute or `…ClassName` prop, in a
-// constant named `…Class`, `…Classes` or `…ClassName`, in an open `cn()` call, or the
-// value of `setAttribute("class", …)`.
-const classContext = ({ before, previous }: Literal): boolean => {
-  if (previous === "class" && /setAttribute\(\s*,\s*$/.test(before)) return true
-  // Up to the end of the attribute or statement, and before the next JSX attribute.
-  if (/(className|ClassName|Classes|Class)\s*[=:](?:(?![;>}])(?!\s[\w-]+=)[\s\S])*$/.test(before))
-    return true
-  const call = before.lastIndexOf("cn(")
-  if (call < 0) return false
-  const rest = before.slice(call)
-  return rest.split("(").length > rest.split(")").length
+// Every class string in a script's compiled code.
+const classStrings = (code: string): string[] => {
+  const program = parseAst(code) as unknown as Node
+  const declared = declaredNames(program)
+  const queue: Node[] = []
+  const collect = (node: Node): void => {
+    queue.push(...classParts(node))
+    children(node).forEach(collect)
+  }
+  collect(program)
+  const seen = new Set<Node>()
+  // Contexts nest, as a `cn()` call in a `className` does: each string counts once.
+  const found = new Map<Node, string>()
+  while (queue.length > 0) {
+    const context = queue.pop()!
+    if (seen.has(context)) continue
+    seen.add(context)
+    const { names } = contents(context, found)
+    for (const name of names) queue.push(...(declared.get(name) ?? []))
+  }
+  return [...found.values()]
 }
 
-// The utility a class token names: without its variants, `!` and a leading `-`.
-const utilityOf = (token: string): string => {
+const compiled = async (file: string, code: string): Promise<string> =>
+  (await transformWithEsbuild(code, file, { jsx: "automatic" })).code
+
+// A class token without its variants (`hover:`, `data-[state=open]:`).
+const withoutVariants = (token: string): string => {
   let depth = 0
   let start = 0
   for (let index = 0; index < token.length; index++) {
@@ -315,11 +395,17 @@ const utilityOf = (token: string): string => {
     else if (char === "]" || char === ")") depth--
     else if (char === ":" && depth === 0) start = index + 1
   }
-  return token
-    .slice(start)
+  return token.slice(start)
+}
+
+// Whether a class token carries Tailwind's important modifier (`!p-2`, `hover:p-2!`).
+const importantUtility = (token: string): boolean => /^!|!$/.test(withoutVariants(token))
+
+// The utility a class token names: without its variants, `!` and a leading `-`.
+const utilityOf = (token: string): string =>
+  withoutVariants(token)
     .replace(/^!|!$/g, "")
     .replace(/^-(?=[a-z])/, "")
-}
 
 // Tailwind utilities that take a value (`p-2`, `bg-paper`, `rounded-[1px]`) by their
 // prefix, and those that stand alone (`flex`, `border`). A token is checked only when
@@ -400,14 +486,24 @@ const lookUtilities = (text: string): string[] =>
     return layoutUtilities.some((pattern) => pattern.test(utility)) ? [] : [token]
   })
 
-const classLooks = (file: string): string[] =>
-  literals(read(file))
-    .filter(classContext)
-    .flatMap(({ text }) => lookUtilities(text))
+// The look utilities in a script's class strings.
+const classLooks = async (file: string, code: string): Promise<string[]> =>
+  classStrings(await compiled(file, code)).flatMap(lookUtilities)
 
 const tsxLooks: Rule = {
   broken: "draws with Tailwind utilities",
   fix: "TSX may only arrange: move the look into the component's recipe, as a token-driven rule (docs/theming.md, Rules for components).",
+}
+
+// The look utilities a stylesheet's `@apply` names, by the same split as the TSX.
+const applyLooks = (file: string, css = read(file)): string[] =>
+  statements(uncomment(css)).flatMap(({ text }) =>
+    text.startsWith("@apply") ? text.split(/\s+/).slice(1).flatMap(lookUtilities) : [],
+  )
+
+const appliedLooks: Rule = {
+  broken: "applies Tailwind utilities that draw",
+  fix: "A recipe may @apply only layout utilities: write the look as a declaration that reads a token (docs/theming.md, Layers).",
 }
 
 // ---- (b) No colour literals outside theme files.
@@ -441,14 +537,14 @@ const systemColours = (
 const word = (names: readonly string[], flags: string): RegExp =>
   new RegExp(`(?<![\\w-])(${names.join("|")})(?![\\w-])`, flags)
 const namedColour = word(namedColours, "gi")
-const systemColour = word(systemColours, "g")
+const systemColour = word(systemColours, "gi")
 const colourFunction = /(?<![\w-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/gi
 const hexColour = /#[0-9a-f]{3,8}(?![\w-])/gi
 const paletteColour =
   /^(bg|text|border(-[xytrblse])?|ring|outline|fill|stroke|from|via|to|divide|shadow|decoration|accent|caret|placeholder)-(white|black|(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d+)(\/.+)?$/
 
-const colourLiterals = (file: string): string[] =>
-  statements(uncomment(read(file))).flatMap(({ text }) => {
+const colourLiterals = (file: string, css = read(file)): string[] =>
+  statements(uncomment(css)).flatMap(({ text }) => {
     if (text.startsWith("@apply"))
       return text
         .split(/\s+/)
@@ -473,36 +569,62 @@ const colours: Rule = {
   fix: "Read a foundation or component token instead, mixing tokens with color-mix() where a shade is needed (docs/theming.md, A recipe reads only tokens).",
 }
 
-// ---- (c) No `!important` outside theme/base.css.
+// ---- (c) No `!important` outside its listed exceptions.
 
-const importantDeclarations = (file: string): string[] =>
-  statements(uncomment(read(file))).flatMap(({ text }) =>
-    /!\s*important/i.test(text) ||
-    (text.startsWith("@apply") && text.split(/\s+/).some((token) => /^!|!$/.test(token)))
-      ? [text.replace(/\s+/g, " ").slice(0, 60)]
-      : [],
-  )
+// Each `!important` in a stylesheet, as the rule's selector and the property, or the
+// utility `@apply` marks important.
+const importantDeclarations = (file: string, css = read(file)): string[] =>
+  statements(uncomment(css)).flatMap(({ block, text }) => {
+    const rule = block.replace(/\s+/g, " ")
+    if (text.startsWith("@apply"))
+      return text
+        .split(/\s+/)
+        .slice(1)
+        .filter(importantUtility)
+        .map((token) => `${rule} { @apply ${token} }`)
+    const colon = text.indexOf(":")
+    return colon > 0 && /!\s*important/i.test(text)
+      ? [`${rule} { ${text.slice(0, colon).trim()} }`]
+      : []
+  })
 
-// Where `!important` stays, and why. Each one beats a style no layer can: an inline
-// style or one a library sets. docs/theming.md lists the same files under Exceptions.
-const importantExceptions: readonly { readonly file: string; readonly reason: string }[] = [
+// Where `!important` stays, and why: the exact declarations, so a new one in the same
+// file fails too. Each one beats a style no layer can: an inline style or one a library
+// sets. docs/theming.md lists the same files under Exceptions.
+const importantExceptions: readonly {
+  readonly file: string
+  readonly reason: string
+  readonly declarations: readonly string[]
+}[] = [
   {
     file: "theme/base.css",
     reason: "stills every transition, inline ones too, for the frame the theme changes",
+    declarations: [
+      "[data-theme-switching] *, [data-theme-switching] *::before, [data-theme-switching] *::after { transition }",
+    ],
   },
   {
     file: "theme/accessibility.css",
     reason: "reduced motion beats transitions libraries set inline or with !important",
+    declarations: [
+      "*, *::before, *::after { scroll-behavior }",
+      "*, *::before, *::after { transition }",
+      "*, *::before, *::after { animation }",
+    ],
   },
   {
     file: "backend/runner/runner.css",
     reason: "xterm sets its scrollbar slider's position and width inline",
+    declarations: [
+      ".runner-terminal .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { left }",
+      ".runner-terminal .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { width }",
+    ],
   },
 ]
 
 const important: Rule = {
   broken: "uses !important",
-  fix: "It turns the layer order around: raise the selector's specificity or put the rule in a later layer. Only a style set inline, which nothing else beats, may need it: then add the file to importantExceptions with its reason, and to docs/theming.md's Exceptions.",
+  fix: "It turns the layer order around: raise the selector's specificity or put the rule in a later layer. Only a style set inline, which nothing else beats, may need it: then add the declaration to importantExceptions with its reason, and the file to docs/theming.md's Exceptions.",
 }
 
 // ---- (d) Every stylesheet is layered.
@@ -575,9 +697,18 @@ const unlayeredStylesheets = (): Map<string, string[]> =>
   ])
 
 describe("theme rules", () => {
-  it("keeps visual utilities out of TSX class strings", () => {
-    const found = byFile(scripts.map((file) => [file, classLooks(file)] as const))
+  it("keeps visual utilities out of TSX class strings", async () => {
+    const found = byFile(
+      await Promise.all(
+        scripts.map(async (file) => [file, await classLooks(file, read(file))] as const),
+      ),
+    )
     expect(report(tsxLooks, found)).toEqual([])
+  })
+
+  it("keeps visual utilities out of @apply", () => {
+    const found = byFile(stylesheets.map((file) => [file, applyLooks(file)] as const))
+    expect(report(appliedLooks, found)).toEqual([])
   })
 
   it("keeps colour literals in theme files", () => {
@@ -590,18 +721,24 @@ describe("theme rules", () => {
   })
 
   it("keeps !important to its listed exceptions", () => {
-    const excepted = new Set(importantExceptions.map(({ file }) => file))
-    const found = byFile(stylesheets.map((file) => [file, importantDeclarations(file)] as const))
-    expect(report(important, new Map([...found].filter(([file]) => !excepted.has(file))))).toEqual(
-      [],
+    const excepted = new Map(importantExceptions.map((entry) => [entry.file, entry]))
+    const found = new Map(stylesheets.map((file) => [file, importantDeclarations(file)] as const))
+    const unlisted = byFile(
+      [...found].map(([file, used]) => {
+        const listed = excepted.get(file)?.declarations ?? []
+        return [file, used.filter((declaration) => !listed.includes(declaration))] as const
+      }),
     )
+    expect(report(important, unlisted)).toEqual([])
     expect(
-      importantExceptions
-        .filter(({ file }) => !found.has(file))
-        .map(
-          ({ file, reason }) =>
-            `${file} no longer uses !important (${reason}): remove it from importantExceptions and from docs/theming.md's Exceptions`,
-        ),
+      importantExceptions.flatMap(({ file, reason, declarations: listed }) =>
+        listed
+          .filter((declaration) => !found.get(file)?.includes(declaration))
+          .map(
+            (declaration) =>
+              `${file} no longer uses !important in ${declaration} (${reason}): remove it from importantExceptions, and the file from docs/theming.md's Exceptions once it has none`,
+          ),
+      ),
     ).toEqual([])
   })
 
@@ -617,5 +754,90 @@ describe("theme rules", () => {
 
   it("puts every stylesheet in a layer", () => {
     expect(report(layers, unlayeredStylesheets())).toEqual([])
+  })
+})
+
+// The checks themselves, against code that breaks the rules, so a blind spot fails here
+// rather than letting the source drift.
+describe("theme rule checks", () => {
+  describe("class strings", () => {
+    it.each([
+      ["a className", '<div data-x="1" className="flex bg-paper" />'],
+      [
+        "a template's ternary",
+        'const X = (on: boolean) => <i className={`row ${on ? "bg-paper" : ""}`} />',
+      ],
+      [
+        "an arrow in a condition",
+        'const X = (all: { on: boolean }[]) => <i className={all.some((one) => one.on) ? "bg-paper" : ""} />',
+      ],
+      [
+        "a multiline ternary",
+        'const X = (on: boolean) => (\n  <i\n    className={\n      on\n        ? "bg-paper"\n        : "flex"\n    }\n  />\n)',
+      ],
+      [
+        "a helper named for classes",
+        'export const itemClass = (on: boolean) => (on ? "bg-paper" : "")',
+      ],
+      [
+        "a lookup map the className reads",
+        'const tones = { danger: "bg-paper", ok: "flex" }\nconst X = (tone: "danger" | "ok") => <i className={tones[tone]} />',
+      ],
+      [
+        "a helper the className calls",
+        'function look(on: boolean) { return on ? "bg-paper" : "" }\nconst X = (on: boolean) => <i className={look(on)} />',
+      ],
+      [
+        "a clsx object's keys",
+        'const X = (on: boolean) => <i className={clsx({ "bg-paper": on })} />',
+      ],
+      [
+        "an array joined",
+        'const X = (on: boolean) => <i className={["flex", on && "bg-paper"].join(" ")} />',
+      ],
+      ["a cn() call", 'const X = (on: boolean) => <i className={cn("flex", on && "bg-paper")} />'],
+      ["a ClassName prop", '<Popover contentClassName="flex bg-paper" />'],
+      ["classList.add()", 'document.body.classList.add("flex", "bg-paper")'],
+      ["classList.toggle()", 'document.body.classList.toggle("bg-paper", true)'],
+      ['setAttribute("class", …)', 'document.body.setAttribute("class", `flex ${"bg-paper"}`)'],
+      ["a className assignment", 'document.body.className = "bg-paper"'],
+    ])("sees a look in %s", async (_, code) => {
+      expect(await classLooks("example.tsx", code)).toEqual(["bg-paper"])
+    })
+
+    it("ignores strings that are compared, indexed by or matched", async () => {
+      const code = [
+        "const X = (kind: string, tones: Record<string, string>) => (",
+        '  <i className={kind === "shadow" ? tones["border"] : "flex"} />',
+        ")",
+        'const toneClass = (kind: string) => { switch (kind) { case "border": return "flex"; default: return "" } }',
+      ].join("\n")
+      expect(await classLooks("example.tsx", code)).toEqual([])
+    })
+  })
+
+  it("sees a look in @apply", () => {
+    expect(
+      applyLooks(
+        "example.css",
+        ".x { @apply flex border opacity-50 uppercase rounded-[3px] bg-[#f00]; }",
+      ),
+    ).toEqual(["border", "opacity-50", "uppercase", "rounded-[3px]", "bg-[#f00]"])
+  })
+
+  it("sees system colours in any case", () => {
+    expect(colourLiterals("example.css", ".x { background: canvas; color: CanvasText; }")).toEqual([
+      "canvas",
+      "CanvasText",
+    ])
+  })
+
+  it("sees !important in a declaration and after a utility's variants", () => {
+    expect(
+      importantDeclarations(
+        "example.css",
+        ".x { color: var(--color-ink) !important; @apply flex hover:!p-2 data-[a=b]:p-1!; }",
+      ),
+    ).toEqual([".x { color }", ".x { @apply hover:!p-2 }", ".x { @apply data-[a=b]:p-1! }"])
   })
 })

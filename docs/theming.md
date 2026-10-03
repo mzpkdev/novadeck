@@ -207,11 +207,12 @@ selected, the DOM says so in an attribute.
   and 1, outline, fill, stroke, filters and backdrop filters, font family, letter
   spacing, text transform and decoration, motion (transitions, durations, easing,
   animations), and the component's own geometry, such as a control's height or a
-  row's padding. `theme/contract.test.ts` checks class strings (in a `className`, a
-  `cn()` call, a constant named `…Classes` or `…ClassName`, or `setAttribute("class",
-…)`) against an allowlist of
-  utility prefixes; it can't tell a component's own geometry from layout, so that part
-  is for review.
+  row's padding. `theme/contract.test.ts` checks every string in a class context, at
+  any depth (a `className` or `…ClassName`, a `cn()` or `clsx()` call, `classList.add`,
+  `toggle` or `replace`, `setAttribute("class", …)`, a constant or function named
+  `…Class`, `…Classes` or `…ClassName`, and a lookup map or helper the context reads),
+  and every `@apply`, against an allowlist of layout utilities; it can't tell a
+  component's own geometry from layout, so that part is for review.
 - **A recipe reads only tokens.** No hex, `rgb()` or named colours outside theme
   files; the contract test enforces it. Every `var()` a recipe reads either has a
   fallback or names a foundation token, a private value, or a variable Ark UI sets
@@ -236,7 +237,8 @@ var(--terminal-bg)` read back with `getComputedStyle`), because a token can hold
 
 A few rules break the contract on purpose, each because it must beat a style no layer
 can: one set inline, by the app or a library. `theme/contract.test.ts` keeps the same
-list and fails when one is no longer needed.
+list, pinned to the exact declarations, so a new `!important` in a listed file fails
+too, and fails when one is no longer needed.
 
 - `theme/base.css` uses `!important` in the rule that stills every transition, inline
   ones too, for the frame the theme changes.
