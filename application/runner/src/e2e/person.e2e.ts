@@ -248,6 +248,47 @@ for (const setup of setups) {
       expect(carried(run, calls)).toEqual([prompt])
     })
 
+    it("takes a cursor key at an empty prompt as the person's input, never ringing what it opened", async ({
+      e2e: run,
+    }) => {
+      // No caret moves in an empty box, so what Home does there is the harness's own, as
+      // Claude Code's Left opens its agents view, whose field would take the ring's line
+      // and its Enter start a new session with it ("What counts"). That view's session
+      // outlives the deck, so the person presses Home here: the same rule.
+      run.model.use(
+        replies("Warm up", "Warmed up."),
+        sends("Tell t1 the news", "t1", "The build is green."),
+        own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+        replies("What's new?", "The build is green, I hear."),
+      )
+      const t1 = await start(run, setup)
+      const t2 = await start(run, setup)
+      await turn(t1, "Warm up", "Warmed up.")
+      const calls = run.model.mark()
+      const mark = t1.mark()
+
+      // The person presses Home at t1's empty prompt, Settled: a draft.
+      t1.press("\x1b[H")
+      const drafting = await t1.reached("drafting", { after: mark })
+
+      // A message comes for t1: it waits, and t1 is never rung.
+      await message(t2, t1, "Tell t1 the news")
+      await unrungFor(t1, "t2", drafting.index)
+
+      // Their next prompt, which Home put nothing in front of, carries it.
+      await t1.submit("What's new?")
+      const prompt = await run.model.waitFor((call) => holding(call, "What's new?"), {
+        after: calls,
+      })
+      expect(deliveries(prompt)).toEqual([{ from: "t2", text: "The build is green." }])
+      await t1.until("The build is green, I hear.")
+      await through(t1, ["working", holds("t2", "t1", "delivered"), "settled"], {
+        after: drafting.index,
+      })
+      expect(carried(run, calls)).toEqual([prompt])
+      expect(states(t1, mark)).not.toContain("ringing")
+    })
+
     it("takes what the person types while the agent starts as a draft, and never rings it", async ({
       e2e: run,
     }) => {

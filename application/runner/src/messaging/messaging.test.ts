@@ -1847,7 +1847,8 @@ describe("the person's submissions", () => {
       follow("C", bound)
       prompt("C", bound, "harness")
       stop("C", bound)
-      messaging.keys("C", claudeKeys("\u001b\u001b[D"), false)
+      // Escape stays neutral at an empty prompt; Left there would draft already.
+      messaging.keys("C", claudeKeys("\u001b"), false)
       expect(messaging.delivery("C")?.state).toBe("settled")
       messaging.keys("C", claudeKeys(input), false)
       expect(messaging.delivery("C")?.state).toBe("drafting")
@@ -2309,8 +2310,14 @@ describe("an agent's prompt shown before any session binds", () => {
     return { ...setup, launched: binding(agent, `s-${agent}-new`, "3") }
   }
 
-  it("keeps a new Codex prompt ringable after Escape, Left, Home or End", () => {
-    for (const input of ["\u001b", "\u001b[D", "\u001b[H", "\u001b[F"]) {
+  it("keeps a new Codex prompt ringable after Escape, but not after Left, Home or End", () => {
+    // In an empty box no caret moves: what those do is the harness's own, so they draft.
+    for (const [input, ringable] of [
+      ["\u001b", true],
+      ["\u001b[D", false],
+      ["\u001b[H", false],
+      ["\u001b[F", false],
+    ] as const) {
       const { messaging, send } = plain("codex")
       messaging.shown("N", "codex", "01a0f932-a824")
       messaging.keys(
@@ -2320,10 +2327,10 @@ describe("an agent's prompt shown before any session binds", () => {
       )
       expect(sent(send("A", "t3", "Review a.ts"))).toMatchObject({
         state: "queued",
-        route: "ringing it now",
+        route: ringable ? "ringing it now" : "when the person next submits a prompt there",
       })
-      expect(messaging.ringable("N")).toBe(true)
-      expect(messaging.ring("N", "n1")).toBe(true)
+      expect(messaging.ringable("N")).toBe(ringable)
+      expect(messaging.ring("N", "n1")).toBe(ringable)
     }
   })
 

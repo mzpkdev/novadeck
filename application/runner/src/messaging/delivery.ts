@@ -126,7 +126,8 @@ export const submitWindowMs = 2_000
 
 /**
  * A key the person sent, as `terminals/keys.ts` tells it: a bare Enter, a harness's queue
- * key, one that never changes the box (Left, Home, End), Escape, which never changes it
+ * key, one that never changes a draft (Left, Home, End: input only on a box known empty,
+ * where no caret moves and what it does is the harness's own), Escape, which never changes it
  * either but may interrupt the agent's turn, one that may take a prompt suggestion into
  * an empty box, though never in a request's dialog (Right, Tab), or content.
  */
@@ -322,7 +323,13 @@ const atPrompt = (delivery: Delivery, at: number): Delivery => {
 
 /** The delivery after an event; the same delivery when it changes nothing. */
 export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery => {
-  if (event.type === "key" && event.key === "neutral") return delivery
+  // Left, Home and End move a caret, which a box known empty doesn't have: there, outside
+  // a request's dialog, what they do is the harness's own (Claude Code's Left opens its
+  // agents view, whose field would take a ring's line and its Enter), so they are input.
+  if (event.type === "key" && event.key === "neutral") {
+    const empty = delivery.box.empty && delivery.state !== "unbound" && !event.asked
+    return empty ? keyed(delivery, false, event.at) : delivery
+  }
   // The person's Escape may interrupt a root turn, which no hook may tell (Claude Code's
   // before its first reply, which puts the prompt back in its box): Unknown, the box a
   // draft, keeping the counts and any queued prompt for the Stop that comes if it ended

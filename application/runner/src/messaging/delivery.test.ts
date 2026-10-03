@@ -58,17 +58,35 @@ const drafting = run(settled, typing)
 const unknown = run(working, ended)
 
 describe("a terminal's delivery state", () => {
-  it("keeps neutral keys from changing readiness, drafts or pending submissions", () => {
+  it("keeps neutral keys from changing drafts, rings, requests or pending submissions", () => {
     const ready = transition(unbound, announced)
     const ringing = transition(ready, { type: "ring", nonce: "k3f9", opening: false })
-    for (const from of [unbound, bound, ready, working, settled, drafting, unknown, ringing]) {
+    // A box not known empty: no session, a draft, a ring's line in it.
+    for (const from of [unbound, drafting, ringing])
       expect(transition(from, key("neutral"))).toBe(from)
+    for (const from of [unbound, bound, ready, working, settled, drafting, unknown, ringing])
       expect(transition(from, key("neutral", at, true))).toBe(from)
-    }
     // Moving the cursor after Enter does not invalidate its pending submission.
     expect(run(settled, enter, key("neutral"), prompted()).byPerson).toBe(true)
-    // Navigating during a turn leaves its empty prompt ready for a message after Stop.
-    expect(run(working, key("neutral"), stop).state).toBe("settled")
+  })
+
+  it("takes Left, Home or End on a box known empty as the person's input, as only the harness's own view can take it", () => {
+    // Claude Code 2.1.287's Left at an empty prompt opens its agents view, whose field a
+    // ring's line would land in and its Enter start a new session with.
+    const ready = transition(unbound, announced)
+    expect(transition(ready, key("neutral")).state).toBe("drafting")
+    expect(transition(settled, key("neutral")).state).toBe("drafting")
+    expect(ringableSince(transition(settled, key("neutral")))).toBeUndefined()
+    // During a turn too, its Stop then leaves a draft.
+    expect(run(working, key("neutral"), stop).state).toBe("drafting")
+    expect(run(bound, key("neutral"), harness, stop).state).toBe("drafting")
+    // In a request's dialog it moves there, leaving the box as it was.
+    expect(transition(settled, key("neutral", at, true))).toBe(settled)
+    expect(run(working, key("neutral", at, true), { type: "asked-cleared" }, stop).state).toBe(
+      "settled",
+    )
+    // Escape stays neutral: what Esc-Esc opens, the ring's test paste is left to judge.
+    expect(transition(settled, key("escape"))).toBe(settled)
   })
 
   it("is Drafting after Right or Tab, which may take a prompt suggestion into the box", () => {
