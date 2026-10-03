@@ -293,7 +293,13 @@ type Record = {
    */
   held: {
     readonly input: string[]
-    size: { readonly cols: number; readonly rows: number; readonly owner: string } | null
+    size: {
+      readonly cols: number
+      readonly rows: number
+      readonly owner: string
+      /** The owner's attachment that asked, as a window showing it anew attaches again. */
+      readonly attachment: Subscription | undefined
+    } | null
   } | null
   /** When its window was last resized, in epoch milliseconds; 0 before any resize. */
   resizedAt: number
@@ -1015,11 +1021,17 @@ export class Terminals {
           record.held = null
           if (live(terminalId) !== record) return
           if (held.input.length > 0) record.process.write(held.input.join(""))
-          // Only for the window still in control: another that took over meanwhile was
-          // told the size in force and asks for its own.
-          if (!held.size || record.controller !== held.size.owner) return
+          // Only for the attachment still in control: one that took over meanwhile, or
+          // the same window attached anew, was told the size in force and asks its own.
+          const { size } = held
+          if (
+            !size ||
+            record.controller !== size.owner ||
+            record.subscribers.get(size.owner) !== size.attachment
+          )
+            return
           try {
-            this.applySize(record, held.size)
+            this.applySize(record, size)
           } catch {
             // A shell that exited meanwhile takes no size; its exit is handled in turn.
           }
@@ -1044,7 +1056,12 @@ export class Terminals {
     // While the doorbell's test paste is on screen, a resize would redraw it and fail the
     // ring: the latest waits for the ring's hold to end.
     if (record.held) {
-      record.held.size = { cols: input.cols, rows: input.rows, owner: ownerId }
+      record.held.size = {
+        cols: input.cols,
+        rows: input.rows,
+        owner: ownerId,
+        attachment: record.subscribers.get(ownerId),
+      }
       return
     }
     this.applySize(record, input)
