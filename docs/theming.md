@@ -80,7 +80,7 @@ Required in every scheme a theme offers:
 | Group    | Tokens                                                                                                                                                                                                 |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Grounds  | `--color-canvas` (the workspace behind windows), `--color-shell` (sidebar, rail, settings), `--color-paper` (windows, cards, header, popovers), `--color-soft` (hover and pressed fills)               |
-| Text     | `--color-ink` (primary), `--color-muted` (secondary), `--color-faint` (disabled, decoration)                                                                                                           |
+| Text     | `--color-ink` (primary), `--color-muted` (secondary)                                                                                                                                                   |
 | Lines    | `--color-line` (dividers, resting borders), `--color-line-strong` (emphasised borders)                                                                                                                 |
 | Emphasis | `--color-strong`, `--color-strong-hover`, `--color-on-strong`: primary actions, on states, what is selected, focus                                                                                     |
 | Overlays | `--color-scrim`, `--color-selection`, `--color-shadow` (the colour every shadow is made from)                                                                                                          |

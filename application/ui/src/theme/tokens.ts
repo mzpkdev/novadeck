@@ -15,7 +15,6 @@ export const requiredTokens: readonly string[] = [
   // Text
   "--color-ink",
   "--color-muted",
-  "--color-faint",
   // Lines
   "--color-line",
   "--color-line-strong",
