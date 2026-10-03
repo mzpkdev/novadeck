@@ -65,6 +65,8 @@ describe("compiled desktop host", () => {
       const preload = await read("preload/index.cjs")
 
       expect(main).toContain("appearance.json")
+      // How launch restores the kept scheme is covered in ./appearance.test.ts.
+      expect(main).toContain("restore(nativeTheme)")
       expect(main).toContain("nativeTheme.themeSource")
       expect(main).toContain("setBackgroundColor")
       expect(main).toContain("appearance.current()?.ground")

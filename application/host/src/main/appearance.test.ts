@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -127,11 +127,71 @@ describe("keeping the appearance between launches", () => {
     })
   })
 
+  context("at launch", () => {
+    it("puts native parts in the kept scheme", async () => {
+      const file = join(directory, "appearance.json")
+      await keepAppearance(file).save({ scheme: "dark", ground: "#0f1114" })
+      const theme: { themeSource: WindowAppearance["scheme"] } = { themeSource: "system" }
+
+      await keepAppearance(file).restore(theme)
+
+      expect(theme.themeSource).toBe("dark")
+    })
+
+    it("leaves native parts alone when nothing was kept", async () => {
+      const theme: { themeSource: WindowAppearance["scheme"] } = { themeSource: "light" }
+
+      await keepAppearance(join(directory, "appearance.json")).restore(theme)
+
+      expect(theme.themeSource).toBe("light")
+    })
+  })
+
   context("when the file cannot be written", () => {
     it("still follows the page", async () => {
       const kept = keepAppearance(join(directory, "missing", "appearance.json"))
       await kept.save({ scheme: "dark", ground: "#0f1114" })
       expect(kept.current()).toEqual({ scheme: "dark", ground: "#0f1114" })
+    })
+
+    it("keeps the last appearance whole and leaves nothing behind", async () => {
+      const file = join(directory, "appearance.json")
+      await keepAppearance(file).save({ scheme: "light", ground: "#f2f3f5" })
+      // The disk fills halfway through the write.
+      const failing = keepAppearance(file, {
+        readFile,
+        rename,
+        rm,
+        writeFile: async (path, data) => {
+          await writeFile(path, data.slice(0, 9))
+          throw new Error("ENOSPC")
+        },
+      })
+      await failing.load()
+
+      await failing.save({ scheme: "dark", ground: "#0f1114" })
+
+      expect(await keepAppearance(file).load()).toEqual({ scheme: "light", ground: "#f2f3f5" })
+      expect(await readdir(directory)).toEqual(["appearance.json"])
+    })
+
+    it("writes the same appearance again when it is reported again", async () => {
+      const file = join(directory, "appearance.json")
+      let fails = 1
+      const kept = keepAppearance(file, {
+        readFile,
+        rename,
+        rm,
+        writeFile: async (path, data) => {
+          if (fails-- > 0) throw new Error("EBUSY")
+          await writeFile(path, data)
+        },
+      })
+
+      await kept.save({ scheme: "dark", ground: "#0f1114" })
+      await kept.save({ scheme: "dark", ground: "#0f1114" })
+
+      expect(await keepAppearance(file).load()).toEqual({ scheme: "dark", ground: "#0f1114" })
     })
   })
 })

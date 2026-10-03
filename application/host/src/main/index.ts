@@ -159,8 +159,7 @@ const createWindow = (origin: string): BrowserWindow => {
 }
 
 const launch = async (): Promise<void> => {
-  const kept = await appearance.load()
-  if (kept) nativeTheme.themeSource = kept.scheme
+  await appearance.restore(nativeTheme)
   runner = startRunner({
     entry: join(currentDirectory, "runner.js"),
     database: join(app.getPath("userData"), "workspace.sqlite"),

@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { readFile, rename, rm, writeFile } from "node:fs/promises"
 
 import type { IpcMainEvent } from "electron"
 
@@ -32,35 +33,70 @@ export const windowAppearanceOf = (value: unknown): WindowAppearance | undefined
 type Files = {
   readFile(path: string, encoding: "utf8"): Promise<string>
   writeFile(path: string, data: string): Promise<void>
+  rename(from: string, to: string): Promise<void>
+  rm(path: string, options: { force: true }): Promise<void>
 }
+
+/** What the window's native parts follow: Electron's `nativeTheme`. */
+type NativeTheme = { themeSource: WindowAppearance["scheme"] }
+
+const same = (one: WindowAppearance | undefined, other: WindowAppearance): boolean =>
+  one?.scheme === other.scheme && one.ground === other.ground
 
 /**
  * The last appearance the page reported, kept in `file` so the next launch opens its
  * windows on that ground. Saves run one after another, so the last report is the one
- * kept.
+ * kept. Each writes a temporary file beside `file` and renames it over, so a failed
+ * write leaves the last kept appearance whole; a report the file already holds writes
+ * nothing, and one that failed is written again when it comes again.
  */
-export const keepAppearance = (file: string, files: Files = { readFile, writeFile }) => {
+export const keepAppearance = (
+  file: string,
+  files: Files = { readFile, writeFile, rename, rm },
+) => {
   let last: WindowAppearance | undefined
+  let written: WindowAppearance | undefined
   let saving: Promise<void> = Promise.resolve()
+  const write = async (next: WindowAppearance): Promise<void> => {
+    const temporary = `${file}.${randomUUID()}.tmp`
+    try {
+      await files.writeFile(temporary, JSON.stringify(next))
+      await files.rename(temporary, file)
+    } catch (error) {
+      await files.rm(temporary, { force: true }).catch(() => {})
+      throw error
+    }
+  }
+  const load = async (): Promise<WindowAppearance | undefined> => {
+    try {
+      last = windowAppearanceOf(JSON.parse(await files.readFile(file, "utf8")))
+    } catch {
+      last = undefined
+    }
+    written = last
+    return last
+  }
   return {
     /** Reads what the last launch kept; nothing when it kept nothing usable. */
-    load: async (): Promise<WindowAppearance | undefined> => {
-      try {
-        last = windowAppearanceOf(JSON.parse(await files.readFile(file, "utf8")))
-      } catch {
-        last = undefined
-      }
-      return last
+    load,
+    /** Opens this launch as the last one left it: native parts in its scheme. */
+    restore: async (theme: NativeTheme): Promise<void> => {
+      const kept = await load()
+      if (kept) theme.themeSource = kept.scheme
     },
+    /** The appearance new windows open on: the last reported, or the kept one. */
     current: (): WindowAppearance | undefined => last,
     save: (next: WindowAppearance): Promise<void> => {
-      if (last?.scheme === next.scheme && last.ground === next.ground) return saving
       last = next
-      saving = saving
-        .then(() => files.writeFile(file, JSON.stringify(next)))
-        .catch(() => {
+      saving = saving.then(async () => {
+        if (same(written, next)) return
+        try {
+          await write(next)
+          written = next
+        } catch {
           // The window still follows the page; the next launch opens on the old ground.
-        })
+        }
+      })
       return saving
     },
   }
