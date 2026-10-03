@@ -384,9 +384,7 @@ const classLooks = (file: string): string[] =>
     .flatMap(({ text }) => lookUtilities(text))
 
 // Files whose class strings still draw. Shrink only.
-const scriptsWithLooks: readonly string[] = [
-  "ui-toolkit/SegmentGroup.tsx",
-]
+const scriptsWithLooks: readonly string[] = ["ui-toolkit/SegmentGroup.tsx"]
 
 // ---- (b) No colour literals outside theme files.
 
@@ -447,9 +445,7 @@ const colourLiterals = (file: string): string[] =>
   })
 
 // Stylesheets that still hold colour literals. Shrink only.
-const stylesheetsWithColours: readonly string[] = [
-  "theme/contract.css",
-]
+const stylesheetsWithColours: readonly string[] = ["theme/contract.css"]
 
 // ---- (c) No `!important` outside theme/base.css.
 
