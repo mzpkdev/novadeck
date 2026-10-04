@@ -68,8 +68,9 @@
   min-height: 0;
   overflow: auto;
 }
-/* A markdown document scrolls inside its reader, beside its outline, as a plan does. */
-.artifact-viewer[data-document] {
+/* A markdown document scrolls inside its reader, beside its outline, as a plan does; an
+   image inside its checker. Their headers stay. */
+.artifact-viewer:is([data-document], :has(> .artifact-image)) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -119,8 +120,9 @@
 }
 .artifact-image {
   display: grid;
+  flex: 1;
   place-items: center;
-  min-height: calc(100% - 38px);
+  min-height: 0;
   padding: 20px;
   background-image: var(
     --artifact-image-image,

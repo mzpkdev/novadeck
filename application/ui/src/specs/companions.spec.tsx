@@ -59,6 +59,24 @@ describe("A terminal's taskbar", () => {
   })
 })
 
+describe("An image", () => {
+  it("scrolls under its header, which stays in view", async () => {
+    await openShowcase()
+    await taskbarIcon("Build Studio", "2 images").click()
+    const pane = companionPane("Build Studio")
+    await pane.getByRole("button", { name: "100%", exact: true }).click()
+    const area = pane.getByRole("img").element().parentElement!
+    await expect.poll(() => area.scrollHeight).toBeGreaterThan(area.clientHeight)
+
+    area.scrollTop = area.scrollHeight
+
+    await expect.poll(() => area.scrollTop).toBeGreaterThan(0)
+    const viewer = area.parentElement!
+    expect(viewer.scrollHeight).toBe(viewer.clientHeight)
+    await expect.element(pane.getByRole("button", { name: "Fit", exact: true })).toBeInViewport()
+  })
+})
+
 describe("Something that can't show", () => {
   it("says why, with its path to copy", async () => {
     await openShowcase()
