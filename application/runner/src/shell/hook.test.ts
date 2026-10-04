@@ -210,9 +210,9 @@ describe("agent hook", () => {
     const began = Date.now()
     await fixture.hook("claude", start(), {}, "SessionStart")
     const [report] = fixture.reports
-    // With a fraction of a millisecond, which Date.now() rounds away.
-    expect(report!.seq).toBeGreaterThanOrEqual(began)
-    expect(report!.seq).toBeLessThan(fixture.received[0]! + 1)
+    // The relay's clock and Node's agree within a few milliseconds, not to the fraction.
+    expect(report!.seq).toBeGreaterThan(began - 50)
+    expect(report!.seq).toBeLessThan(fixture.received[0]! + 50)
   })
 
   it("orders reports by when each hook started", async ({ fixture }) => {
