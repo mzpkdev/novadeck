@@ -95,7 +95,7 @@ export const claude = {
     // terminal's environment.
     {
       path: join("novadeck", ".mcp.json"),
-      content: json({ mcpServers: { novadeck: mcpServer(platform, launchers) } }),
+      content: json({ mcpServers: { novadeck: mcpServer(launchers) } }),
     },
     {
       path: join("novadeck", "hooks", "hooks.json"),

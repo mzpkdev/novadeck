@@ -160,7 +160,7 @@ describe("a doorbell prompt", () => {
   })
 })
 
-const launchers: Launchers = { mcp: "/data/shell/mcp" }
+const launchers: Launchers = { mcp: { command: "/data/shell/mcp" } }
 const file = (agent: AgentName, path: string) =>
   JSON.parse(
     harnesses[agent].files("linux", launchers).find((each) => each.path === path)!.content,

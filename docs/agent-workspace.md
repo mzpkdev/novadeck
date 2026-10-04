@@ -326,7 +326,8 @@ with every safety check again at that time:
   lists no tools, so the agent never sees `show`, and a call anyway does nothing.
   The plugin starts NovaDeck's relay (`application/relay`), a small native program
   NovaDeck copies into its own data folder, so it stays when a packaged NovaDeck's
-  runtime folder goes as it quits; agents on Windows reach it through `cmd.exe`.
+  runtime folder goes as it quits. On Linux and macOS a launcher starts it; on Windows agents
+  start it directly, as a launcher there would keep `cmd.exe` running beside it.
   Outside NovaDeck's terminals, or when the runner can't be reached, the relay answers
   the handshake itself, with no tools. In a terminal it carries the agent's messages
   over the terminal's report endpoint to the runner, which serves the MCP session

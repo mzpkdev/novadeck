@@ -230,20 +230,17 @@ export const hookSeconds = 10
 export const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 
 /** Where the plugin's commands start from, as NovaDeck wrote them for this run. */
-export type Launchers = { readonly mcp: string }
+/** How an agent starts a program of NovaDeck's: a file, by its absolute path, and arguments. */
+export type Start = { readonly command: string; readonly args?: readonly string[] }
 
 /**
- * How an agent starts NovaDeck's MCP server: the launcher, by its absolute path, since an
- * agent starts it without a shell that could expand a variable. On Windows that is cmd,
- * which a .cmd file needs.
+ * How agents start what NovaDeck installs for them: its MCP server, which they start
+ * without a shell that could expand a variable.
  */
-export const mcpServer = (
-  platform: NodeJS.Platform,
-  launchers: Launchers,
-): { readonly command: string; readonly args?: readonly string[] } =>
-  platform === "win32"
-    ? { command: "cmd.exe", args: ["/d", "/c", launchers.mcp] }
-    : { command: launchers.mcp }
+export type Launchers = { readonly mcp: Start }
+
+/** How an agent starts NovaDeck's MCP server, as its plugin names it. */
+export const mcpServer = (launchers: Launchers): Start => launchers.mcp
 
 /** The terminal's variables NovaDeck's MCP server finds its terminal and runner by. */
 export const mcpVariables = [

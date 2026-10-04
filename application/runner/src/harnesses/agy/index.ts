@@ -80,7 +80,7 @@ export const agy = {
     // terminal's environment.
     {
       path: "mcp_config.json",
-      content: json({ mcpServers: { novadeck: mcpServer(platform, launchers) } }),
+      content: json({ mcpServers: { novadeck: mcpServer(launchers) } }),
     },
     {
       path: "hooks.json",

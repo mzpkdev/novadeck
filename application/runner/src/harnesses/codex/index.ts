@@ -89,7 +89,7 @@ export const codex = {
       path: join("novadeck", ".mcp.json"),
       content: json({
         mcpServers: {
-          novadeck: { ...mcpServer(platform, launchers), env_vars: [...mcpVariables] },
+          novadeck: { ...mcpServer(launchers), env_vars: [...mcpVariables] },
         },
       }),
     },

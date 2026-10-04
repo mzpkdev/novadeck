@@ -777,14 +777,17 @@ describe("NovaDeck's MCP server", () => {
     expect(unknown?.result).toMatchObject({ protocolVersion: "2025-11-25" })
   })
 
-  it("starts the relay on Windows too, never PowerShell or NovaDeck's runtime", () => {
+  it("starts the relay itself on Windows, with no cmd, PowerShell or NovaDeck's runtime", () => {
     const paths = shellPaths("C:\\data", "win32")
-    const launcher = shellFiles(paths, "win32").find((file) => file.path === paths.mcp)
-    expect(launcher?.content).toContain(
-      `${paths.relay}" mcp ${plugin.version} ${mcpVersions.join(" ")} %*`,
-    )
-    expect(launcher?.content.toLowerCase()).not.toContain("powershell")
-    expect(launcher?.content).not.toContain("ELECTRON_RUN_AS_NODE")
+    const files = shellFiles(paths, "win32")
+    // No launcher for it: cmd would stay running beside the relay for as long as it runs.
+    expect(files.some((file) => file.path === paths.mcp)).toBe(false)
+    const config = files.find((file) => file.path.endsWith(join("claude", "novadeck", ".mcp.json")))
+    expect(JSON.parse(config?.content ?? "{}")).toEqual({
+      mcpServers: {
+        novadeck: { command: paths.relay, args: ["mcp", plugin.version, ...mcpVersions] },
+      },
+    })
   })
 
   it("refuses a batch", async () => {

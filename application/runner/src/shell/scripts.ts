@@ -2,7 +2,7 @@ import { join } from "node:path"
 
 import type { AgentName } from "@novadeck/protocol"
 
-import { plugin, type Launchers } from "../harnesses/harness.js"
+import { plugin, type Launchers, type Start } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
 import { header } from "./header.js"
 import { mcpVersions } from "./mcp.js"
@@ -48,9 +48,11 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
 })
 
 /** What older versions wrote beside these files and nothing reads any more. */
-export const staleShellFiles = (directory: string): string[] => [
+export const staleShellFiles = (directory: string, platform = process.platform): string[] => [
   join(directory, "hook.mjs"),
   join(directory, "mcp.mjs"),
+  // Windows' agents start the relay itself, without cmd to run a launcher.
+  ...(platform === "win32" ? [join(directory, "mcp.cmd")] : []),
   join(directory, "mcp-idle.js"),
 ]
 
@@ -314,18 +316,28 @@ if /i "%~1"=="agy" if /i "%~2"=="PreToolUse" (echo {"decision":"ask"}) else (ech
 `,
   )
 
+/**
+ * How agents start NovaDeck's MCP server: on Linux and macOS its launcher, which the
+ * relay replaces, as it is started; on Windows the relay itself, as a launcher there
+ * needs cmd, which stays running beside it, costing each agent several megabytes.
+ */
+export const mcpStart = (paths: ShellPaths, platform = process.platform): Start =>
+  platform === "win32"
+    ? { command: paths.relay, args: [...relayArguments.mcp] }
+    : { command: paths.mcp }
+
 export type ShellFile = { readonly path: string; readonly content: string; readonly mode: number }
 
 const file = (path: string, content: string, mode = 0o600): ShellFile => ({ path, content, mode })
 
 /**
  * Every file for this platform, with the permissions each needs. Plugins start the MCP
- * launcher by `launchers.mcp`, which on Windows can be its short name.
+ * server as `launchers.mcp` says.
  */
 export const shellFiles = (
   paths: ShellPaths,
   platform = process.platform,
-  launchers: Launchers = { mcp: paths.mcp },
+  launchers: Launchers = { mcp: mcpStart(paths, platform) },
 ): ShellFile[] => {
   const common = [
     file(paths.bash, bash),
@@ -344,12 +356,7 @@ export const shellFiles = (
   const shims = agents.flatMap((agent) => harnesses[agent].shims?.(platform) ?? [])
   const bin = shims.map((each) => file(join(paths.bin, each.path), each.content, each.mode))
   return platform === "win32"
-    ? [
-        ...common,
-        file(paths.hook, cmdLauncher(paths.relay, "hook", "agent hook launcher")),
-        file(paths.mcp, cmdLauncher(paths.relay, "mcp", "MCP server launcher")),
-        ...bin,
-      ]
+    ? [...common, file(paths.hook, cmdLauncher(paths.relay, "hook", "agent hook launcher")), ...bin]
     : [
         ...common,
         file(paths.hook, posixLauncher(paths.relay, "hook", "agent hook launcher"), 0o700),

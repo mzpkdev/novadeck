@@ -35,10 +35,7 @@ export const installShellFiles = async (
     console.error("NovaDeck's relay is unavailable:", error)
   })
   await Promise.all(staleShellFiles(directory).map((stale) => rm(stale, { force: true })))
-  // Plugins name the MCP launcher by its short name on Windows, as cmd starts it.
-  const mcp =
-    process.platform === "win32" ? join(await shortName(directory), basename(paths.mcp)) : paths.mcp
-  for (const file of shellFiles(paths, process.platform, { mcp })) {
+  for (const file of shellFiles(paths, process.platform)) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
     await mkdir(dirname(file.path), { recursive: true, mode: 0o700 })
     // eslint-disable-next-line no-await-in-loop -- Unchanged files are left alone.
