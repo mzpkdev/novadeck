@@ -25,6 +25,15 @@ export const DocumentViewer = ({
   const headings = headingsOf(text)
   return (
     <div className="plan-reader artifact-document">
+      <div className="artifact-meta">
+        <code>{content.path}</code>
+        <span>read-only</span>
+        {content.truncated && (
+          <span className="plan-meta-hint">It's long, so only its start is shown.</span>
+        )}
+        {actions && <span className="artifact-meta-push" />}
+        {actions}
+      </div>
       <div className="plan-reader-body" data-outline={headings.length > 0}>
         {headings.length > 0 && (
           <nav className="plan-spine" aria-label="Document outline">
@@ -40,29 +49,19 @@ export const DocumentViewer = ({
             </ul>
           </nav>
         )}
-        <div className="plan-document">
-          <div className="plan-meta">
-            <code className="plan-meta-path">{content.path}</code>
-            <span>read-only</span>
-            {content.truncated && (
-              <span className="plan-meta-hint">It's long, so only its start is shown.</span>
-            )}
-            {actions && <span className="plan-meta-actions">{actions}</span>}
-          </div>
-          <div className="plan-document-scroll">
-            <Suspense fallback={null}>
-              <PlanEditor
-                readOnly
-                text={text}
-                marks={noMarks}
-                onChange={ignore}
-                onReady={(handle) => {
-                  editor.current = handle
-                }}
-                onClose={ignore}
-              />
-            </Suspense>
-          </div>
+        <div className="plan-document-scroll">
+          <Suspense fallback={null}>
+            <PlanEditor
+              readOnly
+              text={text}
+              marks={noMarks}
+              onChange={ignore}
+              onReady={(handle) => {
+                editor.current = handle
+              }}
+              onClose={ignore}
+            />
+          </Suspense>
         </div>
       </div>
     </div>

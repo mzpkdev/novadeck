@@ -115,7 +115,7 @@ describe("A file", () => {
 })
 
 describe("A viewer's header", () => {
-  it("keeps the undock button in one place, with the image's zoom or without", async () => {
+  it("keeps the undock button in one place, beside a file, an image or a plan", async () => {
     // The showcase opens with Build Studio showing a file.
     await openShowcase()
     const pane = companionPane("Build Studio")
@@ -134,7 +134,11 @@ describe("A viewer's header", () => {
 
     await taskbarIcon("Build Studio", "2 images").click()
     await expect.element(pane.getByRole("button", { name: "Fit", exact: true })).toBeVisible()
+    expect(await settled(offset)).toBe(besideFile)
 
+    // A plan has the same header across the pane, its outline and document under it.
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    await expect.element(pane.getByText("plans/studio.md", { exact: true })).toBeVisible()
     expect(await settled(offset)).toBe(besideFile)
   })
 })
@@ -146,7 +150,7 @@ describe("A plan", () => {
     const pane = companionPane("Build Studio")
     const path = pane.getByText("plans/studio.md", { exact: true })
     await expect.element(path).toBeVisible()
-    const scroll = path.element().closest(".plan-document")!.querySelector(".plan-document-scroll")!
+    const scroll = path.element().closest(".plan-reader")!.querySelector(".plan-document-scroll")!
     await expect.poll(() => scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight)
 
     scroll.scrollTop = scroll.scrollHeight
