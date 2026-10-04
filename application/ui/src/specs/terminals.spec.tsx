@@ -35,6 +35,9 @@ import {
 
 const views = ["Focus", "Grid", "Canvas"] as const
 
+/** An element's own opacity. */
+const opacity = (locator: Locator): number => Number(getComputedStyle(locator.element()).opacity)
+
 /** How a button looks: its ground, its colour, and its icon's opacity. */
 const look = (button: Element): string[] => [
   getComputedStyle(button).backgroundColor,
@@ -465,6 +468,23 @@ describe("closing terminals", () => {
       })
     })
   }
+})
+
+describe("a tab's actions", () => {
+  it("show Hide and Rename under the pointer, and Close always", async () => {
+    await openWorkspace()
+    const hide = visibilityToggle("Dev server", "Hide")
+    const rename = sidebar().getByRole("button", { name: "Rename Dev server" })
+    const close = tabAction("Close Dev server")
+    await userEvent.unhover(terminalTab("Dev server"))
+    await expect.poll(() => [opacity(hide), opacity(rename)]).toEqual([0, 0])
+    expect(opacity(close)).toBe(1)
+
+    await userEvent.hover(terminalTab("Dev server"))
+
+    await expect.poll(() => [opacity(hide), opacity(rename)]).toEqual([1, 1])
+    expect(opacity(close)).toBe(1)
+  })
 })
 
 describe("hiding terminals from Grid and Canvas", () => {

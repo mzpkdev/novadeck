@@ -18,6 +18,8 @@ import { useRenderAt } from "./use-render-at"
 import { windowMenu, type DockTarget } from "./window-menu"
 
 const actionClasses = "terminal-tab-action icon-button small dim quiet"
+// Hide and Rename wait for the pointer or keyboard focus; Close stays.
+const revealedActionClasses = `${actionClasses} terminal-tab-revealed`
 
 export const TerminalTab = ({
   terminal: tile,
@@ -172,7 +174,7 @@ export const TerminalTab = ({
           <div className="terminal-tab-actions flex items-center">
             <Tooltip content={hidden ? "Show" : "Hide"}>
               <button
-                className={actionClasses}
+                className={revealedActionClasses}
                 aria-label={`${hidden ? "Show" : "Hide"} ${terminal.name} in Grid and Canvas`}
                 aria-pressed={hidden}
                 disabled={editing}
@@ -205,7 +207,7 @@ export const TerminalTab = ({
                 }
               >
                 <button
-                  className={actionClasses}
+                  className={revealedActionClasses}
                   aria-label={`Rename ${terminal.name}`}
                   onClick={onBeginRename}
                 >

@@ -7,10 +7,11 @@
    data-terminal-hidden="true" | "false". Parts: `.terminal-glyph`,
    `.terminal-tab-process`, `.terminal-tab-starting`, `.terminal-tab-action` (an
    `.icon-button.small.dim.quiet`, pressed while it hides the tab but looking as it does
-   at rest, so a hidden tab doesn't draw the eye), `.terminal-tab-kinds` (what its
-   companion bar holds, at the end of the name's line), each `.terminal-tab-kind`
-   data-state="new" | "seen", or for the messages "waiting" | "held" | "paused" with
-   its `.terminal-tab-kind-count`,
+   at rest, so a hidden tab doesn't draw the eye; `.terminal-tab-revealed` on Hide and
+   Rename, which show under the pointer or with keyboard focus), `.terminal-tab-kinds`
+   (what its companion bar holds, at the end of the name's line), each
+   `.terminal-tab-kind` data-state="new" | "seen", or for the messages "waiting" |
+   "held" | "paused" with its `.terminal-tab-kind-count`,
    `.terminal-tab-rename`, `.terminal-tab-empty`.
 
    Tokens, each optional (its fallback in brackets):
@@ -29,6 +30,16 @@
    --tab-empty-fg (muted): the note in an empty list. */
 .icon-button.terminal-tab-action:focus-visible {
   outline-offset: -2px;
+}
+/* Hide and Rename fade in under the pointer or with keyboard focus, and stay while the
+   tab is renamed; Close is always there. Without a pointer that hovers, they all stay. */
+.icon-button.terminal-tab-revealed {
+  transition: opacity var(--motion-feedback) var(--ease-interface);
+}
+@media (hover: hover) {
+  .terminal-tab:not(:hover, :has(:focus-visible), .editing) .icon-button.terminal-tab-revealed {
+    opacity: 0;
+  }
 }
 .icon-button.terminal-tab-action:disabled {
   pointer-events: none;
