@@ -198,8 +198,8 @@
 }
 .plan-tb-item[data-state="new"]::after {
   bottom: 2px;
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
 }
 .plan-tb-item[data-state="open"]::after {
