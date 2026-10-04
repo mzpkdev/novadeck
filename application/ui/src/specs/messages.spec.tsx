@@ -12,11 +12,11 @@ import {
   thread,
 } from "./support/messages"
 import { confirmClose, sidebarRenameField, tabAction } from "./support/terminals"
-import { expectStaysAbsent, terminalTab } from "./support/workspace"
+import { expectStaysAbsent, tabDescription, terminalTab } from "./support/workspace"
 
 const textOf = (locator: Locator) => locator.element().textContent
 
-const description = (name: string) => terminalTab(name).element().getAttribute("aria-description")
+const description = tabDescription
 
 describe("Messages waiting for an agent", () => {
   it("count in its terminal's tab's description, and only those still on their way to it", async () => {
@@ -26,7 +26,7 @@ describe("Messages waiting for an agent", () => {
       .poll(() => description("Checkout review"))
       .toBe("Needs permission, 2 messages waiting")
     // The dev server's message is gone, never waiting.
-    await expect.element(terminalTab("Dev server")).not.toHaveAttribute("aria-description")
+    expect(description("Dev server")).toBeNull()
   })
 
   it("say a release is needed when their thread is held", async () => {

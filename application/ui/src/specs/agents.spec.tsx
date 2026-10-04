@@ -2,7 +2,13 @@ import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { expectFocusWithin, preferencesDialog } from "./support/keyboard"
-import { chooseView, expectStaysAbsent, openWorkspace, tooltipOf } from "./support/workspace"
+import {
+  chooseView,
+  expectStaysAbsent,
+  openWorkspace,
+  tabDescription,
+  tooltipOf,
+} from "./support/workspace"
 
 const agentSwitch = (scope: Locator, name: "Claude Code" | "Codex" | "Antigravity"): Locator =>
   scope.getByRole("switch", { name })
@@ -24,7 +30,7 @@ describe("An agent waiting on the person", () => {
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     const tab = page.getByRole("button", { name: "Select Checkout review" })
-    await expect.element(tab).toHaveAttribute("aria-description", "Needs permission")
+    await expect.poll(() => tabDescription("Checkout review")).toBe("Needs permission")
     await tab.click()
     await expect
       .element(page.getByRole("region", { name: "Checkout review terminal" }))
@@ -39,7 +45,7 @@ describe("An agent that plans", () => {
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     const tab = page.getByRole("button", { name: "Select Checkout implementation" })
-    await expect.element(tab).toHaveAttribute("aria-description", "Plan ready for review")
+    await expect.poll(() => tabDescription("Checkout implementation")).toBe("Plan ready for review")
     await tab.click()
     const window = page.getByRole("region", { name: "Checkout implementation terminal" })
     await expect.element(window).toHaveAttribute("aria-description", "Plan ready for review")
