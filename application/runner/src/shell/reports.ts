@@ -164,12 +164,19 @@ const relayStart = '{"relay":2,'
 // text, but not without end.
 const maxSessionLine = 1_048_576
 
+// How much of a line too long to take is kept, at each end, to find its id.
+const idWindow = 4096
+
 /**
- * The answer to a line too long to take, as a request with the id its start names, so the
- * call it was gets an answer and the session goes on.
+ * The answer to a line too long to take, with the id it was sent with, so the call it was
+ * gets an answer and the session goes on. A client writes the id first or last: last when
+ * it closes the line, as the MCP SDK writes it, or else the first the line's start names.
  */
-const tooLong = (start: string): string => {
-  const named = /"id"\s*:\s*(-?\d+|"(?:[^"\\]|\\.)*")/.exec(start.slice(0, 4096))?.[1]
+const tooLong = (head: string, tail: string): string => {
+  const value = '(-?\\d+|"(?:[^"\\\\]|\\\\.)*")'
+  const named =
+    new RegExp(`"id"\\s*:\\s*${value}\\s*}\\s*$`).exec(tail)?.[1] ??
+    new RegExp(`"id"\\s*:\\s*${value}`).exec(head)?.[1]
   let id: unknown = null
   try {
     id = named === undefined ? null : JSON.parse(named)
@@ -213,22 +220,32 @@ const serveSession = (socket: Socket, rest: string, call: McpCall | undefined): 
       })
   }
   // Whether the line under way was too long to take, and what is left of it goes unread.
-  let skipping = false
+  // Its start and, as it goes, its end: answered once it ends.
+  let skipping: { head: string; tail: string } | undefined
   const read = (chunk: string) => {
     buffer += chunk
     let end
     while ((end = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, end).trim()
+      const line = buffer.slice(0, end)
       buffer = buffer.slice(end + 1)
       if (ended) return
-      if (skipping) skipping = false
-      else take(line)
+      // However it arrived, whole or in pieces, a line over the limit isn't taken.
+      if (!skipping && line.length <= maxSessionLine) {
+        take(line.trim())
+        continue
+      }
+      const head = skipping?.head ?? line.slice(0, idWindow)
+      const tail = ((skipping?.tail ?? "") + line).slice(-idWindow)
+      if (socket.writable) socket.write(`${tooLong(head, tail.trimEnd())}\n`)
+      skipping = undefined
     }
     if (!skipping && buffer.length > maxSessionLine) {
-      skipping = true
-      if (socket.writable) socket.write(`${tooLong(buffer)}\n`)
+      skipping = { head: buffer.slice(0, idWindow), tail: "" }
     }
-    if (skipping) buffer = ""
+    if (skipping) {
+      skipping.tail = (skipping.tail + buffer).slice(-idWindow)
+      buffer = ""
+    }
   }
   socket.on("data", read)
   // A relay that went away without its end has nothing more to answer.

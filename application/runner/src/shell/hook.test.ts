@@ -250,7 +250,11 @@ describe("agent hook", () => {
     // A runner that takes the hook and never answers; reading on, so it hears the hook go.
     const directory = mkdtempSync(join(tmpdir(), "novadeck-silent-"))
     resources.defer(() => rmSync(directory, { recursive: true, force: true }))
-    const endpoint = join(directory, "reports.sock")
+    // As the runner's endpoint: a named pipe on Windows, a socket elsewhere.
+    const endpoint =
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\novadeck-silent-${process.pid}-${Date.now()}`
+        : join(directory, "reports.sock")
     const silent = createServer((socket) => socket.resume())
     await new Promise<void>((resolve) => silent.listen(endpoint, resolve))
     resources.defer(() => new Promise<void>((resolve) => silent.close(() => resolve())))

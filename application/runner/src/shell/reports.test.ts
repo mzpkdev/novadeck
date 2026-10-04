@@ -301,6 +301,13 @@ const hello = (given: object = {}) =>
 const end = JSON.stringify({ relay: "eof" })
 const rpc = (message: object) => JSON.stringify({ jsonrpc: "2.0", ...message })
 
+// The answer to request `id`, over 1 MiB.
+const refused = (id: number) => ({
+  jsonrpc: "2.0",
+  id,
+  error: { code: -32600, message: expect.stringContaining("over 1 MiB") },
+})
+
 describe("relay sessions", () => {
   it("answers an agent's session over one connection, with the terminal's token", async ({
     resources,
@@ -379,19 +386,26 @@ describe("relay sessions", () => {
       method: "tools/call",
       params: { name: "send", arguments: { to: "t2", text: "x".repeat(1_100_000) } },
     })
+    // As the MCP SDK writes a request: its id last, after params that may hold an "id".
+    const last = JSON.stringify({
+      method: "tools/call",
+      params: { name: "send", arguments: { id: 3, to: "t2", text: "x".repeat(1_100_000) } },
+      jsonrpc: "2.0",
+      id: 11,
+    })
     const answers = await relay(reports.endpoint, [
       hello(),
       huge,
       rpc({ id: 10, method: "ping" }),
+      last,
+      rpc({ id: 12, method: "ping" }),
       end,
     ])
     expect(answers).toEqual([
-      {
-        jsonrpc: "2.0",
-        id: 9,
-        error: { code: -32600, message: expect.stringContaining("over 1 MiB") },
-      },
+      refused(9),
       { jsonrpc: "2.0", id: 10, result: {} },
+      refused(11),
+      { jsonrpc: "2.0", id: 12, result: {} },
     ])
     expect(calls).toEqual([])
   })
