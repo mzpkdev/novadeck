@@ -1,4 +1,17 @@
 {
-  "source": "",
-  "files": {}
+  "source": "2f45a451fa97a5ea2a36a2b7d6054d25034b3622921ce973932b69ff5e61d841",
+  "files": {
+    "linux-x64": {
+      "sha256": "0e810cff899a9fca01769b48793c0837d52777e94c6d846e59a15f736ff0fdd4"
+    },
+    "linux-arm64": {
+      "sha256": "5448f7f05ba420de6755a22368e4baf4b49aaa529e6a8196f9ef2d19c0433cdd"
+    },
+    "darwin-universal": {
+      "sha256": "c7205415627f1508b41b7a2b80733421b7227864e2b7ee490a58c35a0dbd28d3"
+    },
+    "win32-x64": {
+      "sha256": "d81b58afb50ef609f352c4541a7937c86fec1e862e12659c13ad238b1f23f63d"
+    }
+  }
 }
