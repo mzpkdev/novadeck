@@ -3,6 +3,7 @@ import { page, userEvent, type Locator } from "vitest/browser"
 
 import {
   messageItems,
+  messagesButton,
   openMessages,
   openMessagesDemo,
   pauseSwitch,
@@ -80,10 +81,11 @@ describe("A terminal's messages", () => {
     await expect.element(written.getByRole("code")).not.toBeInTheDocument()
   })
 
-  it("says so when an agent has had none", async () => {
+  it("stay off the taskbar of an agent that has had none", async () => {
     await openMessagesDemo("/projects/api-service/sessions/initial/focus")
-    const pane = await openMessages("Checkout implementation")
-    await expect.element(pane.getByText(/^No messages yet/)).toBeVisible()
+    await terminalTab("Checkout implementation").click()
+    await expectStaysAbsent(messagesButton("Checkout implementation"))
+    expect(messagesButton("Checkout implementation").query()).toBeNull()
   })
 
   it("names a peer that's gone from the session by its handle alone", async () => {

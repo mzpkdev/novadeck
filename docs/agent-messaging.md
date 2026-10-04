@@ -1038,8 +1038,9 @@ optional `messages` capability (`model/messages.ts`):
   to it that are `queued`, `leased` or `held`, never delivered or gone, and says so in
   its description. The count is amber while a thread is held for release, so the person
   knows one is needed, and shows a pause mark while messaging is paused.
-- **Messages view.** A terminal with an agent bound, or one that has had messages, gets
-  a Messages icon in its companion pane's taskbar, with the same count. The view lists
+- **Messages view.** A terminal that has had messages gets a Messages icon in its
+  companion pane's taskbar, with the same count; an agent with none yet keeps its bar
+  clear. The view lists
   its threads, latest first, each with the peer's title and handle and its messages in
   order: direction, time (with the date when not today), state, and the agent's text as
   plain text, never formatted or interpreted. A peer no longer in the session shows its

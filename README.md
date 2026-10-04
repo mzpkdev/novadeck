@@ -106,8 +106,8 @@ to NovaDeck.
 When agents message each other (see [Agent messaging](docs/agent-messaging.md)), a
 terminal's tab counts the messages waiting for its agent: queued, being delivered or
 held, never those delivered. The count turns amber when a thread is held for your
-release, and shows a pause mark while messaging is paused. A terminal with an agent, or
-one that has had messages, gets a **Messages** icon in its taskbar, which opens its
+release, and shows a pause mark while messaging is paused. A terminal that has had
+messages gets a **Messages** icon in its taskbar, which opens its
 threads in the companion pane: one per peer, latest first, each message with its
 direction, time, state and the agent's text exactly as written, never formatted. A held
 thread has **Release**, and the pane's header has **Pause all agents' messages**, one

@@ -42,7 +42,7 @@ export type MailHandle = {
   readonly releasing: readonly string[]
   // Why a thread's last release didn't take, by thread.
   readonly failed: Readonly<Record<string, string>>
-  // Whether the terminal has a messages view: an agent is there, or it had messages.
+  // Whether the terminal has a messages view: it has had messages.
   readonly present: boolean
   readonly badge: MailBadge | null
   readonly pause: (paused: boolean) => void
