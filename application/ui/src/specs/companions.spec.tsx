@@ -1,7 +1,7 @@
 import { describe as context, describe, expect, it } from "vitest"
 import { page } from "vitest/browser"
 
-import { boxOf, canvasView, dragBackground, viewBox } from "./support/canvas"
+import { boxOf, canvasView, dragBackground, settled, viewBox } from "./support/canvas"
 import {
   cancelPointerOver,
   chooseFromIconMenu,
@@ -102,7 +102,8 @@ describe("A viewer's header", () => {
     await openShowcase()
     const pane = companionPane("Build Studio")
     const undock = pane.getByRole("button", { name: "Undock to its own window" })
-    // Within its header, which holds still while the pane around it settles.
+    // Within its header, once the pane has its width: while the layout settles, a narrow
+    // pane wraps the header and the button drops to its second line.
     const offset = (): number => {
       const button = undock.element()
       const header = button.closest(".artifact-meta")!
@@ -111,12 +112,12 @@ describe("A viewer's header", () => {
     await expect
       .element(pane.getByRole("region", { name: "src/content/projects.json" }))
       .toBeVisible()
-    const besideFile = offset()
+    const besideFile = await settled(offset)
 
     await taskbarIcon("Build Studio", "2 images").click()
     await expect.element(pane.getByRole("button", { name: "Fit", exact: true })).toBeVisible()
 
-    await expect.poll(offset).toBe(besideFile)
+    expect(await settled(offset)).toBe(besideFile)
   })
 })
 
