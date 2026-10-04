@@ -70,6 +70,11 @@ describe("terminal links", () => {
       expect(webLink("javascript:alert(1)")).toBeUndefined()
       expect(webLink("not a link")).toBeUndefined()
     })
+
+    it("stay closed when they carry a login, which hides the host behind it", () => {
+      expect(webLink("https://github.com%2Forg%2Frepo@elsewhere.example/")).toBeUndefined()
+      expect(webLink("https://user:secret@example.com/")).toBeUndefined()
+    })
   })
 
   context("printed as hyperlinks", () => {

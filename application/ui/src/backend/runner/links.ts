@@ -15,10 +15,12 @@ export const opensLink = (event: Click, platform: Platform): boolean =>
 export const linkHint = (platform: Platform): string =>
   platform === "mac" ? "⌘-click to open" : "Ctrl-click to open"
 
-// Only web pages leave the app; a terminal's output can name any scheme.
+// Only web pages leave the app; a terminal's output can name any scheme. An address that
+// carries a login names its real host only after it, so it stays closed.
 export const webLink = (text: string): string | undefined => {
   try {
     const url = new URL(text)
+    if (url.username || url.password) return undefined
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined
   } catch {
     return undefined
