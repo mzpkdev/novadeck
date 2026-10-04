@@ -27,7 +27,7 @@ export type DesktopBridge = {
     readonly ground: string
   }): void
   /**
-   * The path on this machine of a file the person pasted or dropped, such as one copied
+   * The path on this machine of a file the person pasted, such as one copied
    * in a file manager, or "" for one that is no file there, as a copied image's bytes.
    * Absent from hosts that came before it.
    */

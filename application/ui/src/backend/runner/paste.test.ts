@@ -117,11 +117,18 @@ describe("a pasted path", () => {
       )
       expect(shellPath("/tmp/plain.png")).toBe("/tmp/plain.png")
     })
+
+    it("escapes ^, which zsh's extended globs negate with", () => {
+      expect(shellPath("/tmp/^x.png")).toBe("/tmp/\\^x.png")
+      expect(shellPath("/tmp/a^b.png")).toBe("/tmp/a\\^b.png")
+    })
   })
 
   context("on a Windows runner", () => {
-    it("keeps its backslashes, quoting it when it has a space", () => {
-      expect(shellPath("C:\\Users\\me\\uploads\\shot.png")).toBe("C:\\Users\\me\\uploads\\shot.png")
+    it("keeps its backslashes, in double quotes", () => {
+      expect(shellPath("C:\\Users\\me\\uploads\\shot.png")).toBe(
+        '"C:\\Users\\me\\uploads\\shot.png"',
+      )
       expect(shellPath("C:\\Users\\Jo Doe\\uploads\\shot.png")).toBe(
         '"C:\\Users\\Jo Doe\\uploads\\shot.png"',
       )
@@ -136,6 +143,7 @@ describe("a file's own path", () => {
       expect(ownPath("/tmp/$(rm -rf ~);`id`&x.png")).toBe(
         "/tmp/\\$\\(rm\\ -rf\\ \\~\\)\\;\\`id\\`\\&x.png",
       )
+      expect(ownPath("/home/me/^x.png")).toBe("/home/me/\\^x.png")
     })
 
     it("doesn't go in with a control character, which no escape keeps inert", () => {
@@ -147,27 +155,44 @@ describe("a file's own path", () => {
   })
 
   context("on a Windows machine", () => {
-    it("goes in when it is letters, digits, spaces and . _ - \\ :, quoted for a space", () => {
+    it("goes in, in double quotes, when cmd and PowerShell read it literally there", () => {
       expect(ownPath("D:\\a\\_temp\\shots\\my shot.png")).toBe('"D:\\a\\_temp\\shots\\my shot.png"')
-      expect(ownPath("C:\\Users\\Zoë\\スクリーン-1.png")).toBe("C:\\Users\\Zoë\\スクリーン-1.png")
-      expect(ownPath("\\\\server\\share\\notes.txt")).toBe("\\\\server\\share\\notes.txt")
+      expect(ownPath("C:\\Users\\Zoë\\画面-1.png")).toBe('"C:\\Users\\Zoë\\画面-1.png"')
+      expect(ownPath("\\\\server\\share\\notes.txt")).toBe('"\\\\server\\share\\notes.txt"')
+      expect(ownPath("C:\\shots\\Screenshot (1).png")).toBe('"C:\\shots\\Screenshot (1).png"')
+      expect(ownPath("C:\\docs\\report (2).pdf")).toBe('"C:\\docs\\report (2).pdf"')
+      for (const name of [
+        "a&b.png",
+        "it's.png",
+        "a,b;c.png",
+        "@home#1.png",
+        "a+b=c.png",
+        "~a^b.png",
+        "{x}.png",
+      ])
+        expect(ownPath(`C:\\shots\\${name}`)).toBe(`"C:\\shots\\${name}"`)
     })
 
-    it("doesn't go in with any other character, which cmd or PowerShell may act on", () => {
+    it("doesn't go in with what cmd or PowerShell expand or end quotes on", () => {
       for (const name of [
-        "a&calc.png",
         "100%.png",
         "wow!.png",
-        "a^b.png",
         "$x.png",
-        "it's.png",
-        "(1).png",
-        "a;b.png",
-        "a,b.png",
         "a`b.png",
+        'a"b.png',
+        "[1].png",
         "a/b.png",
       ])
         expect(ownPath(`C:\\shots\\${name}`)).toBeUndefined()
+    })
+
+    it("doesn't go in with a spacing modifier letter, which the code page may turn into a quote", () => {
+      // U+02BC MODIFIER LETTER APOSTROPHE and U+02EE MODIFIER LETTER DOUBLE APOSTROPHE.
+      expect(ownPath("C:\\shots\\it\u02bcs.png")).toBeUndefined()
+      expect(ownPath("C:\\shots\\say\u02eehi.png")).toBeUndefined()
+      // Other modifier letters, as Japanese's long-vowel mark and 々, go in as themselves.
+      expect(ownPath("C:\\shots\\スクリーン.png")).toBe('"C:\\shots\\スクリーン.png"')
+      expect(ownPath("C:\\shots\\人々.png")).toBe('"C:\\shots\\人々.png"')
     })
   })
 
@@ -229,9 +254,9 @@ describe("pasting into the desktop app's terminal", () => {
   context("a file whose own path can't go in safely", () => {
     it("pastes a copy's path instead, for a Windows name a shell would act on", async () => {
       const page = terminal(undefined, true)
-      page.field.dispatchEvent(pasteEvent({ files: [onDisk("C:\\shots\\a&calc.png")] }))
-      await vi.waitFor(() => expect(page.pasted).toEqual(["/data/uploads/t/a\\&calc.png "]))
-      expect(page.uploads.map((file) => file.name)).toEqual(["a&calc.png"])
+      page.field.dispatchEvent(pasteEvent({ files: [onDisk("C:\\shots\\100%.png")] }))
+      await vi.waitFor(() => expect(page.pasted).toEqual(["/data/uploads/t/100%.png "]))
+      expect(page.uploads.map((file) => file.name)).toEqual(["100%.png"])
     })
 
     it("pastes a copy's path instead, for a name with a control character", async () => {

@@ -54,20 +54,27 @@ export const uploadName = (file: { readonly name: string; readonly type: string 
 // Whether a path is a Windows one: on a drive, or a share.
 const windowsPath = (path: string): boolean => /^(?:[A-Za-z]:[\\/]|\\\\)/.test(path)
 
-// A path as a shell reads it as one word: backslashes before its special characters, or
-// on Windows, where a backslash separates folders, in double quotes when it has a space.
+// A path as a shell reads it as one word: backslashes before its special characters,
+// `^` among them for zsh's extended globs, or on Windows, where a backslash separates
+// folders, in double quotes.
 export const shellPath = (path: string): string => {
-  if (windowsPath(path)) return /\s/.test(path) ? `"${path}"` : path
-  return path.replace(/([ \t"'`\\()&;|<>$!*?[\]{}#~])/g, "\\$1")
+  if (windowsPath(path)) return `"${path}"`
+  return path.replace(/([ \t"'`\\()&;|<>$!*?[\]{}#~^])/g, "\\$1")
 }
+
+// What a Windows path may hold to go in as itself: letters but the spacing modifier
+// letters (U+02B0 to U+02FF), which a conversion to the system's code page can turn into
+// quotes, marks, digits, spaces, and what cmd and PowerShell both read literally inside
+// double quotes. Not `%`, `!`, `$`, backticks or quotes, which they expand or end the
+// quotes on, nor `[` `]`, which PowerShell takes as wildcards.
+const windowsSafe = /^(?:(?![\u02b0-\u02ff])[\p{L}\p{M}\p{N} ._\-\\:()&',;@#+=~^{}])+$/u
 
 // A file's own path as a shell reads it as one word, or undefined where it can't go in
 // safely, and a copy goes instead: one with a control character, and on Windows, whose
-// cmd and PowerShell can't be escaped alike, one with anything but letters, digits,
-// spaces and `.`, `_`, `-`, `\`, `:`.
+// cmd and PowerShell can't be escaped alike, one with anything `windowsSafe` leaves out.
 export const ownPath = (path: string): string | undefined => {
   if (!path || /\p{Cc}/u.test(path)) return undefined
-  if (windowsPath(path) && !/^[\p{L}\p{M}\p{N} ._\-\\:]+$/u.test(path)) return undefined
+  if (windowsPath(path) && !windowsSafe.test(path)) return undefined
   return shellPath(path)
 }
 

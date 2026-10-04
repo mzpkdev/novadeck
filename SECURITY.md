@@ -42,6 +42,23 @@ launch reads that file back through the same check before it sets `themeSource` 
 opens windows on the kept colour. A compromised UI can change no more through this
 channel than the app's colour scheme and its windows' background colour.
 
+## Pasted Files
+
+The desktop preload's `pathForFile` hands the page the path of a `File` it already
+holds, which only a paste gives it; it names no other file and reads nothing. The
+companion pane's pages get no preload (see `application/host/src/main/pages.ts`), so
+they have no bridge to ask through.
+
+A file copied in a file manager pastes its own path, so names chosen outside NovaDeck,
+such as a downloaded file's, now reach the terminal's shell. They go in inert or not at
+all (`ownPath` in `application/ui/src/backend/runner/paste.ts`): a path with a control
+character never does; a POSIX path has a backslash before every character a shell
+splits, expands or globs on; a Windows path goes in double quotes, and only when every
+character is one cmd and PowerShell both read literally there, so no `%`, `!`, `$`,
+backtick, quote, `[` or `]`, and no modifier letter, which a code-page conversion can
+turn into a quote. A path that fails these rules is uploaded instead, under the
+runner's own safe name.
+
 ## Terminal Runner
 
 The standalone terminal API is a personal/self-hosted shell capability, not a
