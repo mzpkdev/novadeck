@@ -11,7 +11,8 @@ export type PopoverProps = {
   trigger: ReactElement
   children: ReactNode
   className?: string
-  // What its trigger's tooltip says, while the popover is closed.
+  // What its trigger's tooltip says, while the popover is closed. The trigger's Ark data
+  // attributes are then the tooltip's: style its open state by aria-expanded.
   tooltip?: string
 }
 

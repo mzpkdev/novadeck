@@ -5,8 +5,9 @@
    tab's actions; `.raised` stands on paper with an edge and a shadow, for a button over
    content, such as a peek card's close.
 
-   Hooks: aria-pressed="true" on a toggle that is on; Ark's data-state="open" on the
-   trigger of a select, menu or popover while it is open; :disabled.
+   Hooks: aria-pressed="true" on a toggle that is on; aria-expanded="true" with
+   aria-haspopup on the trigger of a select, menu or popover while it is open (its
+   data-state may be a tooltip's around it); :disabled.
 
    Tokens, each optional (its fallback in brackets):
    --icon-button-bg (transparent), --icon-button-fg (muted),
@@ -28,11 +29,7 @@
   background-color: var(--_bg);
   color: var(--_fg);
 }
-.icon-button:is(
-    [data-scope="select"],
-    [data-scope="menu"],
-    [data-scope="popover"]
-  )[data-state="open"] {
+.icon-button[aria-haspopup][aria-expanded="true"] {
   --_bg: var(--icon-button-hover-bg, var(--color-soft));
   --_fg: var(--icon-button-hover-fg, var(--color-ink));
 }

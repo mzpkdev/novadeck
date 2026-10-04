@@ -5,8 +5,7 @@
    the row under the pointer. Under a rule, `.workspace-switcher-new` opens a folder: a
    `.button.quiet`.
 
-   Hooks: on the trigger, aria-expanded="true" while the popover is open (its data-state
-   is its tooltip's); on a row,
+   Hooks: on the trigger, aria-expanded="true" while the popover is open; on a row,
    aria-current="true" for the current project.
 
    Tokens, each optional (its fallback in brackets):
