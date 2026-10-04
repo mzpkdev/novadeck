@@ -14,6 +14,7 @@ import { SidebarItem } from "../sidebar/SidebarItem"
 import { ContextMenu } from "../ui-toolkit/ContextMenu"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
+import { tabInstructionsId } from "./TerminalTabs"
 import { useRenderAt } from "./use-render-at"
 import { windowMenu, type DockTarget } from "./window-menu"
 
@@ -128,6 +129,7 @@ export const TerminalTab = ({
         tooltip={`${terminal.name}${named ? `\n${named}` : ""}\n${place}${note ? `\n${note}` : ""}${messages ? `\n${messages}` : ""}${planning ? `\n${planning}` : ""}${subagentKinds ? `\n${subagentKinds}` : ""}${usage ? `\n${usage}` : ""}`}
         {...(description ? { description } : {})}
         {...(companion ? { badge: companion } : {})}
+        describedBy={tabInstructionsId}
         onSelect={onSelect}
         data-terminal-tab-id={terminal.id}
         data-terminal-phase={phase}

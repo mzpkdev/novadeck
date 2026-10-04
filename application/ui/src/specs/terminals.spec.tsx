@@ -31,6 +31,7 @@ import {
   terminalTabNames,
   visibleTerminalCounts,
   view,
+  tooltipOf,
 } from "./support/workspace"
 
 const views = ["Focus", "Grid", "Canvas"] as const
@@ -484,6 +485,26 @@ describe("a tab's actions", () => {
 
     await expect.poll(() => [opacity(hide), opacity(rename)]).toEqual([1, 1])
     expect(opacity(close)).toBe(1)
+  })
+
+  it("keep telling a screen reader how to reorder the tab once its tooltip has shown", async () => {
+    await openWorkspace()
+    const tab = terminalTab("Dev server")
+    const instructions = (): string | null => {
+      const id = tab.element().getAttribute("aria-describedby")
+      return id ? (document.getElementById(id)?.textContent ?? null) : null
+    }
+    await expect.poll(instructions).toMatch(/^Press Enter to select a terminal\./)
+
+    await tooltipOf(tab)
+    await userEvent.unhover(tab)
+    await expect
+      .poll(() =>
+        document.querySelector('[data-scope="tooltip"][data-part="content"][data-state="open"]'),
+      )
+      .toBeNull()
+
+    expect(instructions()).toMatch(/^Press Enter to select a terminal\./)
   })
 })
 

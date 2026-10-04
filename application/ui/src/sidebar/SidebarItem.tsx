@@ -19,6 +19,7 @@ export const SidebarItem = ({
   tooltip,
   description,
   badge,
+  describedBy,
   onSelect,
   actions,
   editor,
@@ -37,6 +38,8 @@ export const SidebarItem = ({
   description?: string
   // Beside the name, as a count of what waits there.
   badge?: ReactNode
+  // What describes the row to a screen reader, by id, such as how to reorder it.
+  describedBy?: string
   onSelect: () => void
   actions?: ReactNode
   editor?: ReactNode
@@ -58,6 +61,7 @@ export const SidebarItem = ({
         type="button"
         aria-label={selectLabel}
         aria-description={description}
+        aria-describedby={describedBy}
         aria-current={selected ? "true" : undefined}
         onClick={onSelect}
       >
