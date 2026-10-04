@@ -241,7 +241,8 @@ export type CtrlVTarget = PasteTarget & {
 // as a paste of them does. Any other clipboard, one it can't read, or one read too slowly
 // sends Ctrl+V to the program, without a word, as programs such as vim take it. Typing
 // meanwhile waits, to arrive after the paths or Ctrl+V, for `holdMs` at most. Ctrl+V
-// pressed again, or repeating, while it looks does nothing, so an image goes in once.
+// pressed again, or repeating, while typing waits does nothing, so an image goes in once;
+// once typing goes again, as past a slow upload, Ctrl+V does too.
 export const takeCtrlV = (
   xterm: Pick<Terminal, "attachCustomKeyEventHandler">,
   target: CtrlVTarget,
@@ -252,7 +253,7 @@ export const takeCtrlV = (
     holdMs = ctrlVHoldMs,
   } = {},
 ): void => {
-  let pending = false
+  let holding = false
   const check = async (): Promise<void> => {
     const hold = target.hold()
     let cap: ReturnType<typeof setTimeout> | undefined
@@ -260,6 +261,7 @@ export const takeCtrlV = (
     const release = (controlV: boolean): void => {
       if (released) return
       released = true
+      holding = false
       clearTimeout(cap)
       hold(controlV)
     }
@@ -276,9 +278,9 @@ export const takeCtrlV = (
   xterm.attachCustomKeyEventHandler((event) => {
     if (!plainCtrlV(event, platform) || !target.active() || !readable()) return true
     event.preventDefault()
-    if (pending) return false
-    pending = true
-    void check().finally(() => (pending = false))
+    if (holding) return false
+    holding = true
+    void check().catch(() => (holding = false))
     return false
   })
 }

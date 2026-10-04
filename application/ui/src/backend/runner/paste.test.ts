@@ -510,6 +510,17 @@ describe("Ctrl+V in a runner terminal", () => {
       expect(page.log.filter((entry) => entry.startsWith("upload"))).toHaveLength(1)
       expect(page.log.filter((entry) => entry === "hold")).toHaveLength(1)
     })
+
+    it("works again once typing goes, though a slow upload goes on", async () => {
+      clipboard(async () => [item("image/png")])
+      const page = keyboard({ holdMs: 20, saved: () => new Promise(() => {}) })
+      page.press()
+      await vi.waitFor(() => expect(page.log).toContain("release"))
+      clipboard(async () => [item("text/plain")])
+      expect(page.press()).toEqual({ passed: false, prevented: true })
+      await vi.waitFor(() => expect(page.log.at(-1)).toBe("release with ^V"))
+      expect(page.log.filter((entry) => entry === "hold")).toHaveLength(2)
+    })
   })
 
   context("in a browser that hasn't let the page read the clipboard", () => {

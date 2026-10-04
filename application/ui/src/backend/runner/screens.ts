@@ -253,7 +253,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
             const queued = held ?? []
             held = undefined
             if (gone) return
-            // As typed, so it scrolls to the prompt and waits while typing is locked.
+            // As typed, so it scrolls to the prompt, and is dropped while typing is locked.
             if (controlV) xterm.input("\u0016", true)
             queued.forEach(deliver)
           }
