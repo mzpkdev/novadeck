@@ -8,16 +8,18 @@ import { replyPreview, type Harness } from "./harness.js"
 export type Items = NonNullable<Harness["transcripts"]>["items"]
 
 /**
- * The start of what the agent said last since the person's latest prompt, as its
- * transcript records it, through its harness's items: undefined when it said nothing
- * since, or the transcript can't be read. Only its tail is read.
+ * The start of what the agent said last since the person's latest prompt and its latest
+ * tool step, as its transcript records it, through its harness's items: undefined when
+ * it said nothing since, as before its final words are written, or the transcript can't
+ * be read. Words before a tool call are its working notes, not its reply. Only its tail
+ * is read.
  */
 export const lastReply = async (path: string, items: Items): Promise<string | undefined> => {
   const lines = await tailLines(path)
   let reply: string | undefined
   for (const line of lines ?? [])
     for (const { role, kind, text } of items(line)) {
-      if (role === "user") reply = undefined
+      if (role === "user" || role === "tool" || kind === "tool-call") reply = undefined
       else if (role === "assistant" && kind === "text" && text.trim()) reply = text
     }
   return replyPreview(reply)

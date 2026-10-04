@@ -28,6 +28,9 @@ const input = (text: string, step: number) =>
     content: `<USER_REQUEST>\n${text}\n</USER_REQUEST>`,
   })
 
+// A line of Claude Code's transcript.
+const line = (type: string, content: unknown) => JSON.stringify({ type, message: { content } })
+
 const base = { agent: "agy", sessionId: "c", instance: "7", startedAt: 1 } as const
 
 describe("an agent's last reply in its transcript", () => {
@@ -46,6 +49,27 @@ describe("an agent's last reply in its transcript", () => {
     writeFileSync(path, `${steps.map((step) => JSON.stringify(step)).join("\n")}\n`)
     appendFileSync(path, `${input("And now?", 12)}\n`)
     await expect(lastReply(path, items)).resolves.toBeUndefined()
+  })
+
+  it("is only what Claude Code said after its last tool step, so nothing until its final words", async ({
+    resources,
+  }) => {
+    const claude = harnesses.claude.transcripts!.items
+    const path = join(folder(resources), "transcript.jsonl")
+    writeFileSync(
+      path,
+      [
+        line("user", "Look around"),
+        line("assistant", [
+          { type: "text", text: "Looking first." },
+          { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } },
+        ]),
+        line("user", [{ type: "tool_result", tool_use_id: "t1", content: "README.md" }]),
+      ].join("\n") + "\n",
+    )
+    await expect(lastReply(path, claude)).resolves.toBeUndefined()
+    appendFileSync(path, `${line("assistant", [{ type: "text", text: "Found only a README." }])}\n`)
+    await expect(lastReply(path, claude)).resolves.toBe("Found only a README.")
   })
 
   it("is nothing when the transcript can't be read", async () => {
