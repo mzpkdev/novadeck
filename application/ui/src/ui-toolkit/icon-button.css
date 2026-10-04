@@ -16,7 +16,7 @@
    --icon-button-raised-bg (paper), --icon-button-raised-border-color (line),
    --icon-button-raised-shadow (shadow-control): a `.raised` button; under the pointer
    it keeps its ground and takes the hover fg.
-   --icon-button-dim-opacity (0.25): a `.dim` button's icon at rest.
+   --icon-button-dim-opacity (0.5): a `.dim` button's icon at rest.
    --icon-button-disabled-opacity (0.25): a disabled button. */
 .icon-button {
   --_bg: var(--icon-button-bg, transparent);
@@ -67,7 +67,7 @@
   @apply shrink-0;
 }
 .icon-button.dim > svg {
-  opacity: var(--icon-button-dim-opacity, 0.25);
+  opacity: var(--icon-button-dim-opacity, 0.5);
   transition: opacity var(--motion-feedback) var(--ease-interface);
 }
 .icon-button.dim:is(:focus-visible, [aria-pressed="true"]) > svg {
