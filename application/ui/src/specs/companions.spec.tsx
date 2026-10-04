@@ -77,6 +77,42 @@ describe("An image", () => {
   })
 })
 
+describe("A file", () => {
+  it("scrolls its lines under its header, which stays in view", async () => {
+    // The showcase opens with Build Studio showing this file.
+    await openShowcase()
+    const pane = companionPane("Build Studio")
+    const region = pane.getByRole("region", { name: "src/content/projects.json" })
+    await expect.element(region).toBeVisible()
+    const lines = region.element()
+    await expect.poll(() => lines.scrollHeight).toBeGreaterThan(lines.clientHeight)
+
+    lines.scrollTop = lines.scrollHeight
+
+    await expect.poll(() => lines.scrollTop).toBeGreaterThan(0)
+    await expect
+      .element(pane.getByText("src/content/projects.json", { exact: true }))
+      .toBeInViewport()
+  })
+})
+
+describe("A plan", () => {
+  it("scrolls under its header, which stays in view", async () => {
+    await openShowcase()
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    const pane = companionPane("Build Studio")
+    const path = pane.getByText("plans/studio.md", { exact: true })
+    await expect.element(path).toBeVisible()
+    const scroll = path.element().closest(".plan-document")!.querySelector(".plan-document-scroll")!
+    await expect.poll(() => scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight)
+
+    scroll.scrollTop = scroll.scrollHeight
+
+    await expect.poll(() => scroll.scrollTop).toBeGreaterThan(0)
+    await expect.element(path).toBeInViewport()
+  })
+})
+
 describe("Something that can't show", () => {
   it("says why, with its path to copy", async () => {
     await openShowcase()

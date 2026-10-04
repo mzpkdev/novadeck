@@ -111,7 +111,7 @@ const PlanBody = ({
   return (
     <div className="plan-reader-body" data-outline={headingsOf(plan.text).length > 0}>
       <PlanOutline plan={plan} jump={(at) => editor.current?.jumpTo(at)} />
-      <div className="plan-document-scroll" data-changes={plan.showChanges}>
+      <div className="plan-document">
         <div className="plan-meta">
           {pathOf(item) === null ? (
             <span>{item.detail || item.name}</span>
@@ -151,18 +151,20 @@ const PlanBody = ({
           )}
           {actions && <span className="plan-meta-actions">{actions}</span>}
         </div>
-        <Suspense fallback={null}>
-          <PlanEditor
-            readOnly={!plan.writable}
-            text={plan.text}
-            marks={marks}
-            onChange={pane.edit}
-            onReady={(handle) => {
-              editor.current = handle
-            }}
-            onClose={pane.closeEditor}
-          />
-        </Suspense>
+        <div className="plan-document-scroll" data-changes={plan.showChanges}>
+          <Suspense fallback={null}>
+            <PlanEditor
+              readOnly={!plan.writable}
+              text={plan.text}
+              marks={marks}
+              onChange={pane.edit}
+              onReady={(handle) => {
+                editor.current = handle
+              }}
+              onClose={pane.closeEditor}
+            />
+          </Suspense>
+        </div>
       </div>
     </div>
   )

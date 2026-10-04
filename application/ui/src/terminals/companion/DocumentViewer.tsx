@@ -40,7 +40,7 @@ export const DocumentViewer = ({
             </ul>
           </nav>
         )}
-        <div className="plan-document-scroll">
+        <div className="plan-document">
           <div className="plan-meta">
             <code className="plan-meta-path">{content.path}</code>
             <span>read-only</span>
@@ -49,18 +49,20 @@ export const DocumentViewer = ({
             )}
             {actions && <span className="plan-meta-actions">{actions}</span>}
           </div>
-          <Suspense fallback={null}>
-            <PlanEditor
-              readOnly
-              text={text}
-              marks={noMarks}
-              onChange={ignore}
-              onReady={(handle) => {
-                editor.current = handle
-              }}
-              onClose={ignore}
-            />
-          </Suspense>
+          <div className="plan-document-scroll">
+            <Suspense fallback={null}>
+              <PlanEditor
+                readOnly
+                text={text}
+                marks={noMarks}
+                onChange={ignore}
+                onReady={(handle) => {
+                  editor.current = handle
+                }}
+                onClose={ignore}
+              />
+            </Suspense>
+          </div>
         </div>
       </div>
     </div>

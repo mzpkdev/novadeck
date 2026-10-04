@@ -167,7 +167,15 @@
 .plan-reader-body[data-outline="false"] {
   grid-template-columns: minmax(0, 1fr);
 }
+/* The document under its header, which stays while the document scrolls. */
+.plan-document {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
 .plan-document-scroll {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -253,8 +261,9 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px 14px;
+  width: 100%;
   max-width: 700px;
-  margin: auto;
+  margin-inline: auto;
   padding: 24px 44px 0;
   font-size: 11px;
   color: var(--plan-meta-fg, var(--color-muted));

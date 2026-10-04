@@ -3,7 +3,8 @@
    (`.artifact-image`) with its zoom, a segmented control (`.artifact-zoom`); a file's
    lines (`.artifact-code`, highlighted by the syntax recipe); a page in a browser frame
    (`.artifact-browser`, its bar `.artifact-browser-bar` with `.icon-button`s, its
-   address `.artifact-url` and a link to open it, `.artifact-open`); and a markdown
+   address `.artifact-url` and a link to open it, `.artifact-open`, and a snapshot in
+   `.artifact-page-scroll`); and a markdown
    document, which the prose recipe formats. `.artifact-status` says when there's
    nothing to show yet; `.artifact-unavailable` says why something can't show, over
    `.artifact-unavailable-actions`, what can be done about it. `.artifact-actions` holds what the place showing it offers, as
@@ -35,18 +36,22 @@
 /* While an artifact loads, or when it couldn't. */
 .artifact-status {
   display: grid;
+  flex: 1;
   place-items: center;
-  min-height: 240px;
+  min-height: 0;
+  overflow: auto;
   font-size: 12px;
   color: var(--artifact-status-fg, var(--color-muted));
 }
 /* What can't show, and why, with what can be done about it. */
 .artifact-unavailable {
   display: grid;
+  flex: 1;
   place-content: center;
   justify-items: center;
   gap: 10px;
-  min-height: 240px;
+  min-height: 0;
+  overflow: auto;
   padding: 24px;
   text-align: center;
   font-size: 12px;
@@ -63,16 +68,13 @@
   justify-content: center;
   gap: 4px;
 }
+/* Each viewer's header stays while what's under it scrolls: an image in its checker, a
+   file's lines, a page under its bar, a markdown document in its reader. */
 .artifact-viewer {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-/* A markdown document scrolls inside its reader, beside its outline, as a plan does; an
-   image inside its checker. Their headers stay. */
-.artifact-viewer:is([data-document], :has(> .artifact-image)) {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 .artifact-meta {
@@ -147,8 +149,10 @@
 }
 
 .artifact-code {
+  flex: 1;
+  min-height: 0;
   padding: 10px 0;
-  overflow-x: auto;
+  overflow: auto;
   font: 11.5px/1.75 var(--font-mono);
   user-select: text;
 }
@@ -170,8 +174,9 @@
 
 .artifact-browser {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  min-height: 100%;
+  min-height: 0;
 }
 .artifact-browser-bar {
   display: flex;
@@ -219,15 +224,11 @@
   --_bg: var(--artifact-open-hover-bg, var(--color-soft));
   --_fg: var(--artifact-open-hover-fg, var(--color-ink));
 }
-/* A live page fills the viewer, and scrolls itself. */
-.artifact-viewer:has(> .artifact-browser[data-live]) {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.artifact-browser[data-live] {
+/* A live page fills the viewer, and scrolls itself; a snapshot scrolls under the bar. */
+.artifact-page-scroll {
   flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 .artifact-webview-frame {
   display: flex;
