@@ -35,7 +35,19 @@ export const Tooltip = ({ content, children, disabled }: TooltipProps): React.JS
       lazyMount
       unmountOnExit
     >
-      <ArkTooltip.Trigger asChild {...resting.handlers}>
+      <ArkTooltip.Trigger
+        asChild
+        {...resting.handlers}
+        // Ark would open it on its own as the pointer moves, at once while another
+        // tooltip shows; only resting opens it, so Ark never sees the pointer hover. A
+        // move with a button held is a drag's, which a sortable trigger needs whole.
+        onPointerMoveCapture={(event) => {
+          if (event.buttons === 0) event.preventDefault()
+        }}
+        onPointerOverCapture={(event) => {
+          if (event.buttons === 0) event.preventDefault()
+        }}
+      >
         {children}
       </ArkTooltip.Trigger>
       <Portal>
