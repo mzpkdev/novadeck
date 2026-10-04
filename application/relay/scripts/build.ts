@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url"
 //
 //   node scripts/build.ts           builds dist/novadeck-relay[.exe]
 //   node scripts/build.ts --test    runs the relay's own tests, where cargo is installed
+//   node scripts/build.ts --lint    runs clippy, in CI for every platform it ships for
+//   node scripts/build.ts --format  formats the relay's Rust; --format-check checks it
 //   node scripts/build.ts --hash    prints the source's hash
 //   node scripts/build.ts --check   fails when prebuilt.json pins another source
 //   node scripts/build.ts --asset   prints this platform's binary's name in a release
@@ -64,9 +66,9 @@ export const sourceHash = (files: readonly { path: string; text: string }[]): st
 }
 
 /**
- * Every file the binary is built from, relative to the package: the crate, cargo's own
- * configuration, as its flags shape the binary, and this script, which picks each
- * platform's target, merges macOS's and signs it.
+ * Every file the binary is built from, relative to the package: the crate, the Rust that
+ * builds it, cargo's own configuration, as its flags shape the binary, and this script,
+ * which picks each platform's target, merges macOS's and signs it.
  */
 export const sourcePaths = async (folder = root): Promise<string[]> => {
   const under = async (directory: string, keep: (path: string) => boolean) =>
@@ -76,6 +78,7 @@ export const sourcePaths = async (folder = root): Promise<string[]> => {
   return [
     "Cargo.toml",
     "Cargo.lock",
+    "rust-toolchain.toml",
     ...(await under("src", (path) => path.endsWith(".rs"))),
     ...(await under(".cargo", (path) => path.endsWith(".toml"))),
     join("scripts", "build.ts"),
@@ -112,6 +115,17 @@ const run = (command: string, args: readonly string[]): void => {
 
 const hasCargo = (): boolean => !spawnSync("cargo", ["--version"], { stdio: "ignore" }).error
 
+let rustInPlace = false
+/**
+ * Puts the Rust rust-toolchain.toml names in place, once, where rustup manages Rust: not
+ * every rustup installs it by itself when cargo first runs.
+ */
+const pinnedRust = (): void => {
+  if (rustInPlace || !hasRustup()) return
+  rustInPlace = true
+  run("rustup", ["toolchain", "install", "--no-self-update"])
+}
+
 // Apple silicon runs only signed code, and stripping or merging architectures can leave a
 // binary's own signature broken, so on macOS it is signed again, ad hoc, as the unsigned
 // app is. Returns its bytes.
@@ -135,6 +149,7 @@ const fromSource = async (why: string): Promise<void> => {
       `${why}, so it is built from source, which needs Rust: install it from https://rustup.rs.`,
     )
   }
+  pinnedRust()
   // Without rustup, as with a distribution's own cargo, it links as that cargo does.
   if (process.platform === "linux" && hasRustup()) {
     const triple = linuxTriple()
@@ -228,6 +243,48 @@ const pin = async (): Promise<void> => {
   await writeFile(join(root, "prebuilt.json"), `${JSON.stringify(pinned, null, 2)}\n`)
 }
 
+/**
+ * Whether the relay's own checks can run: building NovaDeck needs no Rust, so without it
+ * they're skipped, saying so, except in CI, which always checks the relay.
+ */
+const withRust = (what: string): boolean => {
+  if (hasCargo()) {
+    pinnedRust()
+    return true
+  }
+  if (process.env.CI || process.env.NOVADECK_RELAY_FROM_SOURCE === "1") {
+    throw new Error(`The relay's ${what} need Rust, and cargo is missing.`)
+  }
+  console.log(`Skipping the relay's ${what}: Rust isn't installed.`)
+  return false
+}
+
+/** The platforms clippy checks in CI, as each compiles code of its own. */
+export const lintTriples = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+// Clippy for this platform, or in CI for every platform the relay ships for: checking
+// needs no linker, so one runner checks them all.
+const lint = (): void => {
+  const clippy = (...triple: string[]) =>
+    run("cargo", [
+      "clippy",
+      "--locked",
+      "--release",
+      "--all-targets",
+      ...triple,
+      "--",
+      "-D",
+      "warnings",
+    ])
+  if (!process.env.CI) return clippy()
+  run("rustup", ["target", "add", ...lintTriples])
+  for (const triple of lintTriples) clippy("--target", triple)
+}
+
 export const main = async (args: readonly string[]): Promise<void> => {
   const [mode] = args
   if (mode === "--hash") {
@@ -252,11 +309,16 @@ export const main = async (args: readonly string[]): Promise<void> => {
     return
   }
   if (mode === "--test") {
-    // Building NovaDeck needs no Rust; testing the relay itself does, as CI has.
-    if (hasCargo()) run("cargo", ["test", "--locked"])
-    else if (process.env.NOVADECK_RELAY_FROM_SOURCE === "1") throw new Error("cargo is missing")
-    else console.log("Skipping the relay's own tests: Rust isn't installed.")
     // Its copy is also exercised through the runner's tests.
+    if (withRust("tests")) run("cargo", ["test", "--locked"])
+    return
+  }
+  if (mode === "--format" || mode === "--format-check") {
+    if (withRust("formatting")) run("cargo", ["fmt", ...(mode === "--format" ? [] : ["--check"])])
+    return
+  }
+  if (mode === "--lint") {
+    if (withRust("lints")) lint()
     return
   }
   await build()

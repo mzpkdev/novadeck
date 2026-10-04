@@ -13,6 +13,7 @@ on:
     paths:
       - application/relay/Cargo.toml
       - application/relay/Cargo.lock
+      - application/relay/rust-toolchain.toml
       - application/relay/src/**
       - application/relay/.cargo/**
       - application/relay/scripts/build.ts
@@ -55,9 +56,11 @@ jobs:
           cache: true
           require-lockfile: true
 
+      # The Rust application/relay/rust-toolchain.toml names.
       - name: Set Up Rust
         shell: bash
-        run: rustup toolchain install stable --profile minimal && rustup default stable
+        working-directory: application/relay
+        run: rustup toolchain install
 
       - name: Build the Relay
         shell: bash

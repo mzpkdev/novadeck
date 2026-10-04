@@ -22,7 +22,9 @@ for code and tests, and [SECURITY.md](SECURITY.md) for sensitive work. Run the
 relevant project checks; report results and anything you could not run. Update
 documentation when behavior changes.
 
-Changing the relay in `application/relay` needs Rust. Once the Relay workflow has
+Changing the relay in `application/relay` needs Rust: its `rust-toolchain.toml` names the
+version, and `pnpm format` and `pnpm lint` then format and lint its code too, as CI does
+(without Rust, they skip it and say so). Once the Relay workflow has
 published binaries for your source, run `node application/relay/scripts/build.ts --pin`
 and commit `application/relay/prebuilt.json`; Quality fails until it pins your source.
 

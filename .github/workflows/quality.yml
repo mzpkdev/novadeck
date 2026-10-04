@@ -20,11 +20,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Both check the relay's Rust too, with the toolchain it pins.
           - name: Format
             os: ubuntu-latest
+            relay: true
             command: npm run format:check
           - name: Lint
             os: ubuntu-latest
+            relay: true
             command: npm run lint
           - name: Typecheck
             os: ubuntu-latest
@@ -64,14 +67,14 @@ jobs:
           cache: true
           require-lockfile: true
 
-      # The relay is built from source here, so a change to it is always compiled and
-      # tested; its pinned binaries are for everyone else.
+      # The relay is built from source here, so a change to it is always compiled, tested
+      # and linted; its pinned binaries are for everyone else. Its rust-toolchain.toml
+      # names the Rust, with rustfmt and clippy.
       - name: Set Up Rust
         if: matrix.relay
         shell: bash
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          (cd application/relay && rustup toolchain install)
           echo "NOVADECK_RELAY_FROM_SOURCE=1" >> "$GITHUB_ENV"
 
       - name: Cache Rust Builds
@@ -82,7 +85,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             application/relay/target
-          key: relay-${{ runner.os }}-${{ hashFiles('application/relay/Cargo.lock') }}
+          key: relay-${{ runner.os }}-${{ hashFiles('application/relay/Cargo.lock', 'application/relay/rust-toolchain.toml') }}
 
       - name: Locate Test Browser
         if: matrix.browser

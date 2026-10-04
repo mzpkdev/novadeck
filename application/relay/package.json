@@ -14,6 +14,9 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "test": "vitest run && node scripts/build.ts --test",
+    "lint": "node scripts/build.ts --lint",
+    "format": "node scripts/build.ts --format",
+    "format:check": "node scripts/build.ts --format-check",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

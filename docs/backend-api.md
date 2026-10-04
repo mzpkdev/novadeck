@@ -475,10 +475,10 @@ changed. Only connecting an agent (below) installs anything elsewhere:
 Each shell the runner starts gets `NOVADECK_TERMINAL_ID`, and with the integration
 `NOVADECK_HOOK`, and `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`:
 a Unix socket in a private temporary directory, or a named pipe on Windows, and a random
-token for that shell. The endpoint takes one JSON line,
-`{ terminalId, token, agent, sessionId, source, seq }`, and nothing else: it records the
-agent's session for the terminal whose token matches, keeping the report with the
-largest `seq` (the hook's start time) per agent, so `/clear`, a fork, or another agent
+token for that shell. Agents' hooks and NovaDeck's MCP server reach it through the
+relay, as the [relay protocol](#relay-protocol) below describes. From each hook's report
+the runner records the agent's session for the terminal whose token matches, keeping the
+report with the largest `seq` (the hook's start time) per agent, so `/clear`, a fork, or another agent
 run in between never replaces a later session with an earlier one. Processes that only
 inherited a shell's environment report too, so the runner ignores a report while the
 shell itself holds the foreground (Linux and macOS tell; as from a tmux server or an
@@ -487,6 +487,53 @@ entered since the last prompt, and a new `startup` session while another agent s
 holds the foreground (an agent run by that agent). A session switch such as `/clear`
 reports its own source and is kept, as is a new conversation of the same agent reported
 without a source (Antigravity).
+
+### Relay protocol
+
+The relay (`application/relay`) and the runner's endpoint (`shell/reports.ts`) speak
+JSON, one message per line, over `NOVADECK_REPORT`. A relay's first line starts
+`{"relay":2,`, its version, so the endpoint tells it from the one-line reports, asks,
+acknowledgements and calls the integration tests send. The runner copies in the relay it
+ships on every start, so both sides change together; an incompatible change still
+bumps the version.
+
+**MCP session**, started by the `mcp` launcher as
+`novadeck-relay mcp <plugin version> <MCP versions, newest first>`:
+
+1. The relay sends `{"relay":2,"kind":"mcp","terminalId":…,"token":…}`.
+2. Then it carries the agent's JSON-RPC lines to the runner unchanged, and the runner's
+   answers back, each as soon as it is ready. The runner serves the MCP server itself
+   (`shell/mcp.ts`), and checks the token on every tool call. A token that can't be a
+   runner's gets the handshake with no tools.
+3. When the agent closes its input, the relay sends `{"relay":"eof"}` on a line of its
+   own, rather than half-closing, which Windows' pipes can't. The runner answers what is
+   under way, then closes, and the relay exits.
+
+A line over 1 MiB is answered with error `-32600`, carrying the id that closes the line
+or else the first its start names, and skipped; the session goes on. Outside NovaDeck's
+terminals, or when the endpoint can't be reached, the relay answers by itself:
+`initialize`, `ping`, an empty `tools/list`, and `-32602` for any tool.
+
+**Hook**, run by the `hook` launcher as
+`novadeck-relay hook --asks <agent>=<Event>,…;… <agent> [event]`:
+
+1. The relay reads the agent's payload, up to 1,000,000 bytes, and sends
+   `{"relay":2,"kind":"hook","terminalId","token","agent","event","seq","ancestors","env","payload"}`.
+   - `seq` is when the hook started, in epoch milliseconds with a fraction.
+   - `ancestors` is up to eight `{ pid, name }`, nearest first. They come from `/proc`
+     on Linux and the kernel on macOS, named by the path each was started by; Windows
+     sends none.
+   - `env` is `{ claudePid?, cursor, codexThread? }`.
+   - `payload` is the agent's JSON as text, unread. The runner prunes it.
+2. The runner answers one line, `{"stdout": string | null, "leaseId": string | null}`: a
+   report at once, an ask (`--asks` names the asking events) by its deadline.
+3. The relay prints `stdout`, or else what the agent needs without NovaDeck
+   (Antigravity's `{"decision":"ask"}` before a tool, `{}` otherwise). When a lease came
+   and printing succeeded, it sends `{"ack":"<leaseId>"}` on the same connection.
+
+A hook gives up two seconds after it starts when it reports, four when it asks, and five
+for Claude Code's status line. For the status line, the relay also runs the person's own
+command, as their Claude Code settings name it, beside the report, and prints it.
 
 The runner saves, per terminal, in a `terminals` table next to the sessions: its
 session, last directory, latest session per agent, when it last showed a prompt, and

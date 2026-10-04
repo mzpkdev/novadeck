@@ -33,3 +33,15 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+
+  # The relay's crates, built into every package NovaDeck ships.
+  - package-ecosystem: "cargo"
+    directory: "/application/relay"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Warsaw"
+    commit-message:
+      prefix: "build"
+      include: "scope"
