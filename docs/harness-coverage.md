@@ -299,6 +299,25 @@ records name their turn. Antigravity's continuation's model calls after the cont
 Stop are that continuation's own, so an idle status line after them ends it. Claude
 Code's record says nothing of the background, so its running subagents count.
 
+## A finished turn and its last reply
+
+The done signal (see the README) needs to tell how a turn ended and what the agent said
+last. `TerminalSummary.activity.lastTurn` carries both once no turn runs: the outcome, and
+the start of the reply as one line of plain text, 120 characters at most
+(`replyPreview`), never the whole reply.
+
+| Harness     | How the turn ended                                                                                                               | Its last reply                                                                                                                                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `Stop` completed, `StopFailure` failed, the transcript's interrupt marker interrupted, `stop_hook_summary` completed as recorded | `Stop`'s `last_assistant_message` (the hook keeps its first 4096 characters); a `Stop` or `StopFailure` naming none falls back to the transcript's last assistant text since the person's prompt; `stop_hook_summary` names none |
+| Codex       | `Stop` completed, `Interrupt` interrupted; the rollout's `task_complete` (failed with an `error`) and `turn_aborted` as recorded | `Stop`'s `last_assistant_message`, else the rollout's last agent text; the rollout's `task_complete` names `last_agent_message`                                                                                                  |
+| Antigravity | `Stop` completed, or failed with an `error`; an idle status line with no `Stop` (an Escape or a refusal) is unknown              | `Stop` names none: the runner reads the transcript the same hook names, its last `PLANNER_RESPONSE` text since the person's last input, once the hook comes; it is written by then (e2e, 1.2.14)                                 |
+
+A finish is a turn that completed or failed, whatever background command it left running,
+with no subagent of it running and nothing waiting on the person. An interrupt, or
+Antigravity's unknown idle, is the person's own doing, and no finish. An end only records
+told, with no reply, shows the plain "Finished its turn." until the hook's own `Stop`, should
+it come after all, names the reply.
+
 ## Still to probe
 
 - Claude Code: plan mode entered with Shift+Tab mid-session, which of `StopFailure` and the transcript ends a failed turn (one the API refused ended, 2026-10-04), subagent interruption, and the `agent_type` internal agents report.

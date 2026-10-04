@@ -1,4 +1,5 @@
 import { createWorkspaceStore } from "../model/store"
+import type { AgentStatus } from "../model/types"
 import { context, describe, expect, it } from "../test"
 import { appearance, workspaceFixture } from "../test/fixtures"
 import {
@@ -6,8 +7,10 @@ import {
   initialUi,
   persist,
   trackRecent,
+  watchFinishes,
   watchPresentation,
   watchSwitcher,
+  type FinishNotify,
   type UiState,
 } from "./ui-store"
 
@@ -26,7 +29,12 @@ const initial = (): UiState =>
       dialogDepth: 0,
       navigationType: "POP",
     },
-    preferences: { fontSize: 13, enabledViews: ["focus", "grid"], appearance },
+    preferences: {
+      fontSize: 13,
+      enabledViews: ["focus", "grid"],
+      appearance,
+      notifyFinished: true,
+    },
   })
 
 describe("UI store persistence", () => {
@@ -165,6 +173,110 @@ describe("switcher watch", () => {
       now: 1,
     })
     expect(ui.getSnapshot().recent.switcher).toBeNull()
+    stop()
+  })
+})
+
+describe("finish watch", () => {
+  const target = { projectId: "project", workspaceSessionId: "initial" }
+  // A workspace whose terminal 02 runs a working agent, terminal 01 selected.
+  const setup = (notifyFinished = true) => {
+    const workspace = createWorkspaceStore(workspaceFixture())
+    const ui = createUiStore({
+      ...initial(),
+      preferences: { ...initial().preferences, notifyFinished },
+    })
+    const notices: Parameters<FinishNotify>[0][] = []
+    const status = (terminalId: string, agent: AgentStatus) =>
+      workspace.dispatch({
+        type: "terminal/status",
+        target,
+        terminalId,
+        status: { state: "running", agent },
+      })
+    const select = (terminalId: string) =>
+      workspace.dispatch({ type: "terminal/select", target, terminalId })
+    workspace.dispatch({
+      type: "terminal/update",
+      target,
+      terminalId: "02",
+      name: "Checkout",
+      handle: "t2",
+    })
+    select("01")
+    status("02", { working: true })
+    const stop = watchFinishes(workspace, ui, (notice) => notices.push(notice))
+    const unread = () => ui.getSnapshot().unread
+    const finish = (terminalId = "02") =>
+      status(terminalId, {
+        working: false,
+        lastTurn: { outcome: "completed", reply: "All green." },
+      })
+    return { workspace, ui, notices, status, select, unread, finish, stop }
+  }
+
+  context("when an agent finishes in a terminal the person isn't looking at", () => {
+    it("marks it unread and shows one notification with the start of its reply", () => {
+      const { notices, unread, finish, stop } = setup()
+      finish()
+      expect(unread()).toEqual({ "project/initial": ["02"] })
+      expect(notices).toEqual([{ id: "02", title: "t2 is done: Checkout", body: "All green." }])
+      stop()
+    })
+
+    it("clears the mark once the person selects it", () => {
+      const { unread, finish, select, stop } = setup()
+      finish()
+      select("02")
+      expect(unread()).toEqual({})
+      stop()
+    })
+
+    it("clears the mark once the agent starts another turn", () => {
+      const { unread, finish, status, stop } = setup()
+      finish()
+      status("02", { working: true })
+      expect(unread()).toEqual({})
+      stop()
+    })
+
+    it("marks it without a notification when the person turned them off", () => {
+      const { notices, unread, finish, stop } = setup(false)
+      finish()
+      expect(unread()).toEqual({ "project/initial": ["02"] })
+      expect(notices).toEqual([])
+      stop()
+    })
+  })
+
+  context("when the person looks at the terminal as its agent finishes", () => {
+    it("neither marks nor notifies", () => {
+      const { notices, unread, finish, select, stop } = setup()
+      select("02")
+      finish()
+      expect(unread()).toEqual({})
+      expect(notices).toEqual([])
+      stop()
+    })
+
+    it("marks and notifies while the page has no focus, and clears once it has", () => {
+      const { ui, notices, unread, finish, select, stop } = setup()
+      select("02")
+      ui.update((state) => ({ ...state, pageFocused: false }))
+      finish()
+      expect(unread()).toEqual({ "project/initial": ["02"] })
+      expect(notices).toHaveLength(1)
+      ui.update((state) => ({ ...state, pageFocused: true }))
+      expect(unread()).toEqual({})
+      stop()
+    })
+  })
+
+  it("forgets the mark of a terminal that closed", () => {
+    const { workspace, unread, finish, stop } = setup()
+    finish()
+    workspace.dispatch({ type: "terminal/close", target, terminalId: "02" })
+    expect(unread()).toEqual({})
     stop()
   })
 })

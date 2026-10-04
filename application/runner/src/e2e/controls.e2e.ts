@@ -348,6 +348,26 @@ for (const setup of setups) {
       )
     }
 
+    it("tells the start of the agent's last reply once its turn ends", async ({ e2e: run }) => {
+      // Claude Code's and Codex's Stop name the reply; Antigravity's transcript records it.
+      run.model.use(
+        replies("Sum it up", "## Summary\n\nPlover-7 finished: **all green**, nothing left."),
+      )
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+
+      await t1.submit("Sum it up")
+      await t1.reached("working", { after: mark })
+      await t1.poll(() => (t1.summary().activity?.lastTurn ? true : undefined), "the turn to end")
+      expect(t1.summary().activity).toMatchObject({
+        state: "idle",
+        lastTurn: {
+          outcome: "completed",
+          reply: "Summary Plover-7 finished: all green, nothing left.",
+        },
+      })
+    })
+
     it("ends a turn whose Stop hook's report never came, as its own records tell", async ({
       e2e: run,
     }) => {

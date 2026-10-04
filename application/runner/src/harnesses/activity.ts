@@ -60,6 +60,9 @@ const maxText = 256
  * NovaDeck continued the turn at its latest Stop, at `turnAt`, and `skips` counts the
  * records of such Stops yet to come that name no turn: Claude Code records a Stop it
  * continued, once its hook answered, as it does any other, and that record ends nothing.
+ * `lastTurn` says how the latest turn to end ended, and the start of the agent's last
+ * reply in it; a turn's start clears it, and a continued Stop keeps it, should the
+ * continuation lapse.
  */
 export type Activity = {
   readonly state: "working" | "idle"
@@ -89,6 +92,13 @@ export type Activity = {
    * end left running since: until then, work its Stop said only exists may be one.
    */
   readonly listed: boolean
+  readonly lastTurn: LastTurn | null
+}
+
+/** How a turn ended, and the start of the agent's last reply in it, where told. */
+export type LastTurn = {
+  readonly outcome: "completed" | "failed" | "interrupted" | "unknown"
+  readonly reply: string | null
 }
 
 /** A freshly bound agent waits for its first prompt. */
@@ -109,6 +119,7 @@ export const started = (at: number, wakes = true): Activity => ({
   continued: false,
   skips: 0,
   listed: false,
+  lastTurn: null,
 })
 
 /**
@@ -334,6 +345,7 @@ export const apply = (
         turn: event.turn ?? null,
         continued: false,
         skips: 0,
+        lastTurn: null,
       }
     case "turn-continued":
       // Only the Stop that just ended the turn; never one after a later fact. What it said
@@ -373,6 +385,8 @@ export const apply = (
         idled: true,
         background: waiting(activity, activity.subagents, event.background),
         listed: true,
+        // An Escape or a refusal, which only an idle status line tells.
+        lastTurn: { outcome: "unknown", reply: null },
       }
     }
     case "turn-escaped":
@@ -386,6 +400,7 @@ export const apply = (
         turnAt: event.startedAt,
         idled: false,
         background: waiting(activity, activity.subagents),
+        lastTurn: { outcome: "interrupted", reply: null },
       }
     case "turn-working":
       // Working after the idle that ended its turn, and newer than it: that idle was stale,
@@ -411,6 +426,7 @@ export const apply = (
         idled: false,
         continued: false,
         listed: false,
+        lastTurn: { outcome: event.outcome, reply: event.reply ?? null },
       } as const
       if (event.outcome !== "interrupted")
         return {
@@ -490,7 +506,7 @@ const asked = (
  * subagents it left running, which wake it once done, run on: work its Stop says only
  * exists counts as one until a status line has counted them. Other work it left running,
  * as a command, shows in `background`, but never keeps it working: a dev server may run
- * for ever.
+ * for ever. How its latest turn ended shows once none runs, a continued one included.
  */
 export const summary = ({
   state,
@@ -499,6 +515,7 @@ export const summary = ({
   planning,
   background,
   listed,
+  lastTurn,
 }: Activity): AgentActivity => ({
   state:
     state === "working" ||
@@ -512,4 +529,5 @@ export const summary = ({
   planning,
   attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
   subagents: subagents.map(({ id, type }) => ({ id: subagentRef(id), type })),
+  lastTurn: state === "working" ? null : lastTurn,
 })
