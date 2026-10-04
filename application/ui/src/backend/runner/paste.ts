@@ -72,10 +72,12 @@ const windowsSafe = /^(?:(?![\u02b0-\u036f])[\p{L}\p{M}\p{N} ._\-\\:])+$/u
 
 // A file's own path as a shell reads it as one word, or undefined where it can't go in
 // safely, and a copy goes instead: one with a control character, and on Windows, whose
-// cmd and PowerShell can't be escaped alike, one with anything `windowsSafe` leaves out.
+// cmd and PowerShell can't be escaped alike, one with anything `windowsSafe` leaves out
+// or a space before a `-`.
 export const ownPath = (path: string): string | undefined => {
   if (!path || /\p{Cc}/u.test(path)) return undefined
-  if (windowsPath(path) && !windowsSafe.test(path)) return undefined
+  // A space before `-` could make an option of the rest, were its quotes lost.
+  if (windowsPath(path) && (!windowsSafe.test(path) || /\s-/.test(path))) return undefined
   return shellPath(path)
 }
 

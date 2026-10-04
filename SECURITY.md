@@ -54,11 +54,14 @@ such as a downloaded file's, now reach the terminal's shell. They go in inert or
 all (`ownPath` in `application/ui/src/backend/runner/paste.ts`): a path with a control
 character never does; a POSIX path has a backslash before every character a shell
 splits, expands or globs on; a Windows path goes in only when every character is a
-letter, mark, digit, space, `.`, `_`, `-`, `\` or `:`, which mean nothing to cmd or
-PowerShell even where its quotes are lost (PowerShell running a `.cmd`, or a paste into
-a quote already open), and in double quotes when it has a space; no spacing modifier
-letter or combining diacritic, which a code-page conversion can turn into a quote. A path that fails these rules is uploaded instead, under the
-runner's own safe name.
+letter, mark, digit, space, `.`, `_`, `-`, `\` or `:`, with no space before a `-`, and
+in double quotes when it has a space; no spacing modifier letter or combining
+diacritic, which a code-page conversion can turn into a quote. Where its quotes are
+lost (PowerShell running a `.cmd`, or a paste into a quote already open), such a path
+can't run a command or start an option, though its spaces may split it into words. A
+path that fails these rules is uploaded instead, under the runner's own safe name,
+which keeps to the same letters (`safeName` in
+`application/runner/src/terminals/uploads.ts`).
 
 ## Terminal Runner
 

@@ -194,6 +194,11 @@ describe("a file's own path", () => {
       expect(ownPath("C:\\shots\\say\u02eehi.png")).toBeUndefined()
       expect(ownPath("C:\\shots\\a\u030eb.png")).toBeUndefined()
     })
+
+    it("doesn't go in with a space before a `-`, an option were its quotes lost", () => {
+      expect(ownPath("C:\\x\\a -Recurse b.png")).toBeUndefined()
+      expect(ownPath("C:\\x\\my-shot 1.png")).toBe('"C:\\x\\my-shot 1.png"')
+    })
   })
 
   it("is none for a file that has no path", () => {
