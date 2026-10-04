@@ -31,6 +31,12 @@ export const useMailBadge = (
   return mailBadge(mail, paused)
 }
 
+// Whether a terminal has a messages view, which puts the messages on its bar.
+export const useHasMail = (messages: Messages | undefined, key: CompanionKey): boolean => {
+  const id = companionKeyId(key)
+  return useMailPart(messages, (state) => hasMail(state.terminals[id]))
+}
+
 // A terminal's messages as its companion pane uses them.
 export type MailHandle = {
   readonly mail: TerminalMail | undefined

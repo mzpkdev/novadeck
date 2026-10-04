@@ -102,8 +102,12 @@ describe("A viewer's header", () => {
     await openShowcase()
     const pane = companionPane("Build Studio")
     const undock = pane.getByRole("button", { name: "Undock to its own window" })
-    const offset = (): number =>
-      undock.element().getBoundingClientRect().top - pane.element().getBoundingClientRect().top
+    // Within its header, which holds still while the pane around it settles.
+    const offset = (): number => {
+      const button = undock.element()
+      const header = button.closest(".artifact-meta")!
+      return button.getBoundingClientRect().top - header.getBoundingClientRect().top
+    }
     await expect
       .element(pane.getByRole("region", { name: "src/content/projects.json" }))
       .toBeVisible()
@@ -112,7 +116,7 @@ describe("A viewer's header", () => {
     await taskbarIcon("Build Studio", "2 images").click()
     await expect.element(pane.getByRole("button", { name: "Fit", exact: true })).toBeVisible()
 
-    expect(offset()).toBe(besideFile)
+    await expect.poll(offset).toBe(besideFile)
   })
 })
 
@@ -130,6 +134,38 @@ describe("A plan", () => {
 
     await expect.poll(() => scroll.scrollTop).toBeGreaterThan(0)
     await expect.element(path).toBeInViewport()
+  })
+})
+
+/** The states of what a tab shows of its terminal's bar, in order. */
+const tabKinds = (name: string): string[] =>
+  [...terminalTab(name).element().querySelectorAll(".terminal-tab-kind")].map(
+    (kind) => kind.getAttribute("data-state") ?? "",
+  )
+
+/** The opacity of a part of a terminal's tab, its actions or what its bar holds. */
+const tabPartOpacity = (name: string, selector: string): number =>
+  Number(
+    getComputedStyle(terminalTab(name).element().closest(".terminal-tab")!.querySelector(selector)!)
+      .opacity,
+  )
+
+describe("A terminal's tab", () => {
+  it("shows what its bar holds, in the bar's order, marking what's new", async () => {
+    await openShowcase()
+    await expect.element(taskbarIcon("Build Studio", "Plan: A home for Studio")).toBeVisible()
+    // The plan is new; the images, files and messages have been seen.
+    await expect.poll(() => tabKinds("Build Studio")).toEqual(["new", "seen", "seen", "seen"])
+    expect(tabKinds("Refactor auth").length).toBeGreaterThan(0)
+  })
+
+  it("shows what its bar holds on the name's line, above the actions", async () => {
+    await openShowcase()
+    const tab = terminalTab("Refactor auth").element().closest(".terminal-tab")!
+    const kinds = tab.querySelector(".terminal-tab-kinds")!.getBoundingClientRect()
+    const actions = tab.querySelector(".sidebar-item-actions")!.getBoundingClientRect()
+    expect(kinds.bottom).toBeLessThanOrEqual(actions.top)
+    expect(tabPartOpacity("Refactor auth", ".sidebar-item-actions")).toBe(1)
   })
 })
 

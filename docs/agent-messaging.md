@@ -1034,10 +1034,11 @@ doorbell and every watch among them.
 The UI follows every terminal's listing with `messages.watch`, through the backend's
 optional `messages` capability (`model/messages.ts`):
 
-- **Badge.** A terminal's sidebar tab counts the messages waiting for its agent, those
-  to it that are `queued`, `leased` or `held`, never delivered or gone, and says so in
-  its description. The count is amber while a thread is held for release, so the person
-  knows one is needed, and shows a pause mark while messaging is paused.
+- **Count.** A terminal's sidebar tab shows what its companion bar holds, the messages
+  among them, and the messages' icon counts those waiting for its agent: those to it
+  that are `queued`, `leased` or `held`, never delivered or gone. The tab says so in its
+  description. The count is amber while a thread is held for release, so the person
+  knows one is needed, and the icon becomes a pause mark while messaging is paused.
 - **Messages view.** A terminal that has had messages gets a Messages icon in its
   companion pane's taskbar, with the same count; an agent with none yet keeps its bar
   clear. The view lists
@@ -1079,7 +1080,7 @@ again.
 3. **UI:** badges, the Messages view and the pause switch. Built: `messages.watch` in
    `application/runner/src/terminals/manager.ts` over `Messaging.subscribe`, the
    contract in `model/messages.ts` of `application/ui`, the runner's side in
-   `backend/runner/messages.ts`, the badge in `terminals/MailCount.tsx`, the view in
+   `backend/runner/messages.ts`, the tab's count in `terminals/companion/TabKinds.tsx`, the view in
    `terminals/companion/MessagesView.tsx`, and the title's source and reset on the tab in
    `terminals/TerminalTab.tsx`.
 4. **Self-description:** `describe(title, summary, asked?)`, the first-prompt title and

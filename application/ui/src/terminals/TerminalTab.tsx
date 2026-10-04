@@ -1,5 +1,6 @@
 import { useSortable } from "@dnd-kit/react/sortable"
 import { Check, Eye, EyeOff, Pencil, X, type LucideIcon } from "lucide-react"
+import type { ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import { subagentsBadge, subagentsDetail } from "../model/agent-subagents"
@@ -12,7 +13,6 @@ import type { Tile } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { ContextMenu } from "../ui-toolkit/ContextMenu"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { MailCount } from "./MailCount"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 import { useRenderAt } from "./use-render-at"
 import { windowMenu, type DockTarget } from "./window-menu"
@@ -27,6 +27,7 @@ export const TerminalTab = ({
   hidden,
   rename,
   mail = null,
+  companion,
   onVisibilityChange,
   onSelect,
   onBeginRename,
@@ -45,8 +46,10 @@ export const TerminalTab = ({
   selected: boolean
   hidden: boolean
   rename: TerminalRename | null
-  // What waits for its agent, when anything does.
+  // What waits for its agent, when anything does: the tab says it in words.
   mail?: MailBadge | null
+  // What its companion bar holds, at the end of its name's line.
+  companion?: ReactNode
   onVisibilityChange: (hidden: boolean) => void
   onSelect: () => void
   onBeginRename: () => void
@@ -122,7 +125,7 @@ export const TerminalTab = ({
         selectLabel={`Select ${terminal.name}${hidden ? " (hidden)" : ""}`}
         tooltip={`${terminal.name}${named ? `\n${named}` : ""}\n${place}${note ? `\n${note}` : ""}${messages ? `\n${messages}` : ""}${planning ? `\n${planning}` : ""}${subagentKinds ? `\n${subagentKinds}` : ""}${usage ? `\n${usage}` : ""}`}
         {...(description ? { description } : {})}
-        {...(mail ? { badge: <MailCount badge={mail} /> } : {})}
+        {...(companion ? { badge: companion } : {})}
         onSelect={onSelect}
         data-terminal-tab-id={terminal.id}
         data-terminal-phase={phase}
