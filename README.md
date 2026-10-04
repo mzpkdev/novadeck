@@ -810,7 +810,9 @@ Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 Each package ships the relay agents start for NovaDeck's MCP server and hooks. Its binaries
 are published by the [relay workflow](.github/workflows/relay.yml) when a pull
 request changes its source; pin them with `node application/relay/scripts/build.ts
---pin` and commit `application/relay/prebuilt.json`, which Quality checks.
+--pin` and commit `application/relay/prebuilt.json`, which Quality checks. Those
+`relay-*` prereleases are deleted after two days unless `main` or an open pull request
+pins them; building an older commit whose binaries are gone needs Rust.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native

@@ -1,10 +1,14 @@
 name: Relay
 
 # Publishes the relay's binaries for a version of its source, so building NovaDeck needs
-# no Rust: each platform's binary is built natively, then all three go to a prerelease
-# named for the source's hash. The author pins them with
+# no Rust: each platform's binary is built natively, then all of them go to a prerelease
+# whose tag starts with the source's hash. The author pins them with
 # `node application/relay/scripts/build.ts --pin` and commits prebuilt.json, which the
-# Quality workflow checks.
+# Quality workflow checks. A source already published isn't built again.
+#
+# Daily, it prunes the relay's prereleases older than two days that neither main nor an
+# open pull request pins. A pruned release's tag can't be used again, which is why each
+# publish adds its run's id to the tag.
 
 on:
   pull_request:
@@ -18,18 +22,57 @@ on:
       - application/relay/.cargo/**
       - application/relay/scripts/build.ts
       - .github/workflows/relay.yml
+  schedule:
+    - cron: "41 4 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
+  source:
+    name: Source
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      prefix: ${{ steps.source.outputs.prefix }}
+      published: ${{ steps.source.outputs.published }}
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up Node
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      # A pull request runs this on every push, as its path filter sees the whole diff:
+      # binaries already published for this source are kept, not built again.
+      - name: Find Published Binaries
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prefix="$(node application/relay/scripts/build.ts --prefix)"
+          published="$(gh release list --limit 200 --json tagName \
+            --jq "[.[] | select(.tagName | startswith(\"${prefix}-\"))] | length > 0")"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+          echo "Binaries for $prefix published already: $published"
+
   build:
     name: Build (${{ matrix.name }})
+    needs: source
+    if: needs.source.outputs.published != 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -85,23 +128,16 @@ jobs:
   publish:
     name: Publish
     # Forks can't publish; a maintainer runs this on their behalf.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
-    needs: build
+    if: >-
+      needs.source.outputs.published != 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    needs: [source, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - name: Check Out Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set Up Node
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
-        with:
-          runtime: node@26
-          cache: true
-          require-lockfile: true
-
       - name: Download the Relays
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -113,21 +149,55 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # gh runs among the binaries, outside the checkout.
+          # gh runs among the binaries, outside a checkout.
           GH_REPO: ${{ github.repository }}
+          PREFIX: ${{ needs.source.outputs.prefix }}
           TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          source="$(node application/relay/scripts/build.ts --hash)"
-          tag="relay-${source:0:16}"
+          tag="${PREFIX}-${GITHUB_RUN_ID}"
           cd "$RUNNER_TEMP/relay"
           sha256sum novadeck-relay-* > SHA256SUMS
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already holds this source's binaries."
-          else
-            gh release create "$tag" novadeck-relay-* SHA256SUMS \
-              --prerelease \
-              --target "$TARGET" \
-              --title "Relay ${source:0:16}" \
-              --notes "NovaDeck's relay, built from source ${source}. Pin it with \`node application/relay/scripts/build.ts --pin\`."
-          fi
+          gh release create "$tag" novadeck-relay-* SHA256SUMS \
+            --prerelease \
+            --target "$TARGET" \
+            --title "Relay ${PREFIX#relay-}" \
+            --notes "NovaDeck's relay, built from ${TARGET}. Pin it with \`node application/relay/scripts/build.ts --pin\`."
+
+  prune:
+    name: Prune
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      # Kept: whatever main or an open pull request pins, so their builds still find it.
+      - name: Prune Old Relay Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEEP_DAYS: "2"
+        run: |
+          set -euo pipefail
+          pinned_at() {
+            gh api "repos/$GH_REPO/contents/application/relay/prebuilt.json?ref=$1" \
+              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null |
+              jq -r '.release // ("relay-" + .source[0:16])' 2>/dev/null || true
+          }
+          keep="$(pinned_at main)"
+          for number in $(gh pr list --state open --limit 200 --json number --jq '.[].number'); do
+            keep="$keep"$'\n'"$(pinned_at "refs/pull/$number/head")"
+          done
+          echo "Pinned: $(echo "$keep" | sort -u | tr '\n' ' ')"
+          cutoff="$(date -u -d "$KEEP_DAYS days ago" +%s)"
+          gh release list --limit 200 --json tagName,createdAt \
+            --jq '.[] | select(.tagName | startswith("relay-")) | "\(.tagName) \(.createdAt)"' |
+            while read -r tag created; do
+              if grep -qxF "$tag" <<<"$keep"; then continue; fi
+              if [ "$(date -u -d "$created" +%s)" -gt "$cutoff" ]; then continue; fi
+              echo "Deleting $tag, from $created"
+              gh release delete "$tag" --cleanup-tag --yes
+            done

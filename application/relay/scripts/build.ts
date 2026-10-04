@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url"
 //   node scripts/build.ts --asset   prints this platform's binary's name in a release
 //   node scripts/build.ts --pin     pins the binaries the Relay workflow published for
 //                                   this source, writing prebuilt.json
+//   node scripts/build.ts --prefix  prints the tag prefix this source's releases share
 //
 // NOVADECK_RELAY_FROM_SOURCE=1 always builds from source, as CI does to keep it honest;
 // NOVADECK_RELAY_UNIVERSAL=1 on macOS builds both architectures into one binary, as the
@@ -29,6 +30,8 @@ const releases = "https://github.com/mzpkdev/novadeck/releases/download"
 /** The binaries published for one version of the relay's source, by target. */
 export type Prebuilt = {
   readonly source: string
+  /** The release that holds them, as each publish gets a tag of its own. */
+  readonly release: string
   readonly files: { readonly [target: string]: { readonly sha256: string } }
 }
 
@@ -46,8 +49,13 @@ export const target = (platform: string = process.platform, arch: string = proce
 export const assetName = (key: string): string =>
   `novadeck-relay-${key}${key.startsWith("win32-") ? ".exe" : ""}`
 
-/** Where a source version's binaries are published. */
-export const releaseTag = (source: string): string => `relay-${source.slice(0, 16)}`
+/**
+ * How the tags of a source version's releases start: each publish adds its run's id, as
+ * a pruned release's tag can't be used again (see the Relay workflow).
+ */
+export const releasePrefix = (source: string): string => `relay-${source.slice(0, 16)}`
+
+const repository = "mzpkdev/novadeck"
 
 const binaryName = process.platform === "win32" ? "novadeck-relay.exe" : "novadeck-relay"
 
@@ -182,7 +190,7 @@ const download = async (prebuilt: Prebuilt, key: string): Promise<void> => {
   if (!pinned) throw new Error(`No prebuilt relay for ${key}`)
   const current = await readFile(join(root, "dist", binaryName)).catch(() => undefined)
   if (current && sha256(current) === pinned.sha256) return
-  const url = `${releases}/${releaseTag(prebuilt.source)}/${assetName(key)}`
+  const url = `${releases}/${prebuilt.release}/${assetName(key)}`
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Downloading ${url} failed: ${response.status}`)
   const data = new Uint8Array(await response.arrayBuffer())
@@ -197,7 +205,7 @@ export const build = async (): Promise<void> => {
   }
   const [source, prebuilt] = await Promise.all([readSource(), readPrebuilt()])
   const key = target()
-  if (prebuilt.source !== source || !prebuilt.files[key]) {
+  if (prebuilt.source !== source || !prebuilt.release || !prebuilt.files[key]) {
     await fromSource(
       prebuilt.source === source
         ? `No prebuilt relay is pinned for ${key}`
@@ -223,23 +231,37 @@ export const build = async (): Promise<void> => {
   }
 }
 
+// The newest release published for `source`, by its tag.
+const publishedFor = async (source: string): Promise<string> => {
+  const headers = process.env.GH_TOKEN ? { authorization: `Bearer ${process.env.GH_TOKEN}` } : {}
+  const response = await fetch(`https://api.github.com/repos/${repository}/releases?per_page=100`, {
+    headers,
+  })
+  if (!response.ok) throw new Error(`Listing the releases failed: ${response.status}`)
+  const listed = (await response.json()) as readonly { readonly tag_name: string }[]
+  const found = listed.find(({ tag_name }) => tag_name.startsWith(`${releasePrefix(source)}-`))
+  if (!found) {
+    throw new Error(
+      `No release holds this source's binaries yet; the Relay workflow publishes them once ` +
+        "it is pushed.",
+    )
+  }
+  return found.tag_name
+}
+
 const pin = async (): Promise<void> => {
   const source = await readSource()
+  const release = await publishedFor(source)
   const files: { [key: string]: { sha256: string } } = {}
   for (const key of targets) {
-    const url = `${releases}/${releaseTag(source)}/${assetName(key)}`
-    // eslint-disable-next-line no-await-in-loop -- Three binaries, one after another.
+    const url = `${releases}/${release}/${assetName(key)}`
+    // eslint-disable-next-line no-await-in-loop -- A few binaries, one after another.
     const response = await fetch(url)
-    if (!response.ok) {
-      throw new Error(
-        `Downloading ${url} failed: ${response.status}. The Relay workflow publishes it ` +
-          "once this source is pushed.",
-      )
-    }
+    if (!response.ok) throw new Error(`Downloading ${url} failed: ${response.status}`)
     // eslint-disable-next-line no-await-in-loop -- As above.
     files[key] = { sha256: sha256(new Uint8Array(await response.arrayBuffer())) }
   }
-  const pinned: Prebuilt = { source, files }
+  const pinned: Prebuilt = { source, release, files }
   await writeFile(join(root, "prebuilt.json"), `${JSON.stringify(pinned, null, 2)}\n`)
 }
 
@@ -289,6 +311,10 @@ export const main = async (args: readonly string[]): Promise<void> => {
   const [mode] = args
   if (mode === "--hash") {
     console.log(await readSource())
+    return
+  }
+  if (mode === "--prefix") {
+    console.log(releasePrefix(await readSource()))
     return
   }
   if (mode === "--check") {

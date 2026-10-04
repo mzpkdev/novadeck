@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   assetName,
   linuxTriple,
-  releaseTag,
+  releasePrefix,
   sourceHash,
   sourcePaths,
   target,
@@ -38,7 +38,7 @@ describe("the relay's build", () => {
       "novadeck-relay-darwin-universal",
       "novadeck-relay-win32-x64.exe",
     ])
-    expect(releaseTag("0123456789abcdef0123")).toBe("relay-0123456789abcdef")
+    expect(releasePrefix("0123456789abcdef0123")).toBe("relay-0123456789abcdef")
   })
 
   it("links Linux binaries statically, so one runs on any distribution", () => {
