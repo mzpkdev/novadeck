@@ -744,6 +744,25 @@ describe("an agent waiting on what its turn left running", () => {
     expect(summary(stop(used, 6, { recorded: true })!).state).toBe("idle")
   })
 
+  it("uses up a continued Stop's record read only after the next Stop, leaving no skip over", () => {
+    // Continued twice before the transcript is read: the first record comes behind the
+    // second Stop's fence, yet still uses up its own skip.
+    const first = apply(
+      stop(turn(started(0), 1), 2, { background: none })!,
+      binding,
+      fact({ type: "turn-continued", startedAt: 2 }),
+    )!
+    const second = apply(
+      stop(first, 5, { background: none })!,
+      binding,
+      fact({ type: "turn-continued", startedAt: 5 }),
+    )!
+    const read = stop(stop(second, 3, { recorded: true })!, 6, { recorded: true })!
+    expect(read).toMatchObject({ state: "working", skips: 0 })
+    // So the continuation's own record ends it, should its hook's report never come.
+    expect(summary(stop(read, 8, { recorded: true })!).state).toBe("idle")
+  })
+
   it("ends a continuation at the record naming its turn, used up for no Stop it continued", () => {
     // Codex keeps the turn's id through a continuation, and records only its real end.
     const codex: Binding = { agent: "codex", sessionId: "s", instance: "7" }

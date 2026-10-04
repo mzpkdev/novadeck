@@ -317,6 +317,10 @@ export const apply = (
       }
     }
   }
+  // The record of a Stop NovaDeck continued uses up its skip whenever it is read, even
+  // once a later Stop has moved the fence past it, so no skip is left to eat a later end.
+  if (event.type === "turn-ended" && event.recorded && !event.turn && activity.skips > 0)
+    return { ...activity, skips: activity.skips - 1 }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
@@ -401,8 +405,6 @@ export const apply = (
         (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
       )
         return undefined
-      if (recorded && !named && activity.skips > 0)
-        return { ...activity, skips: activity.skips - 1 }
       const turn = {
         state: "idle",
         turnAt: recorded ? activity.turnAt : event.startedAt,
