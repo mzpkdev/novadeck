@@ -22,6 +22,10 @@ for code and tests, and [SECURITY.md](SECURITY.md) for sensitive work. Run the
 relevant project checks; report results and anything you could not run. Update
 documentation when behavior changes.
 
+Changing the relay in `application/relay` needs Rust. Once the Relay workflow has
+published binaries for your source, run `node application/relay/scripts/build.ts --pin`
+and commit `application/relay/prebuilt.json`; Quality fails until it pins your source.
+
 ## Pull Requests
 
 Use the [PR template](.github/pull_request_template.md), even when submitting

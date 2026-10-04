@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process"
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { promisify } from "node:util"
 
+import { relayPath } from "@novadeck/relay"
+
 import { hookScript } from "./hook.js"
-import { mcpScript } from "./mcp.js"
-import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
+import { shellFiles, shellPaths, staleShellFiles, type ShellPaths } from "./scripts.js"
 
 /**
  * The shell files as written, with the launcher as NovaDeck's shells name it in
@@ -14,23 +15,33 @@ import { shellFiles, shellPaths, type ShellPaths } from "./scripts.js"
  */
 export type InstalledShell = ShellPaths & { readonly launcher: string }
 
+export type InstallOptions = {
+  /** The relay to copy in for the MCP launcher; the one `@novadeck/relay` built by default. */
+  readonly relay?: string
+  /** What runs the hook: NovaDeck's own runtime, Electron acting as Node, or Node. */
+  readonly runtime?: string
+}
+
 /**
- * Writes the shell integration, hook and agent plugins into NovaDeck's own
+ * Writes the shell integration, hook, relay and agent plugins into NovaDeck's own
  * directory, each only when it changed, replacing it whole so a shell starting at that
  * moment reads the old or the new file.
  */
 export const installShellFiles = async (
   directory: string,
-  runtime = process.execPath,
+  { relay = relayPath, runtime = process.execPath }: InstallOptions = {},
 ): Promise<InstalledShell> => {
   const paths = shellPaths(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
+  // Without its relay an agent's MCP server can't start; the rest still works.
+  await installRelay(relay, paths.relay).catch((error: unknown) => {
+    console.error("NovaDeck's relay is unavailable:", error)
+  })
+  await Promise.all(staleShellFiles(directory).map((stale) => rm(stale, { force: true })))
   // Plugins name the MCP launcher by its short name on Windows, as cmd starts it.
   const mcp =
     process.platform === "win32" ? join(await shortName(directory), basename(paths.mcp)) : paths.mcp
-  for (const file of shellFiles(paths, runtime, hookScript, mcpScript, process.platform, {
-    mcp,
-  })) {
+  for (const file of shellFiles(paths, runtime, hookScript, process.platform, { mcp })) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
     await mkdir(dirname(file.path), { recursive: true, mode: 0o700 })
     // eslint-disable-next-line no-await-in-loop -- Unchanged files are left alone.
@@ -50,6 +61,35 @@ export const installShellFiles = async (
   await rm(paths.resume, { recursive: true, force: true })
   await mkdir(paths.resume, { recursive: true, mode: 0o700 })
   return { ...paths, launcher: await shortName(paths.hook) }
+}
+
+/**
+ * Copies the relay to `path` when it differs. Agents run the copy for as long as their
+ * sessions last, so it is replaced, never written over: where it runs, the new copy is
+ * renamed over it, which POSIX allows, and Windows once the running one is moved aside;
+ * copies moved aside earlier go once nothing runs them.
+ */
+const installRelay = async (relay: string, path: string): Promise<void> => {
+  const [binary, current] = await Promise.all([
+    readFile(relay),
+    readFile(path).catch(() => undefined),
+  ])
+  const folder = dirname(path)
+  const aside = `${basename(path)}.old-`
+  for (const name of await readdir(folder)) {
+    // eslint-disable-next-line no-await-in-loop -- Rarely more than one; a running one stays.
+    if (name.startsWith(aside)) await rm(join(folder, name), { force: true }).catch(() => {})
+  }
+  if (current?.equals(binary)) {
+    await chmod(path, 0o700)
+    return
+  }
+  const temporary = `${path}.${process.pid}.tmp`
+  await writeFile(temporary, binary, { mode: 0o700 })
+  if (process.platform === "win32" && current !== undefined) {
+    await rename(path, join(folder, `${aside}${Date.now()}`))
+  }
+  await rename(temporary, path)
 }
 
 // cmd's `for` gives a path's short name, as Windows keeps one on most volumes; a path

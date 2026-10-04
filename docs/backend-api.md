@@ -77,13 +77,19 @@ Without a token, the runner exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set, and
 writes its [shell integration](#shell-integration-and-restoring-terminals) to a `shell`
-folder beside it.
+folder beside it, with its own copy of the relay agents start for NovaDeck's MCP server.
+The build fetches the relay prebuilt for Linux (x64 and ARM64, linked statically, so
+any distribution runs it), macOS and Windows, or builds it with Rust elsewhere; set
+`NOVADECK_RELAY` to use another build. Without it, shells and hooks still work, and
+agents there start without NovaDeck's tools.
 Programmatic `startServer` from `@novadeck/runner/server` and `createRunner` use
 an in-memory database when no path is supplied. `@novadeck/runner/http` stays free
 of native terminal code, so the Electron main process can serve the status endpoint
 without it.
 
 For a VPS, terminate TLS at a trusted reverse proxy and forward WebSocket upgrades.
+Agents run beside the runner on the server, and their relays reach it over a private
+local socket, so a UI elsewhere needs nothing more than the WebSocket.
 Set `CORS_ORIGINS` to the exact trusted frontend origins. A static UI can later
 connect directly over WSS; it does not need a terminal backend on Cloudflare.
 Follow the [runner trust boundary](../SECURITY.md#terminal-runner) before exposing

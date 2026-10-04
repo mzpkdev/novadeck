@@ -3,7 +3,14 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "env": ["VITE_API_URL", "VITE_NOVADECK_RUNNER_URL", "VITE_NOVADECK_RUNNER_TOKEN"],
+      "env": [
+        "VITE_API_URL",
+        "VITE_NOVADECK_RUNNER_URL",
+        "VITE_NOVADECK_RUNNER_TOKEN",
+        "NOVADECK_RELAY_FROM_SOURCE",
+        "NOVADECK_RELAY_UNIVERSAL"
+      ],
+      "passThroughEnv": ["CARGO_HOME", "RUSTUP_HOME"],
       "outputs": ["dist/**", "out/**"]
     },
     "dev": {
@@ -12,8 +19,19 @@
     },
     "test": {
       "dependsOn": ["build", "^build", "^test"],
-      "env": ["VITE_API_URL", "VITE_NOVADECK_RUNNER_URL", "VITE_NOVADECK_RUNNER_TOKEN"],
-      "passThroughEnv": ["PLAYWRIGHT_BROWSERS_PATH", "CI", "NOVADECK_UI_TRACE"],
+      "env": [
+        "VITE_API_URL",
+        "VITE_NOVADECK_RUNNER_URL",
+        "VITE_NOVADECK_RUNNER_TOKEN",
+        "NOVADECK_RELAY_FROM_SOURCE"
+      ],
+      "passThroughEnv": [
+        "PLAYWRIGHT_BROWSERS_PATH",
+        "CI",
+        "NOVADECK_UI_TRACE",
+        "CARGO_HOME",
+        "RUSTUP_HOME"
+      ],
       "outputs": []
     },
     "typecheck": {

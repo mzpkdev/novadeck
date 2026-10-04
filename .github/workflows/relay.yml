@@ -1,0 +1,125 @@
+name: Relay
+
+# Publishes the relay's binaries for a version of its source, so building NovaDeck needs
+# no Rust: each platform's binary is built natively, then all three go to a prerelease
+# named for the source's hash. The author pins them with
+# `node application/relay/scripts/build.ts --pin` and commits prebuilt.json, which the
+# Quality workflow checks.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - application/relay/Cargo.toml
+      - application/relay/Cargo.lock
+      - application/relay/src/**
+      - .github/workflows/relay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          # For runners deployed on their own, as on ARM servers.
+          - name: Linux ARM
+            os: ubuntu-24.04-arm
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up Node
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Set Up Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Build the Relay
+        shell: bash
+        env:
+          NOVADECK_RELAY_FROM_SOURCE: "1"
+          NOVADECK_RELAY_UNIVERSAL: "1"
+        run: |
+          node application/relay/scripts/build.ts --test
+          node application/relay/scripts/build.ts
+          asset="$(node application/relay/scripts/build.ts --asset)"
+          mkdir -p "$RUNNER_TEMP/relay"
+          cp application/relay/dist/novadeck-relay* "$RUNNER_TEMP/relay/$asset"
+
+      - name: Upload the Relay
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: relay-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/relay/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish
+    # Forks can't publish; a maintainer runs this on their behalf.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up Node
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Download the Relays
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: relay-*
+          path: ${{ runner.temp }}/relay
+          merge-multiple: true
+
+      - name: Publish the Relays
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          source="$(node application/relay/scripts/build.ts --hash)"
+          tag="relay-${source:0:16}"
+          cd "$RUNNER_TEMP/relay"
+          sha256sum novadeck-relay-* > SHA256SUMS
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already holds this source's binaries."
+          else
+            gh release create "$tag" novadeck-relay-* SHA256SUMS \
+              --prerelease \
+              --target "$TARGET" \
+              --title "Relay ${source:0:16}" \
+              --notes "NovaDeck's relay, built from source ${source}. Pin it with \`node application/relay/scripts/build.ts --pin\`."
+          fi

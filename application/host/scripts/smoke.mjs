@@ -53,6 +53,29 @@ if (process.platform === "win32") {
   }
 }
 
+// The relay agents start for NovaDeck's MCP server ships beside the UI, and answers the
+// handshake by itself outside NovaDeck's terminals.
+const relay = join(
+  resources,
+  "relay",
+  `novadeck-relay${process.platform === "win32" ? ".exe" : ""}`,
+)
+if (!existsSync(relay)) fail(`The relay is missing: ${relay}`)
+try {
+  const hello = execFileSync(relay, ["mcp", "0.0.0", "2025-06-18"], {
+    input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`,
+    // Outside a NovaDeck terminal, even when the smoke test runs in one.
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith("NOVADECK_")),
+    ),
+    timeout: 10_000,
+  })
+  const answer = JSON.parse(hello.toString())
+  if (answer?.result?.protocolVersion !== "2025-06-18") throw new Error(hello.toString())
+} catch (error) {
+  fail(`The relay didn't answer the MCP handshake: ${error}`)
+}
+
 const bundle = await esbuild.build({
   entryPoints: [join(host, "..", "protocol", "dist", "client.js")],
   bundle: true,

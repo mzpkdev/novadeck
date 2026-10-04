@@ -268,3 +268,115 @@ describe("hook asks", () => {
     expect(acks).toEqual([{ terminalId: "t", token, leaseId: lease }])
   })
 })
+
+// A relay's connection: its first line, then the lines it carries; resolves to every
+// line that came back by the time the endpoint closed it, or `waitMs` passed.
+const relay = (
+  endpoint: string,
+  lines: readonly string[],
+  { waitMs = 5_000 }: { readonly waitMs?: number } = {},
+) =>
+  new Promise<unknown[]>((resolve) => {
+    const socket = connect(endpoint)
+    let received = ""
+    const done = () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(
+        received
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as unknown),
+      )
+    }
+    const timer = setTimeout(done, waitMs)
+    socket.setEncoding("utf8")
+    socket.on("data", (chunk: string) => (received += chunk))
+    socket.on("error", done)
+    socket.on("close", done)
+    socket.write(lines.map((line) => `${line}\n`).join(""))
+  })
+const hello = (given: object = {}) =>
+  JSON.stringify({ relay: 2, kind: "mcp", terminalId: "t", token, ...given })
+const end = JSON.stringify({ relay: "eof" })
+const rpc = (message: object) => JSON.stringify({ jsonrpc: "2.0", ...message })
+
+describe("relay sessions", () => {
+  it("answers an agent's session over one connection, with the terminal's token", async ({
+    resources,
+  }) => {
+    const calls: Call[] = []
+    const reports = await listenForReports(
+      handlers({
+        call: async (asked) => {
+          calls.push(asked)
+          return { ok: true, id: "abc", kind: "file", name: "a.md" }
+        },
+      }),
+    )
+    resources.defer(() => reports.close())
+    const answers = await relay(reports.endpoint, [
+      hello(),
+      rpc({ id: 1, method: "tools/list" }),
+      rpc({ id: 2, method: "tools/call", params: { name: "show", arguments: { path: "a.md" } } }),
+      end,
+    ])
+    expect(answers).toHaveLength(2)
+    expect(answers).toContainEqual(
+      expect.objectContaining({ id: 2, result: expect.objectContaining({ isError: false }) }),
+    )
+    expect(calls).toEqual([call])
+  })
+
+  it("offers no tools to a relay that names no terminal's token", async ({ resources }) => {
+    const calls: Call[] = []
+    const reports = await listenForReports(
+      handlers({ call: async (asked) => (calls.push(asked), { ok: true }) }),
+    )
+    resources.defer(() => reports.close())
+    const answers = await relay(reports.endpoint, [
+      hello({ token: "not a token" }),
+      rpc({ id: 1, method: "tools/list" }),
+      rpc({ id: 2, method: "tools/call", params: { name: "show", arguments: { path: "a.md" } } }),
+      end,
+    ])
+    expect(answers).toEqual([
+      { jsonrpc: "2.0", id: 1, result: { tools: [] } },
+      { jsonrpc: "2.0", id: 2, error: { code: -32602, message: "Unknown tool: show" } },
+    ])
+    expect(calls).toEqual([])
+  })
+
+  it("answers the calls under way after the relay's end, then closes", async ({ resources }) => {
+    const reports = await listenForReports(
+      handlers({
+        call: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          return { ok: true, id: "abc", kind: "file", name: "a.md" }
+        },
+      }),
+    )
+    resources.defer(() => reports.close())
+    const began = Date.now()
+    const answers = await relay(reports.endpoint, [
+      hello(),
+      rpc({ id: 2, method: "tools/call", params: { name: "show", arguments: { path: "a.md" } } }),
+      end,
+    ])
+    expect(answers).toEqual([expect.objectContaining({ id: 2 })])
+    // Closed by the endpoint, not by the test's wait.
+    expect(Date.now() - began).toBeLessThan(5_000)
+  })
+
+  it("ends the sessions still open when it closes", async () => {
+    const reports = await listenForReports(handlers({}))
+    const session = relay(reports.endpoint, [hello(), rpc({ id: 1, method: "ping" })], {
+      waitMs: 10_000,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const began = Date.now()
+    await reports.close()
+    await expect(session).resolves.toEqual([{ jsonrpc: "2.0", id: 1, result: {} }])
+    expect(Date.now() - began).toBeLessThan(5_000)
+  })
+})
