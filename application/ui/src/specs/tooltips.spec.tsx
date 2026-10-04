@@ -78,6 +78,22 @@ describe("A tooltip", () => {
   })
 })
 
+describe("A tooltip for keyboard focus", () => {
+  it("opens without waiting", async () => {
+    await openWorkspace()
+    const zen = page.getByRole("button", { name: "Enter Zen mode" })
+    await expect.element(zen).toBeVisible()
+
+    // Tab through the header until the focus reaches it, as a keyboard user would.
+    for (let presses = 0; presses < 20 && document.activeElement !== zen.element(); presses++)
+      // eslint-disable-next-line no-await-in-loop -- Each Tab moves on from the last.
+      await userEvent.keyboard("{Tab}")
+    expect(document.activeElement).toBe(zen.element())
+
+    await expect.element(page.getByText(/^Zen · /), { timeout: 300 }).toBeVisible()
+  })
+})
+
 describe("A tooltip beside one that shows", () => {
   it("still waits for the pointer to rest", async () => {
     await openWorkspace()
