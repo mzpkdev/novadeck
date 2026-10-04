@@ -96,3 +96,39 @@ jobs:
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n")
           SCRIPT
           node "$RUNNER_TEMP/measure.mjs"
+
+  prune-dry-run:
+    name: Prune (dry run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # The Relay workflow's prune, with every release counted as old and nothing deleted.
+      - name: Prune Old Relay Releases (dry run)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEEP_DAYS: "0"
+        run: |
+          set -euo pipefail
+          pinned_at() {
+            gh api "repos/$GH_REPO/contents/application/relay/prebuilt.json?ref=$1" \
+              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null |
+              jq -r '.release // ("relay-" + .source[0:16])' 2>/dev/null || true
+          }
+          keep="$(pinned_at main)"
+          for number in $(gh pr list --state open --limit 200 --json number --jq '.[].number'); do
+            keep="$keep"$'\n'"$(pinned_at "refs/pull/$number/head")"
+          done
+          echo "Pinned: $(echo "$keep" | sort -u | tr '\n' ' ')"
+          cutoff="$(date -u -d "$KEEP_DAYS days ago" +%s)"
+          gh release list --limit 200 --json tagName,createdAt \
+            --jq '.[] | select(.tagName | startswith("relay-")) | "\(.tagName) \(.createdAt)"' |
+            while read -r tag created; do
+              if grep -qxF "$tag" <<<"$keep"; then echo "Keeping $tag (pinned)"; continue; fi
+              if [ "$(date -u -d "$created" +%s)" -gt "$cutoff" ]; then echo "Keeping $tag (recent)"; continue; fi
+              echo "Would delete $tag, from $created"
+            done
