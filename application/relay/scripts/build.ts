@@ -190,7 +190,22 @@ export const build = async (): Promise<void> => {
     )
     return
   }
-  await download(prebuilt, key)
+  try {
+    await download(prebuilt, key)
+  } catch (error) {
+    // Offline, or behind a proxy Node's fetch doesn't use: Rust, where it's installed,
+    // builds the same source.
+    const why = error instanceof Error ? error.message : String(error)
+    if (!hasCargo()) {
+      throw new Error(
+        `${why}. Without network access to GitHub, install Rust from https://rustup.rs and ` +
+          "build from source with NOVADECK_RELAY_FROM_SOURCE=1.",
+        { cause: error },
+      )
+    }
+    console.warn(`${why}; building the relay from source instead.`)
+    await fromSource("The prebuilt relay couldn't be downloaded")
+  }
 }
 
 const pin = async (): Promise<void> => {

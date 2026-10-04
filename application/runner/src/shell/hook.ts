@@ -1,7 +1,3 @@
-import { readFile } from "node:fs/promises"
-import { homedir } from "node:os"
-import { join } from "node:path"
-
 import { agentName } from "@novadeck/protocol"
 
 import { harnesses } from "../harnesses/registry.js"
@@ -16,15 +12,13 @@ import type { Report } from "./reports.js"
  * agent's harness decodes (see `harnesses/<id>/decode.ts`). A Stop or prompt-time hook
  * asks instead, with a deadline: the runner answers what to print, which may deliver
  * agents' messages (see docs/agent-messaging.md). Claude Code's status line runs through
- * the hook in NovaDeck's shells, which then shows the person's own: the runner names its
- * command, and the relay runs it.
+ * the hook in NovaDeck's shells, which then shows the person's own, as the relay finds
+ * and runs it beside the report.
  */
 export type RelayHook = {
   readonly report: Omit<Report, "terminalId" | "token">
   /** An ask's deadline, in epoch milliseconds; absent for a report. */
   readonly deadline?: number
-  /** The person's own status line command, which the relay runs and prints. */
-  readonly statusLine?: string
 }
 
 /** How long an ask has from its hook's start, as the relay gives up within five seconds. */
@@ -85,42 +79,11 @@ const instanceOf = (agent: string, claudePid: string | undefined, ancestors: Anc
 }
 
 /**
- * The person's own status line command, as Claude Code's settings name it: the
- * project's local settings, the project's, then the person's. NovaDeck's own settings,
- * which name the hook, never count.
- */
-export const ownStatusLine = async (
-  payload: Fields,
-  configDir: string | undefined,
-  home = homedir(),
-): Promise<string | undefined> => {
-  const workspace = object(payload.workspace) ? payload.workspace : {}
-  const project = text(workspace.project_dir, 4096) ?? text(payload.cwd, 4096)
-  const files = [
-    ...(project === undefined
-      ? []
-      : [
-          join(project, ".claude", "settings.local.json"),
-          join(project, ".claude", "settings.json"),
-        ]),
-    join(configDir ?? join(home, ".claude"), "settings.json"),
-  ]
-  for (const file of files) {
-    // eslint-disable-next-line no-await-in-loop -- The first that names one wins.
-    const settings: unknown = await readFile(file, "utf8").then(JSON.parse, () => undefined)
-    const line = object(settings) && object(settings.statusLine) ? settings.statusLine : undefined
-    const command = line?.type === "command" ? text(line.command, 65_536) : undefined
-    if (command !== undefined && !command.includes("NOVADECK_HOOK")) return command
-  }
-  return undefined
-}
-
-/**
  * Reads a relay's hook, without its sender, which the endpoint checks: undefined for one
  * that isn't a hook of a known agent, or whose payload isn't the JSON object agents send,
  * as the hook then reports nothing.
  */
-export const relayHook = async (value: Fields): Promise<RelayHook | undefined> => {
+export const relayHook = (value: Fields): RelayHook | undefined => {
   const agent = agentName.safeParse(value.agent)
   const { seq, payload: sent } = value
   if (!agent.success || typeof seq !== "number" || !Number.isFinite(seq)) return undefined
@@ -155,12 +118,9 @@ export const relayHook = async (value: Fields): Promise<RelayHook | undefined> =
       ? report
       : { ...report, payload: prune(payload, 0, 200) as Fields }
   if (JSON.stringify(sized).length > maxReport) return undefined
-  if (event in harnesses[agent.data].messaging.asks) {
-    // The runner leases messages only with time left before it to print them and
-    // acknowledge the lease.
-    return { report: sized, deadline: Math.round(seq) + askMs - printMs }
-  }
-  if (agent.data !== "claude" || event !== "StatusLine") return { report: sized }
-  const statusLine = await ownStatusLine(payload, text(env.claudeConfigDir, 4096))
-  return { report: sized, ...(statusLine !== undefined && { statusLine }) }
+  // The runner leases messages only with time left before it to print them and
+  // acknowledge the lease.
+  return event in harnesses[agent.data].messaging.asks
+    ? { report: sized, deadline: Math.round(seq) + askMs - printMs }
+    : { report: sized }
 }

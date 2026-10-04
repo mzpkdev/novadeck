@@ -274,16 +274,45 @@ const relayLine = (mode: keyof typeof relayArguments, quote: (value: string) => 
   relayArguments[mode].map((each) => (/^[\w.-]+$/.test(each) ? each : quote(each))).join(" ")
 
 const posixLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
-  `#!/bin/sh
+  mode === "mcp"
+    ? `#!/bin/sh
 ${header("#", what)}
 exec ${shQuote(relay)} ${relayLine(mode, shQuote)} "$@"
 `
+    : `#!/bin/sh
+${header("#", what)}
+if [ -x ${shQuote(relay)} ]; then
+  exec ${shQuote(relay)} ${relayLine(mode, shQuote)} "$@"
+fi
+# Without its relay, as when NovaDeck couldn't put it in place: the hook takes the
+# agent's input and prints what the agent needs, as Antigravity denies a tool otherwise.
+cat >/dev/null
+case "$1 $2" in
+  "agy PreToolUse") printf '%s\\n' '{"decision":"ask"}' ;;
+  "agy "*) printf '%s\\n' '{}' ;;
+esac
+`
+
+// cmd reads a batch file's blocks reliably only with CRLF line endings.
+const crlf = (text: string): string => text.replaceAll("\n", "\r\n")
 
 const cmdLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
-  `@echo off
+  crlf(
+    mode === "mcp"
+      ? `@echo off
 ${header("rem", what)}
 ${cmdQuote(relay)} ${relayLine(mode, cmdQuote)} %*
 `
+      : `@echo off
+${header("rem", what)}
+if exist ${cmdQuote(relay)} (
+  ${cmdQuote(relay)} ${relayLine(mode, cmdQuote)} %*
+  exit /b 0
+)
+rem Without its relay: what the agent needs, as Antigravity denies a tool otherwise.
+if /i "%~1"=="agy" if /i "%~2"=="PreToolUse" (echo {"decision":"ask"}) else (echo {})
+`,
+  )
 
 export type ShellFile = { readonly path: string; readonly content: string; readonly mode: number }
 

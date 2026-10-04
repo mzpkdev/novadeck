@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,7 +7,8 @@ import { join } from "node:path"
 import { relayPath } from "@novadeck/relay"
 
 import { describe, expect, it as base } from "../test.js"
-import { ownStatusLine, relayHook } from "./hook.js"
+import { relayHook } from "./hook.js"
+import { installShellFiles } from "./install.js"
 import {
   listenForReports,
   unanswered,
@@ -123,6 +124,26 @@ const it = base.extend<{ fixture: Fixture }>({
   },
 })
 
+// Runs the hook launcher as an agent's hook command does, cmd running it on Windows, and
+// resolves what it printed.
+const launched = (launcher: string, args: readonly string[], env: NodeJS.ProcessEnv) =>
+  new Promise<string>((resolve) => {
+    const [command, given] =
+      process.platform === "win32"
+        ? [process.env.COMSPEC || "cmd.exe", ["/d", "/c", launcher, ...args]]
+        : [launcher, args]
+    const child = spawn(command, given, {
+      env: { ...process.env, ...env },
+      stdio: ["pipe", "pipe", "inherit"],
+    })
+    let printed = ""
+    child.stdout.on("data", (data: Buffer) => (printed += data.toString()))
+    child.on("exit", () => resolve(printed))
+    // cmd's own answer reads none of it.
+    child.stdin.on("error", () => {})
+    child.stdin.end(JSON.stringify({ conversationId: session }))
+  })
+
 const start = (fields: object = {}) => ({
   hook_event_name: "SessionStart",
   source: "startup",
@@ -160,14 +181,17 @@ describe("agent hook", () => {
     expect(fixture.reports[0]?.instance).toBe("4242")
   })
 
-  // Linux tells a process's name and parent through /proc.
-  it.runIf(process.platform === "linux")(
-    "names the nearest ancestor with its agent's name as the agent process",
-    async ({ fixture }) => {
-      // A shell named codex that waits for the hook, as Codex runs its hooks.
+  // Linux and macOS tell a process's name and parent; Windows doesn't.
+  it.runIf(process.platform === "linux" || process.platform === "darwin")(
+    "names the nearest ancestor with its agent's name, as started through a symlink",
+    async ({ fixture, resources }) => {
+      // bash, by a symlink named codex, running the hook as Codex runs its hooks, as a
+      // package manager installs a program by a symlink to the file it runs. bash stays the
+      // hook's parent, as the command goes on after it.
       const directory = mkdtempSync(join(tmpdir(), "novadeck-codex-"))
+      resources.defer(() => rmSync(directory, { recursive: true, force: true }))
       const codex = join(directory, "codex")
-      symlinkSync("/bin/sh", codex)
+      symlinkSync("/bin/bash", codex)
       const pid = await new Promise<number | undefined>((resolve) => {
         const child = spawn(
           codex,
@@ -186,8 +210,7 @@ describe("agent hook", () => {
         child.stdin.end(JSON.stringify(start()))
         child.on("exit", () => resolve(child.pid))
       })
-      rmSync(directory, { recursive: true, force: true })
-      expect(fixture.reports[0]?.instance).toBe(String(pid))
+      await expect.poll(() => fixture.reports[0]?.instance).toBe(String(pid))
     },
   )
 
@@ -246,7 +269,9 @@ describe("agent hook", () => {
     expect(written).toBeUndefined()
   })
 
-  it("waits for an unanswering runner only as long as the hook may", async ({ resources }) => {
+  it("waits for an unanswering runner, through its launcher, only as long as the hook may", async ({
+    resources,
+  }) => {
     // A runner that takes the hook and never answers; reading on, so it hears the hook go.
     const directory = mkdtempSync(join(tmpdir(), "novadeck-silent-"))
     resources.defer(() => rmSync(directory, { recursive: true, force: true }))
@@ -258,20 +283,14 @@ describe("agent hook", () => {
     const silent = createServer((socket) => socket.resume())
     await new Promise<void>((resolve) => silent.listen(endpoint, resolve))
     resources.defer(() => new Promise<void>((resolve) => silent.close(() => resolve())))
+    // The launcher as agents run it, which tells the relay which hooks ask.
+    const { launcher } = await installShellFiles(join(directory, "shell"))
     const took = async (event: string) => {
       const began = performance.now()
-      await new Promise<void>((resolve) => {
-        const child = spawn(relayPath, ["hook", "--asks", askingHooks, "agy", event], {
-          env: {
-            ...process.env,
-            NOVADECK_TERMINAL_ID: terminalId,
-            NOVADECK_REPORT: endpoint,
-            NOVADECK_REPORT_TOKEN: token,
-          },
-          stdio: ["pipe", "ignore", "inherit"],
-        })
-        child.on("exit", () => resolve())
-        child.stdin.end(JSON.stringify({ conversationId: session }))
+      await launched(launcher, ["agy", event], {
+        NOVADECK_TERMINAL_ID: terminalId,
+        NOVADECK_REPORT: endpoint,
+        NOVADECK_REPORT_TOKEN: token,
       })
       return performance.now() - began
     }
@@ -281,7 +300,26 @@ describe("agent hook", () => {
     expect(reported).toBeLessThan(3_500)
     // An ask has longer, for the runner to lease and answer by its deadline.
     expect(await took("Stop")).toBeGreaterThan(3_500)
-  }, 20_000)
+  }, 30_000)
+
+  it("still answers Antigravity through its launcher when its relay is missing", async ({
+    resources,
+  }) => {
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-norelay-"))
+    resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+    const paths = await installShellFiles(join(directory, "shell"))
+    rmSync(paths.relay)
+    const env = {
+      NOVADECK_TERMINAL_ID: terminalId,
+      NOVADECK_REPORT: "gone",
+      NOVADECK_REPORT_TOKEN: token,
+    }
+    expect((await launched(paths.launcher, ["agy", "PreToolUse"], env)).trim()).toBe(
+      '{"decision":"ask"}',
+    )
+    expect((await launched(paths.launcher, ["agy", "Stop"], env)).trim()).toBe("{}")
+    expect(await launched(paths.launcher, ["claude", "Stop"], env)).toBe("")
+  })
 
   it("gives up within its limit when its agent never closes its input", async ({ fixture }) => {
     const began = performance.now()
@@ -394,6 +432,29 @@ describe("agent hook", () => {
     15_000,
   )
 
+  // A multiplexer can outlive NovaDeck, its terminals still naming the runner gone.
+  it.skipIf(process.platform === "win32")(
+    "shows the person's own status line even when NovaDeck can't be reached",
+    async ({ fixture, resources }) => {
+      const home = mkdtempSync(join(tmpdir(), "novadeck-claude-home-"))
+      resources.defer(() => rmSync(home, { recursive: true, force: true }))
+      writeFileSync(
+        join(home, "settings.json"),
+        JSON.stringify({ statusLine: { type: "command", command: "cat >/dev/null; echo mine" } }),
+      )
+      const printed = await fixture.run(
+        "claude",
+        { session_id: session, cwd: home },
+        {
+          CLAUDE_CONFIG_DIR: home,
+          NOVADECK_REPORT: join(tmpdir(), "novadeck-missing", "reports.sock"),
+        },
+        "StatusLine",
+      )
+      expect(printed.trim()).toBe("mine")
+    },
+  )
+
   it("shows no status line of its own when the person has none", async ({ fixture }) => {
     const home = mkdtempSync(join(tmpdir(), "novadeck-claude-home-"))
     const printed = await fixture.run(
@@ -484,15 +545,6 @@ describe("agent hook asking", () => {
   })
 })
 
-// Claude Code settings in `folder` naming `command` as their status line.
-const settingsNaming = (folder: string, command: string) => {
-  mkdirSync(folder, { recursive: true })
-  writeFileSync(
-    join(folder, "settings.json"),
-    JSON.stringify({ statusLine: { type: "command", command } }),
-  )
-}
-
 describe("reading a relay's hook", () => {
   const hook = (given: object = {}) => ({
     agent: "codex",
@@ -510,19 +562,17 @@ describe("reading a relay's hook", () => {
       { pid: 20, name: "codex" },
       { pid: 30, name: "codex" },
     ]
-    expect((await relayHook(hook({ ancestors })))?.report.instance).toBe("20")
-    expect((await relayHook(hook({ ancestors: [{ pid: 10, name: "sh" }] })))?.report.instance).toBe(
-      null,
-    )
+    expect(relayHook(hook({ ancestors }))?.report.instance).toBe("20")
+    expect(relayHook(hook({ ancestors: [{ pid: 10, name: "sh" }] }))?.report.instance).toBe(null)
     const claude = hook({ agent: "claude", ancestors, env: { claudePid: "4242" } })
-    expect((await relayHook(claude))?.report.instance).toBe("4242")
+    expect(relayHook(claude)?.report.instance).toBe("4242")
   })
 
   it("cuts a payload too large to keep harder, and drops one too large even then", async () => {
     const wide = Object.fromEntries(
       Array.from({ length: 100 }, (_, index) => [`k${index}`, "x".repeat(1_000)]),
     )
-    const cut = await relayHook(hook({ payload: JSON.stringify(wide) }))
+    const cut = relayHook(hook({ payload: JSON.stringify(wide) }))
     expect(String(cut?.report.payload.k0)).toHaveLength(200)
     const deep = Object.fromEntries(
       Array.from({ length: 100 }, (_, index) => [
@@ -530,39 +580,18 @@ describe("reading a relay's hook", () => {
         Array.from({ length: 50 }, () => "x".repeat(200)),
       ]),
     )
-    await expect(relayHook(hook({ payload: JSON.stringify(deep) }))).resolves.toBeUndefined()
+    expect(relayHook(hook({ payload: JSON.stringify(deep) }))).toBeUndefined()
   })
 
   it("asks at the harness's asking events, with time left to print and acknowledge", async () => {
-    const asked = await relayHook(hook({ event: "Stop", seq: 1_000.4 }))
+    const asked = relayHook(hook({ event: "Stop", seq: 1_000.4 }))
     expect(asked?.deadline).toBe(4_500)
-    expect((await relayHook(hook()))?.deadline).toBeUndefined()
+    expect(relayHook(hook())?.deadline).toBeUndefined()
   })
 
   it("reads nothing of an unknown agent or a payload agents don't send", async () => {
-    await expect(relayHook(hook({ agent: "gemini" }))).resolves.toBeUndefined()
-    await expect(relayHook(hook({ payload: "[1]" }))).resolves.toBeUndefined()
-    await expect(relayHook(hook({ seq: "soon" }))).resolves.toBeUndefined()
-  })
-
-  it("finds the person's own status line: project's local, project's, then theirs", async ({
-    resources,
-  }) => {
-    const root = mkdtempSync(join(tmpdir(), "novadeck-status-"))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
-    const project = join(root, "project")
-    const home = join(root, "home")
-    settingsNaming(join(home, ".claude"), "theirs")
-    expect(await ownStatusLine({ cwd: project }, undefined, home)).toBe("theirs")
-    settingsNaming(join(project, ".claude"), "project's")
-    expect(await ownStatusLine({ cwd: project }, undefined, home)).toBe("project's")
-    writeFileSync(
-      join(project, ".claude", "settings.local.json"),
-      JSON.stringify({ statusLine: { type: "command", command: '"$NOVADECK_HOOK" claude' } }),
-    )
-    // NovaDeck's own never counts.
-    expect(await ownStatusLine({ workspace: { project_dir: project } }, undefined, home)).toBe(
-      "project's",
-    )
+    expect(relayHook(hook({ agent: "gemini" }))).toBeUndefined()
+    expect(relayHook(hook({ payload: "[1]" }))).toBeUndefined()
+    expect(relayHook(hook({ seq: "soon" }))).toBeUndefined()
   })
 })

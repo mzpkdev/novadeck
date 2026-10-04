@@ -966,15 +966,18 @@ Each plugin's hook command passes the harness and the event.
 The relay does the following:
 
 - bounds stdin,
-- keeps a five-second deadline, within which the runner answers a report at once and an
-  ask by its own deadline,
+- keeps each hook's deadline: two seconds to report, which the runner answers at once,
+  four to ask, as the launcher names the asking events, and five for Claude Code's
+  status line,
 - checks it runs in a NovaDeck terminal,
 - sends the payload unread, with its start time and the processes it runs under,
+- for Claude Code's status line, runs the person's own, as their settings name it,
+  beside the report, so it shows even when the runner can't be reached,
 - prints the runner's answer, or what the harness needs without NovaDeck.
 
-The runner prunes the payload, finds the agent process, decides whether the hook asks
-(`shell/hook.ts`), and for Claude Code's status line names the person's own command,
-which the relay runs.
+The runner prunes the payload, finds the agent process and decides whether the hook asks
+(`shell/hook.ts`). Without the relay, as when NovaDeck couldn't put it in place, the
+launcher still prints what Antigravity needs.
 
 Everything harness-specific happens in the runner (see
 [Hook decoders](#hook-decoders)).

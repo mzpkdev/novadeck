@@ -1,8 +1,58 @@
 //! The person's own Claude Code status line, which NovaDeck's status line shows: their
-//! command, run as Claude Code runs it, with the same input, in a process group of its
-//! own, so a deadline ends everything it started.
+//! command, as Claude Code's settings name it, run as Claude Code runs it, with the same
+//! input, in a process group of its own, so a deadline ends everything it started. The
+//! relay finds and runs it itself, beside reporting to the runner, so it shows even when
+//! the runner can't be reached, as from a terminal multiplexer that outlived NovaDeck.
 
+use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+use serde_json::Value;
+
+/// A setting's text, when it holds some.
+fn text(value: Option<&Value>) -> Option<&str> {
+    value
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+}
+
+/// The person's own status line command: the project's local settings, the project's,
+/// then the person's (`config_dir`, or `~/.claude`). NovaDeck's own, which names the
+/// hook, never counts.
+pub fn own_command(
+    payload: &str,
+    config_dir: Option<&Path>,
+    home: Option<&Path>,
+) -> Option<String> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let project = text(
+        payload
+            .get("workspace")
+            .and_then(|workspace| workspace.get("project_dir")),
+    )
+    .or_else(|| text(payload.get("cwd")))
+    .map(PathBuf::from);
+    let person = config_dir
+        .map(Path::to_path_buf)
+        .or_else(|| home.map(|home| home.join(".claude")));
+    let files = project
+        .iter()
+        .flat_map(|project| {
+            [
+                project.join(".claude").join("settings.local.json"),
+                project.join(".claude").join("settings.json"),
+            ]
+        })
+        .chain(person.map(|folder| folder.join("settings.json")));
+    files.into_iter().find_map(|file| {
+        let settings: Value = serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok()?;
+        let line = settings.get("statusLine")?;
+        let command = text(line.get("command"))?;
+        (line.get("type").and_then(Value::as_str) == Some("command")
+            && !command.contains("NOVADECK_HOOK"))
+        .then(|| command.to_owned())
+    })
+}
 
 /// The most of its output kept.
 #[cfg(unix)]
@@ -81,6 +131,52 @@ pub fn run(command: &str, input: &[u8], deadline: Instant) -> String {
 #[cfg(not(unix))]
 pub fn run(_command: &str, _input: &[u8], _deadline: Instant) -> String {
     String::new()
+}
+
+#[cfg(test)]
+mod lookup {
+    use std::fs;
+
+    use super::*;
+
+    fn settings(folder: &Path, file: &str, command: &str) {
+        fs::create_dir_all(folder).unwrap();
+        let line = serde_json::json!({ "statusLine": { "type": "command", "command": command } });
+        fs::write(folder.join(file), line.to_string()).unwrap();
+    }
+
+    #[test]
+    fn finds_the_project_s_local_then_the_project_s_then_the_person_s() {
+        let root = std::env::temp_dir().join(format!("novadeck-status-{}", std::process::id()));
+        let project = root.join("project");
+        let home = root.join("home");
+        let payload = serde_json::json!({ "cwd": project }).to_string();
+        let found = || own_command(&payload, None, Some(&home));
+        assert_eq!(found(), None);
+        settings(&home.join(".claude"), "settings.json", "theirs");
+        assert_eq!(found().as_deref(), Some("theirs"));
+        settings(&project.join(".claude"), "settings.json", "project's");
+        assert_eq!(found().as_deref(), Some("project's"));
+        // NovaDeck's own never counts.
+        settings(
+            &project.join(".claude"),
+            "settings.local.json",
+            "\"$NOVADECK_HOOK\" claude",
+        );
+        assert_eq!(found().as_deref(), Some("project's"));
+        settings(&project.join(".claude"), "settings.local.json", "local");
+        assert_eq!(found().as_deref(), Some("local"));
+        // Claude Code's own folder, when it names one, stands for the person's.
+        let config = root.join("config");
+        settings(&config, "settings.json", "configured");
+        let elsewhere =
+            serde_json::json!({ "workspace": { "project_dir": root.join("none") } }).to_string();
+        assert_eq!(
+            own_command(&elsewhere, Some(&config), Some(&home)).as_deref(),
+            Some("configured")
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg(all(test, unix))]

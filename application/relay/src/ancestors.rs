@@ -39,20 +39,13 @@ fn stat(line: &str) -> Option<(String, u32)> {
     Some((name.to_owned(), parent))
 }
 
-/// A process's name, as its executable's file name, and parent, from the kernel.
+/// A process's name and parent, from the kernel. The name is the file name of the path
+/// it was started by, as `ps` names it: a program started through a symlink, as
+/// Homebrew installs them, goes by the symlink's name, not the file it points to.
 #[cfg(target_os = "macos")]
 fn process(pid: u32) -> Option<(String, u32)> {
     use std::mem::{MaybeUninit, size_of};
 
-    let mut path = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-    let length =
-        unsafe { libc::proc_pidpath(pid as i32, path.as_mut_ptr().cast(), path.len() as u32) };
-    if length <= 0 {
-        return None;
-    }
-    path.truncate(length as usize);
-    let path = String::from_utf8_lossy(&path).into_owned();
-    let name = path.rsplit('/').next()?.to_owned();
     let mut info = MaybeUninit::<libc::proc_bsdinfo>::zeroed();
     let size = size_of::<libc::proc_bsdinfo>() as i32;
     let read = unsafe {
@@ -68,7 +61,73 @@ fn process(pid: u32) -> Option<(String, u32)> {
         return None;
     }
     let parent = unsafe { info.assume_init() }.pbi_ppid;
+    let name = started_by(pid).or_else(|| executable(pid))?;
     Some((name, parent))
+}
+
+/// The path a process was started by, from its arguments' record: its argument count,
+/// then that path.
+#[cfg(target_os = "macos")]
+fn started_by(pid: u32) -> Option<String> {
+    use std::mem::size_of;
+    use std::ptr::null_mut;
+
+    let mut most: libc::c_int = 0;
+    let mut length = size_of::<libc::c_int>();
+    let mut name = [libc::CTL_KERN, libc::KERN_ARGMAX];
+    let asked = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            2,
+            (&raw mut most).cast(),
+            &mut length,
+            null_mut(),
+            0,
+        )
+    };
+    if asked != 0 || most <= 0 {
+        return None;
+    }
+    let mut record = vec![0u8; most as usize];
+    let mut length = record.len();
+    let mut name = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as libc::c_int];
+    let asked = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            3,
+            record.as_mut_ptr().cast(),
+            &mut length,
+            null_mut(),
+            0,
+        )
+    };
+    if asked != 0 {
+        return None;
+    }
+    let path = record.get(size_of::<libc::c_int>()..length)?;
+    let path = &path[..path.iter().position(|byte| *byte == 0)?];
+    file_name(&String::from_utf8_lossy(path))
+}
+
+/// The file a process runs, its symlinks followed: where its arguments can't be read.
+#[cfg(target_os = "macos")]
+fn executable(pid: u32) -> Option<String> {
+    let mut path = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    let length =
+        unsafe { libc::proc_pidpath(pid as i32, path.as_mut_ptr().cast(), path.len() as u32) };
+    if length <= 0 {
+        return None;
+    }
+    path.truncate(length as usize);
+    file_name(&String::from_utf8_lossy(&path))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn file_name(path: &str) -> Option<String> {
+    path.rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 /// Elsewhere the platform doesn't tell, and the runner goes without.
@@ -82,6 +141,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn names_a_program_by_its_path_s_file_name() {
+        assert_eq!(
+            file_name("/opt/homebrew/bin/codex").as_deref(),
+            Some("codex")
+        );
+        assert_eq!(file_name("codex").as_deref(), Some("codex"));
+        assert_eq!(file_name("/opt/homebrew/bin/"), None);
+    }
+
+    #[test]
     fn reads_a_name_with_spaces_and_brackets() {
         assert_eq!(
             stat("4242 (my (odd) agent) S 4100 4242 4100 0"),
@@ -90,7 +159,7 @@ mod tests {
         assert_eq!(stat("garbled"), None);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn finds_the_processes_this_one_runs_under() {
         let parent = std::os::unix::process::parent_id();

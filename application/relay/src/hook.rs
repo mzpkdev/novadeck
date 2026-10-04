@@ -2,13 +2,15 @@
 //! hook knows to the runner of the terminal it runs in, unread, and prints what the
 //! runner answers, exactly as the agent expects. A Stop or prompt-time hook's answer may
 //! deliver agents' messages under a lease, which the relay acknowledges once printed.
-//! Claude Code's status line runs through the hook too: the runner names the person's
-//! own command, which the relay runs and prints. Outside NovaDeck's terminals, or when
-//! the runner can't be reached, it prints only what its agent needs: Antigravity's JSON,
-//! where a PreToolUse answer must say "ask" or Antigravity denies the tool.
+//! Claude Code's status line runs through the hook too: the relay runs the person's own,
+//! as their settings name it, beside the report, and prints it. Outside NovaDeck's
+//! terminals, or when the runner can't be reached, it prints only what its agent needs:
+//! Antigravity's JSON, where a PreToolUse answer must say "ask" or Antigravity denies the
+//! tool.
 
 use std::env;
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
@@ -37,13 +39,11 @@ const MAX_PAYLOAD: u64 = 1_000_000;
 
 const AGENTS: [&str; 3] = ["claude", "codex", "agy"];
 
-/// What the runner answered: what to print, the lease that delivers, and the person's
-/// own status line to run.
+/// What the runner answered: what to print, and the lease that delivers it.
 #[derive(Default, Debug, PartialEq)]
 pub struct Answer {
     pub stdout: Option<String>,
     pub lease: Option<String>,
-    pub status_line: Option<String>,
 }
 
 pub fn answer_of(line: &str) -> Answer {
@@ -54,7 +54,6 @@ pub fn answer_of(line: &str) -> Answer {
     Answer {
         stdout: text("stdout"),
         lease: text("leaseId"),
-        status_line: text("statusLine"),
     }
 }
 
@@ -120,10 +119,21 @@ pub fn run(agent: &str, event: &str, asks: &str) {
             "claudePid": variable("CLAUDE_PID"),
             "cursor": variable("CURSOR_VERSION").is_some(),
             "codexThread": variable("CODEX_THREAD_ID"),
-            "claudeConfigDir": variable("CLAUDE_CONFIG_DIR"),
         },
         "payload": payload,
     });
+    // Claude Code's status line: the person's own runs beside the report, which it needs
+    // nothing of, and shows whatever the runner does.
+    let own = (agent == "claude" && event == "StatusLine").then(|| {
+        let config = variable("CLAUDE_CONFIG_DIR").map(PathBuf::from);
+        let home = variable("HOME").map(PathBuf::from);
+        let input = payload.clone();
+        std::thread::spawn(move || {
+            status_line::own_command(&input, config.as_deref(), home.as_deref())
+                .map(|command| status_line::run(&command, input.as_bytes(), deadline))
+        })
+    });
+    let shown = move || own.and_then(|running| running.join().ok().flatten());
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -134,7 +144,8 @@ pub fn run(agent: &str, event: &str, asks: &str) {
         let left = deadline.saturating_duration_since(Instant::now());
         let asked = tokio::time::timeout(left, ask(&endpoint, format!("{message}\n"))).await;
         let Ok(Some((answer, mut to_runner))) = asked else {
-            return say(fallback(agent, event));
+            let own = shown();
+            return say(own.as_deref().unwrap_or_else(|| fallback(agent, event)));
         };
         if let Some(stdout) = &answer.stdout {
             // Printed: what the lease delivers has reached the agent. Otherwise the lease
@@ -150,9 +161,7 @@ pub fn run(agent: &str, event: &str, asks: &str) {
             }
             return;
         }
-        let own = answer
-            .status_line
-            .map(|command| status_line::run(&command, payload.as_bytes(), deadline));
+        let own = shown();
         say(own.as_deref().unwrap_or_else(|| fallback(agent, event)));
     });
     runtime.shutdown_background();
@@ -206,16 +215,11 @@ mod tests {
             Answer {
                 stdout: Some("{\"decision\":\"block\"}".into()),
                 lease: Some("abc".into()),
-                status_line: None
             }
         );
         assert_eq!(
-            answer_of(r#"{"leaseId":null,"stdout":null,"statusLine":"echo hi"}"#),
-            Answer {
-                stdout: None,
-                lease: None,
-                status_line: Some("echo hi".into())
-            }
+            answer_of(r#"{"leaseId":null,"stdout":null}"#),
+            Answer::default()
         );
         assert_eq!(answer_of("not json"), Answer::default());
     }

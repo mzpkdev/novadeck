@@ -40,12 +40,6 @@ export type HookAnswer = { readonly leaseId: string | null; readonly stdout: str
 /** The answer to an ask that failed, took too long, or could not be read. */
 export const unheard: HookAnswer = { leaseId: null, stdout: null }
 
-/**
- * What a relay's hook hears back, whether it asked or reported: a `HookAnswer`, and for
- * Claude Code's status line, the person's own command, which the relay runs and prints.
- */
-export type RelayAnswer = HookAnswer & { readonly statusLine?: string }
-
 /** A hook's word that it printed what a lease delivers. */
 export type Ack = { readonly terminalId: string; readonly token: string; readonly leaseId: string }
 
@@ -338,7 +332,7 @@ export const listenForReports = async (
     (type, request) =>
       within(handlers.call({ type, ...from, request }), answerMs, unansweredCalls[type])
   /**
-   * Answers a relay's hook with one line, a `RelayAnswer`: a report at once, an ask by
+   * Answers a relay's hook with one line, a `HookAnswer`: a report at once, an ask by
    * its deadline or as `unheard`. The relay then prints what it delivers and, holding a
    * lease, acknowledges it with one more line, `{ ack }`, on the same connection.
    */
@@ -376,13 +370,12 @@ export const listenForReports = async (
       if (text.length > maxBytes) return socket.destroy()
       if (from) take(from)
     })
-    const hook = from && (await relayHook(value).catch(() => undefined))
-    let answer: RelayAnswer = unheard
+    const hook = from && relayHook(value)
+    let answer = unheard
     if (from && hook) {
       const report = { ...from, ...hook.report }
       if (hook.deadline === undefined) {
         handlers.report(report)
-        if (hook.statusLine !== undefined) answer = { ...unheard, statusLine: hook.statusLine }
       } else {
         const ms = Math.min(answerMs, hook.deadline - Date.now())
         answer = await within(handlers.ask(report, hook.deadline), ms, unheard)
