@@ -1,5 +1,5 @@
 {
-  "source": "cc47f3a69023e03b6eb8ebf266928d43769b456b1c233f9d11d57520e7b45e25",
+  "source": "a7a9e7a3be263face091f3cf1c03163e15942f5a7cbcdcf2f8df1bb483f620ed",
   "files": {
     "linux-x64": {
       "sha256": "504f6ca2753afa2697e1b59479af8024f82338f35ebf9b6062c4808868897c19"
@@ -11,7 +11,7 @@
       "sha256": "01d241095fcac2c3681adb2ec106921e43420790f8c973cbc63dbdcd08d850e6"
     },
     "win32-x64": {
-      "sha256": "77cf97acc208f5a0487cb3734d23da5e9d30b08527281bcd567798d15a38e5fc"
+      "sha256": "c1264a1a6fce17be91f237087fb3be585b0e34023e1c90691b6a4fe0b1c6a851"
     }
   }
 }
