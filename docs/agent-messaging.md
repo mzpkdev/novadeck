@@ -494,7 +494,8 @@ facts above, so the prompt's emptiness is known before any message arrives:
   Drafting instead.
 - **Working**: a root turn is running (its `turn` phase); NovaDeck continued its Stop and
   waits for the continuation (`continuing`); or after its Stop only work it started
-  still runs (`background`), when a message waits for its next turn. At a root Stop, if the person didn't submit during the turn,
+  still runs (`background`: subagents, which wake it once done, never a command alone),
+  when a message waits for its next turn. At a root Stop, if the person didn't submit during the turn,
   the Stop hook's ask gets a lease (below) and the turn continues, still Working.
   NovaDeck continues a root turn at most twice, by its own count, then lets it end. A
   prompt right after a Stop NovaDeck continued is that continuation, keeping the count,
@@ -512,10 +513,11 @@ facts above, so the prompt's emptiness is known before any message arrives:
   its Stop: Claude Code starts a turn when a background task finishes (its Stop lists
   `background_tasks`), and Antigravity's root wakes when a subagent messages it (its
   Stop says `fullyIdle: false` while one runs, and its status line lists `subagents`).
-  Until they are done the terminal stays Working: the turn their end starts, or the
-  person's, ends the wait, and that turn's own end, with nothing running, ends it as
-  Settled or Drafting. Antigravity's status line saying idle ends no wait, as it lists
-  subagents but never a command it backgrounded, whose end wakes it too. Only
+  While subagents of it run the terminal stays Working: the turn their end starts, or
+  the person's, ends the wait, and that turn's own end, with nothing running, ends it as
+  Settled or Drafting; so does Antigravity's status line saying idle with no subagent
+  running (its Stop says only that something runs). A command left running alone, as a
+  dev server, never holds it: the turn ends Settled, and the doorbell may ring it. Only
   background tasks whose status is running count. Codex never waits: nothing it starts
   wakes it once its turn has ended. The agent's activity tells the same, and an agent
   `agents` lists as busy is one Working here, or one whose terminal shows it working
@@ -568,6 +570,7 @@ Transitions:
 | Working, a root turn running             | The person's Escape                                                              | Unknown               |
 | Unknown, from an idle status line        | A status line saying working, its hook started after the idle's                  | Working               |
 | Working, only background work            | A root prompt: the turn its end starts, or the person's                          | Working               |
+| Working, only background work            | Its subagents finish (Antigravity's idle, no subagent running)                   | Settled or Drafting   |
 | Working, a root turn running             | Its records tell it ended, its hook's report never having come                   | As its Stop or end    |
 | Settled, Ready                           | The person's input, but Escape                                                   | Drafting              |
 | Settled, Ready                           | Messages waiting and the gate passes                                             | Ringing               |

@@ -688,7 +688,7 @@ describe("an agent waiting on what its turn left running", () => {
     )!
   const none = { agents: 0, tasks: 0 }
 
-  it("works on after a Stop that lists work still running, until a later turn ends with none", () => {
+  it("works on after a Stop that lists subagents still running, until a later turn ends with none", () => {
     const waiting = stop(turn(started(0), 1), 2, { background: { agents: 2, tasks: 1 } })!
     expect(waiting.state).toBe("idle")
     expect(summary(waiting)).toMatchObject({
@@ -706,6 +706,41 @@ describe("an agent waiting on what its turn left running", () => {
       state: "idle",
       background: null,
     })
+  })
+
+  it("shows a command left running without working on, as one may run for ever", () => {
+    expect(summary(stop(turn(started(0), 1), 2, { background: { agents: 0, tasks: 2 } })!)).toEqual(
+      expect.objectContaining({ state: "idle", background: { agents: 0, tasks: 2 } }),
+    )
+  })
+
+  it("keeps working through a Stop NovaDeck continued, until the continuation's own Stop", () => {
+    const stopped = stop(turn(started(0), 1), 2, { background: none })!
+    const continued = apply(stopped, binding, fact({ type: "turn-continued", startedAt: 2 }))!
+    expect(summary(continued).state).toBe("working")
+    // Only that Stop's: one after a later fact, or once working, changes nothing.
+    expect(
+      apply(continued, binding, fact({ type: "turn-continued", startedAt: 2 })),
+    ).toBeUndefined()
+    expect(apply(stopped, binding, fact({ type: "turn-continued", startedAt: 1 }))).toBeUndefined()
+    // The record of the continued Stop, written after it, ends nothing: a hook's Stop
+    // already spoke for the turn. The continuation's root request waits on.
+    const asking = apply(
+      continued,
+      binding,
+      fact({
+        type: "attention-requested",
+        requestId: "root:Bash:1",
+        actor: null,
+        toolName: "Bash",
+        kind: "permission",
+        startedAt: 3,
+      }),
+    )!
+    expect(stop(asking, 4, { recorded: true })).toBeUndefined()
+    // Its own Stop ends it; a later turn hears its records again.
+    expect(summary(stop(asking, 5, { background: none })!).state).toBe("idle")
+    expect(stop(turn(asking, 6), 7, { recorded: true })?.state).toBe("idle")
   })
 
   it("counts the subagents still running where nothing says, only where their end wakes it", () => {
@@ -740,7 +775,7 @@ describe("an agent waiting on what its turn left running", () => {
     })
   })
 
-  it("recounts the subagents at an idle status line newer than the Stop, never ending the wait", () => {
+  it("works on only while an idle status line newer than the Stop counts subagents running", () => {
     const agy: Binding = { agent: "agy", sessionId: "s", instance: "7" }
     const listed = (activity: Activity, startedAt: number, agents: number) =>
       apply(
@@ -765,22 +800,39 @@ describe("an agent waiting on what its turn left running", () => {
       agy,
       fact({ agent: "agy", type: "turn-started", startedAt: 1 }),
     )!
-    // Its Stop says only that something runs on.
+    // Its Stop says only that something runs on: it works on until its status line,
+    // drawn just after, counts the subagents among it.
     const waiting = ended(working, 2, true)
     expect(summary(waiting)).toMatchObject({
       state: "working",
       background: { agents: 0, tasks: 0 },
     })
     const counted = listed(waiting, 3, 2)!
-    expect(summary(counted).background).toEqual({ agents: 2, tasks: 0 })
+    expect(summary(counted)).toMatchObject({
+      state: "working",
+      background: { agents: 2, tasks: 0 },
+    })
     expect(listed(counted, 4, 2)).toBeUndefined()
     // One drawn before the Stop says nothing of what it left.
     expect(listed(waiting, 1, 3)).toBeUndefined()
-    // None listed may leave a command it backgrounded running, which wakes it all the same.
-    expect(summary(listed(counted, 5, 0)!)).toMatchObject({
-      state: "working",
+    expect(summary(listed(waiting, 3, 0)!)).toMatchObject({
+      state: "idle",
       background: { agents: 0, tasks: 0 },
     })
+    // Its subagents done, what else its Stop said runs, as a command, which may run for
+    // ever, stays, keeping nothing working.
+    expect(summary(listed(counted, 5, 0)!)).toMatchObject({
+      state: "idle",
+      background: { agents: 0, tasks: 0 },
+    })
+    // Counted, with nothing else said to run, none listed ends it.
+    const abnormal = apply(
+      working,
+      agy,
+      fact({ agent: "agy", type: "turn-idle", startedAt: 3, background: { agents: 1, tasks: 0 } }),
+    )!
+    expect(summary(abnormal)).toMatchObject({ state: "working", background: { agents: 1 } })
+    expect(summary(listed(abnormal, 4, 0)!)).toMatchObject({ state: "idle", background: null })
     // With nothing left running, a stale one listing a subagent starts no wait.
     expect(listed(ended(working, 2, false), 3, 1)).toBeUndefined()
   })

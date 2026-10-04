@@ -7,9 +7,9 @@ const subagentsOf = (terminal: TerminalMetadata) => agentOf(terminal)?.subagents
 
 const counted = (count: number, one: string): string => `${count} ${one}${count === 1 ? "" : "s"}`
 
-// What the agent's turn left running, for its window's header while it waits on that:
-// "3 agents · 1 task", or "background work" where its harness doesn't count it. Else how
-// many subagents it runs: "2 subagents". Undefined without either.
+// What the agent's ended turn left running, for its window's header: "3 agents · 1 task",
+// or "background work" where its harness doesn't count it. Else how many subagents it
+// runs: "2 subagents". Undefined without either.
 export const subagentsBadge = (terminal: TerminalMetadata): string | undefined => {
   const background = agentOf(terminal)?.background
   if (background) {
@@ -24,11 +24,15 @@ export const subagentsBadge = (terminal: TerminalMetadata): string | undefined =
   return counted(length, "subagent")
 }
 
-// Which kinds they are, in the harness's own words, counted: "2 explorer, 1 worker". While
-// the agent waits on what its turn left running, that it works on until those finish.
+// Which kinds they are, in the harness's own words, counted: "2 explorer, 1 worker". For
+// what its ended turn left running, whether the agent works on until that finishes, as
+// it does for subagents, which wake it, or not, as for a command, which may run for ever.
 export const subagentsDetail = (terminal: TerminalMetadata): string | undefined => {
-  if (agentOf(terminal)?.background)
-    return "Its turn is over, but work it started still runs: it works on until that finishes"
+  const agent = agentOf(terminal)
+  if (agent?.background)
+    return agent.working
+      ? "Its turn is over, but subagents it started still run: it works on until they finish"
+      : "Its turn is over; work it started runs on in the background"
   const counts = new Map<string, number>()
   for (const { type } of subagentsOf(terminal)) {
     const kind = type || "subagent"

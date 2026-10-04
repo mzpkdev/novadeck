@@ -226,14 +226,16 @@ The terminal indicator derives from the summary through one shared resolver:
 | Agent detected, but no usable activity evidence | Not reporting                                   |
 | Ordinary shell/program                          | Existing shell/process activity                 |
 
-Working spans the agent's turn and, after it, any work it started that runs on and
-will wake it once done (`TerminalSummary.activity.background` counts it; see
+Working spans the agent's turn, a Stop NovaDeck continued included, and, after it, the
+subagents it started that run on and will wake it once done;
+`TerminalSummary.activity.background` counts what the turn left running, a command too,
+which shows but keeps nothing working (see
 [Harness coverage](harness-coverage.md#working-past-a-turns-end)). A recognized agent
 (Claude Code, Codex or Antigravity in the foreground) with disabled or untrusted
 hooks is Not reporting: a muted "○" in its tab and a muted dashed line on its window,
 said in words to its tooltip and assistive technology, not process-derived running.
 Codex and Antigravity at their own prompt before their first, their hooks running,
-are idle there: `TerminalSummary.ready` names them. Silence never means idle, and no timeout turns a long
+are idle there, until the person presses Enter there: `TerminalSummary.ready` names them. Silence never means idle, and no timeout turns a long
 turn idle. Loss of the runner connection is reported separately; clients never
 present an old snapshot as current.
 

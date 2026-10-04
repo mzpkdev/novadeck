@@ -117,6 +117,12 @@ export type ActivityEvent = {
     }
   | { readonly type: "turn-working" }
   /**
+   * NovaDeck continued the root turn its Stop, started at `startedAt`, would have ended,
+   * delivering messages with the hook's answer: the turn goes on until the continuation's
+   * own Stop, as Claude Code and Codex fire no prompt hook for it.
+   */
+  | { readonly type: "turn-continued" }
+  /**
    * The person pressed Escape while the root turn ran, as their keys tell delivery (see
    * docs/agent-messaging.md, "States"): it may have cancelled the turn, which no hook
    * says, as Claude Code's Escape before its first reply. Started when the key came.

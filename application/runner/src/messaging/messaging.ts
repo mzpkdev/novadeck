@@ -175,9 +175,13 @@ const refusalOfText = (text: string): string | undefined => {
 /** A lease is given only with this long left before its hook's deadline, in milliseconds. */
 export const leaseMargin = 300
 
-/** Whether work a turn left running runs on, to wake its agent: delivery's `background`. */
+/**
+ * Whether subagents a turn left running run on, to wake its agent: delivery's
+ * `background`. Work its harness doesn't count may be one, until its status line counts
+ * it (Antigravity's); a command alone never holds delivery, as one may run for ever.
+ */
 const runsOn = (background: Background | undefined): boolean =>
-  background !== undefined && (background.agents + background.tasks > 0 || background.more === true)
+  background !== undefined && (background.agents > 0 || background.more === true)
 
 const sendRequest = z.strictObject({
   to: z.string().min(1).max(64),
@@ -1033,8 +1037,8 @@ export class Messaging {
         agent: peer.root?.agent ?? peer.shown?.agent ?? null,
         expecting: peer.root || peer.shown ? null : peer.expecting,
         untrusted: peer.root || peer.shown ? null : peer.untrusted,
-        // Working as its terminal shows it too: waiting on what its turn left running,
-        // as after an Esc, is no delivery phase.
+        // Working as its terminal shows it too: waiting on subagents its turn left
+        // running, as after an Esc, is no delivery phase.
         busy: peer.delivery.state === "working" || about(peer.terminalId)?.working === true,
         where: about(peer.terminalId),
         withYou: lastBetween(this.messages.values(), live.terminalId, peer),

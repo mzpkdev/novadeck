@@ -12,8 +12,9 @@
  *
  * Working has three phases: a root `turn` running; `continuing`, after a Stop NovaDeck
  * continued, until the continuation's first prompt; and `background`, when only work a
- * turn started still runs after its Stop (Claude Code's background tasks, Antigravity's
- * subagents and commands), until the turn its end starts, or the person's. Only in a turn, or continuing, is the person's Enter a prompt their harness
+ * turn started still runs after its Stop: subagents (Claude Code's, Antigravity's, which
+ * its Stop says only that something runs until its status line counts them), never a
+ * command alone, which may run for ever. Only in a turn, or continuing, is the person's Enter a prompt their harness
  * queues; in the background it submits one at once. A turn keeps `turnAt`, as the
  * agent's activity does (`harnesses/activity.ts`), so an idle status line older than it
  * belongs to a turn already over.
@@ -521,11 +522,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       // The turn's counts stay, as a Stop that raced this end is still that turn's.
       return { ...counts(delivery), state: "unknown" }
     case "idle": {
-      // Waiting on its background work, as an idle status line shows it does: only the
-      // turn that work wakes, or the person's, ends the wait. The status line lists its
-      // subagents, never a command it backgrounded (Antigravity's), so none listed says
-      // nothing.
-      if (phase === "background") return delivery
+      // Its subagents finished, as an idle status line listing none running says: the
+      // turn they ran after is over, a command it backgrounded (Antigravity's) left to run.
+      if (phase === "background") return event.background ? delivery : ended(delivery, event.at)
       // After the turn's Stop, idle says nothing new, nor does one drawn before the turn
       // (its hook started before the turn's); otherwise the turn ended without one,
       // keeping its counts for a Stop that arrives late, or a working status line newer

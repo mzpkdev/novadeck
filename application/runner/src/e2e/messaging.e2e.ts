@@ -1,12 +1,16 @@
+import { setTimeout as sleep } from "node:timers/promises"
+
 import { setups } from "./agents/index.js"
-import { describe, e2e, expect, supported } from "./fixture.js"
-import { gate, latest, tool } from "./model/script.js"
+import { describe, e2e, expect, gated, supported } from "./fixture.js"
+import { asked, gate, latest, tool } from "./model/script.js"
 import {
   deliveries,
   delivered,
   holds,
+  lacking,
   messages,
   own,
+  result,
   replies,
   ring,
   sends,
@@ -15,6 +19,9 @@ import {
   through,
   turn,
 } from "./scenarios.js"
+
+// How long a terminal is watched for what a stale record, read late, would change.
+const quiet = 3000
 
 // The same scenarios for every harness. Where one differs, it is a trait of its setup or
 // a known gap (known-gaps.ts), never a check of which harness this is.
@@ -110,6 +117,95 @@ for (const setup of setups) {
         ["t2", "t1", "delivered"],
       ])
       expect(messages(t2)).toEqual(messages(t1))
+    })
+
+    gated(it, lacking(setup, "approval"))(
+      "works on through a Stop it continues with a message, waiting on the person as it asks",
+      async ({ e2e: run }) => {
+        // t1's turn ends only once t2's message waits for it; its Stop then delivers it,
+        // and the continuation asks the person before a tool runs.
+        const ending = gate()
+        run.model.use(
+          sends("Tell t1 the news", "t1", "The build is green."),
+          own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+          own((call) => {
+            if (!delivered(call, "t2")) return undefined
+            if (result(call) !== undefined) return { text: "Noted the news." }
+            return setup.approval!.request(call)
+          }),
+          own(async (call) => {
+            if (call.side || !asked(call, "Hold then stop")) return undefined
+            await ending.opened
+            return { text: "First done." }
+          }),
+        )
+        const t1 = await start(run, setup)
+        const t2 = await start(run, setup)
+        const mark = t1.mark()
+        await t1.submit("Hold then stop")
+        await t1.reached("working", { after: mark })
+        await t2.submit("Tell t1 the news")
+        await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+        ending.open()
+
+        // Its Stop continued the turn: it works on, and waits on the person as it asks,
+        // past any record of that Stop, as Claude Code's transcript writes one.
+        await t1.until(setup.approval!.shows)
+        await t1.poll(
+          () => (t1.summary().activity?.attention.pending === 1 ? true : undefined),
+          "the continuation's request",
+        )
+        await sleep(quiet)
+        expect(t1.summary().activity).toMatchObject({
+          state: "working",
+          attention: { pending: 1 },
+        })
+        expect(t1.history().at(-1)?.delivery).toBe("working")
+      },
+    )
+
+    it("works on through a Stop it continues with a message, until the continuation's Stop", async ({
+      e2e: run,
+    }) => {
+      const ending = gate()
+      const continuing = gate()
+      run.model.use(
+        sends("Tell t1 the news", "t1", "The build is green."),
+        own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+        own(async (call) => {
+          if (!delivered(call, "t2")) return undefined
+          await continuing.opened
+          return { text: "Noted the news." }
+        }),
+        own(async (call) => {
+          if (call.side || !asked(call, "Hold then stop")) return undefined
+          await ending.opened
+          return { text: "First done." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const t2 = await start(run, setup)
+      const mark = t1.mark()
+      const calls = run.model.mark()
+      await t1.submit("Hold then stop")
+      await t1.reached("working", { after: mark })
+      await t2.submit("Tell t1 the news")
+      await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+      ending.open()
+
+      // The continuation's model call waits: the agent works, as delivery says, and as its
+      // terminal shows, whatever records its Stop left.
+      await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
+      await sleep(quiet)
+      expect(t1.summary().activity?.state).toBe("working")
+      expect(t1.history().at(-1)?.delivery).toBe("working")
+      continuing.open()
+      await t1.until("Noted the news.")
+      await t1.reached("settled", { after: mark })
+      await t1.poll(
+        () => (t1.summary().activity?.state === "idle" ? true : undefined),
+        "the agent idle",
+      )
     })
 
     it("reaches no model or login but the fake one", async ({ e2e: run }) => {

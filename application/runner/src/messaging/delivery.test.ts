@@ -313,10 +313,13 @@ describe("a terminal's delivery state", () => {
     expect(waiting).toMatchObject({ state: "working", phase: "background", continued: 0 })
     // A background task's result starts a turn by itself, whose Stop ends it.
     expect(run(waiting, harness, stop).state).toBe("settled")
-    // Antigravity's idle status line lists its subagents, never a command it backgrounded,
-    // so it ends no wait, whatever it lists.
+    // Antigravity's subagents finishing, as its idle status line says, ends it too, a
+    // command it backgrounded left to run.
     expect(transition(waiting, idleWithWork)).toEqual(waiting)
-    expect(transition(waiting, { ...idle, at: at + 5 })).toEqual(waiting)
+    expect(transition(waiting, { ...idle, at: at + 5 })).toMatchObject({
+      state: "settled",
+      since: at + 5,
+    })
   })
 
   it("ends a turn its records told ended only while that turn still runs", () => {

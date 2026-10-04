@@ -77,9 +77,22 @@ describe("An agent whose turn left work running", () => {
     const window = page.getByRole("region", { name: "Tests terminal" })
     await expect.element(window).toHaveAttribute("data-terminal-phase", "running")
     expect(await tooltipOf(window.getByText("2 agents · 1 task"))).toBe(
-      "Its turn is over, but work it started still runs: it works on until that finishes",
+      "Its turn is over, but subagents it started still run: it works on until they finish",
     )
     await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
+  })
+
+  it("is idle beside a command it left running, which shows but never keeps it working", async () => {
+    // The demo's other Claude Code left a command running.
+    await openWorkspace("/?demo=agents")
+    const skip = page.getByRole("button", { name: "Skip for now" })
+    if (await skip.query()) await skip.click()
+    await page.getByRole("button", { name: "Select Build" }).click()
+    const window = page.getByRole("region", { name: "Build terminal" })
+    await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
+    expect(await tooltipOf(window.getByText("1 task"))).toBe(
+      "Its turn is over; work it started runs on in the background",
+    )
   })
 })
 

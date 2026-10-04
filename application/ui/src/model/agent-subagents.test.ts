@@ -50,9 +50,18 @@ describe("an agent's subagents", () => {
       expect(subagentsBadge(waiting(0, 0))).toBe("background work")
     })
 
-    it("says on hover that it works on until that work finishes", () => {
+    it("says on hover whether it works on until that work finishes", () => {
       expect(subagentsDetail(waiting(1, 0))).toBe(
-        "Its turn is over, but work it started still runs: it works on until that finishes",
+        "Its turn is over, but subagents it started still run: it works on until they finish",
+      )
+      const command: TerminalMetadata = {
+        ...waiting(0, 1),
+        state: "running",
+        agent: { working: false, background: { agents: 0, tasks: 1 } },
+      }
+      expect(subagentsBadge(command)).toBe("1 task")
+      expect(subagentsDetail(command)).toBe(
+        "Its turn is over; work it started runs on in the background",
       )
     })
   })

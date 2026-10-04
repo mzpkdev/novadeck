@@ -263,27 +263,37 @@ It also carries the account's `email`, which must not leave the adapter.
 ## Working past a turn's end
 
 An agent works, as NovaDeck shows it, while its turn runs, and after the turn while
-work it started runs on that will wake it once done: Working ends only once its own
-turn has ended and nothing it started still runs. `wakes` on each harness says whether
-anything does.
+subagents it started run on, which wake it once done: Working ends only once its own
+turn has ended and no subagent of it still runs. Other work a turn leaves running, as a
+command run in the background, shows as left running (a badge, "1 task"), but keeps
+nothing working: a dev server, a watcher or `tail -f` may run for ever. `wakes` on each
+harness says whether anything wakes it.
 
-| Harness     | What a turn leaves running                                                                                       | How NovaDeck counts it                                                                                                         |
-| ----------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Claude Code | Background subagents and commands, listed by `Stop`, each waking it once done                                    | `Stop`'s running `background_tasks`: `subagent` ones as agents, the rest as tasks; where no `Stop` says, its running subagents |
-| Codex       | Nothing that wakes it: its subagents and commands finish with the root idle                                      | Never waits: its turn's end is the end of Working                                                                              |
-| Antigravity | Subagents and backgrounded commands, which `Stop` says only exist (`fullyIdle: false`), each waking it once done | Its status line's running `subagents` as agents; a command uncounted, shown as background work                                 |
+| Harness     | What a turn leaves running                                                                                       | How NovaDeck counts it                                                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | Background subagents and commands, listed by `Stop`, each waking it once done                                    | `Stop`'s running `background_tasks`: `subagent` ones as agents, which keep it working, the rest as tasks, which don't; where no `Stop` says, its running subagents          |
+| Codex       | Nothing that wakes it: its subagents and commands finish with the root idle                                      | Never waits: its turn's end is the end of Working                                                                                                                           |
+| Antigravity | Subagents and backgrounded commands, which `Stop` says only exist (`fullyIdle: false`), each waking it once done | Working until its next idle status line counts its running `subagents`, then only while it counts one; what else `Stop` said runs shows as background work, keeping nothing |
 
 The wait ends with the turn the work's end starts, at that turn's own end with nothing
-running, or with any later turn, as the person's. An idle status line never ends it, as
-Antigravity's never lists a command. Codex's parity gap is the harness's own: nothing
-there wakes, so nothing is waited on.
+running, or with any later turn, as the person's. Antigravity's idle status line
+listing no subagent running ends it too, leaving any command it backgrounded shown but
+not waited on. Codex's parity gap is the harness's own: nothing there wakes, so nothing
+is waited on. Delivery waits the same way, so the doorbell may ring an agent with only a
+command left running, and `agents` calls it busy only while it works.
+
+A Stop NovaDeck continues with messages keeps the turn running until the continuation's
+own Stop, as Claude Code and Codex start the continuation with no prompt hook.
 
 A turn's end its hook never reported (NovaDeck's hook failed to run, or a Codex turn
 failed, which fires none) comes from the session's own records: Claude Code's
 `stop_hook_summary`, Codex's `task_complete` or `turn_aborted` for the running turn's id,
 and Antigravity's idle status line. Such a record ends only the turn still running, and
-leaves the hook's own `Stop`, should it arrive after all, to say what still runs. Claude
-Code's record says nothing of the background, so its running subagents count.
+only where no hook's `Stop` has spoken for the turn since it started: Claude Code writes
+one for a Stop NovaDeck continued too (probed 2026-10-04, 2.1.289), whose continuation
+runs on. It leaves the hook's own `Stop`, should it arrive after all, to say what still
+runs. Claude Code's record says nothing of the background, so its running subagents
+count.
 
 ## Still to probe
 

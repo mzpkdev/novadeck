@@ -1276,18 +1276,14 @@ describe("Antigravity's root conversation", () => {
     expect(messaging.delivery("G")?.state).toBe("settled")
   })
 
-  it("waits on its background work past idle snapshots, until the turn its end starts settles", () => {
+  it("settles when its status line lists no subagent running, a command left to run", () => {
     const { messaging, ask, observe, root } = agyTerminal()
     observe("G", root, agyStatus(root, "idle"), true)
     ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
     ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: false }))
     expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
-    // Idle, listing no subagent: a command it backgrounded may still run, and wake it.
     observe("G", root, agyStatus(root, "working"), true)
     observe("G", root, agyStatus(root, "idle"), true)
-    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
-    ask("G", root, "PreInvocation", hook(root, "PreInvocation", { invocationNum: 0 }))
-    ask("G", root, "Stop", hook(root, "Stop", { fullyIdle: true }))
     expect(messaging.delivery("G")?.state).toBe("settled")
   })
 
@@ -1597,23 +1593,36 @@ describe("Antigravity's turn, as activity and delivery both tell it", () => {
     expect(messaging.delivery("G")?.state).toBe("drafting")
   })
 
-  it("agrees the agent works on after a Stop with work running, until the turn its end starts", () => {
+  it("agrees the agent works on after a Stop only while its subagents run", () => {
+    const listing = { subagents: [{ name: "self", status: "running" }] }
+    const { messaging, hook, status, turn } = agyTerminal()
+    status("idle", 1)
+    hook("PreInvocation", 2, { invocationNum: 0 })
+    // Its Stop says only that something runs: a subagent, until its status line says.
+    hook("Stop", 3, { fullyIdle: false })
+    turn(false, true)
+    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
+    status("idle", 4, listing)
+    turn(false, true)
+    // Its end wakes the agent, whose Stop says nothing runs any more.
+    hook("PreInvocation", 5, { invocationNum: 0 })
+    turn(true)
+    hook("Stop", 6, { fullyIdle: true })
+    turn(false)
+    expect(messaging.delivery("G")?.state).toBe("settled")
+  })
+
+  it("agrees a command left running, its status line listing no subagent, keeps nothing working", () => {
     const { messaging, hook, status, turn } = agyTerminal()
     status("idle", 1)
     hook("PreInvocation", 2, { invocationNum: 0 })
     hook("Stop", 3, { fullyIdle: false })
     turn(false, true)
-    expect(messaging.delivery("G")).toMatchObject({ state: "working", phase: "background" })
     status("idle", 4)
-    turn(false, true)
-    status("working", 5)
-    turn(false, true)
-    // Its end wakes the agent, whose Stop says nothing runs any more.
-    hook("PreInvocation", 6, { invocationNum: 0 })
-    turn(true)
-    hook("Stop", 7, { fullyIdle: true })
     turn(false)
     expect(messaging.delivery("G")?.state).toBe("settled")
+    status("working", 5)
+    turn(false)
   })
 })
 

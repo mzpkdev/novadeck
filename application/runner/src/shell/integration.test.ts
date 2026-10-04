@@ -3912,6 +3912,18 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         .toBe("delivered")
     })
 
+    it("names an agent ready at its prompt until the person presses Enter there", async ({
+      shell,
+    }) => {
+      const tui = await ringing(shell, "shown", "named-agy", "agy")
+      const summary = () =>
+        tui.manager.list(tui.idle.sessionId).find(({ id }) => id === tui.idle.id)
+      await expect.poll(() => summary()?.ready).toBe("agy")
+      // Only its first prompt's hooks bind it: until then nothing says it is idle.
+      tui.manager.write({ terminalId: tui.idle.id, data: "\r" }, "owner")
+      expect(summary()?.ready).toBeNull()
+    })
+
     // Each harness tells of a resumed session its own way: Claude Code's SessionStart,
     // Codex's title naming the thread, Antigravity's status line naming the conversation.
     for (const [agent, program] of [

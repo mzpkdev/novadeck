@@ -265,7 +265,9 @@ for (const setup of setups) {
       const traits =
         work === "subagent" ? (["background"] as const) : (["background.command", "shell"] as const)
       gated(it, lacking(setup, ...traits))(
-        `stays Working while a ${work} it left running runs past its turn, and settles once it ends`,
+        work === "subagent"
+          ? "stays Working while a subagent it left running runs past its turn, and settles once it ends"
+          : "shows a command it left running without working on, and settles again once it ends",
         async ({ e2e: run }) => {
           const finishing = gate()
           const owns =
@@ -297,42 +299,51 @@ for (const setup of setups) {
           await run.model.waitFor(owns, { after: calls })
           await t1.reached("working", { after: mark })
           await t1.until("Started the work.")
-          // Its turn ends while the work runs: the agent works on, waiting on that work, as
-          // its terminal shows and delivery holds it.
-          const waiting = await t1.poll(
-            async () => (await t1.detail()).activity?.background ?? undefined,
-            "the agent's turn to end, its work still running",
-          )
-          if (work === "subagent")
-            // Antigravity's Stop says only that something runs; its status line counts it.
+          if (work === "subagent") {
+            // Its turn ends while the subagent runs: the agent works on, waiting on it, as
+            // its terminal shows and delivery holds it. Antigravity's Stop says only that
+            // something runs; its status line counts it.
             await t1.poll(
               () => (t1.summary().activity?.background?.agents === 1 ? true : undefined),
-              "the subagent counted",
+              "the agent's turn to end, its subagent counted",
             )
-          else expect(waiting.agents).toBe(0)
-          expect(t1.summary().activity?.state).toBe("working")
-          expect(t1.history().at(-1)?.delivery).toBe("working")
-          // Still so a moment on, past any status line drawn after the Stop.
-          await sleep(quiet)
-          expect(t1.summary().activity).toMatchObject({ state: "working" })
-          expect(t1.summary().activity?.background).not.toBeNull()
-          expect(
-            t1
-              .history()
-              .slice(mark)
-              .map((one) => one.delivery),
-          ).not.toContain("settled")
+            expect(t1.summary().activity?.state).toBe("working")
+            expect(t1.history().at(-1)?.delivery).toBe("working")
+            // Still so a moment on, past any status line drawn after the Stop.
+            await sleep(quiet)
+            expect(t1.summary().activity).toMatchObject({ state: "working" })
+            expect(
+              t1
+                .history()
+                .slice(mark)
+                .map((one) => one.delivery),
+            ).not.toContain("settled")
+          } else {
+            // Its turn ends while the command runs, which may run for ever, as a dev server
+            // does: it shows as left running, but the agent is idle, and Settled.
+            const left = await t1.poll(() => {
+              const activity = t1.summary().activity
+              return activity?.state === "idle" ? (activity.background ?? undefined) : undefined
+            }, "the agent idle, its command still running")
+            expect(left.agents).toBe(0)
+            await t1.reached("settled", { after: mark })
+            await sleep(quiet)
+            expect(t1.summary().activity).toMatchObject({ state: "idle", background: left })
+          }
 
           // The work ends and wakes the agent, whose turn then settles, with nothing running.
           const woken = run.model.mark()
+          const before = t1.mark()
           finishing.open()
           await run.model.waitFor((call) => !call.side && !owns(call), { after: woken })
-          await t1.reached("settled", { after: mark })
+          await t1.reached("settled", { after: before })
           await t1.poll(
-            () => (t1.summary().activity?.state === "idle" ? true : undefined),
-            "the agent idle",
+            () =>
+              t1.summary().activity?.state === "idle" && t1.summary().activity?.background === null
+                ? true
+                : undefined,
+            "the agent idle, nothing left running",
           )
-          expect(t1.summary().activity?.background).toBeNull()
         },
       )
     }

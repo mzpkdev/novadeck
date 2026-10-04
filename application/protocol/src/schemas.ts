@@ -59,14 +59,15 @@ export const agentName = z.enum(["claude", "codex", "agy"])
 export const agentSessionId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
 
 // What the agent holding a terminal's foreground is doing, as its own hooks report it:
-// working on a turn, or with its turn over while work it started runs on and will wake it
-// (`background`); idle with neither; or unknown when they have not said. `attention`
+// working on a turn, or with its turn over while subagents it started run on, which will
+// wake the agent (`background`); idle otherwise; or unknown when they have not said. `attention`
 // counts the requests waiting on the person, and names the kind of the oldest one.
 export const agentActivity = z.strictObject({
   state: z.enum(["working", "idle", "unknown"]),
-  // What its ended turn left running that wakes it once done, while it waits on that:
-  // subagents, and other tasks such as commands, counted. Null while its turn runs, and
-  // once nothing it started runs.
+  // What its ended turn left running that wakes it once done: subagents, which keep it
+  // working, and other tasks such as commands, which don't, as one may run for ever,
+  // counted; both zero where its harness says only that something runs. Null while its
+  // turn runs, and once nothing it started runs.
   background: z
     .strictObject({
       agents: z.number().int().nonnegative(),
