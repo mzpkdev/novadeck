@@ -5,7 +5,8 @@
    "attention" | "ended", data-terminal-attention="question" | "permission",
    data-terminal-hidden="true" | "false". Parts: `.terminal-glyph`,
    `.terminal-tab-process`, `.terminal-tab-starting`, `.terminal-tab-action` (an
-   `.icon-button.small.dim`, pressed while it hides the tab), `.terminal-tab-mail` (a
+   `.icon-button.small.dim.quiet`, pressed while it hides the tab but looking as it does
+   at rest, so a hidden tab doesn't draw the eye), `.terminal-tab-mail` (a
    `.badge`, data-mail="waiting" | "held" | "paused"), `.terminal-tab-rename`,
    `.terminal-tab-empty`.
 

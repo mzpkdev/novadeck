@@ -35,6 +35,13 @@ import {
 
 const views = ["Focus", "Grid", "Canvas"] as const
 
+/** How a button looks: its ground, its colour, and its icon's opacity. */
+const look = (button: Element): string[] => [
+  getComputedStyle(button).backgroundColor,
+  getComputedStyle(button).color,
+  getComputedStyle(button.querySelector("svg")!).opacity,
+]
+
 /** A terminal's offset and size relative to a neighbour, rounded to whole pixels. */
 const placeBeside = (subject: Locator, neighbour: Locator): number[] => {
   const box = subject.element().getBoundingClientRect()
@@ -462,6 +469,18 @@ describe("closing terminals", () => {
 
 describe("hiding terminals from Grid and Canvas", () => {
   context("when clicking the eye on a tab", () => {
+    it("draws the eye that shows it again no stronger than the tab's other actions", async () => {
+      await openWorkspace()
+      await visibilityToggle("Dev server", "Hide").click()
+      const show = visibilityToggle("Dev server", "Show")
+      await expect.element(show).toHaveAttribute("aria-pressed", "true")
+
+      await userEvent.unhover(show)
+
+      const rename = sidebar().getByRole("button", { name: "Rename Dev server" })
+      await expect.poll(() => look(show.element())).toEqual(look(rename.element()))
+    })
+
     it("keeps the tab in the list with a faded label and keeps the current selection", async () => {
       await openWorkspace()
       await chooseView("Grid")
