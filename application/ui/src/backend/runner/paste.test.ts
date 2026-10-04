@@ -246,6 +246,18 @@ describe("pasting into a runner terminal", () => {
       expect(page.notices).toEqual([])
     })
 
+    it("hands the program its empty paste when the image could not be saved", async () => {
+      const image = new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" })
+      const read = vi.fn<() => Promise<unknown[]>>(async () => [
+        { types: ["image/png"], getType: async () => image },
+      ])
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read } })
+      const page = terminal(() => Promise.reject(new Error("connection lost")))
+      page.field.dispatchEvent(pasteEvent({}))
+      await vi.waitFor(() => expect(page.pasted).toEqual([""]))
+      expect(page.notices).toEqual(["Couldn't paste the image"])
+    })
+
     it("says so when the page may not read the clipboard", async () => {
       const read = vi.fn<() => Promise<unknown[]>>(async () => {
         throw new DOMException("Read permission denied.", "NotAllowedError")

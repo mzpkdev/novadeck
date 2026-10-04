@@ -109,27 +109,30 @@ const save = async (file: File, target: PasteTarget, now: Date): Promise<string>
 // Uploads the files one after another, pasting the path of each one saved as it is,
 // followed by a space, as a paste of its own: Codex takes a paste for an image only when
 // it is one path. A file the runner could not save is left out, and the first of them
-// told of.
-const pasteFiles = async (files: readonly File[], target: PasteTarget): Promise<void> => {
+// told of. Answers how many went in.
+const pasteFiles = async (files: readonly File[], target: PasteTarget): Promise<number> => {
   const now = new Date()
   let notice: string | undefined
+  let pasted = 0
   for (const file of files) {
     try {
       // eslint-disable-next-line no-await-in-loop -- One file in memory and in flight at a time.
       target.paste(`${shellPath(await save(file, target, now))} `)
+      pasted += 1
     } catch (error) {
       console.error("NovaDeck could not save a pasted file on the runner:", error)
       notice ??= pasteNotice({ type: file.type, error })
     }
   }
   if (notice) target.failed(notice)
+  return pasted
 }
 
 // Takes the pastes into `host` that carry files and no text, before the emulator inside
 // it sees them, and pastes the files' paths instead. A paste with text is the emulator's,
 // even with an image beside it, as a spreadsheet's cells come; one with neither, as of
 // an image alone, reads the clipboard's images, and says so when it can't. That empty
-// paste goes to the program only when no image comes of it, as some read the clipboard
+// paste goes to the program only when no image's path does, as some read the clipboard
 // themselves on one, and would take the image twice. Returns the undo.
 export const takeFilePastes = (host: HTMLElement, target: PasteTarget): (() => void) => {
   const listener = (event: ClipboardEvent): void => {
@@ -143,8 +146,8 @@ export const takeFilePastes = (host: HTMLElement, target: PasteTarget): (() => v
     }
     event.preventDefault()
     event.stopPropagation()
-    void clipboardImages(new Date()).then((images) => {
-      if (images && images.length > 0) return void pasteFiles(images, target)
+    void clipboardImages(new Date()).then(async (images) => {
+      if (images && images.length > 0 && (await pasteFiles(images, target)) > 0) return
       target.paste("")
       if (!images) target.failed(pasteNotice("clipboard"))
     })
