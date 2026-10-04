@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
-import { agentName, type AgentName } from "@novadeck/protocol"
+import type { AgentName } from "@novadeck/protocol"
 
 import { relayHook } from "./hook.js"
 import { mcpAnswer, type McpCall } from "./mcp.js"
@@ -90,58 +90,8 @@ const sender = (value: {
   return { terminalId, token }
 }
 
-const parse = (value: { readonly [key: string]: unknown }): Report | undefined => {
-  const { agent, event, seq, instance, env, payload } = value
-  const from = sender(value)
-  if (!from) return undefined
-  if (typeof seq !== "number" || !Number.isFinite(seq)) return undefined
-  if (typeof event !== "string" || event.length > 64) return undefined
-  const name = agentName.safeParse(agent)
-  if (!name.success) return undefined
-  if (!object(payload)) return undefined
-  const { cursor, codexThread } = object(env) ? env : {}
-  return {
-    ...from,
-    agent: name.data,
-    event,
-    seq,
-    instance: typeof instance === "string" && /^\d{1,10}$/.test(instance) ? instance : null,
-    env: {
-      cursor: cursor === true,
-      ...(typeof codexThread === "string" && codexThread.length <= 128 && { codexThread }),
-    },
-    payload,
-  }
-}
-
-/** An ask: a report with the hook's deadline, in epoch milliseconds. */
-const parseAsk = (value: {
-  readonly [key: string]: unknown
-}): { report: Report; deadline: number } | undefined => {
-  const { deadline } = value
-  const report = parse(value)
-  if (!report || typeof deadline !== "number" || !Number.isFinite(deadline)) return undefined
-  return { report, deadline }
-}
-
-const parseAck = (value: { readonly [key: string]: unknown }): Ack | undefined => {
-  const { ack } = value
-  const from = sender(value)
-  if (!from || typeof ack !== "string" || !/^[A-Za-z0-9_-]{16,64}$/.test(ack)) return undefined
-  return { ...from, leaseId: ack }
-}
-
-const callType = (type: unknown): type is CallType => callTypes.some((known) => known === type)
-
-const parseCall = (value: { readonly [key: string]: unknown }): Call | undefined => {
-  const { type, request } = value
-  const from = sender(value)
-  if (!callType(type) || !from || !object(request)) return undefined
-  return { type, ...from, request }
-}
-
-// A hook sends at most 60,000 characters; a little more allows for the frame. A call's
-// request is a path or a command and a few words, well within it.
+// A relay's first line, but for a hook's, and its acknowledgement are short: a terminal,
+// a token and a few words, well within this.
 const maxBytes = 65_536
 
 /** What a relay sends once its agent closed its side: answer what's under way, then close. */
@@ -266,7 +216,8 @@ export type ReportsOptions = {
   /** How long a sender has to send its line, in milliseconds. */
   readonly readMs?: number
   /**
-   * How long a call waits for its answer before it gets `unanswered`, in milliseconds:
+   * How long a call waits for its answer before it gets its type's `unansweredCalls`, in
+   * milliseconds:
    * by default 8 s, as opening a terminal waits for NovaDeck's window, and within the
    * 10 s NovaDeck's MCP server waits.
    */
@@ -275,7 +226,7 @@ export type ReportsOptions = {
 
 /** What the endpoint hands on, each to the runner, which checks its token. */
 export type ReportHandlers = {
-  /** A hook's report, which gets no answer. */
+  /** A hook's report; its relay hears `unheard` back. */
   readonly report: (report: Report) => void
   /** A hook's ask, answered by `deadline` or as `unheard`. */
   readonly ask: (report: Report, deadline: number) => Promise<HookAnswer>
@@ -292,16 +243,14 @@ export type Reports = {
 }
 
 /**
- * Listens for agent hook reports, asks and acknowledgements, and calls. Each connection
- * sends one JSON line: an agent hook's report, handed on and closed without a reply; an
- * ask, a report with its hook's `deadline`, which gets one JSON line, a `HookAnswer`,
- * before it is closed, or `unheard` once that deadline passes; a hook's `ack` of a lease,
- * closed without a reply; or a call, one that names its `type`, which gets one JSON line
- * before it is closed. A call that cannot be read gets `unanswered`; one that fails or
- * takes longer than `answerMs`, the same for its type. A relay's first line opens an
- * agent's MCP session instead, which stays open for as long as the agent runs, its tool
- * calls handed on as calls (see `serveSession`).
- * None is checked against the terminal's own token here; the handlers do.
+ * Listens for NovaDeck's relays (see application/relay), which speak only the relay
+ * protocol (docs/backend-api.md, "Relay protocol"). Each connection's first line names
+ * the relay's version and what it carries: an agent's hook, a report or an ask, answered
+ * with one line, a `HookAnswer`, and then perhaps acknowledged (see `serveHook`); or an
+ * agent's MCP session, which stays open for as long as the agent runs, its tool calls
+ * handed on as calls (see `serveSession`). A connection whose first line is anything
+ * else is ended without an answer. None is checked against the terminal's own token
+ * here; the handlers do.
  */
 export const listenForReports = async (
   handlers: ReportHandlers,
@@ -314,18 +263,6 @@ export const listenForReports = async (
     directory === undefined
       ? `\\\\.\\pipe\\novadeck-reports-${randomUUID()}`
       : join(directory, "reports.sock")
-  const respond = async <T>(socket: Socket, answer: Promise<T>, ms: number, failed: T) => {
-    const result = await within(answer, ms, failed)
-    let line: string | undefined
-    try {
-      line = JSON.stringify(result)
-    } catch {
-      // Not JSON; answered as a failure below.
-    }
-    socket.end(`${line ?? JSON.stringify(failed)}\n`)
-    // A caller that never closes its side is let go after a while.
-    socket.setTimeout(readMs)
-  }
   // A relay's call: the terminal and token it named, answered within `answerMs`.
   const relayCall =
     (from: { terminalId: string; token: string }): McpCall =>
@@ -395,9 +332,9 @@ export const listenForReports = async (
   }
   // Every connection, so closing ends the sessions that stay open.
   const sockets = new Set<Socket>()
-  // Half open: a sender that ends its side after its line still reads the answer, where
-  // the platform keeps a half-closed connection. Windows' named pipes don't, so a caller
-  // there keeps its side open until the answer, as a relay does everywhere.
+  // Half open: a relay that ends its side after its hook still reads the answer, where the
+  // platform keeps a half-closed connection. Windows' named pipes don't, so a relay keeps
+  // its side open until the answer everywhere.
   const server: Server = createServer({ allowHalfOpen: true }, (socket: Socket) => {
     let text = ""
     let taken = false
@@ -443,32 +380,8 @@ export const listenForReports = async (
         serveSession(socket, text.slice(end + 1), from && relayCall(from))
         return
       }
-      if (object(value) && "type" in value) {
-        // The answer's own deadline bounds the wait.
-        socket.setTimeout(0)
-        const call = parseCall(value)
-        const failed = call ? unansweredCalls[call.type] : unanswered
-        const answer = call ? handlers.call(call) : Promise.resolve(failed)
-        respond(socket, answer, answerMs, failed).catch(() => socket.destroy())
-        return
-      }
-      if (object(value) && "deadline" in value) {
-        // As for a call; the hook's own deadline bounds the wait.
-        socket.setTimeout(0)
-        const ask = parseAsk(value)
-        const answer = ask ? handlers.ask(ask.report, ask.deadline) : Promise.resolve(unheard)
-        const ms = ask ? Math.min(answerMs, ask.deadline - Date.now()) : 0
-        respond(socket, answer, ms, unheard).catch(() => socket.destroy())
-        return
-      }
+      // Not a relay's: nothing to take or answer.
       socket.end()
-      if (object(value) && "ack" in value) {
-        const ack = parseAck(value)
-        if (ack) handlers.ack(ack)
-        return
-      }
-      const parsed = object(value) ? parse(value) : undefined
-      if (parsed) handlers.report(parsed)
     }
     socket.on("data", first)
   })

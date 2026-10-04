@@ -491,9 +491,10 @@ without a source (Antigravity).
 ### Relay protocol
 
 The relay (`application/relay`) and the runner's endpoint (`shell/reports.ts`) speak
-JSON, one message per line, over `NOVADECK_REPORT`. A relay's first line starts
-`{"relay":2,`, its version, so the endpoint tells it from the one-line reports, asks,
-acknowledgements and calls the integration tests send. The runner copies in the relay it
+JSON, one message per line, over `NOVADECK_REPORT`. The endpoint speaks only this
+protocol. A relay's first line starts `{"relay":2,`, its version, and names what the
+connection carries; the endpoint ends a connection whose first line is anything else,
+without an answer. The runner copies in the relay it
 ships on every start, so both sides change together; an incompatible change still
 bumps the version.
 
