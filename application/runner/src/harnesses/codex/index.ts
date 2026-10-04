@@ -15,7 +15,7 @@ import {
 import { decode } from "./decode.js"
 import { followRollout, followSubagent, rolloutPlans } from "./rollout.js"
 import { cmdShim, posixShim } from "./shim.js"
-import { startedSession, title } from "./title.js"
+import { startedSession, title, titleWorking } from "./title.js"
 import { transcripts } from "./transcripts.js"
 import { hooksTrusted } from "./trust.js"
 
@@ -136,6 +136,7 @@ export const codex = {
   },
   decode,
   title,
+  titleWorking,
   startedSession,
   hooksTrusted,
   // Where it keeps its threads' locks and its configuration, and how it is found.

@@ -235,7 +235,7 @@ which shows but keeps nothing working (see
 hooks is Not reporting: a muted "○" in its tab and a muted dashed line on its window,
 said in words to its tooltip and assistive technology, not process-derived running.
 Codex and Antigravity at their own prompt before their first, their hooks running,
-are idle there, until the person presses Enter there: `TerminalSummary.ready` names them. Silence never means idle, and no timeout turns a long
+are idle there: `TerminalSummary.ready` names them, until the person presses Enter there, and again should that Enter start nothing within moments (a command such as `/status`). Silence never means idle, and no timeout turns a long
 turn idle. Loss of the runner connection is reported separately; clients never
 present an old snapshot as current.
 

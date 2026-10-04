@@ -31,6 +31,7 @@ import { CompanionItems } from "../companions/items.js"
 import { codex as codexHarness } from "../harnesses/codex/index.js"
 import { Terminals, type TerminalOptions } from "../terminals/index.js"
 import { Latest } from "../terminals/latest.js"
+import { readyReturnMs } from "../terminals/manager.js"
 import type { TerminalRecords } from "../terminals/records.js"
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
@@ -3922,6 +3923,21 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       // Only its first prompt's hooks bind it: until then nothing says it is idle.
       tui.manager.write({ terminalId: tui.idle.id, data: "\r" }, "owner")
       expect(summary()?.ready).toBeNull()
+    })
+
+    it("names a Codex ready again once an Enter at its prompt started nothing", async ({
+      shell,
+    }) => {
+      const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
+      const tui = await ringing(shell, "shown", "named", "codex", thread)
+      const summary = () =>
+        tui.manager.list(tui.idle.sessionId).find(({ id }) => id === tui.idle.id)
+      await expect.poll(() => summary()?.ready).toBe("codex")
+      // An empty box: Enter submits nothing, binds nothing, and retitles nothing.
+      tui.manager.write({ terminalId: tui.idle.id, data: "\r" }, "owner")
+      expect(summary()?.ready).toBeNull()
+      await expect.poll(() => summary()?.ready, { timeout: readyReturnMs + 3_000 }).toBe("codex")
+      expect(summary()?.agent).toBeNull()
     })
 
     // Each harness tells of a resumed session its own way: Claude Code's SessionStart,

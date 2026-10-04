@@ -283,17 +283,21 @@ is waited on. Delivery waits the same way, so the doorbell may ring an agent wit
 command left running, and `agents` calls it busy only while it works.
 
 A Stop NovaDeck continues with messages keeps the turn running until the continuation's
-own Stop, as Claude Code and Codex start the continuation with no prompt hook.
+own Stop, as Claude Code and Codex start the continuation with no prompt hook. Should its
+hook never acknowledge the messages, the lease lapses and the turn ends at that Stop
+after all.
 
 A turn's end its hook never reported (NovaDeck's hook failed to run, or a Codex turn
 failed, which fires none) comes from the session's own records: Claude Code's
 `stop_hook_summary`, Codex's `task_complete` or `turn_aborted` for the running turn's id,
-and Antigravity's idle status line. Such a record ends only the turn still running, and
-only where no hook's `Stop` has spoken for the turn since it started: Claude Code writes
-one for a Stop NovaDeck continued too (probed 2026-10-04, 2.1.289), whose continuation
-runs on. It leaves the hook's own `Stop`, should it arrive after all, to say what still
-runs. Claude Code's record says nothing of the background, so its running subagents
-count.
+and Antigravity's idle status line. Such a record ends only the turn still running, its
+continuation included, and leaves the hook's own `Stop`, should it arrive after all, to
+say what still runs. Claude Code writes one for a Stop NovaDeck continued too, once its
+hook answered (probed 2026-10-04, 2.1.289): each continued Stop uses up the next record
+that names no turn, which ends nothing. Codex writes none for a continued Stop, and its
+records name their turn. Antigravity's continuation's model calls after the continued
+Stop are that continuation's own, so an idle status line after them ends it. Claude
+Code's record says nothing of the background, so its running subagents count.
 
 ## Still to probe
 

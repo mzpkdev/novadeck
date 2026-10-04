@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
+import type { Harness } from "../harnesses/harness.js"
+import { harnesses } from "../harnesses/registry.js"
 import { setups } from "./agents/index.js"
 import { describe, e2e, expect, gated, supported } from "./fixture.js"
 import { asked, gate, latest, tool } from "./model/script.js"
@@ -207,6 +209,68 @@ for (const setup of setups) {
         "the agent idle",
       )
     })
+
+    it("ends a continuation whose own Stop hook's report never came, as its records tell", async ({
+      e2e: run,
+    }) => {
+      // As when NovaDeck's hook failed to run for the continuation's Stop: its records, or
+      // Antigravity's idle status line, end the turn all the same.
+      const ending = gate()
+      run.model.use(
+        sends("Tell t1 the news", "t1", "The build is green."),
+        own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+        own((call) => (delivered(call, "t2") ? { text: "Noted the news." } : undefined)),
+        own(async (call) => {
+          if (call.side || !asked(call, "Hold then stop")) return undefined
+          await ending.opened
+          return { text: "First done." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const t2 = await start(run, setup)
+      const harness = harnesses[setup.agent] as { decode: Harness["decode"] }
+      const { decode } = harness
+      // t1's second Stop, its continuation's, never reports.
+      let stops = 0
+      harness.decode = (report) => {
+        if (report.event !== "Stop" || report.terminalId !== t1.id) return decode(report)
+        stops += 1
+        return stops === 2 ? [] : decode(report)
+      }
+      try {
+        const mark = t1.mark()
+        await t1.submit("Hold then stop")
+        await t1.reached("working", { after: mark })
+        await t2.submit("Tell t1 the news")
+        await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+        ending.open()
+        await t1.until("Noted the news.")
+        await t1.poll(
+          () => (t1.summary().activity?.state === "idle" ? true : undefined),
+          "the continuation to end",
+        )
+        await t1.poll(
+          () => (t1.history().at(-1)?.delivery !== "working" ? true : undefined),
+          "delivery to take the continuation as over",
+        )
+        expect(stops).toBe(2)
+      } finally {
+        harness.decode = decode
+      }
+    })
+
+    gated(it, lacking(setup, "idleCommand"))(
+      "keeps telling its agent at its prompt after a command there that submits nothing",
+      async ({ e2e: run }) => {
+        const t1 = await start(run, setup)
+        const heard = () => t1.summary().ready === setup.agent || t1.summary().agent === setup.agent
+        await t1.poll(() => (heard() ? true : undefined), "the agent at its prompt")
+        await t1.submit(setup.idleCommand!)
+        // Its prompt still shows: NovaDeck hears it there again within moments.
+        await t1.poll(() => (heard() ? true : undefined), "the agent at its prompt again", 10_000)
+        expect(t1.summary().activity?.state ?? "idle").toBe("idle")
+      },
+    )
 
     it("reaches no model or login but the fake one", async ({ e2e: run }) => {
       run.model.use(own(() => ({ text: "Nothing left the machine." })))

@@ -82,6 +82,8 @@ type Live = Scope & {
   untrusted: AgentName | null
   /** The Escape `escaped` last told the agent's activity of, so it tells each one once. */
   escapeTold: number | null
+  /** Whether a Stop it would have continued lapsed, its turn ended there, yet untold. */
+  lapsed: boolean
   /** The prompt that started the current root turn, by its delivery epoch; null before any. */
   prompt: { readonly epoch: number; readonly text: string } | null
 }
@@ -291,6 +293,7 @@ export class Messaging {
       shown: null,
       untrusted: null,
       escapeTold: null,
+      lapsed: false,
       prompt: null,
     })
   }
@@ -463,7 +466,13 @@ export class Messaging {
     if (stop) {
       const background = runsOn(stop.background)
       const lease = time && continues(live.delivery) && this.lease(live, root, "stop", background)
-      this.step(live, { type: "stop", continued: Boolean(lease), background, at: this.now() })
+      this.step(live, {
+        type: "stop",
+        continued: Boolean(lease),
+        background,
+        at: this.now(),
+        startedAt: stop.startedAt,
+      })
       return lease ? { leaseId: lease.id, stdout: profile.stop(lease.text) } : silent
     }
     if (kind !== "prompt") return silent
@@ -1143,13 +1152,27 @@ export class Messaging {
     const live = this.live.get(lease.terminalId)
     if (!live || lease.kind !== "stop") return
     const { delivery } = live
-    if (delivery.epoch === lease.epoch && phaseOf(delivery) === "continuing")
+    if (delivery.epoch === lease.epoch && phaseOf(delivery) === "continuing") {
+      live.lapsed = true
       this.step(live, {
         type: "stop",
         continued: false,
         background: lease.background,
         at: this.now(),
       })
+    }
+  }
+
+  /**
+   * Whether a Stop NovaDeck continued lapsed since this was last asked, as an event for
+   * the bound session's activity, so both tell the turn ended there. Told once.
+   */
+  lapsed(terminalId: string, binding: Binding, turnAt: number): ActivityEvent | undefined {
+    const live = this.live.get(terminalId)
+    if (!live?.lapsed) return undefined
+    live.lapsed = false
+    const { agent, sessionId, instance } = binding
+    return { type: "turn-lapsed", agent, sessionId, instance, startedAt: turnAt }
   }
 
   /** Applies the root's changes to the terminal's messages and delivery, in order. */

@@ -322,7 +322,7 @@ describe("a terminal's delivery state", () => {
     })
   })
 
-  it("ends a turn its records told ended only while that turn still runs", () => {
+  it("ends a turn its records told ended only while that turn still runs or continues", () => {
     // A recorded end comes only where the agent's activity took it as the turn's.
     const recorded = { ...stop, recorded: true } as const
     expect(transition(working, recorded).state).toBe("settled")
@@ -331,13 +331,10 @@ describe("a terminal's delivery state", () => {
       phase: "background",
     })
     expect(transition(working, { ...ended, recorded: true }).state).toBe("unknown")
-    // Never one already over, waiting on its background work, or NovaDeck continued.
-    for (const from of [
-      settled,
-      unknown,
-      transition(working, background),
-      transition(working, continued),
-    ]) {
+    // A continuation whose own Stop's hook never reported ends at its record too.
+    expect(transition(transition(working, continued), recorded).state).toBe("settled")
+    // Never one already over, or waiting on its background work.
+    for (const from of [settled, unknown, transition(working, background)]) {
       expect(transition(from, recorded)).toEqual(from)
       expect(transition(from, { ...ended, recorded: true })).toEqual(from)
     }
@@ -389,6 +386,16 @@ describe("a terminal's delivery state", () => {
     expect(continues(delivery)).toBe(false)
     expect(run(working, continued, call)).toMatchObject({ phase: "continuing", continued: 1 })
     expect(run(working, continued, call, harness)).toMatchObject({ phase: "turn", continued: 1 })
+  })
+
+  it("takes a call after the continued Stop's hook started as the continuation running", () => {
+    // As Antigravity's continuation, whose model calls may go on past its first: an idle
+    // status line after it then ends it, as one ends any turn its Stop never reported.
+    const continuing = transition(working, { ...continued, startedAt: at + 10 })
+    expect(transition(continuing, call)).toEqual(continuing)
+    const resumed = transition(continuing, { ...call, startedAt: at + 20 })
+    expect(resumed).toMatchObject({ phase: "turn", turnAt: at + 20, continued: 1 })
+    expect(transition(resumed, { ...idle, startedAt: at + 30 }).state).toBe("unknown")
   })
 
   it("resumes a turn an idle status line ended when a newer one says working", () => {

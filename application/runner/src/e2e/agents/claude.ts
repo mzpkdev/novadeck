@@ -23,6 +23,7 @@ export const claude: AgentSetup = {
   // The name its first screen's header gives, beside its version.
   banner: "Claude Code",
   bindsAtReady: true,
+  idleCommand: "/status",
   refused: [],
   watch: {
     searched: [

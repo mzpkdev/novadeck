@@ -723,8 +723,8 @@ describe("an agent waiting on what its turn left running", () => {
       apply(continued, binding, fact({ type: "turn-continued", startedAt: 2 })),
     ).toBeUndefined()
     expect(apply(stopped, binding, fact({ type: "turn-continued", startedAt: 1 }))).toBeUndefined()
-    // The record of the continued Stop, written after it, ends nothing: a hook's Stop
-    // already spoke for the turn. The continuation's root request waits on.
+    // The record of the continued Stop, written after it, ends nothing, used up instead.
+    // The continuation's root request waits on.
     const asking = apply(
       continued,
       binding,
@@ -737,10 +737,48 @@ describe("an agent waiting on what its turn left running", () => {
         startedAt: 3,
       }),
     )!
-    expect(stop(asking, 4, { recorded: true })).toBeUndefined()
-    // Its own Stop ends it; a later turn hears its records again.
-    expect(summary(stop(asking, 5, { background: none })!).state).toBe("idle")
-    expect(stop(turn(asking, 6), 7, { recorded: true })?.state).toBe("idle")
+    const used = stop(asking, 4, { recorded: true })!
+    expect(summary(used)).toMatchObject({ state: "working", attention: { pending: 1 } })
+    // Its own Stop ends it; should its hook's report never come, its record does.
+    expect(summary(stop(used, 5, { background: none })!).state).toBe("idle")
+    expect(summary(stop(used, 6, { recorded: true })!).state).toBe("idle")
+  })
+
+  it("ends a continuation at the record naming its turn, used up for no Stop it continued", () => {
+    // Codex keeps the turn's id through a continuation, and records only its real end.
+    const codex: Binding = { agent: "codex", sessionId: "s", instance: "7" }
+    const event = (fields: object) =>
+      fact({ agent: "codex", ...fields } as Parameters<typeof fact>[0])
+    const running = apply(
+      started(0, false),
+      codex,
+      event({ type: "turn-started", startedAt: 1, turn: "t1" }),
+    )!
+    const stopped = apply(
+      running,
+      codex,
+      event({ type: "turn-ended", outcome: "completed", startedAt: 2 }),
+    )!
+    const continued = apply(stopped, codex, event({ type: "turn-continued", startedAt: 2 }))!
+    const recorded = (id: string) =>
+      apply(
+        continued,
+        codex,
+        event({ type: "turn-ended", outcome: "completed", startedAt: 9, recorded: true, turn: id }),
+      )
+    expect(recorded("t0")).toBeUndefined()
+    expect(summary(recorded("t1")!).state).toBe("idle")
+  })
+
+  it("ends a continuation at its Stop when NovaDeck's continuing lapsed", () => {
+    const stopped = stop(turn(started(0), 1), 2, { background: { agents: 1, tasks: 0 } })!
+    const continued = apply(stopped, binding, fact({ type: "turn-continued", startedAt: 2 }))!
+    const lapsed = apply(continued, binding, fact({ type: "turn-lapsed", startedAt: 2 }))!
+    expect(summary(lapsed)).toMatchObject({ state: "working", background: { agents: 1 } })
+    expect(lapsed.state).toBe("idle")
+    // Told once: a turn not continued has nothing to lapse.
+    expect(apply(lapsed, binding, fact({ type: "turn-lapsed", startedAt: 2 }))).toBeUndefined()
+    expect(apply(stopped, binding, fact({ type: "turn-lapsed", startedAt: 2 }))).toBeUndefined()
   })
 
   it("counts the subagents still running where nothing says, only where their end wakes it", () => {

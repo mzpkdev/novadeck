@@ -46,7 +46,13 @@ export type Delivery = Counts &
          */
         readonly turnAt: number
       }
-    | { readonly state: "working"; readonly phase: "continuing" | "background" }
+    | {
+        readonly state: "working"
+        readonly phase: "continuing"
+        /** When the hook of the Stop NovaDeck continued started, where it was told. */
+        readonly stoppedAt?: number
+      }
+    | { readonly state: "working"; readonly phase: "background" }
     | {
         readonly state: "ringing"
         readonly nonce: string
@@ -157,7 +163,8 @@ export type KeyKind = "enter" | "queue" | "neutral" | "escape" | "accept" | "con
  *   started still running in the `background`;
  * - `ended`: a root turn ended abnormally: an Esc, a denial, a failure;
  * - either `recorded`: told by the session's own records where its hook's report never
- *   came, which ends only a turn still running, never one already ended or continuing;
+ *   came, which ends only a turn still running or continuing, as the agent's activity
+ *   took it (never the record of a Stop NovaDeck continued), never one already ended;
  * - `idle`: the agent shows idle however its turn ended, with work still running in the
  *   `background` or not, as Antigravity's status line does, its hook started at `startedAt`;
  * - `working`: the agent shows working, as Antigravity's status line does, which resumes
@@ -184,6 +191,8 @@ export type DeliveryEvent =
       readonly background: boolean
       readonly at: number
       readonly recorded?: true
+      /** When its hook started, where told. */
+      readonly startedAt?: number
     }
   | { readonly type: "ended"; readonly recorded?: true }
   | {
@@ -445,7 +454,13 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         return event.startedAt > delivery.turnAt
           ? { ...delivery, turnAt: event.startedAt }
           : delivery
-      if (event.by === "call" && phase === "continuing") return delivery
+      // A call during the continuation, after the continued Stop's hook started, as
+      // Antigravity's past its first, is the continuation running: its turn, with its
+      // counts, so an idle status line after it ends it. One from before is the old turn's.
+      if (event.by === "call" && delivery.state === "working" && delivery.phase === "continuing")
+        return delivery.stoppedAt !== undefined && event.startedAt > delivery.stoppedAt
+          ? turn(delivery, event.startedAt)
+          : delivery
       // The person's submission: their bare Enter shortly before its hook started, with
       // nothing typed before that, or a prompt they queued during the turn that just ended
       // and typed nothing after. Judged by when the hook started, not when it was heard,
@@ -501,10 +516,13 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         : started
     }
     case "stop": {
-      if (event.recorded && phase !== "turn") return delivery
+      if (event.recorded && phase !== "turn" && phase !== "continuing") return delivery
       if (!stoppable(delivery)) return delivery
       if (event.continued)
-        return working(delivery, "continuing", { continued: delivery.continued + 1 })
+        return {
+          ...working(delivery, "continuing", { continued: delivery.continued + 1 }),
+          ...(event.startedAt !== undefined && { stoppedAt: event.startedAt }),
+        }
       // A turn that ends with the person's queued prompt: its harness submits it next.
       const queued: Box = mayRun(delivery)
         ? { ...box, queued: box.queuing && !box.typedSinceEnter }
@@ -518,7 +536,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       return ended({ ...delivery, box: queued }, event.at)
     }
     case "ended":
-      if (event.recorded && phase !== "turn") return delivery
+      if (event.recorded && phase !== "turn" && phase !== "continuing") return delivery
       // The turn's counts stay, as a Stop that raced this end is still that turn's.
       return { ...counts(delivery), state: "unknown" }
     case "idle": {

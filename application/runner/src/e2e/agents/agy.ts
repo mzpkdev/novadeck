@@ -30,6 +30,8 @@ export const agy: AgentSetup = {
   dialect: gemini,
   banner: "Antigravity CLI",
   bindsAtReady: false,
+  // Its own status screen (probed 2026-10-04, 1.2.14).
+  idleCommand: "/help",
   // Its feature flags and its telemetry.
   refused: ["antigravity-unleash.goog", "play.googleapis.com"],
   watch: {

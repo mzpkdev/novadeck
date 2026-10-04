@@ -56,10 +56,10 @@ const maxText = 256
  * `planning` is what the latest hook to name the agent's mode said, at `planningAt`.
  * `idled` says an idle status line, not a Stop, ended the latest turn, at `turnAt`.
  * `background` is what the latest turn's end left running that wakes the agent once
- * done: the agent works on while subagents of it run (see `summary`). `heard` says a
- * hook's own report ended the latest turn, so no record of a turn's end says anything new
- * until the next turn starts: Claude Code records a Stop NovaDeck continued as it does
- * any other.
+ * done: the agent works on while subagents of it run (see `summary`). `continued` says
+ * NovaDeck continued the turn at its latest Stop, at `turnAt`, and `skips` counts the
+ * records of such Stops yet to come that name no turn: Claude Code records a Stop it
+ * continued, once its hook answered, as it does any other, and that record ends nothing.
  */
 export type Activity = {
   readonly state: "working" | "idle"
@@ -82,7 +82,8 @@ export type Activity = {
   readonly wakes: boolean
   /** The latest turn's id, where its harness names one. */
   readonly turn: string | null
-  readonly heard: boolean
+  readonly continued: boolean
+  readonly skips: number
   /**
    * Whether an idle status line has counted the subagents among what the latest turn's
    * end left running since: until then, work its Stop said only exists may be one.
@@ -105,7 +106,8 @@ export const started = (at: number, wakes = true): Activity => ({
   background: null,
   wakes,
   turn: null,
-  heard: false,
+  continued: false,
+  skips: 0,
   listed: false,
 })
 
@@ -326,12 +328,23 @@ export const apply = (
         idled: false,
         background: null,
         turn: event.turn ?? null,
-        heard: false,
+        continued: false,
+        skips: 0,
       }
     case "turn-continued":
-      // Only the Stop that just ended the turn; never one after a later fact.
+      // Only the Stop that just ended the turn; never one after a later fact. What it said
+      // runs stays, should the continuation lapse.
       if (activity.state !== "idle" || event.startedAt !== activity.turnAt) return undefined
-      return { ...activity, state: "working", background: null }
+      return { ...activity, state: "working", continued: true, skips: activity.skips + 1 }
+    case "turn-lapsed":
+      // The continuation never came: the turn ended at its Stop after all.
+      if (activity.state !== "working" || !activity.continued) return undefined
+      return {
+        ...activity,
+        state: "idle",
+        pending: outliving(activity.pending, activity.subagents),
+        continued: false,
+      }
     case "turn-idle": {
       // Idle after the turn's Stop says nothing new of the turn; without one, the turn
       // ended abnormally. Newer than the Stop, it counts the subagents still running of
@@ -378,23 +391,23 @@ export const apply = (
         return undefined
       return { ...activity, state: "working", idled: false }
     case "turn-ended": {
-      // Its records end only the turn still running, and leave its fence where it was, so
-      // the hook's own Stop, should it come after all, still says what the turn left.
-      // A hook's own Stop since the turn started says the record is of that Stop, as one
-      // NovaDeck continued, whose continuation runs with no new turn started.
+      // Its records end only the turn still running, its own where they name one, and
+      // leave its fence where it was, so the hook's own Stop, should it come after all,
+      // still says what the turn left. One naming no turn may be of a Stop NovaDeck
+      // continued, whose continuation runs on: it is used up instead.
       const { recorded, turn: named } = event
       if (
         recorded &&
-        (activity.state !== "working" ||
-          activity.heard ||
-          (named && activity.turn && named !== activity.turn))
+        (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
       )
         return undefined
+      if (recorded && !named && activity.skips > 0)
+        return { ...activity, skips: activity.skips - 1 }
       const turn = {
         state: "idle",
         turnAt: recorded ? activity.turnAt : event.startedAt,
         idled: false,
-        heard: activity.heard || !recorded,
+        continued: false,
         listed: false,
       } as const
       if (event.outcome !== "interrupted")

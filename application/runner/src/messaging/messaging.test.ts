@@ -763,6 +763,9 @@ describe("delivery through hooks", () => {
     vi.advanceTimersByTime(1)
     expect(messages(messaging, "B")[0]?.state).toBe("queued")
     expect(messaging.delivery("B")?.state).toBe("settled")
+    // The agent's activity hears of it, once, at the turn's Stop.
+    expect(messaging.lapsed("B", codex, 7)).toMatchObject({ type: "turn-lapsed", startedAt: 7 })
+    expect(messaging.lapsed("B", codex, 7)).toBeUndefined()
     // A late acknowledgement is ignored; the message arrives again, by id, later.
     messaging.acknowledge("B", answer.leaseId!)
     expect(messages(messaging, "B")[0]?.state).toBe("queued")

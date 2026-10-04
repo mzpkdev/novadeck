@@ -140,6 +140,13 @@ const OUTPUT_CHARS = 4096
 /** How long after the person's last key an untrusted agent's hooks are asked about again. */
 export const trustRecheckMs = 1000
 
+/**
+ * How long after the person's Enter at an agent's own prompt, before its first, a session
+ * must bind or a turn show, or that Enter submitted no prompt (a command such as Codex's
+ * `/status`, or nothing): a prompt binds in about a second (probed 2026-10-04, 0.159.3).
+ */
+export const readyReturnMs = 5000
+
 export type TerminalOptions = {
   shell?: string
   shellArgs?: readonly string[]
@@ -290,6 +297,10 @@ type Record = {
   title?: string
   /** Reads the latest title again once the person's keys pause, while hooks are untrusted. */
   recheck?: NodeJS.Timeout | undefined
+  /** Shows the agent's prompt ready again, once an Enter there started nothing. */
+  readyReturn?: NodeJS.Timeout | undefined
+  /** Whether its title said a turn runs since the person's Enter at its ready prompt. */
+  readyTurned?: boolean
   /** What names it: the person's title, an agent's, and its agent's summary of its work. */
   naming: Naming
   /** When its agent is next nudged to describe its work; kept for this runner's lifetime. */
@@ -619,6 +630,12 @@ export class Terminals {
     })
     this.doorbell =
       options.doorbell === false ? undefined : new Doorbell(this.ringHost(), options.doorbell)
+    // A Stop NovaDeck continued whose lease lapsed ended its turn after all.
+    this.messaging.subscribe((change) => {
+      if (change.kind !== "terminal") return
+      const record = this.records.get(change.terminalId)
+      if (record) this.lapsed(record)
+    })
     const doorbell = this.doorbell
     if (doorbell)
       this.messaging.subscribe((change) => {
@@ -973,10 +990,7 @@ export class Terminals {
       if (this.cancelResume(record) && claim && this.claims.get(claim) === record.summary.id)
         this.claims.delete(claim)
       if (/[\r\n]/.test(input.data)) record.submitted = true
-      if (keys.some(({ kind }) => kind === "enter") && this.readyOf(record)) {
-        record.readyEntered = true
-        this.publishAgent(record, false)
-      }
+      if (keys.some(({ kind }) => kind === "enter") && this.readyOf(record)) this.readyEnter(record)
       this.messaging.keys(
         input.terminalId,
         keys.map(({ kind }) => kind),
@@ -2599,6 +2613,14 @@ export class Terminals {
     return this.nudged(record, report, told, answer, deadline)
   }
 
+  /** A Stop NovaDeck continued, lapsed as delivery took it, ends the agent's turn too. */
+  private lapsed(record: Record): void {
+    const { binding, activity } = record
+    const event =
+      binding && activity && this.messaging.lapsed(record.summary.id, binding, activity.turnAt)
+    if (event && this.applyFact(record, event)) this.publishAgent(record, false)
+  }
+
   /**
    * A root Stop NovaDeck continued with messages, its hook's answer leasing them: the
    * agent's turn goes on, as delivery's does, until the continuation's own Stop.
@@ -2796,6 +2818,8 @@ export class Terminals {
    * with the terminal's reports.
    */
   private screenTitled(record: Record, child: pty.IPty, title: string): void {
+    if (record.readyEntered && agents.some((agent) => harnesses[agent].titleWorking?.(title)))
+      record.readyTurned = true
     for (const agent of agents) {
       const shown = harnesses[agent].title?.(title, Date.now())
       if (!shown) continue
@@ -3061,15 +3085,18 @@ export class Terminals {
 
   /** Applies what the bound session's own sources said, as its hooks' reports apply. */
   private sourceFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): void {
+    const running = record.activity?.state === "working"
     const applied = this.applyFact(record, fact)
     if (applied) this.publishAgent(record, false)
     // What only its records say, as an interrupted turn, reaches messaging too. A turn's
-    // end its records told does only where it ended the turn, with what the activity
-    // holds the turn left running, so the two tell the same.
+    // end its records told does only where it ended the turn, never a record used up as a
+    // continued Stop's, with what the activity holds the turn left running, so the two
+    // tell the same.
+    const ended = applied && running && record.activity?.state === "idle"
     const facts =
       fact.type !== "turn-ended" || !fact.recorded
         ? [fact]
-        : applied
+        : ended
           ? [{ ...fact, background: record.activity?.background ?? { agents: 0, tasks: 0 } }]
           : []
     if (this.trackRoot(record, facts, false)) this.save(record, false)
@@ -3241,6 +3268,28 @@ export class Terminals {
       return
     record.summary = { ...summary, agent, ready, activity, telemetry }
     this.announce(record)
+  }
+
+  /**
+   * The person pressed Enter at the agent's own prompt, before its first: until its
+   * session binds, nothing says it is idle. Should neither a session bind nor its title say
+   * a turn runs within `readyReturnMs`, the Enter submitted no prompt, and the prompt
+   * still shows.
+   */
+  private readyEnter(record: Record): void {
+    record.readyEntered = true
+    record.readyTurned = false
+    this.publishAgent(record, false)
+    if (record.readyReturn) clearTimeout(record.readyReturn)
+    const child = record.process
+    record.readyReturn = setTimeout(() => {
+      record.readyReturn = undefined
+      if (record.process !== child || record.exitQueued || record.binding) return
+      if (!record.readyEntered || record.readyTurned) return
+      record.readyEntered = false
+      this.publishAgent(record, false)
+    }, readyReturnMs)
+    record.readyReturn.unref()
   }
 
   /** The agent whose own prompt shows there, with NovaDeck's hooks, before any session bound. */
