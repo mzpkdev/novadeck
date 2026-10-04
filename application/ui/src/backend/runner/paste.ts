@@ -51,11 +51,24 @@ export const uploadName = (file: { readonly name: string; readonly type: string 
   return `pasted-${stamp}.${extension}`
 }
 
+// Whether a path is a Windows one: on a drive, or a share.
+const windowsPath = (path: string): boolean => /^(?:[A-Za-z]:[\\/]|\\\\)/.test(path)
+
 // A path as a shell reads it as one word: backslashes before its special characters, or
 // on Windows, where a backslash separates folders, in double quotes when it has a space.
 export const shellPath = (path: string): string => {
-  if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(path)) return /\s/.test(path) ? `"${path}"` : path
+  if (windowsPath(path)) return /\s/.test(path) ? `"${path}"` : path
   return path.replace(/([ \t"'`\\()&;|<>$!*?[\]{}#~])/g, "\\$1")
+}
+
+// A file's own path as a shell reads it as one word, or undefined where it can't go in
+// safely, and a copy goes instead: one with a control character, and on Windows, whose
+// cmd and PowerShell can't be escaped alike, one with anything but letters, digits,
+// spaces and `.`, `_`, `-`, `\`, `:`.
+export const ownPath = (path: string): string | undefined => {
+  if (!path || /\p{Cc}/u.test(path)) return undefined
+  if (windowsPath(path) && !/^[\p{L}\p{M}\p{N} ._\-\\:]+$/u.test(path)) return undefined
+  return shellPath(path)
 }
 
 // The images on the clipboard. A paste into the emulator's text field leaves out what a
@@ -104,18 +117,26 @@ export type PasteTarget = {
   readonly paste: (text: string) => void
   // Tells the person why a paste failed, in a short notice.
   readonly failed: (notice: string) => void
+  // A file's own path on the runner's machine, or "" for one that has none there. Only
+  // the desktop app, whose runner is its own, knows it.
+  readonly pathOf?: ((file: File) => string) | undefined
 }
 
-// Saves a file on the runner's machine; one too large is never read.
+// A file's path as the shell reads it: its own, as of a file or folder copied in a file
+// manager, where that is safe; otherwise a copy's, saved on the runner's machine. One too
+// large to copy is never read.
 const save = async (file: File, target: PasteTarget, now: Date): Promise<string> => {
+  const own = ownPath(target.pathOf?.(file) ?? "")
+  if (own) return own
   if (file.size > maxUploadBytes) throw new RunnerError("UPLOAD_TOO_LARGE")
-  return target.upload({
+  const path = await target.upload({
     name: uploadName(file, now),
     data: new Uint8Array(await file.arrayBuffer()),
   })
+  return shellPath(path)
 }
 
-// Uploads the files one after another, pasting the path of each one saved as it is,
+// Saves the files one after another, pasting the path of each one as it is,
 // followed by a space, as a paste of its own: Codex takes a paste for an image only when
 // it is one path. A file the runner could not save is left out, and the first of them
 // told of. Answers how many went in.
@@ -126,7 +147,7 @@ const pasteFiles = async (files: readonly File[], target: PasteTarget): Promise<
   for (const file of files) {
     try {
       // eslint-disable-next-line no-await-in-loop -- One file in memory and in flight at a time.
-      target.paste(`${shellPath(await save(file, target, now))} `)
+      target.paste(`${await save(file, target, now)} `)
       pasted += 1
     } catch (error) {
       console.error("NovaDeck could not save a pasted file on the runner:", error)

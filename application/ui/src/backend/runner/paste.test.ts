@@ -3,6 +3,7 @@ import { afterEach, vi } from "vitest"
 
 import { context, describe, expect, it } from "../../test"
 import {
+  ownPath,
   pasteNotice,
   pastedFiles,
   pastedText,
@@ -32,8 +33,21 @@ const pasteEvent = (carried: Parameters<typeof transfer>[0]) => {
 
 const shot = () => new File([new Uint8Array([137, 80, 78, 71])], "", { type: "image/png" })
 
-// A terminal host with the emulator's field inside, recording uploads and pastes.
-const terminal = (saved = (name: string) => Promise.resolve(`/data/uploads/t/${name}`)) => {
+// Files on this machine as the desktop host names them: only those copied in a file
+// manager have a path; bytes from the clipboard have none.
+const disk = new Map<File, string>()
+const onDisk = (path: string, file = new File(["x"], path.split(/[/\\]/).pop()!)) => {
+  disk.set(file, path)
+  return file
+}
+const pathOf = (file: File) => disk.get(file) ?? ""
+
+// A terminal host with the emulator's field inside, recording uploads and pastes; in the
+// desktop app when `desktop`.
+const terminal = (
+  saved = (name: string) => Promise.resolve(`/data/uploads/t/${name}`),
+  desktop = false,
+) => {
   const host = document.createElement("div")
   const field = document.createElement("textarea")
   host.append(field)
@@ -48,6 +62,7 @@ const terminal = (saved = (name: string) => Promise.resolve(`/data/uploads/t/${n
     },
     paste: (text) => pasted.push(text),
     failed: (notice) => notices.push(notice),
+    pathOf: desktop ? pathOf : undefined,
   }
   const reached: Event[] = []
   field.addEventListener("paste", (event) => reached.push(event))
@@ -56,6 +71,7 @@ const terminal = (saved = (name: string) => Promise.resolve(`/data/uploads/t/${n
 }
 
 afterEach(() => {
+  disk.clear()
   document.body.replaceChildren()
   Reflect.deleteProperty(navigator, "clipboard")
 })
@@ -113,6 +129,53 @@ describe("a pasted path", () => {
   })
 })
 
+describe("a file's own path", () => {
+  context("on a POSIX machine", () => {
+    it("goes in escaped as any path, whatever its name", () => {
+      expect(ownPath("/home/me/my shot.png")).toBe("/home/me/my\\ shot.png")
+      expect(ownPath("/tmp/$(rm -rf ~);`id`&x.png")).toBe(
+        "/tmp/\\$\\(rm\\ -rf\\ \\~\\)\\;\\`id\\`\\&x.png",
+      )
+    })
+
+    it("doesn't go in with a control character, which no escape keeps inert", () => {
+      expect(ownPath("/tmp/two\nlines.png")).toBeUndefined()
+      expect(ownPath("/tmp/bell\u0007.png")).toBeUndefined()
+      expect(ownPath("/tmp/del\u007f.png")).toBeUndefined()
+      expect(ownPath("/tmp/c1\u009b.png")).toBeUndefined()
+    })
+  })
+
+  context("on a Windows machine", () => {
+    it("goes in when it is letters, digits, spaces and . _ - \\ :, quoted for a space", () => {
+      expect(ownPath("D:\\a\\_temp\\shots\\my shot.png")).toBe('"D:\\a\\_temp\\shots\\my shot.png"')
+      expect(ownPath("C:\\Users\\Zoë\\スクリーン-1.png")).toBe("C:\\Users\\Zoë\\スクリーン-1.png")
+      expect(ownPath("\\\\server\\share\\notes.txt")).toBe("\\\\server\\share\\notes.txt")
+    })
+
+    it("doesn't go in with any other character, which cmd or PowerShell may act on", () => {
+      for (const name of [
+        "a&calc.png",
+        "100%.png",
+        "wow!.png",
+        "a^b.png",
+        "$x.png",
+        "it's.png",
+        "(1).png",
+        "a;b.png",
+        "a,b.png",
+        "a`b.png",
+        "a/b.png",
+      ])
+        expect(ownPath(`C:\\shots\\${name}`)).toBeUndefined()
+    })
+  })
+
+  it("is none for a file that has no path", () => {
+    expect(ownPath("")).toBeUndefined()
+  })
+})
+
 describe("a failed paste's notice", () => {
   it("says the clipboard could not be read", () => {
     expect(pasteNotice("clipboard")).toBe("NovaDeck can't read the clipboard")
@@ -133,6 +196,57 @@ describe("a failed paste's notice", () => {
       "Couldn't paste the image",
     )
     expect(pasteNotice({ type: "", error: new Error("disk full") })).toBe("Couldn't paste the file")
+  })
+})
+
+describe("pasting into the desktop app's terminal", () => {
+  context("a file copied in a file manager", () => {
+    it("pastes the file's own path, saving no copy", async () => {
+      const page = terminal(undefined, true)
+      page.field.dispatchEvent(pasteEvent({ files: [onDisk("/home/me/my shot.png")] }))
+      await vi.waitFor(() => expect(page.pasted).toEqual(["/home/me/my\\ shot.png "]))
+      expect(page.uploads).toEqual([])
+    })
+
+    it("pastes a folder's own path too", async () => {
+      const folder = onDisk("/home/me/project", new File([], "project"))
+      const page = terminal(undefined, true)
+      page.field.dispatchEvent(pasteEvent({ files: [folder] }))
+      await vi.waitFor(() => expect(page.pasted).toEqual(["/home/me/project "]))
+      expect(page.uploads).toEqual([])
+    })
+
+    it("pastes its own path however large it is", async () => {
+      const big = onDisk("/home/me/big.iso")
+      Object.defineProperty(big, "size", { value: 33 * 1024 * 1024 })
+      const page = terminal(undefined, true)
+      page.field.dispatchEvent(pasteEvent({ files: [big] }))
+      await vi.waitFor(() => expect(page.pasted).toEqual(["/home/me/big.iso "]))
+      expect(page.notices).toEqual([])
+    })
+  })
+
+  context("a file whose own path can't go in safely", () => {
+    it("pastes a copy's path instead, for a Windows name a shell would act on", async () => {
+      const page = terminal(undefined, true)
+      page.field.dispatchEvent(pasteEvent({ files: [onDisk("C:\\shots\\a&calc.png")] }))
+      await vi.waitFor(() => expect(page.pasted).toEqual(["/data/uploads/t/a\\&calc.png "]))
+      expect(page.uploads.map((file) => file.name)).toEqual(["a&calc.png"])
+    })
+
+    it("pastes a copy's path instead, for a name with a control character", async () => {
+      const page = terminal(undefined, true)
+      page.field.dispatchEvent(pasteEvent({ files: [onDisk("/tmp/two\nlines.png")] }))
+      await vi.waitFor(() => expect(page.uploads).toHaveLength(1))
+    })
+  })
+
+  context("bytes with no file behind them, as a copied image", () => {
+    it("pastes a copy's path", async () => {
+      const page = terminal(undefined, true)
+      page.field.dispatchEvent(pasteEvent({ items: [shot()] }))
+      await vi.waitFor(() => expect(page.uploads).toHaveLength(1))
+    })
   })
 })
 
@@ -402,6 +516,7 @@ const keyboard = (
       paste: (text) => void log.push(`paste ${text}`),
       failed: (notice) => void log.push(`notice ${notice}`),
       active: () => options.active ?? true,
+      pathOf,
       hold: () => {
         log.push("hold")
         return (controlV) => void log.push(controlV ? "release with ^V" : "release")
