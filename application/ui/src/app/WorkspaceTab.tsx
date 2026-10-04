@@ -64,7 +64,7 @@ export const WorkspaceTab = ({
       hidden={hidden}
       rename={rename}
       mail={badge}
-      companion={<TabKinds slots={slots} mail={badge} />}
+      companion={<TabKinds slots={slots} mail={badge !== null} />}
       onVisibilityChange={(isHidden) => commands.setVisibility(target, id, isHidden)}
       onSelect={() => commands.select(id)}
       onBeginRename={() => commands.startRename(terminal, "sidebar")}

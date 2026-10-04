@@ -19,15 +19,12 @@ const textOf = (locator: Locator) => locator.element().textContent
 const description = (name: string) => terminalTab(name).element().getAttribute("aria-description")
 
 describe("Messages waiting for an agent", () => {
-  it("count on its terminal's tab, and only those still on their way to it", async () => {
+  it("count in its terminal's tab's description, and only those still on their way to it", async () => {
     await openMessagesDemo()
     // Codex has one message being delivered and one queued; what it sent doesn't count.
     await expect
       .poll(() => description("Checkout review"))
       .toBe("Needs permission, 2 messages waiting")
-    await expect
-      .element(terminalTab("Checkout review").getByText("2", { exact: true }))
-      .toBeVisible()
     // The dev server's message is gone, never waiting.
     await expect.element(terminalTab("Dev server")).not.toHaveAttribute("aria-description")
   })

@@ -10,8 +10,7 @@
    at rest, so a hidden tab doesn't draw the eye; `.terminal-tab-revealed` on Hide and
    Rename, which show under the pointer or with keyboard focus), `.terminal-tab-kinds`
    (what its companion bar holds, at the end of the name's line), each
-   `.terminal-tab-kind` data-state="new" | "seen", or for the messages "waiting" |
-   "held" | "paused" with its `.terminal-tab-kind-count`,
+   `.terminal-tab-kind` data-state="new" | "seen",
    `.terminal-tab-rename`, `.terminal-tab-empty`.
 
    Tokens, each optional (its fallback in brackets):
@@ -24,9 +23,8 @@
    --tab-hidden-opacity (0.5): a tab hidden from Grid and Canvas.
    --tab-action-disabled-opacity (0.5): an action while the tab is being renamed.
    --tab-kind-fg (muted), --tab-kind-opacity (icon-button-dim-opacity, then 0.5): what's
-   on the bar and has been seen. --tab-kind-new-fg (ink): something new, and messages
-   waiting. --tab-kind-held-fg (warning-fg): messages held for release.
-   --tab-kind-paused-fg (muted): messages waiting while messaging is paused.
+   on the bar and seen. --tab-kind-new-opacity (1): something not yet opened, and the
+   messages while some wait. --tab-kind-new-bg (ink): the dot on it.
    --tab-empty-fg (muted): the note in an empty list. */
 .icon-button.terminal-tab-action:focus-visible {
   outline-offset: -2px;
@@ -70,42 +68,28 @@
   gap: 6px;
   margin-left: auto;
 }
+/* What's been seen is faint; something new is a step brighter, short of the name's
+   ink, with a small dot at its corner: there to notice without asking to be opened. */
 .terminal-tab-kind {
-  --_fg: var(--tab-kind-fg, var(--color-muted));
-  --_opacity: var(--tab-kind-opacity, var(--icon-button-dim-opacity, 0.5));
   position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--_fg);
-  opacity: var(--_opacity);
+  color: var(--tab-kind-fg, var(--color-muted));
 }
-.terminal-tab-kind:is([data-state="new"], [data-state="waiting"]) {
-  --_fg: var(--tab-kind-new-fg, var(--color-ink));
-  --_opacity: 1;
+.terminal-tab-kind > svg {
+  opacity: var(--tab-kind-opacity, var(--icon-button-dim-opacity, 0.5));
 }
-.terminal-tab-kind[data-state="held"] {
-  --_fg: var(--tab-kind-held-fg, var(--color-warning-fg));
-  --_opacity: 1;
+.terminal-tab-kind[data-state="new"] > svg {
+  opacity: var(--tab-kind-new-opacity, 1);
 }
-.terminal-tab-kind[data-state="paused"] {
-  --_fg: var(--tab-kind-paused-fg, var(--color-muted));
-  --_opacity: 1;
-}
-/* Something new: a dot at the icon's corner. */
 .terminal-tab-kind[data-state="new"]::after {
   content: "";
   position: absolute;
-  top: -2px;
-  right: -3px;
-  width: 5px;
-  height: 5px;
+  top: -1px;
+  right: -2px;
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
-  background-color: currentColor;
-}
-.terminal-tab-kind-count {
-  font: 600 9px/1 var(--font-mono);
-  font-variant-numeric: tabular-nums;
+  background-color: var(--tab-kind-new-bg, var(--color-ink));
 }
 /* A tab reads its terminal's phase as text: a braille spinner beside a running program,
    as command-line tools show work, and a faint hatch once it has ended. Each tab keeps a

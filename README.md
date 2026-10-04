@@ -104,15 +104,16 @@ A terminal tab's tooltip says who its name is from: you, the agent in another te
 to NovaDeck.
 
 A terminal's sidebar tab ends its name's line in a small icon for each icon on its
-taskbar, in the taskbar's order: its plan, images, files, pages and messages. Something
-new is drawn strong with a dot, and what you've seen stays faint. A long name truncates
-before them, so they line up down the list.
+taskbar, in the taskbar's order: its plan, images, files, pages and messages. What
+you've seen is faint; something you haven't opened yet, and the messages while some wait
+for the agent, is a step brighter with a small dot. A long name truncates before them,
+so they line up down the list.
 
-When agents message each other (see [Agent messaging](docs/agent-messaging.md)), the
-messages' icon on a terminal's tab counts the messages waiting for its agent: queued,
-being delivered or held, never those delivered. The count turns amber when a thread is
-held for your release, and becomes a pause mark while messaging is paused. A terminal
-that has had messages gets a **Messages** icon in its taskbar, which opens its
+When agents message each other (see [Agent messaging](docs/agent-messaging.md)), a
+terminal's tab says in its tooltip how many messages wait for its agent: queued, being
+delivered or held, never those delivered, and whether a thread is held for your release
+or messaging is paused. A terminal that has had messages gets a **Messages** icon in its
+taskbar, with that count, which opens its
 threads in the companion pane: one per peer, latest first, each message with its
 direction, time, state and the agent's text exactly as written, never formatted. A held
 thread has **Release**, and the pane's header has **Pause all agents' messages**, one
