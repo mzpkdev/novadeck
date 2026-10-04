@@ -96,6 +96,26 @@ describe("A file", () => {
   })
 })
 
+describe("A viewer's header", () => {
+  it("keeps the undock button in one place, with the image's zoom or without", async () => {
+    // The showcase opens with Build Studio showing a file.
+    await openShowcase()
+    const pane = companionPane("Build Studio")
+    const undock = pane.getByRole("button", { name: "Undock to its own window" })
+    const offset = (): number =>
+      undock.element().getBoundingClientRect().top - pane.element().getBoundingClientRect().top
+    await expect
+      .element(pane.getByRole("region", { name: "src/content/projects.json" }))
+      .toBeVisible()
+    const besideFile = offset()
+
+    await taskbarIcon("Build Studio", "2 images").click()
+    await expect.element(pane.getByRole("button", { name: "Fit", exact: true })).toBeVisible()
+
+    expect(offset()).toBe(besideFile)
+  })
+})
+
 describe("A plan", () => {
   it("scrolls under its header, which stays in view", async () => {
     await openShowcase()
