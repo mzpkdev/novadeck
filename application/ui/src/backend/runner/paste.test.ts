@@ -225,22 +225,24 @@ describe("pasting into a runner terminal", () => {
       const page = terminal()
       page.field.dispatchEvent(pasteEvent({}))
       await vi.waitFor(() => expect(page.pasted).toHaveLength(1))
+      expect(page.reached).toEqual([])
+      expect(page.pasted).toEqual([expect.stringMatching(/^\/data\/uploads\/t\/pasted-.*\.png $/)])
       expect(page.uploads).toEqual([
         { name: expect.stringMatching(/^pasted-.*\.png$/), data: new Uint8Array([1, 2, 3]) },
       ])
       expect(page.notices).toEqual([])
     })
 
-    it("pastes nothing, and says nothing, when the clipboard has no image", async () => {
+    it("hands the program its empty paste, and says nothing, when the clipboard has no image", async () => {
       const read = vi.fn<() => Promise<unknown[]>>(async () => [
         { types: ["text/html"], getType: async () => new Blob(["<p>"]) },
       ])
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read } })
       const page = terminal()
       page.field.dispatchEvent(pasteEvent({}))
-      await vi.waitFor(() => expect(read).toHaveBeenCalled())
-      await new Promise((resolve) => setTimeout(resolve))
-      expect(page.pasted).toEqual([])
+      await vi.waitFor(() => expect(page.pasted).toEqual([""]))
+      expect(page.reached).toEqual([])
+      expect(page.uploads).toEqual([])
       expect(page.notices).toEqual([])
     })
 
@@ -253,7 +255,7 @@ describe("pasting into a runner terminal", () => {
       page.field.dispatchEvent(pasteEvent({}))
       await vi.waitFor(() => expect(page.notices).toEqual(["NovaDeck can't read the clipboard"]))
       expect(page.uploads).toEqual([])
-      expect(page.pasted).toEqual([])
+      expect(page.pasted).toEqual([""])
     })
 
     it("says so where there is no clipboard API", async () => {

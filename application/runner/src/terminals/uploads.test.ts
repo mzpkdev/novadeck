@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -45,6 +45,13 @@ describe("an upload's name", () => {
     expect(safeName("スクリーンショット 1.png")).toBe("スクリーンショット 1.png")
     expect(safeName("cafe\u0301.png")).toBe("café.png")
     expect(safeName("हिंदी.png")).toBe("हिंदी.png")
+  })
+
+  it("puts a `_` before a name Windows keeps for a device", () => {
+    expect(safeName("CON")).toBe("_CON")
+    expect(safeName("nul.png")).toBe("_nul.png")
+    expect(safeName("com1.txt")).toBe("_com1.txt")
+    expect(safeName("console.png")).toBe("console.png")
   })
 
   it("is cut to what a file system takes, keeping its extension", () => {
@@ -113,14 +120,26 @@ describe("uploads", () => {
     const root = await folder(resources)
     const uploads = new Uploads(root)
     const recent = await uploads.save({ name: "recent.png", data: base64("new") })
-    const old = join(root, "old")
-    await mkdir(old)
+    const old = "8ba4a381-0d5e-4c4a-9f1e-2b7c3d4e5f60"
+    await mkdir(join(root, old))
     const weekAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
-    await utimes(old, weekAgo, weekAgo)
+    await utimes(join(root, old), weekAgo, weekAgo)
     await uploads.save({ name: "next.png", data: base64("next") })
     const kept = await readdir(root)
-    expect(kept).not.toContain("old")
+    expect(kept).not.toContain(old)
     expect(kept).toContain(dirname(recent).slice(root.length + 1))
+  })
+
+  it("leaves folders it did not make, however old", async ({ resources }) => {
+    const root = await folder(resources)
+    const uploads = new Uploads(root)
+    const theirs = join(root, "website-assets")
+    await mkdir(theirs, { recursive: true })
+    await writeFile(join(theirs, "logo.png"), "logo")
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    await utimes(theirs, monthAgo, monthAgo)
+    await uploads.save({ name: "next.png", data: base64("next") })
+    await expect(readFile(join(theirs, "logo.png"), "utf8")).resolves.toBe("logo")
   })
 
   it("saves where it keeps uploads even after that folder was removed", async ({ resources }) => {

@@ -128,8 +128,9 @@ const pasteFiles = async (files: readonly File[], target: PasteTarget): Promise<
 // Takes the pastes into `host` that carry files and no text, before the emulator inside
 // it sees them, and pastes the files' paths instead. A paste with text is the emulator's,
 // even with an image beside it, as a spreadsheet's cells come; one with neither, as of
-// an image alone, reads the clipboard's images, and says so when it can't; a clipboard
-// without one pastes nothing. Returns the undo.
+// an image alone, reads the clipboard's images, and says so when it can't. That empty
+// paste goes to the program only when no image comes of it, as some read the clipboard
+// themselves on one, and would take the image twice. Returns the undo.
 export const takeFilePastes = (host: HTMLElement, target: PasteTarget): (() => void) => {
   const listener = (event: ClipboardEvent): void => {
     if (pastedText(event.clipboardData)) return
@@ -140,9 +141,12 @@ export const takeFilePastes = (host: HTMLElement, target: PasteTarget): (() => v
       void pasteFiles(files, target)
       return
     }
+    event.preventDefault()
+    event.stopPropagation()
     void clipboardImages(new Date()).then((images) => {
+      if (images && images.length > 0) return void pasteFiles(images, target)
+      target.paste("")
       if (!images) target.failed(pasteNotice("clipboard"))
-      else if (images.length > 0) void pasteFiles(images, target)
     })
   }
   host.addEventListener("paste", listener, true)

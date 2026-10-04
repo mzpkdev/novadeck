@@ -12,6 +12,10 @@ import { DomainError } from "../errors.js"
 const keepMs = 7 * 24 * 60 * 60 * 1000
 // How long a file being received waits for its next part.
 const partMs = 60_000
+// The folders the runner makes, one per upload: only these are ever swept away.
+const ownFolder = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+// Names Windows keeps for devices, which no file can take, with or without an extension.
+const device = /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i
 
 // The longest name a file system takes, in UTF-8 bytes.
 const maxNameBytes = 255
@@ -28,12 +32,14 @@ const fitted = (name: string): string => {
 /**
  * A file name safe to save under and to paste into any shell: its last segment, with
  * every character but letters (with their marks), digits, `.`, `_`, `-` and spaces replaced
- * by `_`, cut to what a file system takes, or `upload` where nothing usable is left.
+ * by `_`, cut to what a file system takes, or `upload` where nothing usable is left. A
+ * name Windows keeps for a device gets a `_` before it.
  */
 export const safeName = (name: string): string => {
   const last = name.normalize("NFC").split(/[/\\]/).pop() ?? ""
   const clean = last.replace(/[^\p{L}\p{M}\p{N}._\- ]/gu, "_").trim()
-  return /^\.*$/.test(clean) ? "upload" : fitted(clean)
+  if (/^\.*$/.test(clean)) return "upload"
+  return fitted(device.test(clean) ? `_${clean}` : clean)
 }
 
 type Part = { name?: string | undefined; path?: string | undefined; data: string }
@@ -104,7 +110,10 @@ export class Uploads {
     return this.root
   }
 
-  /** Removes uploads older than a week, and forgets files whose parts stopped coming. */
+  /**
+   * Removes uploads older than a week, and forgets files whose parts stopped coming. Only
+   * the folders it made go: the uploads folder may sit beside a database anywhere.
+   */
   private async sweep(root: string): Promise<void> {
     const now = this.now()
     for (const [path, file] of this.receiving)
@@ -112,7 +121,7 @@ export class Uploads {
     const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
     await Promise.all(
       entries
-        .filter((entry) => entry.isDirectory())
+        .filter((entry) => entry.isDirectory() && ownFolder.test(entry.name))
         .map(async (entry) => {
           const folder = join(root, entry.name)
           const { mtimeMs } = await stat(folder).catch(() => ({ mtimeMs: now }))
