@@ -207,11 +207,8 @@ describe("finish watch", () => {
     status("02", { working: true })
     const stop = watchFinishes(workspace, ui, (notice) => notices.push(notice))
     const unread = () => ui.getSnapshot().unread
-    const finish = (terminalId = "02") =>
-      status(terminalId, {
-        working: false,
-        lastTurn: { outcome: "completed", reply: "All green." },
-      })
+    const finish = (at = 10, outcome: "completed" | "failed" = "completed") =>
+      status("02", { working: false, lastTurn: { outcome, reply: "All green.", at } })
     return { workspace, ui, notices, status, select, unread, finish, stop }
   }
 
@@ -219,7 +216,7 @@ describe("finish watch", () => {
     it("marks it unread and shows one notification with the start of its reply", () => {
       const { notices, unread, finish, stop } = setup()
       finish()
-      expect(unread()).toEqual({ "project/initial": ["02"] })
+      expect(unread()).toEqual({ "project/initial": { "02": "done" } })
       expect(notices).toEqual([{ id: "02", title: "t2 is done: Checkout", body: "All green." }])
       stop()
     })
@@ -243,10 +240,55 @@ describe("finish watch", () => {
     it("marks it without a notification when the person turned them off", () => {
       const { notices, unread, finish, stop } = setup(false)
       finish()
-      expect(unread()).toEqual({ "project/initial": ["02"] })
+      expect(unread()).toEqual({ "project/initial": { "02": "done" } })
       expect(notices).toEqual([])
       stop()
     })
+  })
+
+  context("when the statuses that tell a finish come together", () => {
+    it("finishes once for each end it hasn't seen, whether or not it saw the agent work", () => {
+      const { notices, unread, finish, stop } = setup()
+      finish(10)
+      finish(10)
+      // The next turn's start and end came as one status.
+      finish(20)
+      expect(notices).toHaveLength(2)
+      expect(unread()).toEqual({ "project/initial": { "02": "done" } })
+      stop()
+    })
+  })
+
+  context("when the turn ended on an error", () => {
+    it("marks it failed and says it stopped with an error", () => {
+      const { notices, unread, finish, stop } = setup()
+      finish(10, "failed")
+      expect(unread()).toEqual({ "project/initial": { "02": "failed" } })
+      expect(notices).toEqual([
+        { id: "02", title: "t2 stopped with an error: Checkout", body: "All green." },
+      ])
+      stop()
+    })
+  })
+
+  it("takes an end already shown when it starts as seen, as after a reload", () => {
+    const workspace = createWorkspaceStore(workspaceFixture())
+    workspace.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "02",
+      status: {
+        state: "running",
+        agent: { working: false, lastTurn: { outcome: "completed", at: 5 } },
+      },
+    })
+    const ui = createUiStore(initial())
+    const notices: unknown[] = []
+    const stop = watchFinishes(workspace, ui, (notice) => notices.push(notice))
+    workspace.dispatch({ type: "terminal/select", target, terminalId: "01" })
+    expect(notices).toEqual([])
+    expect(ui.getSnapshot().unread).toEqual({})
+    stop()
   })
 
   context("when the person looks at the terminal as its agent finishes", () => {
@@ -264,7 +306,7 @@ describe("finish watch", () => {
       select("02")
       ui.update((state) => ({ ...state, pageFocused: false }))
       finish()
-      expect(unread()).toEqual({ "project/initial": ["02"] })
+      expect(unread()).toEqual({ "project/initial": { "02": "done" } })
       expect(notices).toHaveLength(1)
       ui.update((state) => ({ ...state, pageFocused: true }))
       expect(unread()).toEqual({})

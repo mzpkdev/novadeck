@@ -97,11 +97,14 @@ export const agentActivity = z.strictObject({
   // `interrupted` by the person (Escape, or a request they refused, as its hooks or records
   // tell), or `unknown` when it only went idle, as an Escape or a refusal shows in
   // Antigravity. `reply` is the start of what the agent said last in that turn, one line of
-  // plain text, where its harness tells it. Null while a turn runs and before the first ends.
+  // plain text, where its harness tells it. `at` tells one end from another: when it was
+  // reported, in epoch milliseconds, kept as a later report only fills in the same end's
+  // reply. Null while a turn runs and before the first ends.
   lastTurn: z
     .strictObject({
       outcome: z.enum(["completed", "failed", "interrupted", "unknown"]),
       reply: z.string().min(1).max(replyPreviewLength).nullable(),
+      at: z.number(),
     })
     .nullable(),
 })

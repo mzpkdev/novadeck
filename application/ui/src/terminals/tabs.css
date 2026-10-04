@@ -4,7 +4,8 @@
 
    Hooks on `.terminal-tab`: data-terminal-phase="idle" | "done" | "running" | "starting" |
    "attention" | "unheard" | "ended", data-terminal-attention="question" | "permission",
-   data-terminal-hidden="true" | "false". Parts: `.terminal-glyph`,
+   data-terminal-hidden="true" | "false", data-terminal-failed="true" (a done tab whose turn
+   ended on an error). Parts: `.terminal-glyph`,
    `.terminal-tab-process`, `.terminal-tab-starting`, `.terminal-tab-done` (what a done
    tab says in its program's place), `.terminal-tab-action` (an
    `.icon-button.small.dim.quiet`, pressed while it hides the tab but looking as it does
@@ -19,6 +20,7 @@
    shell starts. --tab-attention-fg (warning-fg): the glyph while an agent waits.
    --tab-unheard-fg (muted): the glyph while NovaDeck can't hear from an agent.
    --tab-done-fg (success-fg): the glyph and the words while an agent's reply waits unread.
+   --tab-failed-fg (danger-fg): the same, where its turn ended on an error.
    --tab-process-font (mono): the program and the glyph.
    --tab-active-process-fg (ink): the program while it runs or waits.
    --tab-ended-image (the window's --window-ended-image, a faint ink hatch),
@@ -127,6 +129,10 @@
    they look. */
 .terminal-tab[data-terminal-phase="done"] :is(.terminal-glyph, .terminal-tab-done) {
   color: var(--tab-done-fg, var(--color-success-fg));
+}
+.terminal-tab[data-terminal-phase="done"][data-terminal-failed="true"]
+  :is(.terminal-glyph, .terminal-tab-done) {
+  color: var(--tab-failed-fg, var(--color-danger-fg));
 }
 .terminal-tab[data-terminal-phase="done"] .terminal-tab-done {
   font-weight: 600;

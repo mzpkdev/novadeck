@@ -68,10 +68,25 @@ describe("a turn's end its hook named no reply for", () => {
   const ended: HarnessEvent = { type: "turn-ended", ...base, outcome: "completed" }
 
   it("takes the reply from the transcript the same report names", async () => {
-    expect(await withReplies([observed, ended], items, read)).toEqual([
+    expect(await withReplies([observed, ended], items, undefined, read)).toEqual([
       observed,
       { ...ended, reply: "Done." },
     ])
+  })
+
+  it("looks again, briefly, for a reply written just after the hook started", async () => {
+    let reads = 0
+    const late = () => Promise.resolve((reads += 1) < 3 ? undefined : "Late.")
+    expect(await withReplies([observed, ended], items, undefined, late, { gapMs: 0 })).toEqual([
+      observed,
+      { ...ended, reply: "Late." },
+    ])
+    reads = -10
+    expect(await withReplies([observed, ended], items, undefined, late, { gapMs: 0 })).toEqual([
+      observed,
+      ended,
+    ])
+    expect(reads).toBe(-6)
   })
 
   it("reads nothing for an end that has a reply, an interrupt, a record, or no transcript", async () => {
@@ -83,14 +98,81 @@ describe("a turn's end its hook named no reply for", () => {
     const told = { ...ended, reply: "Said." }
     const interrupted = { ...ended, outcome: "interrupted" } as const
     const recorded = { ...ended, recorded: true } as const
-    expect(await withReplies([observed, told], items, counted)).toEqual([observed, told])
-    expect(await withReplies([observed, interrupted], items, counted)).toEqual([
+    expect(await withReplies([observed, told], items, undefined, counted)).toEqual([observed, told])
+    expect(await withReplies([observed, interrupted], items, undefined, counted)).toEqual([
       observed,
       interrupted,
     ])
-    expect(await withReplies([observed, recorded], items, counted)).toEqual([observed, recorded])
-    expect(await withReplies([ended], items, counted)).toEqual([ended])
-    expect(await withReplies([observed, ended], undefined, counted)).toEqual([observed, ended])
+    expect(await withReplies([observed, recorded], items, undefined, counted)).toEqual([
+      observed,
+      recorded,
+    ])
+    expect(await withReplies([ended], items, undefined, counted)).toEqual([ended])
+    expect(await withReplies([observed, ended], undefined, undefined, counted)).toEqual([
+      observed,
+      ended,
+    ])
     expect(reads).toBe(0)
   })
+})
+
+// A Claude Code transcript: the person's prompt, a tool's call and result, the reply.
+const claudeRecords = [
+  { type: "user", timestamp: "2026-10-04T10:00:00Z", message: { content: "Fix the spec" } },
+  {
+    type: "assistant",
+    timestamp: "2026-10-04T10:00:01Z",
+    message: { content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: {} }] },
+  },
+  {
+    type: "user",
+    timestamp: "2026-10-04T10:00:02Z",
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "ok" }] },
+  },
+  {
+    type: "assistant",
+    timestamp: "2026-10-04T10:00:03Z",
+    message: { content: [{ type: "text", text: "**Fixed** the spec; all green." }] },
+  },
+]
+
+// A Codex rollout: the context Codex adds, the person's prompt, a tool call, the reply.
+const message = (role: string, type: string, text: string) => ({
+  type: "response_item",
+  timestamp: "2026-10-04T10:00:00Z",
+  payload: { type: "message", role, content: [{ type, text }] },
+})
+const codexRecords = [
+  message("user", "input_text", "<environment_context>cwd</environment_context>"),
+  message("user", "input_text", "Fix the spec"),
+  {
+    type: "response_item",
+    timestamp: "2026-10-04T10:00:01Z",
+    payload: { type: "function_call", name: "shell", arguments: "{}", call_id: "c1" },
+  },
+  message("assistant", "output_text", "Fixed the spec; all green."),
+  { type: "event_msg", timestamp: "2026-10-04T10:00:02Z", payload: { type: "token_count" } },
+]
+
+describe("a Stop of Claude Code or Codex that names no reply", () => {
+  for (const [agent, records] of [
+    ["claude", claudeRecords],
+    ["codex", codexRecords],
+  ] as const)
+    it(`takes ${agent}'s from the bound session's own transcript`, async ({ resources }) => {
+      const path = join(folder(resources), "session.jsonl")
+      writeFileSync(path, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
+      const stop: HarnessEvent = { type: "turn-ended", ...base, agent, outcome: "completed" }
+      const told = await withReplies([stop], harnesses[agent].transcripts!.items, {
+        sessionId: "c",
+        transcript: path,
+      })
+      expect(told).toEqual([{ ...stop, reply: "Fixed the spec; all green." }])
+      // Another session's Stop reads nothing of this one's.
+      const other = { ...stop, sessionId: "d" }
+      const bound = { sessionId: "c", transcript: path }
+      expect(await withReplies([other], harnesses[agent].transcripts!.items, bound)).toEqual([
+        other,
+      ])
+    })
 })

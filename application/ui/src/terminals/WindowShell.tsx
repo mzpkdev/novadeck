@@ -59,8 +59,9 @@ export type WindowShellProps = {
   compact?: boolean
   active?: boolean
   fresh?: boolean
-  // Its agent finished while the person looked elsewhere: the window says so until they look.
-  unread?: boolean
+  // Its agent finished while the person looked elsewhere, on its own or on an error: the
+  // window says so until they look.
+  unread?: "done" | "failed" | undefined
   rename: TerminalRename | null
   onBeginRename: () => void
   onRenameDraft: (value: string) => void
@@ -88,7 +89,7 @@ export const WindowShell = ({
   compact = false,
   active = false,
   fresh = false,
-  unread = false,
+  unread,
   rename,
   onBeginRename,
   onRenameDraft,
@@ -116,12 +117,15 @@ export const WindowShell = ({
   const usage = shell && usageBadge(shell)
   const subagents = shell && subagentsBadge(shell)
   const planning = shell?.state === "running" && shell.agent?.planning === true
-  const phase = shell ? terminalPhase(shell, unread) : "idle"
+  const phase = shell ? terminalPhase(shell, unread !== undefined) : "idle"
+  const failed = unread === "failed"
   // What the agent waits on the person for, that NovaDeck can't hear from it, or that it
   // finished with its reply unread.
   const note =
     shell &&
-    (attentionText(shell) ?? unheardText(shell) ?? (phase === "done" ? doneText : undefined))
+    (attentionText(shell) ??
+      unheardText(shell) ??
+      (phase === "done" ? doneText(failed) : undefined))
   const headerDoubleAction = onFlyTo
   const header = (
     <header
@@ -244,7 +248,7 @@ export const WindowShell = ({
       {phase === "done" && (
         // Said in full as the window's description; a compact window keeps its name.
         <span className="terminal-done ml-auto shrink-0 text-[10px]" aria-hidden>
-          {compact ? "Done" : doneText}
+          {compact ? (failed ? "Error" : "Done") : doneText(failed)}
         </span>
       )}
       {(planning || usage || subagents) && !compact && (
@@ -358,6 +362,7 @@ export const WindowShell = ({
       aria-label={`${terminal.name} terminal`}
       data-terminal={terminal.id}
       data-terminal-phase={phase}
+      {...(phase === "done" && failed ? { "data-terminal-failed": true } : {})}
       {...(note ? { "aria-description": note } : {})}
       data-process-window={processWindow}
       data-new={fresh}

@@ -4,7 +4,13 @@ import type { IpcMainEvent } from "electron"
 
 import { noticeChannel } from "../bridge.js"
 import { context, describe, expect, it } from "../test"
-import { desktopNoticeOf, registerNoticeIpc, showNotices, type NotificationLike } from "./notices"
+import {
+  desktopNoticeOf,
+  notificationText,
+  registerNoticeIpc,
+  showNotices,
+  type NotificationLike,
+} from "./notices"
 
 const notice = { id: "3f2a9c1e-0000-4000-8000-000000000001", title: "t1 is done: Tests", body: "" }
 
@@ -34,7 +40,8 @@ describe("a notice from the page", () => {
         { ...notice, title: "  " },
         { ...notice, title: "x".repeat(257) },
         { ...notice, title: "two\nlines" },
-        { ...notice, title: "‮evil" },
+        { ...notice, title: "\u202eevil" },
+        { ...notice, body: "letter\u061cmark" },
         { ...notice, body: "x".repeat(121) },
         { ...notice, body: "bell\u0007" },
         { ...notice, body: null },
@@ -139,5 +146,24 @@ describe("showing notices as the system's notifications", () => {
     const { show, made } = notifying(false)
     show("window", notice)
     expect(made).toEqual([])
+  })
+})
+
+describe("a notification's text", () => {
+  const markup = {
+    title: "t1 is done: <b>Spoof</b>",
+    body: 'x <b>b</b> <a href="https://e.test">l</a> & y',
+  }
+
+  it("escapes the body's markup on Linux, whose notification server may read it", () => {
+    expect(notificationText(markup, "linux")).toEqual({
+      title: "t1 is done: <b>Spoof</b>",
+      body: 'x &lt;b&gt;b&lt;/b&gt; &lt;a href="https://e.test"&gt;l&lt;/a&gt; &amp; y',
+    })
+  })
+
+  it("leaves it as it is elsewhere, where it is plain text", () => {
+    expect(notificationText(markup, "darwin")).toEqual(markup)
+    expect(notificationText(markup, "win32")).toEqual(markup)
   })
 })

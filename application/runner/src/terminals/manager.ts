@@ -2492,7 +2492,13 @@ export class Terminals {
     const events =
       unreplied(decoded) < 0
         ? decoded
-        : await withReplies(decoded, harnesses[report.agent].transcripts?.items)
+        : await withReplies(
+            decoded,
+            harnesses[report.agent].transcripts?.items,
+            record.binding?.agent === report.agent
+              ? { sessionId: record.binding.sessionId, transcript: record.transcript }
+              : undefined,
+          )
     // Its prompt shows before any session of its binds, as Antigravity's status line says.
     const shown = harnesses[report.agent].shown?.(report)
     if (events.length === 0 && !shown) return silent

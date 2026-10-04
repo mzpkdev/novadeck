@@ -198,7 +198,7 @@ describe("Antigravity's status line, as captured", () => {
     expect(run([preInvocation(1), stop(2), report(working!, 3)])).toEqual({
       state: "idle",
       ...quiet,
-      lastTurn: { outcome: "completed", reply: null },
+      lastTurn: { outcome: "completed", reply: null, at: expect.any(Number) },
     })
     expect(run([preInvocation(1), report(confirming!, 2)])).toEqual({
       state: "working",
@@ -213,7 +213,7 @@ describe("Antigravity's status line, as captured", () => {
     expect(run([preInvocation(1), stop(2), report(confirming!, 3)])).toEqual({
       state: "idle",
       ...quiet,
-      lastTurn: { outcome: "completed", reply: null },
+      lastTurn: { outcome: "completed", reply: null, at: expect.any(Number) },
     })
     expect(run([preInvocation(1), report(idle!, 2), report(confirming!, 3)])).toEqual({
       state: "working",

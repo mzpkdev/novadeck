@@ -2,7 +2,7 @@
    the content area the backends draw into.
 
    Hooks: data-terminal-phase="idle" | "done" | "running" | "starting" | "attention" |
-   "unheard" | "ended" and
+   "unheard" | "ended", data-terminal-failed="true" (done on an error) and
    data-new="true" on `.terminal-window`; `.terminal-focused` (Focus) and
    `.terminal-compact` (Grid, Canvas); a selected window is `.terminal-focused`, or sits
    in a `.grid-terminal.selected` or `.canvas-node.selected`. Parts: `.terminal-header`,
@@ -32,6 +32,8 @@
    --window-phase-done-border-color (success-fg), --window-phase-done-border-width (2px):
    the line while an agent's reply waits unread. --window-done-bg (success),
    --window-done-fg (success-fg): the chip that says so.
+   --window-phase-failed-border-color (danger-fg), --window-failed-bg (danger),
+   --window-failed-fg (danger-fg): the line and chip where its turn ended on an error.
    --window-ended-image (a faint ink hatch): laid over an ended window.
    --window-ended-border-style (solid): an ended window's outline.
    --window-ended-content-opacity (0.55): an ended terminal's output.
@@ -196,6 +198,13 @@
   background-color: var(--window-done-bg, var(--color-success));
   color: var(--window-done-fg, var(--color-success-fg));
   font-weight: 600;
+}
+.terminal-window[data-terminal-failed="true"] .terminal-heading::after {
+  border-top-color: var(--window-phase-failed-border-color, var(--color-danger-fg));
+}
+.terminal-window[data-terminal-failed="true"] .terminal-done {
+  background-color: var(--window-failed-bg, var(--color-danger));
+  color: var(--window-failed-fg, var(--color-danger-fg));
 }
 .terminal-window[data-terminal-phase="unheard"] .terminal-heading::after {
   border-top-style: dashed;

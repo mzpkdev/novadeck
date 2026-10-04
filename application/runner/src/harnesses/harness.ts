@@ -392,7 +392,7 @@ export const text = (value: unknown): string | undefined =>
 // eslint-disable-next-line no-control-regex -- These are the characters it removes.
 const escapes = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g
 // eslint-disable-next-line no-control-regex -- As above.
-const controls = /[\x00-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]+/g
+const controls = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g
 // Markdown's marks that read as noise in plain text: emphasis, code, a heading's or a
 // quote's lead, a list's bullet, and a link's brackets around its text.
 const marks = /(\*\*|`+|~~)/g

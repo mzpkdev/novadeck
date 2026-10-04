@@ -26,7 +26,7 @@ import {
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
 import { debugEnabled, registerDebugIpc } from "./debug.js"
-import { registerNoticeIpc, showNotices } from "./notices.js"
+import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
@@ -196,7 +196,7 @@ const launch = async (): Promise<void> => {
     window: appWindow,
     show: showNotices({
       supported: Notification.isSupported(),
-      create: ({ title, body }) => new Notification({ title, body }),
+      create: (notice) => new Notification(notificationText(notice, process.platform)),
       clicked: (window: BrowserWindow, id) => {
         if (window.isDestroyed()) return
         if (window.isMinimized()) window.restore()

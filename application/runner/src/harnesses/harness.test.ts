@@ -34,6 +34,7 @@ describe("the start of an agent's reply", () => {
     expect(replyPreview("\x1b[31mred\x1b[0m \x1b]0;title\x07ok\x00\u202eevil\tend")).toBe(
       "red ok evil end",
     )
+    expect(replyPreview(`arabic\u061cmark`)).toBe("arabic mark")
   })
 
   it("is cut to the preview length with an ellipsis, never inside a character", () => {

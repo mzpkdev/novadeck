@@ -385,7 +385,13 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const { project, session } = found
       const target = { projectId: project.id, workspaceSessionId: session.id }
       recent.setSwitcher(null)
-      if (sameTarget(target, currentTarget(snapshot))) return select(terminalId)
+      // Out from behind any dialog, as the session's front comes from another one.
+      if (sameTarget(target, currentTarget(snapshot))) {
+        go({ terminal: terminalId, dialog: null })
+        pulse()
+        set("sidebar", false)
+        return
+      }
       const { enabledViews } = preferences()
       const now = effects.now()
       navigateWorkspace(

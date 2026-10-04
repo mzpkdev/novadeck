@@ -368,6 +368,35 @@ for (const setup of setups) {
       })
     })
 
+    it("reads the agent's last reply from its own records when its Stop names none", async ({
+      e2e: run,
+    }) => {
+      // As Claude Code's StopFailure, or a Stop whose reply the hook dropped: the runner
+      // reads the session's transcript or rollout instead. Antigravity's Stop never names one.
+      const harness = harnesses[setup.agent] as { decode: Harness["decode"] }
+      const { decode } = harness
+      harness.decode = (report) => {
+        if (report.event !== "Stop") return decode(report)
+        const { last_assistant_message: _dropped, ...payload } = report.payload
+        return decode({ ...report, payload })
+      }
+      try {
+        run.model.use(replies("Sum it up", "Plover-9 finished: nothing left."))
+        const t1 = await start(run, setup)
+        const mark = t1.mark()
+
+        await t1.submit("Sum it up")
+        await t1.reached("working", { after: mark })
+        await t1.poll(() => (t1.summary().activity?.lastTurn ? true : undefined), "the turn to end")
+        expect(t1.summary().activity?.lastTurn).toMatchObject({
+          outcome: "completed",
+          reply: "Plover-9 finished: nothing left.",
+        })
+      } finally {
+        harness.decode = decode
+      }
+    })
+
     it("ends a turn whose Stop hook's report never came, as its own records tell", async ({
       e2e: run,
     }) => {

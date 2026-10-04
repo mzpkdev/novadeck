@@ -131,17 +131,17 @@ describe("terminal activity", () => {
         subagents: [],
         planning: false,
         background: null,
-        lastTurn: { outcome: "completed" as const, reply: "All green." },
+        lastTurn: { outcome: "completed" as const, reply: "All green.", at: 7 },
       }
       expect(claude(ended).status).toEqual({
         state: "running",
-        agent: { working: false, lastTurn: { outcome: "completed", reply: "All green." } },
+        agent: { working: false, lastTurn: { outcome: "completed", reply: "All green.", at: 7 } },
       })
       expect(
-        claude({ ...ended, lastTurn: { outcome: "interrupted", reply: null } }).status,
+        claude({ ...ended, lastTurn: { outcome: "interrupted", reply: null, at: 8 } }).status,
       ).toEqual({
         state: "running",
-        agent: { working: false, lastTurn: { outcome: "interrupted" } },
+        agent: { working: false, lastTurn: { outcome: "interrupted", at: 8 } },
       })
     })
 

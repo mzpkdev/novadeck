@@ -1,7 +1,9 @@
 // Terminals whose agent finished while the person looked elsewhere, by the session context
-// (`${projectId}/${workspaceSessionId}`) that holds them: each stays marked "done, reply
-// unread" until the person views it or its agent starts another turn.
-export type Unread = Readonly<Record<string, readonly string[]>>
+// (`${projectId}/${workspaceSessionId}`) that holds them, each with how its turn ended:
+// `done` on its own, or `failed` on an error. Each stays marked until the person views it
+// or its agent starts another turn.
+export type UnreadEnd = "done" | "failed"
+export type Unread = Readonly<Record<string, Readonly<Record<string, UnreadEnd>>>>
 
 // The terminal the person is looking at: the selected one of the session on screen while
 // the page has focus; null while it has none.
@@ -9,25 +11,28 @@ export type Viewing = { readonly context: string; readonly id: string } | null
 
 export const noUnread: Unread = {}
 
-export const isUnread = (unread: Unread, context: string, id: string): boolean =>
-  unread[context]?.includes(id) ?? false
+// How the terminal's unread turn ended, or undefined when none waits.
+export const unreadEnd = (unread: Unread, context: string, id: string): UnreadEnd | undefined =>
+  unread[context]?.[id]
 
-// Marks a finish, unless the person was looking at that terminal as it finished.
+// Marks a finish, the latest one's end replacing an earlier one's, unless the person was
+// looking at that terminal as it finished.
 export const markUnread = (
   unread: Unread,
   context: string,
   id: string,
+  end: UnreadEnd,
   viewing: Viewing,
 ): Unread =>
-  isUnread(unread, context, id) || (viewing?.context === context && viewing.id === id)
+  unreadEnd(unread, context, id) === end || (viewing?.context === context && viewing.id === id)
     ? unread
-    : { ...unread, [context]: [...(unread[context] ?? []), id] }
+    : { ...unread, [context]: { ...unread[context], [id]: end } }
 
 export const clearUnread = (unread: Unread, context: string, id: string): Unread => {
-  if (!isUnread(unread, context, id)) return unread
-  const left = unread[context]!.filter((each) => each !== id)
-  const { [context]: _cleared, ...rest } = unread
-  return left.length > 0 ? { ...rest, [context]: left } : rest
+  if (!unreadEnd(unread, context, id)) return unread
+  const { [id]: _cleared, ...left } = unread[context]!
+  const { [context]: _session, ...rest } = unread
+  return Object.keys(left).length > 0 ? { ...rest, [context]: left } : rest
 }
 
 // Clears what the person now looks at.
@@ -40,7 +45,8 @@ export const keepUnread = (
   exists: (context: string, id: string) => boolean,
 ): Unread => {
   let next = unread
-  for (const [context, ids] of Object.entries(unread))
-    for (const id of ids) if (!exists(context, id)) next = clearUnread(next, context, id)
+  for (const [context, ends] of Object.entries(unread))
+    for (const id of Object.keys(ends))
+      if (!exists(context, id)) next = clearUnread(next, context, id)
   return next
 }

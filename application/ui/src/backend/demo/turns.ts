@@ -6,7 +6,7 @@ import { demoAgent } from "./samples"
 export const demoTurnMs = 1500
 
 // The agents demo's turns: a prompt to one of its agents idle at its prompt works for a
-// moment, then finishes with a reply, as its hooks would report it, anything it left
+// moment, then finishes with the reply it shows, as its hooks would report it, anything it left
 // running still running. `reply` answers the prompt for the demo engine, and `start`
 // takes the sink the statuses go to.
 export const demoTurns = (turnMs = demoTurnMs) => {
@@ -26,7 +26,7 @@ export const demoTurns = (turnMs = demoTurnMs) => {
     reply: (command: string, terminal: TerminalMetadata, key: TerminalKey): string | undefined => {
       const agent = terminal.state === "running" ? terminal.agent : undefined
       if (!demoAgent(terminal) || !agent || agent.working || agent.attention) return undefined
-      const prompt = command.trim()
+      const reply = `Done: ${command.trim()}. Nothing else changed.`
       const left = agent.background ? { background: agent.background } : {}
       // After the engine's own update: a status is a workspace commit of its own.
       queueMicrotask(() => status(key, { working: true }))
@@ -35,11 +35,12 @@ export const demoTurns = (turnMs = demoTurnMs) => {
           status(key, {
             working: false,
             ...left,
-            lastTurn: { outcome: "completed", reply: `Done: ${prompt}. Nothing else changed.` },
+            lastTurn: { outcome: "completed", reply, at: Date.now() },
           }),
         turnMs,
       )
-      return "Working on it…"
+      // What the agent says, which the screen shows as its turn ends.
+      return reply
     },
     start: (next: BackendSink): (() => void) => {
       sink = next

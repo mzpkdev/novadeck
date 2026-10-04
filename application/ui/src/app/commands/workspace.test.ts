@@ -465,6 +465,15 @@ describe("workspace commands", () => {
       expect(app.ui.getSnapshot().location.route.terminal).toBe("02")
     })
 
+    it("closes a dialog open over it", () => {
+      const app = openCommands({
+        url: "/projects/project/sessions/initial/grid?terminal=01&dialog=preferences",
+      })
+      app.commands.reveal("02")
+      expect(app.ui.getSnapshot().location.route).toMatchObject({ terminal: "02", dialog: null })
+      expect(app.state().selected).toBe("02")
+    })
+
     it("brings its session to the front and selects it there", () => {
       const app = openCommands({ workspace: twoSessions() })
       app.commands.reveal("09")

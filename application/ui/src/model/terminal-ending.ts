@@ -61,8 +61,10 @@ export const terminalPhase = (terminal: TerminalMetadata, unread = false): Termi
   return "running"
 }
 
-// What a done terminal's phase says, in words for its tab, window and assistive technology.
-export const doneText = "Done · reply unread"
+// What a done terminal says, in words for its tab's description, its window and assistive
+// technology: done, or stopped on an error, its reply unread either way.
+export const doneText = (failed = false): string =>
+  failed ? "Stopped with an error · reply unread" : "Done · reply unread"
 
 // What the terminal's phase leaves unsaid at a glance, in words for its tooltip and
 // assistive technology: that NovaDeck can't hear from its agent. Undefined otherwise.

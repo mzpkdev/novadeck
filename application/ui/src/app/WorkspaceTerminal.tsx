@@ -7,7 +7,7 @@ import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
 import { UndockedWindow } from "../terminals/companion/UndockedWindow"
 import { presentedProgram, terminalProfile, windowProfile } from "../terminals/processes/profiles"
 import { renameView } from "../terminals/rename-state"
-import { isUnread } from "../terminals/unread-state"
+import { unreadEnd } from "../terminals/unread-state"
 import { windowMenu } from "../terminals/window-menu"
 import {
   WindowShell,
@@ -53,7 +53,7 @@ const useWindowFrame = (
       fresh: state.created?.context === context && state.created.id === id,
       rename: state.rename?.context === context && state.rename.id === id ? state.rename : null,
       enabledViews: state.preferences.enabledViews,
-      unread: isUnread(state.unread, context, id),
+      unread: unreadEnd(state.unread, context, id),
     }),
     shallowEqual,
   )

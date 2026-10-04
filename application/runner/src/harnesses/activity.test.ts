@@ -53,14 +53,14 @@ const replay = (agent: AgentName, name: string) => {
   return { states, last: activity && summary(activity) }
 }
 
-// Idle once its turn ended as `lastTurn` says.
-const idle = (lastTurn: ReturnType<typeof summary>["lastTurn"]) => ({
+// Idle once its turn ended as `lastTurn` says, whenever it ended.
+const idle = (lastTurn: Omit<NonNullable<ReturnType<typeof summary>["lastTurn"]>, "at">) => ({
   state: "idle",
   attention: { pending: 0, kind: null },
   subagents: [],
   planning: false,
   background: null,
-  lastTurn,
+  lastTurn: { ...lastTurn, at: expect.any(Number) },
 })
 
 // What a turn running shows: no end yet.
@@ -974,10 +974,11 @@ describe("how an agent's latest turn ended", () => {
     expect(summary(stop(running, 2, { reply: "Fixed the flaky spec." })).lastTurn).toEqual({
       outcome: "completed",
       reply: "Fixed the flaky spec.",
+      at: 2,
     })
-    expect(summary(stop(running, 2)).lastTurn).toEqual({ outcome: "completed", reply: null })
+    expect(summary(stop(running, 2)).lastTurn).toEqual({ outcome: "completed", reply: null, at: 2 })
     const failed = stop(running, 2, { outcome: "failed" })
-    expect(summary(failed).lastTurn).toEqual({ outcome: "failed", reply: null })
+    expect(summary(failed).lastTurn).toEqual({ outcome: "failed", reply: null, at: 2 })
   })
 
   it("tells the person's interrupt, an Escape and an idle without a Stop apart from completion", () => {
@@ -987,7 +988,7 @@ describe("how an agent's latest turn ended", () => {
     expect(summary(escaped).lastTurn?.outcome).toBe("interrupted")
     const none = { agents: 0, tasks: 0 }
     const quiet = on(running, { type: "turn-idle", startedAt: 2, background: none })
-    expect(summary(quiet).lastTurn).toEqual({ outcome: "unknown", reply: null })
+    expect(summary(quiet).lastTurn).toEqual({ outcome: "unknown", reply: null, at: 2 })
   })
 
   it("tells the end while subagents it left run, the agent working on", () => {
@@ -995,7 +996,7 @@ describe("how an agent's latest turn ended", () => {
     const waiting = stop(running, 2, { reply: "Waiting on two agents.", background })
     expect(summary(waiting)).toMatchObject({
       state: "working",
-      lastTurn: { outcome: "completed", reply: "Waiting on two agents." },
+      lastTurn: { outcome: "completed", reply: "Waiting on two agents.", at: 2 },
     })
   })
 
@@ -1006,15 +1007,30 @@ describe("how an agent's latest turn ended", () => {
     })
     expect(summary(continued).lastTurn).toBeNull()
     const lapsed = on(continued, { type: "turn-lapsed", startedAt: 2 })
-    expect(summary(lapsed).lastTurn).toEqual({ outcome: "completed", reply: "First answer." })
+    expect(summary(lapsed).lastTurn).toEqual({
+      outcome: "completed",
+      reply: "First answer.",
+      at: 2,
+    })
   })
 
-  it("takes the reply of the hook's own Stop that comes after the records ended the turn", () => {
+  it("keeps the end its records told when the hook's own Stop comes after, taking its reply", () => {
     const recorded = stop(running, 3, { recorded: true })
-    expect(summary(recorded).lastTurn).toEqual({ outcome: "completed", reply: null })
-    expect(summary(stop(recorded, 2, { reply: "All green." })).lastTurn).toEqual({
+    expect(summary(recorded).lastTurn).toEqual({ outcome: "completed", reply: null, at: 3 })
+    expect(summary(stop(recorded, 4, { reply: "All green." })).lastTurn).toEqual({
       outcome: "completed",
       reply: "All green.",
+      at: 3,
+    })
+  })
+
+  it("tells a Stop that comes with no turn seen starting as an end of its own", () => {
+    // As when the hook of the turn's start never came: its end is a new one all the same.
+    const first = stop(running, 2, { reply: "First." })
+    expect(summary(stop(first, 5, { reply: "Second." })).lastTurn).toEqual({
+      outcome: "completed",
+      reply: "Second.",
+      at: 5,
     })
   })
 })

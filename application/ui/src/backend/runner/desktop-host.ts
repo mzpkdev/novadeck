@@ -14,7 +14,7 @@ export const desktopHost = (): DesktopHost | undefined =>
 // Text a notice may show: one line, without control characters, cut to `length` with an
 // ellipsis, never inside a character.
 // eslint-disable-next-line no-control-regex -- These are the characters it replaces.
-const controls = /[\x00-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]+/g
+const controls = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g
 export const noticeText = (text: string, length: number): string => {
   const line = text.replace(controls, " ").replace(/\s+/g, " ").trim()
   if (line.length <= length) return line

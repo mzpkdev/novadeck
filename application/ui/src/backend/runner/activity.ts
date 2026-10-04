@@ -48,6 +48,7 @@ const agentStatus = (
         lastTurn: {
           outcome: lastTurn.outcome,
           ...(lastTurn.reply === null ? {} : { reply: lastTurn.reply }),
+          at: lastTurn.at,
         },
       }
     : {}),

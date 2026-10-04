@@ -824,7 +824,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       subagents: [],
       planning: false,
       background: null,
-      lastTurn: { outcome: "interrupted", reply: null },
+      lastTurn: { outcome: "interrupted", reply: null, at: expect.any(Number) },
     })
     // Messaging hears it too: the turn ended without a Stop.
     expect(manager.messages(terminal.id).delivery).toBe("unknown")

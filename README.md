@@ -121,7 +121,11 @@ notification for each such finish, "t1 is done: <its name>", with the start of t
 agent's last reply (Claude Code's and Codex's Stop hooks name it; Antigravity's
 transcript records it); clicking it brings NovaDeck to the front with that terminal
 selected. **Notify when an agent finishes** in Preferences turns the notification off;
-the mark stays. The browser build (`pnpm dev:web`) shows no notifications. The behaviour
+the mark stays. A turn that ended on an error is marked the same way in red, "error ·
+unread" and "Stopped with an error · reply unread", and its notification says "t1 stopped
+with an error: <its name>". Marks belong to the window that showed them: another window
+keeps its own, and a reload or a restart forgets them. The browser build (`pnpm dev:web`)
+shows no notifications. The behaviour
 specs' demo (`?demo=agents`) finishes a prompt you give its Claude Code in Build.
 
 When agents message each other (see [Agent messaging](docs/agent-messaging.md)), a

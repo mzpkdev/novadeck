@@ -21,7 +21,8 @@ const host = () => {
 
 describe("a notice's text", () => {
   it("is one line without control characters", () => {
-    expect(noticeText("t1 is done:\n‮Checkout\u0007", 256)).toBe("t1 is done: Checkout")
+    expect(noticeText("t1 is done:\n\u202eCheckout\u0007", 256)).toBe("t1 is done: Checkout")
+    expect(noticeText("a\u061cb", 256)).toBe("a b")
   })
 
   it("is cut to its length with an ellipsis, never inside a character", () => {

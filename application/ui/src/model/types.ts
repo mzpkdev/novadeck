@@ -40,10 +40,11 @@ export type AgentStatus = {
 // How an agent's turn ended: `completed` or `failed` on its own, `interrupted` by the
 // person (Escape, or a request they refused), or `unknown` when it only went idle, as an
 // Escape shows in Antigravity. `reply` is the start of its last reply, one line of plain
-// text.
+// text; `at` tells this end from any other.
 export type AgentTurnEnd = {
   readonly outcome: "completed" | "failed" | "interrupted" | "unknown"
   readonly reply?: string
+  readonly at: number
 }
 
 // What an agent's own records say of its tokens and quotas: how many tokens its context

@@ -11,7 +11,7 @@ import { noticeChannel } from "../bridge.js"
 // What a notice may not hold: control characters, and the bidirectional overrides and
 // isolates that could make it read as something else.
 // eslint-disable-next-line no-control-regex -- These are the characters it refuses.
-const unsafe = /[\x00-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]/
+const unsafe = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/
 
 const line = (value: unknown, length: number): value is string =>
   typeof value === "string" && value.length <= length && !unsafe.test(value)
@@ -56,6 +56,24 @@ export const registerNoticeIpc = <Window>(
     show(target, notice)
   })
 }
+
+/**
+ * A notice as the system's notification takes it. On Linux Electron hands the body to the
+ * desktop's notification server as it is, and the server may read it as markup
+ * (`body-markup`, `body-hyperlinks`), so `&`, `<` and `>` there are escaped and it shows
+ * the text it was given; the title, the summary, is plain text everywhere, as the body is
+ * on macOS and Windows.
+ */
+export const notificationText = (
+  { title, body }: { readonly title: string; readonly body: string },
+  platform: NodeJS.Platform,
+): { readonly title: string; readonly body: string } => ({
+  title,
+  body:
+    platform === "linux"
+      ? body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      : body,
+})
 
 /** What showing a notification takes of Electron's `Notification`. */
 export type NotificationLike = {
