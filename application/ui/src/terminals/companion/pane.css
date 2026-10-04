@@ -262,7 +262,8 @@
   align-items: baseline;
   gap: 8px 14px;
   width: 100%;
-  max-width: 700px;
+  /* As wide as the document under it (prose.css). */
+  max-width: 1100px;
   margin-inline: auto;
   padding: 24px 44px 0;
   font-size: 11px;
