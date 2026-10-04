@@ -154,8 +154,8 @@ describe("Who named a terminal", () => {
   it("shows in its tab's tooltip", async () => {
     await openMessagesDemo()
     await expect.poll(() => tabTooltip("Checkout implementation")).toMatch(/\nNamed by you\n/)
-    expect(tabTooltip("Checkout review")).toMatch(/\nNamed by the agent in t1\n/)
-    expect(tabTooltip("Tests")).toMatch(/\nNamed after its first prompt\n/)
+    expect(await tabTooltip("Checkout review")).toMatch(/\nNamed by the agent in t1\n/)
+    expect(await tabTooltip("Tests")).toMatch(/\nNamed after its first prompt\n/)
   })
 
   it("can be handed back to NovaDeck from the tab's menu when the person named it", async () => {

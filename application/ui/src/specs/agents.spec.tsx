@@ -2,7 +2,7 @@ import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { expectFocusWithin, preferencesDialog } from "./support/keyboard"
-import { chooseView, expectStaysAbsent, openWorkspace } from "./support/workspace"
+import { chooseView, expectStaysAbsent, openWorkspace, tooltipOf } from "./support/workspace"
 
 const agentSwitch = (scope: Locator, name: "Claude Code" | "Codex" | "Antigravity"): Locator =>
   scope.getByRole("switch", { name })
@@ -55,7 +55,7 @@ describe("An agent's subagents", () => {
     if (await skip.query()) await skip.click()
     await page.getByRole("button", { name: "Select Checkout review" }).click()
     const window = page.getByRole("region", { name: "Checkout review terminal" })
-    await expect.element(window.getByText("2 subagents")).toHaveAttribute("title", "2 explorer")
+    expect(await tooltipOf(window.getByText("2 subagents"))).toBe("2 explorer")
     await chooseView("Grid")
     await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
   })

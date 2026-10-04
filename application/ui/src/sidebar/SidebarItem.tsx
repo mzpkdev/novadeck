@@ -1,5 +1,7 @@
 import type { ComponentPropsWithoutRef, ReactNode, Ref } from "react"
 
+import { Tooltip } from "../ui-toolkit/Tooltip"
+
 export const sidebarListClasses =
   "sidebar-list mt-2.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-3"
 
@@ -48,34 +50,35 @@ export const SidebarItem = ({
     className={`${sidebarItemClasses} ${editing ? "flex-col" : ""} ${className}`}
     data-selected={selected}
   >
-    <button
-      ref={handleRef}
-      hidden={editing}
-      className="sidebar-item-select flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px] text-left"
-      type="button"
-      aria-label={selectLabel}
-      aria-description={description}
-      aria-current={selected ? "true" : undefined}
-      title={tooltip}
-      onClick={onSelect}
-    >
-      <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center">
-        {icon}
-      </span>
-      <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
-        {badge ? (
-          <span className="flex min-w-0 items-center gap-1.5">
-            <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
-            {badge}
-          </span>
-        ) : (
-          <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
-        )}
-        <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[var(--_sidebar-actions-space,52px)]">
-          {detail}
+    <Tooltip content={tooltip} placement="right-start" disabled={editing}>
+      <button
+        ref={handleRef}
+        hidden={editing}
+        className="sidebar-item-select flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px] text-left"
+        type="button"
+        aria-label={selectLabel}
+        aria-description={description}
+        aria-current={selected ? "true" : undefined}
+        onClick={onSelect}
+      >
+        <span className="sidebar-item-icon flex h-[18px] w-3.5 shrink-0 items-center justify-center">
+          {icon}
         </span>
-      </span>
-    </button>
+        <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
+          {badge ? (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
+              {badge}
+            </span>
+          ) : (
+            <strong className="truncate text-[12px] leading-[18px] font-medium">{name}</strong>
+          )}
+          <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] leading-[18px] [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[var(--_sidebar-actions-space,52px)]">
+            {detail}
+          </span>
+        </span>
+      </button>
+    </Tooltip>
     {editor}
     {actions && (
       <div className="sidebar-item-actions absolute right-2 bottom-[9px] flex h-6 shrink-0 items-center">

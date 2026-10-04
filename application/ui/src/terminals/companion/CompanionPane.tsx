@@ -3,6 +3,7 @@ import { lazy, Suspense, useRef, type ReactNode } from "react"
 
 import { pathOf, notePattern, notesIn, type CompanionItem } from "../../model/companion"
 import type { WorkspaceTarget } from "../../model/types"
+import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { ArtifactViewer, Unavailable } from "./ArtifactViewer"
 import type { BarMember } from "./bar"
 import type { MailHandle } from "./mail"
@@ -61,15 +62,16 @@ const PlanOutline = ({
 // Undocks what the pane shows into a window of its own, at the end of its header.
 const UndockButton = ({ onUndock }: { onUndock: () => void }): React.JSX.Element => (
   <span className="artifact-actions">
-    <button
-      type="button"
-      className="icon-button"
-      aria-label="Undock to its own window"
-      title="Undock to its own window"
-      onClick={onUndock}
-    >
-      <AppWindow size={13} strokeWidth={1.75} aria-hidden />
-    </button>
+    <Tooltip content="Undock to its own window">
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="Undock to its own window"
+        onClick={onUndock}
+      >
+        <AppWindow size={13} strokeWidth={1.75} aria-hidden />
+      </button>
+    </Tooltip>
   </span>
 )
 

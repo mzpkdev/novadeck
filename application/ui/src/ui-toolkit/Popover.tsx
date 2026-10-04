@@ -2,6 +2,8 @@ import { Popover as ArkPopover } from "@ark-ui/react/popover"
 import { Portal } from "@ark-ui/react/portal"
 import type { ReactElement, ReactNode } from "react"
 
+import { Tooltip } from "./Tooltip"
+
 export type PopoverProps = {
   label: string
   open: boolean
@@ -9,6 +11,8 @@ export type PopoverProps = {
   trigger: ReactElement
   children: ReactNode
   className?: string
+  // What its trigger's tooltip says, while the popover is closed.
+  tooltip?: string
 }
 
 export const Popover = ({
@@ -18,6 +22,7 @@ export const Popover = ({
   trigger,
   children,
   className,
+  tooltip,
 }: PopoverProps): React.JSX.Element => (
   <ArkPopover.Root
     open={open}
@@ -26,7 +31,13 @@ export const Popover = ({
     lazyMount
     unmountOnExit
   >
-    <ArkPopover.Trigger asChild>{trigger}</ArkPopover.Trigger>
+    {tooltip ? (
+      <Tooltip content={tooltip} disabled={open}>
+        <ArkPopover.Trigger asChild>{trigger}</ArkPopover.Trigger>
+      </Tooltip>
+    ) : (
+      <ArkPopover.Trigger asChild>{trigger}</ArkPopover.Trigger>
+    )}
     <Portal>
       <ArkPopover.Positioner className="z-40">
         <ArkPopover.Content

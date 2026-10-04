@@ -8,14 +8,22 @@ export type TooltipProps = {
   content: ReactNode
   children: ReactElement<{ id?: string }>
   disabled?: boolean
+  // Under its trigger, or beside it, as a sidebar's rows want so it covers none of them.
+  placement?: "bottom" | "right-start"
 }
 
 // How long the pointer rests on a trigger before its tooltip opens.
 const restDelay = 400
 
-// A tooltip under its trigger: it opens once the pointer rests there, or at once for
+// A tooltip by its trigger: it opens once the pointer rests there, or at once for
 // keyboard focus, and closes as the pointer leaves, the focus moves, or it's pressed.
-export const Tooltip = ({ content, children, disabled }: TooltipProps): React.JSX.Element => {
+// Its text keeps the lines it's given.
+export const Tooltip = ({
+  content,
+  children,
+  disabled,
+  placement = "bottom",
+}: TooltipProps): React.JSX.Element => {
   const [open, setOpen] = useState(false)
   const resting = useRestingPointer(restDelay, () => {
     if (!disabled) setOpen(true)
@@ -31,7 +39,7 @@ export const Tooltip = ({ content, children, disabled }: TooltipProps): React.JS
       }}
       openDelay={restDelay}
       closeDelay={100}
-      positioning={{ placement: "bottom", gutter: 6, strategy: "fixed" }}
+      positioning={{ placement, gutter: 6, strategy: "fixed" }}
       lazyMount
       unmountOnExit
     >
@@ -52,7 +60,7 @@ export const Tooltip = ({ content, children, disabled }: TooltipProps): React.JS
       </ArkTooltip.Trigger>
       <Portal>
         <ArkTooltip.Positioner className="z-50">
-          <ArkTooltip.Content className="floating z-50 max-w-64 px-2 py-1.5 text-[11px]">
+          <ArkTooltip.Content className="floating z-50 max-w-64 px-2 py-1.5 text-[11px] whitespace-pre-line">
             {content}
           </ArkTooltip.Content>
         </ArkTooltip.Positioner>
