@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { join } from "node:path"
+
+import { relayPath } from "@novadeck/relay"
 
 import { describe, expect, it as base } from "../test.js"
-import { hookScript } from "./hook.js"
+import { ownStatusLine, relayHook } from "./hook.js"
 import {
   listenForReports,
   unanswered,
@@ -17,9 +18,9 @@ import {
 
 type Fixture = {
   endpoint: string
-  /** The hook script, as written. */
-  script: string
   reports: Report[]
+  /** When the runner took each report, in epoch milliseconds. */
+  received: number[]
   /** The deadline each ask came with, by its report's event. */
   deadlines: { event: string; seq: number; deadline: number }[]
   /** What the runner answers an ask with; unheard unless a test says otherwise. */
@@ -43,16 +44,16 @@ const session = "11111111-2222-4333-8444-555555555555"
 
 const it = base.extend<{ fixture: Fixture }>({
   fixture: async ({ resources }, use) => {
-    const directory = mkdtempSync(join(tmpdir(), "novadeck-hook-"))
-    resources.defer(() => rmSync(directory, { recursive: true, force: true }))
-    const script = join(directory, "hook.mjs")
-    writeFileSync(script, hookScript)
     const reports: Report[] = []
+    const received: number[] = []
     const deadlines: Fixture["deadlines"] = []
     const answer = { current: unheard }
     const acks: Ack[] = []
     const listening = await listenForReports({
-      report: (report) => reports.push(report),
+      report: (report) => {
+        reports.push(report)
+        received.push(Date.now())
+      },
       ask: (report, deadline) => {
         reports.push(report)
         deadlines.push({ event: report.event, seq: report.seq, deadline })
@@ -64,7 +65,7 @@ const it = base.extend<{ fixture: Fixture }>({
     resources.defer(() => listening.close())
     const hook: Fixture["hook"] = (agent, payload, env = {}, event) =>
       new Promise((resolve) => {
-        const child = spawn(process.execPath, [script, agent, ...(event ? [event] : [])], {
+        const child = spawn(relayPath, ["hook", agent, ...(event ? [event] : [])], {
           env: {
             ...process.env,
             NOVADECK_TERMINAL_ID: terminalId,
@@ -88,7 +89,7 @@ const it = base.extend<{ fixture: Fixture }>({
       })
     const run: Fixture["run"] = (agent, payload, env, event) =>
       new Promise((resolve) => {
-        const child = spawn(process.execPath, [script, agent, event], {
+        const child = spawn(relayPath, ["hook", agent, event], {
           env: {
             ...process.env,
             NOVADECK_TERMINAL_ID: terminalId,
@@ -105,8 +106,8 @@ const it = base.extend<{ fixture: Fixture }>({
       })
     await use({
       endpoint: listening.endpoint,
-      script,
       reports,
+      received,
       deadlines,
       answer,
       acks,
@@ -162,20 +163,16 @@ describe("agent hook", () => {
       const codex = join(directory, "codex")
       symlinkSync("/bin/sh", codex)
       const pid = await new Promise<number | undefined>((resolve) => {
-        const child = spawn(
-          codex,
-          ["-c", `"${process.execPath}" "${fixture.script}" codex SessionStart; true`],
-          {
-            env: {
-              ...process.env,
-              CLAUDE_PID: "",
-              NOVADECK_TERMINAL_ID: terminalId,
-              NOVADECK_REPORT: fixture.endpoint,
-              NOVADECK_REPORT_TOKEN: token,
-            },
-            stdio: ["pipe", "ignore", "inherit"],
+        const child = spawn(codex, ["-c", `"${relayPath}" hook codex SessionStart; true`], {
+          env: {
+            ...process.env,
+            CLAUDE_PID: "",
+            NOVADECK_TERMINAL_ID: terminalId,
+            NOVADECK_REPORT: fixture.endpoint,
+            NOVADECK_REPORT_TOKEN: token,
           },
-        )
+          stdio: ["pipe", "ignore", "inherit"],
+        })
         child.stdin.end(JSON.stringify(start()))
         child.on("exit", () => resolve(child.pid))
       })
@@ -199,24 +196,13 @@ describe("agent hook", () => {
     expect(String(fixture.reports[0]?.payload.prompt)).toHaveLength(4096)
   })
 
-  it("reports when its process started, before Node reached its first line", async ({
-    fixture,
-  }) => {
-    // A module Node loads before the hook, busy for a while as a loaded machine's boot is.
-    const directory = dirname(fixture.script)
-    const booted = join(directory, "booted")
-    const slow = join(directory, "slow.mjs")
-    writeFileSync(
-      slow,
-      `import { writeFileSync } from "node:fs"
-const until = Date.now() + 400
-while (Date.now() < until) {}
-writeFileSync(${JSON.stringify(booted)}, String(Date.now()))
-`,
-    )
-    await fixture.hook("claude", start(), { NODE_OPTIONS: `--import=${pathToFileURL(slow)}` })
+  it("reports when it started, in wall-clock milliseconds", async ({ fixture }) => {
+    const began = Date.now()
+    await fixture.hook("claude", start(), {}, "SessionStart")
     const [report] = fixture.reports
-    expect(report!.seq).toBeLessThan(Number(readFileSync(booted, "utf8")) - 300)
+    // With a fraction of a millisecond, which Date.now() rounds away.
+    expect(report!.seq).toBeGreaterThanOrEqual(began)
+    expect(report!.seq).toBeLessThan(fixture.received[0]! + 1)
   })
 
   it("orders reports by when each hook started", async ({ fixture }) => {
@@ -235,6 +221,42 @@ writeFileSync(${JSON.stringify(booted)}, String(Date.now()))
     expect(await fixture.hook("gemini", start())).toBe(0)
     expect(fixture.reports).toEqual([])
   })
+
+  it("reads its agent's whole payload even outside NovaDeck, so the agent can write it", async () => {
+    const written = await new Promise<Error | undefined>((resolve) => {
+      const child = spawn(relayPath, ["hook", "claude", "Stop"], {
+        env: { PATH: process.env.PATH },
+        stdio: ["pipe", "ignore", "inherit"],
+      })
+      let failed: Error | undefined
+      child.stdin.on("error", (error) => (failed = error))
+      child.on("exit", () => resolve(failed))
+      child.stdin.end(JSON.stringify({ hook_event_name: "Stop", padding: "x".repeat(500_000) }))
+    })
+    expect(written).toBeUndefined()
+  })
+
+  it("gives up within its limit when its agent never closes its input", async ({ fixture }) => {
+    const began = performance.now()
+    const printed = await new Promise<string>((resolve) => {
+      const child = spawn(relayPath, ["hook", "agy", "PreToolUse"], {
+        env: {
+          ...process.env,
+          NOVADECK_TERMINAL_ID: terminalId,
+          NOVADECK_REPORT: fixture.endpoint,
+          NOVADECK_REPORT_TOKEN: token,
+        },
+        stdio: ["pipe", "pipe", "inherit"],
+      })
+      let out = ""
+      child.stdout.on("data", (data: Buffer) => (out += data.toString()))
+      child.on("exit", () => resolve(out))
+      child.stdin.write("{")
+    })
+    expect(printed).toBe('{"decision":"ask"}\n')
+    expect(performance.now() - began).toBeLessThan(8_000)
+    expect(fixture.reports).toEqual([])
+  }, 15_000)
 
   it("answers Antigravity with JSON, letting its policy decide on tools", async ({ fixture }) => {
     const payload = { conversationId: session, workspacePaths: ["/work"], modelName: "auto" }
@@ -412,5 +434,88 @@ describe("agent hook asking", () => {
       ),
     ).resolves.toBe("{}\n")
     expect(fixture.acks).toEqual([])
+  })
+})
+
+// Claude Code settings in `folder` naming `command` as their status line.
+const settingsNaming = (folder: string, command: string) => {
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(
+    join(folder, "settings.json"),
+    JSON.stringify({ statusLine: { type: "command", command } }),
+  )
+}
+
+describe("reading a relay's hook", () => {
+  const hook = (given: object = {}) => ({
+    agent: "codex",
+    event: "SessionStart",
+    seq: 1_000,
+    ancestors: [],
+    env: {},
+    payload: JSON.stringify(start()),
+    ...given,
+  })
+
+  it("names the nearest ancestor with its agent's name, and Claude Code by its own pid", async () => {
+    const ancestors = [
+      { pid: 10, name: "sh" },
+      { pid: 20, name: "codex" },
+      { pid: 30, name: "codex" },
+    ]
+    expect((await relayHook(hook({ ancestors })))?.report.instance).toBe("20")
+    expect((await relayHook(hook({ ancestors: [{ pid: 10, name: "sh" }] })))?.report.instance).toBe(
+      null,
+    )
+    const claude = hook({ agent: "claude", ancestors, env: { claudePid: "4242" } })
+    expect((await relayHook(claude))?.report.instance).toBe("4242")
+  })
+
+  it("cuts a payload too large to keep harder, and drops one too large even then", async () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 100 }, (_, index) => [`k${index}`, "x".repeat(1_000)]),
+    )
+    const cut = await relayHook(hook({ payload: JSON.stringify(wide) }))
+    expect(String(cut?.report.payload.k0)).toHaveLength(200)
+    const deep = Object.fromEntries(
+      Array.from({ length: 100 }, (_, index) => [
+        `k${index}`,
+        Array.from({ length: 50 }, () => "x".repeat(200)),
+      ]),
+    )
+    await expect(relayHook(hook({ payload: JSON.stringify(deep) }))).resolves.toBeUndefined()
+  })
+
+  it("asks at the harness's asking events, with time left to print and acknowledge", async () => {
+    const asked = await relayHook(hook({ event: "Stop", seq: 1_000.4 }))
+    expect(asked?.deadline).toBe(4_500)
+    expect((await relayHook(hook()))?.deadline).toBeUndefined()
+  })
+
+  it("reads nothing of an unknown agent or a payload agents don't send", async () => {
+    await expect(relayHook(hook({ agent: "gemini" }))).resolves.toBeUndefined()
+    await expect(relayHook(hook({ payload: "[1]" }))).resolves.toBeUndefined()
+    await expect(relayHook(hook({ seq: "soon" }))).resolves.toBeUndefined()
+  })
+
+  it("finds the person's own status line: project's local, project's, then theirs", async ({
+    resources,
+  }) => {
+    const root = mkdtempSync(join(tmpdir(), "novadeck-status-"))
+    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+    const project = join(root, "project")
+    const home = join(root, "home")
+    settingsNaming(join(home, ".claude"), "theirs")
+    expect(await ownStatusLine({ cwd: project }, undefined, home)).toBe("theirs")
+    settingsNaming(join(project, ".claude"), "project's")
+    expect(await ownStatusLine({ cwd: project }, undefined, home)).toBe("project's")
+    writeFileSync(
+      join(project, ".claude", "settings.local.json"),
+      JSON.stringify({ statusLine: { type: "command", command: '"$NOVADECK_HOOK" claude' } }),
+    )
+    // NovaDeck's own never counts.
+    expect(await ownStatusLine({ workspace: { project_dir: project } }, undefined, home)).toBe(
+      "project's",
+    )
   })
 })

@@ -779,9 +779,7 @@ describe("NovaDeck's MCP server", () => {
 
   it("starts the relay on Windows too, never PowerShell or NovaDeck's runtime", () => {
     const paths = shellPaths("C:\\data", "win32")
-    const launcher = shellFiles(paths, "C:\\app\\novadeck.exe", "", "win32").find(
-      (file) => file.path === paths.mcp,
-    )
+    const launcher = shellFiles(paths, "win32").find((file) => file.path === paths.mcp)
     expect(launcher?.content).toContain(
       `${paths.relay}" mcp ${plugin.version} ${mcpVersions.join(" ")} %*`,
     )

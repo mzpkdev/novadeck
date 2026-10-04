@@ -25,7 +25,7 @@ export type RunnerOptions = {
    */
   uploads?: string
   /**
-   * The relay agents start for NovaDeck's MCP server, copied in beside the shell files;
+   * The relay agents start for NovaDeck's MCP server and hooks, copied in beside the shell files;
    * the one `@novadeck/relay` built by default. The desktop app passes the one it ships.
    */
   relay?: string

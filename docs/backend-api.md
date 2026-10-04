@@ -77,7 +77,7 @@ Without a token, the runner exposes only the existing HTTP status behavior.
 With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadata
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set, and
 writes its [shell integration](#shell-integration-and-restoring-terminals) to a `shell`
-folder beside it, with its own copy of the relay agents start for NovaDeck's MCP server.
+folder beside it, with its own copy of the relay agents start for NovaDeck's MCP server and hooks.
 The build fetches the relay prebuilt for Linux (x64 and ARM64, linked statically, so
 any distribution runs it), macOS and Windows, or builds it with Rust elsewhere; set
 `NOVADECK_RELAY` to use another build. Without it, shells and hooks still work, and
@@ -462,9 +462,11 @@ changed. Only connecting an agent (below) installs anything elsewhere:
   server without the terminal's environment. It leaves `codex agents`, `--remote` and
   runs outside NovaDeck's shells unchanged. The integration puts `NOVADECK_BIN` back in
   front after the user's startup files.
-- `hook` (`hook.cmd`), a launcher that runs `hook.mjs` on the runner's own runtime
-  (Electron with `ELECTRON_RUN_AS_NODE=1`, or Node), so the hook needs no bash or
-  python3. It reads the agent's payload (`session_id`, or Antigravity's
+- `hook` (`hook.cmd`), a launcher that starts NovaDeck's relay (`novadeck-relay`, a
+  small native program copied in beside it; see `application/relay`), so the hook needs
+  no bash, python3 or JavaScript runtime and starts in about a millisecond. The relay
+  sends the agent's payload, unread, with when it started and the processes it runs
+  under, and prints what the runner answers. The runner reads the payload (`session_id`, or Antigravity's
   `conversationId`), drops Claude Code subagents (`agent_id`), Claude Code inside Cursor
   (`cursor_version`, `CURSOR_VERSION`) and a Codex started by another Codex
   (`CODEX_THREAD_ID` other than the session), prints nothing but the `{}` Antigravity

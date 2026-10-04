@@ -22,7 +22,7 @@ NOVADECK_E2E_AGENTS=claude pnpm --filter @novadeck/runner test:e2e   # one harne
 ```
 
 The runner's own script doesn't build `@novadeck/protocol` or `@novadeck/relay`, which
-agents start for NovaDeck's MCP server, so build them first when running the suite
+agents start for NovaDeck's MCP server and hooks, so build them first when running the suite
 from `application/runner`, as the root script does.
 
 The first run installs the pinned harnesses (a few hundred MB). Later runs reuse them.

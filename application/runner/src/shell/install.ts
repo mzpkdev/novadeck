@@ -5,7 +5,6 @@ import { promisify } from "node:util"
 
 import { relayPath } from "@novadeck/relay"
 
-import { hookScript } from "./hook.js"
 import { shellFiles, shellPaths, staleShellFiles, type ShellPaths } from "./scripts.js"
 
 /**
@@ -16,10 +15,8 @@ import { shellFiles, shellPaths, staleShellFiles, type ShellPaths } from "./scri
 export type InstalledShell = ShellPaths & { readonly launcher: string }
 
 export type InstallOptions = {
-  /** The relay to copy in for the MCP launcher; the one `@novadeck/relay` built by default. */
+  /** The relay to copy in for the launchers; the one `@novadeck/relay` built by default. */
   readonly relay?: string
-  /** What runs the hook: NovaDeck's own runtime, Electron acting as Node, or Node. */
-  readonly runtime?: string
 }
 
 /**
@@ -29,11 +26,11 @@ export type InstallOptions = {
  */
 export const installShellFiles = async (
   directory: string,
-  { relay = relayPath, runtime = process.execPath }: InstallOptions = {},
+  { relay = relayPath }: InstallOptions = {},
 ): Promise<InstalledShell> => {
   const paths = shellPaths(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
-  // Without its relay an agent's MCP server can't start; the rest still works.
+  // Without its relay an agent's hooks and MCP server can't start; shells still work.
   await installRelay(relay, paths.relay).catch((error: unknown) => {
     console.error("NovaDeck's relay is unavailable:", error)
   })
@@ -41,7 +38,7 @@ export const installShellFiles = async (
   // Plugins name the MCP launcher by its short name on Windows, as cmd starts it.
   const mcp =
     process.platform === "win32" ? join(await shortName(directory), basename(paths.mcp)) : paths.mcp
-  for (const file of shellFiles(paths, runtime, hookScript, process.platform, { mcp })) {
+  for (const file of shellFiles(paths, process.platform, { mcp })) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
     await mkdir(dirname(file.path), { recursive: true, mode: 0o700 })
     // eslint-disable-next-line no-await-in-loop -- Unchanged files are left alone.

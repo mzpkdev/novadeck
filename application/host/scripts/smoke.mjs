@@ -53,7 +53,7 @@ if (process.platform === "win32") {
   }
 }
 
-// The relay agents start for NovaDeck's MCP server ships beside the UI, and answers the
+// The relay agents start for NovaDeck's MCP server and hooks ships beside the UI, and answers the
 // handshake by itself outside NovaDeck's terminals.
 const relay = join(
   resources,
@@ -72,8 +72,17 @@ try {
   })
   const answer = JSON.parse(hello.toString())
   if (answer?.result?.protocolVersion !== "2025-06-18") throw new Error(hello.toString())
+  // A hook outside NovaDeck still gives Antigravity the answer that lets its tools run.
+  const hook = execFileSync(relay, ["hook", "agy", "PreToolUse"], {
+    input: "{}",
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith("NOVADECK_")),
+    ),
+    timeout: 10_000,
+  })
+  if (hook.toString() !== '{"decision":"ask"}\n') throw new Error(`hook: ${hook}`)
 } catch (error) {
-  fail(`The relay didn't answer the MCP handshake: ${error}`)
+  fail(`The relay didn't answer as an MCP server and hook: ${error}`)
 }
 
 const bundle = await esbuild.build({

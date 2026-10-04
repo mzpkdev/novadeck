@@ -24,9 +24,8 @@ export type ShellPaths = {
   readonly plugins: { readonly [agent in AgentName]: string }
   /** Where a fresh shell finds the command that resumes its agent, one file per shell. */
   readonly resume: string
-  /** The hook's launcher. */
+  /** The hook's launcher, which connected agents' plugins run. */
   readonly hook: string
-  readonly hookScript: string
   /** The MCP server's launcher, which connected agents' plugins start. */
   readonly mcp: string
   /** NovaDeck's copy of the relay the MCP launcher starts (see application/relay). */
@@ -44,13 +43,13 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
   ) as ShellPaths["plugins"],
   resume: join(directory, "resume"),
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
-  hookScript: join(directory, "hook.mjs"),
   mcp: join(directory, platform === "win32" ? "mcp.cmd" : "mcp"),
   relay: join(directory, platform === "win32" ? "novadeck-relay.exe" : "novadeck-relay"),
 })
 
 /** What older versions wrote beside these files and nothing reads any more. */
 export const staleShellFiles = (directory: string): string[] => [
+  join(directory, "hook.mjs"),
   join(directory, "mcp.mjs"),
   join(directory, "mcp-idle.js"),
 ]
@@ -254,37 +253,27 @@ if ($env:NOVADECK_RESUME) {
 }
 `
 
-// A launcher runs a script on NovaDeck's own runtime: Electron acting as Node, or Node
-// itself for a standalone runner. It is rewritten on each start, as that path moves.
-const posixLauncher = (runtime: string, script: string, what: string): string => `#!/bin/sh
+// The launchers start NovaDeck's relay (see application/relay), which carries an agent's
+// hooks and MCP messages to the runner of the terminal it runs in, or, outside NovaDeck's
+// terminals, answers itself: for the MCP server, the handshake with no tools. Its copy
+// lives here, beside them, so it stays when the app's own folder goes (an AppImage's
+// mount, a portable build's unpacked copy). The MCP server answers as this version of
+// it: its plugin's version, then the MCP versions it speaks, newest first.
+const relayArguments = {
+  hook: ["hook"],
+  mcp: ["mcp", plugin.version, ...mcpVersions],
+} as const
+
+const posixLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
+  `#!/bin/sh
 ${header("#", what)}
-ELECTRON_RUN_AS_NODE=1
-export ELECTRON_RUN_AS_NODE
-exec ${shQuote(runtime)} ${shQuote(script)} "$@"
+exec ${shQuote(relay)} ${relayArguments[mode].join(" ")} "$@"
 `
 
-const cmdLauncher = (runtime: string, script: string, what: string): string => `@echo off
+const cmdLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
+  `@echo off
 ${header("rem", what)}
-set ELECTRON_RUN_AS_NODE=1
-${cmdQuote(runtime)} ${cmdQuote(script)} %*
-`
-
-// The MCP server's launcher starts NovaDeck's relay, which carries the agent's messages
-// to the runner of the terminal it runs in, or, outside NovaDeck's terminals, answers the
-// handshake itself, with no tools. Its copy lives here, beside the launcher, so it stays
-// when the runtime's folder goes (an AppImage's mount, a portable build's unpacked copy).
-// It answers as this version of the server: its plugin's version, then the MCP versions
-// it speaks, newest first.
-const relayArguments = [plugin.version, ...mcpVersions]
-
-const posixMcpLauncher = (relay: string): string => `#!/bin/sh
-${header("#", "MCP server launcher")}
-exec ${shQuote(relay)} mcp ${relayArguments.join(" ")} "$@"
-`
-
-const cmdMcpLauncher = (relay: string): string => `@echo off
-${header("rem", "MCP server launcher")}
-${cmdQuote(relay)} mcp ${relayArguments.join(" ")} %*
+${cmdQuote(relay)} ${relayArguments[mode].join(" ")} %*
 `
 
 export type ShellFile = { readonly path: string; readonly content: string; readonly mode: number }
@@ -297,8 +286,6 @@ const file = (path: string, content: string, mode = 0o600): ShellFile => ({ path
  */
 export const shellFiles = (
   paths: ShellPaths,
-  runtime: string,
-  hookScript: string,
   platform = process.platform,
   launchers: Launchers = { mcp: paths.mcp },
 ): ShellFile[] => {
@@ -314,7 +301,6 @@ export const shellFiles = (
         .files(platform, launchers)
         .map((each) => file(join(paths.plugins[agent], each.path), each.content, each.mode)),
     ),
-    file(paths.hookScript, hookScript),
   ]
   // Every harness's shims, which the shells put first on PATH only while one is connected.
   const shims = agents.flatMap((agent) => harnesses[agent].shims?.(platform) ?? [])
@@ -322,14 +308,14 @@ export const shellFiles = (
   return platform === "win32"
     ? [
         ...common,
-        file(paths.hook, cmdLauncher(runtime, paths.hookScript, "agent hook launcher")),
-        file(paths.mcp, cmdMcpLauncher(paths.relay)),
+        file(paths.hook, cmdLauncher(paths.relay, "hook", "agent hook launcher")),
+        file(paths.mcp, cmdLauncher(paths.relay, "mcp", "MCP server launcher")),
         ...bin,
       ]
     : [
         ...common,
-        file(paths.hook, posixLauncher(runtime, paths.hookScript, "agent hook launcher"), 0o700),
-        file(paths.mcp, posixMcpLauncher(paths.relay), 0o700),
+        file(paths.hook, posixLauncher(paths.relay, "hook", "agent hook launcher"), 0o700),
+        file(paths.mcp, posixLauncher(paths.relay, "mcp", "MCP server launcher"), 0o700),
         ...bin,
       ]
 }

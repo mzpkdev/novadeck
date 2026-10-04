@@ -958,18 +958,23 @@ outstanding operations before their late results can change state.
 
 ## Hook distribution
 
-The hook runs in a short-lived process on NovaDeck's own runtime, through a
-launcher in NovaDeck's integration directory, so it needs no install inside the
-person's project. It is one script for every harness, written on each start.
+The hook runs in a short-lived process, NovaDeck's relay (`application/relay`), through
+a launcher in NovaDeck's integration directory, so it needs no install inside the
+person's project. It is one program for every harness, copied in on each start.
 Each plugin's hook command passes the harness and the event.
 
-The shared hook does the following:
+The relay does the following:
 
 - bounds stdin,
-- keeps a two-second deadline,
+- keeps a five-second deadline, within which the runner answers a report at once and an
+  ask by its own deadline,
 - checks it runs in a NovaDeck terminal,
-- frames and sends the report,
-- answers the harness.
+- sends the payload unread, with its start time and the processes it runs under,
+- prints the runner's answer, or what the harness needs without NovaDeck.
+
+The runner prunes the payload, finds the agent process, decides whether the hook asks
+(`shell/hook.ts`), and for Claude Code's status line names the person's own command,
+which the relay runs.
 
 Everything harness-specific happens in the runner (see
 [Hook decoders](#hook-decoders)).

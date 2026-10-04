@@ -380,3 +380,67 @@ describe("relay sessions", () => {
     expect(Date.now() - began).toBeLessThan(5_000)
   })
 })
+
+describe("relay hooks", () => {
+  const lease = "abcdefghijklmnopqrstuvwx"
+  const hook = (given: object = {}) =>
+    JSON.stringify({
+      relay: 2,
+      kind: "hook",
+      terminalId: "t",
+      token,
+      agent: "claude",
+      event: "Stop",
+      seq: Date.now(),
+      ancestors: [
+        { pid: 7, name: "sh" },
+        { pid: 42, name: "claude" },
+      ],
+      env: { cursor: false },
+      payload: JSON.stringify({ hook_event_name: "Stop", session_id: "a" }),
+      ...given,
+    })
+
+  it("answers an ask, and takes the acknowledgement of the lease it gave, not another", async ({
+    resources,
+  }) => {
+    const acks: Ack[] = []
+    const asked: Report[] = []
+    const reports = await listenForReports(
+      handlers({
+        ask: async (taken) => {
+          asked.push(taken)
+          return { leaseId: lease, stdout: "printed" }
+        },
+        ack: (ack) => acks.push(ack),
+      }),
+    )
+    resources.defer(() => reports.close())
+    const answers = await relay(reports.endpoint, [hook(), JSON.stringify({ ack: lease })])
+    expect(answers).toEqual([{ leaseId: lease, stdout: "printed" }])
+    await expect.poll(() => acks).toEqual([{ terminalId: "t", token, leaseId: lease }])
+    expect(asked).toMatchObject([{ event: "Stop", instance: "42", payload: { session_id: "a" } }])
+    await relay(reports.endpoint, [hook(), JSON.stringify({ ack: "zyxwvutsrqponmlkjihgfedc" })])
+    expect(acks).toHaveLength(1)
+  })
+
+  it("answers a hook with no runner token, reporting nothing", async ({ resources }) => {
+    const received: Report[] = []
+    const reports = await listenForReports(
+      handlers({
+        report: (taken) => received.push(taken),
+        ask: async (taken) => (received.push(taken), { leaseId: lease, stdout: "x" }),
+      }),
+    )
+    resources.defer(() => reports.close())
+    const answers = await relay(reports.endpoint, [
+      hook({ token: "not a token" }),
+      hook({ token: "not a token", event: "SessionStart" }),
+    ])
+    expect(answers).toEqual([unheard])
+    await expect(relay(reports.endpoint, [hook({ payload: "not json" })])).resolves.toEqual([
+      unheard,
+    ])
+    expect(received).toEqual([])
+  })
+})

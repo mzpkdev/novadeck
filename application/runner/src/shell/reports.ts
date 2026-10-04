@@ -7,6 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 
 import { agentName, type AgentName } from "@novadeck/protocol"
 
+import { relayHook } from "./hook.js"
 import { mcpAnswer, type McpCall } from "./mcp.js"
 
 /**
@@ -38,6 +39,12 @@ export type HookAnswer = { readonly leaseId: string | null; readonly stdout: str
 
 /** The answer to an ask that failed, took too long, or could not be read. */
 export const unheard: HookAnswer = { leaseId: null, stdout: null }
+
+/**
+ * What a relay's hook hears back, whether it asked or reported: a `HookAnswer`, and for
+ * Claude Code's status line, the person's own command, which the relay runs and prints.
+ */
+export type RelayAnswer = HookAnswer & { readonly statusLine?: string }
 
 /** A hook's word that it printed what a lease delivers. */
 export type Ack = { readonly terminalId: string; readonly token: string; readonly leaseId: string }
@@ -146,6 +153,13 @@ const maxBytes = 65_536
 /** What a relay sends once its agent closed its side: answer what's under way, then close. */
 const relayEnd = JSON.stringify({ relay: "eof" })
 
+// A relay's hook: its agent's payload, up to a million characters, escaped as JSON text,
+// which may double it, with room for the rest.
+const maxRelayHook = 2_100_000
+
+/** How a relay's first line starts, naming the version of what it carries. */
+const relayStart = '{"relay":2,'
+
 // One line of an agent's MCP session may hold more than a hook's report, as a message's
 // text, but not without end.
 const maxSessionLine = 1_048_576
@@ -199,6 +213,17 @@ const serveSession = (socket: Socket, rest: string, call: McpCall | undefined): 
     settle()
   })
   read(rest)
+}
+
+/** An answer, or `failed` once it fails or `ms` pass. */
+const within = async <T>(answer: Promise<T>, ms: number, failed: T): Promise<T> => {
+  const timeout = new AbortController()
+  const result = await Promise.race([
+    answer.catch(() => failed),
+    sleep(Math.max(0, ms), failed, { signal: timeout.signal }).catch(() => failed),
+  ])
+  timeout.abort()
+  return result
 }
 
 export type ReportsOptions = {
@@ -255,12 +280,7 @@ export const listenForReports = async (
       ? `\\\\.\\pipe\\novadeck-reports-${randomUUID()}`
       : join(directory, "reports.sock")
   const respond = async <T>(socket: Socket, answer: Promise<T>, ms: number, failed: T) => {
-    const timeout = new AbortController()
-    const result = await Promise.race([
-      answer.catch(() => failed),
-      sleep(Math.max(0, ms), failed, { signal: timeout.signal }),
-    ])
-    timeout.abort()
+    const result = await within(answer, ms, failed)
     let line: string | undefined
     try {
       line = JSON.stringify(result)
@@ -274,14 +294,67 @@ export const listenForReports = async (
   // A relay's call: the terminal and token it named, answered within `answerMs`.
   const relayCall =
     (from: { terminalId: string; token: string }): McpCall =>
-    (type, request) => {
-      const failed = unansweredCalls[type]
-      const timeout = new AbortController()
-      return Promise.race([
-        handlers.call({ type, ...from, request }).catch(() => failed),
-        sleep(answerMs, failed, { signal: timeout.signal }).catch(() => failed),
-      ]).finally(() => timeout.abort())
+    (type, request) =>
+      within(handlers.call({ type, ...from, request }), answerMs, unansweredCalls[type])
+  /**
+   * Answers a relay's hook with one line, a `RelayAnswer`: a report at once, an ask by
+   * its deadline or as `unheard`. The relay then prints what it delivers and, holding a
+   * lease, acknowledges it with one more line, `{ ack }`, on the same connection.
+   */
+  const serveHook = async (
+    socket: Socket,
+    value: { readonly [key: string]: unknown },
+    rest: string,
+  ) => {
+    // What the relay sends after its hook, read from the start: its acknowledgement,
+    // which counts once its answer named the lease it acknowledges.
+    let text = rest
+    let lease: string | undefined
+    const take = (from: { terminalId: string; token: string }) => {
+      if (lease === undefined) return
+      const end = text.indexOf("\n")
+      if (end < 0) {
+        if (text.length > maxBytes) socket.destroy()
+        return
+      }
+      socket.end()
+      let ack: unknown
+      try {
+        ack = JSON.parse(text.slice(0, end))
+      } catch {
+        return
+      }
+      if (object(ack) && ack.ack === lease) handlers.ack({ ...from, leaseId: lease })
+      lease = undefined
     }
+    const from = sender(value)
+    socket.on("data", (chunk: string) => {
+      text += chunk
+      if (from) take(from)
+    })
+    const hook = from && (await relayHook(value).catch(() => undefined))
+    let answer: RelayAnswer = unheard
+    if (from && hook) {
+      const report = { ...from, ...hook.report }
+      if (hook.deadline === undefined) {
+        handlers.report(report)
+        if (hook.statusLine !== undefined) answer = { ...unheard, statusLine: hook.statusLine }
+      } else {
+        const ms = Math.min(answerMs, hook.deadline - Date.now())
+        answer = await within(handlers.ask(report, hook.deadline), ms, unheard)
+      }
+    }
+    if (!socket.writable) return
+    socket.write(`${JSON.stringify(answer)}\n`)
+    if (!from || answer.leaseId === null) {
+      socket.end()
+      return
+    }
+    // The relay acknowledges the lease once it has printed what it delivers.
+    lease = answer.leaseId
+    socket.setTimeout(readMs, () => socket.destroy())
+    take(from)
+  }
   // Every connection, so closing ends the sessions that stay open.
   const sockets = new Set<Socket>()
   // Half open: a sender that ends its side after its line still reads the answer, where
@@ -302,7 +375,11 @@ export const listenForReports = async (
     const first = (chunk: string) => {
       if (taken) return
       text += chunk
-      if (text.length > maxBytes) return socket.destroy()
+      // A relay's hook carries its agent's payload whole, which the runner prunes; the
+      // relay names itself first.
+      if (text.length > (text.startsWith(relayStart) ? maxRelayHook : maxBytes)) {
+        return socket.destroy()
+      }
       const end = text.indexOf("\n")
       if (end < 0) return
       taken = true
@@ -311,6 +388,13 @@ export const listenForReports = async (
         value = JSON.parse(text.slice(0, end))
       } catch {
         value = undefined
+      }
+      if (object(value) && value.relay === 2 && value.kind === "hook") {
+        // The ask's own deadline bounds the wait.
+        socket.setTimeout(0)
+        socket.off("data", first)
+        serveHook(socket, value, text.slice(end + 1)).catch(() => socket.destroy())
+        return
       }
       if (object(value) && value.relay === 2 && value.kind === "mcp") {
         // An agent's MCP session lasts as long as the agent, and holds no runner open.

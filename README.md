@@ -502,7 +502,7 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 | `application/runner`   | The runner: shells and metadata, served over WebSocket or port. |
 | `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.    |
 | `application/host`     | Electron host that starts the runner and loads the packaged UI. |
-| `application/relay`    | Rust relay agents start for NovaDeck's MCP server.              |
+| `application/relay`    | Rust relay for agents' NovaDeck MCP server and hooks.           |
 | `scripts`              | Repository checks and automation.                               |
 
 The UI runs real shells through the runner. Projects, sessions and their terminals
@@ -807,7 +807,7 @@ Artifacts go to `application/host/release/`: a Linux x64 AppImage, a macOS
 universal ZIP, or a Windows x64 portable executable. Builds are unsigned, so
 Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 
-Each package ships the relay agents start for NovaDeck's MCP server. Its binaries
+Each package ships the relay agents start for NovaDeck's MCP server and hooks. Its binaries
 are published by the [relay workflow](.github/workflows/relay.yml) when a pull
 request changes its source; pin them with `node application/relay/scripts/build.ts
 --pin` and commit `application/relay/prebuilt.json`, which Quality checks.
