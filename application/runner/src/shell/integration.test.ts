@@ -822,9 +822,61 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       attention: { pending: 0, kind: null },
       subagents: [],
       planning: false,
+      background: null,
     })
     // Messaging hears it too: the turn ended without a Stop.
     expect(manager.messages(terminal.id).delivery).toBe("unknown")
+  })
+
+  it("ends a Claude Code turn its transcript says its Stop hooks ran, its own report lost", async ({
+    shell,
+  }) => {
+    // As when NovaDeck's Stop hook failed to run: the transcript still records the hooks.
+    const transcript = join(shell.home, "session.jsonl")
+    writeFileSync(transcript, "")
+    const bin = reporter(shell.home, [
+      {
+        agent: "claude",
+        sessionId: "s",
+        seq: 1,
+        source: "startup",
+        fields: { transcript_path: transcript },
+      },
+      { agent: "claude", sessionId: "s", seq: 2, source: "", event: "UserPromptSubmit" },
+      {
+        agent: "claude",
+        sessionId: "s",
+        seq: 3,
+        source: "",
+        event: "SubagentStart",
+        fields: { agent_id: "a1", agent_type: "general-purpose" },
+      },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    const activity = () => manager.list(terminal.sessionId)[0]?.activity
+    await expect
+      .poll(activity, { timeout: 10_000 })
+      .toMatchObject({ subagents: [{ type: "general-purpose" }] })
+    expect(activity()).toMatchObject({ state: "working", background: null })
+    appendFileSync(
+      transcript,
+      `${JSON.stringify({
+        isSidechain: false,
+        type: "system",
+        subtype: "stop_hook_summary",
+        hookErrors: ["Failed to run"],
+        timestamp: new Date(Date.now() + 1_000).toISOString(),
+      })}\n`,
+    )
+    // Nothing says what runs on but its hooks: its subagent, which wakes it once done.
+    await expect
+      .poll(activity, { timeout: 10_000 })
+      .toMatchObject({ state: "working", background: { agents: 1, tasks: 0 } })
+    expect(manager.messages(terminal.id).delivery).toBe("working")
   })
 
   it("shows a Codex session's context and rate limits from its rollout", async ({ shell }) => {
@@ -899,6 +951,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         attention: { pending: 0, kind: null },
         subagents: [],
         planning: false,
+        background: null,
       })
     expect(manager.reportedSession(terminal.id, "claude")).toBe("s2")
   })

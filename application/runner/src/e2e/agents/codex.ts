@@ -122,6 +122,8 @@ export const codex: AgentSetup = {
   // next prompt, and a v2 one's end with none. NovaDeck rightly calls such a root Settled.
   absent: {
     background: "nothing it starts wakes it once its turn has ended (probed 2026-10-02, 0.159.3)",
+    "background.command":
+      "nothing it starts wakes it once its turn has ended (probed 2026-10-02, 0.159.3)",
   },
   // Its folder-trust question, "Trust this folder?", has trusting it selected, and its
   // "Hooks need review" screen says "esc skip", which goes on without trusting them.

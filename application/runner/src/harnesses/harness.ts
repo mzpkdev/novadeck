@@ -92,6 +92,12 @@ export type Harness = {
   readonly plans?: (line: string) => readonly WrittenPlan[]
   /** How much of each feature NovaDeck tells of it, from the sources its adapter reads. */
   readonly coverage: AgentCoverage
+  /**
+   * Whether work a turn leaves running, as a background subagent or command, wakes the
+   * agent with a turn of its own once done, so it works on until then (see
+   * docs/harness-coverage.md, "Activity").
+   */
+  readonly wakes: boolean
   /** How it takes part in agents' messaging: what its hooks print, and how it behaves. */
   readonly messaging: MessagingProfile
   /** The normalized facts in one of its hooks' reports; none for one it ignores. */
@@ -356,6 +362,8 @@ export const promptStart = (
     readonly sessionId: string
     readonly instance: string | null
     readonly startedAt: number
+    /** The turn's id, where the harness names one. */
+    readonly turn?: string
   },
   prompt: string,
   harness = false,

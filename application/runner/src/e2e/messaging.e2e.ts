@@ -36,6 +36,13 @@ for (const setup of setups) {
       expect(detail.requests).toEqual([])
       expect(detail.sessionId !== null).toBe(setup.bindsAtReady)
       expect(t1.summary().agent).toBe(setup.bindsAtReady ? setup.agent : null)
+      // Its terminal shows it idle at that prompt, NovaDeck hearing from it, either way.
+      if (!setup.bindsAtReady)
+        await t1.poll(
+          () => (t1.summary().ready === setup.agent ? true : undefined),
+          "the agent named ready",
+        )
+      else expect(t1.summary().ready).toBeNull()
     })
 
     it("takes a prompt to the model and shows its reply, then ends its turn", async ({

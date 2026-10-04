@@ -747,6 +747,7 @@ export class Terminals {
           process: shellProcess(shell),
           run: 1,
           agent: null,
+          ready: null,
           activity: null,
           telemetry: null,
         },
@@ -857,6 +858,7 @@ export class Terminals {
       exit: null,
       process: null,
       agent: null,
+      ready: null,
       activity: null,
       telemetry: null,
     }
@@ -1201,6 +1203,7 @@ export class Terminals {
             process: shellProcess(shell),
             run: record.summary.run + 1,
             agent: null,
+            ready: null,
             activity: null,
             telemetry: null,
           } satisfies TerminalSummary,
@@ -1421,7 +1424,13 @@ export class Terminals {
         record.telemetry = null
         this.unwatch(record)
         this.rebound(record)
-        record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
+        record.summary = {
+          ...record.summary,
+          agent: null,
+          ready: this.readyOf(record),
+          activity: null,
+          telemetry: null,
+        }
         this.announce(record)
       }
     }
@@ -2402,6 +2411,7 @@ export class Terminals {
     this.endBinding(record)
     // An agent whose prompt showed, with no session bound, left with it.
     this.messaging.unshown(record.summary.id)
+    this.publishAgent(record, false)
     if (moved) {
       record.summary = { ...record.summary, cwd }
       this.announce(record)
@@ -2523,7 +2533,9 @@ export class Terminals {
         before.agent === next.binding.agent &&
         before.sessionId === next.binding.sessionId
       if (!same) {
-        record.activity = next.binding ? fresh(event.startedAt) : null
+        record.activity = next.binding
+          ? fresh(event.startedAt, harnesses[next.binding.agent].wakes)
+          : null
         record.telemetry = null
         this.follow(record, event)
         // The plans its bar mirrored of another session go; unbinding alone keeps them.
@@ -2920,7 +2932,11 @@ export class Terminals {
     if (shown.startedAt <= (record.promptedAt ?? 0)) return
     const { binding } = record
     const id = record.summary.id
-    if (!binding) return this.messaging.shown(id, agent, sessionPrefix ?? null)
+    if (!binding) {
+      this.messaging.shown(id, agent, sessionPrefix ?? null)
+      this.publishAgent(record, false)
+      return
+    }
     // Only the session it was shown to replace, still bound: one bound since, as the new
     // session's own first prompt binds it, stays.
     if (replaced === undefined || binding.sessionId !== replaced) return
@@ -2966,7 +2982,13 @@ export class Terminals {
     this.unwatch(record)
     this.rebound(record)
     if (record.summary.agent !== null) {
-      record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
+      record.summary = {
+        ...record.summary,
+        agent: null,
+        ready: this.readyOf(record),
+        activity: null,
+        telemetry: null,
+      }
       this.announce(record)
     }
     return true
@@ -2997,10 +3019,19 @@ export class Terminals {
 
   /** Applies what the bound session's own sources said, as its hooks' reports apply. */
   private sourceFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): void {
-    if (this.applyFact(record, fact)) this.publishAgent(record, false)
-    // What only its records say, as an interrupted turn, reaches messaging too.
-    if (this.trackRoot(record, [fact], false)) this.save(record, false)
-    this.messaging.observe(record.summary.id, [fact])
+    const applied = this.applyFact(record, fact)
+    if (applied) this.publishAgent(record, false)
+    // What only its records say, as an interrupted turn, reaches messaging too. A turn's
+    // end its records told does only where it ended the turn, with what the activity
+    // holds the turn left running, so the two tell the same.
+    const facts =
+      fact.type !== "turn-ended" || !fact.recorded
+        ? [fact]
+        : applied
+          ? [{ ...fact, background: record.activity?.background ?? { agents: 0, tasks: 0 } }]
+          : []
+    if (this.trackRoot(record, facts, false)) this.save(record, false)
+    this.messaging.observe(record.summary.id, facts)
     this.escaped(record)
   }
 
@@ -3154,18 +3185,25 @@ export class Terminals {
     // Detail changes where the summary may not: a revised request, a subject.
     this.detailed(record)
     const agent = record.binding?.agent ?? null
+    const ready = this.readyOf(record)
     const activity = record.binding && record.activity ? activitySummary(record.activity) : null
     const telemetry = record.binding && record.telemetry ? telemetrySummary(record.telemetry) : null
     const { summary } = record
     if (
       !moved &&
       summary.agent === agent &&
+      summary.ready === ready &&
       JSON.stringify(summary.activity) === JSON.stringify(activity) &&
       JSON.stringify(summary.telemetry) === JSON.stringify(telemetry)
     )
       return
-    record.summary = { ...summary, agent, activity, telemetry }
+    record.summary = { ...summary, agent, ready, activity, telemetry }
     this.announce(record)
+  }
+
+  /** The agent whose own prompt shows there, with NovaDeck's hooks, before any session bound. */
+  private readyOf(record: Record): AgentName | null {
+    return record.binding ? null : (this.messaging.shownAgent(record.summary.id) ?? null)
   }
 
   /** Shows a transcript on the record's fresh screen, ahead of its shell's output. */
@@ -3254,6 +3292,7 @@ export class Terminals {
         exit,
         process: null,
         agent: null,
+        ready: null,
         activity: null,
         telemetry: null,
       }

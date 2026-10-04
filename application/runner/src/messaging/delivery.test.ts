@@ -313,12 +313,31 @@ describe("a terminal's delivery state", () => {
     expect(waiting).toMatchObject({ state: "working", phase: "background", continued: 0 })
     // A background task's result starts a turn by itself, whose Stop ends it.
     expect(run(waiting, harness, stop).state).toBe("settled")
-    // Antigravity's subagents finishing, as its idle status line says, ends it too.
+    // Antigravity's idle status line lists its subagents, never a command it backgrounded,
+    // so it ends no wait, whatever it lists.
     expect(transition(waiting, idleWithWork)).toEqual(waiting)
-    expect(transition(waiting, { ...idle, at: at + 5 })).toMatchObject({
-      state: "settled",
-      since: at + 5,
+    expect(transition(waiting, { ...idle, at: at + 5 })).toEqual(waiting)
+  })
+
+  it("ends a turn its records told ended only while that turn still runs", () => {
+    // A recorded end comes only where the agent's activity took it as the turn's.
+    const recorded = { ...stop, recorded: true } as const
+    expect(transition(working, recorded).state).toBe("settled")
+    expect(transition(working, { ...recorded, background: true })).toMatchObject({
+      state: "working",
+      phase: "background",
     })
+    expect(transition(working, { ...ended, recorded: true }).state).toBe("unknown")
+    // Never one already over, waiting on its background work, or NovaDeck continued.
+    for (const from of [
+      settled,
+      unknown,
+      transition(working, background),
+      transition(working, continued),
+    ]) {
+      expect(transition(from, recorded)).toEqual(from)
+      expect(transition(from, { ...ended, recorded: true })).toEqual(from)
+    }
   })
 
   it("takes the person's Enter while only background work runs as a prompt, not one queued", () => {

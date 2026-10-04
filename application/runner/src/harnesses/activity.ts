@@ -1,7 +1,7 @@
 import type { AgentActivity } from "@novadeck/protocol"
 
 import type { Binding } from "./bindings.js"
-import type { ActivityEvent, PlanSource } from "./events.js"
+import type { ActivityEvent, Background, PlanSource } from "./events.js"
 import { ref } from "./harness.js"
 
 /** The reference clients know a subagent by. */
@@ -55,6 +55,8 @@ const maxText = 256
  * subagents stopped with it, so a start that arrives late is not taken for a new run.
  * `planning` is what the latest hook to name the agent's mode said, at `planningAt`.
  * `idled` says an idle status line, not a Stop, ended the latest turn, at `turnAt`.
+ * `background` is what the latest turn's end left running that wakes the agent once
+ * done, while it waits on that: the agent works on until it is over (see `summary`).
  */
 export type Activity = {
   readonly state: "working" | "idle"
@@ -68,10 +70,19 @@ export type Activity = {
   readonly plans: readonly Plan[]
   readonly turnAt: number
   readonly idled: boolean
+  readonly background: Background | null
+  /**
+   * Whether work a turn leaves running wakes the agent once done, as Claude Code's and
+   * Antigravity's does and Codex's never does: where nothing says what runs, its
+   * subagents still running count.
+   */
+  readonly wakes: boolean
+  /** The latest turn's id, where its harness names one. */
+  readonly turn: string | null
 }
 
 /** A freshly bound agent waits for its first prompt. */
-export const started = (at: number): Activity => ({
+export const started = (at: number, wakes = true): Activity => ({
   state: "idle",
   pending: [],
   subagents: [],
@@ -82,7 +93,23 @@ export const started = (at: number): Activity => ({
   plans: [],
   turnAt: at,
   idled: false,
+  background: null,
+  wakes,
+  turn: null,
 })
+
+/**
+ * What a turn's end leaves the agent waiting on: what its harness `said`, else the
+ * subagents still running where their end wakes it; null for nothing.
+ */
+const waiting = (
+  { wakes }: Activity,
+  subagents: readonly Subagent[],
+  said?: Background,
+): Background | null => {
+  const background = said ?? { agents: wakes ? subagents.length : 0, tasks: 0 }
+  return background.agents + background.tasks > 0 || background.more ? background : null
+}
 
 const end = (ended: Activity["ended"], ids: readonly string[], at: number): Activity["ended"] =>
   [...ended.filter(({ id }) => !ids.includes(id)), ...ids.map((id) => ({ id, at }))].slice(
@@ -283,17 +310,30 @@ export const apply = (
         pending: outliving(activity.pending, activity.subagents),
         turnAt: event.startedAt,
         idled: false,
+        background: null,
+        turn: event.turn ?? null,
       }
-    case "turn-idle":
-      // Idle after the turn's Stop says nothing new; without one, the turn ended abnormally.
-      if (activity.state !== "working") return undefined
+    case "turn-idle": {
+      // Idle after the turn's Stop says nothing new of the turn; without one, the turn
+      // ended abnormally. Newer than the Stop, it counts the subagents still running of
+      // what that Stop left; it never ends the wait, as it never lists a command left
+      // running (Antigravity's), whose end wakes the agent all the same.
+      if (activity.state !== "working") {
+        const { background } = activity
+        const { agents } = event.background
+        if (!background || event.startedAt <= activity.turnAt || background.agents === agents)
+          return undefined
+        return { ...activity, background: { ...background, agents } }
+      }
       return {
         ...activity,
         state: "idle",
         pending: outliving(activity.pending, activity.subagents),
         turnAt: event.startedAt,
         idled: true,
+        background: waiting(activity, activity.subagents, event.background),
       }
+    }
     case "turn-escaped":
       // The turn may be over, as delivery takes it: idle, its requests settled, until a
       // later hook moves it on. No working status line resumes it.
@@ -304,6 +344,7 @@ export const apply = (
         pending: outliving(activity.pending, activity.subagents),
         turnAt: event.startedAt,
         idled: false,
+        background: waiting(activity, activity.subagents),
       }
     case "turn-working":
       // Working after the idle that ended its turn, and newer than it: that idle was stale,
@@ -313,14 +354,32 @@ export const apply = (
         return undefined
       return { ...activity, state: "working", idled: false }
     case "turn-ended": {
-      const turn = { state: "idle", turnAt: event.startedAt, idled: false } as const
+      // Its records end only the turn still running, and leave its fence where it was, so
+      // the hook's own Stop, should it come after all, still says what the turn left.
+      const { recorded, turn: named } = event
+      if (
+        recorded &&
+        (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
+      )
+        return undefined
+      const turn = {
+        state: "idle",
+        turnAt: recorded ? activity.turnAt : event.startedAt,
+        idled: false,
+      } as const
       if (event.outcome !== "interrupted")
-        return { ...activity, ...turn, pending: outliving(activity.pending, activity.subagents) }
+        return {
+          ...activity,
+          ...turn,
+          pending: outliving(activity.pending, activity.subagents),
+          background: waiting(activity, activity.subagents, event.background),
+        }
       const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
       const subagents = activity.subagents.filter((subagent) => !stopped.includes(subagent))
       return {
         ...activity,
         ...turn,
+        background: waiting(activity, subagents, event.background),
         // The subagents it ended wait on the person no longer.
         pending: outliving(activity.pending, subagents),
         subagents,
@@ -381,9 +440,22 @@ const asked = (
   }
 }
 
-/** The activity as clients see it. */
-export const summary = ({ state, pending, subagents, planning }: Activity): AgentActivity => ({
+/**
+ * The activity as clients see it: working while its turn runs, and after it while what
+ * the turn left running, which wakes it, runs on.
+ */
+export const summary = ({
   state,
+  pending,
+  subagents,
+  planning,
+  background,
+}: Activity): AgentActivity => ({
+  state: state === "working" || background !== null ? "working" : "idle",
+  background:
+    state === "working" || !background
+      ? null
+      : { agents: background.agents, tasks: background.tasks },
   planning,
   attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
   subagents: subagents.map(({ id, type }) => ({ id: subagentRef(id), type })),

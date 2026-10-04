@@ -13,7 +13,7 @@
  * Working has three phases: a root `turn` running; `continuing`, after a Stop NovaDeck
  * continued, until the continuation's first prompt; and `background`, when only work a
  * turn started still runs after its Stop (Claude Code's background tasks, Antigravity's
- * subagents). Only in a turn, or continuing, is the person's Enter a prompt their harness
+ * subagents and commands), until the turn its end starts, or the person's. Only in a turn, or continuing, is the person's Enter a prompt their harness
  * queues; in the background it submits one at once. A turn keeps `turnAt`, as the
  * agent's activity does (`harnesses/activity.ts`), so an idle status line older than it
  * belongs to a turn already over.
@@ -155,6 +155,8 @@ export type KeyKind = "enter" | "queue" | "neutral" | "escape" | "accept" | "con
  * - `stop`: a normal root Stop, which NovaDeck `continued` or not, with work the turn
  *   started still running in the `background`;
  * - `ended`: a root turn ended abnormally: an Esc, a denial, a failure;
+ * - either `recorded`: told by the session's own records where its hook's report never
+ *   came, which ends only a turn still running, never one already ended or continuing;
  * - `idle`: the agent shows idle however its turn ended, with work still running in the
  *   `background` or not, as Antigravity's status line does, its hook started at `startedAt`;
  * - `working`: the agent shows working, as Antigravity's status line does, which resumes
@@ -180,8 +182,9 @@ export type DeliveryEvent =
       readonly continued: boolean
       readonly background: boolean
       readonly at: number
+      readonly recorded?: true
     }
-  | { readonly type: "ended" }
+  | { readonly type: "ended"; readonly recorded?: true }
   | {
       readonly type: "idle"
       readonly background: boolean
@@ -497,6 +500,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
         : started
     }
     case "stop": {
+      if (event.recorded && phase !== "turn") return delivery
       if (!stoppable(delivery)) return delivery
       if (event.continued)
         return working(delivery, "continuing", { continued: delivery.continued + 1 })
@@ -513,11 +517,15 @@ export const transition = (delivery: Delivery, event: DeliveryEvent): Delivery =
       return ended({ ...delivery, box: queued }, event.at)
     }
     case "ended":
+      if (event.recorded && phase !== "turn") return delivery
       // The turn's counts stay, as a Stop that raced this end is still that turn's.
       return { ...counts(delivery), state: "unknown" }
     case "idle": {
-      // Its background work finished: the turn it ran after is over.
-      if (phase === "background") return event.background ? delivery : ended(delivery, event.at)
+      // Waiting on its background work, as an idle status line shows it does: only the
+      // turn that work wakes, or the person's, ends the wait. The status line lists its
+      // subagents, never a command it backgrounded (Antigravity's), so none listed says
+      // nothing.
+      if (phase === "background") return delivery
       // After the turn's Stop, idle says nothing new, nor does one drawn before the turn
       // (its hook started before the turn's); otherwise the turn ended without one,
       // keeping its counts for a Stop that arrives late, or a working status line newer

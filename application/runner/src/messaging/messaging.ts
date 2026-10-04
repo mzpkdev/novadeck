@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { DomainError } from "../errors.js"
 import type { Binding } from "../harnesses/bindings.js"
-import type { ActivityEvent, HarnessEvent } from "../harnesses/events.js"
+import type { ActivityEvent, Background, HarnessEvent } from "../harnesses/events.js"
 import { agents as allAgents, harnesses } from "../harnesses/registry.js"
 import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import type { HookAnswer } from "../shell/reports.js"
@@ -174,6 +174,10 @@ const refusalOfText = (text: string): string | undefined => {
 
 /** A lease is given only with this long left before its hook's deadline, in milliseconds. */
 export const leaseMargin = 300
+
+/** Whether work a turn left running runs on, to wake its agent: delivery's `background`. */
+const runsOn = (background: Background | undefined): boolean =>
+  background !== undefined && (background.agents + background.tasks > 0 || background.more === true)
 
 const sendRequest = z.strictObject({
   to: z.string().min(1).max(64),
@@ -453,7 +457,7 @@ export class Messaging {
     if (!root) return silent
     const time = report.deadline - this.now() >= leaseMargin
     if (stop) {
-      const background = stop.background === true
+      const background = runsOn(stop.background)
       const lease = time && continues(live.delivery) && this.lease(live, root, "stop", background)
       this.step(live, { type: "stop", continued: Boolean(lease), background, at: this.now() })
       return lease ? { leaseId: lease.id, stdout: profile.stop(lease.text) } : silent
@@ -1029,7 +1033,9 @@ export class Messaging {
         agent: peer.root?.agent ?? peer.shown?.agent ?? null,
         expecting: peer.root || peer.shown ? null : peer.expecting,
         untrusted: peer.root || peer.shown ? null : peer.untrusted,
-        busy: peer.delivery.state === "working",
+        // Working as its terminal shows it too: waiting on what its turn left running,
+        // as after an Esc, is no delivery phase.
+        busy: peer.delivery.state === "working" || about(peer.terminalId)?.working === true,
         where: about(peer.terminalId),
         withYou: lastBetween(this.messages.values(), live.terminalId, peer),
       }),
@@ -1260,15 +1266,16 @@ export class Messaging {
           this.step(live, {
             type: "stop",
             continued: false,
-            background: event.background === true,
+            background: runsOn(event.background),
             at: this.now(),
+            ...(event.recorded && { recorded: true }),
           })
-        else this.step(live, { type: "ended" })
+        else this.step(live, { type: "ended", ...(event.recorded && { recorded: true }) })
         return
       case "turn-idle":
         this.step(live, {
           type: "idle",
-          background: event.background,
+          background: runsOn(event.background),
           at: this.now(),
           startedAt: event.startedAt,
         })

@@ -120,6 +120,9 @@ export const codex = {
   transcripts,
   plans: rolloutPlans,
   // Its hooks and rollout; see docs/harness-coverage.md.
+  // Nothing it starts wakes it once its turn has ended (probed 2026-10-02, 0.159.3): a
+  // subagent or a command left running finishes with the root idle.
+  wakes: false,
   coverage: {
     session: "partial",
     activity: "partial",

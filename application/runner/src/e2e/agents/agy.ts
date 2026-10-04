@@ -118,6 +118,23 @@ export const agy: AgentSetup = {
       ],
     }),
     owns: (call) => call.system.includes(subagent),
+    // `run_command` waiting its least, 500 ms, then backgrounding the command: its Stop
+    // says it isn't fully idle, its status line lists no subagent, and the command's end
+    // wakes it with a message (probed 2026-10-04, 1.2.14).
+    command: (call, command) => ({
+      calls: [
+        {
+          name: "run_command",
+          input: {
+            CommandLine: command,
+            Cwd: workingDirectory(call),
+            WaitMsBeforeAsync: 500,
+            toolSummary: "Run a command",
+            toolAction: "Running",
+          },
+        },
+      ],
+    }),
   },
   // "Do you trust the contents of this project?", its status line initializing meanwhile,
   // with trusting it selected.

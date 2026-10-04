@@ -54,6 +54,7 @@ export type FolderQuestion = {
 export type Trait =
   | "approval"
   | "background"
+  | "background.command"
   | "trust.folder"
   | "trust.hooks"
   | "shell"
@@ -89,6 +90,11 @@ export type Background = {
   readonly start: (call: Call) => Reply
   /** Whether a call is the background work's own, rather than the agent's turn. */
   readonly owns: (call: Call) => boolean
+  /**
+   * A reply that has the agent run `command` through its shell tool in the background,
+   * without asking, its turn going on and ending while it runs, given the call it answers.
+   */
+  readonly command?: (call: Call, command: string) => Reply
 }
 
 /**
