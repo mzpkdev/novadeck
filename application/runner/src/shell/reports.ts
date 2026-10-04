@@ -165,6 +165,23 @@ const relayStart = '{"relay":2,'
 const maxSessionLine = 1_048_576
 
 /**
+ * The answer to a line too long to take, as a request with the id its start names, so the
+ * call it was gets an answer and the session goes on.
+ */
+const tooLong = (start: string): string => {
+  const named = /"id"\s*:\s*(-?\d+|"(?:[^"\\]|\\.)*")/.exec(start.slice(0, 4096))?.[1]
+  let id: unknown = null
+  try {
+    id = named === undefined ? null : JSON.parse(named)
+  } catch {
+    // Unreadable: answered without one.
+  }
+  const message =
+    "The request is over 1 MiB, more than NovaDeck takes; put long content in a file and pass its path."
+  return JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32600, message } })
+}
+
+/**
  * Serves one agent's MCP session over a relay's connection, from `rest`, what came after
  * the relay's first line: each line the agent sent is answered with a line, as it is
  * done, so a slow call holds up no other. Once the relay sends its end, the session
@@ -195,6 +212,8 @@ const serveSession = (socket: Socket, rest: string, call: McpCall | undefined): 
         settle()
       })
   }
+  // Whether the line under way was too long to take, and what is left of it goes unread.
+  let skipping = false
   const read = (chunk: string) => {
     buffer += chunk
     let end
@@ -202,9 +221,14 @@ const serveSession = (socket: Socket, rest: string, call: McpCall | undefined): 
       const line = buffer.slice(0, end).trim()
       buffer = buffer.slice(end + 1)
       if (ended) return
-      take(line)
+      if (skipping) skipping = false
+      else take(line)
     }
-    if (buffer.length > maxSessionLine) socket.destroy()
+    if (!skipping && buffer.length > maxSessionLine) {
+      skipping = true
+      if (socket.writable) socket.write(`${tooLong(buffer)}\n`)
+    }
+    if (skipping) buffer = ""
   }
   socket.on("data", read)
   // A relay that went away without its end has nothing more to answer.
@@ -310,13 +334,13 @@ export const listenForReports = async (
     // which counts once its answer named the lease it acknowledges.
     let text = rest
     let lease: string | undefined
+    // Whether the acknowledgement was taken, or none can come; nothing more is read.
+    let done = false
     const take = (from: { terminalId: string; token: string }) => {
       if (lease === undefined) return
       const end = text.indexOf("\n")
-      if (end < 0) {
-        if (text.length > maxBytes) socket.destroy()
-        return
-      }
+      if (end < 0) return
+      done = true
       socket.end()
       let ack: unknown
       try {
@@ -329,7 +353,10 @@ export const listenForReports = async (
     }
     const from = sender(value)
     socket.on("data", (chunk: string) => {
+      if (done) return
       text += chunk
+      // An acknowledgement is one short line.
+      if (text.length > maxBytes) return socket.destroy()
       if (from) take(from)
     })
     const hook = from && (await relayHook(value).catch(() => undefined))
@@ -347,6 +374,7 @@ export const listenForReports = async (
     if (!socket.writable) return
     socket.write(`${JSON.stringify(answer)}\n`)
     if (!from || answer.leaseId === null) {
+      done = true
       socket.end()
       return
     }

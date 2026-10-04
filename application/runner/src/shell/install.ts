@@ -66,27 +66,66 @@ export const installShellFiles = async (
  * renamed over it, which POSIX allows, and Windows once the running one is moved aside;
  * copies moved aside earlier go once nothing runs them.
  */
-const installRelay = async (relay: string, path: string): Promise<void> => {
+export const installRelay = async (
+  relay: string,
+  path: string,
+  { platform = process.platform, files = relayFiles }: RelayInstall = {},
+): Promise<void> => {
   const [binary, current] = await Promise.all([
-    readFile(relay),
-    readFile(path).catch(() => undefined),
+    files.readFile(relay),
+    files.readFile(path).catch(() => undefined),
   ])
   const folder = dirname(path)
   const aside = `${basename(path)}.old-`
-  for (const name of await readdir(folder)) {
+  for (const name of await files.readdir(folder)) {
+    if (!name.startsWith(aside)) continue
     // eslint-disable-next-line no-await-in-loop -- Rarely more than one; a running one stays.
-    if (name.startsWith(aside)) await rm(join(folder, name), { force: true }).catch(() => {})
+    await files.rm(join(folder, name), { force: true }).catch(() => {})
   }
-  if (current?.equals(binary)) {
-    await chmod(path, 0o700)
+  if (current !== undefined && Buffer.from(current).equals(binary)) {
+    await files.chmod(path, 0o700)
     return
   }
   const temporary = `${path}.${process.pid}.tmp`
-  await writeFile(temporary, binary, { mode: 0o700 })
-  if (process.platform === "win32" && current !== undefined) {
-    await rename(path, join(folder, `${aside}${Date.now()}`))
+  await files.writeFile(temporary, binary, { mode: 0o700 })
+  const moved =
+    platform === "win32" && current !== undefined && join(folder, `${aside}${Date.now()}`)
+  if (moved) await files.rename(path, moved)
+  try {
+    await settled(() => files.rename(temporary, path))
+  } catch (error) {
+    // The running copy goes back, so agents keep a relay until the next start.
+    if (moved) await files.rename(moved, path).catch(() => {})
+    await files.rm(temporary, { force: true }).catch(() => {})
+    throw error
   }
-  await rename(temporary, path)
+}
+
+/** What installing the relay touches, for tests. */
+type RelayFiles = {
+  readFile(path: string): Promise<Uint8Array>
+  readdir(path: string): Promise<string[]>
+  rm(path: string, options: { force: true }): Promise<void>
+  chmod(path: string, mode: number): Promise<void>
+  writeFile(path: string, data: Uint8Array, options: { mode: number }): Promise<void>
+  rename(from: string, to: string): Promise<void>
+}
+
+type RelayInstall = { readonly platform?: NodeJS.Platform; readonly files?: RelayFiles }
+
+const relayFiles: RelayFiles = { readFile, readdir, rm, chmod, writeFile, rename }
+
+// Windows refuses a rename for a moment while something, as a virus scanner, holds the
+// file just written; a few tries a little apart see it through.
+const settled = async (move: () => Promise<void>, tries = 5): Promise<void> => {
+  try {
+    await move()
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (tries <= 1 || !["EPERM", "EBUSY", "EACCES"].includes(code ?? "")) throw error
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await settled(move, tries - 1)
+  }
 }
 
 // cmd's `for` gives a path's short name, as Windows keeps one on most volumes; a path

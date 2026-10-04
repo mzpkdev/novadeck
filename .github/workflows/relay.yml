@@ -9,10 +9,13 @@ name: Relay
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    # What the source's hash covers (see application/relay/scripts/build.ts), and this.
     paths:
       - application/relay/Cargo.toml
       - application/relay/Cargo.lock
       - application/relay/src/**
+      - application/relay/.cargo/**
+      - application/relay/scripts/build.ts
       - .github/workflows/relay.yml
   workflow_dispatch:
 

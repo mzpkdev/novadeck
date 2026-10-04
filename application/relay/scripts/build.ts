@@ -63,11 +63,27 @@ export const sourceHash = (files: readonly { path: string; text: string }[]): st
   return hash.digest("hex")
 }
 
+/**
+ * Every file the binary is built from, relative to the package: the crate, cargo's own
+ * configuration, as its flags shape the binary, and this script, which picks each
+ * platform's target, merges macOS's and signs it.
+ */
+export const sourcePaths = async (folder = root): Promise<string[]> => {
+  const under = async (directory: string, keep: (path: string) => boolean) =>
+    (await readdir(join(folder, directory), { recursive: true }).catch(() => []))
+      .filter(keep)
+      .map((path) => join(directory, path))
+  return [
+    "Cargo.toml",
+    "Cargo.lock",
+    ...(await under("src", (path) => path.endsWith(".rs"))),
+    ...(await under(".cargo", (path) => path.endsWith(".toml"))),
+    join("scripts", "build.ts"),
+  ]
+}
+
 const readSource = async (): Promise<string> => {
-  const sources = (await readdir(join(root, "src"), { recursive: true }))
-    .filter((path) => path.endsWith(".rs"))
-    .map((path) => join("src", path))
-  const paths = ["Cargo.toml", "Cargo.lock", ...sources]
+  const paths = await sourcePaths()
   return sourceHash(
     await Promise.all(
       paths.map(async (path) => ({ path, text: await readFile(join(root, path), "utf8") })),

@@ -257,23 +257,32 @@ if ($env:NOVADECK_RESUME) {
 // hooks and MCP messages to the runner of the terminal it runs in, or, outside NovaDeck's
 // terminals, answers itself: for the MCP server, the handshake with no tools. Its copy
 // lives here, beside them, so it stays when the app's own folder goes (an AppImage's
-// mount, a portable build's unpacked copy). The MCP server answers as this version of
-// it: its plugin's version, then the MCP versions it speaks, newest first.
+// mount, a portable build's unpacked copy). The hook is told which events ask, by agent,
+// as each waits longer for its answer; the MCP server answers as this version of it: its
+// plugin's version, then the MCP versions it speaks, newest first.
+export const askingHooks = agents
+  .map((agent) => `${agent}=${Object.keys(harnesses[agent].messaging.asks).join(",")}`)
+  .join(";")
+
 const relayArguments = {
-  hook: ["hook"],
+  hook: ["hook", "--asks", askingHooks],
   mcp: ["mcp", plugin.version, ...mcpVersions],
 } as const
+
+// Each argument as it is, or quoted where the shell would read more into it.
+const relayLine = (mode: keyof typeof relayArguments, quote: (value: string) => string) =>
+  relayArguments[mode].map((each) => (/^[\w.-]+$/.test(each) ? each : quote(each))).join(" ")
 
 const posixLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
   `#!/bin/sh
 ${header("#", what)}
-exec ${shQuote(relay)} ${relayArguments[mode].join(" ")} "$@"
+exec ${shQuote(relay)} ${relayLine(mode, shQuote)} "$@"
 `
 
 const cmdLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
   `@echo off
 ${header("rem", what)}
-${cmdQuote(relay)} ${relayArguments[mode].join(" ")} %*
+${cmdQuote(relay)} ${relayLine(mode, cmdQuote)} %*
 `
 
 export type ShellFile = { readonly path: string; readonly content: string; readonly mode: number }

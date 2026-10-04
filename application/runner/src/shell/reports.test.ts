@@ -368,6 +368,34 @@ describe("relay sessions", () => {
     expect(Date.now() - began).toBeLessThan(5_000)
   })
 
+  it("answers a line too long to take as an error, and goes on", async ({ resources }) => {
+    const calls: Call[] = []
+    const reports = await listenForReports(
+      handlers({ call: async (asked) => (calls.push(asked), { ok: true }) }),
+    )
+    resources.defer(() => reports.close())
+    const huge = rpc({
+      id: 9,
+      method: "tools/call",
+      params: { name: "send", arguments: { to: "t2", text: "x".repeat(1_100_000) } },
+    })
+    const answers = await relay(reports.endpoint, [
+      hello(),
+      huge,
+      rpc({ id: 10, method: "ping" }),
+      end,
+    ])
+    expect(answers).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 9,
+        error: { code: -32600, message: expect.stringContaining("over 1 MiB") },
+      },
+      { jsonrpc: "2.0", id: 10, result: {} },
+    ])
+    expect(calls).toEqual([])
+  })
+
   it("ends the sessions still open when it closes", async () => {
     const reports = await listenForReports(handlers({}))
     const session = relay(reports.endpoint, [hello(), rpc({ id: 1, method: "ping" })], {

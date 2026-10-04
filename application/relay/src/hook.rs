@@ -16,9 +16,21 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::{ancestors, endpoint, status_line};
 
-/// How long a hook may take, from its start: the longest any hook waits, for Claude
-/// Code's status line; the runner answers the others well within it.
-const LIMIT: Duration = Duration::from_millis(5_000);
+/// How long a hook may take, from its start: Claude Code's status line the longest, as
+/// it runs the person's own; a hook that asks, long enough for the runner to lease and
+/// answer by its deadline; any other only reports, which the runner answers at once.
+pub fn limit(agent: &str, event: &str, asks: &str) -> Duration {
+    let asking = asks.split(';').any(|each| {
+        each.split_once('=').is_some_and(|(named, events)| {
+            named == agent && events.split(',').any(|one| one == event)
+        })
+    });
+    Duration::from_millis(match (agent, event) {
+        ("claude", "StatusLine") => 5_000,
+        _ if asking => 4_000,
+        _ => 2_000,
+    })
+}
 
 /// The most of an agent's payload the hook takes; past it, it reports nothing.
 const MAX_PAYLOAD: u64 = 1_000_000;
@@ -55,18 +67,28 @@ pub fn fallback(agent: &str, event: &str) -> &'static str {
     }
 }
 
-fn print(text: &str) {
-    let mut stdout = io::stdout().lock();
-    let _ = stdout.write_all(text.as_bytes());
-    let _ = stdout.flush();
+/// Prints what the agent needs, whether or not it got there.
+fn say(text: &str) {
+    let _ = print(text);
 }
 
-pub fn run(agent: &str, event: &str) {
+/// Prints `text`, saying whether all of it reached the agent.
+fn print(text: &str) -> bool {
+    let mut stdout = io::stdout().lock();
+    stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+        .is_ok()
+}
+
+/// Runs the hook for `agent`'s `event`; `asks` names the events that ask, by agent, as
+/// `claude=Stop,UserPromptSubmit;agy=Stop,PreInvocation`.
+pub fn run(agent: &str, event: &str, asks: &str) {
     // When the hook started, in wall-clock milliseconds: a later hook reports a larger one.
     let seq = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |since| since.as_secs_f64() * 1000.0);
-    let deadline = Instant::now() + LIMIT;
+    let deadline = Instant::now() + limit(agent, event, asks);
     // The agent's payload, read whole even where it goes unused, so the agent never
     // writes into a closed pipe; within the hook's limit, as an agent may leave it open.
     let payload = read_input(deadline);
@@ -77,10 +99,10 @@ pub fn run(agent: &str, event: &str) {
     ]
     .map(|name| env::var(name).ok().filter(|value| !value.is_empty()));
     let [Some(terminal), Some(endpoint), Some(token)] = terminal else {
-        return print(fallback(agent, event));
+        return say(fallback(agent, event));
     };
     let Some(payload) = payload.filter(|_| AGENTS.contains(&agent)) else {
-        return print(fallback(agent, event));
+        return say(fallback(agent, event));
     };
     let payload = String::from_utf8_lossy(&payload).into_owned();
     let variable = |name: &str| env::var(name).ok().filter(|value| !value.is_empty());
@@ -106,18 +128,19 @@ pub fn run(agent: &str, event: &str) {
         .enable_all()
         .build()
     else {
-        return print(fallback(agent, event));
+        return say(fallback(agent, event));
     };
     runtime.block_on(async {
         let left = deadline.saturating_duration_since(Instant::now());
         let asked = tokio::time::timeout(left, ask(&endpoint, format!("{message}\n"))).await;
         let Ok(Some((answer, mut to_runner))) = asked else {
-            return print(fallback(agent, event));
+            return say(fallback(agent, event));
         };
         if let Some(stdout) = &answer.stdout {
-            print(stdout);
-            // Printed: what the lease delivers has reached the agent.
-            if let Some(lease) = &answer.lease {
+            // Printed: what the lease delivers has reached the agent. Otherwise the lease
+            // lapses, and the runner delivers its messages again.
+            let printed = print(stdout);
+            if let Some(lease) = answer.lease.as_ref().filter(|_| printed) {
                 let ack = format!("{}\n", json!({ "ack": lease }));
                 let sent = async {
                     to_runner.write_all(ack.as_bytes()).await?;
@@ -130,10 +153,7 @@ pub fn run(agent: &str, event: &str) {
         let own = answer
             .status_line
             .map(|command| status_line::run(&command, payload.as_bytes(), deadline));
-        match own {
-            Some(printed) => print(&printed),
-            None => print(fallback(agent, event)),
-        }
+        say(own.as_deref().unwrap_or_else(|| fallback(agent, event)));
     });
     runtime.shutdown_background();
 }
@@ -206,6 +226,19 @@ mod tests {
         assert_eq!(fallback("agy", "Stop"), "{}\n");
         assert_eq!(fallback("claude", "Stop"), "");
         assert_eq!(fallback("codex", "PreToolUse"), "");
+    }
+
+    #[test]
+    fn gives_each_hook_the_time_it_had() {
+        let asks = "claude=Stop,UserPromptSubmit;agy=Stop,PreInvocation";
+        let ms = |agent, event| limit(agent, event, asks).as_millis();
+        assert_eq!(ms("claude", "StatusLine"), 5_000);
+        assert_eq!(ms("claude", "Stop"), 4_000);
+        assert_eq!(ms("agy", "PreInvocation"), 4_000);
+        assert_eq!(ms("agy", "UserPromptSubmit"), 2_000);
+        assert_eq!(ms("codex", "Stop"), 2_000);
+        assert_eq!(ms("claude", "PostToolUse"), 2_000);
+        assert_eq!(limit("claude", "Stop", "").as_millis(), 2_000);
     }
 
     #[test]

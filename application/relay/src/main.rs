@@ -13,16 +13,21 @@ mod status_line;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: novadeck-relay mcp <server-version> <protocol-version>...\n       novadeck-relay hook <agent> [event]";
+const USAGE: &str = "usage: novadeck-relay mcp <server-version> <protocol-version>...\n       novadeck-relay hook [--asks <agent=Event,…;…>] <agent> [event]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
         // A hook always succeeds, so its agent never treats NovaDeck as failing.
         Some((mode, rest)) if mode == "hook" => {
+            // Which hooks ask, as the runner's launcher names them.
+            let (asks, rest) = match rest {
+                [flag, asks, rest @ ..] if flag == "--asks" => (asks.as_str(), rest),
+                _ => ("", rest),
+            };
             let agent = rest.first().map_or("", String::as_str);
             let event = rest.get(1).map_or("", String::as_str);
-            hook::run(agent, event);
+            hook::run(agent, event, asks);
             ExitCode::SUCCESS
         }
         Some((mode, rest)) if mode == "mcp" => match rest.split_first() {
