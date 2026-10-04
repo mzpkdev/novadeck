@@ -501,23 +501,41 @@ describe("hiding terminals from Grid and Canvas", () => {
     })
   })
 
-  for (const name of ["Grid", "Canvas"] as const) {
-    context(`when nothing is selected in ${name}`, () => {
-      it("shows every terminal at full opacity", async () => {
-        await openWorkspace()
-        await chooseView(name)
-        await terminalTab("Tests").click()
-        await expectSelected("Tests")
-        await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(0.5, 1)
+  context("in Grid", () => {
+    it("shows every terminal at full opacity, selected or not", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+      await terminalTab("Tests").click()
+      await expectSelected("Tests")
+      await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
+      expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
 
-        await press("{Escape}")
+      await press("{Escape}")
 
-        await expectNothingSelected()
-        await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
-        expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
-      })
+      await expectNothingSelected()
+      expect(renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
+      expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
     })
+  })
 
+  context("in Canvas", () => {
+    it("fades the terminals not selected, until nothing is", async () => {
+      await openWorkspace()
+      await chooseView("Canvas")
+      await terminalTab("Tests").click()
+      await expectSelected("Tests")
+      await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(0.5, 1)
+      expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
+
+      await press("{Escape}")
+
+      await expectNothingSelected()
+      await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
+      expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
+    })
+  })
+
+  for (const name of ["Grid", "Canvas"] as const) {
     context(`when a hidden terminal is selected in ${name}`, () => {
       it("shows it at half the opacity of a selected visible terminal", async () => {
         await openWorkspace()
