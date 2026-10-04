@@ -282,7 +282,8 @@ after a first image pasted with Ctrl+Shift+V, so it never asks. On macOS ⌘V pa
 Ctrl+V stays the program's. In the desktop app, a file or folder copied in a file
 manager pastes its own path, whatever its size, so an agent edits the file itself; a
 Windows name with anything but letters, digits, spaces and `.`, `_`, `-`, such as
-`&`, `%` or the brackets of `Screenshot (1).png`, goes as a copy instead. On macOS that path may be in a folder the system protects, such as
+`&`, `%` or the brackets of `Screenshot (1).png`, or with a space before a `-`, as in
+`Report - Final.pdf`, goes as a copy instead. On macOS that path may be in a folder the system protects, such as
 Desktop, Documents or Downloads, so a program in the terminal may need macOS's
 permission to read it, where a copy needed none. The runner saves a copy of anything else (a screenshot, an image from a
 page, any file pasted in a browser) on its own machine, readable by its owner only, under a name of letters, digits and `.`, `_`, `-` or spaces, in an `uploads`
