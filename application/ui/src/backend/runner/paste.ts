@@ -56,18 +56,19 @@ const windowsPath = (path: string): boolean => /^(?:[A-Za-z]:[\\/]|\\\\)/.test(p
 
 // A path as a shell reads it as one word: backslashes before its special characters,
 // `^` among them for zsh's extended globs, or on Windows, where a backslash separates
-// folders, in double quotes.
+// folders, in double quotes when it has a space.
 export const shellPath = (path: string): string => {
-  if (windowsPath(path)) return `"${path}"`
+  if (windowsPath(path)) return /\s/.test(path) ? `"${path}"` : path
   return path.replace(/([ \t"'`\\()&;|<>$!*?[\]{}#~^])/g, "\\$1")
 }
 
-// What a Windows path may hold to go in as itself: letters but the spacing modifier
-// letters (U+02B0 to U+02FF), which a conversion to the system's code page can turn into
-// quotes, marks, digits, spaces, and what cmd and PowerShell both read literally inside
-// double quotes. Not `%`, `!`, `$`, backticks or quotes, which they expand or end the
-// quotes on, nor `[` `]`, which PowerShell takes as wildcards.
-const windowsSafe = /^(?:(?![\u02b0-\u02ff])[\p{L}\p{M}\p{N} ._\-\\:()&',;@#+=~^{}])+$/u
+// What a Windows path may hold to go in as itself: letters, marks and digits, spaces, and
+// `.`, `_`, `-`, `\`, `:`, which mean nothing to cmd or PowerShell wherever the quotes
+// end up: PowerShell drops them around a word without a space as it runs a `.cmd`, and
+// a paste into a quote already open pairs them wrongly. Not the spacing modifier letters
+// (U+02B0 to U+02FF) or the combining diacritics (U+0300 to U+036F), some of which a
+// conversion to the system's code page turns into a quote.
+const windowsSafe = /^(?:(?![\u02b0-\u036f])[\p{L}\p{M}\p{N} ._\-\\:])+$/u
 
 // A file's own path as a shell reads it as one word, or undefined where it can't go in
 // safely, and a copy goes instead: one with a control character, and on Windows, whose

@@ -53,10 +53,11 @@ A file copied in a file manager pastes its own path, so names chosen outside Nov
 such as a downloaded file's, now reach the terminal's shell. They go in inert or not at
 all (`ownPath` in `application/ui/src/backend/runner/paste.ts`): a path with a control
 character never does; a POSIX path has a backslash before every character a shell
-splits, expands or globs on; a Windows path goes in double quotes, and only when every
-character is one cmd and PowerShell both read literally there, so no `%`, `!`, `$`,
-backtick, quote, `[` or `]`, and no modifier letter, which a code-page conversion can
-turn into a quote. A path that fails these rules is uploaded instead, under the
+splits, expands or globs on; a Windows path goes in only when every character is a
+letter, mark, digit, space, `.`, `_`, `-`, `\` or `:`, which mean nothing to cmd or
+PowerShell even where its quotes are lost (PowerShell running a `.cmd`, or a paste into
+a quote already open), and in double quotes when it has a space; no spacing modifier
+letter or combining diacritic, which a code-page conversion can turn into a quote. A path that fails these rules is uploaded instead, under the
 runner's own safe name.
 
 ## Terminal Runner
