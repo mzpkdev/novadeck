@@ -1,5 +1,6 @@
 {
-  "source": "a7a9e7a3be263face091f3cf1c03163e15942f5a7cbcdcf2f8df1bb483f620ed",
+  "source": "05f40f4a62fc6b285b724c7ebcd5a3aafc1e0b81d5188a7f5b3ddf62b8c4a8e2",
+  "release": "relay-05f40f4a62fc6b28-37230362549",
   "files": {
     "linux-x64": {
       "sha256": "504f6ca2753afa2697e1b59479af8024f82338f35ebf9b6062c4808868897c19"
@@ -11,7 +12,7 @@
       "sha256": "01d241095fcac2c3681adb2ec106921e43420790f8c973cbc63dbdcd08d850e6"
     },
     "win32-x64": {
-      "sha256": "c1264a1a6fce17be91f237087fb3be585b0e34023e1c90691b6a4fe0b1c6a851"
+      "sha256": "c83fc3783d087ebd72f600aab3a0dfb2ae46bffd4c2c09f66adc1750f8785621"
     }
   }
 }
