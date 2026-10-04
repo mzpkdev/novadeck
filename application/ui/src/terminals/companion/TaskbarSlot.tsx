@@ -34,6 +34,8 @@ export type SlotActions = {
   // Opens it in the pane, or hides the pane when it's what the pane shows.
   readonly activate: (key: BarKey) => void
   readonly open: (key: BarKey) => void
+  // The person looked at these in a peek without opening them.
+  readonly seen: (itemIds: readonly ItemId[]) => void
   readonly close: (member: BarMember) => void
   readonly sendBack: (member: BarMember) => void
   readonly undock: (member: BarMember) => void
@@ -213,6 +215,13 @@ export const TaskbarSlot = ({
         <span className="plan-tb-slot">
           <HoverCard
             className="plan-tb-peek"
+            // What was new in a peek the person looked at is new no more once it closes.
+            onOpenChange={(open) => {
+              const newKeys = slot.members.flatMap((member) =>
+                member.kind === "item" && isNew(member) ? [member.key] : [],
+              )
+              if (!open && newKeys.length) actions.seen(newKeys)
+            }}
             trigger={
               <button
                 ref={buttonRef}

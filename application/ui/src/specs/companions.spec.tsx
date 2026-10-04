@@ -1,5 +1,5 @@
 import { describe as context, describe, expect, it } from "vitest"
-import { page } from "vitest/browser"
+import { page, userEvent } from "vitest/browser"
 
 import { boxOf, canvasView, dragBackground, settled, viewBox } from "./support/canvas"
 import {
@@ -45,6 +45,24 @@ describe("A terminal's taskbar", () => {
     await expect
       .element(taskbarIcon("Build Studio", "2 files"), { timeout: 1000 })
       .toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("takes something new as seen once the person has peeked at it", async () => {
+    await openShowcase()
+    const icon = taskbarIcon("Build Studio", "Plan: A home for Studio")
+    await expect.element(icon).toHaveAttribute("data-state", "new")
+
+    await userEvent.hover(icon)
+    // The peek's card for it, still marked new while it shows.
+    await expect.element(page.getByRole("button", { name: "A home for Studio, new" })).toBeVisible()
+    await userEvent.unhover(icon)
+
+    await expect.element(icon).toHaveAttribute("data-state", "seen")
+    await expect
+      .element(
+        companionPane("Build Studio").getByText("src/content/projects.json", { exact: true }),
+      )
+      .toBeVisible()
   })
 
   context("when an item is closed from its menu", () => {

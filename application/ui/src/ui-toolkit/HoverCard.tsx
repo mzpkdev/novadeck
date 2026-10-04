@@ -6,6 +6,8 @@ export type HoverCardProps = {
   trigger: ReactElement
   children: ReactNode
   className?: string
+  // Told when the peek opens and when it closes.
+  onOpenChange?: (open: boolean) => void
 }
 
 // Whether a menu is open anywhere; a peek stays out of its way.
@@ -16,8 +18,18 @@ const menuOpen = (): boolean =>
 // pointer is on either, so what's in it can be clicked. Focus doesn't open it, so give
 // the trigger another way to what the peek offers, such as a menu. Pressing the right
 // button closes it before a context menu opens, and it doesn't open over a menu.
-export const HoverCard = ({ trigger, children, className }: HoverCardProps): React.JSX.Element => {
-  const [open, setOpen] = useState(false)
+export const HoverCard = ({
+  trigger,
+  children,
+  className,
+  onOpenChange,
+}: HoverCardProps): React.JSX.Element => {
+  const [open, show] = useState(false)
+  const setOpen = (next: boolean): void => {
+    if (next === open) return
+    show(next)
+    onOpenChange?.(next)
+  }
   const hovering = useRef(false)
   return (
     <ArkHoverCard.Root

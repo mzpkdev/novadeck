@@ -377,9 +377,10 @@ several of a kind (images, files, pages, or plans) stacked under one; only Messa
 never stack. A markdown file the agent shows reads as a document, formatted like a plan
 with its outline, but read-only: it's the agent's file, not a plan to edit or note (the
 demo's Codex has shown `docs/brand-voice.md`). The mark under an icon says whether it's
-new, showing, or seen; something new hops once, and nothing opens on its own unless you
-asked for it. Hover an icon to peek: a card per thing behind it, each a preview, its
-name and the same mark, with no copy. Click an icon or a card to open it, click the icon
+new, showing, or seen: something new gets a dot, quietly, and nothing opens on its own
+unless you asked for it. Hover an icon to peek: a card per thing behind it, each a
+preview, its name and the same mark, with no copy. Once you've peeked, what was new is
+seen, without opening it. Click an icon or a card to open it, click the icon
 again (or press Escape) to hide the pane, and close from a card's corner button or the
 icon's right-click. Closing a plan or Messages on its own terminal's bar hides it: the
 plan comes back with the agent's next version of it, Messages with the next message,
