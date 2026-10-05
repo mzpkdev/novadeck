@@ -33,7 +33,7 @@
     "conventional-changelog-conventionalcommits": "10.4.0",
     "msw": "^2.15.0",
     "oxfmt": "^0.71.0",
-    "oxlint": "^1.83.0",
+    "oxlint": "^1.86.0",
     "release-it": "21.1.0",
     "turbo": "^2.11.7",
     "typescript": "^7.0.2",
