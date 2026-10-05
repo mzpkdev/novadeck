@@ -20,42 +20,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Both check the relay's Rust too, with the toolchain it pins.
           - name: Format
             os: ubuntu-latest
-            relay: true
             command: npm run format:check
           - name: Lint
             os: ubuntu-latest
-            relay: true
             command: npm run lint
           - name: Typecheck
             os: ubuntu-latest
-            relay: true
             command: npm run typecheck
           - name: Test (Linux)
             os: ubuntu-latest
             browser: true
-            relay: true
             command: npm run test
           - name: Test (macOS)
             os: macos-latest
             browser: true
-            relay: true
             command: npm run test
           - name: Test (Windows)
             os: windows-latest
             browser: true
-            relay: true
             command: npm run test
           - name: Build
             os: ubuntu-latest
-            relay: true
             command: npm run build
-          # The binaries contributors download are the ones built from this source.
-          - name: Relay Pin
-            os: ubuntu-latest
-            command: node application/relay/scripts/build.ts --check
     steps:
       - name: Check Out Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,18 +55,13 @@ jobs:
           cache: true
           require-lockfile: true
 
-      # The relay is built from source here, so a change to it is always compiled, tested
-      # and linted; its pinned binaries are for everyone else. Its rust-toolchain.toml
-      # names the Rust, with rustfmt and clippy.
+      # The Rust the relay's rust-toolchain.toml names, with rustfmt and clippy.
       - name: Set Up Rust
-        if: matrix.relay
         shell: bash
-        run: |
-          (cd application/relay && rustup toolchain install)
-          echo "NOVADECK_RELAY_FROM_SOURCE=1" >> "$GITHUB_ENV"
+        working-directory: application/relay
+        run: rustup toolchain install
 
       - name: Cache Rust Builds
-        if: matrix.relay
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

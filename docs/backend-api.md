@@ -7,7 +7,8 @@ in `application/ui/src/backend/runner/`.
 
 ## Run and test
 
-Use the repository's Node.js 26 and pnpm versions. `node-pty` is a native dependency;
+Use the repository's Node.js 26 and pnpm versions, and Rust (rustup), which builds the
+relay. `node-pty` is a native dependency;
 installation can require Python and a C/C++ toolchain for your platform.
 `node-pty` is pinned exactly to `1.2.0-beta.14` for its native cleanup fixes and
 correct macOS spawn-helper permissions. One local patch
@@ -78,9 +79,8 @@ With a token, the RPC WebSocket endpoint is `/api/rpc`. The CLI persists metadat
 at `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set, and
 writes its [shell integration](#shell-integration-and-restoring-terminals) to a `shell`
 folder beside it, with its own copy of the relay agents start for NovaDeck's MCP server and hooks.
-The build fetches the relay prebuilt for Linux (x64 and ARM64, linked statically, so
-any distribution runs it), macOS and Windows, or builds it with Rust elsewhere; set
-`NOVADECK_RELAY` to use another build. Without it, shells and hooks still work, and
+The build compiles the relay, on Linux linked statically, so the binary runs on any
+distribution, x64 or ARM64; set `NOVADECK_RELAY` to use another build. Without it, shells and hooks still work, and
 agents there start without NovaDeck's tools.
 Programmatic `startServer` from `@novadeck/runner/server` and `createRunner` use
 an in-memory database when no path is supplied. `@novadeck/runner/http` stays free

@@ -19,9 +19,6 @@ use std::process::ExitCode;
 /// "Relay protocol"); the runner takes the versions it knows.
 pub const PROTOCOL: u32 = 2;
 
-/// The source the relay was built from, as its build names it, to tell copies apart.
-const SOURCE: Option<&str> = option_env!("NOVADECK_RELAY_SOURCE");
-
 const USAGE: &str = "usage: novadeck-relay mcp <server-version> <protocol-version>...
        novadeck-relay hook [--config <relay.json>] [--<option> <value>]... <agent> [event]
        novadeck-relay --version";
@@ -46,9 +43,8 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
         Some((mode, _)) if mode == "--version" => {
-            let source = SOURCE.map_or("unknown", |source| &source[..source.len().min(16)]);
             println!(
-                "novadeck-relay {} (protocol {PROTOCOL}, source {source})",
+                "novadeck-relay {} (protocol {PROTOCOL})",
                 env!("CARGO_PKG_VERSION")
             );
             ExitCode::SUCCESS

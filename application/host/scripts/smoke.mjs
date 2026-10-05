@@ -89,7 +89,7 @@ try {
   if (hook.toString() !== '{"decision":"ask"}\n') throw new Error(`hook: ${hook}`)
   // It names its build, in the protocol the runner speaks.
   const version = execFileSync(relay, ["--version"], { timeout: 10_000 }).toString()
-  if (!/^novadeck-relay \S+ \(protocol 2, source [0-9a-f]{16}\)/.test(version)) {
+  if (!/^novadeck-relay \S+ \(protocol 2\)/.test(version)) {
     throw new Error(`version: ${version}`)
   }
 } catch (error) {

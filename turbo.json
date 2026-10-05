@@ -7,7 +7,6 @@
         "VITE_API_URL",
         "VITE_NOVADECK_RUNNER_URL",
         "VITE_NOVADECK_RUNNER_TOKEN",
-        "NOVADECK_RELAY_FROM_SOURCE",
         "NOVADECK_RELAY_UNIVERSAL"
       ],
       "passThroughEnv": ["CARGO_HOME", "RUSTUP_HOME"],
@@ -19,12 +18,7 @@
     },
     "test": {
       "dependsOn": ["build", "^build", "^test"],
-      "env": [
-        "VITE_API_URL",
-        "VITE_NOVADECK_RUNNER_URL",
-        "VITE_NOVADECK_RUNNER_TOKEN",
-        "NOVADECK_RELAY_FROM_SOURCE"
-      ],
+      "env": ["VITE_API_URL", "VITE_NOVADECK_RUNNER_URL", "VITE_NOVADECK_RUNNER_TOKEN"],
       "passThroughEnv": [
         "PLAYWRIGHT_BROWSERS_PATH",
         "CI",

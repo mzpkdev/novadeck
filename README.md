@@ -337,10 +337,9 @@ background, `+`/`−` zoom and `0` fits all terminals.
 
 ## Development
 
-Requires Node.js 26 and pnpm 11.22.0. Run commands from the repository root.
-Rust ([rustup](https://rustup.rs)) is needed only to change the relay in
-`application/relay`: otherwise the build downloads its prebuilt binary, which
-`application/relay/prebuilt.json` pins by checksum.
+Requires Node.js 26, pnpm 11.22.0 and Rust ([rustup](https://rustup.rs)), which builds
+the relay in `application/relay`; its `rust-toolchain.toml` names the version, which
+rustup installs. Run commands from the repository root.
 
 ```sh
 pnpm install
@@ -841,12 +840,7 @@ universal ZIP, or a Windows x64 portable executable. Builds are unsigned, so
 Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 
 Each package ships the relay agents start for NovaDeck's MCP server and hooks, built
-from source in the release workflow. Its prebuilt binaries, for contributors without Rust,
-are published by the [relay workflow](.github/workflows/relay.yml) when a pull
-request changes its source; pin them with `node application/relay/scripts/build.ts
---pin` and commit `application/relay/prebuilt.json`, which Quality checks. Those
-`relay-*` prereleases are deleted after two days unless `main` ever pinned them or an
-open pull request pins them.
+from source with the rest of the app.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native

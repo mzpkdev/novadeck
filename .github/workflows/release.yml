@@ -174,12 +174,10 @@ jobs:
       - name: Set Package Version
         run: npm --prefix application/host pkg set "version=${{ needs.prepare.outputs.version || '0.0.0' }}"
 
-      # The relay ships built here from its source, as Quality tests it, not prebuilt:
-      # the prebuilt binaries are for contributors without Rust. On macOS it is one
-      # binary for both architectures; rust-toolchain.toml names the Rust.
+      # The relay is built with the Rust its rust-toolchain.toml names; on macOS as one
+      # binary for both architectures.
       - name: Package Application
         env:
-          NOVADECK_RELAY_FROM_SOURCE: "1"
           NOVADECK_RELAY_UNIVERSAL: "1"
         run: pnpm run package:${{ matrix.target }}
 
