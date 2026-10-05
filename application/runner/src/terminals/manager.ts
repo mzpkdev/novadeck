@@ -486,15 +486,18 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
 /**
  * Ends a terminal's program that its first kill left running. On Windows, which has no
  * signals, node-pty throws on one, and later still when it queued the kill until the
- * terminal first drew: its process is ended by its id instead.
+ * terminal first drew: its process is ended by its id instead. Until its output connects,
+ * node-pty names that id 0, which would end the runner itself, so it throws, and the
+ * terminal is taken as ended while node-pty's queued kill closes its console later.
  */
 export const forceKill = (
   child: Pick<pty.IPty, "pid" | "kill">,
   platform: NodeJS.Platform = process.platform,
   end: (pid: number) => void = (pid) => process.kill(pid),
 ): void => {
-  if (platform === "win32") end(child.pid)
-  else child.kill("SIGKILL")
+  if (platform !== "win32") return child.kill("SIGKILL")
+  if (!(child.pid > 0)) throw new Error("The terminal's program has no process id yet.")
+  end(child.pid)
 }
 
 /** A signal number's name, such as `SIGKILL`; Windows has no signals. */

@@ -702,11 +702,11 @@ describe("terminal watching", () => {
 })
 
 // A stand-in for node-pty's terminal, which on Windows throws on any signal.
-const ptyStandIn = (platform: NodeJS.Platform) => {
+const ptyStandIn = (platform: NodeJS.Platform, pid = 4242) => {
   const signals: (string | undefined)[] = []
   return {
     signals,
-    pid: 4242,
+    pid,
     kill: (signal?: string) => {
       if (platform === "win32" && signal) throw new Error("Signals not supported on windows.")
       signals.push(signal)
@@ -730,6 +730,14 @@ describe("forcing a terminal's program to end", () => {
     const terminal = ptyStandIn("win32")
     expect(() => forceKill(terminal, "win32", (pid) => ended.push(pid))).not.toThrow()
     expect(ended).toEqual([4242])
+    expect(terminal.signals).toEqual([])
+  })
+
+  it("ends nothing on Windows before node-pty knows the process, as id 0 would end the runner", () => {
+    const ended: number[] = []
+    const terminal = ptyStandIn("win32", 0)
+    expect(() => forceKill(terminal, "win32", (pid) => ended.push(pid))).toThrow()
+    expect(ended).toEqual([])
     expect(terminal.signals).toEqual([])
   })
 })
