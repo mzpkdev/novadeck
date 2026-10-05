@@ -1,5 +1,6 @@
 import {
   focusSidebarToggle,
+  focusTerminalInput,
   focusTerminalTab,
   focusWorkspaceViewport,
   focusZenCreate,
@@ -18,6 +19,7 @@ export const domEffects: CommandEffects = {
   focusZenEnter,
   focusWorkspaceViewport,
   focusTerminalTab,
+  focusTerminalInput,
   refocus: (element) => {
     if (element.isConnected) element.focus({ preventScroll: true })
   },

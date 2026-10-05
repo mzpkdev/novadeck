@@ -78,6 +78,7 @@ export const openCommands = ({
     focusZenEnter: () => effects.push("focus zen enter"),
     focusWorkspaceViewport: () => effects.push("focus viewport"),
     focusTerminalTab: (id) => effects.push(`focus tab ${id}`),
+    focusTerminalInput: (id) => (effects.push(`focus input ${id}`), true),
     refocus: (element) => {
       effects.push("refocus")
       if (element.isConnected) element.focus({ preventScroll: true })

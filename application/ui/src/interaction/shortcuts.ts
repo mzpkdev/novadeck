@@ -19,6 +19,7 @@ export type ShortcutName =
   | "recent"
   | "previous"
   | "focus"
+  | "zen"
   | "newTerminal"
   | "newSession"
   | "terminals"
@@ -62,6 +63,14 @@ export const shortcutBindings = (
       meta: mac,
       shift: !mac,
       display: mac ? ["⌘", "Enter"] : ["Ctrl", "Shift", "Enter"],
+    },
+    zen: {
+      label: "Toggle Zen mode",
+      key: "z",
+      ctrl: !mac,
+      meta: mac,
+      shift: true,
+      display: [mac ? "⌘" : "Ctrl", "Shift", "Z"],
     },
     newTerminal: {
       label: "New terminal",
@@ -108,56 +117,11 @@ export const shortcutBindings = (
   }
 }
 
-export type WorkspaceShortcutName =
-  | "find"
-  | "focus"
-  | "newTerminal"
-  | "zen"
-  | "terminals"
-  | "rename"
+export type WorkspaceShortcutName = "rename"
 
-// Single keys, which work only while navigating the workspace itself.
+// Keys that work only while navigating the workspace itself. None is a letter or other
+// printable key, so typing meant for a terminal that isn't focused never triggers one.
 export const workspaceShortcutBindings = (): Record<WorkspaceShortcutName, Shortcut> => ({
-  find: {
-    label: "Find a terminal",
-    key: "/",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["/"],
-  },
-  focus: {
-    label: "Toggle Focus view",
-    key: "f",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["F"],
-  },
-  newTerminal: {
-    label: "New terminal",
-    key: "t",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["T"],
-  },
-  zen: {
-    label: "Toggle Zen mode",
-    key: "z",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["Z"],
-  },
-  terminals: {
-    label: "Toggle terminal sidebar",
-    key: "b",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    display: ["B"],
-  },
   rename: {
     label: "Rename active terminal",
     key: "F2",

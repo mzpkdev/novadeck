@@ -193,7 +193,7 @@ describe("Grid view", () => {
   })
 
   context("when creating a terminal from the background", () => {
-    it("offers Terminal and creates one without renaming it", async () => {
+    it("offers Terminal and creates one and focuses its input", async () => {
       await openGrid()
       const before = gridTerminalNames()
       const left = bounds(terminal("Checkout implementation"))
@@ -209,6 +209,7 @@ describe("Grid view", () => {
       const name = await newTerminalName(before)
       await expect.element(terminal(name).getByRole("heading", { name })).toBeVisible()
       await expectStaysAbsent(page.getByRole("textbox", { name: `Rename ${name}` }))
+      await expect.element(commandInput(name)).toHaveFocus()
     })
   })
 

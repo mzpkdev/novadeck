@@ -43,6 +43,7 @@ const openKeys = (options?: CommandsOptions) => {
       altKey: false,
       repeat: false,
       composing: false,
+      altGraph: false,
       defaultPrevented: false,
       ...press,
       target: { ...nowhere, ...target },
@@ -248,7 +249,6 @@ describe("key commands", () => {
           notifyFinished: true,
         },
       })
-      expect(app.keydown({ key: "f" })).toBe("passed")
       expect(app.keydown({ key: "Enter", ctrlKey: true, shiftKey: true })).toBe("passed")
     })
 
@@ -286,14 +286,30 @@ describe("key commands", () => {
   context("when using sidebar shortcuts in Zen", () => {
     it("leaves Zen and shows the requested panel", () => {
       const app = openKeys()
-      app.keydown({ key: "z" })
+      const zen = { key: "Z", ctrlKey: true, shiftKey: true }
+      app.keydown(zen)
       expect(app.shell().zen).not.toBeNull()
-      app.keydown({ key: "b" })
+      app.keydown({ key: "!", code: "Digit1", ctrlKey: true, shiftKey: true })
       expect(app.shell().zen).toBeNull()
-      app.keydown({ key: "z" })
+      app.keydown(zen)
       app.keydown({ key: "@", code: "Digit2", ctrlKey: true, shiftKey: true })
       expect(app.shell().zen).toBeNull()
       expect(app.ui.getSnapshot().location.route.panel).toBe("sessions")
+    })
+  })
+
+  context("when typing with focus outside a terminal", () => {
+    it("moves focus into the selected terminal and lets the key through to it", () => {
+      const app = openKeys({ url: "/projects/project/sessions/initial/grid?terminal=02" })
+      expect(app.keydown({ key: "l" })).toBe("passed")
+      expect(app.effects).toContain("focus input 02")
+    })
+
+    it("does nothing with no terminal selected", () => {
+      const app = openKeys({ url: "/projects/project/sessions/initial/grid" })
+      app.commands.setSelected("")
+      expect(app.keydown({ key: "l" })).toBe("passed")
+      expect(app.effects.filter((effect) => effect.startsWith("focus input"))).toEqual([])
     })
   })
 

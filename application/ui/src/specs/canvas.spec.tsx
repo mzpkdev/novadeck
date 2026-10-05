@@ -26,6 +26,7 @@ import { escapeFrom } from "./support/keyboard"
 import { overlaps } from "./support/layouts"
 import {
   chooseView,
+  commandInput,
   expectSelected,
   expectStaysAbsent,
   openWorkspace,
@@ -420,7 +421,7 @@ describe("Canvas", () => {
       for (const name of names) expect(sameBox(boxOf(terminal(name)), before[name]!)).toBe(true)
     })
 
-    it("does not start renaming the new terminal", async () => {
+    it("focuses the new terminal instead of renaming it", async () => {
       await openCanvas()
       await rightClickBackground({ x: 100, y: 120 })
 
@@ -428,6 +429,7 @@ describe("Canvas", () => {
 
       await expect.element(terminalTab("Terminal 07")).toBeVisible()
       await expectStaysAbsent(page.getByRole("textbox", { name: "Rename Terminal 07" }))
+      await expect.element(commandInput("Terminal 07")).toHaveFocus()
     })
   })
 

@@ -18,7 +18,8 @@ Repeated double gestures during a flight are ignored. Minimized terminals restor
 returning the camera does not minimize them again. The header's arrow opens Focus view.
 
 Click **New terminal** or use its keyboard shortcut to create and select a terminal
-immediately in any view, with or without Zen. Focus shows it right away. Grid uses
+immediately in any view, with or without Zen, ready to type in; F2 renames it. Focus
+shows it right away. Grid uses
 an available slot and scrolls it into view. Canvas chooses a nearby free position,
 preferring the current viewport, and pans only as needed to reveal it without changing
 zoom. Terminals can be moved or resized immediately; there is no placement step.
@@ -265,6 +266,7 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 | Recent terminals                                  | `Ctrl+Tab`       | `Ctrl+Tab`         |
 | Cycle backward through recent terminals           | `Ctrl+Shift+Tab` | `Ctrl+Shift+Tab`   |
 | Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`      | `Ctrl+Shift+Enter` |
+| Toggle Zen                                        | `Cmd+Shift+Z`    | `Ctrl+Shift+Z`     |
 | New terminal                                      | `Cmd+T`          | `Ctrl+Shift+T`     |
 | New session in the current project                | `Cmd+Shift+N`    | `Ctrl+Shift+N`     |
 | Toggle terminal sidebar                           | `Cmd+Shift+1`    | `Ctrl+Shift+1`     |
@@ -272,20 +274,18 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 | Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
 
 When navigating the workspace outside terminal input, text editors, and dialogs,
-these simpler keys work in both normal and Zen mode:
+these keys work in both normal and Zen mode:
 
-| Key      | Action                                            |
-| -------- | ------------------------------------------------- |
-| `T`      | New terminal                                      |
-| `/`      | Find a terminal                                   |
-| `F`      | Toggle Focus and the previous Grid or Canvas view |
-| `Z`      | Toggle Zen                                        |
-| `B`      | Toggle terminal sidebar (leaves Zen to show it)   |
-| `F2`     | Rename the active terminal                        |
-| `Delete` | Close the active terminal                         |
+| Key      | Action                     |
+| -------- | -------------------------- |
+| `F2`     | Rename the active terminal |
+| `Delete` | Close the active terminal  |
 
-The modifier shortcuts above remain available from terminal input. Workspace keys
-never replace typing, editing, or dialog navigation.
+The modifier shortcuts above remain available from terminal input. Letters and other
+typed characters are never workspace shortcuts: typed outside a terminal, they go into
+the selected terminal, which takes keyboard focus. With no terminal selected they do
+nothing, and Space still presses the focused button. Workspace keys never replace
+typing, editing, or dialog navigation.
 
 Web addresses in a terminal, and the web hyperlinks programs print, open in your browser on
 Ctrl-click (⌘-click on macOS); hovering one shows where it goes. A plain click still selects
@@ -331,7 +331,7 @@ retain Escape without changing workspace selection.
 Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
 pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
 The new-terminal shortcut creates a terminal immediately and opens the desktop Terminals sidebar
-when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. The name editor receives focus. These shortcuts are available in the desktop app; browsers may
+when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. The new terminal's input receives focus. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
 groups bindings into Anywhere and Workspace for the current platform. On the Canvas
 background, `+`/`−` zoom and `0` fits all terminals.

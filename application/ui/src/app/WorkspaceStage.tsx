@@ -130,7 +130,7 @@ export const WorkspaceStage = memo(
               minimized={gridMinimized}
               onMinimize={(terminalId) => toggleGridMinimized(target, terminalId)}
               onCreate={() => {
-                add({ beginRename: false })
+                add()
               }}
               render={renderTerminal}
             />
@@ -158,7 +158,7 @@ export const WorkspaceStage = memo(
               }
               navigation={shellNavigation.count}
               onSelect={setSelected}
-              onCreate={() => add({ beginRename: false })}
+              onCreate={() => add()}
               render={renderTerminal}
             />
           )}

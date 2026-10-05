@@ -3,12 +3,14 @@ import { page, userEvent, type Locator } from "vitest/browser"
 
 import {
   expectFocusWithin,
+  expectSearchReady,
   findDialog,
   newTerminalName,
   preferencesDialog,
   pressShortcut,
   recentOption,
   recentSwitcher,
+  searchField,
   shortcut,
   terminalCount,
   viewRegion,
@@ -16,6 +18,7 @@ import {
 import {
   chooseView,
   commandInput,
+  expectNothingSelected,
   expectSelected,
   expectStaysAbsent,
   openWorkspace,
@@ -178,17 +181,17 @@ describe("terminal switcher", () => {
 
 describe("Focus toggle", () => {
   for (const windowed of ["Grid", "Canvas"] as const) {
-    context(`when pressing F after using ${windowed}`, () => {
+    context(`when pressing ${shortcut.focus().label} after using ${windowed}`, () => {
       it(`opens Focus and returns to ${windowed}`, async () => {
         await openWorkspace()
         await chooseView(windowed)
         await terminalTab("Dev server").click()
 
-        await press("f")
+        await pressShortcut("focus")
         await expect.element(view("Focus")).toBeChecked()
         await expect.element(terminal("Dev server")).toBeVisible()
 
-        await press("f")
+        await pressShortcut("focus")
         await expect.element(view(windowed)).toBeChecked()
         await expectSelected("Dev server")
       })
@@ -200,12 +203,12 @@ describe("Focus toggle", () => {
       await openWorkspace()
       await chooseView("Canvas")
       await terminalTab("Checkout implementation").click()
-      await press("f")
+      await pressShortcut("focus")
       await expect.element(view("Focus")).toBeChecked()
 
       await reloadWorkspace()
       await expect.element(view("Focus")).toBeChecked()
-      await press("f")
+      await pressShortcut("focus")
 
       await expect.element(view("Canvas")).toBeChecked()
     })
@@ -228,28 +231,26 @@ describe("Focus toggle", () => {
 })
 
 describe("new terminal shortcut", () => {
-  for (const { label, keys } of [{ label: "T", keys: "t" }, shortcut.newTerminal()]) {
-    context(`when pressing ${label}`, () => {
-      it("creates and shows a new terminal", async () => {
-        await openWorkspace()
-        await expect.element(terminalCount(6)).toBeVisible()
+  context(`when pressing ${shortcut.newTerminal().label}`, () => {
+    it("creates and shows a new terminal", async () => {
+      await openWorkspace()
+      await expect.element(terminalCount(6)).toBeVisible()
 
-        await press(keys)
+      await pressShortcut("newTerminal")
 
-        await expect.element(terminalCount(7)).toBeVisible()
-        await expect.element(terminal(newTerminalName)).toBeVisible()
-        await expect.element(terminal("Checkout implementation")).not.toBeInTheDocument()
-      })
+      await expect.element(terminalCount(7)).toBeVisible()
+      await expect.element(terminal(newTerminalName)).toBeVisible()
+      await expect.element(terminal("Checkout implementation")).not.toBeInTheDocument()
     })
-  }
+  })
 
   context("when the sidebar is hidden", () => {
     it("opens the Terminals sidebar", async () => {
       await openWorkspace()
-      await press("b")
+      await pressShortcut("terminals")
       await expect.element(sidebar()).not.toBeInTheDocument()
 
-      await press("t")
+      await pressShortcut("newTerminal")
 
       await expect.element(sidebarPanel("Terminals")).toBeChecked()
       await expect.element(sidebar()).toBeVisible()
@@ -336,20 +337,6 @@ describe("arrow navigation", () => {
 })
 
 describe("sidebar shortcuts", () => {
-  context("when pressing B", () => {
-    it("hides and shows the Terminals sidebar", async () => {
-      await openWorkspace()
-      await expect.element(sidebar()).toBeVisible()
-
-      await press("b")
-      await expect.element(sidebar()).not.toBeInTheDocument()
-
-      await press("b")
-      await expect.element(sidebar()).toBeVisible()
-      await expect.element(sidebarPanel("Terminals")).toBeChecked()
-    })
-  })
-
   context(`when pressing ${shortcut.sessions().label} and ${shortcut.terminals().label}`, () => {
     it("switches to the requested panel and hides it on a repeat press", async () => {
       await openWorkspace()
@@ -386,13 +373,13 @@ describe("sidebar settings", () => {
   context("when the sidebar is hidden and the app is reloaded", () => {
     it("stays hidden", async () => {
       await openWorkspace()
-      await press("b")
+      await pressShortcut("terminals")
       await expect.element(sidebar()).not.toBeInTheDocument()
 
       await reloadWorkspace()
 
       await expectStaysAbsent(sidebar())
-      await press("b")
+      await pressShortcut("terminals")
       await expect.element(sidebar()).toBeVisible()
     })
   })
@@ -437,38 +424,44 @@ describe("preferences shortcut", () => {
 })
 
 describe("workspace keys after choosing a view", () => {
-  context("when pressing T while the view choice has keyboard focus", () => {
-    it("creates a terminal", async () => {
-      await openWorkspace()
-      await chooseView("Grid")
+  context(
+    `when pressing ${shortcut.newTerminal().label} while the view choice has keyboard focus`,
+    () => {
+      it("creates a terminal", async () => {
+        await openWorkspace()
+        await chooseView("Grid")
 
-      await press("t")
+        await pressShortcut("newTerminal")
 
-      await expect.element(terminalCount(7)).toBeVisible()
-    })
-  })
+        await expect.element(terminalCount(7)).toBeVisible()
+      })
+    },
+  )
 
-  context("when pressing / while the view choice has keyboard focus", () => {
+  context(`when pressing ${shortcut.find().label} while the view choice has keyboard focus`, () => {
     it("opens search", async () => {
       await openWorkspace()
       await chooseView("Grid")
 
-      await press("/")
+      await pressShortcut("find")
 
       await expect.element(findDialog()).toBeVisible()
     })
   })
 
-  context("when pressing F while the view choice has keyboard focus", () => {
-    it("toggles Focus", async () => {
-      await openWorkspace()
-      await chooseView("Grid")
+  context(
+    `when pressing ${shortcut.focus().label} while the view choice has keyboard focus`,
+    () => {
+      it("toggles Focus", async () => {
+        await openWorkspace()
+        await chooseView("Grid")
 
-      await press("f")
+        await pressShortcut("focus")
 
-      await expect.element(view("Focus")).toBeChecked()
-    })
-  })
+        await expect.element(view("Focus")).toBeChecked()
+      })
+    },
+  )
 
   context("when pressing arrows while the view choice has keyboard focus", () => {
     it("moves one view or terminal at a time", async () => {
@@ -484,17 +477,20 @@ describe("workspace keys after choosing a view", () => {
     })
   })
 
-  context("when pressing B while the view choice has keyboard focus", () => {
-    it("hides the sidebar", async () => {
-      await openWorkspace()
-      await chooseView("Grid")
-      await expect.element(sidebar()).toBeVisible()
+  context(
+    `when pressing ${shortcut.terminals().label} while the view choice has keyboard focus`,
+    () => {
+      it("hides the sidebar", async () => {
+        await openWorkspace()
+        await chooseView("Grid")
+        await expect.element(sidebar()).toBeVisible()
 
-      await press("b")
+        await pressShortcut("terminals")
 
-      await expect.element(sidebar()).not.toBeInTheDocument()
-    })
-  })
+        await expect.element(sidebar()).not.toBeInTheDocument()
+      })
+    },
+  )
 })
 
 describe("typing in a terminal", () => {
@@ -512,6 +508,71 @@ describe("typing in a terminal", () => {
       await expect.element(view("Focus")).toBeChecked()
       await expect.element(sidebar()).toBeVisible()
       await expect.element(terminalCount(6)).toBeVisible()
+    })
+  })
+
+  context("when typing single letters with focus outside a terminal", () => {
+    it("does not run workspace actions", async () => {
+      await openWorkspace()
+      await terminalTab("Dev server").click()
+      await expectSelected("Dev server")
+
+      await press("tfzb/")
+
+      await expect.element(terminalCount(6)).toBeVisible()
+      await expectStaysAbsent(findDialog())
+      await expectStaysAbsent(page.getByRole("group", { name: "Zen controls" }))
+      await expect.element(page.getByRole("button", { name: "Enter Zen mode" })).toBeVisible()
+      await expect.element(view("Focus")).toBeChecked()
+      await expect.element(sidebar()).toBeVisible()
+      await expectSelected("Dev server")
+      await expect.element(commandInput("Dev server")).toHaveFocus()
+      await expect.element(commandInput("Dev server")).toHaveValue("tfzb/")
+    })
+  })
+
+  context("when typing with no terminal selected", () => {
+    it("does nothing and keeps focus out of inputs", async () => {
+      await openWorkspace()
+      await terminalTab("Dev server").click()
+      await press("{Escape}")
+      await expectNothingSelected()
+
+      await press("abc")
+
+      await expect.poll(() => document.activeElement instanceof HTMLInputElement).toBe(false)
+      await expect.element(terminalCount(6)).toBeVisible()
+      await expectNothingSelected()
+    })
+  })
+
+  context("when typing while the Find dialog is open", () => {
+    it("types into the search, not the terminal", async () => {
+      await openWorkspace()
+      await terminalTab("Dev server").click()
+      await pressShortcut("find")
+      await expectSearchReady()
+
+      await press("xyz")
+
+      await expect.element(searchField()).toHaveValue("xyz")
+      await press("{Escape}")
+      await expect.element(findDialog()).not.toBeInTheDocument()
+      await expect.element(commandInput("Dev server")).toHaveValue("")
+    })
+  })
+
+  context("when pressing Space with focus on a terminal tab", () => {
+    it("does not move focus into the terminal", async () => {
+      await openWorkspace()
+      await terminalTab("Dev server").click()
+      await terminalTab("Dev server").element().focus()
+      await expect.element(terminalTab("Dev server")).toHaveFocus()
+
+      await press(" ")
+
+      await expect.element(commandInput("Dev server")).not.toHaveFocus()
+      await expect.element(commandInput("Dev server")).toHaveValue("")
     })
   })
 

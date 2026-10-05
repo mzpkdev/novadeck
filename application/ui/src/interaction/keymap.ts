@@ -16,6 +16,8 @@ export type KeyInput = Pick<
 > & {
   // An IME is composing text, which keeps every key.
   readonly composing: boolean
+  // AltGr is held, which types characters, as Ctrl+Alt on Windows reports.
+  readonly altGraph: boolean
   readonly defaultPrevented: boolean
   readonly target: KeyTarget
 }
@@ -30,6 +32,7 @@ export type CommandId =
   | "recent.previous"
   | "view.toggleFocus"
   | "terminal.new"
+  | "terminal.type"
   | "zen.toggle"
   | "terminal.rename"
   | "terminal.close"
@@ -60,6 +63,8 @@ export type KeyPattern =
   | { readonly shortcut: Shortcut }
   // `none` requires no modifiers at all; `any` ignores them.
   | { readonly key: string; readonly modifiers: "none" | "any" }
+  // A key that types a character, such as a letter, digit or punctuation, but not Space.
+  | { readonly typed: true }
   // The window losing focus.
   | { readonly blur: true }
 
@@ -102,10 +107,19 @@ const phaseLayers: Record<KeyPhase, readonly KeyLayer[]> = {
 const modified = (input: KeyInput): boolean =>
   input.ctrlKey || input.metaKey || input.altKey || input.shiftKey
 
+// One character without Ctrl or ⌘; Option and AltGr, which Windows reports as Ctrl+Alt,
+// may type one. Space stays with the button it would press.
+const typed = (input: KeyInput): boolean =>
+  [...input.key].length === 1 &&
+  input.key !== " " &&
+  !input.metaKey &&
+  (!input.ctrlKey || input.altGraph)
+
 const matches = (pattern: KeyPattern, input: KeyInput, phase: KeyPhase): boolean => {
   if ("blur" in pattern) return phase === "blur"
   if (phase === "blur") return false
   if ("shortcut" in pattern) return matchesShortcut(input, pattern.shortcut)
+  if ("typed" in pattern) return typed(input)
   return input.key === pattern.key && (pattern.modifiers === "any" || !modified(input))
 }
 
@@ -136,7 +150,7 @@ const gates: Record<
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,
-  // Single keys work only while navigating the workspace itself.
+  // Unmodified keys work only while navigating the workspace itself.
   workspace: (input, state, environment) =>
     !input.repeat &&
     !state.dialog &&
@@ -261,27 +275,10 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       command: "terminal.new",
       repeat: "swallow",
     },
-    { layer: "workspace", keys: { shortcut: single.find }, command: "search.open", repeat: "run" },
-    {
-      layer: "workspace",
-      keys: { shortcut: single.focus },
-      command: "view.toggleFocus",
-      repeat: "run",
-    },
-    {
-      layer: "workspace",
-      keys: { shortcut: single.newTerminal },
-      command: "terminal.new",
-      repeat: "run",
-    },
-    { layer: "workspace", keys: { shortcut: single.zen }, command: "zen.toggle", repeat: "run" },
-    {
-      layer: "workspace",
-      keys: { shortcut: single.terminals },
-      command: "sidebar.terminals",
-      repeat: "run",
-    },
+    { layer: "app", keys: { shortcut: chord.zen }, command: "zen.toggle", repeat: "swallow" },
     { layer: "workspace", keys: key("Delete"), command: "terminal.close", repeat: "run" },
+    // Typing outside a terminal goes into the selected one.
+    { layer: "workspace", keys: { typed: true }, command: "terminal.type", repeat: "run" },
     {
       layer: "workspace",
       keys: { shortcut: single.rename },

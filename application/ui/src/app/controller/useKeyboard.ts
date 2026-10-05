@@ -31,6 +31,7 @@ const keyInput = (event: KeyboardEvent): KeyInput => ({
   altKey: event.altKey,
   repeat: event.repeat,
   composing: event.isComposing || event.keyCode === 229,
+  altGraph: event.getModifierState("AltGraph"),
   defaultPrevented: event.defaultPrevented,
   target: classifyKeyTarget(event.target),
 })
@@ -45,6 +46,7 @@ const blurInput: KeyInput = {
   altKey: false,
   repeat: false,
   composing: false,
+  altGraph: false,
   defaultPrevented: false,
   target: classifyKeyTarget(null),
 }

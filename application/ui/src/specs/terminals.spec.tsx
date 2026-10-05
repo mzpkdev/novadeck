@@ -1,7 +1,7 @@
 import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
-import { escapeFrom } from "./support/keyboard"
+import { escapeFrom, pressShortcut } from "./support/keyboard"
 import { currentRoute, pressNewSession } from "./support/sessions"
 import {
   anyRenameField,
@@ -69,21 +69,20 @@ const dragTabOnto = async (source: string, destination: string): Promise<void> =
 
 describe("creating terminals", () => {
   for (const name of views) {
-    for (const trigger of ["New terminal button", "T key"] as const) {
+    for (const trigger of ["New terminal button", "new terminal shortcut"] as const) {
       context(`when using the ${trigger} in ${name}`, () => {
         it("adds a selected terminal that is shown right away and counted in the footer", async () => {
           await openWorkspace()
           await chooseView(name)
           await expect.poll(visibleTerminalCounts).toEqual(["6 terminals"])
 
-          if (trigger === "T key") {
-            // The view choice keeps keyboard focus in its radio input, which workspace keys skip.
+          if (trigger === "new terminal shortcut") {
             await terminalTab("Dev server").click()
-            await press("t")
+            await pressShortcut("newTerminal")
           } else await newTerminalButton().click()
 
-          await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
-          await press("{Enter}")
+          await expect.element(commandInput("Terminal 07")).toHaveFocus()
+          await expect.element(anyRenameField()).not.toBeInTheDocument()
           await expectSelected("Terminal 07")
           await expect.element(terminal("Terminal 07")).toBeInViewport()
           await expect.element(commandInput("Terminal 07")).toHaveValue("")
@@ -93,10 +92,31 @@ describe("creating terminals", () => {
     }
   }
 
-  context("when the new terminal's name editor opens", () => {
+  context("when typing right after creating a terminal", () => {
+    for (const trigger of ["New terminal button", "new terminal shortcut"] as const) {
+      it(`goes straight into the new terminal's command input after the ${trigger}`, async () => {
+        await openWorkspace()
+        if (trigger === "new terminal shortcut") {
+          await terminalTab("Dev server").click()
+          await pressShortcut("newTerminal")
+        } else await newTerminalButton().click()
+        await expect.element(commandInput("Terminal 07")).toHaveFocus()
+
+        await press("echo hi")
+
+        await expect.element(commandInput("Terminal 07")).toHaveValue("echo hi")
+        await expect.element(anyRenameField()).not.toBeInTheDocument()
+        await expectSelected("Terminal 07")
+      })
+    }
+  })
+
+  context("when renaming a terminal that was just created", () => {
     it("selects the whole name so typing replaces it", async () => {
       await openWorkspace()
       await newTerminalButton().click()
+      await expect.element(commandInput("Terminal 07")).toHaveFocus()
+      await tabAction("Rename Terminal 07").click()
       await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
 
       await press("My shell{Enter}")
@@ -108,6 +128,7 @@ describe("creating terminals", () => {
     it("keeps the original name when Escape is pressed", async () => {
       await openWorkspace()
       await newTerminalButton().click()
+      await tabAction("Rename Terminal 07").click()
       await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
 
       await press("Discarded{Escape}")
@@ -122,6 +143,7 @@ describe("creating terminals", () => {
       await openWorkspace()
       await chooseView("Grid")
       await newTerminalButton().click()
+      await tabAction("Rename Terminal 07").click()
       await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
 
       await press("Scratch")
@@ -135,22 +157,24 @@ describe("creating terminals", () => {
     })
   })
 
-  context("when the sidebar is hidden and the T key is pressed", () => {
-    it("opens the Terminals sidebar to name the new terminal", async () => {
+  context("when the sidebar is hidden and the new terminal shortcut is pressed", () => {
+    it("opens the Terminals sidebar and focuses the new terminal", async () => {
       await openWorkspace()
       await chooseView("Grid")
       await sidebar().getByRole("button", { name: "Hide terminals" }).click()
       await expect.element(sidebar()).not.toBeInTheDocument()
 
-      await press("t")
+      await pressShortcut("newTerminal")
 
-      await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
+      await expect.element(sidebar()).toBeVisible()
+      await expect.element(commandInput("Terminal 07")).toHaveFocus()
+      await expect.element(anyRenameField()).not.toBeInTheDocument()
       await expect.element(terminal("Terminal 07")).toBeVisible()
     })
   })
 
   context("when creating a terminal in Zen, where the sidebar is not shown", () => {
-    it("names the new terminal in its header", async () => {
+    it("focuses the new terminal without opening its name editor", async () => {
       await openWorkspace()
       await chooseView("Grid")
       await page.getByRole("button", { name: "Enter Zen mode" }).click()
@@ -158,6 +182,9 @@ describe("creating terminals", () => {
 
       await page.getByRole("button", { name: "New terminal" }).click()
 
+      await expect.element(commandInput("Terminal 07")).toHaveFocus()
+      await expect.element(anyRenameField()).not.toBeInTheDocument()
+      await headerName("Terminal 07").dblClick()
       await expect.element(headerRenameField("Terminal 07")).toHaveFocus()
       await press("Zen shell{Enter}")
       await expect.element(headerName("Zen shell")).toBeVisible()

@@ -24,6 +24,8 @@ export type CommandEffects = {
   readonly focusZenEnter: () => void
   readonly focusWorkspaceViewport: () => void
   readonly focusTerminalTab: (id: string) => void
+  // Focuses the terminal's input now; false when it has none that can take focus.
+  readonly focusTerminalInput: (id: string) => boolean
   // Focuses the element again if it is still on the page.
   readonly refocus: (element: FocusTarget) => void
   readonly afterFrame: (run: () => void) => void

@@ -47,6 +47,7 @@ const route = (
       altKey: false,
       repeat: false,
       composing: false,
+      altGraph: false,
       defaultPrevented: false,
       ...press,
       target: { ...nowhere, ...target },
@@ -232,16 +233,19 @@ describe("keymap", () => {
           const preferences = { ctrlKey: platform !== "mac", metaKey: platform === "mac", key: "," }
           expect(keydown(platform, preferences, dialog)).toEqual(["preferences.open"])
           expect(keydown(platform, { ...command(platform), key: "t" }, dialog)).toEqual([])
-          expect(keydown(platform, { key: "/" }, dialog)).toEqual([])
-          expect(keydown(platform, { key: "z" }, dialog)).toEqual([])
+          const zen = { ...command(platform), shiftKey: true, key: "Z" }
+          expect(keydown(platform, zen, dialog)).toEqual([])
         })
       })
 
       context("when matching chords", () => {
-        it("uses Shift for new sessions and sidebars and matches sidebar digits by code", () => {
+        it("uses Shift for new sessions, Zen and sidebars and matches sidebar digits by code", () => {
           const modifier = platform === "mac" ? { metaKey: true } : { ctrlKey: true }
           expect(keydown(platform, { ...modifier, shiftKey: true, key: "N" })).toEqual([
             "session.new",
+          ])
+          expect(keydown(platform, { ...modifier, shiftKey: true, key: "Z" })).toEqual([
+            "zen.toggle",
           ])
           expect(
             keydown(platform, { ...modifier, shiftKey: true, key: "!", code: "Digit1" }),
@@ -256,34 +260,57 @@ describe("keymap", () => {
           expect(keydown(platform, { ...find, altKey: true })).toEqual([])
           const other = platform === "mac" ? { ctrlKey: true, shiftKey: true } : { metaKey: true }
           expect(keydown(platform, { ...other, key: "k" })).toEqual([])
-          expect(keydown(platform, { key: "/" })).toEqual(["search.open"])
-          expect(keydown(platform, { key: "/", shiftKey: true })).toEqual([])
           expect(keydown(platform, { key: "Delete", shiftKey: true })).toEqual([])
         })
       })
 
       context("when pressing workspace keys", () => {
         it("routes each key and ignores repeats, overlays and an open switcher", () => {
-          const keys = {
-            "/": "search.open",
-            f: "view.toggleFocus",
-            t: "terminal.new",
-            z: "zen.toggle",
-          }
-          for (const [key, id] of Object.entries(keys))
-            expect(keydown(platform, { key })).toEqual([id])
-          expect(keydown(platform, { key: "b" })).toEqual(["sidebar.terminals"])
           expect(keydown(platform, { key: "Delete" })).toEqual(["terminal.close"])
           expect(keydown(platform, { key: "F2" })).toEqual(["terminal.rename"])
-          expect(keydown(platform, { key: "t", repeat: true })).toEqual([])
+          expect(keydown(platform, { key: "F2", repeat: true })).toEqual([])
           expect(
-            keydown(platform, { key: "t" }, { environment: { overlayOpen: () => true } }),
+            keydown(platform, { key: "F2" }, { environment: { overlayOpen: () => true } }),
           ).toEqual([])
-          expect(keydown(platform, { key: "t" }, { state: { switcher: "click" } })).toEqual([])
+          expect(keydown(platform, { key: "F2" }, { state: { switcher: "click" } })).toEqual([])
         })
 
+        // Typing meant for a terminal that isn't focused goes to it, never to a workspace action.
+        it("routes typed characters only into the selected terminal", () => {
+          for (const key of "abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`ąé€") {
+            expect(keydown(platform, { key })).toEqual(["terminal.type"])
+            expect(keydown(platform, { key: key.toUpperCase(), shiftKey: true })).toEqual([
+              "terminal.type",
+            ])
+          }
+          // Option on a Mac and AltGr (Ctrl+Alt) on Windows type characters too.
+          expect(keydown(platform, { key: "@", altKey: true })).toEqual(["terminal.type"])
+          const altGraph = { ctrlKey: true, altKey: true, altGraph: true }
+          expect(keydown(platform, { key: "ł", ...altGraph })).toEqual(["terminal.type"])
+          expect(keydown(platform, { key: "l", ctrlKey: true, altKey: true })).toEqual([])
+        })
+
+        it("leaves Space, named keys and chords alone", () => {
+          for (const key of [" ", "Enter", "Tab", "Backspace", "Dead", "Shift"])
+            expect(keydown(platform, { key })).not.toContain("terminal.type")
+          expect(keydown(platform, { key: "a", ctrlKey: true })).toEqual([])
+          expect(keydown(platform, { key: "a", metaKey: true })).toEqual([])
+        })
+
+        it("leaves typing to inputs, dialogs, overlays and the switcher", () => {
+          expect(keydown(platform, { key: "a", target: terminalInput })).toEqual([])
+          expect(keydown(platform, { key: "a", target: { editing: true } })).toEqual([])
+          expect(keydown(platform, { key: "a" }, { state: { dialog: true } })).toEqual([])
+          expect(
+            keydown(platform, { key: "a" }, { environment: { overlayOpen: () => true } }),
+          ).toEqual([])
+          expect(keydown(platform, { key: "a" }, { state: { switcher: "click" } })).toEqual([])
+        })
+
+        // Canvas zooms on its own element and prevents the key before routing sees it.
         it("leaves Canvas zoom keys to Canvas", () => {
-          for (const key of ["+", "-", "=", "0"]) expect(keydown(platform, { key })).toEqual([])
+          for (const key of ["+", "-", "=", "0"])
+            expect(keydown(platform, { key, defaultPrevented: true })).toEqual([])
         })
       })
 
@@ -300,6 +327,7 @@ describe("keymap", () => {
             "sidebar.sessions",
             "view.toggleFocus",
             "terminal.new",
+            "zen.toggle",
           ])
         })
       })
@@ -307,14 +335,9 @@ describe("keymap", () => {
   }
 
   context("when listing shortcuts for Preferences", () => {
-    it("shows the same rows as before, in the same order", () => {
+    it("lists only non-typing keys under Workspace and every chord under Anywhere", () => {
       const workspace = [
         "Workspace",
-        "Find a terminal: /",
-        "Toggle Focus view: F",
-        "New terminal: T",
-        "Toggle Zen mode: Z",
-        "Toggle terminal sidebar: B",
         "Rename active terminal: F2",
         "Previous / next terminal: ↑ ↓",
         "Previous / next view: ← →",
@@ -330,6 +353,7 @@ describe("keymap", () => {
           "Recent terminals: Ctrl Tab",
           "Previous recent terminal: Ctrl Shift Tab",
           "Toggle Focus view: Ctrl Shift Enter",
+          "Toggle Zen mode: Ctrl Shift Z",
           "New terminal: Ctrl Shift T",
           "New session: Ctrl Shift N",
           "Toggle terminal sidebar: Ctrl Shift 1",
@@ -345,6 +369,7 @@ describe("keymap", () => {
           "Recent terminals: Ctrl Tab",
           "Previous recent terminal: Ctrl Shift Tab",
           "Toggle Focus view: ⌘ Enter",
+          "Toggle Zen mode: ⌘ Shift Z",
           "New terminal: ⌘ T",
           "New session: ⌘ Shift N",
           "Toggle terminal sidebar: ⌘ Shift 1",

@@ -82,6 +82,12 @@ export const focusZenCreate = (): void =>
 export const focusZenEnter = (): void =>
   document.querySelector<HTMLElement>("[data-workspace-zen-enter]")?.focus({ preventScroll: true })
 
+export const focusTerminalInput = (id: string): boolean => {
+  const input = terminalElement(id)?.querySelector<HTMLElement>("[data-terminal-input]")
+  input?.focus({ preventScroll: true })
+  return Boolean(input) && document.activeElement === input
+}
+
 export const workspaceArea = (): HTMLElement | null =>
   document.querySelector<HTMLElement>("[data-workspace-area]")
 export const terminalElement = (id: string): HTMLElement | null =>

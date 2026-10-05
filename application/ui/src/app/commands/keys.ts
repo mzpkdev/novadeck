@@ -16,8 +16,9 @@ import type { WorkspaceCommands } from "./workspace"
 export type KeyCommand = {
   // False lets the key through unprevented and ends routing for this event.
   readonly available?: (input: KeyInput) => boolean
-  // "next" hands the key to the next matching binding.
-  readonly run: (input: KeyInput, args?: number) => "handled" | "next"
+  // "next" hands the key to the next matching binding; "through" ends routing and lets
+  // the key on, unprevented, to wherever the command moved focus.
+  readonly run: (input: KeyInput, args?: number) => "handled" | "next" | "through"
 }
 
 // A command that always handles its key.
@@ -112,6 +113,11 @@ export const createKeyCommands = (
       },
     },
     "terminal.new": { run: handled(() => void commands.add({ fromKeyboard: true })) },
+    // Focus moves during keydown, so the character the key types follows it into the input.
+    "terminal.type": {
+      available: () => Boolean(state().selected),
+      run: () => (effects.focusTerminalInput(state().selected) ? "through" : "next"),
+    },
     "zen.toggle": {
       run: handled(() => {
         if (ui.getSnapshot().shell.zen) commands.exitZen()
@@ -235,9 +241,9 @@ export const keyState = (
   }
 }
 
-// Runs routed bindings in order until one handles the key. An unavailable command
-// ends routing and lets the key through; a repeat of a `swallow` binding is handled
-// without running. Keyup and blur are never reported as handled.
+// Runs routed bindings in order until one handles the key. An unavailable command, or
+// one that moved focus for the key, ends routing and lets the key through; a repeat of a
+// `swallow` binding is handled without running. Keyup and blur are never reported as handled.
 export const runKey = (
   keys: Record<CommandId, KeyCommand>,
   candidates: readonly KeyBinding[],
@@ -249,7 +255,9 @@ export const runKey = (
     const command = keys[binding.command]
     if (command.available && !command.available(input)) return "passed"
     if (keydown && input.repeat && binding.repeat === "swallow") return "handled"
-    if (command.run(input, binding.args) === "next") continue
+    const result = command.run(input, binding.args)
+    if (result === "next") continue
+    if (result === "through") return "passed"
     return keydown ? "handled" : "passed"
   }
   return "passed"

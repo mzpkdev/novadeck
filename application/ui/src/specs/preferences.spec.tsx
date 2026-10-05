@@ -145,6 +145,7 @@ describe("shortcut list", () => {
         "Recent terminals: CtrlTab",
         "Previous recent terminal: CtrlShiftTab",
         "Toggle Focus view: CtrlShiftEnter",
+        "Toggle Zen mode: CtrlShiftZ",
         "New terminal: CtrlShiftT",
         "New session: CtrlShiftN",
         "Toggle terminal sidebar: CtrlShift1",
@@ -153,24 +154,20 @@ describe("shortcut list", () => {
       ])
     })
 
-    it("groups single keys under Workspace", async () => {
+    it("groups the remaining single keys under Workspace", async () => {
       await openWorkspace()
 
       await showShortcuts()
 
       expect(shortcutList("Workspace")).toEqual(
         expect.arrayContaining([
-          "Find a terminal: /",
-          "Toggle Focus view: F",
-          "New terminal: T",
-          "Toggle Zen mode: Z",
-          "Toggle terminal sidebar: B",
           "Rename active terminal: F2",
           "Previous / next terminal: ↑↓",
           "Previous / next view: ←→",
           "Deselect, then hide sidebar: Esc",
         ]),
       )
+      expect(shortcutList("Workspace").join("\n")).not.toMatch(/: [FTZB/]$/m)
     })
   })
 
@@ -187,6 +184,7 @@ describe("shortcut list", () => {
         "Recent terminals: CtrlTab",
         "Previous recent terminal: CtrlShiftTab",
         "Toggle Focus view: ⌘Enter",
+        "Toggle Zen mode: ⌘ShiftZ",
         "New terminal: ⌘T",
         "New session: ⌘ShiftN",
         "Toggle terminal sidebar: ⌘Shift1",

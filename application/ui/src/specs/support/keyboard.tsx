@@ -25,6 +25,7 @@ export const shortcut = {
   find: (): Chord => command(isMac() ? "k" : "K", "K"),
   focus: (): Chord => command("{Enter}", "Enter"),
   newTerminal: (): Chord => command(isMac() ? "t" : "T", "T"),
+  zen: (): Chord => commandShift("Z"),
   terminals: (): Chord => commandShift("1"),
   sessions: (): Chord => commandShift("2"),
   preferences: (): Chord =>
