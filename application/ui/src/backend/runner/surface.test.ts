@@ -341,14 +341,15 @@ describe("runner terminal surface", () => {
       }
     })
 
-    it("lets its screen go once no view shows it and its session is off screen", async () => {
+    it("lets its screen go once its session has stayed off screen for a long while", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
       const { open, screen, inView } = following(false)
       try {
         const page = render(inView("grid"))
         page.unmount()
+        await vi.advanceTimersByTimeAsync(29 * 60 * 1000)
         expect(screen.mock.calls.map((call) => call[1])).not.toContain("gone")
-        await vi.advanceTimersByTimeAsync(1100)
+        await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
         expect(screen.mock.calls.map((call) => call[1])).toContain("gone")
       } finally {
         vi.useRealTimers()
@@ -362,7 +363,7 @@ describe("runner terminal surface", () => {
       try {
         const page = render(inView("grid"))
         page.unmount()
-        await vi.advanceTimersByTimeAsync(5000)
+        await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
         expect(screen.mock.calls.map((call) => call[1])).not.toContain("gone")
       } finally {
         vi.useRealTimers()
@@ -377,6 +378,13 @@ describe("runner terminal surface", () => {
       const page = show(runtime)
       expect(input(page).getAttribute("aria-disabled")).toBe("true")
       expect(page.container.querySelector("[role=status]")?.textContent).toBe("Starting shell…")
+    })
+  })
+
+  context("while a running shell's screen has not arrived", () => {
+    it("says its output is loading, not that the shell is starting", () => {
+      const page = show(starting().runtime, { ...terminalFixture(1, "~"), state: "running" })
+      expect(page.container.querySelector("[role=status]")?.textContent).toBe("Loading output…")
     })
   })
 
@@ -595,13 +603,14 @@ describe("runner terminal surface", () => {
         resize: async () => {},
         detach: async () => {},
       }
+      const entry = { closed: false }
       const page = show(
         {
           ...runtime,
           entry: () => ({
             ready: Promise.resolve(true),
             revived: new Promise<void>(() => {}),
-            closed: false,
+            closed: entry.closed,
             size: { cols: 80, rows: 24 },
           }),
           attach: async () => attachment,
@@ -637,7 +646,7 @@ describe("runner terminal surface", () => {
           },
           done: false,
         })
-      return { page, written, press, ready, xterm, exit, connection }
+      return { page, written, press, ready, xterm, exit, connection, entry }
     }
     afterEach(() => {
       Reflect.deleteProperty(navigator, "clipboard")
@@ -746,9 +755,11 @@ describe("runner terminal surface", () => {
         shell.press()
         shell.xterm().input("ls")
         await act(() => vi.advanceTimersByTimeAsync(0))
-        // Nobody shows it, so the screen closes a moment later, while the image uploads.
+        // Nobody shows it and its terminal closes, so the screen closes a moment later, while
+        // the image uploads.
         mounted.splice(mounted.indexOf(shell.page), 1)
         shell.page.unmount()
+        shell.entry.closed = true
         await act(() => vi.advanceTimersByTimeAsync(1_000))
         saved.give("/u/late.png")
         await act(() => vi.advanceTimersByTimeAsync(ctrlVHoldMs))
