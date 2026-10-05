@@ -502,7 +502,10 @@ or a version it doesn't speak, without an answer, and logs that once.
 as the desktop app and a standalone runner can share a machine, so a runner can meet an
 older or newer relay than its own. When the protocol changes incompatibly, the version
 goes up, and the runner keeps taking the one before for a release (`relayVersions`).
-`novadeck-relay --version` names a copy's crate version, protocol and source hash.
+That holds from version 2, the relay's first: the scripts agents ran before it, on
+NovaDeck's own runtime, aren't served, so an agent connected by an install from before
+the relay gets NovaDeck's tools once it is connected again.
+`novadeck-relay --version` names a copy's crate version and protocol.
 
 **MCP session**, started by the `mcp` launcher (on Windows, by the plugin itself) as
 `novadeck-relay mcp <plugin version> <MCP versions, newest first>`:

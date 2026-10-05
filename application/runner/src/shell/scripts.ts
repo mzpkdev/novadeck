@@ -52,11 +52,9 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
 })
 
 /** What older versions wrote beside these files and nothing reads any more. */
-export const staleShellFiles = (directory: string, platform = process.platform): string[] => [
+export const staleShellFiles = (directory: string): string[] => [
   join(directory, "hook.mjs"),
   join(directory, "mcp.mjs"),
-  // Windows' agents start the relay itself, without cmd to run a launcher.
-  ...(platform === "win32" ? [join(directory, "mcp.cmd")] : []),
   join(directory, "mcp-idle.js"),
 ]
 
@@ -325,7 +323,7 @@ const posixLauncher = (paths: ShellPaths, mode: Mode, what: string) =>
     ? `#!/bin/sh
 ${header("#", what)}
 if [ ! -x ${shQuote(paths.relay)} ]; then
-  echo "NovaDeck's relay is missing at ${paths.relay}; restarting NovaDeck puts it back." >&2
+  printf '%s\\n' ${shQuote(`NovaDeck's relay is missing at ${paths.relay}; restarting NovaDeck puts it back.`)} >&2
   exit 1
 fi
 exec ${shQuote(paths.relay)} ${relayLine(paths, mode, shQuote)} "$@"
@@ -363,8 +361,9 @@ if exist ${cmdQuote(paths.relay)} if exist ${cmdQuote(paths.relayConfig)} (
   ${cmdQuote(paths.relay)} ${relayLine(paths, mode, cmdQuote)} %*
   exit /b 0
 )
-rem Without its relay or what it reads: what the agent needs, as Antigravity denies a
-rem tool otherwise.
+rem Without its relay or what it reads: the agent's input taken, as it may not write into a
+rem closed pipe, and what the agent needs printed, as Antigravity denies a tool otherwise.
+findstr "^" >nul 2>nul
 ${silentCases(
   (agent, event, text) =>
     `if /i "%~1"=="${agent}" ${event === "*" ? "" : `if /i "%~2"=="${event}" `}(echo ${text}&exit /b 0)`,
@@ -413,7 +412,14 @@ export const shellFiles = (
   const shims = agents.flatMap((agent) => harnesses[agent].shims?.(platform) ?? [])
   const bin = shims.map((each) => file(join(paths.bin, each.path), each.content, each.mode))
   return platform === "win32"
-    ? [...common, file(paths.hook, cmdLauncher(paths, "hook", "agent hook launcher")), ...bin]
+    ? [
+        ...common,
+        file(paths.hook, cmdLauncher(paths, "hook", "agent hook launcher")),
+        // Agents connected before NovaDeck started the relay itself on Windows keep their
+        // plugin's copy, which starts the MCP server through cmd and this launcher.
+        file(paths.mcp, cmdLauncher(paths, "mcp", "MCP server launcher")),
+        ...bin,
+      ]
     : [
         ...common,
         file(paths.hook, posixLauncher(paths, "hook", "agent hook launcher"), 0o700),

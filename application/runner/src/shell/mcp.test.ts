@@ -13,7 +13,7 @@ import { describe, expect, it } from "../test.js"
 import { installShellFiles } from "./install.js"
 import { mcpVersions } from "./mcp.js"
 import { listenForReports, unheard, type Call, type Reports } from "./reports.js"
-import { shellFiles, shellPaths } from "./scripts.js"
+import { shellFiles, shellPaths, staleShellFiles } from "./scripts.js"
 
 const token = "0123456789abcdef".repeat(3)
 let folder: string
@@ -836,14 +836,24 @@ describe("NovaDeck's MCP server", () => {
   it("starts the relay itself on Windows, with no cmd, PowerShell or NovaDeck's runtime", () => {
     const paths = shellPaths("C:\\data", "win32")
     const files = shellFiles(paths, "win32")
-    // No launcher for it: cmd would stay running beside the relay for as long as it runs.
-    expect(files.some((file) => file.path === paths.mcp)).toBe(false)
     const config = files.find((file) => file.path.endsWith(join("claude", "novadeck", ".mcp.json")))
     expect(JSON.parse(config?.content ?? "{}")).toEqual({
       mcpServers: {
         novadeck: { command: paths.relay, args: ["mcp", plugin.version, ...mcpVersions] },
       },
     })
+  })
+
+  it("keeps the launcher Windows' agents connected before still start, starting the relay", () => {
+    // Agents keep their copy of NovaDeck's plugin, which names cmd and mcp.cmd.
+    const paths = shellPaths("C:\\data", "win32")
+    const launcher = shellFiles(paths, "win32").find((file) => file.path === paths.mcp)
+    expect(launcher?.content).toContain(
+      `${paths.relay}" mcp ${plugin.version} ${mcpVersions.join(" ")} %*`,
+    )
+    expect(launcher?.content.toLowerCase()).not.toContain("powershell")
+    expect(launcher?.content).not.toContain("ELECTRON_RUN_AS_NODE")
+    expect(staleShellFiles("C:\\data")).not.toContain(paths.mcp)
   })
 
   it("refuses a batch", async () => {
