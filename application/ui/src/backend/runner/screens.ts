@@ -313,16 +313,18 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     entry.dispose?.()
   }
   // A screen nobody shows goes once its terminal closes, or once its session has been off
-  // screen for `retainMs`; until then it waits, checking again now and then.
-  const settle = (key: TerminalKey, entry: Entry, idleMs = 0): void => {
+  // screen for `retainMs` of the clock's time, which timers falling behind in a hidden
+  // window or a sleeping machine do not stretch; until then it waits, checking now and then.
+  const settle = (key: TerminalKey, entry: Entry, offSince?: number): void => {
     entry.timer = setTimeout(() => {
       entry.timer = undefined
       if (entry.users > 0) return
       const terminal = runtime.entry(key)
-      if (!terminal || terminal.closed) close(key, entry)
-      else if (runtime.shown(key)) settle(key, entry)
-      else if (idleMs + releaseCheckMs >= retainMs) close(key, entry)
-      else settle(key, entry, idleMs + releaseCheckMs)
+      if (!terminal || terminal.closed) return close(key, entry)
+      if (runtime.shown(key)) return settle(key, entry)
+      const since = offSince ?? Date.now()
+      if (Date.now() - since >= retainMs) close(key, entry)
+      else settle(key, entry, since)
     }, releaseCheckMs)
   }
 

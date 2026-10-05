@@ -283,6 +283,7 @@ describe("runner terminal surface", () => {
       }
       const attach = vi.fn<SurfaceRuntime["attach"]>(async () => attachment)
       const screen = vi.fn<SurfaceRuntime["screen"]>()
+      let onScreen = shown
       const Surface = createRunnerTerminal({
         ...runtime,
         entry: () => ({
@@ -293,7 +294,7 @@ describe("runner terminal surface", () => {
         }),
         attach,
         screen,
-        shown: () => shown,
+        shown: () => onScreen,
       })
       // Each view places its terminals under its own element, so a switch remounts them.
       const inView = (view: string) =>
@@ -310,7 +311,10 @@ describe("runner terminal surface", () => {
             renderWindow: (content) => content,
           }),
         )
-      return { opened, open, attach, detach, screen, inView }
+      const putOnScreen = (value: boolean): void => {
+        onScreen = value
+      }
+      return { opened, open, attach, detach, screen, inView, putOnScreen }
     }
 
     it("keeps its one xterm, attachment, output and focus", async () => {
@@ -342,7 +346,7 @@ describe("runner terminal surface", () => {
     })
 
     it("lets its screen go once its session has stayed off screen for a long while", async () => {
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
       const { open, screen, inView } = following(false)
       try {
         const page = render(inView("grid"))
@@ -357,8 +361,62 @@ describe("runner terminal surface", () => {
       }
     })
 
+    it("hands the same screen back to a session left a few minutes ago", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+      const { open, opened, attach, screen, inView } = following(false)
+      try {
+        const page = render(inView("grid"))
+        await vi.advanceTimersByTimeAsync(0)
+        page.unmount()
+        await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+        mounted.push(render(inView("focus")))
+        expect(opened).toHaveLength(1)
+        expect(attach).toHaveBeenCalledTimes(1)
+        expect(screen.mock.calls.map((call) => call[1])).not.toContain("gone")
+      } finally {
+        vi.useRealTimers()
+        open.mockRestore()
+      }
+    })
+
+    it("counts the time away from the last moment its session was on screen", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+      const { open, screen, inView, putOnScreen } = following(false)
+      try {
+        const page = render(inView("grid"))
+        page.unmount()
+        await vi.advanceTimersByTimeAsync(20 * 60 * 1000)
+        putOnScreen(true)
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+        putOnScreen(false)
+        await vi.advanceTimersByTimeAsync(20 * 60 * 1000)
+        expect(screen.mock.calls.map((call) => call[1])).not.toContain("gone")
+        await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
+        expect(screen.mock.calls.map((call) => call[1])).toContain("gone")
+      } finally {
+        vi.useRealTimers()
+        open.mockRestore()
+      }
+    })
+
+    it("lets its screen go after the time away even when timers ran late", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+      const { open, screen, inView } = following(false)
+      try {
+        const page = render(inView("grid"))
+        page.unmount()
+        await vi.advanceTimersByTimeAsync(1_000)
+        vi.setSystemTime(Date.now() + 31 * 60 * 1000)
+        await vi.advanceTimersByTimeAsync(1_000)
+        expect(screen.mock.calls.map((call) => call[1])).toContain("gone")
+      } finally {
+        vi.useRealTimers()
+        open.mockRestore()
+      }
+    })
+
     it("keeps its screen while its session stays on screen", async () => {
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
       const { open, screen, inView } = following(true)
       try {
         const page = render(inView("grid"))
