@@ -34,6 +34,15 @@ export const shortcut = {
       : { label: "Ctrl+,", keys: "{Control>},{/Control}" },
 }
 
+/** The chord that jumps to the terminal on an arrow's side: ⌘⌥ on a Mac, Ctrl+Shift elsewhere. */
+export const jump = (arrow: "Up" | "Down" | "Left" | "Right"): Chord =>
+  isMac()
+    ? { label: `Cmd+Option+${arrow}`, keys: `{Meta>}{Alt>}{Arrow${arrow}}{/Alt}{/Meta}` }
+    : {
+        label: `Ctrl+Shift+${arrow}`,
+        keys: `{Control>}{Shift>}{Arrow${arrow}}{/Shift}{/Control}`,
+      }
+
 /** Presses a modifier shortcut, e.g. `pressShortcut("find")`. */
 export const pressShortcut = (name: keyof typeof shortcut): Promise<void> =>
   press(shortcut[name]().keys)

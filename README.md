@@ -260,18 +260,19 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 
 ## Keyboard shortcuts
 
-| Action                                            | macOS            | Windows and Linux  |
-| ------------------------------------------------- | ---------------- | ------------------ |
-| Find a terminal                                   | `Cmd+K`          | `Ctrl+Shift+K`     |
-| Recent terminals                                  | `Ctrl+Tab`       | `Ctrl+Tab`         |
-| Cycle backward through recent terminals           | `Ctrl+Shift+Tab` | `Ctrl+Shift+Tab`   |
-| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`      | `Ctrl+Shift+Enter` |
-| Toggle Zen                                        | `Cmd+Shift+Z`    | `Ctrl+Shift+Z`     |
-| New terminal                                      | `Cmd+T`          | `Ctrl+Shift+T`     |
-| New session in the current project                | `Cmd+Shift+N`    | `Ctrl+Shift+N`     |
-| Toggle terminal sidebar                           | `Cmd+Shift+1`    | `Ctrl+Shift+1`     |
-| Toggle session sidebar                            | `Cmd+Shift+2`    | `Ctrl+Shift+2`     |
-| Open preferences                                  | `Cmd+,`          | `Ctrl+,`           |
+| Action                                            | macOS             | Windows and Linux  |
+| ------------------------------------------------- | ----------------- | ------------------ |
+| Find a terminal                                   | `Cmd+K`           | `Ctrl+Shift+K`     |
+| Recent terminals                                  | `Ctrl+Tab`        | `Ctrl+Tab`         |
+| Cycle backward through recent terminals           | `Ctrl+Shift+Tab`  | `Ctrl+Shift+Tab`   |
+| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`       | `Ctrl+Shift+Enter` |
+| Toggle Zen                                        | `Cmd+Shift+Z`     | `Ctrl+Shift+Z`     |
+| Terminal in that direction, typing there          | `Cmd+Option+↑↓←→` | `Ctrl+Shift+↑↓←→`  |
+| New terminal                                      | `Cmd+T`           | `Ctrl+Shift+T`     |
+| New session in the current project                | `Cmd+Shift+N`     | `Ctrl+Shift+N`     |
+| Toggle terminal sidebar                           | `Cmd+Shift+1`     | `Ctrl+Shift+1`     |
+| Toggle session sidebar                            | `Cmd+Shift+2`     | `Ctrl+Shift+2`     |
+| Open preferences                                  | `Cmd+,`           | `Ctrl+,`           |
 
 When navigating the workspace outside terminal input, text editors, and dialogs,
 these keys work in both normal and Zen mode:
@@ -326,6 +327,9 @@ stop at the edge. In Focus, where one terminal shows, every arrow steps through
 sidebar order: Up and Left back, Down and Right forward, wrapping at either end. With a
 terminal tab in the sidebar focused, Up and Down follow the list. Selection pans Canvas
 or scrolls Grid just like clicking a tab.
+From anywhere, terminal input included, Cmd+Option+arrow (Ctrl+Shift+arrow on Windows
+and Linux) moves the same way and keeps typing in the terminal it reaches; at an edge
+it does nothing, and the keys never reach the program.
 Shift+Left and Shift+Right cycle through enabled views in Focus → Grid → Canvas order,
 wrapping at either end and retaining the selected terminal; so do Left and Right on the
 view switch.

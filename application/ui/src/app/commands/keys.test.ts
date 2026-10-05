@@ -305,6 +305,30 @@ describe("key commands", () => {
     })
   })
 
+  context("when jumping with Ctrl+Shift and an arrow", () => {
+    it("selects the tile on that side and keeps typing there", () => {
+      const app = openKeys({
+        workspace: workspaceFixture({ view: "grid", terminals: 2 }),
+        url: "/projects/project/sessions/initial/grid?terminal=01",
+      })
+      app.screen.tiles = [tile("01", 0, 0), tile("02", 110, 0)]
+      const jump = { ctrlKey: true, shiftKey: true, target: { editing: true, terminalInput: true } }
+      expect(app.keydown({ key: "ArrowRight", ...jump })).toBe("handled")
+      expect(app.state().selected).toBe("02")
+      expect(app.shell().keyboardFocus).toEqual({ id: "02", view: "grid" })
+    })
+
+    it("swallows the chord at the edge rather than send it to the terminal", () => {
+      const app = openKeys({
+        workspace: workspaceFixture({ view: "grid", terminals: 2 }),
+        url: "/projects/project/sessions/initial/grid?terminal=01",
+      })
+      app.screen.tiles = [tile("01", 0, 0), tile("02", 110, 0)]
+      expect(app.keydown({ key: "ArrowLeft", ctrlKey: true, shiftKey: true })).toBe("handled")
+      expect(app.state().selected).toBe("01")
+    })
+  })
+
   context("when pressing arrows in Focus", () => {
     it("steps through sidebar order with every arrow, from the terminal Focus shows", () => {
       const app = openKeys({

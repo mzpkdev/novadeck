@@ -1,6 +1,7 @@
 import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page, userEvent } from "vitest/browser"
 
+import { jump } from "./support/keyboard"
 import {
   bounds,
   expectStaysTrue,
@@ -273,6 +274,35 @@ describe("Grid arrow keys", () => {
       await expectSelected("Checkout review")
       await press("{ArrowUp}")
       await expectSelected("Checkout implementation")
+    })
+  })
+
+  context(`when pressing ${jump("Right").label} while typing in a terminal`, () => {
+    it("selects the tile on that side and keeps typing there", async () => {
+      await openGrid()
+      await commandInput("Checkout implementation").click()
+      await expectSelected("Checkout implementation")
+
+      await press(jump("Right").keys)
+      await expectSelected("Dev server")
+      await expect.element(commandInput("Dev server")).toHaveFocus()
+      await press("ls")
+      await expect.element(commandInput("Dev server")).toHaveValue("ls")
+      await expect.element(commandInput("Checkout implementation")).toHaveValue("")
+
+      await press(jump("Down").keys)
+      await expectSelected("Runtime")
+      await expect.element(commandInput("Runtime")).toHaveFocus()
+    })
+
+    it("stays put at the edge without typing anything", async () => {
+      await openGrid()
+      await commandInput("Checkout implementation").click()
+
+      await press(jump("Left").keys)
+      await expectSelected("Checkout implementation")
+      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+      await expect.element(commandInput("Checkout implementation")).toHaveValue("")
     })
   })
 

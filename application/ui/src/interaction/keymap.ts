@@ -1,13 +1,15 @@
 import type { KeyTarget } from "./dom"
 import {
+  jumpShortcut,
   matchesShortcut,
   shortcutBindings,
   workspaceShortcutBindings,
+  type Arrow,
   type Platform,
   type Shortcut,
 } from "./shortcuts"
 
-export type { KeyTarget }
+export type { Arrow, KeyTarget }
 
 // Everything routing reads from a key event, so it can run without a DOM.
 export type KeyInput = Pick<
@@ -42,6 +44,7 @@ export type CommandId =
   | "switcher.choose"
   | "switcher.move"
   | "terminal.step"
+  | "terminal.jump"
   | "view.step"
   | "recent.commitHeld"
   | "recent.cancelHeld"
@@ -51,6 +54,7 @@ export type KeyLayer =
   | "switcher-nav"
   | "escape"
   | "navigation"
+  | "jump"
   | "switcher"
   | "anywhere"
   | "app"
@@ -98,7 +102,8 @@ export type KeyEnvironment = {
 }
 
 const phaseLayers: Record<KeyPhase, readonly KeyLayer[]> = {
-  capture: ["switcher-nav", "escape", "navigation"],
+  // Jumps run in capture, before a terminal's input takes its modified arrows.
+  capture: ["switcher-nav", "escape", "navigation", "jump"],
   bubble: ["switcher", "anywhere", "app", "workspace"],
   keyup: ["release"],
   blur: ["release"],
@@ -152,6 +157,9 @@ const gates: Record<
     !state.switcher &&
     (input.target.viewSwitch ||
       (!input.target.editing && !input.target.navigationControl && !input.target.companion)),
+  // From terminal input or the workspace; text fields and editors keep them to select.
+  jump: (input, state) =>
+    !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,
@@ -190,7 +198,7 @@ export const routeKey = (
 }
 
 // Arrow commands carry their direction as an index into this list.
-export const arrowDirections = ["up", "right", "down", "left"] as const
+export const arrowDirections: readonly Arrow[] = ["up", "right", "down", "left"]
 
 const key = (value: string, modifiers: "none" | "shift" | "any" = "none"): KeyPattern => ({
   key: value,
@@ -243,6 +251,13 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       args: 1,
       repeat: "run",
     },
+    ...arrowDirections.map((arrow, args): KeyBinding => ({
+      layer: "jump",
+      keys: { shortcut: jumpShortcut(arrow, platform) },
+      command: "terminal.jump",
+      args,
+      repeat: "run",
+    })),
     { layer: "switcher", keys: key("Escape", "any"), command: "switcher.close", repeat: "run" },
     {
       layer: "switcher",
@@ -331,6 +346,12 @@ export const shortcutGroups = (platform: Platform): readonly ShortcutGroup[] => 
   {
     title: "Anywhere",
     description: "These also work while typing in a terminal.",
-    items: Object.values(shortcutBindings(platform)),
+    items: [
+      ...Object.values(shortcutBindings(platform)),
+      {
+        label: jumpShortcut("up", platform).label,
+        display: [...jumpShortcut("up", platform).display.slice(0, -1), "↑", "↓", "←", "→"],
+      },
+    ],
   },
 ]

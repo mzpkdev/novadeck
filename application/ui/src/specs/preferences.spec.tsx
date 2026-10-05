@@ -151,6 +151,7 @@ describe("shortcut list", () => {
         "Toggle terminal sidebar: CtrlShift1",
         "Toggle session sidebar: CtrlShift2",
         "Open preferences: Ctrl,",
+        "Terminal in that direction: CtrlShift↑↓←→",
       ])
     })
 
@@ -190,6 +191,7 @@ describe("shortcut list", () => {
         "Toggle terminal sidebar: ⌘Shift1",
         "Toggle session sidebar: ⌘Shift2",
         "Open preferences: ⌘,",
+        "Terminal in that direction: ⌘⌥↑↓←→",
       ])
     })
   })

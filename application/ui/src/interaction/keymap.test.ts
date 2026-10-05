@@ -177,6 +177,23 @@ describe("keymap", () => {
           expect(route(platform, "capture", { key: "ArrowDown", ...shift })).toEqual([])
         })
 
+        it("jumps with the chord from terminal input and the workspace, not from fields", () => {
+          const jump =
+            platform === "mac" ? { metaKey: true, altKey: true } : { ctrlKey: true, shiftKey: true }
+          expect(route(platform, "capture", { key: "ArrowLeft", ...jump })).toEqual([
+            "terminal.jump 3",
+          ])
+          expect(
+            route(platform, "capture", { key: "ArrowUp", ...jump, target: terminalInput }),
+          ).toEqual(["terminal.jump 0"])
+          expect(
+            route(platform, "capture", { key: "ArrowUp", ...jump, target: { editing: true } }),
+          ).toEqual([])
+          expect(
+            route(platform, "capture", { key: "ArrowUp", ...jump }, { state: { dialog: true } }),
+          ).toEqual([])
+        })
+
         it("takes them over from the view switch but leaves other radio groups and the resizer", () => {
           expect(
             route(platform, "capture", {
@@ -368,6 +385,7 @@ describe("keymap", () => {
           "Toggle terminal sidebar: Ctrl Shift 1",
           "Toggle session sidebar: Ctrl Shift 2",
           "Open preferences: Ctrl ,",
+          "Terminal in that direction: Ctrl Shift ↑ ↓ ← →",
         ],
       ])
       expect(rows("mac")).toEqual([
@@ -384,6 +402,7 @@ describe("keymap", () => {
           "Toggle terminal sidebar: ⌘ Shift 1",
           "Toggle session sidebar: ⌘ Shift 2",
           "Open preferences: ⌘ ,",
+          "Terminal in that direction: ⌘ ⌥ ↑ ↓ ← →",
         ],
       ])
       expect(shortcutGroups("mac").map(({ description }) => description)).toEqual([

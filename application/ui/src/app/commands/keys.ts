@@ -1,5 +1,6 @@
 import {
   arrowDirections,
+  type Arrow,
   type CommandId,
   type KeyBinding,
   type KeyInput,
@@ -62,6 +63,20 @@ export const createKeyCommands = (
     if (terminal || view !== "focus") return terminal
     const { focusPreview } = ui.getSnapshot().shell
     return activeTerminal(tilesOf(roster), selected, currentContext(snapshot), focusPreview)
+  }
+  // The tile an arrow moves to from the current one: in Grid and Canvas the nearest on
+  // its side, if any; in Focus or along the sidebar's list, the next in sidebar order.
+  const arrowTarget = (arrow: Arrow, inList: boolean): string | undefined => {
+    const { view, roster } = state()
+    const ordered = orderedTiles(roster)
+    if (!ordered.length) return undefined
+    const current = targeted()?.id
+    const tiles = view !== "focus" && !inList ? effects.tileRects() : []
+    const from = tiles.find((tile) => tile.id === current)
+    if (!from) return inOrder(ordered, current, arrow === "up" || arrow === "left" ? -1 : 1)
+    const others = tiles.filter((tile) => tile.id !== current)
+    const id = nearestInDirection(from.rect, others, arrow)
+    return ordered.some((tile) => tile.id === id) ? id : undefined
   }
   const stepView = (step: 1 | -1): "handled" => {
     const { view } = state()
@@ -201,33 +216,29 @@ export const createKeyCommands = (
     // Focus and the sidebar's list step through sidebar order, wrapping at either end.
     "terminal.step": {
       run: (input, args) => {
-        const { view, roster } = state()
-        const ordered = orderedTiles(roster)
-        if (!ordered.length) return "handled"
         const arrow = arrowDirections[args ?? 0]!
-        const current = targeted()?.id
         const inList = input.target.terminalTab
         const sideways = arrow === "left" || arrow === "right"
         // The view switch keeps Left and Right for its views; the sidebar's list runs up
         // and down only.
         if (input.target.viewSwitch && sideways) return stepView(arrow === "left" ? -1 : 1)
         if (inList && sideways) return "next"
-        const spatial = view !== "focus" && !inList
-        const tiles = spatial ? effects.tileRects() : []
-        const from = tiles.find((tile) => tile.id === current)
-        const nextId = from
-          ? nearestInDirection(
-              from.rect,
-              tiles.filter((tile) => tile.id !== current),
-              arrow,
-            )
-          : inOrder(ordered, current, arrow === "up" || arrow === "left" ? -1 : 1)
-        const terminal = ordered.find((tile) => tile.id === nextId)
-        if (!terminal) return "handled"
-        if (view === "canvas" && input.target.canvasNode) commands.requestCanvasFocus(terminal.id)
-        commands.select(terminal.id)
+        const id = arrowTarget(arrow, inList)
+        if (!id) return "handled"
+        if (state().view === "canvas" && input.target.canvasNode) commands.requestCanvasFocus(id)
+        commands.select(id)
         if ((input.target.viewSwitch || input.target.terminalTab) && terminalsPanelVisible())
-          effects.focusTerminalTab(terminal.id)
+          effects.focusTerminalTab(id)
+        return "handled"
+      },
+    },
+    // As an arrow on the stage, then typing goes on in the terminal it reached.
+    "terminal.jump": {
+      run: (_input, args) => {
+        const id = arrowTarget(arrowDirections[args ?? 0]!, false)
+        if (!id) return "handled"
+        commands.setKeyboardFocus({ id, view: state().view })
+        commands.select(id)
         return "handled"
       },
     },
