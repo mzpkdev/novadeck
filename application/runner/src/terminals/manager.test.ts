@@ -11,7 +11,7 @@ import { vi } from "vitest"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
-import { Terminals } from "./manager.js"
+import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
 const { Terminal } = headless
@@ -698,6 +698,39 @@ describe("terminal watching", () => {
     await manager.shutdown()
     await expect(pending[2]).resolves.toMatchObject({ done: true })
     await expect(manager.watch("late").next()).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
+  })
+})
+
+// A stand-in for node-pty's terminal, which on Windows throws on any signal.
+const ptyStandIn = (platform: NodeJS.Platform) => {
+  const signals: (string | undefined)[] = []
+  return {
+    signals,
+    pid: 4242,
+    kill: (signal?: string) => {
+      if (platform === "win32" && signal) throw new Error("Signals not supported on windows.")
+      signals.push(signal)
+    },
+  }
+}
+
+describe("forcing a terminal's program to end", () => {
+  it("sends SIGKILL on Linux and macOS", () => {
+    for (const platform of ["linux", "darwin"] as const) {
+      const ended: number[] = []
+      const terminal = ptyStandIn(platform)
+      forceKill(terminal, platform, (pid) => ended.push(pid))
+      expect(terminal.signals).toEqual(["SIGKILL"])
+      expect(ended).toEqual([])
+    }
+  })
+
+  it("ends the process by its id on Windows, giving node-pty no signal", () => {
+    const ended: number[] = []
+    const terminal = ptyStandIn("win32")
+    expect(() => forceKill(terminal, "win32", (pid) => ended.push(pid))).not.toThrow()
+    expect(ended).toEqual([4242])
+    expect(terminal.signals).toEqual([])
   })
 })
 

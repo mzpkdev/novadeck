@@ -483,6 +483,20 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
     a.argv?.length === b.argv?.length &&
     (a.argv ?? []).every((arg, index) => arg === b.argv?.[index]))
 
+/**
+ * Ends a terminal's program that its first kill left running. On Windows, which has no
+ * signals, node-pty throws on one, and later still when it queued the kill until the
+ * terminal first drew: its process is ended by its id instead.
+ */
+export const forceKill = (
+  child: Pick<pty.IPty, "pid" | "kill">,
+  platform: NodeJS.Platform = process.platform,
+  end: (pid: number) => void = (pid) => process.kill(pid),
+): void => {
+  if (platform === "win32") end(child.pid)
+  else child.kill("SIGKILL")
+}
+
 /** A signal number's name, such as `SIGKILL`; Windows has no signals. */
 const signalName = (signal: number | undefined): string | null => {
   if (!signal || process.platform === "win32") return null
@@ -3439,7 +3453,7 @@ export class Terminals {
       }
       timer = setTimeout(() => {
         try {
-          record.process.kill("SIGKILL")
+          forceKill(record.process)
         } catch {
           this.exit(record, { code: null, signal: null })
         }
