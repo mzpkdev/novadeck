@@ -509,8 +509,9 @@ goes up, and the runner keeps taking the one before for a release (`relayVersion
 
 1. The relay sends `{"relay":2,"kind":"mcp","terminalId":…,"token":…}`.
 2. The runner takes the session with `{"relay":2,"ok":true}`, in the relay's version.
-   Until then the relay reads nothing of the agent's, so when the runner doesn't take
-   it within 1.5 s, or can't be reached, the relay answers the whole session itself, with
+   Until then the relay reads nothing of the agent's, so when the runner refuses it, or
+   doesn't take it within 8 s, as a busy runner may not, within the 10 s an agent gives a
+   server to start, or can't be reached, the relay answers the whole session itself, with
    no tools, and says why on stderr, which agents keep in their logs.
 3. Then it carries the agent's JSON-RPC lines to the runner unchanged, and the runner's
    answers back, each as soon as it is ready. The runner serves the MCP server itself
@@ -529,7 +530,9 @@ terminals the relay answers by itself: `initialize`, `ping`, an empty `tools/lis
 [event]`. `relay.json`, which the runner writes beside the relay, holds what the relay
 knows of the agents: the events that ask, by agent; the variables it forwards; and what
 each agent prints without NovaDeck, by event and for any other (`*`), from each harness's
-`messaging.silent`.
+`messaging.silent`. Options come before the agent, as `--name value`, and every option
+takes a value: a relay passes over the options it doesn't know, so a later launcher's
+work with it, and an option without a value would be read as the agent.
 
 1. The relay reads the agent's payload, up to 1,000,000 bytes, and sends
    `{"relay":2,"kind":"hook","terminalId","token","agent","event","seq","deadline","ancestors","env","payload"}`.
