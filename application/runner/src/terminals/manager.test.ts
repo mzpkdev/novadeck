@@ -843,9 +843,9 @@ describe("terminal closing", () => {
       let text = ""
       await read(manager, stream, "owner", (event) => {
         if (event.type === "output") text += event.data
-        return /STARTED_PID=\d+/.test(text)
+        return /STARTED_PID=\d+\r?\n/.test(text)
       })
-      const started = Number(/STARTED_PID=(\d+)/.exec(text)?.[1])
+      const started = Number(/STARTED_PID=(\d+)\r?\n/.exec(text)?.[1])
       onTestFinished(() => {
         if (isRunning(started)) process.kill(started)
       })

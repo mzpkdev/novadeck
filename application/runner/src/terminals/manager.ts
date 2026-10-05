@@ -3472,14 +3472,15 @@ export class Terminals {
     try {
       const group = await this.hangUp(record.process)
       const child = record.process
-      const ended = process.platform === "win32" && drawnTerminals.has(child)
       try {
         child.kill()
       } catch {
         this.exit(record, { code: null, signal: null })
       }
       timer = setTimeout(() => {
-        // An ended Windows shell's id may already name another process.
+        // A Windows terminal that has drawn ran node-pty's kill, which ended its shell, whose
+        // id may already name another process.
+        const ended = process.platform === "win32" && drawnTerminals.has(child)
         const forced = ended ? Promise.resolve() : forceKill(child)
         forced.then(
           // node-pty on Windows reports an exit only once the console closes, which a program
