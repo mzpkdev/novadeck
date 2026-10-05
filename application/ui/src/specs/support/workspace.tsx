@@ -161,7 +161,7 @@ export const focusStage = async (): Promise<void> => {
   await expect.poll(() => document.activeElement === stage).toBe(true)
 }
 
-/** The badge shown at the top of the stage while navigating. */
+/** The footer's note while navigating. */
 export const navigateChip = (): Locator =>
   page.getByRole("status").filter({ hasText: "Navigating" })
 

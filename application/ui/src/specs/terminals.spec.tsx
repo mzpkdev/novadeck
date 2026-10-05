@@ -257,6 +257,19 @@ describe("renaming terminals", () => {
       await expect.element(headerName("Local shell")).toBeVisible()
     })
 
+    it("keeps arrows and Shift+arrows in the field", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+      await tabAction("Rename Dev server").click()
+      await expect.element(sidebarRenameField("Dev server")).toHaveFocus()
+
+      await press("{ArrowDown}{Shift>}{ArrowLeft}{/Shift}")
+
+      await expect.element(sidebarRenameField("Dev server")).toHaveFocus()
+      await expect.element(view("Grid")).toBeChecked()
+      await expect.element(terminalTab("Tests")).not.toHaveAttribute("aria-current", "true")
+    })
+
     it("discards the draft with the Cancel button", async () => {
       await openWorkspace()
 

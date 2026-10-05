@@ -8,7 +8,7 @@ import {
   type KeyState,
 } from "../../interaction/keymap"
 import { nearestInDirection } from "../../model/layout/spatial"
-import { hasTile, orderedTiles, tilesOf } from "../../model/roster"
+import { hasTile, isWindow, orderedTiles, tilesOf } from "../../model/roster"
 import { viewModes } from "../../model/state"
 import type { Tile } from "../../model/types"
 import { sidebarVisible } from "../../shell/shell-state"
@@ -66,12 +66,18 @@ export const createKeyCommands = (
   }
   // The tile an arrow moves to from the current one: in Grid and Canvas the nearest on
   // its side, if any; in Focus or along the sidebar's list, the next in sidebar order.
-  const arrowTarget = (arrow: Arrow, inList: boolean): string | undefined => {
+  // With `typing`, only terminals: windows take no typing.
+  const arrowTarget = (arrow: Arrow, inList: boolean, typing = false): string | undefined => {
     const { view, roster } = state()
-    const ordered = orderedTiles(roster)
-    if (!ordered.length) return undefined
     const current = targeted()?.id
-    const tiles = view !== "focus" && !inList ? effects.tileRects() : []
+    const ordered = orderedTiles(roster).filter(
+      (tile) => !typing || !isWindow(tile) || tile.id === current,
+    )
+    if (!ordered.length) return undefined
+    const tiles =
+      view !== "focus" && !inList
+        ? effects.tileRects().filter((tile) => ordered.some(({ id }) => id === tile.id))
+        : []
     const from = tiles.find((tile) => tile.id === current)
     if (!from) return inOrder(ordered, current, arrow === "up" || arrow === "left" ? -1 : 1)
     const others = tiles.filter((tile) => tile.id !== current)
@@ -182,8 +188,12 @@ export const createKeyCommands = (
       }),
     },
     // Back into the selected terminal, or the one Focus shows.
+    // A window takes no typing, so Enter and Escape leave navigating only from a terminal.
     "navigate.exit": {
-      available: () => ui.getSnapshot().shell.navigate,
+      available: () => {
+        const tile = targeted()
+        return ui.getSnapshot().shell.navigate && (!tile || !isWindow(tile))
+      },
       run: handled(() => {
         commands.setNavigate(false)
         const terminal = targeted()
@@ -234,8 +244,8 @@ export const createKeyCommands = (
     // As an arrow on the stage, then typing goes on in the terminal it reached.
     "terminal.jump": {
       run: (_input, args) => {
-        const id = arrowTarget(arrowDirections[args ?? 0]!, false)
-        if (!id) return "handled"
+        const id = arrowTarget(arrowDirections[args ?? 0]!, false, true)
+        if (!id || id === targeted()?.id) return "handled"
         commands.setKeyboardFocus({ id, view: state().view })
         commands.select(id)
         return "handled"

@@ -277,23 +277,28 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 
 The keyboard's home is the selected terminal. A mouse click on the sidebar, a header or
 the view switch leaves typing there, and the shortcuts above work from terminal input.
-`Shift+Esc` leaves the terminal to navigate the workspace: a ring marks the selected
-terminal and a "Navigating" note shows at the top of the stage, in normal and Zen mode.
-While navigating:
+`Shift+Esc` leaves the terminal to navigate the workspace, in normal and Zen mode: a
+ring marks the selected terminal, and outside Zen the footer says "Navigating". While
+navigating:
 
 | Key            | Action                                      |
 | -------------- | ------------------------------------------- |
 | `↑ ↓ ← →`      | Select the terminal in that direction       |
 | `Shift+← / →`  | Previous / next view                        |
-| `Enter`, `Esc` | Go back into the selected terminal          |
+| `Enter`, `Esc` | Go back into the selected terminal¹         |
 | `F2`           | Rename the active terminal                  |
 | `Delete`       | Close the active terminal                   |
 | `+` `−` `0`    | Zoom the Canvas in / out, fit all terminals |
 
-Typing a character, clicking, or moving into any field also ends navigating. Outside
-it, these keys do nothing on the workspace, so a key meant for a terminal never acts
-on it. Letters and other typed characters are never shortcuts: typed outside a
-terminal, they go into the selected terminal, which takes keyboard focus. With no
+¹ On Canvas, Esc first ends a visit to a terminal; an undocked window, which takes no
+typing, keeps you navigating.
+
+Typing a character, clicking, or moving focus anywhere but the view, as with Tab, also
+ends navigating. Outside it, these keys do nothing on the workspace, so a key meant for
+a terminal never acts on it; only the Canvas zoom keys also work whenever the Canvas
+itself has focus, as after clicking its background.
+
+Letters and other typed characters are never shortcuts: typed outside a terminal, they go into the selected terminal, which takes keyboard focus. With no
 terminal selected they do nothing, and Space still presses the focused button.
 
 Web addresses in a terminal, and the web hyperlinks programs print, open in your browser on

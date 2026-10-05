@@ -228,6 +228,12 @@ describe("keymap", () => {
           ).toEqual([])
         })
 
+        it("leaves them to a rename field in the sidebar's list", () => {
+          const renaming = { terminalTab: true, editing: true, rename: true }
+          for (const press of [{ key: "ArrowDown" }, { key: "ArrowLeft", shiftKey: true }])
+            expect(keydown(platform, { ...press, target: renaming }, navigating)).toEqual([])
+        })
+
         it("leaves them to inputs, companion panes, dialogs and modified presses", () => {
           const press = (key: Press, state = {}) =>
             keydown(platform, key, { state: { navigate: true, ...state } })

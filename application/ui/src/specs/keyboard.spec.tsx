@@ -417,6 +417,20 @@ describe("navigate mode", () => {
     })
   })
 
+  context("when a control takes keyboard focus while navigating", () => {
+    it("stops navigating, so Enter presses the control", async () => {
+      await openWorkspace()
+      await enterNavigateMode()
+      const enterZen = page.getByRole("button", { name: "Enter Zen mode" })
+      enterZen.element().focus()
+      await expect.element(navigateChip()).not.toBeInTheDocument()
+
+      await press("{Enter}")
+
+      await expect.element(page.getByRole("group", { name: "Zen controls" })).toBeVisible()
+    })
+  })
+
   for (const [key, name] of [
     ["{Enter}", "Enter"],
     ["{Escape}", "Esc"],

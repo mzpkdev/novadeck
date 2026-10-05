@@ -161,7 +161,7 @@ const gates: Record<
     !state.dialog &&
     !state.switcher &&
     (input.target.viewSwitch ||
-      input.target.terminalTab ||
+      (input.target.terminalTab && !input.target.editing) ||
       (state.navigate &&
         !input.target.editing &&
         !input.target.navigationControl &&

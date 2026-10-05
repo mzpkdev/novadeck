@@ -129,6 +129,17 @@ describe("key commands", () => {
     })
   })
 
+  context("when pressing Enter while navigating on an undocked window", () => {
+    it("keeps navigating, since a window takes no typing", () => {
+      const app = navigating({
+        workspace: workspaceWithWindow(),
+        url: "/projects/project/sessions/initial/grid?terminal=w1",
+      })
+      expect(app.keydown({ key: "Enter" })).toBe("passed")
+      expect(app.shell().navigate).toBe(true)
+    })
+  })
+
   context("when pressing Enter while navigating", () => {
     it("goes back into the terminal Focus shows, selecting it", () => {
       const app = navigating({
@@ -342,6 +353,18 @@ describe("key commands", () => {
       expect(app.keydown({ key: "ArrowRight", ...jump })).toBe("handled")
       expect(app.state().selected).toBe("02")
       expect(app.shell().keyboardFocus).toEqual({ id: "02", view: "grid" })
+    })
+
+    it("passes over an undocked window, which takes no typing", () => {
+      const app = openKeys({
+        workspace: workspaceWithWindow(),
+        url: "/projects/project/sessions/initial/grid?terminal=02",
+      })
+      app.screen.tiles = [tile("01", 0, 0), tile("02", 110, 0), tile("w1", 220, 0)]
+      expect(app.keydown({ key: "ArrowRight", ctrlKey: true, shiftKey: true })).toBe("handled")
+      expect(app.state().selected).toBe("02")
+      expect(app.keydown({ key: "ArrowLeft", ctrlKey: true, shiftKey: true })).toBe("handled")
+      expect(app.state().selected).toBe("01")
     })
 
     it("swallows the chord at the edge rather than send it to the terminal", () => {

@@ -2,6 +2,7 @@ import { useEffect } from "react"
 
 import {
   classifyKeyTarget,
+  navigateHome,
   terminalTabInteractionActive,
   workspaceOverlayOpen,
 } from "../../interaction/dom"
@@ -80,8 +81,10 @@ export const useKeyboard = (): void => {
     const bubble = (event: KeyboardEvent): void => dispatch("bubble", event, keyInput(event))
     const keyup = (event: KeyboardEvent): void => dispatch("keyup", event, keyInput(event))
     const blur = (event: FocusEvent): void => dispatch("blur", event, blurInput)
+    // Navigating holds only while focus is on a view or a Canvas node: a control reached
+    // with Tab keeps its own Enter.
     const focusin = (event: FocusEvent): void => {
-      if (classifyKeyTarget(event.target).editing) commands.setNavigate(false)
+      if (!navigateHome(event.target)) commands.setNavigate(false)
     }
     const pointerdown = (): void => commands.setNavigate(false)
     // Only a mouse: a tap that focused a terminal would raise a phone's keyboard. A click
@@ -89,6 +92,8 @@ export const useKeyboard = (): void => {
     const click = (event: MouseEvent): void => {
       if (!(event instanceof PointerEvent) || event.pointerType !== "mouse") return
       const clicked = document.activeElement
+      const on = classifyKeyTarget(event.target)
+      if (on.companion || on.zenDock) return
       requestAnimationFrame(() => {
         const now = document.activeElement
         if (now !== clicked && now !== document.body) return
