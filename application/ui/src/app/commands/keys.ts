@@ -181,6 +181,8 @@ export const createKeyCommands = (
     },
     // Keyboard focus leaves the terminal for the view, which keys then move around.
     "navigate.enter": {
+      // With no terminals there is no view to move around.
+      available: () => tilesOf(state().roster).length > 0,
       run: handled(() => {
         commands.setSwitcher(null)
         commands.setNavigate(true)

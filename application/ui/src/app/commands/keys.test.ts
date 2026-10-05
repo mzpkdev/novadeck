@@ -129,6 +129,14 @@ describe("key commands", () => {
     })
   })
 
+  context("when pressing Shift+Esc with no terminals", () => {
+    it("lets it through without navigating, since there is no view", () => {
+      const app = openKeys({ workspace: workspaceFixture({ terminals: 0 }) })
+      expect(app.keydown({ key: "Escape", shiftKey: true })).toBe("passed")
+      expect(app.shell().navigate).toBe(false)
+    })
+  })
+
   context("when pressing Enter while navigating on an undocked window", () => {
     it("keeps navigating, since a window takes no typing", () => {
       const app = navigating({
