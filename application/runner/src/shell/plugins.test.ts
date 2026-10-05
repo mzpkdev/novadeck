@@ -255,7 +255,8 @@ describe("NovaDeck's MCP server in each agent's plugin", () => {
           args: [
             "-c",
             'if [ -x "$NOVADECK_MCP" ]; then exec "$NOVADECK_MCP"; fi; exec "$0" "$@"',
-            "/home/jo doe/it's $HOME/shell/mcp",
+            // Joined as the runner joins it, so on a Windows host with its separator.
+            shellPaths("/home/jo doe/it's $HOME/shell", platform).mcp,
           ],
         })
     for (const each of declared("win32", "C:\\Users\\Jo Doe\\AppData\\Roaming\\NovaDeck\\shell"))
