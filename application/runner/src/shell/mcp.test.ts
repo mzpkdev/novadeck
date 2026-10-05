@@ -804,17 +804,19 @@ describe("NovaDeck's MCP server", () => {
       }
     })
 
-    it("answers by itself, with no tools, when the runner doesn't answer", async () => {
+    it("answers by itself, with no tools, when the runner doesn't answer in time", async () => {
       const silent = await runner(undefined)
       try {
         const began = Date.now()
         const [, tools] = await session(silent.env, [initialize, list])
         expect(tools?.result?.tools).toEqual([])
-        expect(Date.now() - began).toBeLessThan(5_000)
+        // It waits for a busy runner, within the ten seconds an agent gives it to start.
+        expect(Date.now() - began).toBeGreaterThan(7_000)
+        expect(Date.now() - began).toBeLessThan(10_000)
       } finally {
         await silent.close()
       }
-    })
+    }, 20_000)
   })
 
   it("names its version, and answers a version it doesn't know with the newest it does", async () => {

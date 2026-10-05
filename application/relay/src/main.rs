@@ -11,6 +11,7 @@ mod idle;
 mod mcp;
 mod status_line;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -22,8 +23,24 @@ pub const PROTOCOL: u32 = 2;
 const SOURCE: Option<&str> = option_env!("NOVADECK_RELAY_SOURCE");
 
 const USAGE: &str = "usage: novadeck-relay mcp <server-version> <protocol-version>...
-       novadeck-relay hook [--config <relay.json>] <agent> [event]
+       novadeck-relay hook [--config <relay.json>] [--<option> <value>]... <agent> [event]
        novadeck-relay --version";
+
+/// The leading `--name value` options, and the arguments after them. Every option takes a
+/// value, so one this relay doesn't know, from a newer runner's launcher, is passed over
+/// whole rather than read as the agent.
+fn options(args: &[String]) -> (HashMap<&str, &str>, &[String]) {
+    let mut found = HashMap::new();
+    let mut rest = args;
+    while let [name, value, after @ ..] = rest {
+        if !name.starts_with("--") {
+            break;
+        }
+        found.insert(name.as_str(), value.as_str());
+        rest = after;
+    }
+    (found, rest)
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -38,13 +55,9 @@ fn main() -> ExitCode {
         }
         // A hook always succeeds, so its agent never treats NovaDeck as failing.
         Some((mode, rest)) if mode == "hook" => {
+            let (options, rest) = options(rest);
             // What the runner tells it of the agents, from the file its launcher names.
-            let (config, rest) = match rest {
-                [flag, path, rest @ ..] if flag == "--config" => {
-                    (hook::Config::read(Some(Path::new(path))), rest)
-                }
-                _ => (hook::Config::default(), rest),
-            };
+            let config = hook::Config::read(options.get("--config").map(Path::new));
             let agent = rest.first().map_or("", String::as_str);
             let event = rest.get(1).map_or("", String::as_str);
             hook::run(agent, event, &config);
@@ -64,5 +77,24 @@ fn main() -> ExitCode {
             eprintln!("{USAGE}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(each: &[&str]) -> Vec<String> {
+        each.iter().map(|one| (*one).to_owned()).collect()
+    }
+
+    #[test]
+    fn passes_over_options_it_doesnt_know_rather_than_read_them_as_the_agent() {
+        let given = args(&["--config", "relay.json", "--newer", "x", "agy", "Stop"]);
+        let (found, rest) = options(&given);
+        assert_eq!(found.get("--config"), Some(&"relay.json"));
+        assert_eq!(rest, args(&["agy", "Stop"]));
+        let plain = args(&["claude", "Stop"]);
+        assert_eq!(options(&plain).1, plain);
     }
 }

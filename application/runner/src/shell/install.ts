@@ -48,8 +48,8 @@ export const installShellFiles = async (
     const temporary = `${file.path}.${process.pid}.tmp`
     // eslint-disable-next-line no-await-in-loop -- As above.
     await writeFile(temporary, file.content, { mode: file.mode })
-    // eslint-disable-next-line no-await-in-loop -- As above.
-    await rename(temporary, file.path)
+    // eslint-disable-next-line no-await-in-loop -- As above; held a moment on Windows, tried again.
+    await settled(() => rename(temporary, file.path))
   }
   // A resume command left by a runner that stopped before its shell took it is stale.
   await rm(paths.resume, { recursive: true, force: true })

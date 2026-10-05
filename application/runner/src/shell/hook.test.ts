@@ -326,6 +326,23 @@ describe("agent hook", () => {
     expect(await launched(paths.launcher, ["claude", "Stop"], env)).toBe("")
   })
 
+  it("still answers Antigravity through its launcher when what the relay reads is missing", async ({
+    resources,
+  }) => {
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-noconfig-"))
+    resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+    const paths = await installShellFiles(join(directory, "shell"))
+    rmSync(paths.relayConfig)
+    const env = {
+      NOVADECK_TERMINAL_ID: terminalId,
+      NOVADECK_REPORT: "gone",
+      NOVADECK_REPORT_TOKEN: token,
+    }
+    expect((await launched(paths.launcher, ["agy", "PreToolUse"], env)).trim()).toBe(
+      '{"decision":"ask"}',
+    )
+  })
+
   it("gives up within its limit when its agent never closes its input", async ({ fixture }) => {
     const began = performance.now()
     const printed = await new Promise<string>((resolve) => {

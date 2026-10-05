@@ -332,11 +332,12 @@ exec ${shQuote(paths.relay)} ${relayLine(paths, mode, shQuote)} "$@"
 `
     : `#!/bin/sh
 ${header("#", what)}
-if [ -x ${shQuote(paths.relay)} ]; then
+if [ -x ${shQuote(paths.relay)} ] && [ -r ${shQuote(paths.relayConfig)} ]; then
   exec ${shQuote(paths.relay)} ${relayLine(paths, mode, shQuote)} "$@"
 fi
-# Without its relay, as when NovaDeck couldn't put it in place: the hook takes the
-# agent's input and prints what the agent needs, as Antigravity denies a tool otherwise.
+# Without its relay or what it reads, as when NovaDeck couldn't put them in place: the
+# hook takes the agent's input and prints what the agent needs, as Antigravity denies a
+# tool otherwise.
 cat >/dev/null
 case "$1 $2" in
 ${silentCases(
@@ -358,11 +359,12 @@ ${cmdQuote(paths.relay)} ${relayLine(paths, mode, cmdQuote)} %*
 `
       : `@echo off
 ${header("rem", what)}
-if exist ${cmdQuote(paths.relay)} (
+if exist ${cmdQuote(paths.relay)} if exist ${cmdQuote(paths.relayConfig)} (
   ${cmdQuote(paths.relay)} ${relayLine(paths, mode, cmdQuote)} %*
   exit /b 0
 )
-rem Without its relay: what the agent needs, as Antigravity denies a tool otherwise.
+rem Without its relay or what it reads: what the agent needs, as Antigravity denies a
+rem tool otherwise.
 ${silentCases(
   (agent, event, text) =>
     `if /i "%~1"=="${agent}" ${event === "*" ? "" : `if /i "%~2"=="${event}" `}(echo ${text}&exit /b 0)`,

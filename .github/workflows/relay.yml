@@ -114,6 +114,11 @@ jobs:
         run: |
           node application/relay/scripts/build.ts --test
           node application/relay/scripts/build.ts
+          # The binary names the source it was built from, as contributors' copies will.
+          prefix="$(node application/relay/scripts/build.ts --prefix)"
+          version="$(application/relay/dist/novadeck-relay --version)"
+          echo "$version"
+          [[ "$version" == *"(protocol "*", source ${prefix#relay-})" ]]
           asset="$(node application/relay/scripts/build.ts --asset)"
           mkdir -p "$RUNNER_TEMP/relay"
           cp application/relay/dist/novadeck-relay* "$RUNNER_TEMP/relay/$asset"

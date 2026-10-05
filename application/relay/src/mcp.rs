@@ -16,8 +16,11 @@ use crate::{PROTOCOL, endpoint, idle};
 /// can't be half closed: the runner answers the calls under way, then closes.
 pub const END: &str = "{\"relay\":\"eof\"}\n";
 
-/// How long the runner has to take the session before the relay answers by itself.
-const TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
+/// How long the runner has to take the session before the relay answers by itself: long,
+/// as a runner busy restoring terminals answers late, and a session given up on stays
+/// without tools for as long as its agent runs; within the ten seconds an agent such as
+/// Codex gives a server to start. A runner that refuses the session says so at once.
+const TAKEN_WITHIN: Duration = Duration::from_millis(8_000);
 
 /// Whether a line is the runner taking the session, in this relay's protocol.
 pub fn taken(line: &str) -> bool {

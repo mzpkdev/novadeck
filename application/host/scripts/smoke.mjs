@@ -1,7 +1,7 @@
 // Launches the unpacked packaged app and runs a real shell through its bundled runner.
 // Usage (after `pnpm run package:<target>`): node scripts/smoke.mjs
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -72,8 +72,14 @@ try {
   })
   const answer = JSON.parse(hello.toString())
   if (answer?.result?.protocolVersion !== "2025-06-18") throw new Error(hello.toString())
-  // A hook outside NovaDeck still gives Antigravity the answer that lets its tools run.
-  const hook = execFileSync(relay, ["hook", "agy", "PreToolUse"], {
+  // A hook outside NovaDeck still gives Antigravity the answer that lets its tools run,
+  // as the runner's relay.json names it.
+  const config = join(mkdtempSync(join(tmpdir(), "novadeck-smoke-relay-")), "relay.json")
+  writeFileSync(
+    config,
+    JSON.stringify({ fallbacks: { agy: { PreToolUse: '{"decision":"ask"}', "*": "{}" } } }),
+  )
+  const hook = execFileSync(relay, ["hook", "--config", config, "agy", "PreToolUse"], {
     input: "{}",
     env: Object.fromEntries(
       Object.entries(process.env).filter(([name]) => !name.startsWith("NOVADECK_")),
@@ -81,6 +87,11 @@ try {
     timeout: 10_000,
   })
   if (hook.toString() !== '{"decision":"ask"}\n') throw new Error(`hook: ${hook}`)
+  // It names its build, in the protocol the runner speaks.
+  const version = execFileSync(relay, ["--version"], { timeout: 10_000 }).toString()
+  if (!/^novadeck-relay \S+ \(protocol 2, source [0-9a-f]{16}\)/.test(version)) {
+    throw new Error(`version: ${version}`)
+  }
 } catch (error) {
   fail(`The relay didn't answer as an MCP server and hook: ${error}`)
 }
