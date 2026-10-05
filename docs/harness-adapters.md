@@ -218,16 +218,30 @@ in [Agent operations in NovaDeck](agent-workspace.md).
 
 The terminal indicator derives from the summary through one shared resolver:
 
-| Condition                                       | Visible state                                   |
-| ----------------------------------------------- | ----------------------------------------------- |
-| PTY starting or ended/failed                    | Terminal lifecycle                              |
-| Accepted live agent has pending user attention  | Needs attention (permission/question and count) |
-| Accepted live agent has known turn activity     | Working or idle                                 |
-| Agent detected, but no usable activity evidence | Unknown                                         |
-| Ordinary shell/program                          | Existing shell/process activity                 |
+| Condition                                       | Visible state                                       |
+| ----------------------------------------------- | --------------------------------------------------- |
+| PTY starting or ended/failed                    | Terminal lifecycle                                  |
+| Accepted live agent has pending user attention  | Needs attention (permission/question and count)     |
+| Accepted live agent has known turn activity     | Working, idle, or done while its reply waits unread |
+| Agent detected, but no usable activity evidence | Not reporting                                       |
+| Ordinary shell/program                          | Existing shell/process activity                     |
 
-A recognized agent with disabled or untrusted hooks gets unknown activity, not
-process-derived running. Silence never means idle, and no timeout turns a long
+Working spans the agent's turn, a Stop NovaDeck continued included, and, after it, the
+subagents it started that run on and will wake it once done;
+`TerminalSummary.activity.background` counts what the turn left running, a command too,
+which shows but keeps nothing working (see
+[Harness coverage](harness-coverage.md#working-past-a-turns-end)). A recognized agent
+(Claude Code, Codex or Antigravity in the foreground) with disabled or untrusted
+hooks is Not reporting: a muted "○" in its tab and a muted dashed line on its window,
+said in words to its tooltip and assistive technology, not process-derived running.
+An agent that finished while the person looked elsewhere is done, its reply unread: a
+green "●" in its tab and a solid green line on its window, until they look at that
+terminal or it starts another turn. That mark is the client's own, from
+`TerminalSummary.activity.lastTurn` (see
+[Harness coverage](harness-coverage.md#a-finished-turn-and-its-last-reply)); the runner
+keeps no unread state.
+Codex and Antigravity at their own prompt before their first, their hooks running,
+are idle there: `TerminalSummary.ready` names them, until the person presses Enter there, and again should that Enter start nothing within moments (a command such as `/status`). Silence never means idle, and no timeout turns a long
 turn idle. Loss of the runner connection is reported separately; clients never
 present an old snapshot as current.
 
@@ -677,7 +691,10 @@ a hook inherits every ancestor harness's variables.
 Interruption reaches NovaDeck differently per harness: Codex fires `Interrupt`,
 Claude Code's transcript records the interruption, and Antigravity reports it
 only through its status line's `agent_state` returning to `idle`. Without such a source, a turn
-stays `working` until its next event, and activity coverage is `partial`.
+stays `working` until its next event, and activity coverage is `partial`. A turn's end
+whose hook never reported comes from the same records: Claude Code's transcript records
+each time a turn's Stop hooks ran, and Codex's rollout each turn's end, a failed one
+too, by the turn's id.
 
 Keep a durable resume reference separate from an ephemeral live binding. A
 binding is runner lifetime, terminal ID, run, a service-issued binding ID, the

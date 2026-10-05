@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path"
 
 import {
   agentSessionId,
+  replyPreviewLength,
   type AgentCoverage,
   type AgentName,
   type TranscriptItem,
@@ -92,6 +93,12 @@ export type Harness = {
   readonly plans?: (line: string) => readonly WrittenPlan[]
   /** How much of each feature NovaDeck tells of it, from the sources its adapter reads. */
   readonly coverage: AgentCoverage
+  /**
+   * Whether work a turn leaves running, as a background subagent or command, wakes the
+   * agent with a turn of its own once done, so it works on until then (see
+   * docs/harness-coverage.md, "Activity").
+   */
+  readonly wakes: boolean
   /** How it takes part in agents' messaging: what its hooks print, and how it behaves. */
   readonly messaging: MessagingProfile
   /** The normalized facts in one of its hooks' reports; none for one it ignores. */
@@ -107,6 +114,8 @@ export type Harness = {
    * foreground runs a process of the harness's name.
    */
   readonly title?: (title: string, at: number) => PromptShown | undefined
+  /** Whether the terminal title it sets says a turn runs, as Codex's Working does. */
+  readonly titleWorking?: (title: string) => boolean
   /**
    * Whether NovaDeck's hooks run for it in `cwd`, where it runs them only once the person
    * trusts them (Codex): a prompt it shows counts only then, as nothing could deliver a
@@ -360,6 +369,8 @@ export const promptStart = (
     readonly sessionId: string
     readonly instance: string | null
     readonly startedAt: number
+    /** The turn's id, where the harness names one. */
+    readonly turn?: string
   },
   prompt: string,
   harness = false,
@@ -378,6 +389,51 @@ export const quotedLine = (line: string): string => `"${line}"`
 /** A payload's string field, or undefined. */
 export const text = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined
+
+// Terminal escape sequences: CSI (ESC [ … final), OSC (ESC ] … BEL or ST), and other
+// two-character escapes; then any control character left, and the bidirectional
+// overrides and isolates that could reorder what a notification shows.
+// eslint-disable-next-line no-control-regex -- These are the characters it removes.
+const escapes = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g
+// eslint-disable-next-line no-control-regex -- As above.
+const controls = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g
+// Markdown's marks that read as noise in plain text: emphasis, code, a heading's or a
+// quote's lead, a list's bullet, and a link's brackets around its text.
+const marks = /(\*\*|`+|~~)/g
+const lead = /^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+(?:\[[ xX]\]\s+)?)/
+const links = /!?\[([^\]]*)\]\([^)]*\)/g
+
+/**
+ * The start of an agent's reply as one line of plain text, at most
+ * `replyPreviewLength` long: escapes and control characters out, Markdown's marks
+ * dropped, lines joined, whitespace collapsed, and an ellipsis where it was cut, never
+ * inside a character. Undefined when nothing is left.
+ */
+export const replyPreview = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined
+  const line = value
+    // Only as much as can show: a reply may be long, and the hook already cut it.
+    .slice(0, replyPreviewLength * 8)
+    .replace(escapes, "")
+    .split(/\r\n|\r|\n/)
+    .map((part) => part.replace(lead, "").replace(links, "$1").replace(marks, ""))
+    .join(" ")
+    .replace(controls, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!line) return undefined
+  if (line.length <= replyPreviewLength) return line
+  let end = replyPreviewLength - 1
+  const last = line.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1
+  return `${line.slice(0, end).trimEnd()}…`
+}
+
+/** A turn's end's `reply`, from a field holding the agent's last reply; nothing without one. */
+export const replied = (value: unknown): { readonly reply?: string } => {
+  const reply = replyPreview(value)
+  return reply === undefined ? {} : { reply }
+}
 
 /**
  * The facts of a hook, and whether the agent plans: the root agent's turn, tool and stop

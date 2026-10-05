@@ -1,12 +1,13 @@
 import { basename, dirname, extname } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
-import type { HarnessEvent } from "../events.js"
+import type { Background, HarnessEvent } from "../events.js"
 import {
   absolute,
   bounded,
   callId,
   promptStart,
+  replied,
   sessionId,
   sessionStart,
   subjectOf,
@@ -85,6 +86,7 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
               ...base,
               outcome: "completed",
               background: running(payload.background_tasks),
+              ...replied(payload.last_assistant_message),
             },
           ]
     case "StopFailure":
@@ -147,16 +149,23 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
 // The prompt of a turn Claude Code starts by itself once a background task finishes.
 const notification = /^\s*<task-notification>/
 
-// Whether a Stop lists background tasks still running, which may start a turn by themselves:
-// each names its status, and only a running one counts.
-const running = (tasks: unknown): boolean =>
-  Array.isArray(tasks) &&
-  tasks.some(
-    (task) =>
+/**
+ * The background tasks a Stop lists still running, each of which starts a turn by itself
+ * once done, with a task notification (probed 2026-10-04, 2.1.289: a background subagent
+ * and a background command each did): its subagents, by their type, and the rest, as
+ * commands. Each names its status, and only a running one counts.
+ */
+const running = (tasks: unknown): Background => {
+  const listed = Array.isArray(tasks) ? (tasks as unknown[]) : []
+  const live = listed.filter(
+    (task): task is { type?: unknown } =>
       typeof task === "object" &&
       task !== null &&
       (task as { status?: unknown }).status === "running",
   )
+  const agents = live.filter(({ type }) => type === "subagent").length
+  return { agents, tasks: live.length - agents }
+}
 
 const count = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined

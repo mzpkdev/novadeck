@@ -45,6 +45,7 @@ import type {
 } from "../harnesses/events.js"
 import { doorbellLine, quotedLine, silentFor, type Install } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
+import { unreplied, withReplies } from "../harnesses/replies.js"
 import { followRoot, rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
@@ -139,6 +140,13 @@ const OUTPUT_CHARS = 4096
 
 /** How long after the person's last key an untrusted agent's hooks are asked about again. */
 export const trustRecheckMs = 1000
+
+/**
+ * How long after the person's Enter at an agent's own prompt, before its first, a session
+ * must bind or a turn show, or that Enter submitted no prompt (a command such as Codex's
+ * `/status`, or nothing): a prompt binds in about a second (probed 2026-10-04, 0.159.3).
+ */
+export const readyReturnMs = 5000
 
 export type TerminalOptions = {
   shell?: string
@@ -290,6 +298,10 @@ type Record = {
   title?: string
   /** Reads the latest title again once the person's keys pause, while hooks are untrusted. */
   recheck?: NodeJS.Timeout | undefined
+  /** Shows the agent's prompt ready again, once an Enter there started nothing. */
+  readyReturn?: NodeJS.Timeout | undefined
+  /** Whether its title said a turn runs since the person's Enter at its ready prompt. */
+  readyTurned?: boolean
   /** What names it: the person's title, an agent's, and its agent's summary of its work. */
   naming: Naming
   /** When its agent is next nudged to describe its work; kept for this runner's lifetime. */
@@ -343,6 +355,11 @@ type Record = {
    * a program may be running.
    */
   submitted: boolean
+  /**
+   * Whether the person pressed Enter at the agent's own prompt shown before any session
+   * bound: its first prompt's hooks bind it, so until then nothing says it is idle.
+   */
+  readyEntered: boolean
   /** `performance.now()` at the last save of its screen, so saves take turns. */
   savedAt: number
 } & Omit<Started, "process" | "screen" | "serializer" | "startedAt">
@@ -614,6 +631,12 @@ export class Terminals {
     })
     this.doorbell =
       options.doorbell === false ? undefined : new Doorbell(this.ringHost(), options.doorbell)
+    // A Stop NovaDeck continued whose lease lapsed ended its turn after all.
+    this.messaging.subscribe((change) => {
+      if (change.kind !== "terminal") return
+      const record = this.records.get(change.terminalId)
+      if (record) this.lapsed(record)
+    })
     const doorbell = this.doorbell
     if (doorbell)
       this.messaging.subscribe((change) => {
@@ -747,6 +770,7 @@ export class Terminals {
           process: shellProcess(shell),
           run: 1,
           agent: null,
+          ready: null,
           activity: null,
           telemetry: null,
         },
@@ -780,6 +804,7 @@ export class Terminals {
         changed: false,
         savedAt: 0,
         submitted: started.resumes,
+        readyEntered: false,
         naming,
         nudges: noNudges,
         root: null,
@@ -857,6 +882,7 @@ export class Terminals {
       exit: null,
       process: null,
       agent: null,
+      ready: null,
       activity: null,
       telemetry: null,
     }
@@ -965,6 +991,7 @@ export class Terminals {
       if (this.cancelResume(record) && claim && this.claims.get(claim) === record.summary.id)
         this.claims.delete(claim)
       if (/[\r\n]/.test(input.data)) record.submitted = true
+      if (keys.some(({ kind }) => kind === "enter") && this.readyOf(record)) this.readyEnter(record)
       this.messaging.keys(
         input.terminalId,
         keys.map(({ kind }) => kind),
@@ -1201,6 +1228,7 @@ export class Terminals {
             process: shellProcess(shell),
             run: record.summary.run + 1,
             agent: null,
+            ready: null,
             activity: null,
             telemetry: null,
           } satisfies TerminalSummary,
@@ -1221,6 +1249,7 @@ export class Terminals {
           exitQueued: false,
           closing: undefined,
           submitted: started.resumes,
+          readyEntered: false,
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
@@ -1421,7 +1450,13 @@ export class Terminals {
         record.telemetry = null
         this.unwatch(record)
         this.rebound(record)
-        record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
+        record.summary = {
+          ...record.summary,
+          agent: null,
+          ready: this.readyOf(record),
+          activity: null,
+          telemetry: null,
+        }
         this.announce(record)
       }
     }
@@ -2396,12 +2431,14 @@ export class Terminals {
     if (record.process !== child) return
     record.promptedAt = Date.now()
     record.submitted = false
+    record.readyEntered = false
     this.cancelResume(record)
     record.changed = true
     const moved = cwd !== record.summary.cwd
     this.endBinding(record)
     // An agent whose prompt showed, with no session bound, left with it.
     this.messaging.unshown(record.summary.id)
+    this.publishAgent(record, false)
     if (moved) {
       record.summary = { ...record.summary, cwd }
       this.announce(record)
@@ -2455,7 +2492,19 @@ export class Terminals {
     }
     const record = this.records.get(report.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, report.token)) return silent
-    const events = harnesses[report.agent].decode(report)
+    const decoded = harnesses[report.agent].decode(report)
+    // A turn's end its hook named no reply for reads the reply from the agent's
+    // transcript; any other report goes on at once.
+    const events =
+      unreplied(decoded) < 0
+        ? decoded
+        : await withReplies(
+            decoded,
+            harnesses[report.agent].transcripts?.items,
+            record.binding?.agent === report.agent
+              ? { sessionId: record.binding.sessionId, transcript: record.transcript }
+              : undefined,
+          )
     // Its prompt shows before any session of its binds, as Antigravity's status line says.
     const shown = harnesses[report.agent].shown?.(report)
     if (events.length === 0 && !shown) return silent
@@ -2478,6 +2527,9 @@ export class Terminals {
       shellInForeground: foreground,
       submitted: record.submitted,
       connected,
+      busy:
+        record.activity !== null &&
+        (record.activity.state === "working" || record.activity.background !== null),
       platform: process.platform,
     }
     // Its prompt shows, as the agent holding the terminal tells, as for a session it names;
@@ -2529,7 +2581,9 @@ export class Terminals {
         before.agent === next.binding.agent &&
         before.sessionId === next.binding.sessionId
       if (!same) {
-        record.activity = next.binding ? fresh(event.startedAt) : null
+        record.activity = next.binding
+          ? fresh(event.startedAt, harnesses[next.binding.agent].wakes)
+          : null
         record.telemetry = null
         this.follow(record, event)
         // The plans its bar mirrored of another session go; unbinding alone keeps them.
@@ -2538,7 +2592,12 @@ export class Terminals {
       }
       record.summary = { ...record.summary, cwd: next.cwd }
     }
-    this.publishAgent(record, record.summary.cwd !== cwd)
+    // A Stop NovaDeck may continue shows once its ask is answered, so a continued turn
+    // never flashes idle.
+    const stopAsk =
+      deadline !== undefined && harnesses[report.agent].messaging.asks[report.event] === "stop"
+    const moved = record.summary.cwd !== cwd
+    if (!stopAsk) this.publishAgent(record, moved)
     const changes = this.followRootOf(record, events, report.event === "StatusLine")
     // The harness compacted the root session's context: it may have lost its description.
     if (
@@ -2564,9 +2623,38 @@ export class Terminals {
       events: told,
       deadline,
     })
+    if (stopAsk) {
+      this.continued(record, told, answer)
+      this.publishAgent(record, moved)
+    }
     this.escaped(record)
     this.judgeFirst(record)
     return this.nudged(record, report, told, answer, deadline)
+  }
+
+  /** A Stop NovaDeck continued, lapsed as delivery took it, ends the agent's turn too. */
+  private lapsed(record: Record): void {
+    const { binding, activity } = record
+    const event =
+      binding && activity && this.messaging.lapsed(record.summary.id, binding, activity.turnAt)
+    if (event && this.applyFact(record, event)) this.publishAgent(record, false)
+  }
+
+  /**
+   * A root Stop NovaDeck continued with messages, its hook's answer leasing them: the
+   * agent's turn goes on, as delivery's does, until the continuation's own Stop.
+   */
+  private continued(record: Record, events: readonly HarnessEvent[], answer: HookAnswer): void {
+    if (answer.leaseId === null) return
+    const stop = events.find(
+      (event) =>
+        event.type === "turn-ended" &&
+        event.outcome === "completed" &&
+        rootedIn(record.root, event),
+    )
+    if (!stop || stop.type !== "turn-ended") return
+    const { agent, sessionId, instance, startedAt } = stop
+    this.applyFact(record, { type: "turn-continued", agent, sessionId, instance, startedAt })
   }
 
   /**
@@ -2749,6 +2837,8 @@ export class Terminals {
    * with the terminal's reports.
    */
   private screenTitled(record: Record, child: pty.IPty, title: string): void {
+    if (record.readyEntered && agents.some((agent) => harnesses[agent].titleWorking?.(title)))
+      record.readyTurned = true
     for (const agent of agents) {
       const shown = harnesses[agent].title?.(title, Date.now())
       if (!shown) continue
@@ -2926,7 +3016,12 @@ export class Terminals {
     if (shown.startedAt <= (record.promptedAt ?? 0)) return
     const { binding } = record
     const id = record.summary.id
-    if (!binding) return this.messaging.shown(id, agent, sessionPrefix ?? null)
+    if (!binding) {
+      this.messaging.shown(id, agent, sessionPrefix ?? null)
+      record.readyEntered = false
+      this.publishAgent(record, false)
+      return
+    }
     // Only the session it was shown to replace, still bound: one bound since, as the new
     // session's own first prompt binds it, stays.
     if (replaced === undefined || binding.sessionId !== replaced) return
@@ -2972,7 +3067,13 @@ export class Terminals {
     this.unwatch(record)
     this.rebound(record)
     if (record.summary.agent !== null) {
-      record.summary = { ...record.summary, agent: null, activity: null, telemetry: null }
+      record.summary = {
+        ...record.summary,
+        agent: null,
+        ready: this.readyOf(record),
+        activity: null,
+        telemetry: null,
+      }
       this.announce(record)
     }
     return true
@@ -3003,10 +3104,22 @@ export class Terminals {
 
   /** Applies what the bound session's own sources said, as its hooks' reports apply. */
   private sourceFact(record: Record, fact: Exclude<HarnessEvent, SessionObserved>): void {
-    if (this.applyFact(record, fact)) this.publishAgent(record, false)
-    // What only its records say, as an interrupted turn, reaches messaging too.
-    if (this.trackRoot(record, [fact], false)) this.save(record, false)
-    this.messaging.observe(record.summary.id, [fact])
+    const running = record.activity?.state === "working"
+    const applied = this.applyFact(record, fact)
+    if (applied) this.publishAgent(record, false)
+    // What only its records say, as an interrupted turn, reaches messaging too. A turn's
+    // end its records told does only where it ended the turn, never a record used up as a
+    // continued Stop's, with what the activity holds the turn left running, so the two
+    // tell the same.
+    const ended = applied && running && record.activity?.state === "idle"
+    const facts =
+      fact.type !== "turn-ended" || !fact.recorded
+        ? [fact]
+        : ended
+          ? [{ ...fact, background: record.activity?.background ?? { agents: 0, tasks: 0 } }]
+          : []
+    if (this.trackRoot(record, facts, false)) this.save(record, false)
+    this.messaging.observe(record.summary.id, facts)
     this.escaped(record)
   }
 
@@ -3160,18 +3273,48 @@ export class Terminals {
     // Detail changes where the summary may not: a revised request, a subject.
     this.detailed(record)
     const agent = record.binding?.agent ?? null
+    const ready = this.readyOf(record)
     const activity = record.binding && record.activity ? activitySummary(record.activity) : null
     const telemetry = record.binding && record.telemetry ? telemetrySummary(record.telemetry) : null
     const { summary } = record
     if (
       !moved &&
       summary.agent === agent &&
+      summary.ready === ready &&
       JSON.stringify(summary.activity) === JSON.stringify(activity) &&
       JSON.stringify(summary.telemetry) === JSON.stringify(telemetry)
     )
       return
-    record.summary = { ...summary, agent, activity, telemetry }
+    record.summary = { ...summary, agent, ready, activity, telemetry }
     this.announce(record)
+  }
+
+  /**
+   * The person pressed Enter at the agent's own prompt, before its first: until its
+   * session binds, nothing says it is idle. Should neither a session bind nor its title say
+   * a turn runs within `readyReturnMs`, the Enter submitted no prompt, and the prompt
+   * still shows.
+   */
+  private readyEnter(record: Record): void {
+    record.readyEntered = true
+    record.readyTurned = false
+    this.publishAgent(record, false)
+    if (record.readyReturn) clearTimeout(record.readyReturn)
+    const child = record.process
+    record.readyReturn = setTimeout(() => {
+      record.readyReturn = undefined
+      if (record.process !== child || record.exitQueued || record.binding) return
+      if (!record.readyEntered || record.readyTurned) return
+      record.readyEntered = false
+      this.publishAgent(record, false)
+    }, readyReturnMs)
+    record.readyReturn.unref()
+  }
+
+  /** The agent whose own prompt shows there, with NovaDeck's hooks, before any session bound. */
+  private readyOf(record: Record): AgentName | null {
+    if (record.binding || record.readyEntered) return null
+    return this.messaging.shownAgent(record.summary.id) ?? null
   }
 
   /** Shows a transcript on the record's fresh screen, ahead of its shell's output. */
@@ -3260,6 +3403,7 @@ export class Terminals {
         exit,
         process: null,
         agent: null,
+        ready: null,
         activity: null,
         telemetry: null,
       }

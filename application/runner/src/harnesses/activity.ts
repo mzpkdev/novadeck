@@ -1,7 +1,7 @@
 import type { AgentActivity } from "@novadeck/protocol"
 
 import type { Binding } from "./bindings.js"
-import type { ActivityEvent, PlanSource } from "./events.js"
+import type { ActivityEvent, Background, PlanSource } from "./events.js"
 import { ref } from "./harness.js"
 
 /** The reference clients know a subagent by. */
@@ -55,6 +55,14 @@ const maxText = 256
  * subagents stopped with it, so a start that arrives late is not taken for a new run.
  * `planning` is what the latest hook to name the agent's mode said, at `planningAt`.
  * `idled` says an idle status line, not a Stop, ended the latest turn, at `turnAt`.
+ * `background` is what the latest turn's end left running that wakes the agent once
+ * done: the agent works on while subagents of it run (see `summary`). `continued` says
+ * NovaDeck continued the turn at its latest Stop, at `turnAt`, and `skips` counts the
+ * records of such Stops yet to come that name no turn: Claude Code records a Stop it
+ * continued, once its hook answered, as it does any other, and that record ends nothing.
+ * `lastTurn` says how the latest turn to end ended, the start of the agent's last reply
+ * in it, and when it ended; a turn's start clears it, and a continued Stop keeps it,
+ * should the continuation lapse.
  */
 export type Activity = {
   readonly state: "working" | "idle"
@@ -68,10 +76,39 @@ export type Activity = {
   readonly plans: readonly Plan[]
   readonly turnAt: number
   readonly idled: boolean
+  readonly background: Background | null
+  /**
+   * Whether work a turn leaves running wakes the agent once done, as Claude Code's and
+   * Antigravity's does and Codex's never does: where nothing says what runs, its
+   * subagents still running count.
+   */
+  readonly wakes: boolean
+  /** The latest turn's id, where its harness names one. */
+  readonly turn: string | null
+  readonly continued: boolean
+  readonly skips: number
+  /**
+   * Whether an idle status line has counted the subagents among what the latest turn's
+   * end left running since: until then, work its Stop said only exists may be one.
+   */
+  readonly listed: boolean
+  readonly lastTurn: LastTurn | null
+}
+
+/**
+ * How a turn ended, the start of the agent's last reply in it where told, and `at`, when
+ * that end was reported, which tells it from any other. `recorded` says only the
+ * session's records told it, whose hook may yet come and say more of the same end.
+ */
+export type LastTurn = {
+  readonly outcome: "completed" | "failed" | "interrupted" | "unknown"
+  readonly reply: string | null
+  readonly at: number
+  readonly recorded: boolean
 }
 
 /** A freshly bound agent waits for its first prompt. */
-export const started = (at: number): Activity => ({
+export const started = (at: number, wakes = true): Activity => ({
   state: "idle",
   pending: [],
   subagents: [],
@@ -82,7 +119,30 @@ export const started = (at: number): Activity => ({
   plans: [],
   turnAt: at,
   idled: false,
+  background: null,
+  wakes,
+  turn: null,
+  continued: false,
+  skips: 0,
+  listed: false,
+  lastTurn: null,
 })
+
+/**
+ * What a turn's end leaves the agent waiting on: what its harness `said`, else the
+ * subagents still running where their end wakes it; null for nothing.
+ */
+const waiting = (
+  { wakes }: Activity,
+  subagents: readonly Subagent[],
+  said?: Background,
+): Background | null => {
+  return counted(said ?? { agents: wakes ? subagents.length : 0, tasks: 0 })
+}
+
+/** Work left running, or null for none: nothing counted, and no more said to run. */
+const counted = (background: Background): Background | null =>
+  background.agents + background.tasks > 0 || background.more ? background : null
 
 const end = (ended: Activity["ended"], ids: readonly string[], at: number): Activity["ended"] =>
   [...ended.filter(({ id }) => !ids.includes(id)), ...ids.map((id) => ({ id, at }))].slice(
@@ -274,6 +334,10 @@ export const apply = (
       }
     }
   }
+  // The record of a Stop NovaDeck continued uses up its skip whenever it is read, even
+  // once a later Stop has moved the fence past it, so no skip is left to eat a later end.
+  if (event.type === "turn-ended" && event.recorded && !event.turn && activity.skips > 0)
+    return { ...activity, skips: activity.skips - 1 }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
@@ -283,17 +347,54 @@ export const apply = (
         pending: outliving(activity.pending, activity.subagents),
         turnAt: event.startedAt,
         idled: false,
+        background: null,
+        turn: event.turn ?? null,
+        continued: false,
+        skips: 0,
+        lastTurn: null,
       }
-    case "turn-idle":
-      // Idle after the turn's Stop says nothing new; without one, the turn ended abnormally.
-      if (activity.state !== "working") return undefined
+    case "turn-continued":
+      // Only the Stop that just ended the turn; never one after a later fact. What it said
+      // runs stays, should the continuation lapse.
+      if (activity.state !== "idle" || event.startedAt !== activity.turnAt) return undefined
+      return { ...activity, state: "working", continued: true, skips: activity.skips + 1 }
+    case "turn-lapsed":
+      // The continuation never came: the turn ended at its Stop after all.
+      if (activity.state !== "working" || !activity.continued) return undefined
+      return {
+        ...activity,
+        state: "idle",
+        pending: outliving(activity.pending, activity.subagents),
+        continued: false,
+      }
+    case "turn-idle": {
+      // Idle after the turn's Stop says nothing new of the turn; without one, the turn
+      // ended abnormally. Newer than the Stop, it counts the subagents still running of
+      // what that Stop left; what else that Stop said runs, as a command (Antigravity's),
+      // which it never lists, stays.
+      if (activity.state !== "working") {
+        const { background } = activity
+        const { agents } = event.background
+        if (
+          !background ||
+          event.startedAt <= activity.turnAt ||
+          (activity.listed && background.agents === agents)
+        )
+          return undefined
+        return { ...activity, background: counted({ ...background, agents }), listed: true }
+      }
       return {
         ...activity,
         state: "idle",
         pending: outliving(activity.pending, activity.subagents),
         turnAt: event.startedAt,
         idled: true,
+        background: waiting(activity, activity.subagents, event.background),
+        listed: true,
+        // An Escape or a refusal, which only an idle status line tells.
+        lastTurn: { outcome: "unknown", reply: null, at: event.startedAt, recorded: false },
       }
+    }
     case "turn-escaped":
       // The turn may be over, as delivery takes it: idle, its requests settled, until a
       // later hook moves it on. No working status line resumes it.
@@ -304,6 +405,8 @@ export const apply = (
         pending: outliving(activity.pending, activity.subagents),
         turnAt: event.startedAt,
         idled: false,
+        background: waiting(activity, activity.subagents),
+        lastTurn: { outcome: "interrupted", reply: null, at: event.startedAt, recorded: false },
       }
     case "turn-working":
       // Working after the idle that ended its turn, and newer than it: that idle was stale,
@@ -313,14 +416,46 @@ export const apply = (
         return undefined
       return { ...activity, state: "working", idled: false }
     case "turn-ended": {
-      const turn = { state: "idle", turnAt: event.startedAt, idled: false } as const
+      // Its records end only the turn still running, its own where they name one, and
+      // leave its fence where it was, so the hook's own Stop, should it come after all,
+      // still says what the turn left. One naming no turn may be of a Stop NovaDeck
+      // continued, whose continuation runs on: it is used up instead.
+      const { recorded, turn: named } = event
+      if (
+        recorded &&
+        (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
+      )
+        return undefined
+      const turn = {
+        state: "idle",
+        turnAt: recorded ? activity.turnAt : event.startedAt,
+        idled: false,
+        continued: false,
+        listed: false,
+        lastTurn: {
+          outcome: event.outcome,
+          reply: event.reply ?? null,
+          // The hook's own Stop after its records ended the turn says more of that end.
+          at:
+            activity.state === "idle" && activity.lastTurn?.recorded && !recorded
+              ? activity.lastTurn.at
+              : event.startedAt,
+          recorded: recorded === true,
+        },
+      } as const
       if (event.outcome !== "interrupted")
-        return { ...activity, ...turn, pending: outliving(activity.pending, activity.subagents) }
+        return {
+          ...activity,
+          ...turn,
+          pending: outliving(activity.pending, activity.subagents),
+          background: waiting(activity, activity.subagents, event.background),
+        }
       const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
       const subagents = activity.subagents.filter((subagent) => !stopped.includes(subagent))
       return {
         ...activity,
         ...turn,
+        background: waiting(activity, subagents, event.background),
         // The subagents it ended wait on the person no longer.
         pending: outliving(activity.pending, subagents),
         subagents,
@@ -381,10 +516,36 @@ const asked = (
   }
 }
 
-/** The activity as clients see it. */
-export const summary = ({ state, pending, subagents, planning }: Activity): AgentActivity => ({
+/**
+ * The activity as clients see it: working while its turn runs, and after it while
+ * subagents it left running, which wake it once done, run on: work its Stop says only
+ * exists counts as one until a status line has counted them. Other work it left running,
+ * as a command, shows in `background`, but never keeps it working: a dev server may run
+ * for ever. How its latest turn ended shows once none runs, a continued one included.
+ */
+export const summary = ({
   state,
+  pending,
+  subagents,
+  planning,
+  background,
+  listed,
+  lastTurn,
+}: Activity): AgentActivity => ({
+  state:
+    state === "working" ||
+    (background !== null && (background.agents > 0 || (background.more === true && !listed)))
+      ? "working"
+      : "idle",
+  background:
+    state === "working" || !background
+      ? null
+      : { agents: background.agents, tasks: background.tasks },
   planning,
   attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
   subagents: subagents.map(({ id, type }) => ({ id: subagentRef(id), type })),
+  lastTurn:
+    state === "working" || !lastTurn
+      ? null
+      : { outcome: lastTurn.outcome, reply: lastTurn.reply, at: lastTurn.at },
 })

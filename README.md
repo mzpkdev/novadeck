@@ -109,6 +109,25 @@ you've seen is faint; something you haven't opened yet, and the messages while s
 for the agent, is a step brighter with a small dot. A long name truncates before them,
 so they line up down the list.
 
+When an agent finishes (its turn over, no subagent it started still running, nothing
+waiting on you, and not stopped by your Escape) while you look at another terminal, or
+at another window altogether, its terminal is marked done until you look: a small green
+"●" and "done · unread" on its tab, its name in bold, and on its window a solid green
+line under the header beside a "Done · reply unread" chip ("Done" on a compact one). A
+command it left running, such as a dev server, doesn't hold that back. The mark clears
+once that terminal is the selected one of the session on screen while NovaDeck's window
+has focus, or once its agent starts another turn. The desktop app also shows one system
+notification for each such finish, "t1 is done: <its name>", with the start of the
+agent's last reply (Claude Code's and Codex's Stop hooks name it; Antigravity's
+transcript records it); clicking it brings NovaDeck to the front with that terminal
+selected. **Notify when an agent finishes** in Preferences turns the notification off;
+the mark stays. A turn that ended on an error is marked the same way in red, "error ·
+unread" and "Stopped with an error · reply unread", and its notification says "t1 stopped
+with an error: <its name>". Marks belong to the window that showed them: another window
+keeps its own, and a reload or a restart forgets them. The browser build (`pnpm dev:web`)
+shows no notifications. The behaviour
+specs' demo (`?demo=agents`) finishes a prompt you give its Claude Code in Build.
+
 When agents message each other (see [Agent messaging](docs/agent-messaging.md)), a
 terminal's tab says in its tooltip how many messages wait for its agent: queued, being
 delivered or held, never those delivered, and whether a thread is held for your release
@@ -273,15 +292,26 @@ text or reaches the program.
 
 Pasting an image, such as a screenshot, into a terminal pastes the path of a file
 holding it, as a native terminal does for a dropped file. A paste with any text stays
-text, even with an image beside it, as cells copied from a spreadsheet come, and Ctrl+V
-still reaches the program. The runner saves the file on its own machine, readable by its
-owner only, under a name of letters, digits and `.`, `_`, `-` or spaces, in an `uploads`
+text, even with an image beside it, as cells copied from a spreadsheet come. On Linux
+and Windows, Ctrl+V pastes a clipboard that holds an image and no text the same way;
+with anything else on the clipboard, or one NovaDeck can't read, it sends Ctrl+V to the
+program as before, and what is typed meanwhile follows it, held for 2 seconds at most.
+In a browser, Ctrl+V looks for an image only once the page may read the clipboard, as
+after a first image pasted with Ctrl+Shift+V, so it never asks. On macOS ⌘V pastes and
+Ctrl+V stays the program's. In the desktop app, a file or folder copied in a file
+manager pastes its own path, whatever its size, so an agent edits the file itself; a
+Windows name with anything but letters, digits, spaces and `.`, `_`, `-`, such as
+`&`, `%` or the brackets of `Screenshot (1).png`, or with a space before a `-`, as in
+`Report - Final.pdf`, goes as a copy instead. On macOS that path may be in a folder the system protects, such as
+Desktop, Documents or Downloads, so a program in the terminal may need macOS's
+permission to read it, where a copy needed none. The runner saves a copy of anything else (a screenshot, an image from a
+page, any file pasted in a browser) on its own machine, readable by its owner only, under a name of letters, digits and `.`, `_`, `-` or spaces, in an `uploads`
 folder beside its database, or a temporary folder without one; each upload removes
 those older than a week. Claude Code and Codex take a pasted
 image's path as the image. The desktop app may read the clipboard for this; in a
 browser, the first paste of an image asks for permission. A paste that fails, as of a
-file over 32 MB or with the clipboard unreadable, says why for a moment at the top of the
-terminal.
+copy over 32 MB or with the clipboard unreadable, says why for a moment at the top of the
+terminal; Ctrl+V says nothing of a clipboard it can't read.
 
 The new-session shortcut creates and selects an empty session in the current project
 and opens the Sessions sidebar.
@@ -325,7 +355,8 @@ pnpm dev:web
 ```
 
 Open <http://127.0.0.1:5173>. `dev:web` starts a runner with a fresh random token
-and hands the same token to the UI dev server. For UI-only work, use
+and hands the same token to the UI dev server. A browser has no desktop host, so it shows
+no notification when an agent finishes; its terminals are still marked done. For UI-only work, use
 `pnpm --filter @novadeck/ui dev` with `VITE_NOVADECK_RUNNER_URL` and
 `VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
@@ -607,7 +638,9 @@ as the backend reports them, and how the person arranged each bar (`model/compan
 changed through one pure reducer. The UI store in `app/ui-store.ts`
 holds what the model does not own: the current route, preferences, the shell
 state from `shell/shell-state.ts`, the rename in progress, the recent-terminal
-switcher and each session's most-recent order, and the new-terminal highlight.
+switcher and each session's most-recent order, the new-terminal highlight, whether the
+page has focus, and the terminals whose agent finished unseen (`terminals/unread-state.ts`,
+kept by `watchFinishes`, which also asks the backend's `notices` for a notification).
 It starts over on reload apart from preferences and the collapsed sidebar, which
 store subscriptions persist. Another subscription saves the active session's
 windowed view from the workspace store, and a new App seeds sessions with it. The

@@ -41,7 +41,7 @@ const replay = (agent: AgentName, name: string) => {
       if (fact.type === "session-observed") {
         if (!binding) {
           binding = { agent, sessionId: fact.sessionId, instance: null }
-          activity = started(fact.startedAt)
+          activity = started(fact.startedAt, harnesses[agent].wakes)
         }
         continue
       }
@@ -53,12 +53,21 @@ const replay = (agent: AgentName, name: string) => {
   return { states, last: activity && summary(activity) }
 }
 
-const idle = {
+// Idle once its turn ended as `lastTurn` says, whenever it ended.
+const idle = (lastTurn: Omit<NonNullable<ReturnType<typeof summary>["lastTurn"]>, "at">) => ({
   state: "idle",
   attention: { pending: 0, kind: null },
   subagents: [],
   planning: false,
-}
+  background: null,
+  lastTurn: { ...lastTurn, at: expect.any(Number) },
+})
+
+// What a turn running shows: no end yet.
+const ongoing = { lastTurn: null }
+
+// A completed turn, its reply as the captured hook named it.
+const replied = { outcome: "completed", reply: "<text>" } as const
 
 describe("activity from captured hooks", () => {
   it("waits on the person while Claude Code asks, and works again once allowed", () => {
@@ -68,8 +77,10 @@ describe("activity from captured hooks", () => {
       attention: { pending: 1, kind: "permission" },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
-    expect(last).toEqual(idle)
+    expect(last).toEqual(idle(replied))
   })
 
   it("asks a question through Claude Code's AskUserQuestion, and settles on the answer", () => {
@@ -79,8 +90,10 @@ describe("activity from captured hooks", () => {
       attention: { pending: 1, kind: "question" },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
-    expect(last).toEqual(idle)
+    expect(last).toEqual(idle(replied))
   })
 
   it("keeps a denied Claude Code request waiting, as nothing reports the denial", () => {
@@ -89,6 +102,8 @@ describe("activity from captured hooks", () => {
       attention: { pending: 1, kind: "permission" },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
   })
 
@@ -99,8 +114,10 @@ describe("activity from captured hooks", () => {
       attention: { pending: 1, kind: "permission" },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
-    expect(last).toEqual(idle)
+    expect(last).toEqual(idle({ outcome: "interrupted", reply: null }))
   })
 
   it("settles an approved Codex request, whose result no longer describes the call", () => {
@@ -110,14 +127,18 @@ describe("activity from captured hooks", () => {
       attention: { pending: 1, kind: "permission" },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
     expect(states).toContainEqual({
       state: "working",
       attention: { pending: 0, kind: null },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
-    expect(last).toEqual(idle)
+    expect(last).toEqual(idle(replied))
   })
 
   it("plans in Claude Code's plan mode, and waits on the person to review the plan", () => {
@@ -132,8 +153,11 @@ describe("activity from captured hooks", () => {
       attention: { pending: 0, kind: null },
       subagents: [],
       planning: false,
+      background: null,
+      ...ongoing,
     })
-    expect(states).toContainEqual(idle)
+    // Its Stop names no reply; its transcript does, which the runner reads apart.
+    expect(states).toContainEqual(idle({ outcome: "completed", reply: null }))
   })
 })
 
@@ -441,9 +465,10 @@ describe("applying activity", () => {
   })
 
   it("leaves the root idle when a background subagent asks after its Stop", () => {
-    // As Codex's spawned agent asks after the root's turn ended (probed 2026-10-03, 0.159.3).
+    // As Codex's spawned agent asks after the root's turn ended (probed 2026-10-03, 0.159.3),
+    // whose end never wakes the root.
     const ended = apply(
-      asking(),
+      { ...asking(), wakes: false },
       binding,
       fact({ type: "turn-ended", outcome: "completed", startedAt: 10 }),
     )!
@@ -658,4 +683,354 @@ describe("subagents from captured hooks", () => {
         { type: "subagent-stopped", actor: start.agent_id },
       ])
     })
+})
+
+describe("an agent waiting on what its turn left running", () => {
+  const binding: Binding = { agent: "claude", sessionId: "s", instance: "7" }
+  type Fields = Parameters<typeof fact>[0]
+  const turn = (activity: Activity, startedAt: number, extra: object = {}) =>
+    apply(activity, binding, fact({ type: "turn-started", startedAt, ...extra } as Fields))!
+  const stop = (activity: Activity, startedAt: number, extra: object = {}) =>
+    apply(
+      activity,
+      binding,
+      fact({ type: "turn-ended", outcome: "completed", startedAt, ...extra } as Fields),
+    )
+  const subagentStarted = (activity: Activity, actor: string, startedAt: number) =>
+    apply(
+      activity,
+      binding,
+      fact({ type: "subagent-started", actor, actorType: "explorer", startedAt }),
+    )!
+  const none = { agents: 0, tasks: 0 }
+
+  it("works on after a Stop that lists subagents still running, until a later turn ends with none", () => {
+    const waiting = stop(turn(started(0), 1), 2, { background: { agents: 2, tasks: 1 } })!
+    expect(waiting.state).toBe("idle")
+    expect(summary(waiting)).toMatchObject({
+      state: "working",
+      background: { agents: 2, tasks: 1 },
+    })
+    // The work's end wakes it: its own turn runs, and says nothing of the wait.
+    const woken = turn(waiting, 3, { cause: "harness" })
+    expect(summary(woken)).toMatchObject({ state: "working", background: null })
+    expect(summary(stop(woken, 4, { background: { agents: 1, tasks: 0 } })!)).toMatchObject({
+      state: "working",
+      background: { agents: 1, tasks: 0 },
+    })
+    expect(summary(stop(woken, 4, { background: none })!)).toMatchObject({
+      state: "idle",
+      background: null,
+    })
+  })
+
+  it("shows a command left running without working on, as one may run for ever", () => {
+    expect(summary(stop(turn(started(0), 1), 2, { background: { agents: 0, tasks: 2 } })!)).toEqual(
+      expect.objectContaining({ state: "idle", background: { agents: 0, tasks: 2 } }),
+    )
+  })
+
+  it("keeps working through a Stop NovaDeck continued, until the continuation's own Stop", () => {
+    const stopped = stop(turn(started(0), 1), 2, { background: none })!
+    const continued = apply(stopped, binding, fact({ type: "turn-continued", startedAt: 2 }))!
+    expect(summary(continued).state).toBe("working")
+    // Only that Stop's: one after a later fact, or once working, changes nothing.
+    expect(
+      apply(continued, binding, fact({ type: "turn-continued", startedAt: 2 })),
+    ).toBeUndefined()
+    expect(apply(stopped, binding, fact({ type: "turn-continued", startedAt: 1 }))).toBeUndefined()
+    // The record of the continued Stop, written after it, ends nothing, used up instead.
+    // The continuation's root request waits on.
+    const asking = apply(
+      continued,
+      binding,
+      fact({
+        type: "attention-requested",
+        requestId: "root:Bash:1",
+        actor: null,
+        toolName: "Bash",
+        kind: "permission",
+        startedAt: 3,
+      }),
+    )!
+    const used = stop(asking, 4, { recorded: true })!
+    expect(summary(used)).toMatchObject({ state: "working", attention: { pending: 1 } })
+    // Its own Stop ends it; should its hook's report never come, its record does.
+    expect(summary(stop(used, 5, { background: none })!).state).toBe("idle")
+    expect(summary(stop(used, 6, { recorded: true })!).state).toBe("idle")
+  })
+
+  it("uses up a continued Stop's record read only after the next Stop, leaving no skip over", () => {
+    // Continued twice before the transcript is read: the first record comes behind the
+    // second Stop's fence, yet still uses up its own skip.
+    const first = apply(
+      stop(turn(started(0), 1), 2, { background: none })!,
+      binding,
+      fact({ type: "turn-continued", startedAt: 2 }),
+    )!
+    const second = apply(
+      stop(first, 5, { background: none })!,
+      binding,
+      fact({ type: "turn-continued", startedAt: 5 }),
+    )!
+    const read = stop(stop(second, 3, { recorded: true })!, 6, { recorded: true })!
+    expect(read).toMatchObject({ state: "working", skips: 0 })
+    // So the continuation's own record ends it, should its hook's report never come.
+    expect(summary(stop(read, 8, { recorded: true })!).state).toBe("idle")
+  })
+
+  it("ends a continuation at the record naming its turn, used up for no Stop it continued", () => {
+    // Codex keeps the turn's id through a continuation, and records only its real end.
+    const codex: Binding = { agent: "codex", sessionId: "s", instance: "7" }
+    const event = (fields: object) =>
+      fact({ agent: "codex", ...fields } as Parameters<typeof fact>[0])
+    const running = apply(
+      started(0, false),
+      codex,
+      event({ type: "turn-started", startedAt: 1, turn: "t1" }),
+    )!
+    const stopped = apply(
+      running,
+      codex,
+      event({ type: "turn-ended", outcome: "completed", startedAt: 2 }),
+    )!
+    const continued = apply(stopped, codex, event({ type: "turn-continued", startedAt: 2 }))!
+    const recorded = (id: string) =>
+      apply(
+        continued,
+        codex,
+        event({ type: "turn-ended", outcome: "completed", startedAt: 9, recorded: true, turn: id }),
+      )
+    expect(recorded("t0")).toBeUndefined()
+    expect(summary(recorded("t1")!).state).toBe("idle")
+  })
+
+  it("ends a continuation at its Stop when NovaDeck's continuing lapsed", () => {
+    const stopped = stop(turn(started(0), 1), 2, { background: { agents: 1, tasks: 0 } })!
+    const continued = apply(stopped, binding, fact({ type: "turn-continued", startedAt: 2 }))!
+    const lapsed = apply(continued, binding, fact({ type: "turn-lapsed", startedAt: 2 }))!
+    expect(summary(lapsed)).toMatchObject({ state: "working", background: { agents: 1 } })
+    expect(lapsed.state).toBe("idle")
+    // Told once: a turn not continued has nothing to lapse.
+    expect(apply(lapsed, binding, fact({ type: "turn-lapsed", startedAt: 2 }))).toBeUndefined()
+    expect(apply(stopped, binding, fact({ type: "turn-lapsed", startedAt: 2 }))).toBeUndefined()
+  })
+
+  it("counts the subagents still running where nothing says, only where their end wakes it", () => {
+    const running = subagentStarted(turn(started(0), 1), "a", 2)
+    // A failed turn's end, an interrupt of a later turn, an Escape: none says what runs.
+    expect(
+      summary(
+        apply(running, binding, fact({ type: "turn-ended", outcome: "failed", startedAt: 3 }))!,
+      ),
+    ).toMatchObject({ state: "working", background: { agents: 1, tasks: 0 } })
+    expect(
+      summary(apply(running, binding, fact({ type: "turn-escaped", startedAt: 3 }))!),
+    ).toMatchObject({ state: "working", background: { agents: 1, tasks: 0 } })
+    // Codex's subagents never wake it.
+    expect(summary(stop({ ...running, wakes: false }, 3)!)).toMatchObject({
+      state: "idle",
+      background: null,
+    })
+  })
+
+  it("leaves out the subagents an interrupted turn ended, keeping an earlier background one", () => {
+    const earlier = stop(subagentStarted(turn(started(0), 1), "bg", 2), 3)!
+    const own = subagentStarted(turn(earlier, 4), "own", 5)
+    const interrupted = apply(
+      own,
+      binding,
+      fact({ type: "turn-ended", outcome: "interrupted", startedAt: 6 }),
+    )!
+    expect(summary(interrupted)).toMatchObject({
+      state: "working",
+      background: { agents: 1, tasks: 0 },
+    })
+  })
+
+  it("works on only while an idle status line newer than the Stop counts subagents running", () => {
+    const agy: Binding = { agent: "agy", sessionId: "s", instance: "7" }
+    const listed = (activity: Activity, startedAt: number, agents: number) =>
+      apply(
+        activity,
+        agy,
+        fact({ agent: "agy", type: "turn-idle", startedAt, background: { agents, tasks: 0 } }),
+      )
+    const ended = (activity: Activity, startedAt: number, more: boolean) =>
+      apply(
+        activity,
+        agy,
+        fact({
+          agent: "agy",
+          type: "turn-ended",
+          outcome: "completed",
+          startedAt,
+          background: { agents: 0, tasks: 0, ...(more && { more: true }) },
+        }),
+      )!
+    const working = apply(
+      started(0),
+      agy,
+      fact({ agent: "agy", type: "turn-started", startedAt: 1 }),
+    )!
+    // Its Stop says only that something runs on: it works on until its status line,
+    // drawn just after, counts the subagents among it.
+    const waiting = ended(working, 2, true)
+    expect(summary(waiting)).toMatchObject({
+      state: "working",
+      background: { agents: 0, tasks: 0 },
+    })
+    const counted = listed(waiting, 3, 2)!
+    expect(summary(counted)).toMatchObject({
+      state: "working",
+      background: { agents: 2, tasks: 0 },
+    })
+    expect(listed(counted, 4, 2)).toBeUndefined()
+    // One drawn before the Stop says nothing of what it left.
+    expect(listed(waiting, 1, 3)).toBeUndefined()
+    expect(summary(listed(waiting, 3, 0)!)).toMatchObject({
+      state: "idle",
+      background: { agents: 0, tasks: 0 },
+    })
+    // Its subagents done, what else its Stop said runs, as a command, which may run for
+    // ever, stays, keeping nothing working.
+    expect(summary(listed(counted, 5, 0)!)).toMatchObject({
+      state: "idle",
+      background: { agents: 0, tasks: 0 },
+    })
+    // Counted, with nothing else said to run, none listed ends it.
+    const abnormal = apply(
+      working,
+      agy,
+      fact({ agent: "agy", type: "turn-idle", startedAt: 3, background: { agents: 1, tasks: 0 } }),
+    )!
+    expect(summary(abnormal)).toMatchObject({ state: "working", background: { agents: 1 } })
+    expect(summary(listed(abnormal, 4, 0)!)).toMatchObject({ state: "idle", background: null })
+    // With nothing left running, a stale one listing a subagent starts no wait.
+    expect(listed(ended(working, 2, false), 3, 1)).toBeUndefined()
+  })
+
+  it("ends a turn its records tell ended, once, leaving its hook's Stop to say what runs", () => {
+    const running = subagentStarted(turn(started(0), 1), "a", 2)
+    const recorded = stop(running, 5, { recorded: true })!
+    expect(summary(recorded)).toMatchObject({
+      state: "working",
+      background: { agents: 1, tasks: 0 },
+    })
+    // The hook's own Stop, whose hook started before the record was written, still counts.
+    expect(summary(stop(recorded, 4, { background: { agents: 1, tasks: 2 } })!)).toMatchObject({
+      background: { agents: 1, tasks: 2 },
+    })
+    // After the hook's Stop, or once idle, the record says nothing new.
+    expect(stop(stop(running, 4, { background: none })!, 5, { recorded: true })).toBeUndefined()
+    // Nor does one of a turn already over.
+    expect(stop(turn(recorded, 6), 5, { recorded: true })).toBeUndefined()
+  })
+
+  it("ends only the turn its records name, where both name one", () => {
+    const codex: Binding = { agent: "codex", sessionId: "s", instance: "7" }
+    const running = apply(
+      started(0, false),
+      codex,
+      fact({ agent: "codex", type: "turn-started", startedAt: 1, turn: "t2" }),
+    )!
+    const ended = (id: string) =>
+      apply(
+        running,
+        codex,
+        fact({
+          agent: "codex",
+          type: "turn-ended",
+          outcome: "failed",
+          startedAt: 9,
+          recorded: true,
+          turn: id,
+        }),
+      )
+    // Codex wrote an earlier failed turn's record late.
+    expect(ended("t1")).toBeUndefined()
+    expect(summary(ended("t2")!)).toMatchObject({ state: "idle", background: null })
+  })
+})
+
+describe("how an agent's latest turn ended", () => {
+  const binding: Binding = { agent: "claude", sessionId: "s", instance: "7" }
+  type Fields = Parameters<typeof fact>[0]
+  const on = (activity: Activity, fields: object) =>
+    apply(activity, binding, fact(fields as Fields))!
+  const turn = (activity: Activity, startedAt: number) =>
+    on(activity, { type: "turn-started", cause: "prompt", startedAt })
+  const stop = (activity: Activity, startedAt: number, extra: object = {}) =>
+    on(activity, { type: "turn-ended", outcome: "completed", startedAt, ...extra })
+  const running = turn(started(0), 1)
+
+  it("says nothing before the first turn ends, nor while one runs", () => {
+    expect(summary(started(0)).lastTurn).toBeNull()
+    expect(summary(running).lastTurn).toBeNull()
+    expect(summary(turn(stop(running, 2, { reply: "Done." }), 3)).lastTurn).toBeNull()
+  })
+
+  it("tells a completed turn with the start of the agent's reply, where its hook named it", () => {
+    expect(summary(stop(running, 2, { reply: "Fixed the flaky spec." })).lastTurn).toEqual({
+      outcome: "completed",
+      reply: "Fixed the flaky spec.",
+      at: 2,
+    })
+    expect(summary(stop(running, 2)).lastTurn).toEqual({ outcome: "completed", reply: null, at: 2 })
+    const failed = stop(running, 2, { outcome: "failed" })
+    expect(summary(failed).lastTurn).toEqual({ outcome: "failed", reply: null, at: 2 })
+  })
+
+  it("tells the person's interrupt, an Escape and an idle without a Stop apart from completion", () => {
+    const interrupted = stop(running, 2, { outcome: "interrupted" })
+    expect(summary(interrupted).lastTurn?.outcome).toBe("interrupted")
+    const escaped = on(running, { type: "turn-escaped", startedAt: 2 })
+    expect(summary(escaped).lastTurn?.outcome).toBe("interrupted")
+    const none = { agents: 0, tasks: 0 }
+    const quiet = on(running, { type: "turn-idle", startedAt: 2, background: none })
+    expect(summary(quiet).lastTurn).toEqual({ outcome: "unknown", reply: null, at: 2 })
+  })
+
+  it("tells the end while subagents it left run, the agent working on", () => {
+    const background = { agents: 2, tasks: 0 }
+    const waiting = stop(running, 2, { reply: "Waiting on two agents.", background })
+    expect(summary(waiting)).toMatchObject({
+      state: "working",
+      lastTurn: { outcome: "completed", reply: "Waiting on two agents.", at: 2 },
+    })
+  })
+
+  it("hides a continued Stop's end while the continuation runs, and tells it should it lapse", () => {
+    const continued = on(stop(running, 2, { reply: "First answer." }), {
+      type: "turn-continued",
+      startedAt: 2,
+    })
+    expect(summary(continued).lastTurn).toBeNull()
+    const lapsed = on(continued, { type: "turn-lapsed", startedAt: 2 })
+    expect(summary(lapsed).lastTurn).toEqual({
+      outcome: "completed",
+      reply: "First answer.",
+      at: 2,
+    })
+  })
+
+  it("keeps the end its records told when the hook's own Stop comes after, taking its reply", () => {
+    const recorded = stop(running, 3, { recorded: true })
+    expect(summary(recorded).lastTurn).toEqual({ outcome: "completed", reply: null, at: 3 })
+    expect(summary(stop(recorded, 4, { reply: "All green." })).lastTurn).toEqual({
+      outcome: "completed",
+      reply: "All green.",
+      at: 3,
+    })
+  })
+
+  it("tells a Stop that comes with no turn seen starting as an end of its own", () => {
+    // As when the hook of the turn's start never came: its end is a new one all the same.
+    const first = stop(running, 2, { reply: "First." })
+    expect(summary(stop(first, 5, { reply: "Second." })).lastTurn).toEqual({
+      outcome: "completed",
+      reply: "Second.",
+      at: 5,
+    })
+  })
 })

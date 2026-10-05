@@ -6,6 +6,7 @@ import {
   absolute,
   callId,
   promptStart,
+  replied,
   sessionId,
   sessionStart,
   subjectOf,
@@ -62,11 +63,22 @@ export const decode = ({ event, seq, instance, env, payload }: Report): readonly
       // A subagent's prompt is its own work, not the root's turn.
       if (actor) return []
       // A Stop hook's reason it submits to continue the turn is no prompt of the person's.
-      return [promptStart(base, text(payload.prompt) ?? "")]
+      // Its turn's id is what its rollout records the turn's end by.
+      const turn = text(payload.turn_id)
+      return [promptStart({ ...base, ...(turn && { turn }) }, text(payload.prompt) ?? "")]
     }
     case "Stop":
       // A subagent's stop ends its own work, not the turn.
-      return actor ? [] : [{ type: "turn-ended", ...base, outcome: "completed" }]
+      return actor
+        ? []
+        : [
+            {
+              type: "turn-ended",
+              ...base,
+              outcome: "completed",
+              ...replied(payload.last_assistant_message),
+            },
+          ]
     case "Interrupt":
       // A subagent's own interrupt ends its work, not the turn.
       return actor ? [] : [{ type: "turn-ended", ...base, outcome: "interrupted" }]

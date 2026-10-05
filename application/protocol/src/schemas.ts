@@ -58,11 +58,26 @@ export const foregroundProcess = z.strictObject({
 export const agentName = z.enum(["claude", "codex", "agy"])
 export const agentSessionId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
 
+// How long the start of an agent's last reply runs at most, in UTF-16 code units: enough
+// for a notification's line, and never the whole reply.
+export const replyPreviewLength = 120
+
 // What the agent holding a terminal's foreground is doing, as its own hooks report it:
-// working on a turn, idle between turns, or unknown when they have not said. `attention`
+// working on a turn, or with its turn over while subagents it started run on, which will
+// wake the agent (`background`); idle otherwise; or unknown when they have not said. `attention`
 // counts the requests waiting on the person, and names the kind of the oldest one.
 export const agentActivity = z.strictObject({
   state: z.enum(["working", "idle", "unknown"]),
+  // What its ended turn left running that wakes it once done: subagents, which keep it
+  // working, and other tasks such as commands, which don't, as one may run for ever,
+  // counted; both zero where its harness says only that something runs. Null while its
+  // turn runs, and once nothing it started runs.
+  background: z
+    .strictObject({
+      agents: z.number().int().nonnegative(),
+      tasks: z.number().int().nonnegative(),
+    })
+    .nullable(),
   attention: z.strictObject({
     pending: z.number().int().nonnegative(),
     kind: z.enum(["permission", "question", "plan"]).nullable(),
@@ -78,6 +93,20 @@ export const agentActivity = z.strictObject({
       }),
     )
     .max(32),
+  // How its latest turn ended: `completed` as its harness said, `failed` on an error,
+  // `interrupted` by the person (Escape, or a request they refused, as its hooks or records
+  // tell), or `unknown` when it only went idle, as an Escape or a refusal shows in
+  // Antigravity. `reply` is the start of what the agent said last in that turn, one line of
+  // plain text, where its harness tells it. `at` tells one end from another: when it was
+  // reported, in epoch milliseconds, kept as a later report only fills in the same end's
+  // reply. Null while a turn runs and before the first ends.
+  lastTurn: z
+    .strictObject({
+      outcome: z.enum(["completed", "failed", "interrupted", "unknown"]),
+      reply: z.string().min(1).max(replyPreviewLength).nullable(),
+      at: z.number(),
+    })
+    .nullable(),
 })
 
 // What an agent's own records say of its tokens and quotas: how many tokens its context
@@ -256,6 +285,10 @@ export const terminalSummary = z.strictObject({
   // The agent that reported a session in this shell since its last prompt, so a client
   // can name the program where the process alone cannot, as on Windows. Null otherwise.
   agent: agentName.nullable(),
+  // The agent whose own empty prompt shows there, with NovaDeck's hooks running for it,
+  // before it reported a session, as Codex and Antigravity do only with their first
+  // prompt. Null otherwise, and once a session is reported.
+  ready: agentName.nullable(),
   // What that agent is doing; null without one.
   activity: agentActivity.nullable(),
   // Its tokens and quotas, once its records named any; null otherwise.
