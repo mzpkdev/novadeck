@@ -160,13 +160,21 @@ describe("keymap", () => {
       })
 
       context("when pressing arrows", () => {
-        it("steps through terminals and views", () => {
-          expect(route(platform, "capture", { key: "ArrowUp" })).toEqual(["terminal.step -1"])
+        it("steps between terminals in each direction, and between views with Shift", () => {
+          expect(route(platform, "capture", { key: "ArrowUp" })).toEqual(["terminal.step 0"])
+          expect(route(platform, "capture", { key: "ArrowRight" })).toEqual(["terminal.step 1"])
           expect(route(platform, "capture", { key: "ArrowDown", repeat: true })).toEqual([
-            "terminal.step 1",
+            "terminal.step 2",
           ])
-          expect(route(platform, "capture", { key: "ArrowLeft" })).toEqual(["view.step -1"])
-          expect(route(platform, "capture", { key: "ArrowRight" })).toEqual(["view.step 1"])
+          expect(route(platform, "capture", { key: "ArrowLeft" })).toEqual(["terminal.step 3"])
+          const shift = { shiftKey: true }
+          expect(route(platform, "capture", { key: "ArrowLeft", ...shift })).toEqual([
+            "view.step -1",
+          ])
+          expect(route(platform, "capture", { key: "ArrowRight", ...shift })).toEqual([
+            "view.step 1",
+          ])
+          expect(route(platform, "capture", { key: "ArrowDown", ...shift })).toEqual([])
         })
 
         it("takes them over from the view switch but leaves other radio groups and the resizer", () => {
@@ -175,7 +183,7 @@ describe("keymap", () => {
               key: "ArrowRight",
               target: { viewSwitch: true, navigationControl: true },
             }),
-          ).toEqual(["view.step 1"])
+          ).toEqual(["terminal.step 1"])
           expect(
             route(platform, "capture", { key: "ArrowRight", target: { navigationControl: true } }),
           ).toEqual([])
@@ -186,7 +194,8 @@ describe("keymap", () => {
           expect(keydown(platform, { key: "ArrowDown", target: { companion: true } })).toEqual([])
           expect(keydown(platform, { key: "ArrowDown" }, { state: { dialog: true } })).toEqual([])
           expect(keydown(platform, { key: "ArrowDown", ctrlKey: true })).toEqual([])
-          expect(keydown(platform, { key: "ArrowDown", shiftKey: true })).toEqual([])
+          expect(keydown(platform, { key: "ArrowLeft", shiftKey: true, altKey: true })).toEqual([])
+          expect(keydown(platform, { key: "ArrowLeft", shiftKey: true, metaKey: true })).toEqual([])
         })
       })
 
@@ -339,8 +348,8 @@ describe("keymap", () => {
       const workspace = [
         "Workspace",
         "Rename active terminal: F2",
-        "Previous / next terminal: ↑ ↓",
-        "Previous / next view: ← →",
+        "Terminal in that direction: ↑ ↓ ← →",
+        "Previous / next view: Shift ← →",
         "Deselect, then hide sidebar: Esc",
         "Zoom canvas in / out: + −",
         "Fit canvas to all terminals: 0",

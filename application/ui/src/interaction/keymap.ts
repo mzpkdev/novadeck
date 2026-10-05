@@ -61,8 +61,8 @@ export type KeyPhase = "capture" | "bubble" | "keyup" | "blur"
 
 export type KeyPattern =
   | { readonly shortcut: Shortcut }
-  // `none` requires no modifiers at all; `any` ignores them.
-  | { readonly key: string; readonly modifiers: "none" | "any" }
+  // `none` requires no modifiers at all, `shift` exactly Shift; `any` ignores them.
+  | { readonly key: string; readonly modifiers: "none" | "shift" | "any" }
   // A key that types a character, such as a letter, digit or punctuation, but not Space.
   | { readonly typed: true }
   // The window losing focus.
@@ -120,7 +120,10 @@ const matches = (pattern: KeyPattern, input: KeyInput, phase: KeyPhase): boolean
   if (phase === "blur") return false
   if ("shortcut" in pattern) return matchesShortcut(input, pattern.shortcut)
   if ("typed" in pattern) return typed(input)
-  return input.key === pattern.key && (pattern.modifiers === "any" || !modified(input))
+  if (input.key !== pattern.key) return false
+  if (pattern.modifiers === "shift")
+    return input.shiftKey && !input.ctrlKey && !input.metaKey && !input.altKey
+  return pattern.modifiers === "any" || !modified(input)
 }
 
 const gates: Record<
@@ -139,10 +142,12 @@ const gates: Record<
     !input.target.companion &&
     !environment.overlayOpen() &&
     !environment.tabInteraction(),
-  // Arrows move through terminals and views, except where a control or a companion pane
-  // (which scrolls, and moves through its own buttons) uses them itself.
+  // Arrows move between terminals and Shift+arrows between views, except where a control
+  // or a companion pane (which scrolls, and moves through its own buttons) uses them itself.
   navigation: (input, state) =>
-    !modified(input) &&
+    !input.ctrlKey &&
+    !input.metaKey &&
+    !input.altKey &&
     !state.dialog &&
     !state.switcher &&
     (input.target.viewSwitch ||
@@ -184,7 +189,10 @@ export const routeKey = (
   })
 }
 
-const key = (value: string, modifiers: "none" | "any" = "none"): KeyPattern => ({
+// Arrow commands carry their direction as an index into this list.
+export const arrowDirections = ["up", "right", "down", "left"] as const
+
+const key = (value: string, modifiers: "none" | "shift" | "any" = "none"): KeyPattern => ({
   key: value,
   modifiers,
 })
@@ -210,22 +218,31 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
     // Canvas returns to its origin first; otherwise Escape clears the selection, then the sidebar.
     { layer: "escape", keys: key("Escape"), command: "canvas.returnToOrigin", repeat: "run" },
     { layer: "escape", keys: key("Escape"), command: "selection.clear", repeat: "swallow" },
+    // Arrows move to the terminal on that side in Grid and Canvas, and through sidebar
+    // order in Focus and the sidebar's list; Shift+Left and Right change the view.
+    ...(["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"] as const).map(
+      (arrow, args): KeyBinding => ({
+        layer: "navigation",
+        keys: key(arrow),
+        command: "terminal.step",
+        args,
+        repeat: "run",
+      }),
+    ),
     {
       layer: "navigation",
-      keys: key("ArrowUp"),
-      command: "terminal.step",
+      keys: key("ArrowLeft", "shift"),
+      command: "view.step",
       args: -1,
       repeat: "run",
     },
     {
       layer: "navigation",
-      keys: key("ArrowDown"),
-      command: "terminal.step",
+      keys: key("ArrowRight", "shift"),
+      command: "view.step",
       args: 1,
       repeat: "run",
     },
-    { layer: "navigation", keys: key("ArrowLeft"), command: "view.step", args: -1, repeat: "run" },
-    { layer: "navigation", keys: key("ArrowRight"), command: "view.step", args: 1, repeat: "run" },
     { layer: "switcher", keys: key("Escape", "any"), command: "switcher.close", repeat: "run" },
     {
       layer: "switcher",
@@ -304,8 +321,8 @@ export const shortcutGroups = (platform: Platform): readonly ShortcutGroup[] => 
     description: "When you’re not typing in a terminal, field, or dialog.",
     items: [
       ...Object.values(workspaceShortcutBindings()),
-      { label: "Previous / next terminal", display: ["↑", "↓"] },
-      { label: "Previous / next view", display: ["←", "→"] },
+      { label: "Terminal in that direction", display: ["↑", "↓", "←", "→"] },
+      { label: "Previous / next view", display: ["Shift", "←", "→"] },
       { label: "Deselect, then hide sidebar", display: ["Esc"] },
       { label: "Zoom canvas in / out", display: ["+", "−"] },
       { label: "Fit canvas to all terminals", display: ["0"] },

@@ -1,6 +1,15 @@
-import type { CommandId, KeyBinding, KeyInput, KeyPhase, KeyState } from "../../interaction/keymap"
+import {
+  arrowDirections,
+  type CommandId,
+  type KeyBinding,
+  type KeyInput,
+  type KeyPhase,
+  type KeyState,
+} from "../../interaction/keymap"
+import { nearestInDirection } from "../../model/layout/spatial"
 import { hasTile, orderedTiles, tilesOf } from "../../model/roster"
 import { viewModes } from "../../model/state"
+import type { Tile } from "../../model/types"
 import { sidebarVisible } from "../../shell/shell-state"
 import { cycleRecent, moveRecent } from "../../terminals/recent"
 import {
@@ -53,6 +62,15 @@ export const createKeyCommands = (
     if (terminal || view !== "focus") return terminal
     const { focusPreview } = ui.getSnapshot().shell
     return activeTerminal(tilesOf(roster), selected, currentContext(snapshot), focusPreview)
+  }
+  const stepView = (step: 1 | -1): "handled" => {
+    const { view } = state()
+    const modes = viewModes.filter((mode) =>
+      ui.getSnapshot().preferences.enabledViews.includes(mode),
+    )
+    const next = modes[(modes.indexOf(view) + step + modes.length) % modes.length]
+    if (next && next !== view) commands.changeView(next)
+    return "handled"
   }
   const recent = (direction: 1 | -1): KeyCommand => ({
     available: () => (commands.visibleSwitcher()?.ids ?? commands.recentIds()).length >= 2,
@@ -179,20 +197,33 @@ export const createKeyCommands = (
         return "handled"
       },
     },
+    // Grid and Canvas move to the nearest tile on the arrow's side and stop at the edge;
+    // Focus and the sidebar's list step through sidebar order, wrapping at either end.
     "terminal.step": {
       run: (input, args) => {
-        const { view, selected, roster } = state()
+        const { view, roster } = state()
         const ordered = orderedTiles(roster)
         if (!ordered.length) return "handled"
-        const step = direction(args)
-        const index = ordered.findIndex((terminal) => terminal.id === selected)
-        const next =
-          index < 0
-            ? step > 0
-              ? 0
-              : ordered.length - 1
-            : (index + step + ordered.length) % ordered.length
-        const terminal = ordered[next]!
+        const arrow = arrowDirections[args ?? 0]!
+        const current = targeted()?.id
+        const inList = input.target.terminalTab
+        const sideways = arrow === "left" || arrow === "right"
+        // The view switch keeps Left and Right for its views; the sidebar's list runs up
+        // and down only.
+        if (input.target.viewSwitch && sideways) return stepView(arrow === "left" ? -1 : 1)
+        if (inList && sideways) return "next"
+        const spatial = view !== "focus" && !inList
+        const tiles = spatial ? effects.tileRects() : []
+        const from = tiles.find((tile) => tile.id === current)
+        const nextId = from
+          ? nearestInDirection(
+              from.rect,
+              tiles.filter((tile) => tile.id !== current),
+              arrow,
+            )
+          : inOrder(ordered, current, arrow === "up" || arrow === "left" ? -1 : 1)
+        const terminal = ordered.find((tile) => tile.id === nextId)
+        if (!terminal) return "handled"
         if (view === "canvas" && input.target.canvasNode) commands.requestCanvasFocus(terminal.id)
         commands.select(terminal.id)
         if ((input.target.viewSwitch || input.target.terminalTab) && terminalsPanelVisible())
@@ -200,17 +231,7 @@ export const createKeyCommands = (
         return "handled"
       },
     },
-    "view.step": {
-      run: (_input, args) => {
-        const { view } = state()
-        const modes = viewModes.filter((mode) =>
-          ui.getSnapshot().preferences.enabledViews.includes(mode),
-        )
-        const next = modes[(modes.indexOf(view) + direction(args) + modes.length) % modes.length]
-        if (next && next !== view) commands.changeView(next)
-        return "handled"
-      },
-    },
+    "view.step": { run: (_input, args) => stepView(direction(args)) },
     "recent.commitHeld": {
       run: handled(() => {
         const switcher = commands.visibleSwitcher()
@@ -226,6 +247,19 @@ export const createKeyCommands = (
 }
 
 const direction = (args: number | undefined): 1 | -1 => (args !== undefined && args < 0 ? -1 : 1)
+
+// The tile `step` places from `current` in sidebar order, wrapping; with none current,
+// the first going forward or the last going back.
+const inOrder = (ordered: readonly Tile[], current: string | undefined, step: 1 | -1): string => {
+  const index = ordered.findIndex((tile) => tile.id === current)
+  const next =
+    index < 0
+      ? step > 0
+        ? 0
+        : ordered.length - 1
+      : (index + step + ordered.length) % ordered.length
+  return ordered[next]!.id
+}
 
 // What routing needs to know about the stores right now.
 export const keyState = (

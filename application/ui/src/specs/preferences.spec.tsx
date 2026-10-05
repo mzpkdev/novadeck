@@ -162,8 +162,8 @@ describe("shortcut list", () => {
       expect(shortcutList("Workspace")).toEqual(
         expect.arrayContaining([
           "Rename active terminal: F2",
-          "Previous / next terminal: ↑↓",
-          "Previous / next view: ←→",
+          "Terminal in that direction: ↑↓←→",
+          "Previous / next view: Shift←→",
           "Deselect, then hide sidebar: Esc",
         ]),
       )

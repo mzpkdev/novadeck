@@ -69,6 +69,12 @@ const openKeys = (options?: CommandsOptions) => {
   }
 }
 
+// A 100px tile at a place on screen.
+const tile = (id: string, left: number, top: number) => ({
+  id,
+  rect: { left, top, width: 100, height: 100 },
+})
+
 afterEach(() => void vi.useRealTimers())
 
 describe("key commands", () => {
@@ -220,7 +226,7 @@ describe("key commands", () => {
     })
   })
 
-  context("when pressing Left and Right", () => {
+  context("when pressing Shift with Left and Right", () => {
     it("steps through the enabled views, wrapping and skipping disabled ones", () => {
       const app = openKeys({
         preferences: {
@@ -232,10 +238,86 @@ describe("key commands", () => {
         workspace: workspaceFixture({ view: "canvas" }),
         url: "/projects/project/sessions/initial/canvas?terminal=01",
       })
-      app.keydown({ key: "ArrowRight" })
+      app.keydown({ key: "ArrowRight", shiftKey: true })
       expect(app.state().view).toBe("focus")
-      app.keydown({ key: "ArrowLeft" })
+      app.keydown({ key: "ArrowLeft", shiftKey: true })
       expect(app.state().view).toBe("canvas")
+    })
+
+    it("steps through views with plain Left and Right on the view switch", () => {
+      const app = openKeys({
+        workspace: workspaceFixture({ view: "grid" }),
+        url: "/projects/project/sessions/initial/grid?terminal=01",
+      })
+      app.keydown({ key: "ArrowRight", target: { viewSwitch: true, navigationControl: true } })
+      expect(app.state().view).toBe("canvas")
+      expect(app.state().selected).toBe("01")
+    })
+  })
+
+  context("when pressing arrows in Grid or Canvas", () => {
+    // Three tiles in a row and one under the first:
+    //   01 02 03
+    //   04
+    const laidOut = (view: "grid" | "canvas") => {
+      const app = openKeys({
+        workspace: workspaceFixture({ view, terminals: 4 }),
+        url: `/projects/project/sessions/initial/${view}?terminal=01`,
+      })
+      app.screen.tiles = [
+        tile("01", 0, 0),
+        tile("02", 110, 0),
+        tile("03", 220, 0),
+        tile("04", 0, 110),
+      ]
+      return app
+    }
+
+    for (const view of ["grid", "canvas"] as const) {
+      it(`moves to the nearest tile on that side in ${view}`, () => {
+        const app = laidOut(view)
+        app.keydown({ key: "ArrowRight" })
+        expect(app.state().selected).toBe("02")
+        app.keydown({ key: "ArrowRight" })
+        expect(app.state().selected).toBe("03")
+        app.keydown({ key: "ArrowLeft" })
+        app.keydown({ key: "ArrowLeft" })
+        app.keydown({ key: "ArrowDown" })
+        expect(app.state().selected).toBe("04")
+        app.keydown({ key: "ArrowUp" })
+        expect(app.state().selected).toBe("01")
+      })
+
+      it(`stops at the edge in ${view}`, () => {
+        const app = laidOut(view)
+        expect(app.keydown({ key: "ArrowLeft" })).toBe("handled")
+        expect(app.keydown({ key: "ArrowUp" })).toBe("handled")
+        expect(app.state().selected).toBe("01")
+      })
+    }
+
+    it("follows sidebar order from the sidebar's list, and leaves Left and Right to it", () => {
+      const app = laidOut("grid")
+      app.keydown({ key: "ArrowDown", target: { terminalTab: true } })
+      expect(app.state().selected).toBe("02")
+      expect(app.keydown({ key: "ArrowRight", target: { terminalTab: true } })).toBe("passed")
+      expect(app.state().selected).toBe("02")
+    })
+  })
+
+  context("when pressing arrows in Focus", () => {
+    it("steps through sidebar order with every arrow, from the terminal Focus shows", () => {
+      const app = openKeys({
+        workspace: workspaceFixture({ view: "focus", terminals: 3 }),
+        url: "/projects/project/sessions/initial/focus?terminal=02",
+      })
+      app.keydown({ key: "ArrowRight" })
+      expect(app.state().selected).toBe("03")
+      app.keydown({ key: "ArrowLeft" })
+      expect(app.state().selected).toBe("02")
+      app.keydown({ key: "Escape" })
+      app.keydown({ key: "ArrowDown" })
+      expect(app.state().selected).toBe("03")
     })
   })
 

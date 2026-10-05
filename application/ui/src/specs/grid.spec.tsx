@@ -17,6 +17,7 @@ import {
   expectSelected,
   expectStaysAbsent,
   openWorkspace,
+  press,
   terminal,
   terminalTab,
   view,
@@ -240,6 +241,60 @@ describe("Grid view", () => {
         .toBeVisible()
       await expect.element(terminal("Checkout implementation")).not.toBeInTheDocument()
       await expectSelected("Runtime")
+    })
+  })
+})
+
+describe("Grid arrow keys", () => {
+  // Demo layout at 1440px, three columns: Checkout implementation, Dev server, Tests
+  // on top; Checkout review, Runtime, Build below.
+  const selectInGrid = async (name: string): Promise<void> => {
+    await openGrid()
+    await terminal(name).click({ position: { x: 150, y: 150 } })
+    await expectSelected(name)
+  }
+
+  context("when pressing Right and Down", () => {
+    it("selects the tile on that side, as laid out on screen", async () => {
+      await selectInGrid("Checkout implementation")
+      const start = bounds(terminal("Checkout implementation"))
+      const right = bounds(terminal("Dev server"))
+      const below = bounds(terminal("Checkout review"))
+      expect(right.left).toBeGreaterThan(start.right)
+      expect(right.top < start.bottom && start.top < right.bottom).toBe(true)
+      expect(below.top).toBeGreaterThan(start.bottom - 1)
+      expect(below.left).toBeLessThan(start.right)
+
+      await press("{ArrowRight}")
+      await expectSelected("Dev server")
+      await press("{ArrowDown}")
+      await expectSelected("Runtime")
+      await press("{ArrowLeft}")
+      await expectSelected("Checkout review")
+      await press("{ArrowUp}")
+      await expectSelected("Checkout implementation")
+    })
+  })
+
+  context("when pressing an arrow toward an edge with no tile", () => {
+    it("keeps the selection without wrapping", async () => {
+      await selectInGrid("Checkout implementation")
+
+      await press("{ArrowLeft}")
+      await expectSelected("Checkout implementation")
+      // Its shorter row-mates are beside it, not above it.
+      await press("{ArrowUp}")
+      await expectSelected("Checkout implementation")
+
+      await terminal("Dev server").click({ position: { x: 150, y: 150 } })
+      await expectSelected("Dev server")
+      await press("{ArrowUp}")
+      await expectSelected("Dev server")
+
+      await terminal("Tests").click({ position: { x: 150, y: 150 } })
+      await expectSelected("Tests")
+      await press("{ArrowRight}")
+      await expect.element(terminalTab("Tests")).toHaveAttribute("aria-current", "true")
     })
   })
 })

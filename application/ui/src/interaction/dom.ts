@@ -88,6 +88,19 @@ export const focusTerminalInput = (id: string): boolean => {
   return Boolean(input) && document.activeElement === input
 }
 
+// Each shown tile's frame, once, leaving out tiles hidden while they animate away.
+export const tileRects = (): { id: string; rect: DOMRect }[] => {
+  const seen = new Set<string>()
+  return [...(workspaceArea()?.querySelectorAll<HTMLElement>("[data-terminal]") ?? [])].flatMap(
+    (element) => {
+      const id = element.dataset.terminal
+      if (!id || seen.has(id) || element.closest("[inert]")) return []
+      seen.add(id)
+      return [{ id, rect: element.getBoundingClientRect() }]
+    },
+  )
+}
+
 export const workspaceArea = (): HTMLElement | null =>
   document.querySelector<HTMLElement>("[data-workspace-area]")
 export const terminalElement = (id: string): HTMLElement | null =>

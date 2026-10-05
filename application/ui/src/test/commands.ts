@@ -13,6 +13,7 @@ import {
 } from "../app/ui-store"
 import type { Backend } from "../backend/port"
 import type { CanvasHandle } from "../layouts/canvas/types"
+import type { Rect } from "../model/layout/spatial"
 import { activeSession } from "../model/state"
 import { createWorkspaceStore } from "../model/store"
 import type { PreferencesValue, Workspace } from "../model/types"
@@ -65,7 +66,10 @@ export const openCommands = ({
   )
   const effects: string[] = []
   const queued: (() => void)[] = []
-  const screen = { desktop }
+  const screen: { desktop: boolean; tiles: { id: string; rect: Rect }[] } = {
+    desktop,
+    tiles: [],
+  }
   let ids = 0
   const record: CommandEffects = {
     transitionTerminal: (id, update) => {
@@ -79,6 +83,7 @@ export const openCommands = ({
     focusWorkspaceViewport: () => effects.push("focus viewport"),
     focusTerminalTab: (id) => effects.push(`focus tab ${id}`),
     focusTerminalInput: (id) => (effects.push(`focus input ${id}`), true),
+    tileRects: () => screen.tiles,
     refocus: (element) => {
       effects.push("refocus")
       if (element.isConnected) element.focus({ preventScroll: true })

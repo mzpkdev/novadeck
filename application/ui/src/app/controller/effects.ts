@@ -2,6 +2,7 @@ import {
   focusSidebarToggle,
   focusTerminalInput,
   focusTerminalTab,
+  tileRects,
   focusWorkspaceViewport,
   focusZenCreate,
   focusZenEnter,
@@ -20,6 +21,7 @@ export const domEffects: CommandEffects = {
   focusWorkspaceViewport,
   focusTerminalTab,
   focusTerminalInput,
+  tileRects,
   refocus: (element) => {
     if (element.isConnected) element.focus({ preventScroll: true })
   },

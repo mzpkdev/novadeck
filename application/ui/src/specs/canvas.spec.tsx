@@ -449,20 +449,65 @@ describe("Canvas", () => {
     })
   })
 
-  context("when pressing modified arrow keys on the canvas", () => {
+  context("when pressing Up or Down with a modifier on the canvas", () => {
     it("neither pans the canvas nor moves the active terminal", async () => {
       await openCanvas()
       await terminal("Checkout implementation").click({ position: { x: 150, y: 150 } })
       await expectSelected("Checkout implementation")
       const before = boxesOf(names)
 
-      await press("{Shift>}{ArrowLeft}{ArrowRight}{ArrowUp}{ArrowDown}{/Shift}")
+      await press("{Shift>}{ArrowUp}{ArrowDown}{/Shift}")
       await clickBackground({ x: 150, y: 100 })
-      await press("{Shift>}{ArrowLeft}{ArrowRight}{ArrowUp}{ArrowDown}{/Shift}")
-      await press("{Control>}{ArrowLeft}{ArrowUp}{/Control}")
+      await press("{Shift>}{ArrowUp}{ArrowDown}{/Shift}")
+      await press("{Control>}{ArrowLeft}{ArrowRight}{ArrowUp}{ArrowDown}{/Control}")
+      await press("{Alt>}{ArrowLeft}{ArrowRight}{ArrowUp}{ArrowDown}{/Alt}")
 
       const after = await settled(() => boxesOf(names))
       for (const name of names) expect(sameBox(after[name]!, before[name]!)).toBe(true)
+    })
+  })
+
+  context("when pressing an arrow key on the canvas", () => {
+    // Demo layout, left to right: Checkout implementation, Dev server, Tests above;
+    // Checkout review, Runtime, Build below, each a little lower than the one above.
+    const picks: [string, string, string][] = [
+      ["Checkout implementation", "{ArrowRight}", "Dev server"],
+      ["Checkout implementation", "{ArrowDown}", "Checkout review"],
+      ["Runtime", "{ArrowUp}", "Dev server"],
+      ["Runtime", "{ArrowLeft}", "Checkout review"],
+    ]
+
+    for (const [from, key, to] of picks) {
+      it(`selects the terminal on that side: ${key} from ${from} reaches ${to}`, async () => {
+        await openCanvas()
+        await terminal(from).click({ position: { x: 150, y: 150 } })
+        await expectSelected(from)
+        const start = boxOf(terminal(from))
+        const target = boxOf(terminal(to))
+        const horizontal = key === "{ArrowRight}" || key === "{ArrowLeft}"
+        const sign = key === "{ArrowRight}" || key === "{ArrowDown}" ? 1 : -1
+        expect(
+          (horizontal ? target.centerX - start.centerX : target.centerY - start.centerY) * sign,
+        ).toBeGreaterThan(0)
+
+        await press(key)
+
+        await expectSelected(to)
+      })
+    }
+
+    it("does nothing when no terminal lies on that side", async () => {
+      await openCanvas()
+      await terminal("Checkout implementation").click({ position: { x: 150, y: 150 } })
+      await expectSelected("Checkout implementation")
+      await press("{ArrowLeft}")
+      await expectSelected("Checkout implementation")
+
+      await terminal("Dev server").click({ position: { x: 150, y: 150 } })
+      await expectSelected("Dev server")
+      await press("{ArrowUp}")
+
+      await expect.element(terminalTab("Dev server")).toHaveAttribute("aria-current", "true")
     })
   })
 
@@ -480,13 +525,13 @@ describe("Canvas", () => {
       expect(near(after.width, before.width) && near(after.height, before.height)).toBe(true)
     })
 
-    it("pans to reveal it when reached with Down", async () => {
+    it("pans to reveal it when reached with Right", async () => {
       await openCanvas()
-      await terminalTab("Dev server").click()
+      await terminal("Dev server").click({ position: { x: 150, y: 150 } })
       await expectSelected("Dev server")
       expect(insideView(await settled(() => boxOf(terminal("Tests"))))).toBe(false)
 
-      await press("{ArrowDown}")
+      await press("{ArrowRight}")
 
       await expectSelected("Tests")
       await expect.poll(() => insideView(boxOf(terminal("Tests")))).toBe(true)

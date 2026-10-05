@@ -320,10 +320,15 @@ and opens the Sessions sidebar.
 Sidebar shortcuts open or switch to their panel; pressing the same shortcut again hides it.
 
 Hold Ctrl while pressing Tab to choose a terminal, then release Ctrl to switch.
-Up and Down select terminals in sidebar order in Focus, Grid, and Canvas, wrapping
-at either end. Selection pans Canvas or scrolls Grid just like clicking a tab.
-Left and Right cycle through enabled views in Focus → Grid → Canvas order, wrapping
-at either end and retaining the selected terminal.
+In Grid and Canvas, the arrow keys select the nearest terminal on that side as it
+appears on screen, keeping to the current row or column when anything is in it, and
+stop at the edge. In Focus, where one terminal shows, every arrow steps through
+sidebar order: Up and Left back, Down and Right forward, wrapping at either end. With a
+terminal tab in the sidebar focused, Up and Down follow the list. Selection pans Canvas
+or scrolls Grid just like clicking a tab.
+Shift+Left and Shift+Right cycle through enabled views in Focus → Grid → Canvas order,
+wrapping at either end and retaining the selected terminal; so do Left and Right on the
+view switch.
 Escape first deselects the active terminal in any view, then hides the open sidebar
 on the next press. Further presses do nothing. Focus keeps the displayed terminal
 in place; clicking it activates it again. Terminal input, editors, and dialogs
