@@ -1,6 +1,7 @@
 import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
+import { clickBackground } from "./support/canvas"
 import {
   expectFocusWithin,
   expectSearchReady,
@@ -18,8 +19,14 @@ import {
 import {
   chooseView,
   commandInput,
+  enterNavigateMode,
   expectNothingSelected,
   expectSelected,
+  expectTypingIn,
+  focusStage,
+  focusViewChoice,
+  focusTab,
+  navigateChip,
   expectStaysAbsent,
   openWorkspace,
   press,
@@ -276,7 +283,7 @@ describe("arrow navigation", () => {
       it("selects terminals in sidebar order and wraps at either end", async () => {
         await openWorkspace()
         await chooseView(name)
-        await terminalTab("Checkout implementation").click()
+        await focusTab("Checkout implementation")
 
         await press("{ArrowDown}")
         await expectSelected("Dev server")
@@ -289,10 +296,11 @@ describe("arrow navigation", () => {
     })
   }
 
-  context("when pressing Shift+Right", () => {
+  context("when pressing Shift+Right while navigating", () => {
     it("cycles Focus, Grid, and Canvas and keeps the selection", async () => {
       await openWorkspace()
       await terminalTab("Tests").click()
+      await enterNavigateMode()
 
       await press("{Shift>}{ArrowRight}{/Shift}")
       await expect.element(view("Grid")).toBeChecked()
@@ -306,10 +314,11 @@ describe("arrow navigation", () => {
     })
   })
 
-  context("when pressing Shift+Left", () => {
+  context("when pressing Shift+Left while navigating", () => {
     it("cycles backwards from Focus to Canvas and keeps the selection", async () => {
       await openWorkspace()
       await terminalTab("Tests").click()
+      await enterNavigateMode()
 
       await press("{Shift>}{ArrowLeft}{/Shift}")
       await expect.element(view("Canvas")).toBeChecked()
@@ -320,10 +329,24 @@ describe("arrow navigation", () => {
     })
   })
 
+  context("when pressing Shift+Right outside navigate mode", () => {
+    it("does nothing on the stage", async () => {
+      await openWorkspace()
+      await terminalTab("Tests").click()
+      await expect.element(commandInput("Tests")).toHaveFocus()
+      await focusStage()
+
+      await press("{Shift>}{ArrowRight}{/Shift}")
+
+      await expectStaysAbsent(viewRegion("grid"))
+      await expect.element(view("Focus")).toBeChecked()
+    })
+  })
+
   context("when pressing Left or Right on a sidebar terminal tab", () => {
     it("does nothing", async () => {
       await openWorkspace()
-      await terminalTab("Tests").click()
+      await focusTab("Tests")
 
       await press("{ArrowRight}{ArrowLeft}")
 
@@ -333,10 +356,11 @@ describe("arrow navigation", () => {
     })
   })
 
-  context("when pressing a plain arrow in Focus with focus outside the terminals", () => {
+  context("when pressing a plain arrow in Focus while navigating", () => {
     it("steps through sidebar order: Right and Down forward, Left and Up back", async () => {
       await openWorkspace()
       await expectSelected("Checkout implementation")
+      await enterNavigateMode()
 
       await press("{ArrowRight}")
       await expectSelected("Dev server")
@@ -352,18 +376,6 @@ describe("arrow navigation", () => {
       await expectSelected("Checkout implementation")
       await expect.element(terminal("Checkout implementation")).toBeVisible()
     })
-
-    it("starts from the terminal Focus shows after Escape deselected it", async () => {
-      await openWorkspace()
-      await terminalTab("Dev server").click()
-      await press("{Escape}")
-      await expectNothingSelected()
-      await expect.element(terminal("Dev server")).toBeVisible()
-
-      await press("{ArrowRight}")
-
-      await expectSelected("Tests")
-    })
   })
 
   context("when a view is disabled in Preferences", () => {
@@ -373,11 +385,93 @@ describe("arrow navigation", () => {
       await preferencesDialog().getByRole("checkbox", { name: "Grid" }).click()
       await preferencesDialog().getByRole("button", { name: "Close preferences" }).click()
       await expect.element(preferencesDialog()).not.toBeInTheDocument()
+      await enterNavigateMode()
 
       await press("{Shift>}{ArrowRight}{/Shift}")
       await expect.element(view("Canvas")).toBeChecked()
       await press("{Shift>}{ArrowRight}{/Shift}")
       await expect.element(view("Focus")).toBeChecked()
+    })
+  })
+})
+
+describe("navigate mode", () => {
+  context(`when pressing Shift+Esc in a terminal's command input`, () => {
+    it("starts navigating, and arrows then move the selection", async () => {
+      await openWorkspace()
+      await commandInput("Checkout implementation").click()
+      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+      await expect.element(navigateChip()).not.toBeInTheDocument()
+
+      await press("{Shift>}{Escape}{/Shift}")
+
+      await expect.element(navigateChip()).toBeVisible()
+      await expect
+        .element(page.getByRole("region", { name: "focus view" }))
+        .toHaveAttribute("data-navigate", "true")
+      await expect.element(commandInput("Checkout implementation")).not.toHaveFocus()
+      await press("{ArrowDown}")
+      await expectSelected("Dev server")
+      await press("{ArrowDown}")
+      await expectSelected("Tests")
+    })
+  })
+
+  for (const [key, name] of [
+    ["{Enter}", "Enter"],
+    ["{Escape}", "Esc"],
+  ] as const) {
+    context(`when pressing ${name} while navigating`, () => {
+      it("goes back into the selected terminal", async () => {
+        await openWorkspace()
+        await enterNavigateMode()
+        await press("{ArrowDown}")
+        await expectSelected("Dev server")
+
+        await press(key)
+
+        await expectTypingIn("Dev server")
+        await expectSelected("Dev server")
+        await expect
+          .element(page.getByRole("region", { name: "focus view" }))
+          .not.toHaveAttribute("data-navigate", "true")
+      })
+    })
+  }
+
+  context("when typing while navigating", () => {
+    it("types into the selected terminal and stops navigating", async () => {
+      await openWorkspace()
+      await enterNavigateMode()
+      await press("{ArrowDown}")
+      await expectSelected("Dev server")
+
+      await press("ls")
+
+      await expectTypingIn("Dev server")
+      await expect.element(commandInput("Dev server")).toHaveValue("ls")
+    })
+  })
+
+  context("when pressing a plain arrow on the stage outside navigate mode", () => {
+    it("does nothing", async () => {
+      await openWorkspace()
+      await focusStage()
+      await press("{ArrowUp}{ArrowLeft}")
+
+      await expectSelected("Checkout implementation")
+      await expect.element(navigateChip()).not.toBeInTheDocument()
+    })
+  })
+
+  context("when clicking a terminal tab in the sidebar", () => {
+    it("leaves keyboard focus in that terminal's input", async () => {
+      await openWorkspace()
+
+      await terminalTab("Dev server").click()
+
+      await expectSelected("Dev server")
+      await expect.element(commandInput("Dev server")).toHaveFocus()
     })
   })
 })
@@ -476,6 +570,7 @@ describe("workspace keys after choosing a view", () => {
       it("creates a terminal", async () => {
         await openWorkspace()
         await chooseView("Grid")
+        await focusViewChoice()
 
         await pressShortcut("newTerminal")
 
@@ -488,6 +583,7 @@ describe("workspace keys after choosing a view", () => {
     it("opens search", async () => {
       await openWorkspace()
       await chooseView("Grid")
+      await focusViewChoice()
 
       await pressShortcut("find")
 
@@ -501,6 +597,7 @@ describe("workspace keys after choosing a view", () => {
       it("toggles Focus", async () => {
         await openWorkspace()
         await chooseView("Grid")
+        await focusViewChoice()
 
         await pressShortcut("focus")
 
@@ -513,6 +610,7 @@ describe("workspace keys after choosing a view", () => {
     it("moves one view at a time with Left and Right, and spatially with Up and Down", async () => {
       await openWorkspace()
       await chooseView("Grid")
+      await focusViewChoice()
 
       await press("{ArrowRight}")
       await expect.element(view("Canvas")).toBeChecked()
@@ -529,6 +627,7 @@ describe("workspace keys after choosing a view", () => {
       it("hides the sidebar", async () => {
         await openWorkspace()
         await chooseView("Grid")
+        await focusViewChoice()
         await expect.element(sidebar()).toBeVisible()
 
         await pressShortcut("terminals")
@@ -580,8 +679,8 @@ describe("typing in a terminal", () => {
   context("when typing with no terminal selected", () => {
     it("does nothing and keeps focus out of inputs", async () => {
       await openWorkspace()
-      await terminalTab("Dev server").click()
-      await press("{Escape}")
+      await chooseView("Canvas")
+      await clickBackground({ x: 12, y: 12 })
       await expectNothingSelected()
 
       await press("abc")

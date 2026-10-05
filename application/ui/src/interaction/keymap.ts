@@ -39,7 +39,8 @@ export type CommandId =
   | "terminal.rename"
   | "terminal.close"
   | "canvas.returnToOrigin"
-  | "selection.clear"
+  | "navigate.enter"
+  | "navigate.exit"
   | "switcher.close"
   | "switcher.choose"
   | "switcher.move"
@@ -58,6 +59,7 @@ export type KeyLayer =
   | "switcher"
   | "anywhere"
   | "app"
+  | "navigate"
   | "workspace"
   | "release"
 
@@ -93,6 +95,8 @@ export type KeyState = {
   readonly switcher: "held" | "click" | null
   // A held switcher exists, even one that no longer shows.
   readonly held: boolean
+  // The person is navigating the workspace, after Shift+Esc.
+  readonly navigate: boolean
 }
 
 // DOM facts routing asks for only when a layer needs them.
@@ -104,7 +108,7 @@ export type KeyEnvironment = {
 const phaseLayers: Record<KeyPhase, readonly KeyLayer[]> = {
   // Jumps run in capture, before a terminal's input takes its modified arrows.
   capture: ["switcher-nav", "escape", "navigation", "jump"],
-  bubble: ["switcher", "anywhere", "app", "workspace"],
+  bubble: ["switcher", "anywhere", "app", "navigate", "workspace"],
   keyup: ["release"],
   blur: ["release"],
 }
@@ -147,8 +151,9 @@ const gates: Record<
     !input.target.companion &&
     !environment.overlayOpen() &&
     !environment.tabInteraction(),
-  // Arrows move between terminals and Shift+arrows between views, except where a control
-  // or a companion pane (which scrolls, and moves through its own buttons) uses them itself.
+  // While navigating, arrows move between terminals and Shift+arrows between views, except
+  // where a control or a companion pane (which scrolls, and moves through its own buttons)
+  // uses them itself. Otherwise only the sidebar's list and the view switch take them.
   navigation: (input, state) =>
     !input.ctrlKey &&
     !input.metaKey &&
@@ -156,14 +161,26 @@ const gates: Record<
     !state.dialog &&
     !state.switcher &&
     (input.target.viewSwitch ||
-      (!input.target.editing && !input.target.navigationControl && !input.target.companion)),
+      input.target.terminalTab ||
+      (state.navigate &&
+        !input.target.editing &&
+        !input.target.navigationControl &&
+        !input.target.companion)),
   // From terminal input or the workspace; text fields and editors keep them to select.
   jump: (input, state) =>
     !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,
-  // Unmodified keys work only while navigating the workspace itself.
+  // Unmodified keys act on the workspace only while navigating it.
+  navigate: (input, state, environment) =>
+    state.navigate &&
+    !input.repeat &&
+    !state.dialog &&
+    !state.switcher &&
+    !input.target.editing &&
+    !environment.overlayOpen(),
+  // Typing anywhere but a terminal, field or dialog.
   workspace: (input, state, environment) =>
     !input.repeat &&
     !state.dialog &&
@@ -223,9 +240,9 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       args: 1,
       repeat: "run",
     },
-    // Canvas returns to its origin first; otherwise Escape clears the selection, then the sidebar.
+    // Canvas returns to its origin first; otherwise Escape goes back into the terminal.
     { layer: "escape", keys: key("Escape"), command: "canvas.returnToOrigin", repeat: "run" },
-    { layer: "escape", keys: key("Escape"), command: "selection.clear", repeat: "swallow" },
+    { layer: "escape", keys: key("Escape"), command: "navigate.exit", repeat: "swallow" },
     // Arrows move to the terminal on that side in Grid and Canvas, and through sidebar
     // order in Focus and the sidebar's list; Shift+Left and Right change the view.
     ...(["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"] as const).map(
@@ -251,6 +268,8 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       args: 1,
       repeat: "run",
     },
+    // Shift+Esc, from a terminal too: the one way into navigating.
+    { layer: "jump", keys: { shortcut: chord.navigate }, command: "navigate.enter", repeat: "run" },
     ...arrowDirections.map((arrow, args): KeyBinding => ({
       layer: "jump",
       keys: { shortcut: jumpShortcut(arrow, platform) },
@@ -308,15 +327,16 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       repeat: "swallow",
     },
     { layer: "app", keys: { shortcut: chord.zen }, command: "zen.toggle", repeat: "swallow" },
-    { layer: "workspace", keys: key("Delete"), command: "terminal.close", repeat: "run" },
-    // Typing outside a terminal goes into the selected one.
-    { layer: "workspace", keys: { typed: true }, command: "terminal.type", repeat: "run" },
+    { layer: "navigate", keys: key("Enter"), command: "navigate.exit", repeat: "run" },
+    { layer: "navigate", keys: key("Delete"), command: "terminal.close", repeat: "run" },
     {
-      layer: "workspace",
+      layer: "navigate",
       keys: { shortcut: single.rename },
       command: "terminal.rename",
       repeat: "run",
     },
+    // Typing outside a terminal goes into the selected one.
+    { layer: "workspace", keys: { typed: true }, command: "terminal.type", repeat: "run" },
     { layer: "release", keys: key("Control", "any"), command: "recent.commitHeld", repeat: "run" },
     { layer: "release", keys: { blur: true }, command: "recent.cancelHeld", repeat: "run" },
   ]
@@ -329,16 +349,17 @@ export type ShortcutGroup = {
 }
 
 // The shortcut table Preferences shows. Canvas zoom keys stay in Canvas's own handler
-// and appear here only as rows; Delete works but is not listed.
+// and appear here only as rows.
 export const shortcutGroups = (platform: Platform): readonly ShortcutGroup[] => [
   {
-    title: "Workspace",
-    description: "When you’re not typing in a terminal, field, or dialog.",
+    title: "Navigating",
+    description: "After Shift+Esc, until you type, press Enter or Esc, or click.",
     items: [
-      ...Object.values(workspaceShortcutBindings()),
       { label: "Terminal in that direction", display: ["↑", "↓", "←", "→"] },
       { label: "Previous / next view", display: ["Shift", "←", "→"] },
-      { label: "Deselect, then hide sidebar", display: ["Esc"] },
+      { label: "Back into the terminal", display: ["Enter", "Esc"] },
+      ...Object.values(workspaceShortcutBindings()),
+      { label: "Close active terminal", display: ["Delete"] },
       { label: "Zoom canvas in / out", display: ["+", "−"] },
       { label: "Fit canvas to all terminals", display: ["0"] },
     ],

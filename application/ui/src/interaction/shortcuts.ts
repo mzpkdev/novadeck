@@ -27,6 +27,7 @@ export type ShortcutName =
   | "terminals"
   | "sessions"
   | "preferences"
+  | "navigate"
 
 // Modifier shortcuts, which also work from terminal input.
 export const shortcutBindings = (
@@ -116,6 +117,14 @@ export const shortcutBindings = (
       shift: false,
       display: [mac ? "⌘" : "Ctrl", ","],
     },
+    navigate: {
+      label: "Navigate the workspace",
+      key: "Escape",
+      ctrl: false,
+      meta: false,
+      shift: true,
+      display: ["Shift", "Esc"],
+    },
   }
 }
 
@@ -146,8 +155,8 @@ export const jumpShortcut = (arrow: Arrow, platform: Platform = currentPlatform(
 
 export type WorkspaceShortcutName = "rename"
 
-// Keys that work only while navigating the workspace itself. None is a letter or other
-// printable key, so typing meant for a terminal that isn't focused never triggers one.
+// Keys that work only while navigating the workspace. None is a letter or other printable
+// key, so typing meant for a terminal never triggers one.
 export const workspaceShortcutBindings = (): Record<WorkspaceShortcutName, Shortcut> => ({
   rename: {
     label: "Rename active terminal",

@@ -1,6 +1,7 @@
 import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
+import { clickBackground } from "./support/canvas"
 import { escapeFrom, pressShortcut } from "./support/keyboard"
 import { currentRoute, pressNewSession } from "./support/sessions"
 import {
@@ -22,7 +23,10 @@ import {
   chooseView,
   commandInput,
   expectNothingSelected,
+  enterNavigateMode,
   expectSelected,
+  focusStage,
+  focusTab,
   expectStaysAbsent,
   openWorkspace,
   press,
@@ -272,6 +276,7 @@ describe("renaming terminals", () => {
       await openWorkspace()
       await chooseView("Grid")
       await terminalTab("Tests").click()
+      await enterNavigateMode()
 
       await press("{F2}")
 
@@ -286,12 +291,27 @@ describe("renaming terminals", () => {
       await terminalTab("Tests").click()
       await sidebar().getByRole("button", { name: "Hide terminals" }).click()
       await expect.element(sidebar()).not.toBeInTheDocument()
+      await enterNavigateMode()
 
       await press("{F2}")
 
       await expect.element(headerRenameField("Tests")).toHaveFocus()
       await press("Unit tests{Enter}")
       await expect.element(headerName("Unit tests")).toBeVisible()
+    })
+  })
+
+  context("when pressing F2 outside navigate mode", () => {
+    it("does not rename the terminal", async () => {
+      await openWorkspace()
+      await chooseView("Grid")
+      await terminalTab("Tests").click()
+      await focusStage()
+
+      await press("{F2}")
+
+      await expectStaysAbsent(anyRenameField())
+      await expect.element(terminalTab("Tests")).toBeVisible()
     })
   })
 
@@ -470,6 +490,7 @@ describe("closing terminals", () => {
         await openWorkspace()
         await chooseView(name)
         await terminalTab("Dev server").click()
+        await enterNavigateMode()
 
         await press("{Delete}")
         await confirmClose()
@@ -477,6 +498,19 @@ describe("closing terminals", () => {
         await expect.element(terminalTab("Dev server")).not.toBeInTheDocument()
         await expect.element(terminal("Dev server")).not.toBeInTheDocument()
         await expect.poll(visibleTerminalCounts).toEqual(["5 terminals"])
+      })
+
+      it("does nothing outside navigate mode", async () => {
+        await openWorkspace()
+        await chooseView(name)
+        await terminalTab("Dev server").click()
+        await focusStage()
+
+        await press("{Delete}")
+
+        await expectStaysAbsent(closeConfirmation())
+        await expectSelected("Dev server")
+        await expect.poll(visibleTerminalCounts).toEqual(["6 terminals"])
       })
 
       it("leaves the terminal open when Delete is pressed in its command input", async () => {
@@ -596,12 +630,6 @@ describe("hiding terminals from Grid and Canvas", () => {
       await expectSelected("Tests")
       await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
       expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
-
-      await press("{Escape}")
-
-      await expectNothingSelected()
-      expect(renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
-      expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
     })
   })
 
@@ -614,7 +642,7 @@ describe("hiding terminals from Grid and Canvas", () => {
       await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(0.5, 1)
       expect(renderedOpacity(headerName("Tests"))).toBeCloseTo(1, 1)
 
-      await press("{Escape}")
+      await clickBackground({ x: 12, y: 12 })
 
       await expectNothingSelected()
       await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(1, 1)
@@ -782,7 +810,7 @@ describe("reordering terminal tabs", () => {
       await openWorkspace()
       await dragTabOnto("Tests", "Checkout implementation")
       await expect.poll(() => terminalTabNames()[0]).toBe("Tests")
-      await terminalTab("Tests").click()
+      await focusTab("Tests")
       await expectSelected("Tests")
 
       await press("{ArrowDown}")

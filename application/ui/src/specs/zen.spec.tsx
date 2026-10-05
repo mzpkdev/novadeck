@@ -1,5 +1,5 @@
 import { describe as context, describe, expect, it } from "vitest"
-import { page } from "vitest/browser"
+import { page, type Locator } from "vitest/browser"
 
 import { findDialog, pressShortcut, shortcut } from "./support/keyboard"
 import { emptyWorkspace, pressNewSession } from "./support/sessions"
@@ -330,7 +330,7 @@ describe("Zen dock", () => {
   context("when activating the chevron from the keyboard", () => {
     it("toggles with Enter and Space", async () => {
       await openWorkspace()
-      await enterZen().click()
+      await activateWithKeyboard(enterZen())
       await expect.element(dock().getByRole("button", { name: "New terminal" })).toHaveFocus()
       await press("{Tab}")
       await expect.element(showControls()).toHaveFocus()
@@ -377,7 +377,7 @@ describe("Zen dock", () => {
 
     it("folds when keyboard focus leaves it", async () => {
       await openWorkspace()
-      await enterZen().click()
+      await activateWithKeyboard(enterZen())
       await press("{Tab}")
       await expect.element(showControls()).toHaveFocus()
       await press("{Enter}")
@@ -422,6 +422,13 @@ describe("Zen dock", () => {
     })
   })
 })
+
+/** Activates a button from the keyboard, as Tab then Enter does. */
+const activateWithKeyboard = async (button: Locator): Promise<void> => {
+  button.element().focus()
+  await expect.element(button).toHaveFocus()
+  await press("{Enter}")
+}
 
 describe("leaving Zen", () => {
   context("when choosing Exit Zen", () => {

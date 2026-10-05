@@ -273,20 +273,28 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 | Toggle terminal sidebar                           | `Cmd+Shift+1`     | `Ctrl+Shift+1`     |
 | Toggle session sidebar                            | `Cmd+Shift+2`     | `Ctrl+Shift+2`     |
 | Open preferences                                  | `Cmd+,`           | `Ctrl+,`           |
+| Navigate the workspace                            | `Shift+Esc`       | `Shift+Esc`        |
 
-When navigating the workspace outside terminal input, text editors, and dialogs,
-these keys work in both normal and Zen mode:
+The keyboard's home is the selected terminal. A mouse click on the sidebar, a header or
+the view switch leaves typing there, and the shortcuts above work from terminal input.
+`Shift+Esc` leaves the terminal to navigate the workspace: a ring marks the selected
+terminal and a "Navigating" note shows at the top of the stage, in normal and Zen mode.
+While navigating:
 
-| Key      | Action                     |
-| -------- | -------------------------- |
-| `F2`     | Rename the active terminal |
-| `Delete` | Close the active terminal  |
+| Key            | Action                                      |
+| -------------- | ------------------------------------------- |
+| `↑ ↓ ← →`      | Select the terminal in that direction       |
+| `Shift+← / →`  | Previous / next view                        |
+| `Enter`, `Esc` | Go back into the selected terminal          |
+| `F2`           | Rename the active terminal                  |
+| `Delete`       | Close the active terminal                   |
+| `+` `−` `0`    | Zoom the Canvas in / out, fit all terminals |
 
-The modifier shortcuts above remain available from terminal input. Letters and other
-typed characters are never workspace shortcuts: typed outside a terminal, they go into
-the selected terminal, which takes keyboard focus. With no terminal selected they do
-nothing, and Space still presses the focused button. Workspace keys never replace
-typing, editing, or dialog navigation.
+Typing a character, clicking, or moving into any field also ends navigating. Outside
+it, these keys do nothing on the workspace, so a key meant for a terminal never acts
+on it. Letters and other typed characters are never shortcuts: typed outside a
+terminal, they go into the selected terminal, which takes keyboard focus. With no
+terminal selected they do nothing, and Space still presses the focused button.
 
 Web addresses in a terminal, and the web hyperlinks programs print, open in your browser on
 Ctrl-click (⌘-click on macOS); hovering one shows where it goes. A plain click still selects
@@ -321,28 +329,26 @@ and opens the Sessions sidebar.
 Sidebar shortcuts open or switch to their panel; pressing the same shortcut again hides it.
 
 Hold Ctrl while pressing Tab to choose a terminal, then release Ctrl to switch.
-In Grid and Canvas, the arrow keys select the nearest terminal on that side as it
-appears on screen, keeping to the current row or column when anything is in it, and
-stop at the edge. In Focus, where one terminal shows, every arrow steps through
+While navigating Grid and Canvas, the arrow keys select the nearest terminal on that
+side as it appears on screen, keeping to the current row or column when anything is in
+it, and stop at the edge. In Focus, where one terminal shows, every arrow steps through
 sidebar order: Up and Left back, Down and Right forward, wrapping at either end. With a
-terminal tab in the sidebar focused, Up and Down follow the list. Selection pans Canvas
-or scrolls Grid just like clicking a tab.
-From anywhere, terminal input included, Cmd+Option+arrow (Ctrl+Shift+arrow on Windows
-and Linux) moves the same way and keeps typing in the terminal it reaches; at an edge
-it does nothing, and the keys never reach the program.
+terminal tab in the sidebar focused, Up and Down follow the list, navigating or not.
+Selection pans Canvas or scrolls Grid just like clicking a tab.
+From terminal input, Cmd+Option+arrow (Ctrl+Shift+arrow on Windows and Linux) moves the
+same way without leaving the terminal and keeps typing in the one it reaches; at an
+edge it does nothing, and the keys never reach the program.
 Shift+Left and Shift+Right cycle through enabled views in Focus → Grid → Canvas order,
 wrapping at either end and retaining the selected terminal; so do Left and Right on the
 view switch.
-Escape first deselects the active terminal in any view, then hides the open sidebar
-on the next press. Further presses do nothing. Focus keeps the displayed terminal
-in place; clicking it activates it again. Terminal input, editors, and dialogs
-retain Escape without changing workspace selection.
+Escape while navigating first returns a Canvas visit to where it began; otherwise it
+goes back into the terminal. Terminal input, editors, and dialogs retain Escape.
 Text inputs and open dialogs retain their own arrow behavior. Arrow keys no longer
 pan the canvas camera. While the recent switcher is open, Up and Down cycle its list.
 The new-terminal shortcut creates a terminal immediately and opens the desktop Terminals sidebar
 when outside Zen. On narrow screens the sidebar stays closed so the new terminal is visible. The new terminal's input receives focus. These shortcuts are available in the desktop app; browsers may
 reserve `Ctrl+Tab` for changing browser tabs. The Shortcuts tab in Preferences
-groups bindings into Anywhere and Workspace for the current platform. On the Canvas
+groups bindings into Navigating and Anywhere for the current platform. On the Canvas
 background, `+`/`−` zoom and `0` fits all terminals.
 
 ## Development

@@ -173,24 +173,23 @@ export const createKeyCommands = (
           ? "handled"
           : "next",
     },
-    "selection.clear": {
-      available: () =>
-        Boolean(state().selected) || sidebarVisible(ui.getSnapshot().shell, effects.desktop()),
+    // Keyboard focus leaves the terminal for the view, which keys then move around.
+    "navigate.enter": {
       run: handled(() => {
-        const { selected, view } = state()
-        if (!selected) {
-          commands.hideSidebar()
-          return
-        }
-        // Focus keeps showing the terminal as a preview.
-        if (view === "focus")
-          commands.setFocusPreview({
-            context: currentContext(workspace.getSnapshot()),
-            id: selected,
-          })
-        commands.setKeyboardFocus(null)
-        commands.setSelected("")
+        commands.setSwitcher(null)
+        commands.setNavigate(true)
         effects.focusWorkspaceViewport()
+      }),
+    },
+    // Back into the selected terminal, or the one Focus shows.
+    "navigate.exit": {
+      available: () => ui.getSnapshot().shell.navigate,
+      run: handled(() => {
+        commands.setNavigate(false)
+        const terminal = targeted()
+        if (!terminal) return
+        commands.setKeyboardFocus({ id: terminal.id, view: state().view })
+        if (state().selected !== terminal.id) commands.select(terminal.id)
       }),
     },
     "switcher.close": { run: handled(() => commands.closeSwitcher()) },
@@ -283,6 +282,7 @@ export const keyState = (
     alert,
     switcher: commands.visibleSwitcher()?.mode ?? null,
     held: ui.getSnapshot().recent.switcher?.mode === "held",
+    navigate: ui.getSnapshot().shell.navigate,
   }
 }
 

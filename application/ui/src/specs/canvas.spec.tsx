@@ -27,8 +27,10 @@ import { overlaps } from "./support/layouts"
 import {
   chooseView,
   commandInput,
+  enterNavigateMode,
   expectSelected,
   expectStaysAbsent,
+  focusStage,
   openWorkspace,
   press,
   terminal,
@@ -482,6 +484,7 @@ describe("Canvas", () => {
         await openCanvas()
         await terminal(from).click({ position: { x: 150, y: 150 } })
         await expectSelected(from)
+        await enterNavigateMode()
         const start = boxOf(terminal(from))
         const target = boxOf(terminal(to))
         const horizontal = key === "{ArrowRight}" || key === "{ArrowLeft}"
@@ -496,15 +499,31 @@ describe("Canvas", () => {
       })
     }
 
+    it("does nothing outside navigate mode", async () => {
+      await openCanvas()
+      await terminal("Checkout implementation").click({ position: { x: 150, y: 150 } })
+      await expectSelected("Checkout implementation")
+      await focusStage()
+      const before = boxesOf(names)
+
+      await press("{ArrowRight}{ArrowDown}")
+
+      await expectSelected("Checkout implementation")
+      const after = await settled(() => boxesOf(names))
+      for (const name of names) expect(sameBox(after[name]!, before[name]!)).toBe(true)
+    })
+
     it("does nothing when no terminal lies on that side", async () => {
       await openCanvas()
       await terminal("Checkout implementation").click({ position: { x: 150, y: 150 } })
       await expectSelected("Checkout implementation")
+      await enterNavigateMode()
       await press("{ArrowLeft}")
       await expectSelected("Checkout implementation")
 
       await terminal("Dev server").click({ position: { x: 150, y: 150 } })
       await expectSelected("Dev server")
+      await enterNavigateMode()
       await press("{ArrowUp}")
 
       await expect.element(terminalTab("Dev server")).toHaveAttribute("aria-current", "true")
@@ -530,6 +549,7 @@ describe("Canvas", () => {
       await terminal("Dev server").click({ position: { x: 150, y: 150 } })
       await expectSelected("Dev server")
       expect(insideView(await settled(() => boxOf(terminal("Tests"))))).toBe(false)
+      await enterNavigateMode()
 
       await press("{ArrowRight}")
 

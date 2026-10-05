@@ -15,8 +15,10 @@ import {
 import {
   chooseView,
   commandInput,
+  enterNavigateMode,
   expectSelected,
   expectStaysAbsent,
+  focusStage,
   openWorkspace,
   press,
   terminal,
@@ -266,6 +268,8 @@ describe("Grid arrow keys", () => {
       expect(below.top).toBeGreaterThan(start.bottom - 1)
       expect(below.left).toBeLessThan(start.right)
 
+      await enterNavigateMode()
+
       await press("{ArrowRight}")
       await expectSelected("Dev server")
       await press("{ArrowDown}")
@@ -274,6 +278,18 @@ describe("Grid arrow keys", () => {
       await expectSelected("Checkout review")
       await press("{ArrowUp}")
       await expectSelected("Checkout implementation")
+    })
+  })
+
+  context("when pressing an arrow outside navigate mode", () => {
+    it("keeps the selection", async () => {
+      await selectInGrid("Checkout implementation")
+      await focusStage()
+
+      await press("{ArrowRight}{ArrowDown}")
+
+      await expectSelected("Checkout implementation")
+      await expect.element(terminal("Checkout implementation")).toBeVisible()
     })
   })
 
@@ -309,6 +325,7 @@ describe("Grid arrow keys", () => {
   context("when pressing an arrow toward an edge with no tile", () => {
     it("keeps the selection without wrapping", async () => {
       await selectInGrid("Checkout implementation")
+      await enterNavigateMode()
 
       await press("{ArrowLeft}")
       await expectSelected("Checkout implementation")
@@ -318,11 +335,13 @@ describe("Grid arrow keys", () => {
 
       await terminal("Dev server").click({ position: { x: 150, y: 150 } })
       await expectSelected("Dev server")
+      await enterNavigateMode()
       await press("{ArrowUp}")
       await expectSelected("Dev server")
 
       await terminal("Tests").click({ position: { x: 150, y: 150 } })
       await expectSelected("Tests")
+      await enterNavigateMode()
       await press("{ArrowRight}")
       await expect.element(terminalTab("Tests")).toHaveAttribute("aria-current", "true")
     })
