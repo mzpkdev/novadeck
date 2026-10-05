@@ -491,11 +491,15 @@ const endTree = async (pid: number): Promise<void> => {
   await promisify(execFile)(
     join(windows, "System32", "taskkill.exe"),
     ["/T", "/F", "/PID", String(pid)],
-    {
-      windowsHide: true,
-    },
+    { windowsHide: true, timeout: 5000 },
   )
 }
+
+/**
+ * Terminals that have drawn. node-pty on Windows queues a kill until then; after, its kill
+ * ends the shell at once and closes the console, which ends the programs still attached.
+ */
+const drawnTerminals = new WeakSet<pty.IPty>()
 
 /**
  * Ends a terminal's program that its first kill left running. On Windows, which has no
@@ -2423,7 +2427,10 @@ export class Terminals {
       record.resolveExit = resolve
     })
     record.listeners = [
-      child.onData((data) => this.output(record, child, data)),
+      child.onData((data) => {
+        drawnTerminals.add(child)
+        this.output(record, child, data)
+      }),
       // node-pty can report an exit before it learns the code, e.g. after ending a
       // Windows terminal whose input failed.
       child.onExit(({ exitCode, signal }) =>
@@ -3464,13 +3471,17 @@ export class Terminals {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const group = await this.hangUp(record.process)
+      const child = record.process
+      const ended = process.platform === "win32" && drawnTerminals.has(child)
       try {
-        record.process.kill()
+        child.kill()
       } catch {
         this.exit(record, { code: null, signal: null })
       }
       timer = setTimeout(() => {
-        forceKill(record.process).then(
+        // An ended Windows shell's id may already name another process.
+        const forced = ended ? Promise.resolve() : forceKill(child)
+        forced.then(
           // node-pty on Windows reports an exit only once the console closes, which a program
           // the kill could not end can still keep open.
           () => {

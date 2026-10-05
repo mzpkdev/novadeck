@@ -829,6 +829,33 @@ describe("terminal closing", () => {
     expect(manager.get(ended.id)).toMatchObject({ exit: { code: 2 } })
   })
 
+  it.runIf(process.platform === "win32")(
+    "ends on Windows the programs a closed terminal's shell started",
+    async ({ terminals, onTestFinished }) => {
+      const manager = terminals.manager(ptyOptions)
+      const terminal = await manager.create(
+        { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+        "owner",
+      )
+      const stream = terminals.attach(manager, terminal.id, "owner")
+      await read(manager, stream, "owner", (_event, text) => text.includes("PTY_READY"))
+      manager.write({ terminalId: terminal.id, data: command({ type: "spawn" }) }, "owner")
+      let text = ""
+      await read(manager, stream, "owner", (event) => {
+        if (event.type === "output") text += event.data
+        return /STARTED_PID=\d+/.test(text)
+      })
+      const started = Number(/STARTED_PID=(\d+)/.exec(text)?.[1])
+      onTestFinished(() => {
+        if (isRunning(started)) process.kill(started)
+      })
+      expect(isRunning(started)).toBe(true)
+
+      await manager.close({ terminalId: terminal.id }, "owner")
+      await vi.waitFor(() => expect(isRunning(started)).toBe(false), { timeout: 15_000 })
+    },
+  )
+
   it("lets any connection close a terminal nobody controls, but not another's", async ({
     terminals,
   }) => {
