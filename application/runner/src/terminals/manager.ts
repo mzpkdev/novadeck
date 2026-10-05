@@ -3457,6 +3457,9 @@ export class Terminals {
       timer = setTimeout(() => {
         try {
           forceKill(record.process)
+          // node-pty on Windows reports an exit only once the console closes, which a program
+          // the shell started can keep open.
+          if (process.platform === "win32") this.exit(record, { code: null, signal: null })
         } catch {
           this.exit(record, { code: null, signal: null })
         }
