@@ -21,8 +21,17 @@ export type RelayHook = {
   readonly deadline?: number
 }
 
-/** How long an ask has from its hook's start, as the relay gives up within five seconds. */
+/**
+ * The most an ask has from its hook's start. The relay names its own deadline, which the
+ * runner keeps to, and this bounds it.
+ */
 export const askMs = 4_000
+
+/**
+ * What of a hook's environment the relay forwards, by name: Claude Code's own pid, and
+ * what tells nested agents apart. The relay reads the names from its configuration.
+ */
+export const hookVariables = ["CLAUDE_PID", "CURSOR_VERSION", "CODEX_THREAD_ID"] as const
 
 /**
  * The margin an ask leaves before its hook's limit, for the hook to print what a lease
@@ -101,16 +110,19 @@ export const relayHook = (value: Fields): RelayHook | undefined => {
     (typeof payload.hook_event_name === "string" && payload.hook_event_name.length <= 64
       ? payload.hook_event_name
       : "")
-  const claudePid = typeof env.claudePid === "string" ? env.claudePid : undefined
+  const claudePid = text(env.CLAUDE_PID, 10)
   const instance = instanceOf(agent.data, claudePid, ancestorsOf(value.ancestors))
-  const codexThread = text(env.codexThread, 128)
+  const codexThread = text(env.CODEX_THREAD_ID, 128)
   const report = {
     agent: agent.data,
     event,
     seq,
     instance: instance !== null && /^\d{1,10}$/.test(instance) ? instance : null,
     // Only what tells nested agents apart; nothing else of the environment is kept.
-    env: { cursor: env.cursor === true, ...(codexThread !== undefined && { codexThread }) },
+    env: {
+      cursor: text(env.CURSOR_VERSION, 128) !== undefined,
+      ...(codexThread !== undefined && { codexThread }),
+    },
     payload: prune(payload, 0, 4096) as Fields,
   }
   const sized =
@@ -118,9 +130,14 @@ export const relayHook = (value: Fields): RelayHook | undefined => {
       ? report
       : { ...report, payload: prune(payload, 0, 200) as Fields }
   if (JSON.stringify(sized).length > maxReport) return undefined
-  // The runner leases messages only with time left before it to print them and
-  // acknowledge the lease.
+  // The runner leases messages only with time left before the relay gives up to print
+  // them and acknowledge the lease.
+  const { deadline } = value
+  const relayGivesUp =
+    typeof deadline === "number" && Number.isFinite(deadline)
+      ? Math.min(deadline, seq + askMs)
+      : seq + askMs
   return event in harnesses[agent.data].messaging.asks
-    ? { report: sized, deadline: Math.round(seq) + askMs - printMs }
+    ? { report: sized, deadline: Math.round(relayGivesUp) - printMs }
     : { report: sized }
 }

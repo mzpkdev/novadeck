@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -760,6 +761,59 @@ describe("NovaDeck's MCP server", () => {
         error: { code: -32600, message: "Invalid Request" },
       })
       expect(unknown?.error).toEqual({ code: -32601, message: "Method not found: resources/list" })
+    })
+  })
+
+  describe("with a runner that doesn't take the session", () => {
+    // A runner that reads the relay's first line and answers as `answer` says, or never.
+    const runner = async (answer: string | undefined) => {
+      const directory = await mkdtemp(join(tmpdir(), "novadeck-mcp-runner-"))
+      const endpoint =
+        process.platform === "win32"
+          ? `\\\\.\\pipe\\novadeck-mcp-runner-${process.pid}-${Date.now()}`
+          : join(directory, "reports.sock")
+      const server = createServer((socket) => {
+        socket.once("data", () => {
+          if (answer !== undefined) socket.write(answer)
+        })
+        socket.resume()
+      })
+      await new Promise<void>((resolve) => server.listen(endpoint, resolve))
+      return {
+        env: {
+          PATH: process.env.PATH,
+          NOVADECK_TERMINAL_ID: "3f1c2b1e-0000-4000-8000-000000000001",
+          NOVADECK_REPORT: endpoint,
+          NOVADECK_REPORT_TOKEN: token,
+        },
+        close: async () => {
+          server.close()
+          await rm(directory, { recursive: true, force: true })
+        },
+      }
+    }
+
+    it("answers by itself, with no tools, when the runner speaks another version", async () => {
+      const newer = await runner(`${JSON.stringify({ relay: 3, ok: true })}\n`)
+      try {
+        const [hello, tools] = await session(newer.env, [initialize, list])
+        expect(hello?.result).toMatchObject({ protocolVersion: "2025-06-18" })
+        expect(tools?.result?.tools).toEqual([])
+      } finally {
+        await newer.close()
+      }
+    })
+
+    it("answers by itself, with no tools, when the runner doesn't answer", async () => {
+      const silent = await runner(undefined)
+      try {
+        const began = Date.now()
+        const [, tools] = await session(silent.env, [initialize, list])
+        expect(tools?.result?.tools).toEqual([])
+        expect(Date.now() - began).toBeLessThan(5_000)
+      } finally {
+        await silent.close()
+      }
     })
   })
 

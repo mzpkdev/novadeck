@@ -44,7 +44,7 @@ const hook = (platform: NodeJS.Platform, event: string): string =>
 // wrapper still attributes to its sender; a prompt's context is a developer message.
 const messaging: MessagingProfile = {
   asks: { Stop: "stop", UserPromptSubmit: "prompt" },
-  silent: () => "",
+  silent: { "*": "" },
   stop: (delivery) => `${JSON.stringify({ decision: "block", reason: delivery })}\n`,
   prompt: (delivery) =>
     `${JSON.stringify({

@@ -236,7 +236,7 @@ const reporter = (
       // The agent process: Claude Code names itself, the others are the nearest ancestor
       // with the agent's name.
       '  const named = instance !== null && agent === "claude"',
-      "  const env = { cursor: false, ...(named && { claudePid: instance }) }",
+      "  const env = named ? { CLAUDE_PID: instance } : {}",
       "  const ancestors = instance !== null && !named ? [{ pid: Number(instance), name: agent }] : []",
       "  const hook = { relay: 2, kind: 'hook', terminalId, token, agent, event, seq: base + seq, ancestors, env, payload: JSON.stringify(payload) }",
       '  let text = ""',
@@ -258,8 +258,8 @@ const reporter = (
 }
 
 // How a stand-in calls a tool of NovaDeck's MCP server, as NovaDeck's relay carries an
-// agent's session: its first line names the terminal and the token, then a `tools/call`
-// names the tool for the runner's call of `type`. It hands `done` what the agent was
+// agent's session: its first line names the terminal and the token, and once the runner
+// takes the session, a `tools/call` names the tool for the runner's call of `type`. It hands `done` what the agent was
 // told: `{ ok: true, text }`, or `{ ok: false, reason }` with the failure's text, or null
 // without an answer. Then the session ends.
 const toolCall = [
@@ -268,12 +268,14 @@ const toolCall = [
   "  const socket = net.connect(process.env.NOVADECK_REPORT)",
   '  let text = ""',
   '  socket.setEncoding("utf8")',
+  // The runner takes the session with a line of its own, then answers the call.
+  '  const answer = () => text.split("\\n").filter(Boolean).map((line) => JSON.parse(line)).find((line) => line.id === 1)',
   '  socket.on("data", (chunk) => {',
   "    text += chunk",
-  '    if (text.includes("\\n")) socket.end(JSON.stringify({ relay: "eof" }) + "\\n")',
+  '    if (answer()) socket.end(JSON.stringify({ relay: "eof" }) + "\\n")',
   "  })",
   '  socket.on("close", () => {',
-  '    const { result } = text ? JSON.parse(text.split("\\n")[0]) : {}',
+  "    const { result } = answer() ?? {}",
   "    const said = result && result.content[0].text",
   "    done(!result ? null : result.isError ? { ok: false, reason: said } : { ok: true, text: said })",
   "  })",

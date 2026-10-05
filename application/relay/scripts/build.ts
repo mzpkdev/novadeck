@@ -1,9 +1,8 @@
-import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
 import { chmod, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+
+import { binaryName, compile, hasCargo, pinnedRust, root, run } from "./recipe.ts"
 
 // `pnpm build` for the relay: the prebuilt binary for this platform when the source is
 // the one `prebuilt.json` pins, so building NovaDeck needs no Rust; otherwise, as when
@@ -24,7 +23,6 @@ import { fileURLToPath } from "node:url"
 // NOVADECK_RELAY_UNIVERSAL=1 on macOS builds both architectures into one binary, as the
 // universal app needs.
 
-const root = fileURLToPath(new URL("..", import.meta.url))
 const releases = "https://github.com/mzpkdev/novadeck/releases/download"
 
 /** The binaries published for one version of the relay's source, by target. */
@@ -57,8 +55,6 @@ export const releasePrefix = (source: string): string => `relay-${source.slice(0
 
 const repository = "mzpkdev/novadeck"
 
-const binaryName = process.platform === "win32" ? "novadeck-relay.exe" : "novadeck-relay"
-
 const sha256 = (data: string | Uint8Array): string =>
   createHash("sha256").update(data).digest("hex")
 
@@ -75,8 +71,8 @@ export const sourceHash = (files: readonly { path: string; text: string }[]): st
 
 /**
  * Every file the binary is built from, relative to the package: the crate, the Rust that
- * builds it, cargo's own configuration, as its flags shape the binary, and this script,
- * which picks each platform's target, merges macOS's and signs it.
+ * builds it, cargo's own configuration, as its flags shape the binary, and the recipe
+ * (scripts/recipe.ts), which picks each platform's target, merges macOS's and signs it.
  */
 export const sourcePaths = async (folder = root): Promise<string[]> => {
   const under = async (directory: string, keep: (path: string) => boolean) =>
@@ -89,7 +85,7 @@ export const sourcePaths = async (folder = root): Promise<string[]> => {
     "rust-toolchain.toml",
     ...(await under("src", (path) => path.endsWith(".rs"))),
     ...(await under(".cargo", (path) => path.endsWith(".toml"))),
-    join("scripts", "build.ts"),
+    join("scripts", "recipe.ts"),
   ]
 }
 
@@ -115,74 +111,13 @@ const place = async (data: Uint8Array): Promise<void> => {
   await chmod(output, 0o755)
 }
 
-const run = (command: string, args: readonly string[]): void => {
-  const result = spawnSync(command, args, { cwd: root, stdio: "inherit" })
-  if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`)
-}
-
-const hasCargo = (): boolean => !spawnSync("cargo", ["--version"], { stdio: "ignore" }).error
-
-let rustInPlace = false
-/**
- * Puts the Rust rust-toolchain.toml names in place, once, where rustup manages Rust: not
- * every rustup installs it by itself when cargo first runs.
- */
-const pinnedRust = (): void => {
-  if (rustInPlace || !hasRustup()) return
-  rustInPlace = true
-  run("rustup", ["toolchain", "install", "--no-self-update"])
-}
-
-// Apple silicon runs only signed code, and stripping or merging architectures can leave a
-// binary's own signature broken, so on macOS it is signed again, ad hoc, as the unsigned
-// app is. Returns its bytes.
-const signed = (path: string): Buffer => {
-  if (process.platform === "darwin") run("codesign", ["--force", "--sign", "-", path])
-  return readFileSync(path)
-}
-
-/**
- * On Linux, the Rust target the relay is built for: linked statically against musl, so
- * one binary runs on any distribution, however old its C library, as a server's may be.
- */
-export const linuxTriple = (arch: string = process.arch): string =>
-  `${arch === "arm64" ? "aarch64" : "x86_64"}-unknown-linux-musl`
-
-const hasRustup = (): boolean => !spawnSync("rustup", ["--version"], { stdio: "ignore" }).error
-
 const fromSource = async (why: string): Promise<void> => {
   if (!hasCargo()) {
     throw new Error(
       `${why}, so it is built from source, which needs Rust: install it from https://rustup.rs.`,
     )
   }
-  pinnedRust()
-  // Without rustup, as with a distribution's own cargo, it links as that cargo does.
-  if (process.platform === "linux" && hasRustup()) {
-    const triple = linuxTriple()
-    run("rustup", ["target", "add", triple])
-    run("cargo", ["build", "--release", "--locked", "--target", triple])
-    await place(await readFile(join(root, "target", triple, "release", binaryName)))
-    return
-  }
-  const universal = process.platform === "darwin" && process.env.NOVADECK_RELAY_UNIVERSAL === "1"
-  if (!universal) {
-    run("cargo", ["build", "--release", "--locked"])
-    await place(signed(join(root, "target", "release", binaryName)))
-    return
-  }
-  const triples = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
-  run("rustup", ["target", "add", ...triples])
-  for (const triple of triples) run("cargo", ["build", "--release", "--locked", "--target", triple])
-  const merged = join(root, "target", binaryName)
-  run("lipo", [
-    "-create",
-    "-output",
-    merged,
-    ...triples.map((triple) => join(root, "target", triple, "release", binaryName)),
-  ])
-  await place(signed(merged))
+  await place(compile(await readSource()))
 }
 
 const download = async (prebuilt: Prebuilt, key: string): Promise<void> => {
@@ -290,18 +225,19 @@ export const lintTriples = [
 
 // Clippy for this platform, or in CI for every platform the relay ships for: checking
 // needs no linker, so one runner checks them all.
+const clippy = (...triple: string[]) =>
+  run("cargo", [
+    "clippy",
+    "--locked",
+    "--release",
+    "--all-targets",
+    ...triple,
+    "--",
+    "-D",
+    "warnings",
+  ])
+
 const lint = (): void => {
-  const clippy = (...triple: string[]) =>
-    run("cargo", [
-      "clippy",
-      "--locked",
-      "--release",
-      "--all-targets",
-      ...triple,
-      "--",
-      "-D",
-      "warnings",
-    ])
   if (!process.env.CI) return clippy()
   run("rustup", ["target", "add", ...lintTriples])
   for (const triple of lintTriples) clippy("--target", triple)

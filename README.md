@@ -807,12 +807,13 @@ Artifacts go to `application/host/release/`: a Linux x64 AppImage, a macOS
 universal ZIP, or a Windows x64 portable executable. Builds are unsigned, so
 Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 
-Each package ships the relay agents start for NovaDeck's MCP server and hooks. Its binaries
+Each package ships the relay agents start for NovaDeck's MCP server and hooks, built
+from source in the release workflow. Its prebuilt binaries, for contributors without Rust,
 are published by the [relay workflow](.github/workflows/relay.yml) when a pull
 request changes its source; pin them with `node application/relay/scripts/build.ts
 --pin` and commit `application/relay/prebuilt.json`, which Quality checks. Those
-`relay-*` prereleases are deleted after two days unless `main` or an open pull request
-pins them; building an older commit whose binaries are gone needs Rust.
+`relay-*` prereleases are deleted after two days unless `main` ever pinned them or an
+open pull request pins them.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native

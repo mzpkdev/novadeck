@@ -1,16 +1,31 @@
 //! In a NovaDeck terminal, the MCP server is the runner's: the relay names the terminal
-//! once, then carries the agent's lines to the runner and its answers back unchanged.
+//! once, waits for the runner to take the session, then carries the agent's lines to the
+//! runner and its answers back unchanged. A runner that doesn't take it, as one that
+//! speaks another version of the protocol, leaves the relay to answer by itself, with no
+//! tools: nothing of the agent's has been read yet, so the session is whole.
 
 use std::env;
+use std::time::Duration;
 
-use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
-use crate::{endpoint, idle};
+use crate::{PROTOCOL, endpoint, idle};
 
 /// What the relay sends once the agent has closed its side, as Windows' named pipes
 /// can't be half closed: the runner answers the calls under way, then closes.
 pub const END: &str = "{\"relay\":\"eof\"}\n";
+
+/// How long the runner has to take the session before the relay answers by itself.
+const TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
+
+/// Whether a line is the runner taking the session, in this relay's protocol.
+pub fn taken(line: &str) -> bool {
+    serde_json::from_str::<Value>(line).is_ok_and(|value| {
+        value.get("relay").and_then(Value::as_u64) == Some(u64::from(PROTOCOL))
+            && value.get("ok") == Some(&Value::Bool(true))
+    })
+}
 
 pub fn run(server: &str, versions: &[String]) {
     let terminal = [
@@ -19,31 +34,56 @@ pub fn run(server: &str, versions: &[String]) {
         "NOVADECK_REPORT_TOKEN",
     ]
     .map(|name| env::var(name).ok().filter(|value| !value.is_empty()));
+    // Outside NovaDeck's terminals there is nothing to say: no tools is what's meant.
     let [Some(terminal), Some(endpoint), Some(token)] = terminal else {
         return idle::serve(server, versions);
+    };
+    // In one, the agent's log says why NovaDeck's tools are missing.
+    let idle = |why: &str| {
+        eprintln!("NovaDeck's relay offers no tools: {why}.");
+        idle::serve(server, versions);
     };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build();
     let Ok(runtime) = runtime else {
-        return idle::serve(server, versions);
+        return idle("it couldn't start");
     };
-    // A runner that can't be reached has no tools to offer.
-    let Some(connection) = runtime.block_on(async { endpoint::connect(&endpoint).await.ok() })
-    else {
-        return idle::serve(server, versions);
-    };
-    let hello = json!({ "relay": 2, "kind": "mcp", "terminalId": terminal, "token": token });
-    runtime.block_on(carry(connection, format!("{hello}\n")));
+    let hello = json!({ "relay": PROTOCOL, "kind": "mcp", "terminalId": terminal, "token": token });
+    match runtime.block_on(open(&endpoint, format!("{hello}\n"))) {
+        Ok(session) => runtime.block_on(carry(session)),
+        Err(why) => {
+            runtime.shutdown_background();
+            return idle(why);
+        }
+    }
     // The agent's input may still be read on a thread of its own, which can't be
     // cancelled; the process ends without waiting for it.
     runtime.shutdown_background();
 }
 
-async fn carry(
-    (mut from_runner, mut to_runner): (endpoint::Reader, endpoint::Writer),
-    hello: String,
-) {
+type Session = (BufReader<endpoint::Reader>, endpoint::Writer);
+
+/// Connects, names the terminal, and waits for the runner to take the session.
+async fn open(endpoint: &str, hello: String) -> Result<Session, &'static str> {
+    let (from_runner, mut to_runner) = endpoint::connect(endpoint)
+        .await
+        .map_err(|_| "NovaDeck's runner can't be reached")?;
+    to_runner
+        .write_all(hello.as_bytes())
+        .await
+        .map_err(|_| "NovaDeck's runner went away")?;
+    let mut from_runner = BufReader::new(from_runner);
+    let mut line = String::new();
+    let read = tokio::time::timeout(TAKEN_WITHIN, from_runner.read_line(&mut line)).await;
+    match read {
+        Ok(Ok(read)) if read > 0 && taken(&line) => Ok((from_runner, to_runner)),
+        Ok(_) => Err("NovaDeck's runner speaks another version of the relay's protocol"),
+        Err(_) => Err("NovaDeck's runner didn't answer"),
+    }
+}
+
+async fn carry((mut from_runner, mut to_runner): Session) {
     let answers = async {
         let mut stdout = tokio::io::stdout();
         let mut buffer = vec![0u8; 16 * 1024];
@@ -62,9 +102,6 @@ async fn carry(
     let messages = async {
         let mut stdin = tokio::io::stdin();
         let mut buffer = vec![0u8; 16 * 1024];
-        if to_runner.write_all(hello.as_bytes()).await.is_err() {
-            return;
-        }
         // Whether what went last ends a line, so the end goes on a line of its own.
         let mut whole = true;
         loop {
@@ -92,5 +129,19 @@ async fn carry(
     tokio::select! {
         () = answers => {}
         () = messages => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn takes_the_session_only_in_its_own_protocol() {
+        assert!(taken("{\"relay\":2,\"ok\":true}\n"));
+        assert!(!taken("{\"relay\":3,\"ok\":true}\n"));
+        assert!(!taken("{\"relay\":2,\"ok\":false}\n"));
+        assert!(!taken("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n"));
+        assert!(!taken(""));
     }
 }

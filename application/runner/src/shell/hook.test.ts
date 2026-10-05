@@ -6,6 +6,7 @@ import { join } from "node:path"
 
 import { relayPath } from "@novadeck/relay"
 
+import { agents, harnesses } from "../harnesses/registry.js"
 import { describe, expect, it as base } from "../test.js"
 import { relayHook } from "./hook.js"
 import { installShellFiles } from "./install.js"
@@ -17,7 +18,7 @@ import {
   type HookAnswer,
   type Report,
 } from "./reports.js"
-import { askingHooks } from "./scripts.js"
+import { relayConfig } from "./scripts.js"
 
 type Fixture = {
   endpoint: string
@@ -39,6 +40,10 @@ type Fixture = {
     event?: string,
   ) => Promise<number | null>
 }
+
+// The relay's configuration, as the runner writes it beside the relay.
+const relayConfigFile = join(mkdtempSync(join(tmpdir(), "novadeck-relay-config-")), "relay.json")
+writeFileSync(relayConfigFile, JSON.stringify(relayConfig))
 
 const terminalId = "00000000-0000-4000-8000-000000000001"
 // Shaped like a runner's token: 48 hex digits.
@@ -70,7 +75,7 @@ const it = base.extend<{ fixture: Fixture }>({
       new Promise((resolve) => {
         const child = spawn(
           relayPath,
-          ["hook", "--asks", askingHooks, agent, ...(event ? [event] : [])],
+          ["hook", "--config", relayConfigFile, agent, ...(event ? [event] : [])],
           {
             env: {
               ...process.env,
@@ -96,7 +101,7 @@ const it = base.extend<{ fixture: Fixture }>({
       })
     const run: Fixture["run"] = (agent, payload, env, event) =>
       new Promise((resolve) => {
-        const child = spawn(relayPath, ["hook", "--asks", askingHooks, agent, event], {
+        const child = spawn(relayPath, ["hook", "--config", relayConfigFile, agent, event], {
           env: {
             ...process.env,
             NOVADECK_TERMINAL_ID: terminalId,
@@ -195,7 +200,7 @@ describe("agent hook", () => {
       const pid = await new Promise<number | undefined>((resolve) => {
         const child = spawn(
           codex,
-          ["-c", `"${relayPath}" hook --asks '${askingHooks}' codex SessionStart; true`],
+          ["-c", `"${relayPath}" hook --config '${relayConfigFile}' codex SessionStart; true`],
           {
             env: {
               ...process.env,
@@ -257,7 +262,7 @@ describe("agent hook", () => {
 
   it("reads its agent's whole payload even outside NovaDeck, so the agent can write it", async () => {
     const written = await new Promise<Error | undefined>((resolve) => {
-      const child = spawn(relayPath, ["hook", "--asks", askingHooks, "claude", "Stop"], {
+      const child = spawn(relayPath, ["hook", "--config", relayConfigFile, "claude", "Stop"], {
         env: { PATH: process.env.PATH },
         stdio: ["pipe", "ignore", "inherit"],
       })
@@ -324,7 +329,7 @@ describe("agent hook", () => {
   it("gives up within its limit when its agent never closes its input", async ({ fixture }) => {
     const began = performance.now()
     const printed = await new Promise<string>((resolve) => {
-      const child = spawn(relayPath, ["hook", "--asks", askingHooks, "agy", "PreToolUse"], {
+      const child = spawn(relayPath, ["hook", "--config", relayConfigFile, "agy", "PreToolUse"], {
         env: {
           ...process.env,
           NOVADECK_TERMINAL_ID: terminalId,
@@ -564,7 +569,7 @@ describe("reading a relay's hook", () => {
     ]
     expect(relayHook(hook({ ancestors }))?.report.instance).toBe("20")
     expect(relayHook(hook({ ancestors: [{ pid: 10, name: "sh" }] }))?.report.instance).toBe(null)
-    const claude = hook({ agent: "claude", ancestors, env: { claudePid: "4242" } })
+    const claude = hook({ agent: "claude", ancestors, env: { CLAUDE_PID: "4242" } })
     expect(relayHook(claude)?.report.instance).toBe("4242")
   })
 
@@ -587,6 +592,22 @@ describe("reading a relay's hook", () => {
     const asked = relayHook(hook({ event: "Stop", seq: 1_000.4 }))
     expect(asked?.deadline).toBe(4_500)
     expect(relayHook(hook())?.deadline).toBeUndefined()
+  })
+
+  it("keeps to the deadline the relay names, within the most an ask has", () => {
+    // A relay that gives up sooner is never answered after it.
+    expect(relayHook(hook({ event: "Stop", seq: 1_000, deadline: 3_000 }))?.deadline).toBe(2_500)
+    expect(relayHook(hook({ event: "Stop", seq: 1_000, deadline: 9_000 }))?.deadline).toBe(4_500)
+    expect(relayHook(hook({ event: "Stop", seq: 1_000, deadline: "later" }))?.deadline).toBe(4_500)
+  })
+
+  it("tells the relay what each agent prints without NovaDeck, as its harness does", () => {
+    for (const agent of agents) {
+      for (const [event, text] of Object.entries(harnesses[agent].messaging.silent)) {
+        expect(relayConfig.fallbacks[agent]?.[event]).toBe(text.trimEnd())
+      }
+      expect(relayConfig.asks[agent]).toEqual(Object.keys(harnesses[agent].messaging.asks))
+    }
   })
 
   it("reads nothing of an unknown agent or a payload agents don't send", async () => {

@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  assetName,
-  linuxTriple,
-  releasePrefix,
-  sourceHash,
-  sourcePaths,
-  target,
-  targets,
-} from "./build.ts"
+import { assetName, releasePrefix, sourceHash, sourcePaths, target, targets } from "./build.ts"
+import { linuxTriple } from "./recipe.ts"
 
 describe("the relay's build", () => {
   it("hashes the source by each file's path and content, whatever the order or line endings", () => {
@@ -46,7 +39,7 @@ describe("the relay's build", () => {
     expect(linuxTriple("arm64")).toBe("aarch64-unknown-linux-musl")
   })
 
-  it("hashes what shapes the binary: the crate, cargo's flags and this build", async () => {
+  it("hashes what shapes the binary: the crate, cargo's flags and the recipe", async () => {
     const paths = (await sourcePaths()).map((path) => path.replaceAll("\\", "/"))
     expect(paths).toEqual(
       expect.arrayContaining([
@@ -54,7 +47,7 @@ describe("the relay's build", () => {
         "Cargo.lock",
         "src/main.rs",
         ".cargo/config.toml",
-        "scripts/build.ts",
+        "scripts/recipe.ts",
       ]),
     )
     expect(paths.some((path) => path.startsWith("target/") || path.startsWith("dist/"))).toBe(false)

@@ -102,7 +102,31 @@ const relayEnd = JSON.stringify({ relay: "eof" })
 const maxRelayHook = 2_100_000
 
 /** How a relay's first line starts, naming the version of what it carries. */
-const relayStart = '{"relay":2,'
+const relayStart = '{"relay":'
+
+/**
+ * The versions of the relay protocol the runner speaks (see docs/backend-api.md, "Relay
+ * protocol"). An agent's plugin starts whichever relay the install that connected it
+ * last copied in, so a runner can meet a relay older or newer than its own: when the
+ * protocol changes, the runner keeps taking the version before it for a release. A
+ * relay the runner doesn't take answers by itself, with no tools.
+ */
+export const relayVersions: ReadonlySet<number> = new Set([2])
+
+// What the endpoint turned away, said once each, so a mismatch shows in the runner's log
+// without filling it.
+const refused = new Set<string>()
+const refuse = (value: unknown): void => {
+  const relay =
+    typeof value === "object" && value !== null && "relay" in value ? value.relay : undefined
+  const why =
+    relay === undefined
+      ? "a connection that isn't a relay's"
+      : `a relay speaking version ${JSON.stringify(relay)} of its protocol`
+  if (refused.has(why)) return
+  refused.add(why)
+  console.error(`NovaDeck's report endpoint turned away ${why}.`)
+}
 
 // One line of an agent's MCP session may hold more than a hook's report, as a message's
 // text, but not without end.
@@ -134,12 +158,20 @@ const tooLong = (head: string, tail: string): string => {
 
 /**
  * Serves one agent's MCP session over a relay's connection, from `rest`, what came after
- * the relay's first line: each line the agent sent is answered with a line, as it is
+ * the relay's first line, once it has told the relay it takes the session, in the
+ * relay's own version: each line the agent sent is answered with a line, as it is
  * done, so a slow call holds up no other. Once the relay sends its end, the session
  * answers what is under way and closes. Calls carry the terminal and token the relay
  * named; outside a terminal it named, the server offers no tools.
  */
-const serveSession = (socket: Socket, rest: string, call: McpCall | undefined): void => {
+const serveSession = (
+  socket: Socket,
+  rest: string,
+  call: McpCall | undefined,
+  version: number,
+): void => {
+  // The session is taken: the relay carries the agent's lines from here on.
+  socket.write(`${JSON.stringify({ relay: version, ok: true })}\n`)
   let buffer = ""
   let pending = 0
   let ended = false
@@ -364,23 +396,28 @@ export const listenForReports = async (
       } catch {
         value = undefined
       }
-      if (object(value) && value.relay === 2 && value.kind === "hook") {
+      const version =
+        object(value) && typeof value.relay === "number" && relayVersions.has(value.relay)
+          ? value.relay
+          : undefined
+      if (object(value) && version !== undefined && value.kind === "hook") {
         // The ask's own deadline bounds the wait.
         socket.setTimeout(0)
         socket.off("data", first)
         serveHook(socket, value, text.slice(end + 1)).catch(() => socket.destroy())
         return
       }
-      if (object(value) && value.relay === 2 && value.kind === "mcp") {
+      if (object(value) && version !== undefined && value.kind === "mcp") {
         // An agent's MCP session lasts as long as the agent, and holds no runner open.
         socket.setTimeout(0)
         socket.unref()
         socket.off("data", first)
         const from = sender(value)
-        serveSession(socket, text.slice(end + 1), from && relayCall(from))
+        serveSession(socket, text.slice(end + 1), from && relayCall(from), version)
         return
       }
-      // Not a relay's: nothing to take or answer.
+      // Not a relay's this runner speaks with: nothing to take or answer.
+      refuse(value)
       socket.end()
     }
     socket.on("data", first)

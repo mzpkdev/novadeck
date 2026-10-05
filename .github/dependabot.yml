@@ -34,14 +34,18 @@ updates:
       prefix: "build"
       include: "scope"
 
-  # The relay's crates, built into every package NovaDeck ships.
+  # The relay's crates, built into every package NovaDeck ships. Monthly and in one pull
+  # request, as each update needs its binaries published and pinned by hand.
   - package-ecosystem: "cargo"
     directory: "/application/relay"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "09:00"
       timezone: "Europe/Warsaw"
+    groups:
+      crates:
+        patterns:
+          - "*"
     commit-message:
       prefix: "build"
       include: "scope"

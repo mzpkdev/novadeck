@@ -5,6 +5,7 @@ import type { AgentName } from "@novadeck/protocol"
 import { plugin, type Launchers, type Start } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
 import { header } from "./header.js"
+import { hookVariables } from "./hook.js"
 import { mcpVersions } from "./mcp.js"
 
 // The files NovaDeck puts in shells it starts, and the plugins agents install when the
@@ -28,8 +29,10 @@ export type ShellPaths = {
   readonly hook: string
   /** The MCP server's launcher, which connected agents' plugins start. */
   readonly mcp: string
-  /** NovaDeck's copy of the relay the MCP launcher starts (see application/relay). */
+  /** NovaDeck's copy of the relay the launchers start (see application/relay). */
   readonly relay: string
+  /** What the runner tells the relay about the agents, which the hook launcher names. */
+  readonly relayConfig: string
 }
 
 export const shellPaths = (directory: string, platform = process.platform): ShellPaths => ({
@@ -45,6 +48,7 @@ export const shellPaths = (directory: string, platform = process.platform): Shel
   hook: join(directory, platform === "win32" ? "hook.cmd" : "hook"),
   mcp: join(directory, platform === "win32" ? "mcp.cmd" : "mcp"),
   relay: join(directory, platform === "win32" ? "novadeck-relay.exe" : "novadeck-relay"),
+  relayConfig: join(directory, "relay.json"),
 })
 
 /** What older versions wrote beside these files and nothing reads any more. */
@@ -259,60 +263,110 @@ if ($env:NOVADECK_RESUME) {
 // hooks and MCP messages to the runner of the terminal it runs in, or, outside NovaDeck's
 // terminals, answers itself: for the MCP server, the handshake with no tools. Its copy
 // lives here, beside them, so it stays when the app's own folder goes (an AppImage's
-// mount, a portable build's unpacked copy). The hook is told which events ask, by agent,
-// as each waits longer for its answer; the MCP server answers as this version of it: its
-// plugin's version, then the MCP versions it speaks, newest first.
-export const askingHooks = agents
-  .map((agent) => `${agent}=${Object.keys(harnesses[agent].messaging.asks).join(",")}`)
-  .join(";")
+// mount, a portable build's unpacked copy). The MCP server answers as this version of
+// it: its plugin's version, then the MCP versions it speaks, newest first.
 
-const relayArguments = {
-  hook: ["hook", "--asks", askingHooks],
-  mcp: ["mcp", plugin.version, ...mcpVersions],
-} as const
+// What a hook prints with nothing from NovaDeck, by agent and event, as each harness's
+// messaging names it, without the line's end.
+const silentAnswers = Object.fromEntries(
+  agents.map((agent) => [
+    agent,
+    Object.fromEntries(
+      Object.entries(harnesses[agent].messaging.silent).map(([event, text]) => [
+        event,
+        text.trimEnd(),
+      ]),
+    ),
+  ]),
+)
+
+/**
+ * What the relay knows of the agents, as `relay.json` holds it: which events ask, as
+ * each waits longer for its answer, what of a hook's environment it forwards, and what
+ * each prints without NovaDeck.
+ */
+export const relayConfig = {
+  asks: Object.fromEntries(
+    agents.map((agent) => [agent, Object.keys(harnesses[agent].messaging.asks)]),
+  ),
+  env: [...hookVariables],
+  fallbacks: silentAnswers,
+}
+
+const relayArguments = (paths: ShellPaths) =>
+  ({
+    hook: ["hook", "--config", paths.relayConfig],
+    mcp: ["mcp", plugin.version, ...mcpVersions],
+  }) as const
+
+type Mode = keyof ReturnType<typeof relayArguments>
 
 // Each argument as it is, or quoted where the shell would read more into it.
-const relayLine = (mode: keyof typeof relayArguments, quote: (value: string) => string) =>
-  relayArguments[mode].map((each) => (/^[\w.-]+$/.test(each) ? each : quote(each))).join(" ")
+const relayLine = (paths: ShellPaths, mode: Mode, quote: (value: string) => string) => {
+  const args: readonly string[] = relayArguments(paths)[mode]
+  return args.map((each) => (/^[\w.-]+$/.test(each) ? each : quote(each))).join(" ")
+}
 
-const posixLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
+// Each agent's answers without NovaDeck, events of their own first: as sh's cases, and as
+// cmd's lines, which hold none of cmd's own special characters.
+const silentCases = (each: (agent: string, event: string, text: string) => string) =>
+  agents.flatMap((agent) =>
+    Object.entries(silentAnswers[agent] ?? {})
+      .filter(([, text]) => text !== "")
+      .toSorted(([one], [other]) => Number(one === "*") - Number(other === "*"))
+      .map(([event, text]) => {
+        if (/[&|<>^%]/.test(text)) throw new Error(`cmd can't print ${text} as it is`)
+        return each(agent, event, text)
+      }),
+  )
+
+const posixLauncher = (paths: ShellPaths, mode: Mode, what: string) =>
   mode === "mcp"
     ? `#!/bin/sh
 ${header("#", what)}
-exec ${shQuote(relay)} ${relayLine(mode, shQuote)} "$@"
+if [ ! -x ${shQuote(paths.relay)} ]; then
+  echo "NovaDeck's relay is missing at ${paths.relay}; restarting NovaDeck puts it back." >&2
+  exit 1
+fi
+exec ${shQuote(paths.relay)} ${relayLine(paths, mode, shQuote)} "$@"
 `
     : `#!/bin/sh
 ${header("#", what)}
-if [ -x ${shQuote(relay)} ]; then
-  exec ${shQuote(relay)} ${relayLine(mode, shQuote)} "$@"
+if [ -x ${shQuote(paths.relay)} ]; then
+  exec ${shQuote(paths.relay)} ${relayLine(paths, mode, shQuote)} "$@"
 fi
 # Without its relay, as when NovaDeck couldn't put it in place: the hook takes the
 # agent's input and prints what the agent needs, as Antigravity denies a tool otherwise.
 cat >/dev/null
 case "$1 $2" in
-  "agy PreToolUse") printf '%s\\n' '{"decision":"ask"}' ;;
-  "agy "*) printf '%s\\n' '{}' ;;
+${silentCases(
+  (agent, event, text) =>
+    `  ${event === "*" ? `"${agent} "*` : `"${agent} ${event}"`}) printf '%s\\n' ${shQuote(text)} ;;`,
+).join("\n")}
 esac
 `
 
 // cmd reads a batch file's blocks reliably only with CRLF line endings.
 const crlf = (text: string): string => text.replaceAll("\n", "\r\n")
 
-const cmdLauncher = (relay: string, mode: keyof typeof relayArguments, what: string) =>
+const cmdLauncher = (paths: ShellPaths, mode: Mode, what: string) =>
   crlf(
     mode === "mcp"
       ? `@echo off
 ${header("rem", what)}
-${cmdQuote(relay)} ${relayLine(mode, cmdQuote)} %*
+${cmdQuote(paths.relay)} ${relayLine(paths, mode, cmdQuote)} %*
 `
       : `@echo off
 ${header("rem", what)}
-if exist ${cmdQuote(relay)} (
-  ${cmdQuote(relay)} ${relayLine(mode, cmdQuote)} %*
+if exist ${cmdQuote(paths.relay)} (
+  ${cmdQuote(paths.relay)} ${relayLine(paths, mode, cmdQuote)} %*
   exit /b 0
 )
 rem Without its relay: what the agent needs, as Antigravity denies a tool otherwise.
-if /i "%~1"=="agy" if /i "%~2"=="PreToolUse" (echo {"decision":"ask"}) else (echo {})
+${silentCases(
+  (agent, event, text) =>
+    `if /i "%~1"=="${agent}" ${event === "*" ? "" : `if /i "%~2"=="${event}" `}(echo ${text}&exit /b 0)`,
+).join("\n")}
 `,
   )
 
@@ -323,7 +377,7 @@ if /i "%~1"=="agy" if /i "%~2"=="PreToolUse" (echo {"decision":"ask"}) else (ech
  */
 export const mcpStart = (paths: ShellPaths, platform = process.platform): Start =>
   platform === "win32"
-    ? { command: paths.relay, args: [...relayArguments.mcp] }
+    ? { command: paths.relay, args: [...relayArguments(paths).mcp] }
     : { command: paths.mcp }
 
 export type ShellFile = { readonly path: string; readonly content: string; readonly mode: number }
@@ -340,6 +394,7 @@ export const shellFiles = (
   launchers: Launchers = { mcp: mcpStart(paths, platform) },
 ): ShellFile[] => {
   const common = [
+    file(paths.relayConfig, `${JSON.stringify(relayConfig, null, 2)}\n`),
     file(paths.bash, bash),
     file(join(paths.zsh, ".zshenv"), zshenv),
     file(join(paths.zsh, ".zprofile"), zprofile),
@@ -356,11 +411,11 @@ export const shellFiles = (
   const shims = agents.flatMap((agent) => harnesses[agent].shims?.(platform) ?? [])
   const bin = shims.map((each) => file(join(paths.bin, each.path), each.content, each.mode))
   return platform === "win32"
-    ? [...common, file(paths.hook, cmdLauncher(paths.relay, "hook", "agent hook launcher")), ...bin]
+    ? [...common, file(paths.hook, cmdLauncher(paths, "hook", "agent hook launcher")), ...bin]
     : [
         ...common,
-        file(paths.hook, posixLauncher(paths.relay, "hook", "agent hook launcher"), 0o700),
-        file(paths.mcp, posixLauncher(paths.relay, "mcp", "MCP server launcher"), 0o700),
+        file(paths.hook, posixLauncher(paths, "hook", "agent hook launcher"), 0o700),
+        file(paths.mcp, posixLauncher(paths, "mcp", "MCP server launcher"), 0o700),
         ...bin,
       ]
 }

@@ -492,49 +492,66 @@ without a source (Antigravity).
 
 The relay (`application/relay`) and the runner's endpoint (`shell/reports.ts`) speak
 JSON, one message per line, over `NOVADECK_REPORT`. The endpoint speaks only this
-protocol. A relay's first line starts `{"relay":2,`, its version, and names what the
-connection carries; the endpoint ends a connection whose first line is anything else,
-without an answer. The runner copies in the relay it
-ships on every start, so both sides change together; an incompatible change still
-bumps the version.
+protocol. A relay's first line starts `{"relay":<version>,`, currently 2, and names what
+the connection carries; the endpoint ends a connection whose first line is anything else,
+or a version it doesn't speak, without an answer, and logs that once.
 
-**MCP session**, started by the `mcp` launcher as
+**Versions.** An agent's plugin starts the relay of whichever install connected it last,
+as the desktop app and a standalone runner can share a machine, so a runner can meet an
+older or newer relay than its own. When the protocol changes incompatibly, the version
+goes up, and the runner keeps taking the one before for a release (`relayVersions`).
+`novadeck-relay --version` names a copy's crate version, protocol and source hash.
+
+**MCP session**, started by the `mcp` launcher (on Windows, by the plugin itself) as
 `novadeck-relay mcp <plugin version> <MCP versions, newest first>`:
 
 1. The relay sends `{"relay":2,"kind":"mcp","terminalId":…,"token":…}`.
-2. Then it carries the agent's JSON-RPC lines to the runner unchanged, and the runner's
+2. The runner takes the session with `{"relay":2,"ok":true}`, in the relay's version.
+   Until then the relay reads nothing of the agent's, so when the runner doesn't take
+   it within 1.5 s, or can't be reached, the relay answers the whole session itself, with
+   no tools, and says why on stderr, which agents keep in their logs.
+3. Then it carries the agent's JSON-RPC lines to the runner unchanged, and the runner's
    answers back, each as soon as it is ready. The runner serves the MCP server itself
    (`shell/mcp.ts`), and checks the token on every tool call. A token that can't be a
    runner's gets the handshake with no tools.
-3. When the agent closes its input, the relay sends `{"relay":"eof"}` on a line of its
+4. When the agent closes its input, the relay sends `{"relay":"eof"}` on a line of its
    own, rather than half-closing, which Windows' pipes can't. The runner answers what is
    under way, then closes, and the relay exits.
 
 A line over 1 MiB is answered with error `-32600`, carrying the id that closes the line
 or else the first its start names, and skipped; the session goes on. Outside NovaDeck's
-terminals, or when the endpoint can't be reached, the relay answers by itself:
-`initialize`, `ping`, an empty `tools/list`, and `-32602` for any tool.
+terminals the relay answers by itself: `initialize`, `ping`, an empty `tools/list`, and
+`-32602` for any tool.
 
-**Hook**, run by the `hook` launcher as
-`novadeck-relay hook --asks <agent>=<Event>,…;… <agent> [event]`:
+**Hook**, run by the `hook` launcher as `novadeck-relay hook --config <relay.json> <agent>
+[event]`. `relay.json`, which the runner writes beside the relay, holds what the relay
+knows of the agents: the events that ask, by agent; the variables it forwards; and what
+each agent prints without NovaDeck, by event and for any other (`*`), from each harness's
+`messaging.silent`.
 
 1. The relay reads the agent's payload, up to 1,000,000 bytes, and sends
-   `{"relay":2,"kind":"hook","terminalId","token","agent","event","seq","ancestors","env","payload"}`.
-   - `seq` is when the hook started, in epoch milliseconds with a fraction.
+   `{"relay":2,"kind":"hook","terminalId","token","agent","event","seq","deadline","ancestors","env","payload"}`.
+   - `seq` is when the hook started, and `deadline` when it gives up, in epoch
+     milliseconds with a fraction.
    - `ancestors` is up to eight `{ pid, name }`, nearest first. They come from `/proc`
      on Linux and the kernel on macOS, named by the path each was started by; Windows
      sends none.
-   - `env` is `{ claudePid?, cursor, codexThread? }`.
+   - `env` holds the variables `relay.json` names, by name, as the hook found them:
+     `CLAUDE_PID`, `CURSOR_VERSION` and `CODEX_THREAD_ID`.
    - `payload` is the agent's JSON as text, unread. The runner prunes it.
 2. The runner answers one line, `{"stdout": string | null, "leaseId": string | null}`: a
-   report at once, an ask (`--asks` names the asking events) by its deadline.
-3. The relay prints `stdout`, or else what the agent needs without NovaDeck
-   (Antigravity's `{"decision":"ask"}` before a tool, `{}` otherwise). When a lease came
-   and printing succeeded, it sends `{"ack":"<leaseId>"}` on the same connection.
+   report at once, an ask by the relay's deadline (at most four seconds after `seq`),
+   leaving half a second to print and acknowledge.
+3. The relay prints `stdout`, or else what `relay.json` says the agent needs without
+   NovaDeck (Antigravity's `{"decision":"ask"}` before a tool, `{}` otherwise). When a
+   lease came and printing succeeded, it sends `{"ack":"<leaseId>"}` on the same
+   connection.
 
 A hook gives up two seconds after it starts when it reports, four when it asks, and five
 for Claude Code's status line. For the status line, the relay also runs the person's own
-command, as their Claude Code settings name it, beside the report, and prints it.
+command, as their Claude Code settings name it, beside the report, and prints it. Without
+the relay, the hook launcher prints what `relay.json` would, as it is written from the
+same tables.
 
 The runner saves, per terminal, in a `terminals` table next to the sessions: its
 session, last directory, latest session per agent, when it last showed a prompt, and

@@ -1,5 +1,7 @@
 import { connect } from "node:net"
 
+import { vi } from "vitest"
+
 import { describe, expect, it } from "../test.js"
 import {
   listenForReports,
@@ -67,6 +69,17 @@ const relay = (
     socket.on("close", done)
     socket.write(lines.map((line) => `${line}\n`).join(""))
   })
+// An agent's MCP session through a relay: what the runner answered after taking it,
+// which it says first, in the relay's own version.
+const session = async (
+  endpoint: string,
+  lines: readonly string[],
+  options?: { readonly waitMs?: number },
+) => {
+  const [taken, ...answers] = await relay(endpoint, lines, options)
+  expect(taken).toEqual({ relay: 2, ok: true })
+  return answers
+}
 const hello = (given: object = {}) =>
   JSON.stringify({ relay: 2, kind: "mcp", terminalId: "t", token, ...given })
 const end = JSON.stringify({ relay: "eof" })
@@ -104,7 +117,7 @@ describe("relay sessions", () => {
       }),
     )
     resources.defer(() => reports.close())
-    const answers = await relay(reports.endpoint, [
+    const answers = await session(reports.endpoint, [
       hello(),
       rpc({ id: 1, method: "tools/list" }),
       rpc({ id: 2, method: "tools/call", params: { name: "show", arguments: { path: "a.md" } } }),
@@ -128,10 +141,15 @@ describe("relay sessions", () => {
       }),
     )
     resources.defer(() => reports.close())
-    const answer = `${JSON.stringify(told(1, "Showing a.md to the user in NovaDeck.", false))}\n`
-    const session = [hello(), tool(1, "show", { path: "a.md" })].join("\n")
-    if (halfOpen) await expect(send(reports.endpoint, session)).resolves.toBe(answer)
-    await expect(send(reports.endpoint, `${session}\n${end}`, { end: false })).resolves.toBe(answer)
+    // Taken first, then answered.
+    const answer = [
+      JSON.stringify({ relay: 2, ok: true }),
+      JSON.stringify(told(1, "Showing a.md to the user in NovaDeck.", false)),
+      "",
+    ].join("\n")
+    const lines = [hello(), tool(1, "show", { path: "a.md" })].join("\n")
+    if (halfOpen) await expect(send(reports.endpoint, lines)).resolves.toBe(answer)
+    await expect(send(reports.endpoint, `${lines}\n${end}`, { end: false })).resolves.toBe(answer)
     expect(calls).toEqual(halfOpen ? [call, call] : [call])
   })
 
@@ -152,7 +170,7 @@ describe("relay sessions", () => {
       { answerMs: 50 },
     )
     resources.defer(() => reports.close())
-    const answers = await relay(reports.endpoint, [
+    const answers = await session(reports.endpoint, [
       hello(),
       tool(1, "open_terminal", { command: "claude" }),
       tool(2, "open_terminal", { command: "slow" }),
@@ -187,11 +205,13 @@ describe("relay sessions", () => {
     )
     resources.defer(() => reports.close())
     // A tool it doesn't have, and a terminal no runner names.
-    await expect(relay(reports.endpoint, [hello(), tool(1, "unknown", {}), end])).resolves.toEqual([
+    await expect(
+      session(reports.endpoint, [hello(), tool(1, "unknown", {}), end]),
+    ).resolves.toEqual([
       { jsonrpc: "2.0", id: 1, error: { code: -32602, message: "Unknown tool: unknown" } },
     ])
     await expect(
-      relay(reports.endpoint, [
+      session(reports.endpoint, [
         hello({ terminalId: "t".repeat(65) }),
         tool(1, "show", { path: "a.md" }),
         end,
@@ -208,7 +228,7 @@ describe("relay sessions", () => {
       handlers({ call: async (asked) => (calls.push(asked), { ok: true }) }),
     )
     resources.defer(() => reports.close())
-    const answers = await relay(reports.endpoint, [
+    const answers = await session(reports.endpoint, [
       hello({ token: "not a token" }),
       rpc({ id: 1, method: "tools/list" }),
       rpc({ id: 2, method: "tools/call", params: { name: "show", arguments: { path: "a.md" } } }),
@@ -232,7 +252,7 @@ describe("relay sessions", () => {
     )
     resources.defer(() => reports.close())
     const began = Date.now()
-    const answers = await relay(reports.endpoint, [
+    const answers = await session(reports.endpoint, [
       hello(),
       rpc({ id: 2, method: "tools/call", params: { name: "show", arguments: { path: "a.md" } } }),
       end,
@@ -260,7 +280,7 @@ describe("relay sessions", () => {
       jsonrpc: "2.0",
       id: 11,
     })
-    const answers = await relay(reports.endpoint, [
+    const answers = await session(reports.endpoint, [
       hello(),
       huge,
       rpc({ id: 10, method: "ping" }),
@@ -277,15 +297,29 @@ describe("relay sessions", () => {
     expect(calls).toEqual([])
   })
 
+  it("turns away a relay of a version it doesn't speak, saying so once", async ({ resources }) => {
+    const reports = await listenForReports(handlers({}))
+    resources.defer(() => reports.close())
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    const newer = hello({ relay: 99 })
+    await expect(relay(reports.endpoint, [newer, rpc({ id: 1, method: "ping" })])).resolves.toEqual(
+      [],
+    )
+    await relay(reports.endpoint, [newer])
+    expect(logged.mock.calls.filter(([said]) => String(said).includes("version 99"))).toHaveLength(
+      1,
+    )
+  })
+
   it("ends the sessions still open when it closes", async () => {
     const reports = await listenForReports(handlers({}))
-    const session = relay(reports.endpoint, [hello(), rpc({ id: 1, method: "ping" })], {
+    const open = session(reports.endpoint, [hello(), rpc({ id: 1, method: "ping" })], {
       waitMs: 10_000,
     })
     await new Promise((resolve) => setTimeout(resolve, 100))
     const began = Date.now()
     await reports.close()
-    await expect(session).resolves.toEqual([{ jsonrpc: "2.0", id: 1, result: {} }])
+    await expect(open).resolves.toEqual([{ jsonrpc: "2.0", id: 1, result: {} }])
     expect(Date.now() - began).toBeLessThan(5_000)
   })
 })

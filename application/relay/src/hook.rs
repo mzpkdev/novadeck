@@ -4,40 +4,105 @@
 //! deliver agents' messages under a lease, which the relay acknowledges once printed.
 //! Claude Code's status line runs through the hook too: the relay runs the person's own,
 //! as their settings name it, beside the report, and prints it. Outside NovaDeck's
-//! terminals, or when the runner can't be reached, it prints only what its agent needs:
-//! Antigravity's JSON, where a PreToolUse answer must say "ask" or Antigravity denies the
-//! tool.
+//! terminals, or when the runner can't be reached, it prints only what its agent needs,
+//! as the runner's configuration names it: Antigravity's JSON, where a PreToolUse answer
+//! must say "ask" or Antigravity denies the tool.
+//!
+//! What it knows of the agents comes from that configuration, `relay.json` beside it,
+//! which the runner writes: which events ask, which variables tell agents apart, and what
+//! each agent needs printed without NovaDeck. Nothing here names an agent but Claude Code,
+//! whose status line only the relay can run.
 
 use std::env;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::{ancestors, endpoint, status_line};
+use crate::{PROTOCOL, ancestors, endpoint, status_line};
 
-/// How long a hook may take, from its start: Claude Code's status line the longest, as
-/// it runs the person's own; a hook that asks, long enough for the runner to lease and
-/// answer by its deadline; any other only reports, which the runner answers at once.
-pub fn limit(agent: &str, event: &str, asks: &str) -> Duration {
-    let asking = asks.split(';').any(|each| {
-        each.split_once('=').is_some_and(|(named, events)| {
-            named == agent && events.split(',').any(|one| one == event)
+/// What the runner tells the relay about the agents, from `relay.json`. Missing or
+/// unreadable, it is empty: every hook reports, forwards nothing of its environment, and
+/// prints nothing without NovaDeck.
+#[derive(Default, Debug, PartialEq)]
+pub struct Config {
+    asks: Value,
+    env: Vec<String>,
+    fallbacks: Value,
+}
+
+impl Config {
+    pub fn read(path: Option<&Path>) -> Config {
+        path.and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .map(|value| Config::of(&value))
+            .unwrap_or_default()
+    }
+
+    pub fn of(value: &Value) -> Config {
+        let names = value.get("env").and_then(Value::as_array);
+        Config {
+            asks: value.get("asks").cloned().unwrap_or(Value::Null),
+            env: names
+                .into_iter()
+                .flatten()
+                .filter_map(|name| name.as_str().map(str::to_owned))
+                .collect(),
+            fallbacks: value.get("fallbacks").cloned().unwrap_or(Value::Null),
+        }
+    }
+
+    /// Whether `agent`'s `event` asks the runner what to print.
+    fn asks(&self, agent: &str, event: &str) -> bool {
+        self.asks
+            .get(agent)
+            .and_then(Value::as_array)
+            .is_some_and(|events| events.iter().any(|one| one.as_str() == Some(event)))
+    }
+
+    /// What `agent`'s `event` prints when the runner gave nothing to print: the event's
+    /// own, else the agent's for any event (`*`), else nothing.
+    pub fn fallback(&self, agent: &str, event: &str) -> String {
+        let named = self.fallbacks.get(agent);
+        let text = named
+            .and_then(|each| each.get(event).or_else(|| each.get("*")))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if text.is_empty() {
+            String::new()
+        } else {
+            format!("{text}\n")
+        }
+    }
+
+    /// The variables that tell agents apart, by name, as the hook's environment holds them.
+    fn env(&self) -> Map<String, Value> {
+        self.env
+            .iter()
+            .filter_map(|name| {
+                let value = env::var(name).ok().filter(|value| !value.is_empty())?;
+                Some((name.clone(), Value::String(value)))
+            })
+            .collect()
+    }
+
+    /// How long a hook may take, from its start: Claude Code's status line the longest,
+    /// as it runs the person's own; a hook that asks, long enough for the runner to lease
+    /// and answer by its deadline; any other only reports, which the runner answers at
+    /// once. The relay tells the runner its deadline, so the runner never leases past it.
+    pub fn limit(&self, agent: &str, event: &str) -> Duration {
+        Duration::from_millis(match (agent, event) {
+            ("claude", "StatusLine") => 5_000,
+            _ if self.asks(agent, event) => 4_000,
+            _ => 2_000,
         })
-    });
-    Duration::from_millis(match (agent, event) {
-        ("claude", "StatusLine") => 5_000,
-        _ if asking => 4_000,
-        _ => 2_000,
-    })
+    }
 }
 
 /// The most of an agent's payload the hook takes; past it, it reports nothing.
 const MAX_PAYLOAD: u64 = 1_000_000;
-
-const AGENTS: [&str; 3] = ["claude", "codex", "agy"];
 
 /// What the runner answered: what to print, and the lease that delivers it.
 #[derive(Default, Debug, PartialEq)]
@@ -57,15 +122,6 @@ pub fn answer_of(line: &str) -> Answer {
     }
 }
 
-/// What the hook prints when the runner gave nothing to print.
-pub fn fallback(agent: &str, event: &str) -> &'static str {
-    match (agent, event) {
-        ("agy", "PreToolUse") => "{\"decision\":\"ask\"}\n",
-        ("agy", _) => "{}\n",
-        _ => "",
-    }
-}
-
 /// Prints what the agent needs, whether or not it got there.
 fn say(text: &str) {
     let _ = print(text);
@@ -80,14 +136,15 @@ fn print(text: &str) -> bool {
         .is_ok()
 }
 
-/// Runs the hook for `agent`'s `event`; `asks` names the events that ask, by agent, as
-/// `claude=Stop,UserPromptSubmit;agy=Stop,PreInvocation`.
-pub fn run(agent: &str, event: &str, asks: &str) {
+/// Runs the hook for `agent`'s `event`, as `config` describes the agents.
+pub fn run(agent: &str, event: &str, config: &Config) {
     // When the hook started, in wall-clock milliseconds: a later hook reports a larger one.
     let seq = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |since| since.as_secs_f64() * 1000.0);
-    let deadline = Instant::now() + limit(agent, event, asks);
+    let limit = config.limit(agent, event);
+    let deadline = Instant::now() + limit;
+    let fallback = || config.fallback(agent, event);
     // The agent's payload, read whole even where it goes unused, so the agent never
     // writes into a closed pipe; within the hook's limit, as an agent may leave it open.
     let payload = read_input(deadline);
@@ -98,32 +155,29 @@ pub fn run(agent: &str, event: &str, asks: &str) {
     ]
     .map(|name| env::var(name).ok().filter(|value| !value.is_empty()));
     let [Some(terminal), Some(endpoint), Some(token)] = terminal else {
-        return say(fallback(agent, event));
+        return say(&fallback());
     };
-    let Some(payload) = payload.filter(|_| AGENTS.contains(&agent)) else {
-        return say(fallback(agent, event));
+    let Some(payload) = payload else {
+        return say(&fallback());
     };
     let payload = String::from_utf8_lossy(&payload).into_owned();
-    let variable = |name: &str| env::var(name).ok().filter(|value| !value.is_empty());
     let message = json!({
-        "relay": 2,
+        "relay": PROTOCOL,
         "kind": "hook",
         "terminalId": terminal,
         "token": token,
         "agent": agent,
         "event": event,
         "seq": seq,
+        // When this hook gives up, so the runner leases nothing it couldn't print.
+        "deadline": seq + limit.as_secs_f64() * 1000.0,
         "ancestors": ancestors::of_this_process(),
-        // Only what tells agents apart, and where Claude Code keeps its settings.
-        "env": {
-            "claudePid": variable("CLAUDE_PID"),
-            "cursor": variable("CURSOR_VERSION").is_some(),
-            "codexThread": variable("CODEX_THREAD_ID"),
-        },
+        "env": config.env(),
         "payload": payload,
     });
     // Claude Code's status line: the person's own runs beside the report, which it needs
     // nothing of, and shows whatever the runner does.
+    let variable = |name: &str| env::var(name).ok().filter(|value| !value.is_empty());
     let own = (agent == "claude" && event == "StatusLine").then(|| {
         let config = variable("CLAUDE_CONFIG_DIR").map(PathBuf::from);
         let home = variable("HOME").map(PathBuf::from);
@@ -138,14 +192,13 @@ pub fn run(agent: &str, event: &str, asks: &str) {
         .enable_all()
         .build()
     else {
-        return say(fallback(agent, event));
+        return say(&fallback());
     };
     runtime.block_on(async {
         let left = deadline.saturating_duration_since(Instant::now());
         let asked = tokio::time::timeout(left, ask(&endpoint, format!("{message}\n"))).await;
         let Ok(Some((answer, mut to_runner))) = asked else {
-            let own = shown();
-            return say(own.as_deref().unwrap_or_else(|| fallback(agent, event)));
+            return say(&shown().unwrap_or_else(fallback));
         };
         if let Some(stdout) = &answer.stdout {
             // Printed: what the lease delivers has reached the agent. Otherwise the lease
@@ -161,8 +214,7 @@ pub fn run(agent: &str, event: &str, asks: &str) {
             }
             return;
         }
-        let own = shown();
-        say(own.as_deref().unwrap_or_else(|| fallback(agent, event)));
+        say(&shown().unwrap_or_else(fallback));
     });
     runtime.shutdown_background();
 }
@@ -208,6 +260,14 @@ async fn ask(endpoint: &str, line: String) -> Option<(Answer, endpoint::Writer)>
 mod tests {
     use super::*;
 
+    fn config() -> Config {
+        Config::of(&json!({
+            "asks": { "claude": ["Stop", "UserPromptSubmit"], "agy": ["Stop", "PreInvocation"] },
+            "env": ["CLAUDE_PID", "CODEX_THREAD_ID"],
+            "fallbacks": { "agy": { "PreToolUse": "{\"decision\":\"ask\"}", "*": "{}" } },
+        }))
+    }
+
     #[test]
     fn reads_the_runners_answer() {
         assert_eq!(
@@ -225,29 +285,44 @@ mod tests {
     }
 
     #[test]
-    fn prints_what_antigravity_needs_without_nova_deck() {
-        assert_eq!(fallback("agy", "PreToolUse"), "{\"decision\":\"ask\"}\n");
-        assert_eq!(fallback("agy", "Stop"), "{}\n");
-        assert_eq!(fallback("claude", "Stop"), "");
-        assert_eq!(fallback("codex", "PreToolUse"), "");
+    fn prints_what_each_agent_needs_without_nova_deck_as_configured() {
+        let config = config();
+        assert_eq!(
+            config.fallback("agy", "PreToolUse"),
+            "{\"decision\":\"ask\"}\n"
+        );
+        assert_eq!(config.fallback("agy", "Stop"), "{}\n");
+        assert_eq!(config.fallback("claude", "Stop"), "");
+        assert_eq!(config.fallback("codex", "PreToolUse"), "");
+        // Without its configuration, it prints nothing.
+        assert_eq!(Config::default().fallback("agy", "PreToolUse"), "");
     }
 
     #[test]
     fn gives_each_hook_the_time_it_had() {
-        let asks = "claude=Stop,UserPromptSubmit;agy=Stop,PreInvocation";
-        let ms = |agent, event| limit(agent, event, asks).as_millis();
+        let config = config();
+        let ms = |agent, event| config.limit(agent, event).as_millis();
         assert_eq!(ms("claude", "StatusLine"), 5_000);
         assert_eq!(ms("claude", "Stop"), 4_000);
         assert_eq!(ms("agy", "PreInvocation"), 4_000);
         assert_eq!(ms("agy", "UserPromptSubmit"), 2_000);
         assert_eq!(ms("codex", "Stop"), 2_000);
         assert_eq!(ms("claude", "PostToolUse"), 2_000);
-        assert_eq!(limit("claude", "Stop", "").as_millis(), 2_000);
+        assert_eq!(Config::default().limit("claude", "Stop").as_millis(), 2_000);
+    }
+
+    #[test]
+    fn reads_no_configuration_as_an_empty_one() {
+        assert_eq!(Config::read(None), Config::default());
+        assert_eq!(
+            Config::read(Some(Path::new("/no/such/relay.json"))),
+            Config::default()
+        );
     }
 
     #[test]
     fn names_itself_first_so_the_runner_knows_its_line() {
-        let hello = json!({ "relay": 2, "kind": "hook", "agent": "claude" }).to_string();
+        let hello = json!({ "relay": PROTOCOL, "kind": "hook", "agent": "claude" }).to_string();
         assert!(hello.starts_with("{\"relay\":2,"));
     }
 }

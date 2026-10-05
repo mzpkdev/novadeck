@@ -171,8 +171,11 @@ export type Harness = {
 export type MessagingProfile = {
   /** The hook events that ask, and when each fires: as a turn ends, or as a prompt starts it. */
   readonly asks: { readonly [event: string]: "stop" | "prompt" }
-  /** What a hook prints with nothing to deliver, as it does without NovaDeck. */
-  readonly silent: (event: string) => string
+  /**
+   * What a hook prints with nothing to deliver, as it does without NovaDeck: by event, and
+   * for any other (`*`). The relay prints the same when NovaDeck can't answer.
+   */
+  readonly silent: { readonly "*": string; readonly [event: string]: string }
   /** A Stop's answer that continues the turn with a delivery. */
   readonly stop: (delivery: string) => string
   /** A prompt's answer that adds a delivery to what the model sees, apart from the prompt. */
@@ -230,6 +233,10 @@ export const hookSeconds = 10
 export const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 
 /** Where the plugin's commands start from, as NovaDeck wrote them for this run. */
+/** What `profile`'s hook prints for `event` with nothing to deliver. */
+export const silentFor = (profile: MessagingProfile, event: string): string =>
+  profile.silent[event] ?? profile.silent["*"]
+
 /** How an agent starts a program of NovaDeck's: a file, by its absolute path, and arguments. */
 export type Start = { readonly command: string; readonly args?: readonly string[] }
 
