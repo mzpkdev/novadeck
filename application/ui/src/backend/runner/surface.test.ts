@@ -38,13 +38,13 @@ vi.hoisted(() => {
 })
 
 const mounted: Rendered[] = []
-// A screen closes a moment after its last surface goes; it closes here instead, while
-// the file's DOM is still there to take its listeners off.
+// A screen closes once its session has stayed off screen for its retention; it closes
+// here instead, while the file's DOM is still there to take its listeners off.
 afterEach(() => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
   try {
     mounted.splice(0).forEach((page) => page.unmount())
-    vi.runOnlyPendingTimers()
+    vi.advanceTimersByTime(31 * 60 * 1000)
   } finally {
     vi.useRealTimers()
   }
@@ -284,14 +284,18 @@ describe("runner terminal surface", () => {
       const attach = vi.fn<SurfaceRuntime["attach"]>(async () => attachment)
       const screen = vi.fn<SurfaceRuntime["screen"]>()
       let onScreen = shown
+      let terminalEnd: "open" | "closed" | "removed" = "open"
       const Surface = createRunnerTerminal({
         ...runtime,
-        entry: () => ({
-          ready: Promise.resolve(true),
-          revived: new Promise<void>(() => {}),
-          closed: false,
-          size: { cols: 80, rows: 24 },
-        }),
+        entry: () =>
+          terminalEnd === "removed"
+            ? undefined
+            : {
+                ready: Promise.resolve(true),
+                revived: new Promise<void>(() => {}),
+                closed: terminalEnd === "closed",
+                size: { cols: 80, rows: 24 },
+              },
         attach,
         screen,
         shown: () => onScreen,
@@ -314,7 +318,10 @@ describe("runner terminal surface", () => {
       const putOnScreen = (value: boolean): void => {
         onScreen = value
       }
-      return { opened, open, attach, detach, screen, inView, putOnScreen }
+      const end = (how: "closed" | "removed"): void => {
+        terminalEnd = how
+      }
+      return { opened, open, attach, detach, screen, inView, putOnScreen, end }
     }
 
     it("keeps its one xterm, attachment, output and focus", async () => {
@@ -414,6 +421,28 @@ describe("runner terminal surface", () => {
         open.mockRestore()
       }
     })
+
+    it.each(["closed", "removed"] as const)(
+      "lets its screen go at the next check once its terminal is %s, even on screen",
+      async (how) => {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+        const { open, screen, detach, inView, end } = following(true)
+        try {
+          const page = render(inView("grid"))
+          await vi.advanceTimersByTimeAsync(0)
+          page.unmount()
+          await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+          expect(screen.mock.calls.map((call) => call[1])).not.toContain("gone")
+          end(how)
+          await vi.advanceTimersByTimeAsync(1_000)
+          expect(screen.mock.calls.map((call) => call[1])).toContain("gone")
+          expect(detach).toHaveBeenCalled()
+        } finally {
+          vi.useRealTimers()
+          open.mockRestore()
+        }
+      },
+    )
 
     it("keeps its screen while its session stays on screen", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
