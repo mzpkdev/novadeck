@@ -1,8 +1,10 @@
+import { execFile } from "node:child_process"
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import { constants, rmSync, writeFileSync } from "node:fs"
 import { access, realpath, stat } from "node:fs/promises"
 import { homedir, constants as system } from "node:os"
 import { basename, delimiter, isAbsolute, join, resolve as resolvePath } from "node:path"
+import { promisify } from "node:util"
 
 import type {
   AgentDetail,
@@ -483,21 +485,34 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
     a.argv?.length === b.argv?.length &&
     (a.argv ?? []).every((arg, index) => arg === b.argv?.[index]))
 
+/** Ends a Windows process and every program it started, which could keep its console open. */
+const endTree = async (pid: number): Promise<void> => {
+  const windows = process.env.SystemRoot ?? "C:\\Windows"
+  await promisify(execFile)(
+    join(windows, "System32", "taskkill.exe"),
+    ["/T", "/F", "/PID", String(pid)],
+    {
+      windowsHide: true,
+    },
+  )
+}
+
 /**
  * Ends a terminal's program that its first kill left running. On Windows, which has no
  * signals, node-pty throws on one, and later still when it queued the kill until the
- * terminal first drew: its process is ended by its id instead. Until its output connects,
- * node-pty names that id 0, which would end the runner itself, so it throws, and the
- * terminal is taken as ended while node-pty's queued kill closes its console later.
+ * terminal first drew: its process and every program it started are ended by its id
+ * instead. Until its output connects, node-pty names that id 0, which would end the runner
+ * itself, so it rejects, and the terminal is taken as ended while node-pty's queued kill
+ * closes its console later.
  */
-export const forceKill = (
+export const forceKill = async (
   child: Pick<pty.IPty, "pid" | "kill">,
   platform: NodeJS.Platform = process.platform,
-  end: (pid: number) => void = (pid) => process.kill(pid),
-): void => {
+  end: (pid: number) => Promise<void> | void = endTree,
+): Promise<void> => {
   if (platform !== "win32") return child.kill("SIGKILL")
   if (!(child.pid > 0)) throw new Error("The terminal's program has no process id yet.")
-  end(child.pid)
+  await end(child.pid)
 }
 
 /** A signal number's name, such as `SIGKILL`; Windows has no signals. */
@@ -3455,14 +3470,14 @@ export class Terminals {
         this.exit(record, { code: null, signal: null })
       }
       timer = setTimeout(() => {
-        try {
-          forceKill(record.process)
+        forceKill(record.process).then(
           // node-pty on Windows reports an exit only once the console closes, which a program
-          // the shell started can keep open.
-          if (process.platform === "win32") this.exit(record, { code: null, signal: null })
-        } catch {
-          this.exit(record, { code: null, signal: null })
-        }
+          // the kill could not end can still keep open.
+          () => {
+            if (process.platform === "win32") this.exit(record, { code: null, signal: null })
+          },
+          () => this.exit(record, { code: null, signal: null }),
+        )
       }, 1000)
       await record.exited
       if (group !== undefined) resumeGroup(group)

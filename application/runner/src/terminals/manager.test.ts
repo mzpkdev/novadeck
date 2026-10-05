@@ -1,5 +1,6 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import { once } from "node:events"
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
@@ -714,32 +715,78 @@ const ptyStandIn = (platform: NodeJS.Platform, pid = 4242) => {
   }
 }
 
+/** Whether a process is still running. */
+const isRunning = (id: number): boolean => {
+  try {
+    process.kill(id, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 describe("forcing a terminal's program to end", () => {
-  it("sends SIGKILL on Linux and macOS", () => {
+  it("sends SIGKILL on Linux and macOS", async () => {
     for (const platform of ["linux", "darwin"] as const) {
       const ended: number[] = []
       const terminal = ptyStandIn(platform)
-      forceKill(terminal, platform, (pid) => ended.push(pid))
+      // eslint-disable-next-line no-await-in-loop -- Each platform is checked in turn.
+      await forceKill(terminal, platform, (pid) => void ended.push(pid))
       expect(terminal.signals).toEqual(["SIGKILL"])
       expect(ended).toEqual([])
     }
   })
 
-  it("ends the process by its id on Windows, giving node-pty no signal", () => {
+  it("ends the process by its id on Windows, giving node-pty no signal", async () => {
     const ended: number[] = []
     const terminal = ptyStandIn("win32")
-    expect(() => forceKill(terminal, "win32", (pid) => ended.push(pid))).not.toThrow()
+    await forceKill(terminal, "win32", (pid) => void ended.push(pid))
     expect(ended).toEqual([4242])
     expect(terminal.signals).toEqual([])
   })
 
-  it("ends nothing on Windows before node-pty knows the process, as id 0 would end the runner", () => {
+  it("ends nothing on Windows before node-pty knows the process, as id 0 would end the runner", async () => {
     const ended: number[] = []
     const terminal = ptyStandIn("win32", 0)
-    expect(() => forceKill(terminal, "win32", (pid) => ended.push(pid))).toThrow()
+    await expect(forceKill(terminal, "win32", (pid) => void ended.push(pid))).rejects.toThrow()
     expect(ended).toEqual([])
     expect(terminal.signals).toEqual([])
   })
+
+  it.runIf(process.platform === "win32")(
+    "ends on Windows every program the process started, which could keep its console open",
+    async ({ onTestFinished }) => {
+      const keep = "setInterval(() => {}, 1e6)"
+      const parent = spawn(
+        process.execPath,
+        [
+          "-e",
+          `const started = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(keep)}], { stdio: "ignore" }); console.log(started.pid); ${keep}`,
+        ],
+        { stdio: ["ignore", "pipe", "ignore"] },
+      )
+      const { pid } = parent
+      if (pid === undefined) throw new Error("The test's process did not start.")
+      const [data] = (await once(parent.stdout, "data")) as [Buffer]
+      const started = Number(data.toString().trim())
+      onTestFinished(() => {
+        for (const leftover of [pid, started]) {
+          try {
+            process.kill(leftover)
+          } catch {
+            // Already ended.
+          }
+        }
+      })
+      expect(isRunning(started)).toBe(true)
+
+      await forceKill(ptyStandIn("win32", pid), "win32")
+      await vi.waitFor(() => {
+        expect(isRunning(started)).toBe(false)
+        expect(isRunning(pid)).toBe(false)
+      })
+    },
+  )
 })
 
 describe("terminal closing", () => {
