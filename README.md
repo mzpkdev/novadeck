@@ -522,8 +522,8 @@ Normal development and packaged builds keep their runner behavior.
 
 The content-preview demo has a panel for reaching every state of the app on demand,
 including the ones that need a runner to go wrong. Run `pnpm dev:previews`, open
-http://127.0.0.1:5181 and click the bug button at the bottom of the page, in the middle,
-to open or close it. The runner has no panel. The top line shows the demo variant, the
+http://127.0.0.1:5181 and click the bug button floating at the bottom right to open or close
+it; Escape closes it too. The runner has no panel. The top line shows the demo variant, the
 connection state, the crash-loop count, and the terminal count.
 
 `?demo=` in the address's hash picks the variant: `showcase` (the default, with the
