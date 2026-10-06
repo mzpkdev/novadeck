@@ -39,6 +39,10 @@ export class Clips {
     if (offset + bytes.length > maxClipBytes) throw new DomainError("UPLOAD_TOO_LARGE")
     const key = this.key(owner, id)
     const existing = this.clips.get(key)
+    // A clip begins at its start: a later part of one the runner doesn't have means its
+    // beginning went with a dropped connection, and the rest alone would mislead.
+    if (existing === undefined && offset !== 0)
+      throw new DomainError("NOT_FOUND", "The start of this recording was lost.")
     if (existing === undefined) this.admit(owner)
     const clip = existing ?? { owner, pages: new Map(), length: 0, at: 0 }
     for (let done = 0; done < bytes.length;) {

@@ -316,7 +316,8 @@ export const contract = {
     set: procedure.input(voiceSettings.partial()).output(z.void()),
     // Adds audio to a clip being recorded, which the client names: 16 kHz mono 16-bit
     // little-endian PCM, base64, at the byte `offset` into the clip. Audio past
-    // `maxVoiceSeconds` is UPLOAD_TOO_LARGE. Voice input that is off is VOICE_UNAVAILABLE.
+    // `maxVoiceSeconds` is UPLOAD_TOO_LARGE, and a part past the start of a clip the
+    // runner does not have NOT_FOUND. Voice input that is off is VOICE_UNAVAILABLE.
     // Clips nobody transcribes are forgotten after a few minutes.
     record: procedure
       .input(

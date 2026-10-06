@@ -22,9 +22,19 @@ describe("clips", () => {
 
   it("fills a gap with silence", () => {
     const clips = new Clips()
+    clips.write("owner", "a", 0, Buffer.from([1]))
     clips.write("owner", "a", 4, Buffer.from([7, 7]))
 
-    expect(clips.get("owner", "a")).toEqual(Buffer.from([0, 0, 0, 0, 7, 7]))
+    expect(clips.get("owner", "a")).toEqual(Buffer.from([1, 0, 0, 0, 7, 7]))
+  })
+
+  it("refuses a clip that does not begin at its start, as after its beginning was lost", () => {
+    const clips = new Clips()
+
+    expect(() => clips.write("owner", "a", 4, Buffer.from([7, 7]))).toThrow(
+      expect.objectContaining({ code: "NOT_FOUND" }),
+    )
+    expect(clips.get("owner", "a")).toBeUndefined()
   })
 
   it("keeps clips apart and forgets a discarded one", () => {
@@ -57,7 +67,7 @@ describe("clips", () => {
     clips.write("owner", "new", 0, Buffer.from([1]))
     expect(clips.get("owner", "old")).toBeDefined()
     now = 6 * 60_000
-    clips.write("owner", "new", 1, Buffer.from([1]))
+    clips.write("owner", "new", 0, Buffer.from([1]))
 
     expect(clips.get("owner", "old")).toBeUndefined()
     expect(clips.get("owner", "new")).toBeDefined()

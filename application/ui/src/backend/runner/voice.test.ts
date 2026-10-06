@@ -1,4 +1,4 @@
-import { maxVoiceSeconds, type VoiceState } from "@novadeck/protocol"
+import { maxVoiceSeconds, voiceSampleRate, type VoiceState } from "@novadeck/protocol"
 import { RunnerError } from "@novadeck/protocol/client"
 import { vi } from "vitest"
 
@@ -100,6 +100,25 @@ describe("the runner's voice input", () => {
         expect(second![1]).toBe(6)
         expect([...second![2]]).toEqual([3, 0])
         expect(calls.transcribe).toHaveBeenCalledWith(first![0], { prompt: "main.ts" })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("keeps the first two minutes of a clip that runs over, instead of failing it", async () => {
+      vi.useFakeTimers()
+      try {
+        const { voice, calls } = runner()
+        const clip = voice.record()
+        const limit = maxVoiceSeconds * voiceSampleRate
+        clip.append(new Int16Array(limit - 10))
+        clip.append(new Int16Array(100))
+        clip.append(new Int16Array(100))
+        const finished = clip.finish()
+        await vi.advanceTimersByTimeAsync(0)
+        await expect(finished).resolves.toMatchObject({ text: "hello" })
+        const sent = calls.record.mock.calls.reduce((sum, call) => sum + call[2].length, 0)
+        expect(sent).toBe(limit * 2)
       } finally {
         vi.useRealTimers()
       }

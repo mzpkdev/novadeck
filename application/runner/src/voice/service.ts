@@ -464,8 +464,11 @@ export class Voice {
       // What finished stays: a model that downloaded shows as installed, to turn on or
       // check again, rather than looking as if it had to download again.
       await this.refresh().catch(() => {})
-      // The model the person asked for, off until they turn it on.
-      if (!engineOnly && this.installed.includes(model)) this.settings.saveVoiceSettings({ model })
+      // A model that went unchecked never replaces one in use: it is chosen only when the
+      // one chosen is not there to use, as on a first install, and stays off until turned on.
+      const chosen = this.settings.voiceSettings().model
+      if (!engineOnly && this.installed.includes(model) && !this.installed.includes(chosen))
+        this.settings.saveVoiceSettings({ model, enabled: false })
     } finally {
       this.installing = null
       this.running = undefined

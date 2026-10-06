@@ -1,4 +1,8 @@
-import { maxVoiceSeconds, type VoiceState as WireVoiceState } from "@novadeck/protocol"
+import {
+  maxVoiceSeconds,
+  voiceSampleRate,
+  type VoiceState as WireVoiceState,
+} from "@novadeck/protocol"
 import { hasCode, type Runner } from "@novadeck/protocol/client"
 
 import { createStore } from "../../model/store"
@@ -114,6 +118,9 @@ export const createRunnerVoice = (
     let flights: Promise<void> = Promise.resolve()
     let failed: Error | undefined
     let ended = false
+    // Samples still to take before the runner's limit: a stop that comes late, as from a
+    // timer slowed in a hidden window, keeps the first two minutes instead of losing all.
+    let room = maxVoiceSeconds * voiceSampleRate
 
     const send = async (): Promise<void> => {
       if (failed || !pending.length) return
@@ -135,8 +142,10 @@ export const createRunnerVoice = (
 
     return {
       append: (samples) => {
-        if (ended || failed) return
-        pending.push(samples)
+        if (ended || failed || room <= 0) return
+        const kept = samples.length > room ? samples.subarray(0, room) : samples
+        room -= kept.length
+        pending.push(kept)
         timer ??= setTimeout(() => void flush(), flushMs)
       },
       finish: async (options) => {

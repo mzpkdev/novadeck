@@ -172,6 +172,34 @@ describe("installing voice input", () => {
     expect(voice.state().enabled).toBe(true)
   })
 
+  it("keeps the model in use when another fails its check or is cancelled", async ({
+    resources,
+  }) => {
+    const { voice } = await setup(resources, {
+      catalog: await modelCatalog(resources, { turbo: "turbo slow" }),
+      checkMs: 100,
+    })
+    await voice.install("small")
+    await voice.settled()
+    expect(voice.state()).toMatchObject({ enabled: true, model: "small" })
+
+    await voice.install("turbo")
+    await voice.settled()
+    expect(voice.state().failure).toContain("did not transcribe")
+    expect(voice.state()).toMatchObject({
+      installed: ["turbo", "small"],
+      enabled: true,
+      model: "small",
+    })
+
+    const checking = watchUntil(voice, (state) => state.installing?.step === "check")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await voice.install("turbo")
+    await checking
+    await voice.cancel()
+    expect(voice.state()).toMatchObject({ enabled: true, model: "small", failure: null })
+  })
+
   it("stops on cancel without a failure, keeping what it fetched", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { small: "small slow" }),
@@ -281,6 +309,7 @@ describe("transcribing a recording", () => {
   it("refuses audio past the longest clip", async ({ resources }) => {
     const { voice } = await installed(resources)
     const whole = maxVoiceSeconds * voiceSampleRate * 2
+    voice.record("owner", "clip", 0, pcm(2))
     voice.record("owner", "clip", whole - 2, pcm(2))
 
     expect(() => voice.record("owner", "clip", whole - 1, pcm(2))).toThrowError(
