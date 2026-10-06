@@ -19,10 +19,13 @@
 
    The debug panel, a floating surface of actions that put the demo in a state, is
    `.debug-panel` with its `.debug-meta` line, `.debug-heading`s, `.debug-hint`s,
-   `.debug-close` and `.debug-action` buttons. Tokens, each optional:
+   `.debug-close` and `.debug-action` buttons; `.debug-floater` is the pill in the
+   footer that opens it, aria-expanded while it is open. Tokens, each optional:
    --debug-muted-fg (muted): its meta line, headings, hints and Close.
    --debug-action-bg (shell), --debug-action-border-color (line),
-   --debug-action-hover-bg (soft): an action, and while hovered. */
+   --debug-action-hover-bg (soft): an action, and while hovered.
+   --debug-floater-bg (paper), --debug-floater-fg (muted), --debug-floater-border-color
+   (line), --debug-floater-active-fg (ink): the pill, and while hovered or open. */
 
 @layer components {
   /* Demo output styles. The frame marks compact terminals with .terminal-compact. */
@@ -154,6 +157,20 @@
     border: var(--border-width) solid var(--debug-action-border-color, var(--color-line));
     border-radius: var(--radius-control);
     background-color: var(--_bg);
+  }
+  .debug-floater {
+    border: var(--border-width) solid var(--debug-floater-border-color, var(--color-line));
+    border-radius: 999px;
+    background-color: var(--debug-floater-bg, var(--color-paper));
+    color: var(--debug-floater-fg, var(--color-muted));
+  }
+  .debug-floater:hover,
+  .debug-floater[aria-expanded="true"] {
+    color: var(--debug-floater-active-fg, var(--color-ink));
+  }
+  .debug-floater:focus-visible {
+    outline: 2px solid var(--focus-ring-color, var(--color-strong));
+    outline-offset: 1px;
   }
   .debug-action:hover {
     --_bg: var(--debug-action-hover-bg, var(--color-soft));

@@ -522,10 +522,9 @@ Normal development and packaged builds keep their runner behavior.
 
 The content-preview demo has a panel for reaching every state of the app on demand,
 including the ones that need a runner to go wrong. Run `pnpm dev:previews`, open
-http://127.0.0.1:5181 and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> to open or
-close it; it takes the keys before the terminal does. The runner has no panel. The top
-line shows the demo variant, the connection state, the crash-loop count, and the
-terminal count.
+http://127.0.0.1:5181 and click **Debug**, the pill in the middle of the footer, to open
+or close it. The runner has no panel. The top line shows the demo variant, the
+connection state, the crash-loop count, and the terminal count.
 
 `?demo=` in the address's hash picks the variant: `showcase` (the default, with the
 sample agents' plans and artifacts), `plain`, `agents`, `messages` or `welcome`. The
