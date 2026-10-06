@@ -50,6 +50,8 @@ export type VoiceOptions = {
   readonly catalog?: Catalog
   readonly launch?: Launch
   readonly idleMs?: number
+  /** How long each of the check's transcriptions may take after an install. */
+  readonly checkMs?: number
   readonly now?: () => number
 }
 
@@ -459,6 +461,11 @@ export class Voice {
         this.failure = explain(error).slice(0, 1024)
         this.updateFailed = engineOnly
       }
+      // What finished stays: a model that downloaded shows as installed, to turn on or
+      // check again, rather than looking as if it had to download again.
+      await this.refresh().catch(() => {})
+      // The model the person asked for, off until they turn it on.
+      if (!engineOnly && this.installed.includes(model)) this.settings.saveVoiceSettings({ model })
     } finally {
       this.installing = null
       this.running = undefined
@@ -511,11 +518,22 @@ export class Voice {
       const clip = await readFile(join(config.folder, "check.wav")).catch(() => {
         throw new EngineError("The engine's archive has no test clip.")
       })
+      // A check that never ends would hold the install; one this slow means the model
+      // is too much for this computer anyway.
+      const timeoutMs = this.options.checkMs ?? 60_000
+      const run = () =>
+        engine.transcribe(config, clip, { language: "en", timeoutMs }).catch((error) => {
+          throw new EngineError(
+            `The ${model} model did not transcribe a short test clip within ` +
+              `${Math.round(timeoutMs / 1000)} s. ${model === "turbo" ? "Try Small, which is faster, or " : ""}` +
+              `turn voice input on to try dictating anyway. (${explain(error)})`,
+          )
+        })
       // The first run loads the voice model and warms up the GPU, which later clips do not pay for.
-      await engine.transcribe(config, clip, { language: "en" })
+      await run()
       signal.throwIfAborted()
       const started = performance.now()
-      const result = await engine.transcribe(config, clip, { language: "en" })
+      const result = await run()
       const milliseconds = Math.round(performance.now() - started)
       if (result.text === "")
         throw new EngineError("The engine ran but heard nothing in its test clip.")

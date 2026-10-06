@@ -178,7 +178,7 @@ export class Engine {
   async transcribe(
     config: EngineConfig,
     audio: Uint8Array,
-    options: { language: string; prompt?: string | undefined },
+    options: { language: string; prompt?: string | undefined; timeoutMs?: number },
   ): Promise<{ text: string; language: string }> {
     const running = await this.ensure(config)
     const port = await running.ready
@@ -196,7 +196,7 @@ export class Engine {
       response = await fetch(`http://127.0.0.1:${port}${running.path}/inference`, {
         method: "POST",
         body: form,
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(options.timeoutMs ?? 180_000),
       })
     } catch (error) {
       // A crashed engine has exited by the time its socket closes.

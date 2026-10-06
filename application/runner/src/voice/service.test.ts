@@ -22,6 +22,7 @@ const setup = async (
     engine?: false | string
     store?: WorkspaceStore
     directory?: string
+    checkMs?: number
   } = {},
 ) => {
   const store = options.store ?? new WorkspaceStore()
@@ -34,6 +35,7 @@ const setup = async (
     directory,
     catalog: options.catalog ?? (await modelCatalog(resources)),
     launch: fakeLaunch,
+    ...(options.checkMs !== undefined && { checkMs: options.checkMs }),
   })
   resources.defer(() => voice.close())
   await voice.refresh()
@@ -151,6 +153,23 @@ describe("installing voice input", () => {
 
     expect(voice.state().failure).toContain("heard nothing")
     expect(voice.state().enabled).toBe(false)
+  })
+
+  it("gives up on a check too slow to finish, keeping the model to turn on", async ({
+    resources,
+  }) => {
+    const { voice } = await setup(resources, {
+      catalog: await modelCatalog(resources, { small: "small slow" }),
+      checkMs: 100,
+    })
+
+    await voice.install("small")
+    await voice.settled()
+
+    expect(voice.state().failure).toContain("did not transcribe a short test clip within")
+    expect(voice.state()).toMatchObject({ installed: ["small"], enabled: false, installing: null })
+    expect(() => voice.set({ enabled: true })).not.toThrow()
+    expect(voice.state().enabled).toBe(true)
   })
 
   it("stops on cancel without a failure, keeping what it fetched", async ({ resources }) => {
