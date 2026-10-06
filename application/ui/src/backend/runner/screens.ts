@@ -150,6 +150,9 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       fontSize,
       fontFamily: monospace(element),
       theme: themeOf(element),
+      // Programs and agents pick their own colours, often greys meant for another ground;
+      // xterm darkens or lightens any that would read under 4.5:1 against the background.
+      minimumContrastRatio: 4.5,
       scrollback: 1000,
       allowTransparency: false,
     })

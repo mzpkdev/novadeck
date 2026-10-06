@@ -38,8 +38,8 @@
   --color-danger-fg: #8a2a22;
   --color-note: #fdf2eb;
   --color-note-fg: #a85f3a;
-  /* Syntax: muted hues that each meet WCAG AA on paper and on soft, where the lines an
-     agent pointed at sit. */
+  /* Syntax: muted hues that each meet WCAG AA on paper and on the lighter fill where the
+     lines an agent pointed at sit. */
   --color-syntax-keyword: #8b3a8f;
   --color-syntax-string: #2f6b3a;
   --color-syntax-number: #a1460f;
@@ -47,27 +47,29 @@
   --color-syntax-definition: #4a4fb0;
   --color-syntax-type: #8a5300;
   --color-syntax-comment: var(--color-muted);
-  /* Terminal: the page's own paper and ink, and muted ANSI hues that read on paper. */
+  /* Terminal: the page's own paper and ink, and muted ANSI hues that read on paper: each
+     at 5:1 or more, each bright one at 4.5:1 or more, and white, a grey here so text a
+     program prints in it still reads, at 5:1 (its bright at about 4:1). */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
   --terminal-cursor: var(--color-ink);
   --terminal-selection: var(--color-selection);
   --terminal-ansi-black: #121519;
-  --terminal-ansi-red: #b0362d;
-  --terminal-ansi-green: #2f7a41;
-  --terminal-ansi-yellow: #8a6100;
-  --terminal-ansi-blue: #2b61a6;
-  --terminal-ansi-magenta: #8b3a8f;
-  --terminal-ansi-cyan: #1d7280;
-  --terminal-ansi-white: #80868e;
+  --terminal-ansi-red: #b02a22;
+  --terminal-ansi-green: #21703a;
+  --terminal-ansi-yellow: #7a5700;
+  --terminal-ansi-blue: #1f5ba8;
+  --terminal-ansi-magenta: #8a3596;
+  --terminal-ansi-cyan: #0b6b75;
+  --terminal-ansi-white: #5f656e;
   --terminal-ansi-black-bright: #535962;
-  --terminal-ansi-red-bright: #c9463b;
-  --terminal-ansi-green-bright: #3a8d50;
-  --terminal-ansi-yellow-bright: #9e7810;
-  --terminal-ansi-blue-bright: #3a76c0;
-  --terminal-ansi-magenta-bright: #a24da5;
-  --terminal-ansi-cyan-bright: #2a8794;
-  --terminal-ansi-white-bright: #a2a7ae;
+  --terminal-ansi-red-bright: #c0352b;
+  --terminal-ansi-green-bright: #277d42;
+  --terminal-ansi-yellow-bright: #876200;
+  --terminal-ansi-blue-bright: #2667bd;
+  --terminal-ansi-magenta-bright: #9940a6;
+  --terminal-ansi-cyan-bright: #107984;
+  --terminal-ansi-white-bright: #737983;
   /* Depth */
   --shadow-control: 0 1px 3px color-mix(in srgb, var(--color-shadow) 4%, transparent);
   --shadow-panel:
@@ -89,6 +91,13 @@
   --window-phase-ended-border-color: #121519;
   --brand-tile-bg: linear-gradient(180deg, #2a2e34, #121519);
   --brand-tile-fg: #00e5d6;
+  /* Component tokens: fills inside a panel stay a light step off it, where the soft
+     ground would weigh on pale paper: the lines an agent pointed at take a trace of the
+     teal, and inline code, the demo's requests and its command form a lighter steel. */
+  --artifact-code-pointed-bg: #e4ecee;
+  --prose-code-bg: #e8ebef;
+  --demo-request-bg: #e8ebef;
+  --demo-form-bg: #f7f8f9;
   /* Component tokens: the Deck mark's cards, two steps lighter than the tile. */
   --deck-mark-card-near-bg: #c2c7ce;
   --deck-mark-card-far-bg: #dcdfe4;
@@ -184,6 +193,12 @@
   --brand-tile-bg: linear-gradient(180deg, #2a2f3c, #1f2430);
   --brand-tile-fg: #00e5d6;
   --brand-tile-border-color: #51596c;
+  /* Component tokens: fills inside a panel restated on the soft and shell grounds, so
+     light's lighter steps don't carry over. */
+  --artifact-code-pointed-bg: #222835;
+  --prose-code-bg: #222835;
+  --demo-request-bg: #222835;
+  --demo-form-bg: #0f131d;
   /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
      as a state. */
   --window-phase-ended-border-color: #c9d0dc;
