@@ -42,7 +42,7 @@ import { useCanvasVisit } from "./useCanvasVisit"
 export type { CanvasHandle } from "./types"
 
 // The chrome that reads `--_canvas-chrome-scale` (canvas.css, runner.css).
-const chromeReaders = ".terminal-heading, .terminal-resize-grip, .runner-ending"
+const chromeReaders = ".terminal-heading, .terminal-resize-grip, .terminal-ending"
 
 // How long a window dropped from a taskbar takes to settle onto the canvas's grid.
 const settleMs = 160
