@@ -1,0 +1,102 @@
+import type { AgentStatus } from "../../model/types"
+import { chatModeOn } from "../../terminals/chat/mode-state"
+import { context, describe, expect, it } from "../../test"
+import { openCommands } from "../../test/commands"
+import { watchChatModes } from "../ui-store"
+
+const target = { projectId: "project", workspaceSessionId: "initial" }
+
+const open = (agent?: AgentStatus) => {
+  const app = openCommands()
+  const status = (next: AgentStatus | undefined) =>
+    app.workspace.dispatch({
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: next ? { state: "running", agent: next } : { state: "idle" },
+    })
+  status(agent)
+  return {
+    ...app,
+    status,
+    on: () => chatModeOn(app.ui.getSnapshot().chat, "project/initial", "01"),
+  }
+}
+
+describe("chat commands", () => {
+  context("when toggling a terminal whose agent runs", () => {
+    it("shows its chat, then its screen, each time moving typing there", () => {
+      const app = open({ working: false })
+      app.commands.toggleChat("01")
+      expect(app.on()).toBe(true)
+      expect(app.shell().keyboardFocus).toEqual({ id: "01", view: "grid" })
+      app.commands.toggleChat("01")
+      expect(app.on()).toBe(false)
+    })
+
+    it("selects the terminal", () => {
+      const app = open({ working: false })
+      app.commands.setSelected("02")
+      app.commands.toggleChat("01")
+      expect(app.urls.at(-1)).toContain("terminal=01")
+    })
+
+    it("shows its screen to answer in the terminal", () => {
+      const app = open({ working: false })
+      app.commands.toggleChat("01")
+      app.commands.showTerminal("01")
+      expect(app.on()).toBe(false)
+      expect(app.shell().keyboardFocus).toEqual({ id: "01", view: "grid" })
+    })
+  })
+
+  context("for a terminal without an agent", () => {
+    it("has no chat to show", () => {
+      const app = open()
+      app.commands.toggleChat("01")
+      expect(app.on()).toBe(false)
+      expect(app.shell().keyboardFocus).toBeNull()
+    })
+
+    it("has none for a terminal that isn't there", () => {
+      const app = open({ working: false })
+      app.commands.toggleChat("missing")
+      expect(app.ui.getSnapshot().chat).toEqual({})
+    })
+  })
+
+  context("when typing a draft", () => {
+    it("keeps it for the terminal until its agent ends", () => {
+      const app = open({ working: false })
+      const stop = watchChatModes(app.workspace, app.ui)
+      app.commands.setChatDraft("01", "hello")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "hello" } })
+      app.status(undefined)
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({})
+      stop()
+    })
+  })
+
+  context("when the agent ends", () => {
+    it("shows the terminal again, and a later agent starts on its screen", () => {
+      const app = open({ working: false })
+      const stop = watchChatModes(app.workspace, app.ui)
+      app.commands.toggleChat("01")
+      expect(app.on()).toBe(true)
+      app.status(undefined)
+      expect(app.on()).toBe(false)
+      app.status({ working: true })
+      expect(app.on()).toBe(false)
+      stop()
+    })
+
+    it("keeps the chat while the agent runs on", () => {
+      const app = open({ working: false })
+      const stop = watchChatModes(app.workspace, app.ui)
+      app.commands.toggleChat("01")
+      app.status({ working: true })
+      expect(app.on()).toBe(true)
+      stop()
+    })
+  })
+})

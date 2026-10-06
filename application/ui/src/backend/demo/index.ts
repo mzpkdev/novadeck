@@ -12,11 +12,13 @@ import type {
   CreateBackend,
   TerminalKey,
 } from "../port"
+import { createDemoChat } from "./chat"
 import { createDemoTerminal } from "./DemoTerminal"
 import { createDemoEngine, type DemoEngine } from "./engine"
 import { checkoutMailboxes, createDemoMessages } from "./messages"
 import { createMockTerminal, demoSeed } from "./samples"
-import { demoTurns } from "./turns"
+import { agentTranscripts, type DemoTranscript } from "./transcripts"
+import { demoTurns, type DemoTurns } from "./turns"
 
 // Sample agents: Claude Code and Codex installed, Antigravity not.
 const sampleAgents: readonly AgentConnection[] = [
@@ -181,17 +183,53 @@ export const withMessages = (backend: Backend, now: number): Backend => {
   }
 }
 
+// A backend with the conversations of its agents, as `transcripts` open them and `turns`
+// run what the person sends: the status of each turn goes through the sink it starts with.
+export const withConversations = (
+  backend: Backend,
+  transcripts: Readonly<Record<string, DemoTranscript>>,
+  turns: DemoTurns,
+): Backend => {
+  const chat = createDemoChat(backend.seed, transcripts, turns)
+  return {
+    ...backend,
+    conversations: chat.conversations,
+    commit: (workspace, actions) => {
+      backend.commit(workspace, actions)
+      chat.observe(workspace)
+    },
+    start: (sink) => {
+      const stopTurns = turns.start(sink)
+      const stop = backend.start?.(sink)
+      return () => {
+        stop?.()
+        stopTurns()
+      }
+    },
+  }
+}
+
 export const createDemoBackend: CreateBackend = () => {
   const demo = new URLSearchParams(window.location.hash.split("?")[1]).get("demo")
   const agents = demo === "agents"
   // The agents demo's idle agents take a prompt, work a moment, and finish.
-  const turns = agents ? demoTurns() : undefined
-  const engine = createDemoEngine(turns?.reply)
+  const turns = demoTurns()
+  const engine = createDemoEngine(agents ? turns.reply : undefined)
   const backend = demoBackend(
     engine,
     demo === "welcome" || (import.meta.env.DEV && import.meta.env.VITE_WELCOME_PREVIEW === "true"),
   )
+  const now = Date.now()
+  const transcripts = agentTranscripts(now)
   if (demo === "messages")
-    return withMessages({ ...backend, seed: demoSeed(Date.now(), true) }, Date.now())
-  return turns ? { ...backend, seed: demoSeed(Date.now(), true), start: turns.start } : backend
+    return withConversations(
+      withMessages({ ...backend, seed: demoSeed(now, true) }, now),
+      transcripts,
+      turns,
+    )
+  return withConversations(
+    agents ? { ...backend, seed: demoSeed(now, true) } : backend,
+    transcripts,
+    turns,
+  )
 }

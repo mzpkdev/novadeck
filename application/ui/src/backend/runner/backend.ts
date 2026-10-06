@@ -29,6 +29,7 @@ import { createTerminalRegistry } from "../registry"
 import { defaultQuickExitMs, exitStatus, restartable, terminalActivity } from "./activity"
 import { createBootProgress } from "./boot-progress"
 import { createRunnerCompanions } from "./companions"
+import { createRunnerConversations } from "./conversations"
 import type { RunnerDebug } from "./debug"
 import { createDebugPanel } from "./DebugPanel"
 import { createRunnerItems } from "./items"
@@ -937,6 +938,15 @@ export const runnerBackend = (
     },
     track,
   )
+  const conversations = createRunnerConversations(
+    {
+      detail: (terminalId) => runner.agents.detail(terminalId),
+      transcript: (terminalId, actor) => runner.agents.transcript(terminalId, actor),
+      prompt: (terminalId, text) => runner.agents.prompt(terminalId, text),
+      interrupt: (terminalId) => runner.agents.interrupt(terminalId),
+    },
+    track,
+  )
   let following = false
   // Follows a terminal's messages once the runner has it: it answers "not found" before
   // then. Called whenever a shell is created or started afresh.
@@ -1210,6 +1220,7 @@ export const runnerBackend = (
       following = false
       stopItems()
       messages.stop()
+      conversations.stop()
       // The last changes are saved; nothing retries after this.
       flush()
       halted = true
@@ -1236,6 +1247,7 @@ export const runnerBackend = (
       livePages: options.livePages === true,
     }),
     messages,
+    conversations,
     resetTitle: (key) => {
       const { terminalId } = key
       if (items.holdsWindow(target(key), terminalId))
