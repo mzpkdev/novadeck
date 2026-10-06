@@ -7,7 +7,7 @@
   color-scheme: light;
 
   /* Grounds */
-  --color-canvas: #f2f3f5;
+  --color-canvas: #eceef1;
   --color-shell: #f8f9fa;
   --color-paper: #ffffff;
   --color-soft: #eef0f2;
@@ -15,8 +15,8 @@
   --color-ink: #1a1d21;
   --color-muted: #676c74;
   /* Lines */
-  --color-line: #e4e6e9;
-  --color-line-strong: #cdd1d6;
+  --color-line: #e0e3e7;
+  --color-line-strong: #c9cdd3;
   /* Emphasis */
   --color-strong: #15181c;
   --color-strong-hover: #2b2f35;
@@ -87,29 +87,29 @@
 }
 
 /* The dark scheme: near-black grounds with a trace of blue, stepping lighter from the
-   canvas to the paper. The strong colour turns light, so on states, what is selected
+   canvas to the paper, each step wide enough to tell the regions apart. The strong colour turns light, so on states, what is selected
    and focus read light on dark. */
 [data-theme="graphite"][data-scheme="dark"] {
   color-scheme: dark;
 
   /* Grounds */
-  --color-canvas: #0f1114;
-  --color-shell: #14171a;
-  --color-paper: #191c20;
-  --color-soft: #23272c;
+  --color-canvas: #0b0c0f;
+  --color-shell: #131619;
+  --color-paper: #1b1e22;
+  --color-soft: #272b31;
   /* Text */
   --color-ink: #e6e8eb;
   --color-muted: #9aa0a8;
   /* Lines */
-  --color-line: #2a2e34;
-  --color-line-strong: #3b4047;
+  --color-line: #31363d;
+  --color-line-strong: #454b53;
   /* Emphasis */
   --color-strong: #e8eaed;
   --color-strong-hover: #cdd1d6;
   --color-on-strong: #15181c;
   /* Overlays */
   --color-scrim: rgb(0 0 0 / 0.5);
-  --color-selection: #353b43;
+  --color-selection: #3a4049;
   --color-shadow: rgb(0 0 0);
   /* Tones: deep tints with light text of the same hue. */
   --color-success: #1f3326;
@@ -167,13 +167,34 @@
   --toggle-track-off-border-color: #6b7078;
   --toggle-thumb-border-color: #6b7078;
   --toggle-box-border-color: #6b7078;
-  /* Component tokens: the Deck mark's cards, stepping down from the light tile. */
-  --deck-mark-card-near-bg: #8a9099;
-  --deck-mark-card-far-bg: #4b5058;
+  /* Component tokens: the brand tile (the logo, the welcome's start button, a checked
+     choice's icon) and primary buttons. The strong colour is near-white here, and filled
+     across a tile or a button it glares; the tile stays dark with a light edge instead,
+     and primary buttons take a dimmer fill that brightens under the pointer. */
+  --brand-tile-bg: linear-gradient(180deg, #2f343a, #24282d);
+  --brand-tile-fg: #e6e8eb;
+  --brand-tile-border-color: #5a6068;
+  --button-primary-bg: #cdd1d6;
+  --button-primary-border-color: #cdd1d6;
+  --button-primary-hover-bg: #e8eaed;
+  --button-primary-hover-border-color: #e8eaed;
+  /* Component tokens: the Deck mark's cards, stepping back from the tile into the
+     ground. */
+  --deck-mark-card-near-bg: #3d424a;
+  --deck-mark-card-far-bg: #2a2e34;
   /* Component tokens: the workspace's edges shade darker than its ground, as in light;
      the soft ground, lighter here, would make them glow instead. */
-  --workspace-edge-bg: #08090b;
+  --workspace-edge-bg: #060709;
   /* Component tokens: behind a live page while it loads. Pages assume a white ground
      whatever the scheme, so this stays white in both. */
   --artifact-webview-bg: #ffffff;
+}
+
+/* The welcome's start button is the dialog's one primary action, so in dark it keeps a
+   light fill, at primary buttons' dimmer strength, where the logo and icon tiles stay
+   dark. */
+[data-theme="graphite"][data-scheme="dark"] .welcome-start {
+  --brand-tile-bg: linear-gradient(180deg, #d9dce1, #c4c9cf);
+  --brand-tile-fg: #15181c;
+  --brand-tile-border-color: transparent;
 }
