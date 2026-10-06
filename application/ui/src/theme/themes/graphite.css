@@ -8,16 +8,16 @@
   color-scheme: light;
 
   /* Grounds */
-  --color-canvas: #d1d5da;
-  --color-shell: #e6e9ec;
-  --color-paper: #f1f3f5;
-  --color-soft: #dfe3e7;
+  --color-canvas: #c7ccd2;
+  --color-shell: #dce0e4;
+  --color-paper: #e8ebee;
+  --color-soft: #d5dae0;
   /* Text */
   --color-ink: #121519;
-  --color-muted: #535962;
+  --color-muted: #4f555e;
   /* Lines */
-  --color-line: #d3d7dd;
-  --color-line-strong: #b3b9c1;
+  --color-line: #c9ced5;
+  --color-line-strong: #a9b0b9;
   /* Emphasis */
   /* Emphasis: a deep teal, dark's cyan brought down to read on steel, as a line too. */
   --color-strong: #007a72;
@@ -25,7 +25,7 @@
   --color-on-strong: #ffffff;
   /* Overlays: selection sits behind selected text, in the page and in terminals. */
   --color-scrim: rgb(18 21 25 / 0.2);
-  --color-selection: #c8cfd8;
+  --color-selection: #bec6d0;
   --color-shadow: rgb(18 21 25);
   /* Tones: soft tints, each with a dark text colour of the same hue (every pair meets
      WCAG AA). Notes the user leaves for an agent are a warm tint apart from the greys
@@ -61,14 +61,14 @@
   --terminal-ansi-blue: #1f5ba8;
   --terminal-ansi-magenta: #8a3596;
   --terminal-ansi-cyan: #0b6b75;
-  --terminal-ansi-white: #5f656e;
-  --terminal-ansi-black-bright: #535962;
+  --terminal-ansi-white: #5b6169;
+  --terminal-ansi-black-bright: #4f555e;
   --terminal-ansi-red-bright: #c0352b;
-  --terminal-ansi-green-bright: #277d42;
+  --terminal-ansi-green-bright: #24763e;
   --terminal-ansi-yellow-bright: #876200;
   --terminal-ansi-blue-bright: #2667bd;
   --terminal-ansi-magenta-bright: #9940a6;
-  --terminal-ansi-cyan-bright: #107984;
+  --terminal-ansi-cyan-bright: #0e727c;
   --terminal-ansi-white-bright: #737983;
   /* Depth */
   --shadow-control: 0 1px 3px color-mix(in srgb, var(--color-shadow) 4%, transparent);
@@ -84,8 +84,8 @@
 
   /* Component tokens: the workspace is steel, so its glow is a lighter steel rather than
      white, and its edges a darker one. */
-  --workspace-glow-bg: #dfe2e6;
-  --workspace-edge-bg: #c3c7cd;
+  --workspace-glow-bg: #d5d9de;
+  --workspace-edge-bg: #b9bec5;
   /* Component tokens: an ended terminal's line stays neutral, so the teal never reads
      as a state. The logo tile is black, its glyph the bright cyan of dark. */
   --window-phase-ended-border-color: #121519;
@@ -94,13 +94,13 @@
   /* Component tokens: fills inside a panel stay a light step off it, where the soft
      ground would weigh on pale paper: the lines an agent pointed at take a trace of the
      teal, and inline code, the demo's requests and its command form a lighter steel. */
-  --artifact-code-pointed-bg: #e4ecee;
-  --prose-code-bg: #e8ebef;
-  --demo-request-bg: #e8ebef;
-  --demo-form-bg: #f7f8f9;
+  --artifact-code-pointed-bg: #dbe4e6;
+  --prose-code-bg: #dfe3e7;
+  --demo-request-bg: #dfe3e7;
+  --demo-form-bg: #eef0f2;
   /* Component tokens: the Deck mark's cards, two steps lighter than the tile. */
-  --deck-mark-card-near-bg: #c2c7ce;
-  --deck-mark-card-far-bg: #dcdfe4;
+  --deck-mark-card-near-bg: #b9bfc7;
+  --deck-mark-card-far-bg: #d3d7dc;
   /* Component tokens: behind a live page while it loads. Pages assume a white ground
      whatever the scheme, so this stays white in both. */
   --artifact-webview-bg: #ffffff;
@@ -199,6 +199,13 @@
   --prose-code-bg: #222835;
   --demo-request-bg: #222835;
   --demo-form-bg: #0f131d;
+  /* Component tokens: the cyan's stripes glow like neon tubes, a bright core with a soft
+     bloom: the selection bars, the tab underline and the running sweep. Only the thin
+     lines glow, never text or fills, and only here, where a dark ground lets light read
+     as light; on light steel a bloom would read as a smudge. */
+  --item-selected-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
+  --tabs-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
+  --window-phase-running-shadow: drop-shadow(0 0 3px rgb(0 229 214 / 0.75));
   /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
      as a state. */
   --window-phase-ended-border-color: #c9d0dc;

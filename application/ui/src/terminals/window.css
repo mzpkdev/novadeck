@@ -20,9 +20,12 @@
    --window-metadata-fg (muted), --window-metadata-font (mono): planning, subagents and
    usage beside the name.
    --window-indicator-bg (the sidebar item's --item-selected-indicator-bg, then strong):
-   the selection bar at the header's leading edge.
+   the selection bar at the header's leading edge. --window-indicator-shadow (the sidebar
+   item's --item-selected-indicator-shadow, then none): a glow around it.
    --window-phase-border-width (1px): the phase line's weight.
    --window-phase-track-border-color (line): the line the running sweep travels along.
+   --window-phase-running-shadow (none): a filter over the running sweep, such as a
+   drop-shadow that glows along it as it moves.
    --window-phase-running-border-color (strong), --window-phase-starting-border-color
    (muted), --window-phase-attention-border-color (warning-fg),
    --window-phase-ended-border-color (strong): the phase line in each phase.
@@ -104,6 +107,7 @@
     --window-indicator-bg,
     var(--item-selected-indicator-bg, var(--color-strong))
   );
+  box-shadow: var(--window-indicator-shadow, var(--item-selected-indicator-shadow, none));
   opacity: 0;
   transition: opacity var(--motion-state) var(--ease-interface);
 }
@@ -168,6 +172,7 @@
       var(--_track) calc(var(--_terminal-sweep) + 25%)
     )
     1;
+  filter: var(--window-phase-running-shadow, none);
   animation: terminal-sweep 2.2s var(--ease-interface) infinite;
 }
 .terminal-window[data-terminal-phase="starting"] .terminal-heading::after {
