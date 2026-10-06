@@ -849,8 +849,10 @@ describe("dictation", () => {
       await commandInput("Checkout implementation").click()
 
       await press(dictateKeys)
-      await wait(500)
       await expect.element(saying("Release to send")).toBeVisible()
+      // Two seconds from the press: past the shortest clip kept, even when the microphone
+      // takes a while to start, as on a slow CI machine.
+      await expect.element(saying("0:02")).toBeVisible()
       expect(microphone.live()).toBe(1)
 
       // Modifiers may come up before the letter; the letter ends the hold.
@@ -872,7 +874,7 @@ describe("dictation", () => {
 
       await press(`${dictateKeys}${releaseKeys}`)
       await expect.element(saying("Press again to stop")).toBeVisible()
-      await wait(500)
+      await expect.element(saying("0:02")).toBeVisible()
       expect(microphone.live()).toBe(1)
 
       await press(`${dictateKeys}${releaseKeys}`)
