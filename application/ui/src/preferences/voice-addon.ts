@@ -40,10 +40,13 @@ export const formatSize = (bytes: number): string =>
     : `${Math.max(1, Math.round(bytes / megabyte))} MB`
 
 // What installing `model` downloads: its own file, and the engine too until one is there.
+// A model's size includes the speech-detection model every install shares, which the state
+// doesn't give apart, so a second install is shown at most a megabyte over.
 export const installSize = (state: VoiceState, model: VoiceModel): number =>
   state.sizes[model] + (state.installed.length ? 0 : state.sizes.engine)
 
-// What an uninstall frees: the engine and every model on disk.
+// What an uninstall frees: the engine and every model on disk, with the shared
+// speech-detection model counted once per model for the same reason.
 export const installedSize = (state: VoiceState): number =>
   state.sizes.engine + state.installed.reduce((sum, model) => sum + state.sizes[model], 0)
 

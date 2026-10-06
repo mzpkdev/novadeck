@@ -28,15 +28,16 @@ export const folder = async (resources: Resources): Promise<string> => {
 /**
  * An engine archive and its manifest in a new folder, as the build leaves them: the
  * program, a test clip and a licence, packed flat. Returns the manifest's path, which
- * beside the archive is also its source.
+ * beside the archive is also its source. Another `release` is another engine, with another
+ * checksum.
  */
-export const engineArchive = async (resources: Resources): Promise<string> => {
+export const engineArchive = async (resources: Resources, release = "1"): Promise<string> => {
   const directory = await folder(resources)
   const contents = join(directory, "contents")
   await mkdir(contents)
   await writeFile(join(contents, engineProgram), "not a program: tests run a fake")
   await writeFile(join(contents, "check.wav"), Buffer.alloc(3200))
-  await writeFile(join(contents, "LICENSE"), "MIT")
+  await writeFile(join(contents, "LICENSE"), `MIT ${release}`)
   const file = "engine.tar.gz"
   const packed = spawnSync("tar", ["-czf", join(directory, file), "-C", contents, "."])
   if (packed.status !== 0) throw new Error(`tar failed: ${packed.stderr.toString()}`)

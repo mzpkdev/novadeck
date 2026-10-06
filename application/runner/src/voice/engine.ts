@@ -20,6 +20,13 @@ export class EngineError extends Error {
 /** The engine's program inside its folder. */
 export const engineProgram = process.platform === "win32" ? "whisper-server.exe" : "whisper-server"
 
+// On Windows the system's own tar: a GNU tar from Git or MSYS that comes first on the
+// PATH reads `C:\\...` as a host name and fails.
+const tarProgram =
+  process.platform === "win32"
+    ? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\tar.exe`
+    : "tar"
+
 const exists = (path: string): Promise<boolean> =>
   access(path).then(
     () => true,
@@ -50,7 +57,7 @@ export const unpack = async (
   await mkdir(staging, { recursive: true })
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn("tar", ["-xzf", archive, "-C", staging], {
+      const child = spawn(tarProgram, ["-xzf", archive, "-C", staging], {
         stdio: ["ignore", "ignore", "pipe"],
         windowsHide: true,
         ...(signal && { signal }),
@@ -102,6 +109,8 @@ export type Launch = (
 
 type Running = {
   readonly key: string
+  /** The path every request goes under, unguessable, so no web page can reach the engine. */
+  readonly path: string
   readonly child: ChildProcess
   readonly output: string[]
   readonly exited: Promise<void>
@@ -138,6 +147,10 @@ export class Engine {
   private idle: NodeJS.Timeout | undefined
   private closed = false
   private queue: Promise<void> = Promise.resolve()
+  // Counts stops, so a start that began before one knows it must not outlive it.
+  private generation = 0
+  // The engine being started, which a stop ends without waiting for the queue.
+  private starting: Running | undefined
 
   constructor(
     private readonly options: {
@@ -180,7 +193,7 @@ export class Engine {
     if (options.prompt) form.set("prompt", options.prompt)
     let response: Response
     try {
-      response = await fetch(`http://127.0.0.1:${port}/inference`, {
+      response = await fetch(`http://127.0.0.1:${port}${running.path}/inference`, {
         method: "POST",
         body: form,
         signal: AbortSignal.timeout(180_000),
@@ -205,10 +218,15 @@ export class Engine {
 
   /** Ends the engine, if it runs, once it has stopped. */
   async stop(): Promise<void> {
-    clearTimeout(this.idle)
-    const running = this.running
-    this.running = undefined
-    if (running) await this.end(running)
+    this.generation += 1
+    // An engine still loading would otherwise be ended only after it finished.
+    if (this.starting) void this.end(this.starting)
+    await this.enqueue(async () => {
+      clearTimeout(this.idle)
+      const running = this.running
+      this.running = undefined
+      if (running) await this.end(running)
+    })
   }
 
   /** Ends the engine and refuses to start another. */
@@ -217,9 +235,10 @@ export class Engine {
     await this.stop()
   }
 
-  // One at a time, so a clip's warm-up and its transcription never start two engines.
-  private ensure(config: EngineConfig): Promise<Running> {
-    const next = this.queue.then(() => this.ensureNow(config))
+  // One at a time, so starting, stopping and a clip's warm-up never overlap and two
+  // engines never run.
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(task)
     this.queue = next.then(
       () => undefined,
       () => undefined,
@@ -227,31 +246,48 @@ export class Engine {
     return next
   }
 
+  private ensure(config: EngineConfig): Promise<Running> {
+    return this.enqueue(() => this.ensureNow(config))
+  }
+
   private async ensureNow(config: EngineConfig): Promise<Running> {
     if (this.closed) throw new EngineError("Novadeck is closing.")
+    const generation = this.generation
     const key = [config.folder, config.model].join("\n")
     const current = this.running
     if (current?.key === key && !current.stopped) {
       this.touch(current)
       return current
     }
-    if (current) await this.end(current)
+    if (current) {
+      this.running = undefined
+      await this.end(current)
+    }
     const running = await this.launch(config, key)
-    this.running = running
+    this.starting = running
     try {
       await running.ready
+      // A stop or close that came while it loaded ended it, or must: nothing may outlive it.
+      if (generation !== this.generation || this.closed)
+        throw new EngineError("The engine was stopped while it started.")
+      this.running = running
       // Idle from when it can answer, not from when it started loading.
       this.touch(running)
     } catch (error) {
       if (this.running === running) this.running = undefined
       await this.end(running)
-      throw error
+      throw generation !== this.generation || this.closed
+        ? new EngineError("The engine was stopped while it started.")
+        : error
+    } finally {
+      if (this.starting === running) this.starting = undefined
     }
     return running
   }
 
   private async launch(config: EngineConfig, key: string): Promise<Running> {
     const port = await freePort()
+    const path = `/${randomUUID().replaceAll("-", "")}`
     const threads = Math.min(8, Math.max(2, Math.floor(availableParallelism() / 2)))
     const program = join(config.folder, engineProgram)
     const args = [
@@ -259,6 +295,8 @@ export class Engine {
       "127.0.0.1",
       "--port",
       String(port),
+      "--request-path",
+      path,
       "-m",
       config.model,
       "-l",
@@ -285,6 +323,7 @@ export class Engine {
     const exited = new Promise<void>((resolve) => child.once("close", () => resolve()))
     const running: Running = {
       key,
+      path,
       child,
       output: [],
       exited,
@@ -337,10 +376,14 @@ export class Engine {
       while (Date.now() < deadline) {
         if (running.stopped) throw new EngineError(this.explain(running, "the engine stopped"))
         try {
-          // Any answer, even an error page, means the server listens.
           // eslint-disable-next-line no-await-in-loop -- One probe at a time.
-          await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) })
-          return port
+          const response = await fetch(`http://127.0.0.1:${port}${running.path}/health`, {
+            signal: AbortSignal.timeout(2000),
+          })
+          if (response.ok) return port
+          // Not answering yet, or a stranger on the port: the engine must say so itself.
+          // eslint-disable-next-line no-await-in-loop -- Wait between probes.
+          await sleep(100)
         } catch {
           // eslint-disable-next-line no-await-in-loop -- Wait between probes.
           await sleep(100)
@@ -366,7 +409,7 @@ export class Engine {
     clearTimeout(this.idle)
     this.idle = setTimeout(
       () => {
-        if (this.running === running) void this.stop()
+        if (this.running === running && !this.starting) void this.stop()
       },
       this.options.idleMs ?? 10 * 60 * 1000,
     )

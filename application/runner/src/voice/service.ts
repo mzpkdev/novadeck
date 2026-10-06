@@ -85,6 +85,12 @@ export class Voice {
   private readonly clips: Clips
   private manifest: Manifest | undefined
   private installed: VoiceModel[] = []
+  // Whether the manifest's engine is unpacked; models alone still count as installed, as
+  // an update of the app brings a new engine that is fetched without a reinstall.
+  private engineReady = false
+  // An engine update that failed is not tried again by every clip; installing retries it.
+  private updateFailed = false
+  private uninstalling = false
   private installing: VoiceInstall | null = null
   private check: VoiceCheck | null = null
   private failure: string | null = null
@@ -115,13 +121,13 @@ export class Voice {
     this.manifest = await readManifest(this.options.engine)
     const manifest = this.manifest
     const models: VoiceModel[] = []
-    if (
-      manifest &&
-      (await exists(join(engineFolder(this.directory, manifest.sha256), engineProgram)))
-    )
+    if (manifest)
       for (const model of ["turbo", "small"] as const)
         if ((await exists(this.modelPath(model))) && (await exists(this.vadPath())))
           models.push(model)
+    this.engineReady =
+      manifest !== undefined &&
+      (await exists(join(engineFolder(this.directory, manifest.sha256), engineProgram)))
     this.installed = models
   }
 
@@ -149,6 +155,7 @@ export class Voice {
   async *watch(owner: string, signal?: AbortSignal): AsyncGenerator<VoiceState> {
     this.assertOpen()
     await this.refresh()
+    this.updateEngine()
     const watch: Watch = { owner, finished: false, wake: undefined }
     this.watchers.add(watch)
     const stop = () => {
@@ -178,6 +185,7 @@ export class Voice {
 
   /** Ends an owner's watch streams, as its connection goes. */
   release(owner: string): void {
+    this.clips.release(owner)
     for (const watch of this.watchers)
       if (watch.owner === owner) {
         watch.finished = true
@@ -189,17 +197,50 @@ export class Voice {
   async install(model: VoiceModel): Promise<void> {
     this.assertOpen()
     if (this.running) throw new DomainError("CONFLICT", "Voice input is already installing.")
+    if (this.uninstalling)
+      throw new DomainError("CONFLICT", "Voice input is being removed. Install it afterwards.")
     await this.refresh()
     if (this.manifest === undefined)
       throw new DomainError("VOICE_UNAVAILABLE", "Voice input is not available in this build.")
     // `refresh` yielded: another install may have started.
-    if (this.running) throw new DomainError("CONFLICT", "Voice input is already installing.")
+    if (this.running || this.uninstalling)
+      throw new DomainError("CONFLICT", "Voice input is already installing.")
     const controller = new AbortController()
+    this.updateFailed = false
     this.failure = null
     this.check = null
     this.installing = { model, step: "engine", received: 0, total: this.manifest.size }
     this.changed()
     this.running = { controller, done: this.run(model, this.manifest, controller.signal) }
+  }
+
+  /**
+   * Fetches the engine of this build alone when voice input is on with its models but
+   * the engine is an older one or missing, as after an update of the app. It shows as an
+   * install at the engine step, and a failure lands in `failure`.
+   */
+  private updateEngine(): void {
+    const { manifest } = this
+    const settings = this.settings.voiceSettings()
+    if (
+      this.closed ||
+      this.running ||
+      this.uninstalling ||
+      this.updateFailed ||
+      this.engineReady ||
+      manifest === undefined ||
+      !settings.enabled ||
+      !this.installed.includes(settings.model)
+    )
+      return
+    const controller = new AbortController()
+    this.failure = null
+    this.installing = { model: settings.model, step: "engine", received: 0, total: manifest.size }
+    this.changed()
+    this.running = {
+      controller,
+      done: this.run(settings.model, manifest, controller.signal, true),
+    }
   }
 
   /** Stops an install, and answers once it has. */
@@ -216,22 +257,43 @@ export class Voice {
   /** Removes the engine and the models, and turns voice input off. */
   async uninstall(): Promise<void> {
     this.assertOpen()
-    await this.cancel()
-    await this.engine.stop()
-    // The folder itself may be one the person chose, so only what is in it goes.
-    const entries = await readdir(this.directory).catch(() => [])
-    await Promise.all(
-      entries.map((entry) => rm(join(this.directory, entry), { recursive: true, force: true })),
-    )
-    this.settings.saveVoiceSettings({ enabled: false })
-    this.installed = []
-    this.check = null
-    this.failure = null
-    this.changed()
+    if (this.uninstalling)
+      throw new DomainError("CONFLICT", "Voice input is already being removed.")
+    // Held until the end, so nothing installs, records or starts the engine from files
+    // that are going.
+    this.uninstalling = true
+    try {
+      await this.cancel()
+      // Off first: a removal that fails halfway must not leave voice input on.
+      this.settings.saveVoiceSettings({ enabled: false })
+      this.changed()
+      // The engine's program is in use until it has exited, which Windows will not delete.
+      await this.engine.stop()
+      // The folder itself may be one the person chose, so only what is in it goes.
+      const entries = await readdir(this.directory).catch(() => [])
+      try {
+        await Promise.all(
+          entries.map((entry) => rm(join(this.directory, entry), { recursive: true, force: true })),
+        )
+      } catch (error) {
+        throw new DomainError(
+          "VOICE_FAILED",
+          `Voice input could not be removed: ${error instanceof Error ? error.message : String(error)}. Close anything using the files in ${this.directory} and try again.`,
+        )
+      } finally {
+        await this.refresh()
+      }
+      this.check = null
+      this.failure = null
+    } finally {
+      this.uninstalling = false
+      this.changed()
+    }
   }
 
   set(change: VoiceSettingsChange): void {
     this.assertOpen()
+    if (this.uninstalling) throw new DomainError("CONFLICT", "Voice input is being removed.")
     const model = change.model ?? this.settings.voiceSettings().model
     if (change.model !== undefined && !this.installed.includes(change.model))
       throw new DomainError("CONFLICT", `The ${change.model} model is not installed.`)
@@ -244,33 +306,33 @@ export class Voice {
   }
 
   /** Adds audio to a clip. The first part of a clip starts the engine, to have it ready by its end. */
-  record(clipId: string, offset: number, data: string): void {
+  record(owner: string, clipId: string, offset: number, data: string): void {
     this.assertOpen()
     const config = this.configuration()
-    if (this.clips.write(clipId, offset, Buffer.from(data, "base64")))
+    if (this.clips.write(owner, clipId, offset, Buffer.from(data, "base64")))
       this.engine.start(config).catch(() => {
         // `transcribe` starts it again and reports why it cannot.
       })
   }
 
-  discard(clipId: string): void {
-    this.clips.discard(clipId)
+  discard(owner: string, clipId: string): void {
+    this.clips.discard(owner, clipId)
   }
 
-  async transcribe(clipId: string, prompt?: string): Promise<VoiceTranscript> {
+  async transcribe(owner: string, clipId: string, prompt?: string): Promise<VoiceTranscript> {
     this.assertOpen()
     const config = this.configuration()
-    const pcm = this.clips.get(clipId)
+    const pcm = this.clips.get(owner, clipId)
     if (pcm === undefined) throw new DomainError("NOT_FOUND", "That recording is gone.")
     const { language } = this.settings.voiceSettings()
     // Less than a hundredth of a second holds no word, and the engine rejects an empty file.
     if (pcm.length < voiceSampleRate / 50) {
-      this.clips.discard(clipId)
+      this.clips.discard(owner, clipId)
       return { text: "", language: language === "auto" ? "" : language }
     }
     try {
       const result = await this.engine.transcribe(config, wav(pcm), { language, prompt })
-      this.clips.discard(clipId)
+      this.clips.discard(owner, clipId)
       if (this.failure !== null && this.installing === null) {
         this.failure = null
         this.changed()
@@ -304,8 +366,21 @@ export class Voice {
   /** The engine's files, for voice input that is on and installed; VOICE_UNAVAILABLE otherwise. */
   private configuration(): EngineConfig {
     const settings = this.settings.voiceSettings()
+    if (this.uninstalling)
+      throw new DomainError("VOICE_UNAVAILABLE", "Voice input is being removed.")
     if (!settings.enabled || !this.manifest || !this.installed.includes(settings.model))
       throw new DomainError("VOICE_UNAVAILABLE", "Voice input is not turned on.")
+    if (!this.engineReady) {
+      this.updateEngine()
+      // A dictation does not wait for the download, which takes minutes: it is told, and
+      // the install in the state shows how far the engine is.
+      throw new DomainError(
+        "VOICE_UNAVAILABLE",
+        this.running
+          ? "Updating the voice engine. Try again when it is done."
+          : (this.failure ?? "The voice engine is missing. Install voice input again."),
+      )
+    }
     return this.engineConfig(this.manifest, settings.model, settings.language)
   }
 
@@ -342,7 +417,12 @@ export class Voice {
 
   private lastProgress = 0
 
-  private async run(model: VoiceModel, manifest: Manifest, signal: AbortSignal): Promise<void> {
+  private async run(
+    model: VoiceModel,
+    manifest: Manifest,
+    signal: AbortSignal,
+    engineOnly = false,
+  ): Promise<void> {
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -358,8 +438,14 @@ export class Voice {
           signal,
           progress: (received) => this.progress({ model, step: "engine", received, total }),
         })
+        // Unpacking removes the engines this one replaces; none may be running.
+        await this.engine.stop()
         await unpack(archive, this.directory, manifest.sha256, signal)
         await rm(archive, { force: true })
+      }
+      if (engineOnly) {
+        await this.refresh()
+        return
       }
       await this.fetchModel(model, signal)
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
@@ -369,7 +455,10 @@ export class Voice {
       this.check = check
     } catch (error) {
       // Cancelling is the person's choice, not a failure.
-      if (!signal.aborted && !aborted(error)) this.failure = explain(error).slice(0, 1024)
+      if (!signal.aborted && !aborted(error)) {
+        this.failure = explain(error).slice(0, 1024)
+        this.updateFailed = engineOnly
+      }
     } finally {
       this.installing = null
       this.running = undefined
@@ -410,28 +499,31 @@ export class Voice {
     signal: AbortSignal,
   ): Promise<VoiceCheck> {
     const config = this.engineConfig(manifest, model, "en")
-    const stop = () => void this.engine.stop()
+    // Its own engine, so a dictation's model is neither swapped out for this one nor
+    // ended by the check, and a check never fails because a clip came in.
+    const engine = new Engine({ ...(this.options.launch && { launch: this.options.launch }) })
+    const stop = () => void engine.stop()
     signal.addEventListener("abort", stop, { once: true })
     try {
-      await this.engine.start(config)
+      await engine.start(config)
       // Cancelling may come while the engine starts, which nothing interrupts.
       signal.throwIfAborted()
       const clip = await readFile(join(config.folder, "check.wav")).catch(() => {
         throw new EngineError("The engine's archive has no test clip.")
       })
       // The first run loads the voice model and warms up the GPU, which later clips do not pay for.
-      await this.engine.transcribe(config, clip, { language: "en" })
+      await engine.transcribe(config, clip, { language: "en" })
       signal.throwIfAborted()
       const started = performance.now()
-      const result = await this.engine.transcribe(config, clip, { language: "en" })
+      const result = await engine.transcribe(config, clip, { language: "en" })
       const milliseconds = Math.round(performance.now() - started)
       if (result.text === "")
         throw new EngineError("The engine ran but heard nothing in its test clip.")
-      const gpu = this.engine.gpu ?? false
+      const gpu = engine.gpu ?? false
       return { model, milliseconds, gpu, recommended: recommend({ gpu, milliseconds }) }
     } finally {
       signal.removeEventListener("abort", stop)
-      if (signal.aborted) await this.engine.stop()
+      await engine.close()
     }
   }
 }

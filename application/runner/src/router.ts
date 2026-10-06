@@ -272,13 +272,15 @@ export const createRouter = (options: {
       cancel: authorized.voice.cancel.handler(() => voice.cancel()),
       uninstall: authorized.voice.uninstall.handler(() => voice.uninstall()),
       set: authorized.voice.set.handler(({ input }) => voice.set(input)),
-      record: authorized.voice.record.handler(({ input }) =>
-        voice.record(input.clipId, input.offset, input.data),
+      record: authorized.voice.record.handler(({ input, context }) =>
+        voice.record(context.connection.id, input.clipId, input.offset, input.data),
       ),
-      transcribe: authorized.voice.transcribe.handler(({ input }) =>
-        voice.transcribe(input.clipId, input.prompt),
+      transcribe: authorized.voice.transcribe.handler(({ input, context }) =>
+        voice.transcribe(context.connection.id, input.clipId, input.prompt),
       ),
-      discard: authorized.voice.discard.handler(({ input }) => voice.discard(input.clipId)),
+      discard: authorized.voice.discard.handler(({ input, context }) =>
+        voice.discard(context.connection.id, input.clipId),
+      ),
     },
     // The store keeps the settings; the terminals apply the transcript switch.
     settings: {

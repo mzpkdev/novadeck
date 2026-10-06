@@ -147,6 +147,9 @@ export const createRunnerVoice = (
         try {
           return await calls.transcribe(clipId, options)
         } catch (error) {
+          // The runner keeps a clip after a failed transcription for a retry, which
+          // dictation never makes: let it go rather than leave the audio there.
+          void calls.discard(clipId).catch(() => {})
           throw clipFailure(error)
         }
       },

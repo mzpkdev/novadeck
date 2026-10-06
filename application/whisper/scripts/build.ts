@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs"
 import { cp, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { gzipSync } from "node:zlib"
 
 // The whisper.cpp engine voice input downloads, built for this platform:
 //
@@ -56,6 +57,10 @@ const run = (
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`)
 }
 
+// Windows ships bsdtar in System32; the `tar` first on a CI runner's PATH may be GNU tar
+// from Git, which reads `C:` in a path as a host name.
+const tar = windows ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar"
+
 const has = (command: string, flag = "--version"): boolean =>
   !spawnSync(command, [flag], { stdio: "ignore" }).error
 
@@ -68,7 +73,7 @@ const requireTools = (): void => {
   }
   if (!has("git"))
     throw new Error("Building the voice engine needs git, which applies its patches.")
-  if (!has("tar")) throw new Error("Building the voice engine needs tar.")
+  if (!has(tar)) throw new Error("Building the voice engine needs tar.")
   if (macos) {
     if (!has("xcrun", "--version")) {
       throw new Error("Building the voice engine on macOS needs Xcode's command line tools.")
@@ -127,7 +132,7 @@ const prepare = async (tarball: string): Promise<{ source: string; build: string
   if (!existsSync(join(directory, "patched"))) {
     await rm(directory, { recursive: true, force: true })
     await mkdir(source, { recursive: true })
-    run("tar", ["-xzf", tarball, "--strip-components=1", "-C", source], root)
+    run(tar, ["-xzf", tarball, "--strip-components=1", "-C", source], root)
     for (const name of patches()) {
       const patch = join(patchesDirectory, name)
       // The source is a bare folder to git: inside this repository it would skip every
@@ -250,17 +255,61 @@ const sign = async (staging: string): Promise<void> => {
   }
 }
 
+const block = 512
+
+const field = (header: Buffer, offset: number, length: number, value: string): void => {
+  header.write(value, offset, length, "latin1")
+}
+
+const octal = (header: Buffer, offset: number, length: number, value: number): void => {
+  field(header, offset, length, `${value.toString(8).padStart(length - 1, "0")}\0`)
+}
+
+// One ustar entry, with the owner, group and time every build gives it, so the same files
+// always make the same bytes. Staged names are flat and short; links keep their target.
+const entry = (name: string, path: string): Buffer[] => {
+  if (Buffer.byteLength(name) > 100) throw new Error(`${name} is too long for the archive.`)
+  const stat = lstatSync(path)
+  const link = stat.isSymbolicLink()
+  const data = link ? Buffer.alloc(0) : readFileSync(path)
+  const header = Buffer.alloc(block)
+  field(header, 0, 100, name)
+  octal(header, 100, 8, link ? 0o777 : stat.mode & 0o111 ? 0o755 : 0o644)
+  octal(header, 108, 8, 0)
+  octal(header, 116, 8, 0)
+  octal(header, 124, 12, data.length)
+  octal(header, 136, 12, 0)
+  header.fill(" ", 148, 156)
+  field(header, 156, 1, link ? "2" : "0")
+  if (link) field(header, 157, 100, readlinkSync(path))
+  field(header, 257, 6, "ustar\0")
+  field(header, 263, 2, "00")
+  const sum = header.reduce((total, byte) => total + byte, 0)
+  field(header, 148, 8, `${sum.toString(8).padStart(6, "0")}\0 `)
+  const padding = Buffer.alloc((block - (data.length % block)) % block)
+  return [header, data, padding]
+}
+
+// The archive written here, not by whichever tar the computer has, so it is the same bytes
+// on every run and every platform: entries sorted, no timestamps, owner and group 0, and
+// a gzip header with no time and the Unix operating system. bsdtar and GNU tar extract it.
+const pack = (staging: string, names: readonly string[]): Buffer => {
+  const parts = names.flatMap((name) => entry(name, join(staging, name)))
+  const gzipped = gzipSync(Buffer.concat([...parts, Buffer.alloc(block * 2)]), { level: 9 })
+  gzipped.writeUInt32LE(0, 4)
+  gzipped[9] = 3
+  return gzipped
+}
+
 // The archive and manifest replaced whole, the manifest last, so a runner reading
 // meanwhile sees the old engine or the new one and never a manifest without its archive.
 const place = async (staging: string): Promise<void> => {
   await mkdir(dist, { recursive: true })
-  const names = (await readdir(staging)).toSorted()
-  const temporary = `${archive}.${process.pid}.tmp`
-  run("tar", ["-czf", join("..", temporary), ...names], staging)
-  const written = join(staging, "..", temporary)
-  const data = readFileSync(written)
+  const data = pack(staging, (await readdir(staging)).toSorted())
   const manifest = { file: archive, sha256: sha256(data), size: data.length }
-  await rename(written, join(dist, archive))
+  const temporary = join(dist, `${archive}.${process.pid}.tmp`)
+  await writeFile(temporary, data)
+  await rename(temporary, join(dist, archive))
   const manifestTemporary = join(dist, `engine.json.${process.pid}.tmp`)
   await writeFile(manifestTemporary, `${JSON.stringify(manifest, null, 2)}\n`)
   await rename(manifestTemporary, join(dist, "engine.json"))

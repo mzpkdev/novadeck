@@ -175,8 +175,9 @@ export type Backend = {
   // machine. Absent where the backend cannot transcribe.
   readonly voice?: Voice
   // Optional. Types text into a terminal as a paste, bracketed where its program asks,
-  // without pressing Enter, as dictation does. Absent where terminals take no input.
-  readonly typeInto?: (key: TerminalKey, text: string) => void
+  // without pressing Enter, as dictation does. Says whether it typed: false when the
+  // terminal has gone or has no screen to take the text. Absent where terminals take no input.
+  readonly typeInto?: (key: TerminalKey, text: string) => boolean
   // Optional. Hands a terminal's name back to the backend, which names it on its own
   // again: the name the person gave it goes, and the backend reports the one it takes
   // with `terminal/update`. Absent where names are only the person's.

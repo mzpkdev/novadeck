@@ -104,8 +104,10 @@ describe("dictation state", () => {
       expect(play(press(0), { type: "cancel" }, release(2000)).state).toEqual(idle)
     })
 
-    it("leaves a transcription running", () => {
-      expect(play(press(0), release(2000), { type: "cancel" }).state.kind).toBe("transcribing")
+    it("drops a transcription under way", () => {
+      const { state, effects } = play(press(0), release(2000), { type: "cancel" })
+      expect(state).toEqual(idle)
+      expect(effects.at(-1)).toEqual([{ kind: "drop" }])
     })
   })
 

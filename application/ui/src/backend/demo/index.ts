@@ -77,8 +77,10 @@ export const demoBackend = (
     TerminalSurface: createDemoTerminal(engine, introOf, runtime),
     voice,
     // The demo's command line takes dictation as typed text, which it never submits.
-    typeInto: (key, text) =>
-      engine.setDraft(key, engine.getSnapshot(key).draft + text.replaceAll(/\s*\r?\n\s*/g, " ")),
+    typeInto: (key, text) => {
+      engine.setDraft(key, engine.getSnapshot(key).draft + text.replaceAll(/\s*\r?\n\s*/g, " "))
+      return true
+    },
     transcripts: { enabled: transcripts, set: (enabled) => transcripts.update(() => enabled) },
     agents: {
       state: agents,

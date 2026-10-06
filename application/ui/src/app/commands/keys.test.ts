@@ -505,6 +505,7 @@ const fakeDictation = (): Dictation & { readonly calls: string[]; recordingNow: 
     calls: [] as string[],
     recordingNow: false,
     recording: () => dictation.recordingNow,
+    active: () => dictation.recordingNow,
     press: (target: { terminalId: string } | undefined, code: string) =>
       void dictation.calls.push(`press ${target?.terminalId ?? "none"} ${code}`),
     release: (code: string) => void dictation.calls.push(`release ${code}`),

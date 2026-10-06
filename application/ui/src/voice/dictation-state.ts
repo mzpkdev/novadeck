@@ -56,6 +56,8 @@ export type DictationEffect =
   // Ends the recording and transcribes it.
   | { readonly kind: "stop"; readonly target: TerminalKey }
   | { readonly kind: "discard" }
+  // Forgets a transcription under way: whatever it returns is thrown away.
+  | { readonly kind: "drop" }
   | { readonly kind: "hint"; readonly text: string }
 
 export type Step = { readonly state: Dictating; readonly effects: readonly DictationEffect[] }
@@ -111,8 +113,9 @@ export const stepDictation = (state: Dictating, event: DictationEvent): Step => 
     case "limit":
       return state.kind === "recording" ? stop(state) : stay(state)
     case "cancel":
-      return state.kind === "recording"
-        ? { state: idle, effects: [{ kind: "discard" }] }
+      if (state.kind === "recording") return { state: idle, effects: [{ kind: "discard" }] }
+      return state.kind === "transcribing"
+        ? { state: idle, effects: [{ kind: "drop" }] }
         : stay(state)
     case "settled":
       return state.kind === "transcribing" || state.kind === "recording" ? stay(idle) : stay(state)

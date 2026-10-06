@@ -105,7 +105,7 @@ export type KeyState = {
   readonly held: boolean
   // The person is navigating the workspace, after Shift+Esc.
   readonly navigate: boolean
-  // A voice clip is recording, held or hands-free.
+  // A voice clip is recording, held or hands-free, or its transcription is under way.
   readonly dictating: boolean
 }
 

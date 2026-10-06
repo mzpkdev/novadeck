@@ -1,6 +1,6 @@
 import type { TerminalKey } from "../backend/port"
 import { createStore, type MutableStore, type Store } from "../model/store"
-import type { Voice, VoiceClip, VoiceState } from "../model/voice"
+import { maxClipSeconds, type Voice, type VoiceClip, type VoiceState } from "../model/voice"
 import type { Capture, CaptureHandlers } from "./capture"
 import type { Dictation } from "./dictation-control"
 import {
@@ -13,9 +13,6 @@ import {
   type Readiness,
 } from "./dictation-state"
 import { voiceSampleRate } from "./resample"
-
-// What the backend takes of one clip, in seconds (the protocol's `maxVoiceSeconds`).
-export const maxClipSeconds = 120
 
 const noticeMilliseconds = 4000
 
@@ -53,7 +50,7 @@ const quiet: DictationView = {
 
 export type DictationDeps = {
   readonly voice: Voice
-  readonly typeInto: (key: TerminalKey, text: string) => void
+  readonly typeInto: (key: TerminalKey, text: string) => boolean
   readonly startCapture: (handlers: CaptureHandlers) => Promise<Capture>
   // A few words that help the engine spell what is said there.
   readonly promptFor: (key: TerminalKey) => string | undefined
@@ -83,6 +80,9 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   let appended = 0
   let cancelLimit: (() => void) | null = null
   let cancelNotice: (() => void) | null = null
+  // Bumped for each transcription and again when one is dropped, so a transcript that
+  // arrives for a clip the person cancelled is thrown away.
+  let transcription = 0
 
   const notify = (text: string, tone: "hint" | "error"): void => {
     cancelNotice?.()
@@ -170,17 +170,33 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       current.discard()
       return dispatch({ type: "settled" })
     }
+    const mine = ++transcription
+    // False once cancelled: the person has moved on, so neither text nor failure shows.
+    const wanted = (): boolean => mine === transcription
     current
       .finish(prompt ? { prompt } : undefined)
       .then(({ text }) => {
+        if (!wanted()) return
         const said = text.trim()
-        if (said) typeInto(target, said)
-        else notify("Didn't catch anything.", "hint")
+        if (!said) return notify("Didn't catch anything.", "hint")
+        if (typeInto(target, said)) return
+        // The terminal went while the engine worked. The words stay on the clipboard where
+        // that is allowed, and in the message where it is not, so they aren't lost.
+        const lost = "The terminal closed before the text arrived"
+        const clipboard = navigator.clipboard?.writeText(said)
+        if (!clipboard) return notify(`${lost}: ${said}`, "error")
+        clipboard.then(
+          () => notify(`${lost}. The text is on your clipboard.`, "error"),
+          () => notify(`${lost}: ${said}`, "error"),
+        )
       })
-      .catch((failure: unknown) =>
-        notify(failure instanceof Error ? failure.message : "Couldn't transcribe that.", "error"),
-      )
-      .finally(() => dispatch({ type: "settled" }))
+      .catch((failure: unknown) => {
+        if (wanted())
+          notify(failure instanceof Error ? failure.message : "Couldn't transcribe that.", "error")
+      })
+      .finally(() => {
+        if (wanted()) dispatch({ type: "settled" })
+      })
   }
 
   const run = (effect: DictationEffect): void => {
@@ -192,6 +208,9 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       case "discard":
         clip?.discard()
         return endClip()
+      case "drop":
+        transcription++
+        return
       case "hint":
         return notify(effect.text, "hint")
     }
@@ -210,6 +229,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     level,
     dictation: {
       recording: () => state.kind === "recording",
+      active: () => state.kind !== "idle",
       press: (target, code) =>
         dispatch({ type: "press", code, target, now: now(), readiness: ready() }),
       release: (code) => dispatch({ type: "release", code, now: now() }),

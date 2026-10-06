@@ -1,15 +1,17 @@
+import { vi } from "vitest"
+
 import type { TerminalKey } from "../backend/port"
 import { createStore } from "../model/store"
-import type { Voice, VoiceClip, VoiceState, VoiceTranscript } from "../model/voice"
+import {
+  maxClipSeconds,
+  type Voice,
+  type VoiceClip,
+  type VoiceState,
+  type VoiceTranscript,
+} from "../model/voice"
 import { context, describe, expect, it } from "../test"
 import type { Capture, CaptureHandlers } from "./capture"
-import {
-  createDictation,
-  dictationPrompt,
-  maxClipSeconds,
-  voiceReady,
-  type DictationController,
-} from "./dictation"
+import { createDictation, dictationPrompt, voiceReady, type DictationController } from "./dictation"
 
 const target: TerminalKey = { projectId: "p", workspaceSessionId: "s", terminalId: "t1" }
 
@@ -65,6 +67,8 @@ const setup = (state: VoiceState = installed) => {
     },
   }
   const typed: { key: TerminalKey; text: string }[] = []
+  // Whether the target terminal is still there to take text.
+  const terminal = { open: true }
   const microphone: {
     handlers: CaptureHandlers[]
     stops: number
@@ -76,7 +80,10 @@ const setup = (state: VoiceState = installed) => {
   let timerIds = 0
   const controller: DictationController = createDictation({
     voice,
-    typeInto: (key, text) => void typed.push({ key, text }),
+    typeInto: (key, text) => {
+      if (terminal.open) typed.push({ key, text })
+      return terminal.open
+    },
     startCapture: (handlers) =>
       new Promise((resolve, reject) => {
         microphone.handlers.push(handlers)
@@ -105,7 +112,7 @@ const setup = (state: VoiceState = installed) => {
     await Promise.resolve()
     microphone.handlers.at(-1)!.onSamples(new Int16Array(Math.round(seconds * 16_000)))
   }
-  return { controller, clips, typed, microphone, advance, speak, voice }
+  return { controller, clips, typed, terminal, microphone, advance, speak, voice }
 }
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -305,6 +312,76 @@ describe("dictation", () => {
         phase: "idle",
         notice: { text: "The speech engine isn't running.", tone: "error" },
       })
+    })
+  })
+
+  context("when the terminal closed before the text arrived", () => {
+    const dictate = async (app: ReturnType<typeof setup>): Promise<void> => {
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      app.terminal.open = false
+      app.clips[0]!.resolve({ text: "run the tests", language: "en" })
+      await flush()
+    }
+
+    it("copies the text to the clipboard and says so", async () => {
+      const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
+      vi.stubGlobal("navigator", { clipboard: { writeText } })
+      try {
+        const app = setup()
+        await dictate(app)
+        expect(writeText).toHaveBeenCalledWith("run the tests")
+        expect(app.controller.view.getSnapshot().notice).toEqual({
+          text: "The terminal closed before the text arrived. The text is on your clipboard.",
+          tone: "error",
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
+    it("shows the text itself where the clipboard can't take it", async () => {
+      vi.stubGlobal("navigator", {})
+      try {
+        const app = setup()
+        await dictate(app)
+        expect(app.controller.view.getSnapshot().notice).toEqual({
+          text: "The terminal closed before the text arrived: run the tests",
+          tone: "error",
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+  })
+
+  context("when cancelled while transcribing", () => {
+    it("goes idle at once and throws the transcript away", async () => {
+      const app = setup()
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      expect(app.controller.dictation.active()).toBe(true)
+      app.controller.dictation.cancel()
+      expect(app.controller.view.getSnapshot().phase).toBe("idle")
+      app.clips[0]!.resolve({ text: "run the tests", language: "en" })
+      await flush()
+      expect(app.typed).toEqual([])
+      expect(app.controller.view.getSnapshot().notice).toBeNull()
+    })
+
+    it("lets a new recording start without the old one ending it", async () => {
+      const app = setup()
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      app.controller.dictation.cancel()
+      app.controller.dictation.toggle(target)
+      app.clips[0]!.resolve({ text: "stale", language: "en" })
+      await flush()
+      expect(app.controller.view.getSnapshot().phase).toBe("recording")
+      expect(app.typed).toEqual([])
     })
   })
 

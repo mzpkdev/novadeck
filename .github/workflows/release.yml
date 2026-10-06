@@ -97,7 +97,7 @@ jobs:
     needs: prepare
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 60 || 30 }}
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -204,6 +204,22 @@ jobs:
       - name: Build Voice Engine
         if: steps.engine.outputs.cache-hit != 'true'
         run: pnpm --filter @novadeck/whisper build:engine
+
+      # Unpacks the engine with the tar the runner uses on this platform and runs it, so a
+      # missing library or backend module fails here rather than on a person's machine.
+      - name: Check Voice Engine
+        shell: bash
+        run: |
+          engine="$RUNNER_TEMP/voice-engine"
+          mkdir -p "$engine"
+          archive="$(ls application/whisper/dist/novadeck-whisper-*.tar.gz)"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            "$SYSTEMROOT/System32/tar.exe" -xzf "$(cygpath -w "$archive")" -C "$(cygpath -w "$engine")"
+            "$engine/whisper-server.exe" --help > /dev/null
+          else
+            tar -xzf "$archive" -C "$engine"
+            "$engine/whisper-server" --help > /dev/null
+          fi
 
       # The relay is built with the Rust its rust-toolchain.toml names; on macOS as one
       # binary for both architectures.

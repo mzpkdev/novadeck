@@ -58,9 +58,14 @@ describe.skipIf(!engine || !model || !vad || !clip)("voice input with the real e
     const speech = (await readFile(clip ?? "")).subarray(44)
     const part = Math.floor((maxVoicePartLength / 4) * 3)
     for (let offset = 0; offset < speech.length; offset += part)
-      voice.record("clip", offset, speech.subarray(offset, offset + part).toString("base64"))
+      voice.record(
+        "owner",
+        "clip",
+        offset,
+        speech.subarray(offset, offset + part).toString("base64"),
+      )
     const started = performance.now()
-    const transcript = await voice.transcribe("clip", "Kennedy")
+    const transcript = await voice.transcribe("owner", "clip", "Kennedy")
     console.info("transcribed in", Math.round(performance.now() - started), "ms:", transcript)
 
     expect(transcript.text.toLowerCase()).toContain("ask not what your country can do for you")

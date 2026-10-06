@@ -4,6 +4,10 @@ import type { Store } from "./store"
 // machine by an engine and a model the person installs from Preferences, and typed into
 // a terminal as if pasted, for the person to read and send.
 
+// The longest clip a backend takes, in seconds. The model layer can't import the protocol,
+// so backend/runner/voice.test.ts checks this against its `maxVoiceSeconds`.
+export const maxClipSeconds = 120
+
 // `turbo` is accurate in many languages but wants a GPU; `small` is quicker on a CPU.
 export type VoiceModel = "turbo" | "small"
 

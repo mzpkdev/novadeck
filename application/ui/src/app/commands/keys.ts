@@ -328,7 +328,7 @@ export const keyState = (
     switcher: commands.visibleSwitcher()?.mode ?? null,
     held: ui.getSnapshot().recent.switcher?.mode === "held",
     navigate: ui.getSnapshot().shell.navigate,
-    dictating: dictation?.recording() ?? false,
+    dictating: dictation?.active() ?? false,
   }
 }
 

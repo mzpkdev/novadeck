@@ -26,6 +26,12 @@ const configured = async (
   return { folder: directory, model, vad: join(directory, "vad.bin"), language: "en" }
 }
 
+const form = () => {
+  const body = new FormData()
+  body.set("file", new Blob([new Uint8Array(wav(Buffer.alloc(320)))]), "clip.wav")
+  return body
+}
+
 describe("unpacking the engine", () => {
   it("puts the archive's files in a folder named by its checksum, and removes older engines", async ({
     resources,
@@ -174,6 +180,76 @@ describe("the engine", () => {
 
     expect(engine.gpu).toBeUndefined()
     await expect(engine.start(config)).rejects.toThrow("closing")
+  })
+
+  it("answers only under a path it was started with, different for each start", async ({
+    resources,
+  }) => {
+    const launched: (readonly string[])[] = []
+    const engine = new Engine({
+      launch: (program, args) => {
+        launched.push(args)
+        return fakeLaunch(program, args)
+      },
+    })
+    resources.defer(() => engine.close())
+    const config = await configured(resources)
+    await engine.start(config)
+    await engine.stop()
+    await engine.start(config)
+
+    const [first, second] = launched.map((args) => ({
+      port: args[args.indexOf("--port") + 1],
+      path: args[args.indexOf("--request-path") + 1] ?? "",
+    }))
+    expect(first?.path).toMatch(/^\/[0-9a-f]{32}$/)
+    expect(second?.path).not.toBe(first?.path)
+    const base = `http://127.0.0.1:${second?.port}`
+    expect((await fetch(`${base}${second?.path}/health`)).status).toBe(200)
+    expect((await fetch(`${base}/health`)).status).toBe(404)
+    expect((await fetch(`${base}/`)).status).toBe(404)
+    expect((await fetch(`${base}/inference`, { method: "POST", body: form() })).status).toBe(404)
+    expect(
+      (await fetch(`${base}${first?.path}/inference`, { method: "POST", body: form() })).status,
+    ).toBe(404)
+    expect(
+      (await fetch(`${base}${second?.path}/inference`, { method: "POST", body: form() })).status,
+    ).toBe(200)
+  })
+
+  it("leaves no engine behind when it closes while one is still loading", async ({ resources }) => {
+    let url = ""
+    const engine = new Engine({
+      launch: (program, args) => {
+        url = `http://127.0.0.1:${args[args.indexOf("--port") + 1]}${args[args.indexOf("--request-path") + 1]}/health`
+        return fakeLaunch(program, args)
+      },
+    })
+    const starting = engine.start(await configured(resources, "small late"))
+    const failed = expect(starting).rejects.toThrow(EngineError)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    await engine.close()
+    await failed
+    // The late process would listen by now, were it alive.
+    await new Promise((resolve) => setTimeout(resolve, 800))
+
+    await expect(fetch(url)).rejects.toThrow()
+    expect(engine.gpu).toBeUndefined()
+  })
+
+  it("does not start the model that was replaced while it loaded", async ({ resources }) => {
+    const engine = new Engine({ launch: fakeLaunch })
+    resources.defer(() => engine.close())
+    const old = engine.start(await configured(resources, "small late"))
+    const failed = expect(old).rejects.toThrow("stopped")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    await engine.stop()
+    await failed
+    await engine.start(await configured(resources, "turbo gpu"))
+
+    expect(engine.gpu).toBe(true)
   })
 
   it("is given the engine's model and language as arguments", async ({ resources }) => {

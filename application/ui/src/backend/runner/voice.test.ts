@@ -1,7 +1,8 @@
-import type { VoiceState } from "@novadeck/protocol"
+import { maxVoiceSeconds, type VoiceState } from "@novadeck/protocol"
 import { RunnerError } from "@novadeck/protocol/client"
 import { vi } from "vitest"
 
+import { maxClipSeconds } from "../../model/voice"
 import { context, describe, expect, it } from "../../test"
 import { createRunnerVoice, flushMs, noVoice, type VoiceCalls } from "./voice"
 
@@ -149,6 +150,18 @@ describe("the runner's voice input", () => {
       await expect(next.finish()).rejects.toThrow(/Preferences/)
     })
 
+    it("lets the runner forget a clip whose transcription failed", async () => {
+      const { voice, calls } = runner({
+        transcribe: async () => {
+          throw new RunnerError("VOICE_FAILED", "engine crashed")
+        },
+      })
+      const clip = voice.record()
+      clip.append(Int16Array.of(1))
+      await expect(clip.finish()).rejects.toThrow(/engine failed/)
+      await vi.waitFor(() => expect(calls.discard).toHaveBeenCalledOnce())
+    })
+
     it("is forgotten by the runner once discarded, after the upload under way", async () => {
       const { voice, calls } = runner()
       const clip = voice.record()
@@ -159,5 +172,11 @@ describe("the runner's voice input", () => {
       expect(calls.record).not.toHaveBeenCalled()
       expect(calls.transcribe).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe("the longest dictation", () => {
+  it("is what the protocol takes of a clip", () => {
+    expect(maxClipSeconds).toBe(maxVoiceSeconds)
   })
 })

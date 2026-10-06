@@ -937,10 +937,19 @@ describe("typing into a terminal's screen", () => {
     expect(written).toEqual(["\u001b[200~run the tests\u001b[201~"])
   })
 
-  it("does nothing for a terminal with no screen", async () => {
+  it("does nothing for a terminal with no screen, and says so", async () => {
     const { screens, written, ready } = running("$ ")
     await ready()
-    screens.typeInto({ ...key, terminalId: "02" }, "run the tests")
-    expect(written).toEqual([])
+    expect(screens.typeInto({ ...key, terminalId: "02" }, "run the tests")).toBe(false)
+    expect(screens.typeInto(key, "run the tests")).toBe(true)
+    expect(written).toEqual(["run the tests"])
+  })
+
+  it("turns line breaks and control characters into single spaces, never Enter", async () => {
+    const { screens, written, ready } = running("$ ")
+    await ready()
+    expect(screens.typeInto(key, "\n one\r\ntwo\u001b[31m\tthree \n")).toBe(true)
+    expect(written).toEqual(["one two [31m three"])
+    expect(screens.typeInto(key, " \r\n ")).toBe(false)
   })
 })
