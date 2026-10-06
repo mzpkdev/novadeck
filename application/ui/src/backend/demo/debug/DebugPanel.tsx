@@ -1,6 +1,6 @@
 // The demo's debug panel: puts the demo in the states the real backend can be in, for
-// manual checks. A pill in the middle of the footer opens and closes it, as dev
-// toolbars do; see README "Debug panel".
+// manual checks. A round button at the bottom of the page, in the middle, opens and
+// closes it, as dev toolbars do; see README "Debug panel".
 import { Bug } from "lucide-react"
 import { useEffect, useState, useSyncExternalStore } from "react"
 
@@ -54,7 +54,7 @@ export const createDebugPanel = ({
     })
     const groups = [...shellGroups({ launch, shell, states }), ...states.groups]
 
-    // Mounted while closed too: the pill, and where the demo's notifications appear.
+    // Mounted while closed too: the button, and where the demo's notifications appear.
     return (
       <>
         <Notices />
@@ -62,14 +62,14 @@ export const createDebugPanel = ({
           type="button"
           aria-expanded={open}
           aria-controls="debug-panel"
-          className="debug-floater fixed bottom-1 left-1/2 z-50 flex h-5 -translate-x-1/2 items-center gap-1.5 px-2.5 text-[10px] font-medium"
+          aria-label={open ? "Close the debug panel" : "Open the debug panel"}
+          className="debug-floater fixed bottom-12 left-1/2 z-50 flex size-10 -translate-x-1/2 items-center justify-center"
           onClick={() => {
             setTerminals(shell.terminals())
             setOpen((value) => !value)
           }}
         >
-          <Bug size={11} aria-hidden />
-          Debug
+          <Bug size={18} aria-hidden />
         </button>
         {open && (
           <aside

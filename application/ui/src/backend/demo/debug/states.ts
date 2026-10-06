@@ -1,6 +1,6 @@
 import { createStore } from "../../../model/store"
 import type { AgentStatus, AgentTurnEnd } from "../../../model/types"
-import type { TerminalKey } from "../../port"
+import type { BackendAction, TerminalKey } from "../../port"
 import { terminalKeyId } from "../../registry"
 import { createDemoAgents } from "./agents"
 import { createDemoFolders } from "./folders"
@@ -16,6 +16,7 @@ import {
   killedBy,
   othersOf,
   planning,
+  rename,
   runAgent,
   runProgram,
   starting,
@@ -95,6 +96,54 @@ const failingTerminal = (label: string, hint: string, message: string, wait = 0)
   },
 })
 
+// One terminal per state, named after it, so every tab and window shows one at a time.
+// The last stays selected; a done mark needs the person to be looking elsewhere, so the
+// finished ones come first.
+const gallery: readonly {
+  readonly name: string
+  readonly actions: (key: TerminalKey, now: number) => BackendAction[]
+}[] = [
+  {
+    name: "Finished turn",
+    actions: (key, now) => agentIn(key, undefined, turnEnded("completed", now)),
+  },
+  {
+    name: "Failed turn",
+    actions: (key, now) => agentIn(key, undefined, turnEnded("failed", now)),
+  },
+  { name: "Working", actions: (key) => agentIn(key, undefined, working) },
+  { name: "Planning", actions: (key) => agentIn(key, undefined, planning) },
+  { name: "Subagents", actions: (key) => agentIn(key, undefined, withSubagents) },
+  { name: "Asks a question", actions: (key) => agentIn(key, undefined, asking("question", 1)) },
+  { name: "Plan ready", actions: (key) => agentIn(key, undefined, asking("plan", 1)) },
+  { name: "3 permissions", actions: (key) => agentIn(key, undefined, asking("permission", 3)) },
+  { name: "Unheard agent", actions: (key) => unheardAgent(key, "claude") },
+  { name: "Running a program", actions: (key) => runProgram(key, "sleep") },
+  { name: "Starting", actions: (key) => starting(key) },
+  { name: "Idle", actions: () => [] },
+  { name: "Exited · code 3", actions: (key) => exitedWithCode(key, 3) },
+  { name: "Killed", actions: (key) => killedBy(key, "SIGKILL") },
+  { name: "Failed to start", actions: (key) => failedToStart(key, "Folder not found") },
+  { name: "Needs permission", actions: (key) => agentIn(key, undefined, asking("permission", 1)) },
+]
+
+const everyState: DemoAction = {
+  label: "Every state at once",
+  hint: `Adds ${gallery.length} terminals, each tab and window in its own state: attention, done, error, ended and more`,
+  run: ({ addTerminal, dispatch }) => {
+    if (!dispatch) return
+    // Added first, so each finish lands while the person looks at the last one.
+    const keys = gallery.map(() => addTerminal())
+    const now = Date.now()
+    dispatch(
+      gallery.flatMap(({ name, actions }, index) => {
+        const key = keys[index]!
+        return [rename(key, name), ...actions(key, now)]
+      }),
+    )
+  },
+}
+
 // An agent finishes in a terminal other than the one on screen: the app marks it unread
 // and, with the Preferences switch on, notifies.
 const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
@@ -130,6 +179,7 @@ export const createDemoStates = (): DemoStates => {
     )
   }
   const groups: readonly DemoActionGroup[] = [
+    { title: "All at once", actions: [everyState] },
     {
       title: "Selected terminal",
       actions: [

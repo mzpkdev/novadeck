@@ -522,14 +522,17 @@ Normal development and packaged builds keep their runner behavior.
 
 The content-preview demo has a panel for reaching every state of the app on demand,
 including the ones that need a runner to go wrong. Run `pnpm dev:previews`, open
-http://127.0.0.1:5181 and click **Debug**, the pill in the middle of the footer, to open
-or close it. The runner has no panel. The top line shows the demo variant, the
+http://127.0.0.1:5181 and click the bug button at the bottom of the page, in the middle,
+to open or close it. The runner has no panel. The top line shows the demo variant, the
 connection state, the crash-loop count, and the terminal count.
 
 `?demo=` in the address's hash picks the variant: `showcase` (the default, with the
 sample agents' plans and artifacts), `plain`, `agents`, `messages` or `welcome`. The
 Demo group switches between them without reloading.
 
+- **All at once:** add one terminal per state, named after it, so the tabs and the
+  windows in Grid and Canvas show attention, done, error, ended and the rest side by
+  side. You stay on one that needs permission; the done marks land on the others.
 - **Demo:** boot into another variant.
 - **Startup:** boot again from the splash. "Splash hold" keeps it until you press
   Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot

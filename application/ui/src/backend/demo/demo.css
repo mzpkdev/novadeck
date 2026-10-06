@@ -19,13 +19,15 @@
 
    The debug panel, a floating surface of actions that put the demo in a state, is
    `.debug-panel` with its `.debug-meta` line, `.debug-heading`s, `.debug-hint`s,
-   `.debug-close` and `.debug-action` buttons; `.debug-floater` is the pill in the
-   footer that opens it, aria-expanded while it is open. Tokens, each optional:
+   `.debug-close` and `.debug-action` buttons; `.debug-floater` is the round button at
+   the page's bottom that opens it, faint until hovered, focused or open (aria-expanded).
+   Tokens, each optional:
    --debug-muted-fg (muted): its meta line, headings, hints and Close.
    --debug-action-bg (shell), --debug-action-border-color (line),
    --debug-action-hover-bg (soft): an action, and while hovered.
    --debug-floater-bg (paper), --debug-floater-fg (muted), --debug-floater-border-color
-   (line), --debug-floater-active-fg (ink): the pill, and while hovered or open. */
+   (line), --debug-floater-shadow (shadow-floating), --debug-floater-active-fg (ink),
+   --debug-floater-rest-opacity (0.45): the button, and while hovered or open. */
 
 @layer components {
   /* Demo output styles. The frame marks compact terminals with .terminal-compact. */
@@ -163,10 +165,17 @@
     border-radius: 999px;
     background-color: var(--debug-floater-bg, var(--color-paper));
     color: var(--debug-floater-fg, var(--color-muted));
+    box-shadow: var(--debug-floater-shadow, var(--shadow-floating));
+    opacity: var(--debug-floater-rest-opacity, 0.45);
+    transition:
+      opacity var(--motion-state) var(--ease-interface),
+      color var(--motion-state) var(--ease-interface);
   }
   .debug-floater:hover,
+  .debug-floater:focus-visible,
   .debug-floater[aria-expanded="true"] {
     color: var(--debug-floater-active-fg, var(--color-ink));
+    opacity: 1;
   }
   .debug-floater:focus-visible {
     outline: 2px solid var(--focus-ring-color, var(--color-strong));

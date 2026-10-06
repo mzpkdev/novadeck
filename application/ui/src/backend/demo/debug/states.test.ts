@@ -64,9 +64,29 @@ const panel = (selected: string | undefined) => {
 }
 
 describe("demo states", () => {
+  it("puts each of its new terminals in its own state, the finished ones first", async () => {
+    const { run, added, terminal } = panel("04")
+    await run("Every state at once")
+    const shown = added.map((each) => terminal(each.terminalId)!)
+    expect(shown.map((each) => each.name)).toContain("Needs permission")
+    expect(shown.at(-1)).toMatchObject({
+      name: "Needs permission",
+      agent: { attention: { kind: "permission", count: 1 } },
+    })
+    expect(shown[0]).toMatchObject({
+      name: "Finished turn",
+      agent: { lastTurn: { outcome: "completed" } },
+    })
+    expect(shown[1]).toMatchObject({ agent: { lastTurn: { outcome: "failed" } } })
+    expect(new Set(shown.map((each) => terminalPhase(each)))).toEqual(
+      new Set(["idle", "running", "attention", "unheard", "starting", "ended"]),
+    )
+  })
+
   it("groups its actions, each with a hint", () => {
     const { states } = panel("04")
     expect(states.groups.map((group) => group.title)).toEqual([
+      "All at once",
       "Selected terminal",
       "Agent",
       "New terminals",

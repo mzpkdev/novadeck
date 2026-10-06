@@ -50,6 +50,15 @@ export const setProcess = (key: TerminalKey, process: string): BackendAction => 
   process,
 })
 
+// A name the person gave it.
+export const rename = (key: TerminalKey, name: string): BackendAction => ({
+  type: "terminal/update",
+  target: target(key),
+  terminalId: key.terminalId,
+  name,
+  titleSource: { kind: "person" },
+})
+
 // The shell ended cleanly, so the terminal closes.
 export const cleanExit = (key: TerminalKey): BackendAction[] => [
   { type: "terminal/close", target: target(key), terminalId: key.terminalId },
