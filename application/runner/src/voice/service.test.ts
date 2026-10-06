@@ -162,7 +162,7 @@ describe("installing voice input", () => {
   }) => {
     const { voice } = await setup(resources, {
       catalog: await modelCatalog(resources, { small: "small slow" }),
-      checkMs: 100,
+      checkMs: 300,
     })
 
     await voice.install("small")
@@ -179,7 +179,7 @@ describe("installing voice input", () => {
   }) => {
     const { voice } = await setup(resources, {
       catalog: await modelCatalog(resources, { turbo: "turbo slow" }),
-      checkMs: 100,
+      checkMs: 300,
     })
     await voice.install("small")
     await voice.settled()
@@ -219,7 +219,7 @@ describe("installing voice input", () => {
     resources,
   }) => {
     const catalog = await modelCatalog(resources, { small: "small slow" })
-    const first = await setup(resources, { catalog, checkMs: 100 })
+    const first = await setup(resources, { catalog, checkMs: 300 })
     await first.voice.install("small")
     await first.voice.settled()
     expect(first.voice.state()).toMatchObject({ installed: ["small"], enabled: false })
@@ -253,7 +253,7 @@ describe("installing voice input", () => {
   it("keeps an unchecked model off when the one chosen had gone missing", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { small: "small slow" }),
-      checkMs: 100,
+      checkMs: 300,
     })
     await voice.install("turbo")
     await voice.settled()
@@ -553,10 +553,22 @@ describe("voice input after the app brings a new engine", () => {
     await first.voice.close()
   })
 
-  it("tells a dictation that comes meanwhile that it is updating, rather than making it wait", async ({
-    resources,
-  }) => {
+  it("keeps dictating with the older engine while the new one downloads", async ({ resources }) => {
     const { voice } = await updated(resources)
+
+    expect(() => voice.record("owner", "clip", 0, pcm(3200))).not.toThrow()
+    expect(voice.state().installing).toMatchObject({ step: "engine" })
+    await voice.settled()
+
+    // The next clip starts the new engine, the old one's folder being gone.
+    await expect(voice.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
+    expect(voice.state()).toMatchObject({ installing: null, failure: null, enabled: true })
+  })
+
+  it("tells a dictation that no engine is there that it is updating", async ({ resources }) => {
+    const { voice, directory } = await updated(resources)
+    await rm(join(directory, "engine"), { recursive: true })
+    await voice.refresh()
 
     expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrowError(
       expect.objectContaining({
@@ -568,19 +580,18 @@ describe("voice input after the app brings a new engine", () => {
     await voice.settled()
   })
 
-  it("shows a failed update as a failure, keeping voice input on", async ({ resources }) => {
+  it("shows a failed update as a failure, keeping the older engine in use", async ({
+    resources,
+  }) => {
     const { voice, next } = await updated(resources)
     await rm(join(next, "..", "engine.tar.gz"))
 
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrow()
+    expect(() => voice.record("owner", "clip", 0, pcm(3200))).not.toThrow()
     await voice.settled()
 
     expect(voice.state()).toMatchObject({ installed: ["small"], enabled: true, installing: null })
     expect(voice.state().failure).toEqual(expect.any(String))
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrowError(
-      expect.objectContaining({ code: "VOICE_UNAVAILABLE" }),
-    )
-    expect(voice.state().installing).toBeNull()
+    await expect(voice.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
   })
 
   it("is tried again by a clip a minute later, as once the network is back", async ({
@@ -591,20 +602,89 @@ describe("voice input after the app brings a new engine", () => {
     const archive = join(next, "..", "engine.tar.gz")
     const kept = await readFile(archive)
     await rm(archive)
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrow()
+    voice.record("owner", "clip", 0, pcm(2))
     await voice.settled()
     expect(voice.state().failure).toEqual(expect.any(String))
 
     await writeFile(archive, kept)
     time += updateRetryMs - 1
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrow()
+    voice.record("owner", "clip", 0, pcm(2))
     expect(voice.state().installing).toBeNull()
 
     time += 2
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrowError(/Updating the voice engine/)
+    voice.record("owner", "clip", 0, pcm(2))
+    expect(voice.state().installing).toMatchObject({ step: "engine" })
     await voice.settled()
     expect(voice.state()).toMatchObject({ failure: null, installing: null, enabled: true })
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).not.toThrow()
+  })
+})
+
+describe("voice input after the runner restarts", () => {
+  it("dictates before anything watches, once the saved state is loaded", async ({ resources }) => {
+    const first = await installed(resources)
+    const restarted = new Voice(first.store, {
+      engine: first.manifest,
+      directory: first.directory,
+      catalog: await modelCatalog(resources),
+      launch: fakeLaunch,
+    })
+    resources.defer(() => restarted.close())
+
+    restarted.start()
+    await restarted.ready()
+
+    expect(() => restarted.record("owner", "clip", 0, pcm(3200))).not.toThrow()
+    await expect(restarted.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
+  })
+
+  it("only reads on a refresh, and chooses a model that is there on a load", async ({
+    resources,
+  }) => {
+    const { voice, store } = await setup(resources, {
+      catalog: await modelCatalog(resources),
+    })
+    await voice.install("small")
+    await voice.settled()
+    store.saveVoiceSettings({ model: "turbo" })
+
+    await voice.refresh()
+    expect(store.voiceSettings().model).toBe("turbo")
+    await voice.load()
+    expect(store.voiceSettings().model).toBe("small")
+  })
+})
+
+describe("the switch of voice input", () => {
+  it("is not chosen until an install, which turns it on, or a person", async ({ resources }) => {
+    const { voice, store } = await setup(resources)
+    expect(store.voiceEnabledChoice()).toBeUndefined()
+
+    await voice.install("small")
+    await voice.settled()
+    expect(store.voiceEnabledChoice()).toBe(true)
+
+    voice.set({ enabled: false })
+    expect(store.voiceEnabledChoice()).toBe(false)
+    expect(voice.state().enabled).toBe(false)
+  })
+
+  it("stays off by choice through another install, and is forgotten by an uninstall", async ({
+    resources,
+  }) => {
+    const { voice, store } = await setup(resources, { catalog: await modelCatalog(resources) })
+    await voice.install("small")
+    await voice.settled()
+    voice.set({ enabled: false })
+
+    await voice.install("turbo")
+    await voice.settled()
+    expect(store.voiceEnabledChoice()).toBe(false)
+
+    await voice.uninstall()
+    expect(store.voiceEnabledChoice()).toBeUndefined()
+    await voice.install("small")
+    await voice.settled()
+    expect(voice.state().enabled).toBe(true)
   })
 })
 
@@ -620,7 +700,7 @@ describe("a chosen model that went missing", () => {
     expect(voice.state()).toMatchObject({ model: "turbo", enabled: true })
 
     await rm(join(directory, "models", "ggml-turbo.bin"))
-    await voice.refresh()
+    await voice.load()
 
     expect(voice.state()).toMatchObject({ installed: ["small"], model: "small", enabled: true })
     expect(store.voiceSettings().model).toBe("small")

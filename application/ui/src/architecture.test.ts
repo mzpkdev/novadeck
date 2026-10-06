@@ -21,7 +21,7 @@ const rules: Record<string, readonly string[]> = {
   ...Object.fromEntries(features.map((layer) => [layer, [...base, layer]])),
   // Voice input: capture and the dictation state machine over the model's `Voice`, and the
   // one terminal contract it types into.
-  "voice/": ["voice/", "model/", "backend/port.ts", "ui-toolkit/"],
+  "voice/": ["voice/", "model/", "ui-toolkit/"],
   "terminals/": [...base, "terminals/", "sidebar/"],
   "layouts/": [...base, "layouts/", "sidebar/", "terminals/"],
   "shell/": [...base, "shell/", "sidebar/", "terminals/", "layouts/", "projects/"],

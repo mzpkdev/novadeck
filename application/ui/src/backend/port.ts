@@ -5,12 +5,12 @@ import type { Messages } from "../model/messages"
 import type { WorkspaceSeed } from "../model/seed"
 import type { WorkspaceAction } from "../model/state"
 import type { Store } from "../model/store"
-import type { TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
+import type { TerminalKey, TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
 import type { Voice } from "../model/voice"
 
 // The UI-owned contract every terminal backend implements. Only app/ talks to it.
 
-export type TerminalKey = WorkspaceTarget & { readonly terminalId: string }
+export type { TerminalKey }
 
 // What a terminal's content area receives. The surface renders one content element and
 // hands it to `renderWindow`; the window around it is the UI's to choose.

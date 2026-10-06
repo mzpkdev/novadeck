@@ -1,5 +1,5 @@
-import type { TerminalKey } from "../backend/port"
 import { createStore, type MutableStore, type Store } from "../model/store"
+import type { TerminalKey } from "../model/types"
 import { maxClipSeconds, type Voice, type VoiceClip, type VoiceState } from "../model/voice"
 import type { Capture, CaptureHandlers } from "./capture"
 import type { Dictation } from "./dictation-control"
@@ -20,18 +20,17 @@ const noticeMilliseconds = 4000
 export const voiceReady = (state: VoiceState): boolean =>
   state.enabled && state.installed.includes(state.model)
 
+// An engine update doesn't stop dictation: the runner keeps the engine it has until the
+// new one is in, and says why should there be none to use.
 const readiness = (state: VoiceState): Readiness =>
-  // An engine an update is replacing can't take a clip; better said now than after one.
-  voiceReady(state) && state.installing?.step === "engine"
-    ? { ready: false, hint: "Updating the voice engine. Try again when it is done." }
-    : voiceReady(state)
-      ? { ready: true }
-      : {
-          ready: false,
-          hint: state.available
-            ? "Voice input isn't set up. Turn it on in Preferences → Addons."
-            : "Voice input isn't available on this machine. See Preferences → Addons.",
-        }
+  voiceReady(state)
+    ? { ready: true }
+    : {
+        ready: false,
+        hint: state.available
+          ? "Voice input isn't set up. Turn it on in Preferences → Addons."
+          : "Voice input isn't available on this machine. See Preferences → Addons.",
+      }
 
 export type DictationView = {
   readonly phase: Dictating["kind"]

@@ -29,7 +29,10 @@ import type { Work } from "../terminals/work.js"
 
 /** Settings to change; those left out, or undefined, stay as they are. */
 export type VoiceSettingsChange = {
-  readonly [K in keyof VoiceSettings]?: VoiceSettings[K] | undefined
+  readonly [K in Exclude<keyof VoiceSettings, "enabled">]?: VoiceSettings[K] | undefined
+} & {
+  /** `null` forgets the choice, as when voice input is removed. */
+  readonly enabled?: boolean | null | undefined
 }
 
 export type SettingsChange = {
@@ -824,28 +827,27 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     }
   }
 
-  /** Whether the person turned voice input off themselves, which an install respects. */
-  voiceTurnedOff(): boolean {
-    const row = this.queries.get`SELECT value FROM settings WHERE key = 'voice.turnedOff'` as
+  /**
+   * Whether the person chose voice input on or off: `undefined` until they, or an install,
+   * did, so that an install turns it on and a person's own off survives installs.
+   */
+  voiceEnabledChoice(): boolean | undefined {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'voice.enabled'` as
       | { value: string }
       | undefined
-    return row?.value === "true"
+    return row === undefined ? undefined : row.value === "true"
   }
 
-  saveVoiceTurnedOff(off: boolean): void {
-    void this.queries.run`
-      INSERT INTO settings (key, value) VALUES ('voice.turnedOff', ${String(off)})
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value
-    `
-  }
-
+  /** Saves what is given; `enabled: null` forgets the choice. */
   saveVoiceSettings(settings: VoiceSettingsChange): void {
-    for (const [key, value] of Object.entries(settings))
-      if (value !== undefined)
+    for (const [key, value] of Object.entries(settings)) {
+      if (value === null) void this.queries.run`DELETE FROM settings WHERE key = ${`voice.${key}`}`
+      else if (value !== undefined)
         void this.queries.run`
         INSERT INTO settings (key, value) VALUES (${`voice.${key}`}, ${String(value)})
         ON CONFLICT (key) DO UPDATE SET value = excluded.value
       `
+    }
   }
 
   item(itemId: string): ItemRecord | undefined {

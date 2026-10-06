@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 
-import type { TerminalKey } from "../backend/port"
 import { createStore } from "../model/store"
+import type { TerminalKey } from "../model/types"
 import {
   maxClipSeconds,
   type Voice,
@@ -312,22 +312,21 @@ describe("dictation", () => {
     })
   })
 
+  it("records while an update replaces the engine, which the runner keeps serving", () => {
+    const app = setup({
+      ...installed,
+      installing: { model: "turbo", step: "engine", received: 1, total: 2 },
+    })
+    app.controller.dictation.press(target, "KeyM")
+    expect(app.clips).toHaveLength(1)
+  })
+
   context("when dictation is not set up", () => {
     it("starts nothing and points to Preferences", () => {
       const app = setup({ ...installed, enabled: false })
       app.controller.dictation.press(target, "KeyM")
       expect(app.clips).toHaveLength(0)
       expect(app.controller.view.getSnapshot().notice?.text).toContain("Preferences → Addons")
-    })
-
-    it("starts nothing while an update replaces the engine, and says so", () => {
-      const app = setup({
-        ...installed,
-        installing: { model: "turbo", step: "engine", received: 1, total: 2 },
-      })
-      app.controller.dictation.press(target, "KeyM")
-      expect(app.clips).toHaveLength(0)
-      expect(app.controller.view.getSnapshot().notice?.text).toContain("Updating the voice engine")
     })
 
     it("asks for a terminal when there is none to type into", () => {

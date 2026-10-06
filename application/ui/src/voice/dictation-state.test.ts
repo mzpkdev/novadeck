@@ -1,4 +1,4 @@
-import type { TerminalKey } from "../backend/port"
+import type { TerminalKey } from "../model/types"
 import { context, describe, expect, it } from "../test"
 import {
   idle,

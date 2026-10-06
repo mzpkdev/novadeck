@@ -27,6 +27,7 @@ import {
   EngineError,
   engineFolder,
   engineProgram,
+  enginesIn,
   unpack,
   type EngineConfig,
   type Launch,
@@ -37,8 +38,7 @@ import { wav } from "./wav.js"
 export type VoiceSettingsStore = {
   voiceSettings(): VoiceSettings
   saveVoiceSettings(settings: VoiceSettingsChange): void
-  voiceTurnedOff(): boolean
-  saveVoiceTurnedOff(off: boolean): void
+  voiceEnabledChoice(): boolean | undefined
 }
 
 export type VoiceOptions = {
@@ -95,6 +95,11 @@ export class Voice {
   // Whether the manifest's engine is unpacked; models alone still count as installed, as
   // an update of the app brings a new engine that is fetched without a reinstall.
   private engineReady = false
+  // The engine folder clips are transcribed with: the manifest's, or while that one is
+  // fetched an older one that still runs, so dictation goes on through an update.
+  private engineDir: string | undefined
+  // Loading the saved state at start, which the first call to use it waits for.
+  private loading: Promise<void> = Promise.resolve()
   // An engine update that failed is not tried again by every clip; installing retries it.
   // When the last engine update failed: another waits a minute, not for every clip.
   private updateFailedAt: number | undefined
@@ -128,25 +133,55 @@ export class Voice {
     return (this.options.now ?? Date.now)()
   }
 
-  /** Reads the manifest and what is on disk again, as either may have changed. */
+  /** Reads the manifest and what is on disk again, as either may have changed. Writes nothing. */
   async refresh(): Promise<void> {
-    this.manifest = await readManifest(this.options.engine)
-    const manifest = this.manifest
+    const manifest = await readManifest(this.options.engine)
     const models: VoiceModel[] = []
     if (manifest)
       for (const model of ["turbo", "small"] as const)
         if ((await exists(this.modelPath(model))) && (await exists(this.vadPath())))
           models.push(model)
-    this.engineReady =
-      manifest !== undefined &&
-      (await exists(join(engineFolder(this.directory, manifest.sha256), engineProgram)))
+    const current = manifest && engineFolder(this.directory, manifest.sha256)
+    const ready = current !== undefined && (await exists(join(current, engineProgram)))
+    this.manifest = manifest
     this.installed = models
-    // A chosen model that went missing gives way to one that is there, so turning voice
-    // input on, and the model the card shows as chosen, both mean a model that exists.
+    this.engineReady = ready
+    this.engineDir = manifest === undefined ? undefined : ready ? current : await this.olderEngine()
+  }
+
+  /** An engine of an earlier build that is still unpacked and can run, if there is one. */
+  private async olderEngine(): Promise<string | undefined> {
+    const root = enginesIn(this.directory)
+    // Folders being unpacked start with a dot and are not whole yet.
+    const entries = (await readdir(root).catch(() => [])).filter((entry) => !entry.startsWith("."))
+    for (const entry of entries.toSorted()) {
+      // eslint-disable-next-line no-await-in-loop -- Stops at the first that runs.
+      if (await exists(join(root, entry, engineProgram))) return join(root, entry)
+    }
+    return undefined
+  }
+
+  /**
+   * `refresh`, and the saved state it implies: a chosen model that went missing gives way
+   * to one that is there, so turning voice input on, and the model the card shows as
+   * chosen, both mean a model that exists.
+   */
+  async load(): Promise<void> {
+    await this.refresh()
     const chosen = this.settings.voiceSettings().model
-    const remaining = models[0]
-    if (!models.includes(chosen) && remaining !== undefined)
+    const remaining = this.installed[0]
+    if (!this.installed.includes(chosen) && remaining !== undefined)
       this.settings.saveVoiceSettings({ model: remaining })
+  }
+
+  /** Loads the saved state at start; the first record, transcription or watch waits for it. */
+  start(): void {
+    this.loading = this.load().catch(() => {})
+  }
+
+  /** Answers once the state loaded at start is there. */
+  ready(): Promise<void> {
+    return this.loading
   }
 
   state(): VoiceState {
@@ -172,6 +207,7 @@ export class Voice {
   /** The state now, then again after each change, until `signal` aborts or the owner is released. */
   async *watch(owner: string, signal?: AbortSignal): AsyncGenerator<VoiceState> {
     this.assertOpen()
+    await this.ready()
     await this.refresh()
     this.updateEngine()
     const watch: Watch = { owner, finished: false, wake: undefined }
@@ -283,9 +319,8 @@ export class Voice {
     try {
       await this.cancel()
       // Off first: a removal that fails halfway must not leave voice input on.
-      this.settings.saveVoiceSettings({ enabled: false })
       // Off for want of an install, not by choice: the next install turns it on again.
-      this.settings.saveVoiceTurnedOff(false)
+      this.settings.saveVoiceSettings({ enabled: null })
       this.changed()
       // The engine's program is in use until it has exited, which Windows will not delete.
       await this.engine.stop()
@@ -301,7 +336,7 @@ export class Voice {
           `Voice input could not be removed: ${error instanceof Error ? error.message : String(error)}. Close anything using the files in ${this.directory} and try again.`,
         )
       } finally {
-        await this.refresh()
+        await this.load()
       }
       this.check = null
       this.failure = null
@@ -320,8 +355,6 @@ export class Voice {
     if (change.enabled === true && !this.installed.includes(model))
       throw new DomainError("CONFLICT", "Install voice input before turning it on.")
     this.settings.saveVoiceSettings(change)
-    // The person's own switch, unlike the off a failed install leaves, is kept by installs.
-    if (change.enabled !== undefined) this.settings.saveVoiceTurnedOff(!change.enabled)
     // The engine holds one model, so the next clip starts it with the new one.
     if (change.model !== undefined) void this.engine.stop()
     this.changed()
@@ -343,6 +376,7 @@ export class Voice {
 
   async transcribe(owner: string, clipId: string, prompt?: string): Promise<VoiceTranscript> {
     this.assertOpen()
+    await this.ready()
     const config = this.configuration()
     const pcm = this.clips.get(owner, clipId)
     if (pcm === undefined) throw new DomainError("NOT_FOUND", "That recording is gone.")
@@ -374,6 +408,7 @@ export class Voice {
     this.closed = true
     this.running?.controller.abort()
     await this.settled()
+    await this.loading
     await this.engine.close()
     for (const watch of this.watchers) {
       watch.finished = true
@@ -392,8 +427,10 @@ export class Voice {
       throw new DomainError("VOICE_UNAVAILABLE", "Voice input is being removed.")
     if (!settings.enabled || !this.manifest || !this.installed.includes(settings.model))
       throw new DomainError("VOICE_UNAVAILABLE", "Voice input is not turned on.")
-    if (!this.engineReady) {
-      this.updateEngine()
+    // An update of the engine is fetched in the background; clips go on with the engine
+    // that is there until the new one is.
+    if (!this.engineReady) this.updateEngine()
+    if (this.engineDir === undefined) {
       // A dictation does not wait for the download, which takes minutes: it is told, and
       // the install in the state shows how far the engine is.
       throw new DomainError(
@@ -403,7 +440,10 @@ export class Voice {
           : (this.failure ?? "The voice engine is missing. Install voice input again."),
       )
     }
-    return this.engineConfig(this.manifest, settings.model, settings.language)
+    return {
+      ...this.engineConfig(this.manifest, settings.model, settings.language),
+      folder: this.engineDir,
+    }
   }
 
   private engineConfig(manifest: Manifest, model: VoiceModel, language: string): EngineConfig {
@@ -462,22 +502,27 @@ export class Voice {
           signal,
           progress: (received) => this.progress({ model, step: "engine", received, total }),
         })
-        // Unpacking removes the engines this one replaces; none may be running.
+        // Unpacking removes the engines this one replaces; none may be running, and no
+        // clip may start one from a folder that is going. Clips are told to wait until
+        // the new engine is there, which the refresh after the unpacking, or after a
+        // failure, settles.
+        this.engineDir = undefined
         await this.engine.stop()
         await unpack(archive, this.directory, manifest.sha256, signal)
         await rm(archive, { force: true })
-      }
-      if (engineOnly) {
         await this.refresh()
-        return
       }
+      if (engineOnly) return
       await this.fetchModel(model, signal)
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
       const check = await this.measure(model, manifest, signal)
       // The model checked out, so it is the one used, and voice input is on, as the person
       // installed it to use it, unless they had turned it off themselves.
-      this.settings.saveVoiceSettings({ model, enabled: !this.settings.voiceTurnedOff() })
-      await this.refresh()
+      this.settings.saveVoiceSettings({
+        model,
+        enabled: this.settings.voiceEnabledChoice() !== false,
+      })
+      await this.load()
       this.check = check
     } catch (error) {
       // Cancelling is the person's choice, not a failure.
@@ -487,13 +532,17 @@ export class Voice {
       }
       // What finished stays: a model that downloaded shows as installed, to turn on or
       // check again, rather than looking as if it had to download again.
-      await this.refresh().catch(() => {})
+      await this.load().catch(() => {})
       // A model that went unchecked never replaces one in use: it is chosen only when the
       // one chosen before is not there to use, as on a first install, and stays off until
-      // turned on, even if the refresh above already chose it for a model gone missing.
+      // turned on, even if the load above already chose it for a model gone missing. Off
+      // by choice only if the person chose it; otherwise a later check turns it on.
       const chosen = before.settings.model
       if (!engineOnly && this.installed.includes(model) && !this.installed.includes(chosen))
-        this.settings.saveVoiceSettings({ model, enabled: false })
+        this.settings.saveVoiceSettings({
+          model,
+          enabled: this.settings.voiceEnabledChoice() === false ? false : null,
+        })
     } finally {
       this.installing = null
       this.running = undefined

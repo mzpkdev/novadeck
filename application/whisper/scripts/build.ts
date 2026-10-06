@@ -206,7 +206,16 @@ const platformOptions = (): string[] => {
 }
 
 const compile = (source: string, build: string): void => {
-  run("cmake", ["-S", source, "-B", build, ...common, ...platformOptions()])
+  // The same source must build the same engine, or every installed app fetches it again.
+  // ggml stamps the git commit it finds into its library: inside this repository that is
+  // Novadeck's own, which changes with every commit, so git is kept from finding one. MSVC
+  // stamps the time unless told not to; CMake takes these as its first flags.
+  const reproducible = {
+    ...process.env,
+    GIT_CEILING_DIRECTORIES: cache,
+    ...(windows && { CFLAGS: "/Brepro", CXXFLAGS: "/Brepro", LDFLAGS: "/Brepro" }),
+  }
+  run("cmake", ["-S", source, "-B", build, ...common, ...platformOptions()], root, reproducible)
   // Backend modules are dependencies of the library, so building the server builds them.
   run("cmake", [
     "--build",

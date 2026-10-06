@@ -125,6 +125,8 @@ export const wire = (options: RunnerOptions) => {
         ? join(tmpdir(), `novadeck-voice-${randomUUID()}`)
         : join(dirname(options.database), "voice")),
   })
+  // Not awaited: the runner starts at once, and the first voice call waits for the load.
+  voice.start()
   return { store, shellFiles, agents, terminals, items, projects, uploads, voice }
 }
 
