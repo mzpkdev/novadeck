@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { access, chmod, mkdir, readdir, rename, rm } from "node:fs/promises"
 import { createServer } from "node:net"
-import { availableParallelism } from "node:os"
+import { availableParallelism, tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { z } from "zod"
@@ -316,7 +316,10 @@ export class Engine {
       args,
     )
     const child = spawn(command, argv, {
-      cwd: config.folder,
+      // Not the engine's folder: Windows can't remove a folder a process works in, which
+      // would keep an update or uninstall from removing it. The engine finds its libraries
+      // beside its program, whatever its working directory.
+      cwd: tmpdir(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     })
