@@ -1,0 +1,341 @@
+import type { TerminalKey } from "../backend/port"
+import { createStore } from "../model/store"
+import type { Voice, VoiceClip, VoiceState, VoiceTranscript } from "../model/voice"
+import { context, describe, expect, it } from "../test"
+import type { Capture, CaptureHandlers } from "./capture"
+import {
+  createDictation,
+  dictationPrompt,
+  maxClipSeconds,
+  voiceReady,
+  type DictationController,
+} from "./dictation"
+
+const target: TerminalKey = { projectId: "p", workspaceSessionId: "s", terminalId: "t1" }
+
+const installed: VoiceState = {
+  available: true,
+  installed: ["turbo"],
+  enabled: true,
+  model: "turbo",
+  language: "auto",
+  sizes: { engine: 1, turbo: 2, small: 1 },
+  installing: null,
+  check: null,
+  failure: null,
+}
+
+type FakeClip = VoiceClip & {
+  readonly appended: number[]
+  readonly prompts: (string | undefined)[]
+  discarded: boolean
+  resolve: (transcript: VoiceTranscript) => void
+  reject: (failure: Error) => void
+}
+
+// A backend voice and microphone that record what they were asked, with a clock and
+// timers the test turns by hand.
+const setup = (state: VoiceState = installed) => {
+  const clips: FakeClip[] = []
+  const voice: Voice = {
+    state: createStore(state),
+    install: () => {},
+    cancel: () => {},
+    uninstall: () => {},
+    set: () => {},
+    record: () => {
+      const clip: FakeClip = {
+        appended: [],
+        prompts: [],
+        discarded: false,
+        append: (samples) => void clip.appended.push(samples.length),
+        finish: (options) => {
+          clip.prompts.push(options?.prompt)
+          return new Promise((resolve, reject) => {
+            clip.resolve = resolve
+            clip.reject = reject
+          })
+        },
+        discard: () => void (clip.discarded = true),
+        resolve: () => {},
+        reject: () => {},
+      }
+      clips.push(clip)
+      return clip
+    },
+  }
+  const typed: { key: TerminalKey; text: string }[] = []
+  const microphone: {
+    handlers: CaptureHandlers[]
+    stops: number
+    settle: ((capture: Capture) => void)[]
+    fail: ((failure: Error) => void)[]
+  } = { handlers: [], stops: 0, settle: [], fail: [] }
+  let now = 0
+  const timers = new Map<number, { at: number; run: () => void }>()
+  let timerIds = 0
+  const controller: DictationController = createDictation({
+    voice,
+    typeInto: (key, text) => void typed.push({ key, text }),
+    startCapture: (handlers) =>
+      new Promise((resolve, reject) => {
+        microphone.handlers.push(handlers)
+        microphone.settle.push(resolve)
+        microphone.fail.push(reject)
+      }),
+    promptFor: () => "novadeck, ui",
+    now: () => now,
+    after: (milliseconds, run) => {
+      const id = ++timerIds
+      timers.set(id, { at: now + milliseconds, run })
+      return () => void timers.delete(id)
+    },
+  })
+  const advance = (milliseconds: number): void => {
+    now += milliseconds
+    for (const [id, timer] of timers)
+      if (timer.at <= now) {
+        timers.delete(id)
+        timer.run()
+      }
+  }
+  // The microphone starts and delivers `seconds` of speech.
+  const speak = async (seconds: number): Promise<void> => {
+    microphone.settle.at(-1)!({ stop: () => void microphone.stops++ })
+    await Promise.resolve()
+    microphone.handlers.at(-1)!.onSamples(new Int16Array(Math.round(seconds * 16_000)))
+  }
+  return { controller, clips, typed, microphone, advance, speak, voice }
+}
+
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+
+describe("voiceReady", () => {
+  it("needs voice on and the chosen model on disk", () => {
+    expect(voiceReady(installed)).toBe(true)
+    expect(voiceReady({ ...installed, enabled: false })).toBe(false)
+    expect(voiceReady({ ...installed, installed: ["small"] })).toBe(false)
+    expect(voiceReady({ ...installed, installed: [] })).toBe(false)
+  })
+})
+
+describe("dictation", () => {
+  context("when held to speak", () => {
+    it("starts a clip at once and pastes the transcript into the terminal on release", async () => {
+      const app = setup()
+      const { dictation, view } = app.controller
+      dictation.press(target, "KeyM")
+      expect(app.clips).toHaveLength(1)
+      expect(view.getSnapshot()).toMatchObject({ phase: "recording", mode: "hold", target })
+      await app.speak(2)
+      app.advance(2000)
+      dictation.release("KeyM")
+      expect(view.getSnapshot().phase).toBe("transcribing")
+      expect(app.microphone.stops).toBe(1)
+      expect(app.clips[0]!.prompts).toEqual(["novadeck, ui"])
+      app.clips[0]!.resolve({ text: "  run the tests \n", language: "en" })
+      await flush()
+      expect(app.typed).toEqual([{ key: target, text: "run the tests" }])
+      expect(view.getSnapshot()).toMatchObject({ phase: "idle", target: null })
+    })
+
+    it("streams audio into the clip as it arrives", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      await app.speak(1)
+      expect(app.clips[0]!.appended).toEqual([16_000])
+    })
+
+    it("pastes nothing when the engine hears nothing, and says so", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      await app.speak(1)
+      app.advance(1000)
+      app.controller.dictation.release("KeyM")
+      app.clips[0]!.resolve({ text: "  ", language: "en" })
+      await flush()
+      expect(app.typed).toEqual([])
+      expect(app.controller.view.getSnapshot().notice).toMatchObject({ tone: "hint" })
+    })
+
+    it("transcribes when the window loses focus", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      await app.speak(1)
+      app.advance(1000)
+      app.controller.dictation.blur()
+      expect(app.controller.view.getSnapshot().phase).toBe("transcribing")
+    })
+  })
+
+  context("when tapped for hands-free recording", () => {
+    it("keeps recording after a quick release and stops on the next press", async () => {
+      const app = setup()
+      const { dictation, view } = app.controller
+      dictation.press(target, "KeyM")
+      app.advance(120)
+      dictation.release("KeyM")
+      expect(view.getSnapshot()).toMatchObject({ phase: "recording", mode: "toggle" })
+      await app.speak(3)
+      app.advance(3000)
+      dictation.press(target, "KeyM")
+      dictation.release("KeyM")
+      expect(view.getSnapshot().phase).toBe("transcribing")
+    })
+  })
+
+  context("when the mic button is clicked", () => {
+    it("records until clicked again", async () => {
+      const app = setup()
+      const { dictation, view } = app.controller
+      dictation.toggle(target)
+      await app.speak(1)
+      app.advance(1000)
+      expect(dictation.recording()).toBe(true)
+      dictation.toggle(target)
+      expect(view.getSnapshot().phase).toBe("transcribing")
+    })
+  })
+
+  context("when the clip is a slip of the key", () => {
+    it("drops under 300 ms of audio without a word", async () => {
+      const app = setup()
+      const { dictation, view } = app.controller
+      dictation.toggle(target)
+      await app.speak(0.2)
+      dictation.toggle(target)
+      expect(app.clips[0]!.discarded).toBe(true)
+      expect(app.microphone.stops).toBe(1)
+      expect(view.getSnapshot()).toMatchObject({ phase: "idle", notice: null })
+    })
+  })
+
+  context("when cancelled", () => {
+    it("discards the clip, releases the microphone and pastes nothing", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      await app.speak(2)
+      app.controller.dictation.cancel()
+      expect(app.clips[0]!.discarded).toBe(true)
+      expect(app.microphone.stops).toBe(1)
+      expect(app.controller.view.getSnapshot().phase).toBe("idle")
+      app.controller.dictation.release("KeyM")
+      await flush()
+      expect(app.typed).toEqual([])
+    })
+
+    it("lets the microphone go if it was still asking when cancelled", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.dictation.cancel()
+      app.microphone.settle[0]!({ stop: () => void app.microphone.stops++ })
+      await flush()
+      expect(app.microphone.stops).toBe(1)
+    })
+
+    it("ignores audio that arrives late", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      const [handlers] = app.microphone.handlers
+      app.controller.dictation.cancel()
+      handlers!.onSamples(new Int16Array(100))
+      expect(app.clips[0]!.appended).toEqual([])
+    })
+  })
+
+  context("when the recording reaches the backend's limit", () => {
+    it("stops and transcribes by itself", async () => {
+      const app = setup()
+      app.controller.dictation.toggle(target)
+      await app.speak(5)
+      app.advance(maxClipSeconds * 1000 - 1)
+      expect(app.controller.dictation.recording()).toBe(true)
+      app.advance(1)
+      expect(app.controller.view.getSnapshot().phase).toBe("transcribing")
+    })
+  })
+
+  context("when dictation is not set up", () => {
+    it("starts nothing and points to Preferences", () => {
+      const app = setup({ ...installed, enabled: false })
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.clips).toHaveLength(0)
+      expect(app.controller.view.getSnapshot().notice?.text).toContain("Preferences → Addons")
+    })
+
+    it("asks for a terminal when there is none to type into", () => {
+      const app = setup()
+      app.controller.dictation.press(undefined, "KeyM")
+      expect(app.clips).toHaveLength(0)
+      expect(app.controller.view.getSnapshot().notice?.text).toContain("Select a terminal")
+    })
+
+    it("lets the hint fade after a few seconds", () => {
+      const app = setup({ ...installed, enabled: false })
+      app.controller.dictation.press(target, "KeyM")
+      app.advance(4000)
+      expect(app.controller.view.getSnapshot().notice).toBeNull()
+    })
+  })
+
+  context("when the microphone can't start", () => {
+    it("says why, releases the clip and goes idle", async () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      app.microphone.fail[0]!(new Error("No microphone found."))
+      await flush()
+      expect(app.clips[0]!.discarded).toBe(true)
+      expect(app.controller.view.getSnapshot()).toMatchObject({
+        phase: "idle",
+        notice: { text: "No microphone found.", tone: "error" },
+      })
+    })
+  })
+
+  context("when the transcription fails", () => {
+    it("shows the backend's reason and pastes nothing", async () => {
+      const app = setup()
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      app.clips[0]!.reject(new Error("The speech engine isn't running."))
+      await flush()
+      expect(app.typed).toEqual([])
+      expect(app.controller.view.getSnapshot()).toMatchObject({
+        phase: "idle",
+        notice: { text: "The speech engine isn't running.", tone: "error" },
+      })
+    })
+  })
+
+  context("while a transcription runs", () => {
+    it("takes no second clip", async () => {
+      const app = setup()
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.clips).toHaveLength(1)
+    })
+  })
+
+  it("shares the microphone's level through a store of its own", async () => {
+    const app = setup()
+    app.controller.dictation.toggle(target)
+    app.microphone.handlers[0]!.onLevel(0.6)
+    expect(app.controller.level.getSnapshot()).toBe(0.6)
+    app.controller.dictation.cancel()
+    expect(app.controller.level.getSnapshot()).toBe(0)
+  })
+})
+
+describe("dictationPrompt", () => {
+  it("names the project and the directory's last folder", () => {
+    expect(dictationPrompt("novadeck", "/home/mzpk/Workspace/novadeck/")).toBe("novadeck, novadeck")
+    expect(dictationPrompt("Checkout", "C:\\work\\api-gateway")).toBe("Checkout, api-gateway")
+  })
+
+  it("leaves out what is missing", () => {
+    expect(dictationPrompt("Checkout", "")).toBe("Checkout")
+  })
+})

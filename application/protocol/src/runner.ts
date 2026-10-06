@@ -1187,6 +1187,7 @@ export const connectRunner = async (
         let at = offset
         for (const data of base64Parts(audio, maxVoicePartLength)) {
           const start = at
+          // eslint-disable-next-line no-await-in-loop -- Parts arrive in order.
           await call((wire) => wire.voice.record({ clipId, offset: start, data }))
           at += size
         }

@@ -346,6 +346,14 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       entry.users -= 1
       if (entry.users === 0 && entry.timer === undefined) settle(key, entry)
     },
+    // Pastes text into the terminal's screen as the person's own paste: bracketed when its
+    // program asked for that, and never followed by Enter. Dictation targets a terminal the
+    // person is looking at, so a terminal with no open screen has nothing to type into and
+    // gets nothing: opening a second attachment to write behind a screen that is not there,
+    // for a paste with no brackets, would run the text as typed commands.
+    typeInto: (key: TerminalKey, text: string): void => {
+      entries.get(id(key))?.screen?.xterm.paste(text)
+    },
   }
 }
 
