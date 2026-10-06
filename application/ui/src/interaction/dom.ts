@@ -36,6 +36,9 @@ export const navigateHome = (target: EventTarget | null): boolean =>
 // A terminal's companion pane and its taskbar close themselves on Escape.
 export const insideCompanion = (target: EventTarget | null): boolean =>
   within(target, "[data-workspace-companion]")
+// A terminal's chat, which holds text the person selects and a box they type in.
+export const insideChat = (target: EventTarget | null): boolean =>
+  within(target, "[data-workspace-chat]")
 // Terminal surfaces mark the element that receives typed input.
 export const insideTerminalInput = (target: EventTarget | null): boolean =>
   within(target, "[data-terminal-input]")
@@ -53,6 +56,7 @@ export type KeyTarget = {
   readonly switcherClose: boolean
   readonly zenDock: boolean
   readonly companion: boolean
+  readonly chat: boolean
 }
 
 export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
@@ -66,6 +70,7 @@ export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
   switcherClose: insideSwitcherClose(target),
   zenDock: insideOpenZenDock(target),
   companion: insideCompanion(target),
+  chat: insideChat(target),
 })
 
 export const terminalTabInteractionActive = (): boolean =>

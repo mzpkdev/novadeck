@@ -166,9 +166,13 @@ const gates: Record<
         !input.target.editing &&
         !input.target.navigationControl &&
         !input.target.companion)),
-  // From terminal input or the workspace; text fields and editors keep them to select.
+  // From terminal input or the workspace; text fields and editors keep them to select,
+  // and so does a chat's box, which is a text field of its own: only Shift+Esc leaves it.
   jump: (input, state) =>
-    !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
+    !state.dialog &&
+    !state.switcher &&
+    (!input.target.editing ||
+      (input.target.terminalInput && !(input.target.chat && input.key !== "Escape"))),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,

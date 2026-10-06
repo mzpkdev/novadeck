@@ -26,6 +26,7 @@ const nowhere: KeyTarget = {
   switcherClose: false,
   zenDock: false,
   companion: false,
+  chat: false,
 }
 
 // The app's key handling on other platforms, over real stores and commands.

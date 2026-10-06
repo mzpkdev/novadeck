@@ -98,6 +98,27 @@ describe("Sending a prompt from the chat", () => {
   })
 })
 
+describe("Reading the chat", () => {
+  it("leaves focus on a tool row the person clicked", async () => {
+    await openChatDemo()
+    const chat = await openChat("Build")
+    const row = chat.getByRole("button", { name: /^Edited .*total\.ts/ })
+    await row.click()
+    // The workspace would send typing back to the composer a frame after a click.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await expect.element(row).toHaveFocus()
+  })
+
+  it("lets the person select text, which stays selected", async () => {
+    await openChatDemo()
+    const chat = await openChat("Build")
+    const reply = conversation(chat).getByText("It passes now.", { exact: false })
+    await reply.click({ clickCount: 3 })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(window.getSelection()?.toString()).toContain("It passes now.")
+  })
+})
+
 describe("A chat's unsent draft", () => {
   it("stays with its terminal across a change of view", async () => {
     await openChatDemo()

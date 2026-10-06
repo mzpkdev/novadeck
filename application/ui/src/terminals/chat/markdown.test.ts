@@ -127,9 +127,9 @@ describe("markdown inline", () => {
       expect(plain(`[click](${href})`)).not.toContain('"link"')
     })
 
-    it("allows web addresses and mail", () => {
+    it("allows web addresses, and not mail, which the desktop host won't open", () => {
       expect(safeHref("https://example.com")).toBe("https://example.com/")
-      expect(safeHref("mailto:a@b.co")).toBe("mailto:a@b.co")
+      expect(safeHref("mailto:a@b.co")).toBeUndefined()
     })
 
     it("keeps raw HTML as text", () => {
@@ -137,5 +137,24 @@ describe("markdown inline", () => {
         { t: "text", text: "<img src=x onerror=alert(1)>" },
       ])
     })
+  })
+})
+
+describe("markdown on pathological text", () => {
+  const size = 16 * 1024
+  it.each([
+    ["unclosed stars", "*a ".repeat(size / 3)],
+    ["unclosed double stars", "**a ".repeat(size / 4)],
+    ["unclosed underscores", "_a ".repeat(size / 3)],
+    ["unclosed brackets", "[a ".repeat(size / 3)],
+    ["nested brackets", "[".repeat(size)],
+    ["unclosed backticks of changing length", "`a ``b ```c ".repeat(size / 12)],
+    ["links without addresses", "[a](".repeat(size / 4)],
+    ["blank lines in a list", "- a\n\n".repeat(size / 5)],
+    ["unclosed tildes", "~~a ".repeat(size / 4)],
+  ])("reads %s in well under 100 ms", (_name, text) => {
+    const started = performance.now()
+    parseMarkdown(text)
+    expect(performance.now() - started).toBeLessThan(100)
   })
 })

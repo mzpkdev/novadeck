@@ -14,6 +14,13 @@ export const noChatModes: ChatModes = {}
 export const chatAvailable = (terminal: TerminalMetadata): boolean =>
   terminal.state === "running" && (terminal.agent !== undefined || isAgentProgram(terminal.process))
 
+// Whether a terminal's chat choice, and what was typed in it, are kept: while an agent
+// runs, and through a restart (`starting`, as when the runner is reached again), which says
+// nothing of whether the agent is gone. They go once the terminal settles on something
+// else, or closes.
+export const chatKept = (terminal: TerminalMetadata): boolean =>
+  chatAvailable(terminal) || terminal.state === "starting"
+
 export const chatModeOn = (modes: ChatModes, context: string, id: string): boolean =>
   modes[context]?.[id] === true
 

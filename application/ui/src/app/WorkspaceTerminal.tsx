@@ -194,8 +194,8 @@ export const WorkspaceTerminal = ({
   const chatShown = frame.chat?.on === true
   const draft = useUiState((state) => chatDraftOf(state.chatDrafts, chatContext, terminalId))
   const conversation = useMemo(
-    () => (chatShown ? conversations?.conversation(terminalId) : undefined),
-    [chatShown, conversations, terminalId],
+    () => (chatShown ? conversations?.conversation(terminalKey) : undefined),
+    [chatShown, conversations, terminalKey],
   )
   const wanted = keyboardFocus?.view === view && active
   const hidden = minimize?.minimized === true && !minimize.clipContent
@@ -206,6 +206,7 @@ export const WorkspaceTerminal = ({
         {conversation && (
           <div
             className="chat-pane absolute inset-0 z-10 nodrag nopan nowheel"
+            data-workspace-chat=""
             hidden={hidden}
             aria-hidden={minimize?.minimized}
             inert={minimize?.minimized}
@@ -218,8 +219,12 @@ export const WorkspaceTerminal = ({
               compact={view !== "focus"}
               draft={draft}
               onDraft={(text) => commands.setChatDraft(terminalId, text)}
-              onSend={(text) => conversations!.send(terminalId, text)}
-              onInterrupt={() => conversations!.interrupt(terminalId)}
+              onSend={async (text) => {
+                await conversations!.send(terminalKey, text)
+                // Cleared even if the chat has gone from the screen meanwhile.
+                commands.clearChatDraft(chatContext, terminalId, text)
+              }}
+              onInterrupt={() => conversations!.interrupt(terminalKey)}
               onAnswerInTerminal={() => commands.showTerminal(terminalId)}
               focusInput={wanted}
               onInputFocused={onInputFocused}

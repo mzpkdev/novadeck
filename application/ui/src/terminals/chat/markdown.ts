@@ -47,12 +47,11 @@ export type MarkdownBlock =
 
 // ---- Inline
 
-// Only web pages and mail addresses leave the app, and not an address that carries a
-// login, whose real host is named after it.
+// Only web pages leave the app (the desktop host opens nothing else), and not an address
+// that carries a login, whose real host is named after it.
 export const safeHref = (href: string): string | undefined => {
   try {
     const url = new URL(href)
-    if (url.protocol === "mailto:") return url.href
     if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
     return url.username || url.password ? undefined : url.href
   } catch {
@@ -63,10 +62,8 @@ export const safeHref = (href: string): string | undefined => {
 const punctuation = /[!-/:-@[-`{-~]/
 const space = /\s/
 
-// The end of a bare address: it stops at white space, and gives back the punctuation
-// that closes a sentence or a parenthesis around it.
-const bareLink = /^https?:\/\/[^\s<>]+/
-
+// A bare address stops at white space; this gives back the punctuation that closes a
+// sentence or a parenthesis around it.
 const trimmedAddress = (text: string): string => {
   let address = text
   for (;;) {
@@ -77,20 +74,49 @@ const trimmedAddress = (text: string): string => {
   }
 }
 
+// What a scan of one text learned, so text full of marks that never close is read in
+// one pass rather than once per mark: a backtick run that has no twin after some point has
+// none after any later one, and nor has a closing mark.
+type Misses = {
+  readonly runs: Set<string>
+  readonly closers: Map<string, number>
+}
+
+const ticks = /`+/y
+const autolink = /<(https?:\/\/[^\s<>]+)>/y
+const address = /https?:\/\/[^\s<>]+/y
+
+const matchAt = (pattern: RegExp, text: string, at: number): RegExpExecArray | null => {
+  pattern.lastIndex = at
+  return pattern.exec(text)
+}
+
+// The twin of the backtick run at `at`, or -1.
+const twinOf = (text: string, run: string, at: number, misses: Misses): number => {
+  if (misses.runs.has(run)) return -1
+  const end = text.indexOf(run, at + run.length)
+  if (end < 0) misses.runs.add(run)
+  return end
+}
+
 // The index of `close` in `text` from `from`, skipping what a backslash escapes and the
 // inside of code spans; -1 when absent.
-const closer = (text: string, close: string, from: number): number => {
+const closer = (text: string, close: string, from: number, misses: Misses): number => {
   for (let i = from; i < text.length; i++) {
     if (text[i] === "\\") i++
     else if (text[i] === "`") {
-      const run = /^`+/.exec(text.slice(i))![0]
-      const end = text.indexOf(run, i + run.length)
-      if (end < 0) i += run.length - 1
-      else i = end + run.length - 1
+      const run = matchAt(ticks, text, i)![0]
+      const end = twinOf(text, run, i, misses)
+      i = end < 0 ? i + run.length - 1 : end + run.length - 1
     } else if (text.startsWith(close, i)) return i
   }
   return -1
 }
+
+// How far a link's label and its address may run: a bracket or parenthesis that closes
+// further on is text.
+const labelSpan = 300
+const addressSpan = 1000
 
 // The text of `[label](address "title")` at `from`, or undefined where it isn't one.
 const linkAt = (
@@ -99,26 +125,29 @@ const linkAt = (
 ): { readonly label: string; readonly href: string; readonly end: number } | undefined => {
   let depth = 0
   let i = from
-  for (; i < text.length; i++) {
+  const labelEnd = Math.min(text.length, from + labelSpan)
+  for (; i < labelEnd; i++) {
     if (text[i] === "\\") i++
     else if (text[i] === "[") depth++
     else if (text[i] === "]" && --depth === 0) break
   }
-  if (i >= text.length || text[i + 1] !== "(") return undefined
+  if (i >= labelEnd || text[i + 1] !== "(") return undefined
   let parens = 0
   let j = i + 2
-  for (; j < text.length; j++) {
+  const addressEnd = Math.min(text.length, j + addressSpan)
+  for (; j < addressEnd; j++) {
     if (text[j] === "\\") j++
     else if (text[j] === "(") parens++
     else if (text[j] === ")" && parens-- === 0) break
   }
-  if (j >= text.length) return undefined
+  if (j >= addressEnd) return undefined
   const target = text.slice(i + 2, j).trim()
   const href = /^<([^>]*)>/.exec(target)?.[1] ?? /^\S+/.exec(target)?.[0] ?? ""
   return { label: text.slice(from + 1, i), href, end: j + 1 }
 }
 
 export const parseInline = (text: string): readonly Inline[] => {
+  const misses: Misses = { runs: new Set(), closers: new Map() }
   const out: Inline[] = []
   let plain = ""
   const flush = (): void => {
@@ -132,7 +161,6 @@ export const parseInline = (text: string): readonly Inline[] => {
   let i = 0
   while (i < text.length) {
     const char = text[i]!
-    const rest = text.slice(i)
     if (char === "\\" && i + 1 < text.length) {
       if (text[i + 1] === "\n") {
         flush()
@@ -143,8 +171,8 @@ export const parseInline = (text: string): readonly Inline[] => {
       continue
     }
     if (char === "`") {
-      const run = /^`+/.exec(rest)![0]
-      const end = text.indexOf(run, i + run.length)
+      const run = matchAt(ticks, text, i)![0]
+      const end = twinOf(text, run, i, misses)
       if (end > 0) {
         flush()
         const code = text.slice(i + run.length, end).replace(/\n/g, " ")
@@ -173,31 +201,27 @@ export const parseInline = (text: string): readonly Inline[] => {
       }
     }
     if (char === "<") {
-      const auto = /^<((?:https?:\/\/|mailto:)[^\s<>]+)>/.exec(rest)
+      const auto = matchAt(autolink, text, i)
       const href = auto && safeHref(auto[1]!)
       if (auto && href) {
         flush()
-        out.push({
-          t: "link",
-          href,
-          children: [{ t: "text", text: auto[1]! }],
-        })
+        out.push({ t: "link", href, children: [{ t: "text", text: auto[1]! }] })
         i += auto[0].length
         continue
       }
     }
     if (char === "h" && (i === 0 || !/\w/.test(text[i - 1]!))) {
-      const match = bareLink.exec(rest)
-      const address = match && trimmedAddress(match[0])
-      const href = address && safeHref(address)
-      if (address && href) {
+      const match = matchAt(address, text, i)
+      const trimmed = match && trimmedAddress(match[0])
+      const href = trimmed && safeHref(trimmed)
+      if (trimmed && href) {
         flush()
-        out.push({ t: "link", href, children: [{ t: "text", text: address }] })
-        i += address.length
+        out.push({ t: "link", href, children: [{ t: "text", text: trimmed }] })
+        i += trimmed.length
         continue
       }
     }
-    const emphasis = emphasisAt(text, i)
+    const emphasis = emphasisAt(text, i, misses)
     if (emphasis) {
       wrap(emphasis.kind, emphasis.inner)
       i = emphasis.end
@@ -224,12 +248,9 @@ const marks = [
 const emphasisAt = (
   text: string,
   from: number,
+  misses: Misses,
 ):
-  | {
-      readonly kind: "strong" | "em" | "del"
-      readonly inner: string
-      readonly end: number
-    }
+  | { readonly kind: "strong" | "em" | "del"; readonly inner: string; readonly end: number }
   | undefined => {
   for (const [mark, kind] of marks) {
     if (!text.startsWith(mark, from) || space.test(text[from + mark.length] ?? " ")) continue
@@ -237,15 +258,19 @@ const emphasisAt = (
     if (underscore && from > 0 && /\w/.test(text[from - 1]!)) continue
     // A single mark does not open on the first character of its double.
     if (mark.length === 1 && text[from + 1] === mark) continue
-    let end = closer(text, mark, from + mark.length)
-    while (end >= 0 && space.test(text[end - 1]!)) end = closer(text, mark, end + mark.length)
-    if (end < 0 || end === from + mark.length) continue
-    if (underscore && /\w/.test(text[end + mark.length] ?? " ")) continue
-    return {
-      kind,
-      inner: text.slice(from + mark.length, end),
-      end: end + mark.length,
+    const start = from + mark.length
+    // No closing mark was found from an earlier start, so none is from this one.
+    if ((misses.closers.get(mark) ?? Infinity) <= start) continue
+    let end = closer(text, mark, start, misses)
+    while (end >= 0 && space.test(text[end - 1]!))
+      end = closer(text, mark, end + mark.length, misses)
+    if (end < 0) {
+      misses.closers.set(mark, Math.min(misses.closers.get(mark) ?? Infinity, start))
+      continue
     }
+    if (end === start) continue
+    if (underscore && /\w/.test(text[end + mark.length] ?? " ")) continue
+    return { kind, inner: text.slice(start, end), end: end + mark.length }
   }
   return undefined
 }
@@ -327,7 +352,9 @@ const parseList = (
       const line = lines[i]!
       if (isBlank(line)) {
         // A blank line ends the item unless more of it follows, indented.
-        const after = lines.slice(i + 1).find((each) => !isBlank(each))
+        let next = i + 1
+        while (next < lines.length && isBlank(lines[next]!)) next++
+        const after = lines[next]
         if (after === undefined || indentOf(after) < 2) break
         tight = false
         body.push("")

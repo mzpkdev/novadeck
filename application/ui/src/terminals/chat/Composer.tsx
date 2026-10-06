@@ -24,6 +24,8 @@ export const Composer = ({
   readonly draft: string
   readonly onDraft: (draft: string) => void
   readonly working: boolean
+  // Resolves once the agent has it; clearing the draft is the owner's, which may outlive
+  // this box. A failure leaves the draft as it is.
   readonly onSend: (text: string) => Promise<void>
   readonly onStop: () => Promise<void>
   // Keyboard navigation asks for focus here; call `onInputFocused` once it's there.
@@ -62,8 +64,8 @@ export const Composer = ({
     onSend(text).then(
       () => {
         if (!mounted.current) return
+        // The draft goes with the send: the owner clears it, mounted or not.
         setSending(false)
-        onDraft("")
       },
       (failure: unknown) => {
         if (!mounted.current) return
@@ -116,12 +118,6 @@ export const Composer = ({
             if (error) setError(null)
           }}
           onKeyDown={(event) => {
-            // The box keeps Escape: it must not reach the terminal beneath or the keys
-            // that navigate the workspace.
-            if (event.key === "Escape") {
-              event.stopPropagation()
-              return
-            }
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return
             // A modified Enter belongs to the workspace's shortcuts.
             if (event.ctrlKey || event.metaKey || event.altKey) return

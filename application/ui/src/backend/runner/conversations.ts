@@ -37,6 +37,10 @@ export const graceMs = 30_000
 // milliseconds.
 export const settleMs = 500
 
+// How long a transcript may be open without a batch before it counts as read: the runner
+// sends none for a session whose file is empty, and goes on following it, in milliseconds.
+export const loadedMs = 1000
+
 type Stream<T> = AsyncIterableIterator<T, undefined>
 
 const end = (stream: Stream<unknown> | undefined): void => {
@@ -95,7 +99,10 @@ const sameRequests = (a: readonly ChatRequest[], b: readonly ChatRequest[]): boo
 // What the person is told when the agent can't take what they sent.
 const failure = (error: unknown, what: string): Error => {
   if (hasCode(error, "DISCONNECTED", "CLOSED")) return new Error("The runner is offline.")
-  if (hasCode(error, "CONFLICT")) return new Error("No agent is at its prompt to take that.")
+  if (hasCode(error, "CONFLICT"))
+    return new Error(
+      "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
+    )
   if (hasCode(error, "PROMPT_FAILED"))
     return new Error("The prompt didn't land in the agent's box. It may be there as a draft.")
   return new Error(`Couldn't ${what} the agent.`)
@@ -128,6 +135,12 @@ const read = (
       return
     }
     transcript = stream
+    // A transcript with nothing in it sends no batch: once it has been quiet a while, what
+    // shows is all there is yet.
+    const quiet = setTimeout(() => {
+      if (alive && transcript === stream)
+        store.update((current) => (current.loaded ? current : { ...current, loaded: true }))
+    }, loadedMs)
     // After a reset the read again builds here while the old items stay on show.
     let pending: readonly ChatItem[] | null = null
     const swap = (): void => {
@@ -166,6 +179,7 @@ const read = (
       }
       // Ended, as when the agent left the session: the next snapshot says what follows.
       if (!alive || transcript !== stream) return
+      clearTimeout(quiet)
       transcript = undefined
       swap()
       store.update((current) => (current.loaded ? current : { ...current, loaded: true }))
@@ -287,12 +301,13 @@ export const createRunnerConversations = (
   const stoppers = new Map<string, () => void>()
 
   return {
-    conversation: (terminalId) => entryOf(terminalId).conversation,
-    send: (terminalId, text) =>
+    // The runner's terminal ids are unique, so the id alone names the terminal.
+    conversation: ({ terminalId }) => entryOf(terminalId).conversation,
+    send: ({ terminalId }, text) =>
       track(streams.prompt(terminalId, text)).catch((error: unknown) => {
         throw failure(error, "reach")
       }),
-    interrupt: (terminalId) =>
+    interrupt: ({ terminalId }) =>
       track(streams.interrupt(terminalId)).catch((error: unknown) => {
         throw failure(error, "stop")
       }),

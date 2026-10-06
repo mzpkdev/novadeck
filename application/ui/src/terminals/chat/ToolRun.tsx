@@ -10,7 +10,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react"
-import { useId, useState } from "react"
+import { useId, useMemo, useState } from "react"
 
 import {
   inputText,
@@ -62,10 +62,13 @@ const ToolRow = ({
 }): React.JSX.Element => {
   const [open, setOpen] = useState(false)
   const body = useId()
-  const summary =
-    entry.tool === null
-      ? { kind: "other" as const, title: "Result", detail: "" }
-      : toolSummary(entry.tool, entry.input)
+  const summary = useMemo(
+    () =>
+      entry.tool === null
+        ? { kind: "other" as const, title: "Result", detail: "" }
+        : toolSummary(entry.tool, entry.input),
+    [entry.tool, entry.input],
+  )
   const Icon = icons[summary.kind]
   return (
     <li className="chat-tool" data-kind={summary.kind} data-running={running || undefined}>

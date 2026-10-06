@@ -5,6 +5,7 @@ import {
   groupItems,
   inputText,
   patchFiles,
+  sameBlock,
   toolSummary,
   turnStatus,
 } from "./conversation-turns"
@@ -94,6 +95,21 @@ describe("grouping a conversation's items", () => {
       item({ role: "user", text: "[Request interrupted by user for tool use]" }),
     ])
     expect(block).toMatchObject({ kind: "note", text: "Interrupted" })
+  })
+})
+
+describe("telling blocks apart", () => {
+  it("finds the blocks of two groupings of the same items the same", () => {
+    const items = [item({ role: "user", text: "hi" }), call("Read", "a"), result("a", "x")]
+    const [first, second] = [groupItems(items), groupItems(items)]
+    expect(first.every((block, index) => sameBlock(block, second[index]!))).toBe(true)
+  })
+
+  it("finds a run that gained its result different", () => {
+    const calls = [call("Bash", "b")]
+    const before = groupItems(calls)[0]!
+    const after = groupItems([...calls, result("b", "done")])[0]!
+    expect(sameBlock(before, after)).toBe(false)
   })
 })
 

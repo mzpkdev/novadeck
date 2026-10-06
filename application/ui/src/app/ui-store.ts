@@ -13,7 +13,7 @@ import { writePreferences } from "../preferences/preferences-storage"
 import { initialShell, resetPresentation, type ShellState } from "../shell/shell-state"
 import { writeSidebarCollapsed, writeWindowedView } from "../shell/shell-storage"
 import {
-  chatAvailable,
+  chatKept,
   keepChatDrafts,
   keepChatModes,
   noChatDrafts,
@@ -261,7 +261,7 @@ export const watchChatModes = (workspace: Store<Workspace>, ui: UiStore): (() =>
     const terminals = terminalsOf(snapshot)
     const keep = (context: string, id: string): boolean => {
       const terminal = terminals.get(`${context}/${id}`)
-      return terminal !== undefined && chatAvailable(terminal)
+      return terminal !== undefined && chatKept(terminal)
     }
     ui.update((state) => {
       const chat = keepChatModes(state.chat, keep)

@@ -6,6 +6,7 @@ import { describe, expect, it } from "../../test"
 import {
   createRunnerConversations,
   graceMs,
+  loadedMs,
   settleMs,
   type ConversationStreams,
 } from "./conversations"
@@ -73,6 +74,8 @@ const pushed = <T>() => {
   }
 }
 
+const key = { projectId: "p", workspaceSessionId: "s", terminalId: "t" }
+
 const setup = () => {
   const details = pushed<AgentDetail>()
   const transcripts: Record<string, ReturnType<typeof pushed<TranscriptChange>>> = {}
@@ -87,7 +90,7 @@ const setup = () => {
     interrupt: vi.fn<ConversationStreams["interrupt"]>(async () => {}),
   }
   const conversations = createRunnerConversations(streams)
-  const store = conversations.conversation("t")
+  const store = conversations.conversation(key)
   return { details, transcripts, streams, conversations, store }
 }
 
@@ -100,12 +103,24 @@ describe("the runner's conversations", () => {
   describe("reading", () => {
     it("starts with the first subscriber and gives the same store for a terminal", async () => {
       const { conversations, streams, store } = setup()
-      expect(conversations.conversation("t")).toBe(store)
+      expect(conversations.conversation(key)).toBe(store)
       expect(streams.detail).not.toHaveBeenCalled()
       const stop = store.subscribe(() => {})
       store.subscribe(() => {})
       expect(streams.detail).toHaveBeenCalledTimes(1)
       stop()
+    })
+
+    it("counts a session whose transcript stays empty as loaded after a moment", async () => {
+      const { details, store } = setup()
+      store.subscribe(() => {})
+      details.push(detail())
+      await settle()
+      expect(store.getSnapshot()).toMatchObject({ session: "s1", loaded: false })
+      await vi.advanceTimersByTimeAsync(loadedMs - 1)
+      expect(store.getSnapshot().loaded).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(store.getSnapshot()).toMatchObject({ loaded: true, items: [] })
     })
 
     it("stops a grace period after the last subscriber left, ending its streams", async () => {
@@ -385,8 +400,8 @@ describe("the runner's conversations", () => {
   describe("sending", () => {
     it("gives the prompt to the runner and stops the turn on interrupt", async () => {
       const { conversations, streams } = setup()
-      await conversations.send("t", "hello")
-      await conversations.interrupt("t")
+      await conversations.send(key, "hello")
+      await conversations.interrupt(key)
       expect(streams.prompt).toHaveBeenCalledWith("t", "hello")
       expect(streams.interrupt).toHaveBeenCalledWith("t")
     })
@@ -394,23 +409,26 @@ describe("the runner's conversations", () => {
     it.each([
       ["DISCONNECTED", "The runner is offline."],
       ["CLOSED", "The runner is offline."],
-      ["CONFLICT", "No agent is at its prompt to take that."],
+      [
+        "CONFLICT",
+        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
+      ],
       ["PROMPT_FAILED", "The prompt didn't land in the agent's box. It may be there as a draft."],
       ["INTERNAL_SERVER_ERROR", "Couldn't reach the agent."],
     ] as const)("tells the person why a %s failure didn't go", async (code, message) => {
       const { conversations, streams } = setup()
       streams.prompt.mockRejectedValue(new RunnerError(code))
-      await expect(conversations.send("t", "hi")).rejects.toThrow(message)
+      await expect(conversations.send(key, "hi")).rejects.toThrow(message)
     })
 
     it("tells the person why an interrupt didn't go", async () => {
       const { conversations, streams } = setup()
       streams.interrupt.mockRejectedValue(new RunnerError("CONFLICT"))
-      await expect(conversations.interrupt("t")).rejects.toThrow(
-        "No agent is at its prompt to take that.",
+      await expect(conversations.interrupt(key)).rejects.toThrow(
+        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
       )
       streams.interrupt.mockRejectedValue(new Error("boom"))
-      await expect(conversations.interrupt("t")).rejects.toThrow("Couldn't stop the agent.")
+      await expect(conversations.interrupt(key)).rejects.toThrow("Couldn't stop the agent.")
     })
   })
 })

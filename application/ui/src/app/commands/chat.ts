@@ -1,6 +1,7 @@
 import {
   chatAvailable,
   chatModeOn,
+  chatDraftOf,
   setChatDraft,
   setChatMode,
 } from "../../terminals/chat/mode-state"
@@ -18,6 +19,9 @@ export type ChatCommands = {
   readonly showTerminal: (terminalId: string) => void
   // Keeps what the person has typed in the terminal's chat and not sent.
   readonly setChatDraft: (terminalId: string, text: string) => void
+  // Clears the draft a prompt was sent from, in the session it was sent in, if the person
+  // hasn't changed it since: whether or not the chat is still on screen.
+  readonly clearChatDraft: (context: string, terminalId: string, sent: string) => void
 }
 
 export const createChatCommands = (ctx: CommandContext): ChatCommands => {
@@ -50,5 +54,11 @@ export const createChatCommands = (ctx: CommandContext): ChatCommands => {
         return chatDrafts === state.chatDrafts ? state : { ...state, chatDrafts }
       })
     },
+    clearChatDraft: (context, terminalId, sent) =>
+      void ui.update((state) =>
+        chatDraftOf(state.chatDrafts, context, terminalId).trim() === sent.trim()
+          ? { ...state, chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, "") }
+          : state,
+      ),
   }
 }

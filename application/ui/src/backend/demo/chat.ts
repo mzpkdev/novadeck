@@ -8,6 +8,7 @@ import type { WorkspaceSeed } from "../../model/seed"
 import { createStore, type MutableStore } from "../../model/store"
 import type { AgentStatus, TerminalMetadata, Workspace } from "../../model/types"
 import type { TerminalKey } from "../port"
+import { terminalKeyId } from "../registry"
 import { chatAgent, chatAgents } from "./samples"
 import type { DemoTranscript } from "./transcripts"
 import type { DemoTurns, TurnEvent } from "./turns"
@@ -80,89 +81,68 @@ export const createDemoChat = (
   turns: DemoTurns,
 ): DemoChat => {
   let latest: Workspace | undefined
-  const stores = new Map<string, MutableStore<Conversation>>()
-  // Terminal ids repeat across projects; the active project's terminal answers first.
-  const locate = (terminalId: string): Found | undefined => {
-    if (latest) {
-      const projects = [
-        ...latest.projects.filter((project) => project.id === latest!.activeProjectId),
-        ...latest.projects,
-      ]
-      for (const project of projects)
-        for (const session of project.history) {
-          const terminal = session.state.roster.terminals.find((each) => each.id === terminalId)
-          if (terminal)
-            return {
-              key: {
-                projectId: project.id,
-                workspaceSessionId: session.id,
-                terminalId,
-              },
-              terminal,
-            }
-        }
-      return undefined
-    }
-    for (const project of seed.projects)
-      for (const session of project.sessions) {
-        const terminal = session.terminals.find((each) => each.id === terminalId)
-        if (terminal)
-          return {
-            key: {
-              projectId: project.id,
-              workspaceSessionId: session.id,
-              terminalId,
-            },
-            terminal,
-          }
-      }
-    return undefined
+  const stores = new Map<string, { key: TerminalKey; store: MutableStore<Conversation> }>()
+  // The terminal at the full address, in the workspace as it stands, or in the seed.
+  const locate = (key: TerminalKey): Found | undefined => {
+    const terminals = latest
+      ? latest.projects
+          .find((project) => project.id === key.projectId)
+          ?.history.find((session) => session.id === key.workspaceSessionId)?.state.roster.terminals
+      : seed.projects
+          .find((project) => project.id === key.projectId)
+          ?.sessions.find((session) => session.id === key.workspaceSessionId)?.terminals
+    const terminal = terminals?.find((each) => each.id === key.terminalId)
+    return terminal ? { key, terminal } : undefined
   }
   const opened = (found: Found | undefined): Conversation => {
     if (!runs(found)) return noConversation
-    const transcript = transcripts[found.terminal.id]
+    // The sample transcripts belong to the first project's terminals, as the engine's
+    // sample terminals do; another project's agents start empty.
+    const transcript =
+      found.key.projectId === seed.projects[0]?.id ? transcripts[found.terminal.id] : undefined
     return {
       agent: found.terminal.process,
-      session: `demo-${found.terminal.id}`,
+      session: `demo-${terminalKeyId(found.key)}`,
       loaded: true,
       items: transcript?.items ?? [],
       requests: transcript?.requests ?? [],
     }
   }
-  const storeOf = (terminalId: string): MutableStore<Conversation> => {
-    const existing = stores.get(terminalId)
-    if (existing) return existing
-    const store = createStore(opened(locate(terminalId)))
-    stores.set(terminalId, store)
+  const storeOf = (key: TerminalKey): MutableStore<Conversation> => {
+    const id = terminalKeyId(key)
+    const existing = stores.get(id)
+    if (existing) return existing.store
+    const store = createStore(opened(locate(key)))
+    stores.set(id, { key, store })
     return store
   }
-  const append = (terminalId: string, ...drafts: Omit<ChatItem, "id" | "at" | "truncated">[]) =>
-    storeOf(terminalId).update((conversation) => ({
+  const append = (key: TerminalKey, ...drafts: Omit<ChatItem, "id" | "at" | "truncated">[]) =>
+    storeOf(key).update((conversation) => ({
       ...conversation,
       items: [
         ...conversation.items,
         ...drafts.map((draft, index) => ({
           ...draft,
-          id: `${terminalId}:${conversation.items.length + index + 1}`,
+          id: `${terminalKeyId(key)}:${conversation.items.length + index + 1}`,
           at: Date.now(),
           truncated: false,
         })),
       ],
     }))
   turns.watch((event: TurnEvent) => {
-    const { terminalId } = event.key
-    if (event.type === "begin") append(terminalId, text("user", event.prompt))
+    const { key } = event
+    if (event.type === "begin") append(key, text("user", event.prompt))
     else if (event.type === "tool") {
-      const found = locate(terminalId)
+      const found = locate(key)
       if (!found) return
-      const items = storeOf(terminalId).getSnapshot().items
+      const items = storeOf(key).getSnapshot().items
       const run = toolRun(
         String(found.terminal.process),
         found.terminal,
         `demo-call-${items.length}`,
       )
       append(
-        terminalId,
+        key,
         {
           role: "assistant",
           kind: "tool-call",
@@ -181,16 +161,16 @@ export const createDemoChat = (
         },
       )
     } else if (event.outcome === "completed" && event.reply) {
-      append(terminalId, text("assistant", event.reply))
+      append(key, text("assistant", event.reply))
     } else {
       // A refused request is answered.
-      storeOf(terminalId).update((conversation) =>
+      storeOf(key).update((conversation) =>
         conversation.requests.length ? { ...conversation, requests: [] } : conversation,
       )
     }
   })
-  const agentFor = (terminalId: string): Found => {
-    const found = locate(terminalId)
+  const agentFor = (key: TerminalKey): Found => {
+    const found = locate(key)
     if (!runs(found))
       throw new Error(
         "No agent is running in this terminal. Start Claude Code, Codex or Antigravity in it first.",
@@ -200,8 +180,8 @@ export const createDemoChat = (
   return {
     conversations: {
       conversation: storeOf,
-      send: async (terminalId, prompt) => {
-        const found = agentFor(terminalId)
+      send: async (key, prompt) => {
+        const found = agentFor(key)
         const name = chatAgents[chatAgent(found.terminal)!]
         const agent = agentOf(found.terminal)
         if (agent.attention)
@@ -213,15 +193,15 @@ export const createDemoChat = (
         if (!prompt.trim()) return
         turns.prompt(prompt, found.terminal, found.key)
       },
-      interrupt: async (terminalId) => {
-        const found = agentFor(terminalId)
+      interrupt: async (key) => {
+        const found = agentFor(key)
         turns.interrupt(found.key, agentOf(found.terminal))
       },
     },
     observe: (workspace) => {
       latest = workspace
-      for (const [terminalId, store] of stores) {
-        const found = locate(terminalId)
+      for (const { key, store } of stores.values()) {
+        const found = locate(key)
         store.update((conversation) => {
           if (!runs(found)) return conversation.agent === null ? conversation : noConversation
           if (conversation.agent === null) return opened(found)

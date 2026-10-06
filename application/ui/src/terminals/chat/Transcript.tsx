@@ -1,6 +1,6 @@
 import { memo } from "react"
 
-import type { ChatBlock } from "../../model/conversation-turns"
+import { sameBlock, type ChatBlock } from "../../model/conversation-turns"
 import { Markdown } from "./Markdown"
 import { ToolRun } from "./ToolRun"
 
@@ -57,6 +57,11 @@ const BlockView = memo(
         return <ToolRun entries={block.entries} live={live} />
     }
   },
+  // Grouping makes new blocks each time; a block drawn again only when its content changed.
+  (before, after) =>
+    before.agent === after.agent &&
+    before.live === after.live &&
+    sameBlock(before.block, after.block),
 )
 
 // The blocks of a conversation, in order.

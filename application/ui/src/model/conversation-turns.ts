@@ -145,6 +145,38 @@ export const groupItems = (items: readonly ChatItem[]): readonly ChatBlock[] => 
   return blocks
 }
 
+const sameEntry = (a: ToolEntry, b: ToolEntry): boolean =>
+  a.id === b.id &&
+  a.tool === b.tool &&
+  a.input === b.input &&
+  a.truncated === b.truncated &&
+  a.result?.id === b.result?.id &&
+  a.result?.text === b.result?.text &&
+  a.result?.truncated === b.result?.truncated
+
+// Whether two groupings made the same block, so a view can keep what it drew: grouping
+// builds new objects each time, though the items under most of them are the same.
+export const sameBlock = (a: ChatBlock, b: ChatBlock): boolean => {
+  if (a === b) return true
+  if (a.kind === "tools" || b.kind === "tools")
+    return (
+      a.kind === "tools" &&
+      b.kind === "tools" &&
+      a.id === b.id &&
+      a.entries.length === b.entries.length &&
+      a.entries.every((entry, index) => sameEntry(entry, b.entries[index]!))
+    )
+  if (a.kind === "note" || b.kind === "note")
+    return a.kind === "note" && b.kind === "note" && a.id === b.id && a.text === b.text
+  return (
+    a.kind === b.kind &&
+    a.id === b.id &&
+    a.text === b.text &&
+    a.truncated === b.truncated &&
+    (a.kind === "agent" ? a.author === (b as typeof a).author : true)
+  )
+}
+
 // ---- Tool calls, in one line.
 
 export type ToolKind = "run" | "read" | "write" | "search" | "web" | "agent" | "plan" | "other"

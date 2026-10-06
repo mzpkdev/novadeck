@@ -61,15 +61,23 @@ export const noConversation: Conversation = {
   requests: [],
 }
 
+// A terminal by its full address: ids repeat across sessions and projects in some
+// backends, so a conversation is asked for by where its terminal is.
+export type ConversationKey = {
+  readonly projectId: string
+  readonly workspaceSessionId: string
+  readonly terminalId: string
+}
+
 // Where a backend's conversations come from, and how the chat talks back to the agent.
 export type Conversations = {
   // The conversation of the agent in a terminal, following the terminal from session to
   // session: the same store for the same terminal while anyone subscribes. Reading starts
   // with its first subscriber and stops once its last leaves.
-  readonly conversation: (terminalId: string) => Store<Conversation>
+  readonly conversation: (key: ConversationKey) => Store<Conversation>
   // Gives the terminal's agent a prompt as the person would type it into its box, then
   // Enter. Rejects with an Error whose message tells the person why it didn't go.
-  readonly send: (terminalId: string, text: string) => Promise<void>
+  readonly send: (key: ConversationKey, text: string) => Promise<void>
   // Stops the agent's turn, as Escape in its TUI does. Rejects as `send` does.
-  readonly interrupt: (terminalId: string) => Promise<void>
+  readonly interrupt: (key: ConversationKey) => Promise<void>
 }

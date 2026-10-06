@@ -77,6 +77,18 @@ describe("chat commands", () => {
     })
   })
 
+  context("when a sent prompt's draft is cleared", () => {
+    it("clears it where it was sent, unless it has changed since", () => {
+      const app = open({ working: false })
+      app.commands.setChatDraft("01", "go")
+      app.commands.clearChatDraft("project/initial", "01", "go")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({})
+      app.commands.setChatDraft("01", "go on")
+      app.commands.clearChatDraft("project/initial", "01", "go")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "go on" } })
+    })
+  })
+
   context("when the agent ends", () => {
     it("shows the terminal again, and a later agent starts on its screen", () => {
       const app = open({ working: false })
@@ -87,6 +99,32 @@ describe("chat commands", () => {
       expect(app.on()).toBe(false)
       app.status({ working: true })
       expect(app.on()).toBe(false)
+      stop()
+    })
+
+    it("keeps the chat through a restart, and drops it once the terminal settles elsewhere", () => {
+      const app = open({ working: false })
+      const stop = watchChatModes(app.workspace, app.ui)
+      app.commands.toggleChat("01")
+      app.commands.setChatDraft("01", "draft")
+      app.workspace.dispatch({
+        type: "terminal/status",
+        target,
+        terminalId: "01",
+        status: { state: "starting" },
+      })
+      expect(app.on()).toBe(true)
+      expect(app.ui.getSnapshot().chatDrafts).not.toEqual({})
+      app.status({ working: false })
+      expect(app.on()).toBe(true)
+      app.workspace.dispatch({
+        type: "terminal/status",
+        target,
+        terminalId: "01",
+        status: { state: "exited", exitCode: 0, signal: null },
+      })
+      expect(app.on()).toBe(false)
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({})
       stop()
     })
 
