@@ -11,6 +11,7 @@ export const readPreferences = (): PreferencesValue => {
     enabledViews: [...viewModes],
     appearance: defaultPreference(themes),
     notifyFinished: true,
+    ligatures: false,
   }
   try {
     const saved = JSON.parse(
@@ -25,6 +26,7 @@ export const readPreferences = (): PreferencesValue => {
       appearance: appearancePreferenceOf(saved?.appearance, themes),
       notifyFinished:
         typeof saved?.notifyFinished === "boolean" ? saved.notifyFinished : defaults.notifyFinished,
+      ligatures: typeof saved?.ligatures === "boolean" ? saved.ligatures : defaults.ligatures,
     }
   } catch {
     return defaults

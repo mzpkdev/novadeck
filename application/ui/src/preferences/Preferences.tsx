@@ -288,6 +288,20 @@ export const Preferences = ({
                   onOpenChange={(expanded) => setOpenSelect(expanded ? "font-size" : null)}
                   portalContainer={dialog}
                 />
+                <div className={`preference-row ${settingRowClasses}`}>
+                  <SettingText
+                    id="ligatures-label"
+                    label="Ligatures"
+                    description="Join pairs such as => and != into one symbol in terminals and code."
+                    descriptionId="ligatures-description"
+                  />
+                  <Switch
+                    checked={value.ligatures}
+                    onChange={(ligatures) => onChange({ ...value, ligatures })}
+                    labelledBy="ligatures-label"
+                    describedBy="ligatures-description"
+                  />
+                </div>
                 {transcripts && (
                   <div className={`preference-row ${settingRowClasses}`}>
                     <SettingText

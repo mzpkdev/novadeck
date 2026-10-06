@@ -11,7 +11,11 @@
   --border-width: 1px;
   /* Type */
   --font-sans: "Inter Variable", "Inter", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /* JetBrains Mono ships with the app, so terminals look and measure the same on every
+     system. A prompt's icons, which it lacks, fall to a Nerd Font the person installed. */
+  --font-mono:
+    "JetBrains Mono Variable", "Symbols Nerd Font Mono", "Symbols Nerd Font", "SFMono-Regular",
+    Consolas, "Liberation Mono", monospace;
   /* Focus */
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
@@ -50,6 +54,12 @@
 *::-webkit-scrollbar-thumb {
   border-radius: var(--radius-control);
   background: var(--color-line);
+}
+/* Ligatures join pairs such as => into one glyph. They stay off unless the person turns
+   them on in Preferences (data-ligatures on <html>), since a terminal shows what a
+   program printed. */
+:root:not([data-ligatures="on"]) {
+  font-variant-ligatures: none;
 }
 body {
   margin: 0;

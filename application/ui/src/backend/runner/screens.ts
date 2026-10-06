@@ -292,6 +292,21 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     })
     resizes.observe(element)
     window.addEventListener(themeChangeEvent, retheme)
+    // xterm measures its cells once, with whatever font has loaded by then; a bundled font
+    // still on its way arrives later, so the terminal measures and fits again once it has.
+    const fonts = element.ownerDocument.fonts as FontFaceSet | undefined
+    const face = `${xterm.options.fontSize}px ${xterm.options.fontFamily}`
+    if (fonts && !fonts.check(face))
+      fonts.load(face).then(
+        () => {
+          if (gone) return
+          const font = monospace(element)
+          xterm.options.fontFamily = "monospace"
+          xterm.options.fontFamily = font
+          followed.refit()
+        },
+        () => {},
+      )
     runtime.screen(key, "mounted")
     entry.dispose = () => {
       runtime.screen(key, "gone")

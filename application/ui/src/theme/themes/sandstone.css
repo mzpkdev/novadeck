@@ -77,9 +77,11 @@
   --radius-control: 6px;
   --radius-panel: 10px;
   --radius-popover: 12px;
-  /* Type: Inter ships with the app; the mono face prefers fonts installed locally. */
+  /* Type: Inter and JetBrains Mono ship with the app; the mono face falls back to fonts
+     installed locally. */
   --font-mono:
-    "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    "JetBrains Mono Variable", "JetBrains Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font",
+    "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   /* Texture: a plain warm canvas, no grain or dots. */
   --canvas-grain-opacity: 0;
   --canvas-dots-opacity: 0;

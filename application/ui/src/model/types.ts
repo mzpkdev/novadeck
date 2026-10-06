@@ -12,6 +12,9 @@ export type PreferencesValue = {
   // Whether the desktop app notifies the person when an agent finishes while they look
   // elsewhere.
   notifyFinished: boolean
+  // Whether monospace text joins pairs such as => and != into one glyph. Off by default:
+  // a terminal shows what a program printed.
+  ligatures: boolean
 }
 export type Project = { id: string; name: string; directory: string }
 

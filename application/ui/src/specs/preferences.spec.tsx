@@ -62,6 +62,17 @@ const chooseMode = async (name: "System" | "Light" | "Dark"): Promise<void> => {
 const transcriptsSwitch = (): Locator =>
   preferencesDialog().getByRole("switch", { name: "Transcripts" })
 
+const ligaturesSwitch = (): Locator =>
+  preferencesDialog().getByRole("switch", { name: "Ligatures" })
+
+/** A style of a terminal's output text, as drawn. */
+const outputStyle = (property: "fontVariantLigatures" | "fontFamily"): string =>
+  getComputedStyle(
+    terminal("Checkout implementation")
+      .getByText("Nothing to commit, working tree clean.")
+      .element(),
+  )[property]
+
 describe("Preferences", () => {
   context("when choosing whether terminals keep transcripts", () => {
     it("keeps them by default, says they may hold secrets, and turns them off", async () => {
@@ -74,6 +85,23 @@ describe("Preferences", () => {
       await closePreferences()
       await openPreferences()
       await expect.element(transcriptsSwitch()).toHaveAttribute("aria-checked", "false")
+    })
+  })
+
+  context("when choosing whether to join ligatures", () => {
+    it("draws terminals in the bundled mono without them, then joins them once turned on", async () => {
+      await openWorkspace()
+      expect(outputStyle("fontFamily")).toMatch(/^"JetBrains Mono Variable"/)
+      expect(outputStyle("fontVariantLigatures")).toBe("none")
+      await openPreferences()
+      await expect.element(ligaturesSwitch()).toHaveAttribute("aria-checked", "false")
+      await ligaturesSwitch().click()
+      await expect.element(ligaturesSwitch()).toHaveAttribute("aria-checked", "true")
+      await closePreferences()
+
+      await expect.poll(() => outputStyle("fontVariantLigatures")).toBe("normal")
+      await reloadWorkspace()
+      await expect.poll(() => outputStyle("fontVariantLigatures")).toBe("normal")
     })
   })
 
