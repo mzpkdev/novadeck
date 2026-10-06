@@ -1,6 +1,6 @@
+import { createBootRehearsals } from "../backend/boot-rehearsal"
 import { createDemoBackend } from "../backend/demo"
 import { createContentDemo } from "../backend/demo/content"
-import { createDemoConnection } from "../backend/demo/debug/connect"
 import type { BackendSelection } from "../backend/port"
 
 // The only place that chooses a backend adapter. Tests and specs run on the demo;
@@ -12,6 +12,19 @@ const runnerSelection = (): BackendSelection => ({
     (await import("../backend/runner")).connectRunnerBackend(signal, progress),
 })
 
+// The content preview's demo, with its debug panel, loads with the connection too, so
+// no build for a runner carries it.
+const demoSelection = (): BackendSelection => {
+  const rehearsals = createBootRehearsals()
+  const connect = import("../backend/demo/debug/connect").then(({ connectDemo }) =>
+    connectDemo(rehearsals),
+  )
+  return {
+    connect: async (signal, progress) => (await connect)(signal, progress),
+    reboots: rehearsals.reboots,
+  }
+}
+
 // Specs open the content demo, with its agents' plans and artifacts, by adding
 // `?demo=showcase` to the address's hash. The address is read when the workspace
 // mounts, since each spec sets its own.
@@ -20,7 +33,7 @@ const showcaseRequested = (): boolean =>
 
 export const selectBackend: BackendSelection =
   import.meta.env.MODE === "content-preview"
-    ? createDemoConnection()
+    ? demoSelection()
     : import.meta.env.MODE === "test"
       ? { createBackend: () => (showcaseRequested() ? createContentDemo() : createDemoBackend()) }
       : runnerSelection()

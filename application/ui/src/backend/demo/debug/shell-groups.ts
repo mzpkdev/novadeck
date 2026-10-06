@@ -28,7 +28,7 @@ export const shellGroups = ({
     .filter((variant) => variant !== "welcome")
     .map((variant) => ({
       label: `${variant}${variant === launch.variant ? " (current)" : ""}`,
-      hint: "Boots again into this demo; the address keeps it as ?demo=.",
+      hint: "Boots again into this demo; a reload in this tab keeps it.",
       run: () => launch.switchVariant(variant),
     }))
   return [

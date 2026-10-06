@@ -528,7 +528,8 @@ connection state, the crash-loop count, and the terminal count.
 
 `?demo=` in the address's hash picks the variant: `showcase` (the default, with the
 sample agents' plans and artifacts), `plain`, `agents`, `messages` or `welcome`. The
-Demo group switches between them without reloading.
+Demo group switches between them without reloading, and the browser tab remembers the
+last one chosen.
 
 - **All at once:** add one terminal per state, named after it, so the tabs and the
   windows in Grid and Canvas show attention, done, error, ended and the rest side by

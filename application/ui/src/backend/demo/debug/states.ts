@@ -1,3 +1,4 @@
+import { isAgentProgram } from "../../../model/process"
 import { createStore } from "../../../model/store"
 import type { AgentStatus, AgentTurnEnd } from "../../../model/types"
 import type { BackendAction, TerminalKey } from "../../port"
@@ -78,11 +79,29 @@ const agentAction = (
     dispatch(agentIn(key, terminalOf(workspace(), key), status(Date.now()))),
   )
 
+// Ends the agent's turn a moment later, unless its terminal no longer runs it, as after
+// a restart back to the shell.
+const endLater = (
+  key: TerminalKey,
+  outcome: AgentTurnEnd["outcome"],
+  {
+    dispatch,
+    workspace,
+  }: Pick<DemoActionContext, "workspace"> & {
+    readonly dispatch: NonNullable<DemoActionContext["dispatch"]>
+  },
+): void =>
+  later(turnMs, () => {
+    const terminal = terminalOf(workspace(), key)
+    if (terminal?.state !== "running" || !isAgentProgram(terminal.process)) return
+    dispatch(agentSays(key, turnEnded(outcome, Date.now())))
+  })
+
 // The agent works, then its turn ends the way asked.
 const endingAction = (outcome: AgentTurnEnd["outcome"], label: string, hint: string): DemoAction =>
-  onSelected(label, hint, (key, { dispatch, workspace }) => {
-    dispatch(agentIn(key, terminalOf(workspace(), key), working))
-    later(turnMs, () => dispatch(agentSays(key, turnEnded(outcome, Date.now()))))
+  onSelected(label, hint, (key, context) => {
+    context.dispatch(agentIn(key, terminalOf(context.workspace(), key), working))
+    endLater(key, outcome, context)
   })
 
 // A terminal that is added and then fails to start.
@@ -154,9 +173,10 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
     if (!current) return note("Select a terminal first.")
     const other = othersOf(workspace(), current)[0]
     if (!other) return note("Add a second terminal first.")
+    if (!dispatch) return
     const key = { ...current, terminalId: other.id }
-    dispatch?.(agentIn(key, other, working))
-    later(turnMs, () => dispatch?.(agentSays(key, turnEnded(outcome, Date.now()))))
+    dispatch(agentIn(key, other, working))
+    endLater(key, outcome, { dispatch, workspace })
   },
 })
 

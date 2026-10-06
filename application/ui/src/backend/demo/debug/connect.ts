@@ -1,4 +1,4 @@
-import { createBootRehearsals, type BootRehearsals } from "../../boot-rehearsal"
+import type { BootRehearsals } from "../../boot-rehearsal"
 import type { BackendConnection, ConnectBackend } from "../../port"
 import { rememberVariant, requestedVariant } from "../variants"
 import { bootFailures } from "./boot-failures"
@@ -36,12 +36,4 @@ export const connectDemo = (rehearsals: BootRehearsals): ConnectBackend => {
     }
     return { createBackend: () => createDebugDemo(launch), close: () => {} }
   }
-}
-
-export const createDemoConnection = (): {
-  readonly connect: ConnectBackend
-  readonly reboots: BootRehearsals["reboots"]
-} => {
-  const rehearsals = createBootRehearsals()
-  return { connect: connectDemo(rehearsals), reboots: rehearsals.reboots }
 }

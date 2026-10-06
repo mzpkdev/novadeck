@@ -1,6 +1,7 @@
 // The demo's debug panel: puts the demo in the states the real backend can be in, for
 // manual checks. A round button floating at the page's bottom right opens it, as dev
 // toolbars do, and the panel rises out of it; see README "Debug panel".
+import "./debug-panel.css"
 import { Bug, ChevronRight, X } from "lucide-react"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
@@ -88,6 +89,22 @@ export const createDebugPanel = ({
     return (
       <>
         <Notices />
+        <button
+          ref={toggle}
+          type="button"
+          aria-expanded={open}
+          aria-controls="debug-panel"
+          aria-label={open ? "Close the debug panel" : "Open the debug panel"}
+          className="debug-floater fixed right-5 bottom-12 z-50 flex size-12 items-center justify-center"
+          onClick={(event) => {
+            event.stopPropagation()
+            setTerminals(shell.terminals())
+            setOpen((value) => !value)
+          }}
+        >
+          {open ? <X size={20} aria-hidden /> : <Bug size={22} aria-hidden />}
+        </button>
+        {/* After its button, so Tab goes on from the button into the panel. */}
         {open && (
           <aside
             id="debug-panel"
@@ -173,21 +190,6 @@ export const createDebugPanel = ({
             <span aria-hidden className="debug-panel-tail absolute right-4.5 -bottom-1.5 size-3" />
           </aside>
         )}
-        <button
-          ref={toggle}
-          type="button"
-          aria-expanded={open}
-          aria-controls="debug-panel"
-          aria-label={open ? "Close the debug panel" : "Open the debug panel"}
-          className="debug-floater fixed right-5 bottom-12 z-50 flex size-12 items-center justify-center"
-          onClick={(event) => {
-            event.stopPropagation()
-            setTerminals(shell.terminals())
-            setOpen((value) => !value)
-          }}
-        >
-          {open ? <X size={20} aria-hidden /> : <Bug size={22} aria-hidden />}
-        </button>
       </>
     )
   }

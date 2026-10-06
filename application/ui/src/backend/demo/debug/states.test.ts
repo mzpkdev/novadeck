@@ -129,6 +129,15 @@ describe("demo states", () => {
       expect(terminal("04")).toMatchObject({ agent: { lastTurn: { outcome: "failed" } } })
     })
 
+    it("leaves a turn unended once the terminal is back at its shell", () => {
+      const { run, terminal } = panel("04")
+      run("Turn completed")
+      run("Back at the prompt")
+      vi.advanceTimersByTime(3000)
+      expect(terminal("04")).toMatchObject({ process: "zsh", state: "idle" })
+      expect(terminal("04")).not.toHaveProperty("agent")
+    })
+
     it("lets an unheard agent say nothing", () => {
       const { run, terminal } = panel("04")
       run("Unheard agent")
