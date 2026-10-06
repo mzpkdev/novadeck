@@ -6,6 +6,7 @@ import type { WorkspaceSeed } from "../model/seed"
 import type { WorkspaceAction } from "../model/state"
 import type { Store } from "../model/store"
 import type { TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
+import type { Voice } from "../model/voice"
 
 // The UI-owned contract every terminal backend implements. Only app/ talks to it.
 
@@ -170,6 +171,12 @@ export type Backend = {
   // The pane needs `companions`: a backend with messages and nothing else to show passes
   // `emptyCompanions()`.
   readonly messages?: Messages
+  // Optional. Voice input: the person speaks, and the backend transcribes it on its
+  // machine. Absent where the backend cannot transcribe.
+  readonly voice?: Voice
+  // Optional. Types text into a terminal as a paste, bracketed where its program asks,
+  // without pressing Enter, as dictation does. Absent where terminals take no input.
+  readonly typeInto?: (key: TerminalKey, text: string) => void
   // Optional. Hands a terminal's name back to the backend, which names it on its own
   // again: the name the person gave it goes, and the backend reports the one it takes
   // with `terminal/update`. Absent where names are only the person's.
