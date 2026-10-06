@@ -61,6 +61,10 @@ export type DictationDeps = {
   readonly after: (milliseconds: number, run: () => void) => () => void
 }
 
+// What a clip's microphone has handed over. It stays open past the person's stop, while
+// the microphone lets the last words in, which a bump of `generation` would cut.
+type Recording = { open: boolean; appended: number }
+
 export type DictationController = {
   readonly dictation: Dictation
   readonly view: Store<DictationView>
@@ -80,7 +84,9 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   let capture: Capture | null = null
   // Bumped for each clip, so a microphone that answers after its clip ended is let go.
   let generation = 0
-  let appended = 0
+  let recording: Recording | null = null
+  // Lets go of a clip that is waiting for the microphone's last words, for a cancel.
+  let abortDrain: (() => void) | null = null
   let cancelLimit: (() => void) | null = null
   let cancelNotice: (() => void) | null = null
   // Bumped for each transcription and again when one is dropped, so a transcript that
@@ -118,7 +124,8 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     capture?.stop()
     capture = null
     clip = null
-    appended = 0
+    if (recording) recording.open = false
+    recording = null
   }
 
   const start = (): void => {
@@ -126,16 +133,17 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     const id = ++generation
     const current = voice.record()
     clip = current
-    appended = 0
+    const mine: Recording = { open: true, appended: 0 }
+    recording = mine
     cancelLimit = after(maxClipSeconds * 1000, () => dispatch({ type: "limit" }))
     startCapture({
       onSamples: (samples) => {
-        if (id !== generation) return
-        appended += samples.length
+        if (!mine.open) return
+        mine.appended += samples.length
         current.append(samples)
       },
       onLevel: (next) => {
-        if (id === generation) level.update(() => next)
+        if (mine.open && recording === mine) level.update(() => next)
       },
     }).then(
       (started) => {
@@ -161,21 +169,46 @@ export const createDictation = (deps: DictationDeps): DictationController => {
 
   const finish = (target: TerminalKey): void => {
     const current = clip
-    // Stopping flushes the last samples into the clip, so count them after.
-    capture?.stop()
-    capture = null
-    const heard = appended / voiceSampleRate
+    const heardFrom = recording
+    const microphone = capture
     const prompt = promptFor(target)
-    endClip()
-    if (!current) return dispatch({ type: "settled" })
-    // A slip of the key, not speech.
-    if (heard < minimumClipSeconds) {
-      current.discard()
-      return dispatch({ type: "settled" })
-    }
+    cancelLimit?.()
+    cancelLimit = null
+    clip = null
+    capture = null
+    recording = null
+    // A microphone still being asked for is let go when it answers.
+    if (!microphone) generation++
+    if (!current || !heardFrom) return dispatch({ type: "settled" })
     const mine = ++transcription
     // False once cancelled: the person has moved on, so neither text nor failure shows.
     const wanted = (): boolean => mine === transcription
+    // The microphone keeps listening a moment so the last words are in the clip, which is
+    // counted and sent only after.
+    abortDrain = () => {
+      microphone?.stop()
+      heardFrom.open = false
+      current.discard()
+    }
+    void (microphone?.drain() ?? Promise.resolve()).then(() => {
+      if (!wanted()) return
+      abortDrain = null
+      heardFrom.open = false
+      // A slip of the key, not speech.
+      if (heardFrom.appended / voiceSampleRate < minimumClipSeconds) {
+        current.discard()
+        return dispatch({ type: "settled" })
+      }
+      transcribe(current, prompt, target, wanted)
+    })
+  }
+
+  const transcribe = (
+    current: VoiceClip,
+    prompt: string | undefined,
+    target: TerminalKey,
+    wanted: () => boolean,
+  ): void => {
     current
       .finish(prompt ? { prompt } : undefined)
       .then(({ text }) => {
@@ -213,6 +246,8 @@ export const createDictation = (deps: DictationDeps): DictationController => {
         return endClip()
       case "drop":
         transcription++
+        abortDrain?.()
+        abortDrain = null
         return
       case "hint":
         return notify(effect.text, "hint")

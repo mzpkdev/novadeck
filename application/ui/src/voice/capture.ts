@@ -1,8 +1,12 @@
 import { createChunker, createResampler, level, voiceSampleRate } from "./resample"
 
 export type Capture = {
-  // Flushes the last samples, releases the microphone and closes the audio graph, which
-  // turns the operating system's recording indicator off.
+  // Ends the recording for good: lets the last words land, then releases the microphone
+  // and closes the audio graph, which turns the operating system's recording indicator
+  // off. Resolves once the last samples have been handed over.
+  readonly drain: () => Promise<void>
+  // Releases the microphone and closes the graph at once, handing over nothing more. A
+  // drain still waiting resolves.
   readonly stop: () => void
 }
 
@@ -17,6 +21,22 @@ export type CaptureHandlers = {
 export class CaptureError extends Error {}
 
 const chunkSamples = voiceSampleRate / 10
+
+// Speech trails off after the key is let go, and what the microphone heard in the last
+// tens of milliseconds is still on its way through the audio thread; capturing this much
+// longer puts the last syllable in the clip.
+export const tailMilliseconds = 150
+// The longest wait for the audio thread to hand over its partial block.
+export const flushMilliseconds = 300
+
+const sleep = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+type Tap = {
+  readonly node: AudioNode
+  // Resolves once every block the tap holds has reached `receive`.
+  readonly flush: () => Promise<void>
+}
 
 const describe = (failure: unknown): string => {
   const name = failure instanceof DOMException ? failure.name : ""
@@ -40,7 +60,7 @@ const tap = async (
   context: AudioContext,
   source: MediaStreamAudioSourceNode,
   receive: (block: Float32Array) => void,
-): Promise<AudioNode> => {
+): Promise<Tap> => {
   try {
     await context.audioWorklet.addModule(workletUrl())
     const node = new AudioWorkletNode(context, "novadeck-voice-capture", {
@@ -48,19 +68,34 @@ const tap = async (
       numberOfOutputs: 1,
       outputChannelCount: [1],
     })
-    node.port.addEventListener("message", (event: MessageEvent<Float32Array>) =>
-      receive(event.data),
-    )
+    // Messages on a port arrive in order, so the worklet's "flushed" marker comes after
+    // every block it posted before.
+    const flushes: (() => void)[] = []
+    node.port.addEventListener("message", (event: MessageEvent<Float32Array | "flushed">) => {
+      if (event.data === "flushed") flushes.shift()?.()
+      else receive(event.data)
+    })
     node.port.start()
     source.connect(node)
-    return node
+    return {
+      node,
+      flush: () =>
+        new Promise((resolve) => {
+          flushes.push(resolve)
+          // A message port has no origin to name, unlike a window.
+          // oxlint-disable-next-line unicorn/require-post-message-target-origin
+          node.port.postMessage("flush")
+        }),
+    }
   } catch {
     const node = context.createScriptProcessor(4096, 1, 1)
     node.addEventListener("audioprocess", (event) =>
       receive(event.inputBuffer.getChannelData(0).slice()),
     )
     source.connect(node)
-    return node
+    // A script processor can't be asked for its partial buffer; the tail of capturing
+    // after the stop is longer than the buffer it fills, so nothing is left in it.
+    return { node, flush: () => Promise.resolve() }
   }
 }
 
@@ -88,7 +123,7 @@ export const startCapture = async ({ onSamples, onLevel }: CaptureHandlers): Pro
     const chunker = createChunker(chunkSamples, onSamples)
     let open = true
     const source = context.createMediaStreamSource(stream)
-    const node = await tap(context, source, (block) => {
+    const { node, flush } = await tap(context, source, (block) => {
       if (!open) return
       onLevel(level(block))
       chunker.add(resampler.push(block))
@@ -100,15 +135,29 @@ export const startCapture = async ({ onSamples, onLevel }: CaptureHandlers): Pro
     // A context may start suspended until the page has been interacted with.
     if (context.state === "suspended") await context.resume()
     const running = context
+    const close = (): void => {
+      open = false
+      node.disconnect()
+      source.disconnect()
+      release()
+      void running.close()
+    }
+    let draining: Promise<void> | undefined
     return {
+      drain: () => {
+        draining ??= (async () => {
+          await sleep(tailMilliseconds)
+          if (!open) return
+          await Promise.race([flush(), sleep(flushMilliseconds)])
+          // Stopped for good while waiting: nothing more is wanted.
+          if (!open) return
+          chunker.flush()
+          close()
+        })()
+        return draining
+      },
       stop: () => {
-        if (!open) return
-        open = false
-        chunker.flush()
-        node.disconnect()
-        source.disconnect()
-        release()
-        void running.close()
+        if (open) close()
       },
     }
   } catch (failure) {

@@ -33,11 +33,12 @@ export const languages = [
 const megabyte = 1024 * 1024
 const gigabyte = 1024 * megabyte
 
-// A download size in whole megabytes, or gigabytes with a decimal from one up.
+// A download size in whole megabytes, or gigabytes with a decimal from one up. Anything
+// received reads as at least a megabyte; only nothing at all reads as none.
 export const formatSize = (bytes: number): string =>
   bytes >= gigabyte
     ? `${(bytes / gigabyte).toFixed(1)} GB`
-    : `${Math.max(1, Math.round(bytes / megabyte))} MB`
+    : `${bytes <= 0 ? 0 : Math.max(1, Math.round(bytes / megabyte))} MB`
 
 // What installing `model` downloads: its own file, and the engine too until one is there.
 // A model's size includes the speech-detection model every install shares, which the state

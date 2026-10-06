@@ -1,4 +1,4 @@
-import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import type { VoiceState } from "@novadeck/protocol"
@@ -9,7 +9,7 @@ import type { Resources } from "../testing/resources.js"
 import { engineArchive, fakeLaunch, folder, modelCatalog } from "../testing/voice.js"
 import { WorkspaceStore } from "../workspaces/store.js"
 import type { Catalog } from "./catalog.js"
-import { Voice } from "./service.js"
+import { updateRetryMs, Voice } from "./service.js"
 
 const pcm = (bytes: number) => Buffer.alloc(bytes).toString("base64")
 
@@ -23,6 +23,7 @@ const setup = async (
     store?: WorkspaceStore
     directory?: string
     checkMs?: number
+    now?: () => number
   } = {},
 ) => {
   const store = options.store ?? new WorkspaceStore()
@@ -36,6 +37,7 @@ const setup = async (
     catalog: options.catalog ?? (await modelCatalog(resources)),
     launch: fakeLaunch,
     ...(options.checkMs !== undefined && { checkMs: options.checkMs }),
+    ...(options.now && { now: options.now }),
   })
   resources.defer(() => voice.close())
   await voice.refresh()
@@ -449,7 +451,7 @@ describe("recordings", () => {
 })
 
 describe("voice input after the app brings a new engine", () => {
-  const updated = async (resources: Resources) => {
+  const updated = async (resources: Resources, now?: () => number) => {
     const first = await installed(resources)
     const next = await engineArchive(resources, "2")
     const second = await setup(resources, {
@@ -457,6 +459,7 @@ describe("voice input after the app brings a new engine", () => {
       directory: first.directory,
       engine: next,
       catalog: await modelCatalog(resources),
+      ...(now && { now }),
     })
     return { ...second, next, first }
   }
@@ -513,6 +516,49 @@ describe("voice input after the app brings a new engine", () => {
       expect.objectContaining({ code: "VOICE_UNAVAILABLE" }),
     )
     expect(voice.state().installing).toBeNull()
+  })
+
+  it("is tried again by a clip a minute later, as once the network is back", async ({
+    resources,
+  }) => {
+    let time = 1_000_000
+    const { voice, next } = await updated(resources, () => time)
+    const archive = join(next, "..", "engine.tar.gz")
+    const kept = await readFile(archive)
+    await rm(archive)
+    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrow()
+    await voice.settled()
+    expect(voice.state().failure).toEqual(expect.any(String))
+
+    await writeFile(archive, kept)
+    time += updateRetryMs - 1
+    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrow()
+    expect(voice.state().installing).toBeNull()
+
+    time += 2
+    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrowError(/Updating the voice engine/)
+    await voice.settled()
+    expect(voice.state()).toMatchObject({ failure: null, installing: null, enabled: true })
+    expect(() => voice.record("owner", "clip", 0, pcm(2))).not.toThrow()
+  })
+})
+
+describe("a chosen model that went missing", () => {
+  it("gives way to one that is installed", async ({ resources }) => {
+    const { voice, store, directory } = await setup(resources, {
+      catalog: await modelCatalog(resources),
+    })
+    await voice.install("small")
+    await voice.settled()
+    await voice.install("turbo")
+    await voice.settled()
+    expect(voice.state()).toMatchObject({ model: "turbo", enabled: true })
+
+    await rm(join(directory, "models", "ggml-turbo.bin"))
+    await voice.refresh()
+
+    expect(voice.state()).toMatchObject({ installed: ["small"], model: "small", enabled: true })
+    expect(store.voiceSettings().model).toBe("small")
   })
 })
 

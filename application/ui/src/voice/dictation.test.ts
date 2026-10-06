@@ -72,9 +72,12 @@ const setup = (state: VoiceState = installed) => {
   const microphone: {
     handlers: CaptureHandlers[]
     stops: number
+    // Whether a drain waits, as the real one does, until `land` lets the last words in.
+    hold: boolean
+    land: (() => void)[]
     settle: ((capture: Capture) => void)[]
     fail: ((failure: Error) => void)[]
-  } = { handlers: [], stops: 0, settle: [], fail: [] }
+  } = { handlers: [], stops: 0, hold: false, land: [], settle: [], fail: [] }
   let now = 0
   const timers = new Map<number, { at: number; run: () => void }>()
   let timerIds = 0
@@ -107,12 +110,21 @@ const setup = (state: VoiceState = installed) => {
       }
   }
   // The microphone starts and delivers `seconds` of speech.
+  const capture = (): Capture => ({
+    stop: () => void microphone.stops++,
+    drain: () => {
+      microphone.stops++
+      return microphone.hold
+        ? new Promise((resolve) => void microphone.land.push(resolve))
+        : Promise.resolve()
+    },
+  })
   const speak = async (seconds: number): Promise<void> => {
-    microphone.settle.at(-1)!({ stop: () => void microphone.stops++ })
+    microphone.settle.at(-1)!(capture())
     await Promise.resolve()
     microphone.handlers.at(-1)!.onSamples(new Int16Array(Math.round(seconds * 16_000)))
   }
-  return { controller, clips, typed, terminal, microphone, advance, speak, voice }
+  return { controller, clips, typed, terminal, microphone, capture, advance, speak, voice }
 }
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -139,6 +151,7 @@ describe("dictation", () => {
       dictation.release("KeyM")
       expect(view.getSnapshot().phase).toBe("transcribing")
       expect(app.microphone.stops).toBe(1)
+      await flush()
       expect(app.clips[0]!.prompts).toEqual(["novadeck, ui"])
       app.clips[0]!.resolve({ text: "  run the tests \n", language: "en" })
       await flush()
@@ -159,6 +172,7 @@ describe("dictation", () => {
       await app.speak(1)
       app.advance(1000)
       app.controller.dictation.release("KeyM")
+      await flush()
       app.clips[0]!.resolve({ text: "  ", language: "en" })
       await flush()
       expect(app.typed).toEqual([])
@@ -211,6 +225,7 @@ describe("dictation", () => {
       dictation.toggle(target)
       await app.speak(0.2)
       dictation.toggle(target)
+      await flush()
       expect(app.clips[0]!.discarded).toBe(true)
       expect(app.microphone.stops).toBe(1)
       expect(view.getSnapshot()).toMatchObject({ phase: "idle", notice: null })
@@ -235,7 +250,7 @@ describe("dictation", () => {
       const app = setup()
       app.controller.dictation.press(target, "KeyM")
       app.controller.dictation.cancel()
-      app.microphone.settle[0]!({ stop: () => void app.microphone.stops++ })
+      app.microphone.settle[0]!(app.capture())
       await flush()
       expect(app.microphone.stops).toBe(1)
     })
@@ -247,6 +262,41 @@ describe("dictation", () => {
       app.controller.dictation.cancel()
       handlers!.onSamples(new Int16Array(100))
       expect(app.clips[0]!.appended).toEqual([])
+    })
+  })
+
+  context("when the microphone is still taking in the last words", () => {
+    it("counts and sends what lands before the drain ends", async () => {
+      const app = setup()
+      app.microphone.hold = true
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      await flush()
+      expect(app.clips[0]!.prompts).toEqual([])
+      app.microphone.handlers[0]!.onSamples(new Int16Array(1600))
+      app.microphone.land[0]!()
+      await flush()
+      expect(app.clips[0]!.appended).toEqual([16_000, 1600])
+      expect(app.clips[0]!.prompts).toHaveLength(1)
+    })
+
+    it("lets a cancel discard at once and release the microphone", async () => {
+      const app = setup()
+      app.microphone.hold = true
+      app.controller.dictation.toggle(target)
+      await app.speak(1)
+      app.controller.dictation.toggle(target)
+      const stops = app.microphone.stops
+      app.controller.dictation.cancel()
+      expect(app.microphone.stops).toBe(stops + 1)
+      expect(app.clips[0]!.discarded).toBe(true)
+      app.microphone.handlers[0]!.onSamples(new Int16Array(1600))
+      app.microphone.land[0]!()
+      await flush()
+      expect(app.clips[0]!.appended).toEqual([16_000])
+      expect(app.clips[0]!.prompts).toEqual([])
+      expect(app.controller.view.getSnapshot().phase).toBe("idle")
     })
   })
 
@@ -315,6 +365,7 @@ describe("dictation", () => {
       app.controller.dictation.toggle(target)
       await app.speak(1)
       app.controller.dictation.toggle(target)
+      await flush()
       app.clips[0]!.reject(new Error("The speech engine isn't running."))
       await flush()
       expect(app.typed).toEqual([])
@@ -331,6 +382,7 @@ describe("dictation", () => {
       await app.speak(1)
       app.controller.dictation.toggle(target)
       app.terminal.open = false
+      await flush()
       app.clips[0]!.resolve({ text: "run the tests", language: "en" })
       await flush()
     }

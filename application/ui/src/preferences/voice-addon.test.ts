@@ -21,6 +21,7 @@ describe("voice input sizes", () => {
     expect(formatSize(190 * megabyte)).toBe("190 MB")
     expect(formatSize(1600 * megabyte)).toBe("1.6 GB")
     expect(formatSize(10)).toBe("1 MB")
+    expect(formatSize(0)).toBe("0 MB")
   })
 
   it("count the engine in an install only until it is there", () => {

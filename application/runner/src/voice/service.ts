@@ -74,6 +74,9 @@ type Watch = { readonly owner: string; finished: boolean; wake: (() => void) | u
 
 // How often progress reaches watchers, at most.
 const progressMs = 100
+// How long after a failed engine update the next clip tries it again, as when the
+// network was down: soon enough to recover by itself, not once per clip.
+export const updateRetryMs = 60_000
 
 /**
  * Voice input: the engine and models people install, the settings, the clips being
@@ -91,7 +94,8 @@ export class Voice {
   // an update of the app brings a new engine that is fetched without a reinstall.
   private engineReady = false
   // An engine update that failed is not tried again by every clip; installing retries it.
-  private updateFailed = false
+  // When the last engine update failed: another waits a minute, not for every clip.
+  private updateFailedAt: number | undefined
   private uninstalling = false
   private installing: VoiceInstall | null = null
   private check: VoiceCheck | null = null
@@ -118,6 +122,10 @@ export class Voice {
     this.clips = new Clips(options.now)
   }
 
+  private clock(): number {
+    return (this.options.now ?? Date.now)()
+  }
+
   /** Reads the manifest and what is on disk again, as either may have changed. */
   async refresh(): Promise<void> {
     this.manifest = await readManifest(this.options.engine)
@@ -131,6 +139,12 @@ export class Voice {
       manifest !== undefined &&
       (await exists(join(engineFolder(this.directory, manifest.sha256), engineProgram)))
     this.installed = models
+    // A chosen model that went missing gives way to one that is there, so turning voice
+    // input on, and the model the card shows as chosen, both mean a model that exists.
+    const chosen = this.settings.voiceSettings().model
+    const remaining = models[0]
+    if (!models.includes(chosen) && remaining !== undefined)
+      this.settings.saveVoiceSettings({ model: remaining })
   }
 
   state(): VoiceState {
@@ -208,7 +222,7 @@ export class Voice {
     if (this.running || this.uninstalling)
       throw new DomainError("CONFLICT", "Voice input is already installing.")
     const controller = new AbortController()
-    this.updateFailed = false
+    this.updateFailedAt = undefined
     this.failure = null
     this.check = null
     this.installing = { model, step: "engine", received: 0, total: this.manifest.size }
@@ -228,7 +242,7 @@ export class Voice {
       this.closed ||
       this.running ||
       this.uninstalling ||
-      this.updateFailed ||
+      (this.updateFailedAt !== undefined && this.clock() - this.updateFailedAt < updateRetryMs) ||
       this.engineReady ||
       manifest === undefined ||
       !settings.enabled ||
@@ -459,7 +473,7 @@ export class Voice {
       // Cancelling is the person's choice, not a failure.
       if (!signal.aborted && !aborted(error)) {
         this.failure = explain(error).slice(0, 1024)
-        this.updateFailed = engineOnly
+        this.updateFailedAt = engineOnly ? this.clock() : undefined
       }
       // What finished stays: a model that downloaded shows as installed, to turn on or
       // check again, rather than looking as if it had to download again.

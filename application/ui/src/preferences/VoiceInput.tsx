@@ -66,18 +66,21 @@ const ModelChoice = ({
   value,
   onChange,
   detail,
+  disabled = false,
 }: {
   readonly label: string
   readonly choices: readonly VoiceModel[]
   readonly value: VoiceModel
   readonly onChange: (model: VoiceModel) => void
   readonly detail: (model: VoiceModel) => string
+  readonly disabled?: boolean
 }): React.JSX.Element => (
   <Row id="model" label={label} description={`${modelSummaries[value]} ${detail(value)}`.trim()}>
     <SegmentGroup
       label={label}
       items={choices.map((model) => ({ label: modelNames[model], value: model }))}
       value={value}
+      disabled={disabled}
       onValueChange={(next) => {
         const model = choices.find((item) => item === next)
         if (model) onChange(model)
@@ -139,6 +142,16 @@ export const VoiceInput = ({
   const [choice, setChoice] = useState<VoiceModel>("turbo")
   const [selecting, setSelecting] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // Set once the person confirms an uninstall, holding the failure then showing: the state
+  // has no field for a removal under way, so the card waits for the engine to be gone or a
+  // new failure to turn up.
+  const [removing, setRemoving] = useState<{ readonly failure: string | null } | null>(null)
+  if (
+    removing &&
+    voice &&
+    (!voice.state.installed.length || voice.state.failure !== removing.failure)
+  )
+    setRemoving(null)
   if (!voice)
     return (
       <div className={settingsCardClasses}>
@@ -156,6 +169,10 @@ export const VoiceInput = ({
       {failure}
     </p>
   )
+  // What an installed card can still do about a failure: install again, which fetches an
+  // engine that is missing or out of date, runs the check, and skips models on disk.
+  const retry = (): void =>
+    actions.install(installed.includes(state.model) ? state.model : installed[0]!)
   if (!state.available)
     return (
       <div className={settingsCardClasses}>
@@ -193,6 +210,7 @@ export const VoiceInput = ({
         {failed}
       </div>
     )
+  const busy = removing !== null
   const other = models.find((model) => !installed.includes(model))
   const keys = dictationKeys()
   const hint = recommendation(state)
@@ -211,6 +229,7 @@ export const VoiceInput = ({
           <Switch
             checked={state.enabled}
             onChange={(enabled) => actions.set({ enabled })}
+            disabled={busy}
             labelledBy="voice-enabled"
             describedBy="voice-enabled-description"
           />
@@ -222,6 +241,7 @@ export const VoiceInput = ({
             value={installed.includes(state.model) ? state.model : installed[0]!}
             onChange={(model) => actions.set({ model })}
             detail={() => ""}
+            disabled={busy}
           />
         </li>
         {other && (
@@ -233,6 +253,7 @@ export const VoiceInput = ({
             <button
               type="button"
               className="button min-h-8 shrink-0 px-3 text-[11px]"
+              disabled={busy}
               onClick={() => actions.install(other)}
             >
               {`Install · ${formatSize(installSize(state, other))}`}
@@ -246,6 +267,7 @@ export const VoiceInput = ({
             items={languages}
             value={state.language}
             onValueChange={(language) => actions.set({ language })}
+            disabled={busy}
             open={open && selecting}
             onOpenChange={setSelecting}
             portalContainer={portalContainer}
@@ -267,12 +289,25 @@ export const VoiceInput = ({
           <button
             type="button"
             className="button min-h-8 shrink-0 px-3 text-[11px]"
+            disabled={busy}
             onClick={() => setConfirming(true)}
           >
-            Uninstall
+            {busy ? "Removing…" : "Uninstall"}
           </button>
         </li>
-        {failure && <li>{failed}</li>}
+        {failure && (
+          <li className="flex items-center justify-between gap-6">
+            {failed}
+            <button
+              type="button"
+              className="button mr-4 min-h-8 shrink-0 px-3 text-[11px]"
+              disabled={busy}
+              onClick={retry}
+            >
+              Try again
+            </button>
+          </li>
+        )}
       </ul>
       <ConfirmDialog
         subject={confirming ? state : null}
@@ -284,6 +319,7 @@ export const VoiceInput = ({
         cancelLabel="Cancel"
         onConfirm={() => {
           setConfirming(false)
+          setRemoving({ failure })
           actions.uninstall()
         }}
         onCancel={() => setConfirming(false)}
