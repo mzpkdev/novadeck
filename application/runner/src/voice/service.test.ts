@@ -215,6 +215,41 @@ describe("installing voice input", () => {
     expect(voice.state()).toMatchObject({ model: "turbo", enabled: false, failure: null })
   })
 
+  it("turns voice input on when a first install that failed its check is tried again", async ({
+    resources,
+  }) => {
+    const catalog = await modelCatalog(resources, { small: "small slow" })
+    const first = await setup(resources, { catalog, checkMs: 100 })
+    await first.voice.install("small")
+    await first.voice.settled()
+    expect(first.voice.state()).toMatchObject({ installed: ["small"], enabled: false })
+
+    const again = await setup(resources, {
+      catalog,
+      store: first.store,
+      directory: first.directory,
+      ...(first.manifest && { engine: first.manifest }),
+      checkMs: 5000,
+    })
+    await again.voice.install("small")
+    await again.voice.settled()
+
+    expect(again.voice.state()).toMatchObject({ failure: null, enabled: true, model: "small" })
+  })
+
+  it("turns voice input on again for an install after an uninstall, whatever its switch was", async ({
+    resources,
+  }) => {
+    const { voice } = await installed(resources)
+    voice.set({ enabled: false })
+    await voice.uninstall()
+
+    await voice.install("small")
+    await voice.settled()
+
+    expect(voice.state()).toMatchObject({ enabled: true, model: "small" })
+  })
+
   it("keeps an unchecked model off when the one chosen had gone missing", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { small: "small slow" }),

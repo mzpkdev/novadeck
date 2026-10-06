@@ -26,6 +26,18 @@ describe("the demo's voice input", () => {
     })
   })
 
+  it("leaves voice input off for another model when the person turned it off", async () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    voice.install("turbo")
+    await vi.advanceTimersByTimeAsync(400)
+    voice.set({ enabled: false })
+
+    voice.install("small")
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(voice.state.getSnapshot()).toMatchObject({ model: "small", enabled: false })
+  })
+
   it("stops an install on cancel, and forgets everything on uninstall", async () => {
     const voice = createDemoVoice({ step: 100, transcribe: 10 })
     voice.install("small")

@@ -146,8 +146,11 @@ export const VoiceInput = ({
   // has no field for a removal under way, so the card waits for the engine to be gone or a
   // new failure to turn up.
   const [removing, setRemoving] = useState<{ readonly failure: string | null } | null>(null)
-  // The model the person last asked to install, which Try again installs again.
-  const [asked, setAsked] = useState<VoiceModel | null>(null)
+  // The model the person last asked to install, which Try again installs again, until that
+  // install is seen through: once it has run, an end without a failure forgets it.
+  const [asked, setAsked] = useState<{ readonly model: VoiceModel; readonly ran: boolean } | null>(
+    null,
+  )
   if (
     removing &&
     voice &&
@@ -161,6 +164,8 @@ export const VoiceInput = ({
       </div>
     )
   const { state, actions } = voice
+  if (asked && !asked.ran && state.installing) setAsked({ ...asked, ran: true })
+  if (asked?.ran && !state.installing && !state.failure) setAsked(null)
   const { failure, installing, installed } = state
   const failed = failure && (
     <p
@@ -172,14 +177,14 @@ export const VoiceInput = ({
     </p>
   )
   const install = (model: VoiceModel): void => {
-    setAsked(model)
+    setAsked({ model, ran: false })
     actions.install(model)
   }
   // What an installed card can still do about a failure: install again, the model asked
   // for if there was one, or the one in use, which fetches an engine that is missing or out
   // of date, runs the check, and skips models on disk. It leaves voice input off if it was.
   const retry = (): void =>
-    install(asked ?? (installed.includes(state.model) ? state.model : installed[0]!))
+    install(asked?.model ?? (installed.includes(state.model) ? state.model : installed[0]!))
   if (!state.available)
     return (
       <div className={settingsCardClasses}>

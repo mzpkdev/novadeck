@@ -38,6 +38,8 @@ const ticks = 8
 export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice => {
   const state = createStore<VoiceState>(demoVoiceState)
   let timers: ReturnType<typeof setTimeout>[] = []
+  // As the runner: an install turns voice input on unless the person turned it off.
+  let turnedOff = false
   const stop = (): void => {
     timers.forEach(clearTimeout)
     timers = []
@@ -66,7 +68,7 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
       installed: current.installed.includes(model)
         ? current.installed
         : [...current.installed, model],
-      enabled: true,
+      enabled: !turnedOff,
       model,
       check: { model, milliseconds: gpu ? 2300 : 3800, gpu, recommended: model },
     }))
@@ -98,6 +100,7 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
     },
     uninstall: () => {
       stop()
+      turnedOff = false
       state.update(() => demoVoiceState)
     },
     set: (settings) =>
@@ -105,6 +108,7 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
         const next = { ...current, ...settings }
         if ((next.enabled || settings.model) && !next.installed.includes(next.model))
           return { ...current, failure: "That model isn't installed." }
+        if (settings.enabled !== undefined) turnedOff = !settings.enabled
         return { ...next, failure: null }
       }),
     record: () => ({

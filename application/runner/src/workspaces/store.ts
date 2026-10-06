@@ -824,6 +824,21 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     }
   }
 
+  /** Whether the person turned voice input off themselves, which an install respects. */
+  voiceTurnedOff(): boolean {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'voice.turnedOff'` as
+      | { value: string }
+      | undefined
+    return row?.value === "true"
+  }
+
+  saveVoiceTurnedOff(off: boolean): void {
+    void this.queries.run`
+      INSERT INTO settings (key, value) VALUES ('voice.turnedOff', ${String(off)})
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `
+  }
+
   saveVoiceSettings(settings: VoiceSettingsChange): void {
     for (const [key, value] of Object.entries(settings))
       if (value !== undefined)

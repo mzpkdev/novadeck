@@ -37,6 +37,8 @@ import { wav } from "./wav.js"
 export type VoiceSettingsStore = {
   voiceSettings(): VoiceSettings
   saveVoiceSettings(settings: VoiceSettingsChange): void
+  voiceTurnedOff(): boolean
+  saveVoiceTurnedOff(off: boolean): void
 }
 
 export type VoiceOptions = {
@@ -282,6 +284,8 @@ export class Voice {
       await this.cancel()
       // Off first: a removal that fails halfway must not leave voice input on.
       this.settings.saveVoiceSettings({ enabled: false })
+      // Off for want of an install, not by choice: the next install turns it on again.
+      this.settings.saveVoiceTurnedOff(false)
       this.changed()
       // The engine's program is in use until it has exited, which Windows will not delete.
       await this.engine.stop()
@@ -316,6 +320,8 @@ export class Voice {
     if (change.enabled === true && !this.installed.includes(model))
       throw new DomainError("CONFLICT", "Install voice input before turning it on.")
     this.settings.saveVoiceSettings(change)
+    // The person's own switch, unlike the off a failed install leaves, is kept by installs.
+    if (change.enabled !== undefined) this.settings.saveVoiceTurnedOff(!change.enabled)
     // The engine holds one model, so the next clip starts it with the new one.
     if (change.model !== undefined) void this.engine.stop()
     this.changed()
@@ -439,8 +445,8 @@ export class Voice {
     signal: AbortSignal,
     engineOnly = false,
   ): Promise<void> {
-    // What was installed and chosen as the install began, before it or a refresh changes them.
-    const before = { installed: [...this.installed], settings: this.settings.voiceSettings() }
+    // What was chosen as the install began, before it or a refresh changes that.
+    const before = { settings: this.settings.voiceSettings() }
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -468,12 +474,9 @@ export class Voice {
       await this.fetchModel(model, signal)
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
       const check = await this.measure(model, manifest, signal)
-      // The model checked out, so it is the one used. A first install turns voice input
-      // on, as the person installed it to use it; a later one leaves the switch as it was.
-      this.settings.saveVoiceSettings({
-        model,
-        enabled: before.installed.length === 0 || before.settings.enabled,
-      })
+      // The model checked out, so it is the one used, and voice input is on, as the person
+      // installed it to use it, unless they had turned it off themselves.
+      this.settings.saveVoiceSettings({ model, enabled: !this.settings.voiceTurnedOff() })
       await this.refresh()
       this.check = check
     } catch (error) {
