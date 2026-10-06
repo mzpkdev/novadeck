@@ -10,7 +10,7 @@
   --radius-popover: 4px;
   --border-width: 1px;
   /* Type */
-  --font-sans: "Inter Variable", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "InterVariable", "Inter", "Helvetica Neue", Arial, sans-serif;
   /* JetBrains Mono ships with the app, so terminals look and measure the same on every
      system. A prompt's icons, which it lacks, fall to a Nerd Font the person installed. */
   --font-mono:
@@ -61,8 +61,14 @@
 :root:not([data-ligatures="on"]) {
   font-variant-ligatures: none;
 }
+/* Inter's l takes a tail, its I serifs and its 0 a slash, so names, paths and branches
+   read unambiguously; and its digits are all one width, so counts, timers and badges
+   hold still as they change. The mono has none of these variants and fixed digits
+   already, so terminals draw as they were. */
 body {
   margin: 0;
+  font-feature-settings: "cv05", "cv08", "zero";
+  font-variant-numeric: tabular-nums;
   background-color: var(--color-paper);
   font-family: var(--font-sans);
   color: var(--color-ink);
