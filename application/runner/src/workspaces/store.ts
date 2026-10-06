@@ -3,7 +3,15 @@ import { realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute } from "node:path"
 import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 
-import type { AgentName, Project, RunnerSettings, WorkspaceSession } from "@novadeck/protocol"
+import {
+  voiceLanguage,
+  voiceModel,
+  type AgentName,
+  type Project,
+  type RunnerSettings,
+  type VoiceSettings,
+  type WorkspaceSession,
+} from "@novadeck/protocol"
 
 import type { ItemRecord, ItemRecords, Placed, WindowRecord } from "../companions/records.js"
 import { DomainError } from "../errors.js"
@@ -20,6 +28,10 @@ import type {
 import type { Work } from "../terminals/work.js"
 
 /** Settings to change; those left out, or undefined, stay as they are. */
+export type VoiceSettingsChange = {
+  readonly [K in keyof VoiceSettings]?: VoiceSettings[K] | undefined
+}
+
 export type SettingsChange = {
   readonly [K in keyof RunnerSettings]?: RunnerSettings[K] | undefined
 }
@@ -794,6 +806,29 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       if (value !== undefined)
         void this.queries.run`
         INSERT INTO settings (key, value) VALUES (${key}, ${String(value)})
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      `
+  }
+
+  /** Voice input's settings: off, on the lighter model, and detecting the language, until chosen. */
+  voiceSettings(): VoiceSettings {
+    const rows = this.queries.all`SELECT key, value FROM settings WHERE key LIKE 'voice.%'` as {
+      key: string
+      value: string
+    }[]
+    const saved = new Map(rows.map((row) => [row.key, row.value]))
+    return {
+      enabled: saved.get("voice.enabled") === "true",
+      model: voiceModel.catch("turbo").parse(saved.get("voice.model")),
+      language: voiceLanguage.catch("auto").parse(saved.get("voice.language")),
+    }
+  }
+
+  saveVoiceSettings(settings: VoiceSettingsChange): void {
+    for (const [key, value] of Object.entries(settings))
+      if (value !== undefined)
+        void this.queries.run`
+        INSERT INTO settings (key, value) VALUES (${`voice.${key}`}, ${String(value)})
         ON CONFLICT (key) DO UPDATE SET value = excluded.value
       `
   }
