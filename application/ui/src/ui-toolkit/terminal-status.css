@@ -22,7 +22,10 @@
 
 /* The surface dims, after a moment, under a notice. */
 .terminal-lock {
-  background-color: var(--terminal-lock-bg, color-mix(in srgb, var(--color-canvas) 80%, transparent));
+  background-color: var(
+    --terminal-lock-bg,
+    color-mix(in srgb, var(--color-canvas) 80%, transparent)
+  );
   transition: opacity var(--motion-state) var(--ease-interface) 200ms;
 }
 @starting-style {

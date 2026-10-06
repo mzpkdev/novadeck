@@ -15,7 +15,14 @@
    --demo-request-bg (soft): a request to an agent.
    --demo-badge-bg (strong), --demo-badge-fg (on-strong): a PASS badge.
    --demo-form-bg (shell), --demo-form-border-color (line),
-   --demo-form-focus-border-color (line-strong): the command form, and while typing. */
+   --demo-form-focus-border-color (line-strong): the command form, and while typing.
+
+   The debug panel, a floating surface of actions that put the demo in a state, is
+   `.debug-panel` with its `.debug-meta` line, `.debug-heading`s, `.debug-hint`s,
+   `.debug-close` and `.debug-action` buttons. Tokens, each optional:
+   --debug-muted-fg (muted): its meta line, headings, hints and Close.
+   --debug-action-bg (shell), --debug-action-border-color (line),
+   --debug-action-hover-bg (soft): an action, and while hovered. */
 
 @layer components {
   /* Demo output styles. The frame marks compact terminals with .terminal-compact. */
@@ -124,5 +131,31 @@
       font-size: 10px;
       gap: 3px 10px;
     }
+  }
+  /* The debug panel. */
+  .debug-meta,
+  .debug-heading,
+  .debug-hint,
+  .debug-close {
+    color: var(--debug-muted-fg, var(--color-muted));
+  }
+  .debug-meta {
+    font-family: var(--font-mono);
+  }
+  .debug-heading {
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+  .debug-close:hover {
+    color: var(--color-ink);
+  }
+  .debug-action {
+    --_bg: var(--debug-action-bg, var(--color-shell));
+    border: var(--border-width) solid var(--debug-action-border-color, var(--color-line));
+    border-radius: var(--radius-control);
+    background-color: var(--_bg);
+  }
+  .debug-action:hover {
+    --_bg: var(--debug-action-hover-bg, var(--color-soft));
   }
 }
