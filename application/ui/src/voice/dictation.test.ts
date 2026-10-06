@@ -270,6 +270,16 @@ describe("dictation", () => {
       expect(app.controller.view.getSnapshot().notice?.text).toContain("Preferences → Addons")
     })
 
+    it("starts nothing while an update replaces the engine, and says so", () => {
+      const app = setup({
+        ...installed,
+        installing: { model: "turbo", step: "engine", received: 1, total: 2 },
+      })
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.clips).toHaveLength(0)
+      expect(app.controller.view.getSnapshot().notice?.text).toContain("Updating the voice engine")
+    })
+
     it("asks for a terminal when there is none to type into", () => {
       const app = setup()
       app.controller.dictation.press(undefined, "KeyM")

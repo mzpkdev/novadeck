@@ -161,12 +161,25 @@ describe("the runner's voice input", () => {
 
       const off = runner({
         transcribe: async () => {
-          throw new RunnerError("VOICE_UNAVAILABLE", "off")
+          throw new RunnerError("VOICE_UNAVAILABLE")
         },
       })
       const next = off.voice.record()
       next.append(Int16Array.of(1))
       await expect(next.finish()).rejects.toThrow(/Preferences/)
+
+      // The runner's own reason, as while its engine updates, says more than the code.
+      const updating = runner({
+        record: async () => {
+          throw new RunnerError(
+            "VOICE_UNAVAILABLE",
+            "Updating the voice engine. Try again when it is done.",
+          )
+        },
+      })
+      const later = updating.voice.record()
+      later.append(Int16Array.of(1))
+      await expect(later.finish()).rejects.toThrow("Updating the voice engine")
     })
 
     it("lets the runner forget a clip whose transcription failed", async () => {

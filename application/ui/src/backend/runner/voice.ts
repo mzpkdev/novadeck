@@ -46,8 +46,13 @@ const reason = (error: unknown): string =>
 export const clipFailure = (error: unknown): Error => {
   if (hasCode(error, "UPLOAD_TOO_LARGE"))
     return new Error(`That was too long to transcribe. Dictate up to ${maxVoiceSeconds} seconds.`)
+  // The runner says why, as that its engine is updating; a bare code says nothing.
   if (hasCode(error, "VOICE_UNAVAILABLE"))
-    return new Error("Voice input isn't installed or is turned off. See Preferences, Addons.")
+    return new Error(
+      reason(error) !== "VOICE_UNAVAILABLE" && reason(error)
+        ? reason(error)
+        : "Voice input isn't installed or is turned off. See Preferences, Addons.",
+    )
   if (hasCode(error, "VOICE_FAILED")) return new Error(`The speech engine failed: ${reason(error)}`)
   if (hasCode(error, "NOT_FOUND"))
     return new Error("The runner lost the recording. Try dictating again.")

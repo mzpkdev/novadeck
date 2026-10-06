@@ -186,9 +186,13 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
         try {
           await terminals.shutdown()
         } finally {
-          // Downloads and the engine use no records, but end before the store they ask.
-          await voice.close()
-          store.close()
+          // Downloads and the engine use no records, but end before the store they ask;
+          // the store closes even if they fail to.
+          try {
+            await voice.close()
+          } finally {
+            store.close()
+          }
         }
       })()
       return closing

@@ -21,14 +21,17 @@ export const voiceReady = (state: VoiceState): boolean =>
   state.enabled && state.installed.includes(state.model)
 
 const readiness = (state: VoiceState): Readiness =>
-  voiceReady(state)
-    ? { ready: true }
-    : {
-        ready: false,
-        hint: state.available
-          ? "Voice input isn't set up. Turn it on in Preferences → Addons."
-          : "Voice input isn't available on this machine. See Preferences → Addons.",
-      }
+  // An engine an update is replacing can't take a clip; better said now than after one.
+  voiceReady(state) && state.installing?.step === "engine"
+    ? { ready: false, hint: "Updating the voice engine. Try again when it is done." }
+    : voiceReady(state)
+      ? { ready: true }
+      : {
+          ready: false,
+          hint: state.available
+            ? "Voice input isn't set up. Turn it on in Preferences → Addons."
+            : "Voice input isn't available on this machine. See Preferences → Addons.",
+        }
 
 export type DictationView = {
   readonly phase: Dictating["kind"]
