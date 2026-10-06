@@ -47,12 +47,13 @@
   --color-syntax-definition: #4a4fb0;
   --color-syntax-type: #8a5300;
   --color-syntax-comment: var(--color-muted);
-  /* Terminal: the page's own paper and ink, and muted ANSI hues that read on paper: each
-     at 5:1 or more, each bright one at 4.5:1 or more, and white, a grey here so text a
-     program prints in it still reads, at 5:1 (its bright at about 4:1). */
+  /* Terminal: the page's own paper and ink, a block cursor in the teal, and muted ANSI
+     hues that read on paper: each at 5:1 or more, each bright one at 4.5:1 or more, and
+     white, a grey here so text a program prints in it still reads, at 5:1 (its bright at
+     about 4:1). */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
-  --terminal-cursor: var(--color-ink);
+  --terminal-cursor: #007a72;
   --terminal-selection: var(--color-selection);
   --terminal-ansi-black: #121519;
   --terminal-ansi-red: #b02a22;
@@ -98,6 +99,10 @@
   --prose-code-bg: #dfe3e7;
   --demo-request-bg: #dfe3e7;
   --demo-form-bg: #eef0f2;
+  /* Component tokens: the workspace's dot grid takes the teal, faint enough to stay a
+     texture on the steel. */
+  --workspace-dots-fg: #007a72;
+  --canvas-dots-opacity: 0.12;
   /* Component tokens: the Deck mark's cards, two steps lighter than the tile. */
   --deck-mark-card-near-bg: #b9bfc7;
   --deck-mark-card-far-bg: #d3d7dc;
@@ -148,10 +153,10 @@
   --color-syntax-definition: #adb3f5;
   --color-syntax-type: #e4c07a;
   --color-syntax-comment: #99a2b8;
-  /* Terminal */
+  /* Terminal: the cursor is a block of the cyan, the character under it in the paper. */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
-  --terminal-cursor: var(--color-ink);
+  --terminal-cursor: #00e5d6;
   --terminal-selection: var(--color-selection);
   /* Black stays a step above the paper so text drawn in it still reads. */
   --terminal-ansi-black: #484f60;
@@ -206,6 +211,10 @@
   --item-selected-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
   --tabs-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
   --window-phase-running-shadow: drop-shadow(0 0 3px rgb(0 229 214 / 0.75));
+  /* Component tokens: the workspace's dot grid takes the cyan, faint enough to stay a
+     texture. */
+  --workspace-dots-fg: #00e5d6;
+  --canvas-dots-opacity: 0.07;
   /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
      as a state. */
   --window-phase-ended-border-color: #c9d0dc;
@@ -234,4 +243,19 @@
   --brand-tile-bg: linear-gradient(180deg, #2ef0e2, #00d6c8);
   --brand-tile-fg: #04161a;
   --brand-tile-border-color: transparent;
+}
+
+/* A clipped corner, as on the cut cards of the look Graphite takes after: primary actions
+   and the logo tile lose their bottom-right corner to a bevel. corner-shape keeps the
+   border, the shadow and the focus ring on the cut, where clip-path would cut them off;
+   a browser without it keeps the square corner. */
+@supports (corner-shape: bevel) {
+  [data-theme="graphite"] .button.primary {
+    border-bottom-right-radius: 8px;
+    corner-bottom-right-shape: bevel;
+  }
+  [data-theme="graphite"] .deck-face {
+    border-bottom-right-radius: 32%;
+    corner-bottom-right-shape: bevel;
+  }
 }
