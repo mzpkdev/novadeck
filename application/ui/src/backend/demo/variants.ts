@@ -39,13 +39,19 @@ export const requestedVariant = (): DemoVariant => {
   return variantOf(demo) ?? variantOf(stored()) ?? "showcase"
 }
 
-// Keeps the variant for the tab, so a reload boots it again, and puts the app back at
-// its start page. The router does not hear it: the next boot reads the address afresh.
-export const rememberVariant = (variant: DemoVariant): void => {
+// Keeps the variant for the tab, so a reload boots it again after the router rewrote
+// the address that asked for it.
+export const keepVariant = (variant: DemoVariant): void => {
   try {
     window.sessionStorage.setItem(remembered, variant)
   } catch {
     // Without storage, the choice lasts until the page reloads.
   }
+}
+
+// Keeps the variant the debug panel chose, and puts the app back at its start page. The
+// router does not hear it: the next boot reads the address afresh.
+export const rememberVariant = (variant: DemoVariant): void => {
+  keepVariant(variant)
   window.history.replaceState(null, "", "#/")
 }

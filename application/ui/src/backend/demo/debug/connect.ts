@@ -1,6 +1,6 @@
 import type { BootRehearsals } from "../../boot-rehearsal"
 import type { BackendConnection, ConnectBackend } from "../../port"
-import { rememberVariant, requestedVariant } from "../variants"
+import { keepVariant, rememberVariant, requestedVariant } from "../variants"
 import { bootFailures } from "./boot-failures"
 import { createDebugDemo, type DemoLaunch } from "./with-debug"
 
@@ -13,6 +13,7 @@ const unavailable = (code: string): Error => {
 // debug panel rehearsed, into the demo variant it last chose (the address's, at first).
 export const connectDemo = (rehearsals: BootRehearsals): ConnectBackend => {
   let variant = requestedVariant()
+  keepVariant(variant)
   let slowAttach = false
   return async (signal, progress): Promise<BackendConnection> => {
     await rehearsals.beforeConnect(signal, unavailable)

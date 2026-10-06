@@ -52,23 +52,13 @@ export const createDebugPanel = ({
       return () => clearInterval(timer)
     }, [open])
 
-    // Escape from inside the panel, or on its button, closes it, before the app's own
-    // keys see it.
-    useEffect(() => {
-      if (!open) return
-      const onKey = (event: KeyboardEvent): void => {
-        const target = event.target as Node | null
-        const inside =
-          target === toggle.current || document.getElementById("debug-panel")?.contains(target)
-        if (event.key !== "Escape" || !inside) return
-        event.preventDefault()
-        event.stopImmediatePropagation()
-        setOpen(false)
-        toggle.current?.focus()
-      }
-      window.addEventListener("keydown", onKey, { capture: true })
-      return () => window.removeEventListener("keydown", onKey, { capture: true })
-    }, [open])
+    // Escape in the panel, or on its button, closes it and returns to the button.
+    const closeOnEscape = (event: React.KeyboardEvent): void => {
+      if (event.key !== "Escape" || !open) return
+      event.preventDefault()
+      setOpen(false)
+      toggle.current?.focus()
+    }
 
     const context = (): DemoActionContext => ({
       selected,
@@ -96,8 +86,9 @@ export const createDebugPanel = ({
           aria-controls="debug-panel"
           aria-label={open ? "Close the debug panel" : "Open the debug panel"}
           className="debug-floater fixed right-5 bottom-12 z-50 flex size-12 items-center justify-center"
-          onClick={(event) => {
-            event.stopPropagation()
+          data-own-keys
+          onKeyDown={closeOnEscape}
+          onClick={() => {
             setTerminals(shell.terminals())
             setOpen((value) => !value)
           }}
@@ -109,9 +100,10 @@ export const createDebugPanel = ({
           <aside
             id="debug-panel"
             aria-label="Debug panel"
-            // A click here keeps focus here, so Escape and Tab work, instead of handing
-            // typing back to the selected terminal as a click on the page's chrome does.
-            onClick={(event) => event.stopPropagation()}
+            // Its keys are its own (see interaction/dom.ts): the workspace leaves them
+            // alone, and a click here keeps focus here.
+            data-own-keys
+            onKeyDown={closeOnEscape}
             className="debug-panel fixed right-5 bottom-[110px] z-50 flex max-h-[min(720px,calc(100vh-170px))] w-100 max-w-[calc(100vw-2.5rem)] flex-col"
           >
             <header className="debug-panel-header flex items-start gap-3 px-4 pt-4 pb-3">

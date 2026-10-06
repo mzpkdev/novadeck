@@ -1,7 +1,10 @@
 // DOM contracts for keyboard policy and focus restoration. Library-specific
-// overlay markup stays here so interaction owners do not depend on it.
+// overlay markup stays here so interaction owners do not depend on it. `data-own-keys`
+// marks a region that takes its own keys, as the demo's debug panel does: the
+// workspace's shortcuts, Escape among them, leave keys there alone, and a click there
+// keeps focus where it landed.
 const editingOrOverlay =
-  'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"]), textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="textbox"], [role="searchbox"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="slider"], [role="spinbutton"], [role="tablist"], [data-scope="popover"][data-state="open"]'
+  'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"]), textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="textbox"], [role="searchbox"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="slider"], [role="spinbutton"], [role="tablist"], [data-scope="popover"][data-state="open"], [data-own-keys]'
 
 export const workspaceShortcutTarget = (target: EventTarget | null): boolean =>
   !(target instanceof Element && target.closest(editingOrOverlay))

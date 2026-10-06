@@ -1,7 +1,7 @@
 import { createBootRehearsals } from "../backend/boot-rehearsal"
 import { createDemoBackend } from "../backend/demo"
 import { createContentDemo } from "../backend/demo/content"
-import type { BackendSelection } from "../backend/port"
+import type { BackendSelection, ConnectBackend } from "../backend/port"
 
 // The only place that chooses a backend adapter. Tests and specs run on the demo;
 // every build, development or production, connects to a runner, whose client and
@@ -16,11 +16,14 @@ const runnerSelection = (): BackendSelection => ({
 // no build for a runner carries it.
 const demoSelection = (): BackendSelection => {
   const rehearsals = createBootRehearsals()
-  const connect = import("../backend/demo/debug/connect").then(({ connectDemo }) =>
-    connectDemo(rehearsals),
-  )
+  // Made once it loads, as it remembers the variant and what the panel armed; a load
+  // that failed is tried again by the next attempt.
+  let connect: ConnectBackend | undefined
   return {
-    connect: async (signal, progress) => (await connect)(signal, progress),
+    connect: async (signal, progress) => {
+      connect ??= (await import("../backend/demo/debug/connect")).connectDemo(rehearsals)
+      return connect(signal, progress)
+    },
     reboots: rehearsals.reboots,
   }
 }
