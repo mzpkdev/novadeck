@@ -1,0 +1,190 @@
+import { setTimeout as sleep } from "node:timers/promises"
+
+import type { TranscriptItem } from "@novadeck/protocol"
+
+import { setups } from "./agents/index.js"
+import type { DeckTerminal } from "./deck.js"
+import { describe, e2e, expect, supported } from "./fixture.js"
+import { asked, gate, latest } from "./model/script.js"
+import { own, replies, start, through, turn } from "./scenarios.js"
+
+// The chat view's way to an agent, the same for every harness (see messaging.e2e.ts for
+// the rule on parity): `agents.prompt` and `agents.interrupt`, read back through
+// `agents.transcript` of the root actor `agents.detail` names (docs/backend-api.md).
+
+/** The root transcript's text items of `role`, as `agents.transcript` gives them. */
+const texts = async (terminal: DeckTerminal, role: TranscriptItem["role"]): Promise<string[]> =>
+  (await terminal.transcript())
+    .filter((item) => item.role === role && item.kind === "text")
+    .map((item) => item.text)
+
+/** Waits until the transcript holds a `role` item whose text passes `fits`, and returns it. */
+const item = (
+  terminal: DeckTerminal,
+  role: TranscriptItem["role"],
+  fits: (text: string) => boolean,
+): Promise<string> =>
+  terminal.poll(
+    async () => (await texts(terminal, role)).find(fits),
+    `its transcript to hold a ${role} item`,
+    30_000,
+  )
+
+for (const setup of setups) {
+  describe.skipIf(!supported)(setup.name, () => {
+    const it = e2e(setup)
+
+    it("gives its agent a one-line prompt, which the transcript shows with the reply", async ({
+      e2e: run,
+    }) => {
+      run.model.use(replies("Greet the chat", "Hello, chat."))
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+
+      await t1.prompt("Greet the chat")
+      await t1.until("Hello, chat.")
+      await through(t1, ["working", "settled"], { after: mark })
+
+      expect(await item(t1, "user", (text) => text.includes("Greet the chat"))).toContain(
+        "Greet the chat",
+      )
+      await item(t1, "assistant", (text) => text.includes("Hello, chat."))
+    })
+
+    it("takes a prompt as the person's own: the terminal is named as a typed prompt names it", async ({
+      e2e: run,
+    }) => {
+      run.model.use(replies("Greet the chat", "Hello, chat."))
+      const chat = await start(run, setup)
+      const typed = await start(run, setup)
+
+      await chat.prompt("Greet the chat")
+      await chat.until("Hello, chat.")
+      await turn(typed, "Greet the chat", "Hello, chat.")
+      // A harness whose hooks name no prompt (Antigravity) may leave a quick turn's
+      // prompt unattributed, which is the same for both: the two are named alike.
+      await sleep(5000)
+
+      const [one, other] = [chat.summary(), typed.summary()]
+      expect(one.titleSource).toEqual(other.titleSource)
+      if (other.titleSource.kind === "fallback") expect(one.title).toBe(other.title)
+    })
+
+    it("gives its agent a multi-line prompt as one prompt, whole in the transcript", async ({
+      e2e: run,
+    }) => {
+      run.model.use(replies("Third line of the chat", "Got three lines."))
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+      const lines = ["First line of the chat", "Second line of the chat", "Third line of the chat"]
+
+      await t1.prompt(lines.join("\n"))
+      await t1.until("Got three lines.")
+      await through(t1, ["working", "settled"], { after: mark })
+
+      const user = await item(t1, "user", (text) => text.includes("Third line of the chat"))
+      expect(user.split("\n").map((line) => line.trim())).toEqual(lines)
+      await item(t1, "assistant", (text) => text.includes("Got three lines."))
+      // One prompt, one user turn: the line breaks never submitted anything.
+      expect((await texts(t1, "user")).filter((text) => text.includes("First line"))).toHaveLength(
+        1,
+      )
+    })
+
+    it("gives its agent a long prompt that its box may show as a placeholder", async ({
+      e2e: run,
+    }) => {
+      run.model.use(replies("Line 40 of the long prompt", "Read all forty."))
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+      const lines = Array.from({ length: 40 }, (_, index) => `Line ${index + 1} of the long prompt`)
+
+      await t1.prompt(lines.join("\n"))
+      await t1.until("Read all forty.")
+      await through(t1, ["working", "settled"], { after: mark })
+
+      const user = await item(t1, "user", (text) => text.includes("Line 40 of the long prompt"))
+      expect(user.split("\n").map((line) => line.trim())).toEqual(lines)
+    })
+
+    it("queues a prompt given mid-turn as the person's would be, and answers both", async ({
+      e2e: run,
+    }) => {
+      const held = gate()
+      run.model.use(
+        own(async (call) => {
+          if (!asked(call, "Start the long job")) return undefined
+          await held.opened
+          return { text: "Long job done." }
+        }),
+        replies("Then sum it up", "Summed up."),
+      )
+      const t1 = await start(run, setup)
+      const calls = run.model.mark()
+      const mark = t1.mark()
+
+      await t1.prompt("Start the long job")
+      await run.model.waitFor((call) => !call.side && latest(call).includes("Start the long job"), {
+        after: calls,
+      })
+      await t1.reached("working", { after: mark })
+      await t1.prompt("Then sum it up\nin one line\n\nthanks")
+      held.open()
+
+      await t1.until("Summed up.")
+      await through(t1, ["working", "settled"], { after: mark })
+      await item(t1, "user", (text) => text.includes("Start the long job"))
+      await item(t1, "user", (text) => text.includes("Then sum it up") && text.includes("thanks"))
+      await item(t1, "assistant", (text) => text.includes("Long job done."))
+      await item(t1, "assistant", (text) => text.includes("Summed up."))
+    })
+
+    it("interrupts a running turn, which ends without a normal stop, and takes the next prompt", async ({
+      e2e: run,
+    }) => {
+      const held = gate()
+      const answered = gate()
+      run.model.use(
+        replies("Carry on", "Carried on."),
+        own(async (call) => {
+          if (!asked(call, "Take your time")) return undefined
+          await held.opened
+          answered.open()
+          return { text: "Too late." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const calls = run.model.mark()
+      const mark = t1.mark()
+
+      await t1.prompt("Take your time")
+      await run.model.waitFor((call) => !call.side && latest(call).includes("Take your time"), {
+        after: calls,
+      })
+      await t1.reached("working", { after: mark })
+      t1.interrupt()
+
+      const ended = await t1.reached("unknown", { after: mark })
+      // The harness takes the key a moment after it is written: its own account of the
+      // interruption shows before the held reply is let go, which must never show.
+      await t1.until(setup.interrupted("Take your time"))
+      held.open()
+      await answered.opened
+      await sleep(3000)
+      expect(await t1.screen()).not.toContain("Too late.")
+      expect((await texts(t1, "assistant")).join("\n")).not.toContain("Too late.")
+      expect(
+        t1
+          .history()
+          .slice(mark)
+          .map((one) => one.delivery),
+      ).not.toContain("settled")
+
+      // The next prompt starts a turn that ends normally.
+      const next = t1.mark()
+      await t1.prompt("Carry on")
+      await t1.until("Carried on.")
+      await through(t1, ["working", "settled"], { after: Math.max(next, ended.index) })
+    })
+  })
+}

@@ -641,6 +641,39 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   client's `agents.transcript(terminalId, actor)` resubscribes across reconnections,
   yielding `reset` before the items follow again, and ends without one when the actor
   is gone.
+- `agents.prompt({ terminalId, text })` gives the terminal's agent a prompt as the person
+  would paste and submit it (`text` is 1 to 16,384 characters; its line breaks stay
+  line breaks in the box). It needs an agent bound, or one showing its own empty prompt
+  before its first session binds (Codex before its first prompt), and no request waiting
+  on the person, whose dialog would take the text: otherwise `CONFLICT`, as when the
+  screen takes no bracketed paste. The runner holds the person's keys, writes the text as
+  one bracketed paste, waits until it shows and the screen is steady, and presses Enter
+  once; it resolves after that Enter. A short line must show on the screen once, as the
+  doorbell's test paste does (see `agent-messaging.md`), twice running; while the turn
+  runs, or at a Ready prompt, it need only show once and wasn't there before, as a
+  spinner redraws rows and Codex's welcome screen goes whole as the box takes text. Text a
+  TUI may collapse (several lines, or over 200 characters, as Claude Code's `[Pasted text
+#1 +N lines]`) is taken once the screen changed and showed the same on two reads
+  running. When none of that happens within 5 s, the call fails with `PROMPT_FAILED`: no
+  Enter is ever pressed after a failed check, so what landed stays in the box as a draft.
+  Prompts to one terminal go one at a time, in order; one that meets a doorbell ring under
+  way waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
+  person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and
+  its Enter, the person's prompt attributed from the harness's transcript, the terminal
+  named from its first prompt. A prompt given while the agent works behaves as typing it
+  would: Claude Code and Antigravity queue it (their box shows "Press up to edit queued
+  messages") and run it as its own turn once the turn ends; Codex shows it as "Messages to
+  be submitted after next tool call", submitting it into the running turn then, or at its
+  end when no tool follows. Each shows up as a separate user item in the transcript. The
+  window's resizes are held until a second after the Enter, or the next prompt. The
+  client's `agents.prompt(terminalId, text)` is that call.
+- `agents.interrupt({ terminalId })` presses Escape in the terminal's agent, which stops
+  its turn in every harness (the turn ends without a normal Stop: its activity is
+  `unknown` until the next prompt, see `agent-messaging.md`); `CONFLICT` without an agent
+  bound, or one showing its own prompt. It goes through the person's key bookkeeping too:
+  the turn ends as an Escape of theirs ends it. The harness takes the key a moment later.
+  Claude Code puts a prompt interrupted before any reply back in its box as a draft, and
+  the next prompt appends to it. The client's `agents.interrupt(terminalId)` is that call.
 - `companions.*` keeps what agents show and the person attaches beside terminals: items,
   each a pointer to a file, a page or a plan, never a copy of it, held by exactly one
   terminal's bar or one undocked window. Items and windows live in the runner's database,

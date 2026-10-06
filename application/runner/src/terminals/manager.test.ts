@@ -99,6 +99,32 @@ describe("terminal creation ownership", () => {
   })
 })
 
+describe("terminal prompts", () => {
+  it("refuse a plain shell, which runs no agent, writing nothing to it", async ({ terminals }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    await expect(manager.prompt({ terminalId: terminal.id, text: "Hello" })).rejects.toMatchObject({
+      code: "CONFLICT",
+    })
+    expect(() => manager.interrupt({ terminalId: terminal.id })).toThrow(
+      expect.objectContaining({ code: "CONFLICT" }),
+    )
+  })
+
+  it("refuse a terminal that does not exist", async ({ terminals }) => {
+    const manager = terminals.manager(ptyOptions)
+    await expect(manager.prompt({ terminalId: randomUUID(), text: "Hello" })).rejects.toMatchObject(
+      { code: "TERMINAL_NOT_FOUND" },
+    )
+    expect(() => manager.interrupt({ terminalId: randomUUID() })).toThrow(
+      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
+    )
+  })
+})
+
 /** Reads until `predicate` holds; `text` joins all screen data so far, across chunk splits. */
 const until = async (
   manager: Terminals,
