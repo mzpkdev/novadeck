@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs"
 import { cp, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { availableParallelism } from "node:os"
-import { join } from "node:path"
+import { join, parse } from "node:path"
 import { fileURLToPath } from "node:url"
 import { gzipSync } from "node:zlib"
 
@@ -145,8 +145,14 @@ const prepare = async (tarball: string): Promise<{ source: string; build: string
     }
     await writeFile(join(directory, "patched"), "")
   }
-  return { source, build: join(directory, "build") }
+  return { source, build: windows ? shortBuild(key) : join(directory, "build") }
 }
+
+// MSBuild fails past 260 characters, and the Vulkan backend's shader generator is a
+// project nested deep inside the build tree, so on Windows the build goes to a short
+// folder at the drive's root, or where NOVADECK_WHISPER_BUILD says.
+const shortBuild = (key: string): string =>
+  process.env.NOVADECK_WHISPER_BUILD ?? join(parse(root).root, "nvw", key.slice(0, 8))
 
 // Options for every platform: shared libraries, no OpenMP runtime to ship, no native CPU
 // tuning (the engine runs on other computers than it is built on), and no tests.
