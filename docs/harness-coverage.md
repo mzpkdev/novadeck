@@ -60,6 +60,7 @@ Evidence:
 - `Stop` ends it normally.
 - `StopFailure` ends it on an API error. It carries `error` (`rate_limit`, `overloaded`, `billing_error`, …) and replaces `Stop`.
 - An Esc interrupt fires no hook, not even `Stop` or `PostToolBatch` (probed with every event registered: Esc during a running Bash call). The transcript records the call's `tool_result` with `is_error` and a user record `[Request interrupted by user for tool use]`, which marks the end of the turn (probed).
+- Esc before any reply came takes the prompt out of the conversation and puts it back in the input box, whole and multi-line, with no echo above it; Esc Esc written together then clears the box's text, single or multi-line, where Ctrl+U clears only a line (the last of a multi-line draft) and Ctrl+A Ctrl+K only the rest of one. Esc Esc over an empty box opens the rewind picker, so it is pressed only over a draft seen on the screen (probed 2026-10-06, 2.1.287, the e2e sandbox with the fake model).
 - Transcript saving is off when Claude Code inherits `CLAUDE_CODE_CHILD_SESSION`, as a process started from another Claude Code session does (probed: the TUI says so). Novadeck's shells must not pass that variable on, or the transcript fallback disappears.
 - `claude agents --json` reports `busy`, `waiting` or `idle` per session and is documented as the supported way to read state from outside. It is a polled command, not a stream.
 
@@ -177,6 +178,7 @@ Other facts:
 - `token_usage_record` gives usage per response and per turn.
 - No source reports a cost.
 - Occupancy is estimated from the last response's input tokens over `model_context_window`.
+- Esc during a turn before any reply leaves the prompt, single or multi-line, echoed above the box with "■ Conversation interrupted" under it, and the box empty (probed 2026-10-06, 0.159.3, the e2e sandbox with the fake model).
 
 ## Antigravity
 
@@ -229,6 +231,8 @@ Other facts:
 - `cost`, `task_count` and `pending_input_count`.
 
 It also carries the account's `email`, which must not leave the adapter.
+
+- Esc during a turn before any reply leaves the prompt, single or multi-line, echoed above the box with "⎿ Interrupted · What should Antigravity CLI do instead?" under it, and the box empty (probed 2026-10-06, 1.2.14, the e2e sandbox with the fake model).
 
 ## Consequences for the design
 

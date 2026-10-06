@@ -162,7 +162,7 @@ for (const setup of setups) {
         after: calls,
       })
       await t1.reached("working", { after: mark })
-      t1.interrupt()
+      await t1.interrupt()
 
       const ended = await t1.reached("unknown", { after: mark })
       // The harness takes the key a moment after it is written: its own account of the
@@ -185,6 +185,40 @@ for (const setup of setups) {
       await t1.prompt("Carry on")
       await t1.until("Carried on.")
       await through(t1, ["working", "settled"], { after: Math.max(next, ended.index) })
+    })
+
+    it("leaves the box as it was before the interrupted prompt, so the next prompt is sent alone", async ({
+      e2e: run,
+    }) => {
+      const held = gate()
+      run.model.use(
+        replies("Prompt B only", "Answered B."),
+        own(async (call) => {
+          if (!asked(call, "Prompt A")) return undefined
+          await held.opened
+          return { text: "Too late." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const calls = run.model.mark()
+      const mark = t1.mark()
+
+      // Interrupted before any reply, a multi-line prompt: Claude Code puts it back in its box.
+      await t1.prompt("Prompt A line one\nPrompt A line two")
+      await run.model.waitFor((call) => !call.side && latest(call).includes("Prompt A line one"), {
+        after: calls,
+      })
+      await t1.reached("working", { after: mark })
+      await t1.interrupt()
+      held.open()
+      await sleep(1000)
+
+      await t1.prompt("Prompt B only")
+      await t1.until("Answered B.")
+      const users = await item(t1, "user", (text) => text.includes("Prompt B only"))
+      expect(users).toBe("Prompt B only")
+      const sent = (await texts(t1, "user")).filter((text) => text.includes("Prompt"))
+      expect(sent.at(-1)).toBe("Prompt B only")
     })
   })
 }

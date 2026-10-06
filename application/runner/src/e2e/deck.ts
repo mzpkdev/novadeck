@@ -109,7 +109,7 @@ export type DeckTerminal = {
    */
   readonly prompt: (text: string) => Promise<void>
   /** Presses Escape in its agent as the chat does, `agents.interrupt`. */
-  readonly interrupt: () => void
+  readonly interrupt: () => Promise<void>
   /**
    * The items of its root actor's transcript as `agents.transcript` gives them now, read
    * as a client does with the root's ref from `agents.detail`; empty before a session binds.
@@ -628,9 +628,9 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         prompted = undefined
         await terminals.prompt({ terminalId: id, text })
       },
-      interrupt: () => {
+      interrupt: async () => {
         prompted = undefined
-        terminals.interrupt({ terminalId: id })
+        await terminals.interrupt({ terminalId: id })
       },
       transcript: async () => {
         const detail = await now((signal) => terminals.detail(id, signal))

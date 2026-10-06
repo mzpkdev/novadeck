@@ -672,8 +672,15 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   `unknown` until the next prompt, see `agent-messaging.md`); `CONFLICT` without an agent
   bound, or one showing its own prompt. It goes through the person's key bookkeeping too:
   the turn ends as an Escape of theirs ends it. The harness takes the key a moment later.
-  Claude Code puts a prompt interrupted before any reply back in its box as a draft, and
-  the next prompt appends to it. The client's `agents.interrupt(terminalId)` is that call.
+  Claude Code puts a prompt interrupted before any reply back in its box as a draft; the
+  runner leaves the box as it was before the turn's prompt: with the prompt as its hooks
+  told it, it looks at the screen up to 2 s, and when the box holds exactly that text,
+  steady on two reads, behind its prompt marker only and where it didn't show before, it
+  clears it with a double Escape (never pressed over an empty box, where it opens Claude
+  Code's rewind picker, nor over text the person added or merged in, which is left). The
+  call resolves after that, so `agents.interrupt` takes up to about half a second longer
+  where no draft comes (Codex, Antigravity). The client's `agents.interrupt(terminalId)`
+  is that call.
 - `companions.*` keeps what agents show and the person attaches beside terminals: items,
   each a pointer to a file, a page or a plan, never a copy of it, held by exactly one
   terminal's bar or one undocked window. Items and windows live in the runner's database,

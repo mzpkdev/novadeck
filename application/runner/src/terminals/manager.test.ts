@@ -109,9 +109,9 @@ describe("terminal prompts", () => {
     await expect(manager.prompt({ terminalId: terminal.id, text: "Hello" })).rejects.toMatchObject({
       code: "CONFLICT",
     })
-    expect(() => manager.interrupt({ terminalId: terminal.id })).toThrow(
-      expect.objectContaining({ code: "CONFLICT" }),
-    )
+    await expect(manager.interrupt({ terminalId: terminal.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+    })
   })
 
   it("refuse a terminal that does not exist", async ({ terminals }) => {
@@ -119,9 +119,9 @@ describe("terminal prompts", () => {
     await expect(manager.prompt({ terminalId: randomUUID(), text: "Hello" })).rejects.toMatchObject(
       { code: "TERMINAL_NOT_FOUND" },
     )
-    expect(() => manager.interrupt({ terminalId: randomUUID() })).toThrow(
-      expect.objectContaining({ code: "TERMINAL_NOT_FOUND" }),
-    )
+    await expect(manager.interrupt({ terminalId: randomUUID() })).rejects.toMatchObject({
+      code: "TERMINAL_NOT_FOUND",
+    })
   })
 })
 

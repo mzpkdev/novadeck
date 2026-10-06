@@ -136,6 +136,7 @@ import type {
   TerminalIdentity,
   TerminalRecords,
 } from "./records.js"
+import { restoredDraft } from "./restore.js"
 import { freshNonce } from "./ring.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
@@ -472,6 +473,12 @@ const holdCapMs = 3_000
 // The longest it holds the app's resizes, in milliseconds: a safety cap beyond the wait
 // for the ring's prompt to confirm it.
 const sizeCapMs = 8_000
+
+// How long an interrupt looks for the turn's prompt put back in the agent's box, and how
+// long the screen must be still without it before it is taken as not coming, in
+// milliseconds.
+const restoreMs = 2_000
+const restoreCalmMs = 500
 
 // How much time a prompt's hook must have left for drift to be read, in milliseconds:
 // a git branch and a plan's file, each with its own short timeout.
@@ -1042,11 +1049,53 @@ export class Terminals {
     return this.prompts.prompt(input.terminalId, input.text)
   }
 
-  /** Presses Escape in the terminal's agent as the person would, which stops its turn. */
-  interrupt(input: { terminalId: string }): void {
+  /**
+   * Presses Escape in the terminal's agent as the person would, which stops its turn, and
+   * leaves its box as it was before the turn's prompt: where the harness put that prompt
+   * back in it (Claude Code, before any reply), it is cleared, only when the box holds
+   * exactly it and nothing else (see `restoredDraft`).
+   */
+  async interrupt(input: { terminalId: string }): Promise<void> {
     const record = this.promptable(input.terminalId)
+    // The turn's prompt, as its hooks told it, ends with the turn Escape ends.
+    const prompt = this.messaging.personPrompt(input.terminalId)
+    const before = prompt === undefined ? undefined : await this.screenOf(input.terminalId)
     this.keyed(record, "\x1b")
     record.process.write("\x1b")
+    if (prompt !== undefined && before) await this.clearRestored(record, prompt, before)
+  }
+
+  /**
+   * Waits for the screen to show whether the harness put the interrupted `prompt` back in
+   * its box, and clears it with the double Escape that clears a box's text: never pressed
+   * unless the draft showed, steady on two reads running, as it would open Claude Code's
+   * rewind picker over an empty box. Gives up once the screen has been still for
+   * `restoreCalmMs` with no draft, or after `restoreMs`.
+   */
+  private async clearRestored(record: Record, prompt: string, before: ScreenText): Promise<void> {
+    const id = record.summary.id
+    const until = Date.now() + restoreMs
+    let last: string | undefined
+    let since = Date.now()
+    while (Date.now() < until) {
+      // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      // eslint-disable-next-line no-await-in-loop -- As above.
+      const after = await this.screenOf(id)
+      if (!after || this.live(id) !== record) return
+      const text = after.rows.join("\n")
+      if (text !== last) {
+        last = text
+        since = Date.now()
+        continue
+      }
+      if (restoredDraft(before.rows, after.rows, prompt)) {
+        // Written, not typed: the box is empty after it, which the person's keys never say.
+        record.process.write("\x1b\x1b")
+        return
+      }
+      if (Date.now() - since >= restoreCalmMs) return
+    }
   }
 
   /**
