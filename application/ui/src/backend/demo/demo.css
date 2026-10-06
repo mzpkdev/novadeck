@@ -20,14 +20,16 @@
    The debug panel, a floating surface of actions that put the demo in a state, is
    `.debug-panel` with its `.debug-meta` line, `.debug-heading`s, `.debug-hint`s,
    `.debug-close` and `.debug-action` buttons; `.debug-floater` is the round button at
-   the page's bottom that opens it, faint until hovered, focused or open (aria-expanded).
+   the page's bottom that opens it, see-through until hovered, focused or open
+   (aria-expanded).
    Tokens, each optional:
    --debug-muted-fg (muted): its meta line, headings, hints and Close.
    --debug-action-bg (shell), --debug-action-border-color (line),
    --debug-action-hover-bg (soft): an action, and while hovered.
    --debug-floater-bg (paper), --debug-floater-fg (muted), --debug-floater-border-color
-   (line), --debug-floater-shadow (shadow-floating), --debug-floater-active-fg (ink),
-   --debug-floater-rest-opacity (0.45): the button, and while hovered or open. */
+   (line), --debug-floater-rest-fill (30%, of the background, at rest),
+   --debug-floater-rest-opacity (0.6), --debug-floater-shadow (shadow-floating, once
+   active), --debug-floater-active-fg (ink): the button, and while hovered or open. */
 
 @layer components {
   /* Demo output styles. The frame marks compact terminals with .terminal-compact. */
@@ -160,20 +162,30 @@
     border-radius: var(--radius-control);
     background-color: var(--_bg);
   }
+  /* At rest it is glass: the page shows through a thin fill, blurred, under a faint
+     icon. Hovered, focused or open, it turns solid. */
   .debug-floater {
     border: var(--border-width) solid var(--debug-floater-border-color, var(--color-line));
     border-radius: 999px;
-    background-color: var(--debug-floater-bg, var(--color-paper));
+    background-color: color-mix(
+      in srgb,
+      var(--debug-floater-bg, var(--color-paper)) var(--debug-floater-rest-fill, 30%),
+      transparent
+    );
+    backdrop-filter: blur(6px);
     color: var(--debug-floater-fg, var(--color-muted));
-    box-shadow: var(--debug-floater-shadow, var(--shadow-floating));
-    opacity: var(--debug-floater-rest-opacity, 0.45);
+    opacity: var(--debug-floater-rest-opacity, 0.6);
     transition:
       opacity var(--motion-state) var(--ease-interface),
-      color var(--motion-state) var(--ease-interface);
+      color var(--motion-state) var(--ease-interface),
+      background-color var(--motion-state) var(--ease-interface),
+      box-shadow var(--motion-state) var(--ease-interface);
   }
   .debug-floater:hover,
   .debug-floater:focus-visible,
   .debug-floater[aria-expanded="true"] {
+    background-color: var(--debug-floater-bg, var(--color-paper));
+    box-shadow: var(--debug-floater-shadow, var(--shadow-floating));
     color: var(--debug-floater-active-fg, var(--color-ink));
     opacity: 1;
   }
