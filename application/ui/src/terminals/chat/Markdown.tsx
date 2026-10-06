@@ -5,7 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import type { HighlightedLine } from "../companion/highlight"
 import { fenceFile } from "./languages"
-import { parseMarkdown, type Inline, type MarkdownBlock } from "./markdown"
+import { parseMarkdown, type Inline, type MarkdownBlock } from "./markdown-parse"
 
 const InlineNodes = ({ nodes }: { readonly nodes: readonly Inline[] }): React.JSX.Element => (
   <>

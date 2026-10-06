@@ -1,5 +1,5 @@
 import { context, describe, expect, it } from "../../test"
-import { parseInline, parseMarkdown, safeHref } from "./markdown"
+import { parseInline, parseMarkdown, safeHref } from "./markdown-parse"
 
 const kinds = (text: string) => parseMarkdown(text).map((block) => block.t)
 
@@ -152,9 +152,12 @@ describe("markdown on pathological text", () => {
     ["links without addresses", "[a](".repeat(size / 4)],
     ["blank lines in a list", "- a\n\n".repeat(size / 5)],
     ["unclosed tildes", "~~a ".repeat(size / 4)],
-  ])("reads %s in well under 100 ms", (_name, text) => {
+  ])("reads %s in well under the second a quadratic reading took", (_name, text) => {
+    // Warmed up first, so the bound measures the reading, not the compiler; generous for
+    // slow CI machines, yet far below the ~1 s a quadratic reading took here.
+    parseMarkdown(text.slice(0, 1024))
     const started = performance.now()
     parseMarkdown(text)
-    expect(performance.now() - started).toBeLessThan(100)
+    expect(performance.now() - started).toBeLessThan(400)
   })
 })
