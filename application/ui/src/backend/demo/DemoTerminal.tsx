@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useSyncExternalStore, type ReactNode } 
 
 import { endingText, terminalEnding } from "../../model/terminal-ending"
 import type { TerminalMetadata } from "../../model/types"
-import { TerminalEndingBar, TerminalLock } from "../../ui-toolkit/TerminalStatus"
+import { TerminalEndingBar, TerminalLock, TerminalNotice } from "../../ui-toolkit/TerminalStatus"
 import type { BackendConnectionState, TerminalKey, TerminalSurfaceProps } from "../port"
-import type { DemoSurfaceRuntime } from "./debug/types"
+import { terminalKeyId } from "../registry"
+import type { DemoScreen, DemoSurfaceRuntime } from "./debug/types"
 import type { DemoEngine, DemoTerminalSnapshot } from "./engine"
 import { demoAgent, demoAgents } from "./samples"
 import { TerminalOutput } from "./TerminalOutput"
@@ -23,6 +24,8 @@ type DemoTerminalSurfaceProps = Omit<TerminalSurfaceProps, "terminalKey" | "rend
     session?: {
       readonly locked: boolean
       readonly lockNotice: string
+      // Shown for a moment at the top, as a failed paste's.
+      readonly notice: string | undefined
       readonly restart: () => void
     }
   }
@@ -161,6 +164,15 @@ const DemoTerminalSurface = ({
             commandInput.current?.focus({ preventScroll: true })
           }}
         />
+        {session.notice && (
+          <div
+            aria-hidden
+            data-paste-notice
+            className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3"
+          >
+            <TerminalNotice notice={session.notice} />
+          </div>
+        )}
         {session.locked && <TerminalLock notice={session.lockNotice} />}
       </div>
       {/* Announced from outside the frame: it is inert while hidden. Empty while no
@@ -168,12 +180,31 @@ const DemoTerminalSurface = ({
       <span aria-live="polite" aria-atomic className="sr-only">
         {ending ? endingText(ending) : ""}
       </span>
+      <span aria-live="polite" aria-atomic className="sr-only">
+        {session.notice ?? ""}
+      </span>
     </>
   )
 }
 
 const ignore = (): (() => void) => () => {}
 const connected = (): BackendConnectionState => "connected"
+const showing: DemoScreen = {}
+const noScreens: ReadonlyMap<string, DemoScreen> = new Map()
+const none = (): ReadonlyMap<string, DemoScreen> => noScreens
+
+// Why typing is paused, as the runner's surface says it: the far side away, a shell still
+// starting, or a screen on its way.
+const lockNotice = (
+  connection: BackendConnectionState,
+  terminal: TerminalMetadata,
+  screen: DemoScreen,
+): string | undefined => {
+  if (connection === "reconnecting") return "Reconnecting…"
+  if (connection === "unavailable") return "Runner offline"
+  if (terminal.state === "starting") return "Starting shell…"
+  return screen.attaching ? "Loading output…" : undefined
+}
 
 // One component per engine, so its identity stays stable while the backend lives.
 // `introOf` gives a terminal its own opening output, when it has one.
@@ -202,7 +233,13 @@ export const createDemoTerminal = (
       runtime?.connection.subscribe ?? ignore,
       runtime?.connection.getSnapshot ?? connected,
     )
+    const screens = useSyncExternalStore(
+      runtime?.screens.subscribe ?? ignore,
+      runtime?.screens.getSnapshot ?? none,
+    )
     const key = { projectId, workspaceSessionId, terminalId }
+    const screen = screens.get(terminalKeyId(key)) ?? showing
+    const locked = lockNotice(connection, props.terminal, screen)
     const content = (
       <DemoTerminalSurface
         {...props}
@@ -213,8 +250,9 @@ export const createDemoTerminal = (
         intro={introOf?.(props.terminal, key)}
         {...(runtime && {
           session: {
-            locked: connection !== "connected",
-            lockNotice: connection === "reconnecting" ? "Reconnecting…" : "Runner offline",
+            locked: locked !== undefined,
+            lockNotice: locked ?? "",
+            notice: screen.notice,
             restart: () => runtime.restart(key),
           },
         })}

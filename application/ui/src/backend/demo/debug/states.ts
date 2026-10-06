@@ -1,5 +1,7 @@
+import { createStore } from "../../../model/store"
 import type { AgentStatus, AgentTurnEnd } from "../../../model/types"
 import type { TerminalKey } from "../../port"
+import { terminalKeyId } from "../../registry"
 import { createDemoAgents } from "./agents"
 import { createDemoFolders } from "./folders"
 import { createDemoNotices } from "./notices"
@@ -20,17 +22,30 @@ import {
   terminalOf,
   turnEnded,
   unheardAgent,
-  withHelpers,
+  backgroundWork,
+  contextOnly,
+  finishingSubagents,
+  uncountedWork,
+  withSubagents,
   withUsage,
   working,
 } from "./terminals"
-import type { DemoAction, DemoActionContext, DemoActionGroup, DemoStates } from "./types"
+import type {
+  DemoAction,
+  DemoActionContext,
+  DemoActionGroup,
+  DemoScreen,
+  DemoStates,
+} from "./types"
 
 // How long an agent works before its turn ends, so the person can look elsewhere.
 const turnMs = 3000
 // How long a new terminal takes to fail when it fails "right away".
 const quickFailMs = 400
 const burst = 30
+// How long a screen takes to arrive, and a failed paste's notice stays, as the runner's.
+const attachMs = 2500
+const noticeMs = 4000
 
 const later = (ms: number, run: () => void): void => void setTimeout(run, ms)
 
@@ -100,6 +115,20 @@ export const createDemoStates = (): DemoStates => {
   const { agents, openWelcome, failNext: failAgents } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
   const { pickDirectory, failNext: failPick } = createDemoFolders()
+  const screens = createStore<ReadonlyMap<string, DemoScreen>>(new Map())
+  // Sets what a terminal's screen is doing for a while, then shows its output again.
+  const showScreen = (key: TerminalKey, screen: DemoScreen, ms: number): void => {
+    const id = terminalKeyId(key)
+    screens.update((all) => new Map(all).set(id, screen))
+    later(ms, () =>
+      screens.update((all) => {
+        if (all.get(id) !== screen) return all
+        const next = new Map(all)
+        next.delete(id)
+        return next
+      }),
+    )
+  }
   const groups: readonly DemoActionGroup[] = [
     {
       title: "Selected terminal",
@@ -110,6 +139,9 @@ export const createDemoStates = (): DemoStates => {
         onSelected("Exited · code 3", "Ending bar with Restart", (key, { dispatch }) =>
           dispatch(exitedWithCode(key, 3)),
         ),
+        onSelected("Exited, no code", "Ending bar without a reason", (key, { dispatch }) =>
+          dispatch(exitedWithCode(key, null)),
+        ),
         onSelected("Killed · SIGKILL", "Ending bar in the danger tone", (key, { dispatch }) =>
           dispatch(killedBy(key, "SIGKILL")),
         ),
@@ -118,8 +150,18 @@ export const createDemoStates = (): DemoStates => {
           "Ending bar, tab marked failed",
           (key, { dispatch }) => dispatch(failedToStart(key, "Folder not found")),
         ),
-        onSelected("Starting shell", "Tab shows it starting", (key, { dispatch }) =>
-          dispatch(starting(key)),
+        onSelected(
+          "Starting shell",
+          "Tab shows it starting; Starting shell… over the output",
+          (key, { dispatch }) => dispatch(starting(key)),
+        ),
+        onSelected(
+          "Loading output",
+          "Loading output… over the output for a moment, as after a reconnection",
+          (key) => showScreen(key, { attaching: true }, attachMs),
+        ),
+        onSelected("Paste fails", "A notice at the top for a moment", (key) =>
+          showScreen(key, { notice: "Novadeck can't read the clipboard" }, noticeMs),
         ),
         onSelected("Back at the prompt", "A shell, idle", (key, { dispatch }) =>
           dispatch(backToPrompt(key)),
@@ -152,12 +194,24 @@ export const createDemoStates = (): DemoStates => {
           asking("question", 3),
         ),
         agentAction("3 plans waiting", "Count in the tab and tooltip", () => asking("plan", 3)),
+        agentAction("Subagents", "Three subagents while it works", () => withSubagents),
         agentAction(
-          "Subagents and background tasks",
-          "Three subagents, two more in the background",
-          () => withHelpers,
+          "Finishing subagents",
+          "Turn over, two subagents run on; it works until they finish",
+          () => finishingSubagents,
+        ),
+        agentAction(
+          "Background work",
+          "Turn over, 1 agent · 2 tasks run on without it",
+          () => backgroundWork,
+        ),
+        agentAction(
+          "Background work, uncounted",
+          "Turn over, its harness only says work runs on",
+          () => uncountedWork,
         ),
         agentAction("Context and limits", "Usage in its tooltip and status", withUsage),
+        agentAction("Context, size unknown", "ctx in tokens, no limits", () => contextOnly),
         endingAction(
           "completed",
           "Turn completed",
@@ -250,6 +304,7 @@ export const createDemoStates = (): DemoStates => {
     openWelcome,
     notices,
     pickDirectory,
+    screens,
     restart: (key, dispatch) => dispatch(backToPrompt(key)),
     Notices,
   }

@@ -55,7 +55,7 @@ export const cleanExit = (key: TerminalKey): BackendAction[] => [
   { type: "terminal/close", target: target(key), terminalId: key.terminalId },
 ]
 
-export const exitedWithCode = (key: TerminalKey, exitCode: number): BackendAction[] => [
+export const exitedWithCode = (key: TerminalKey, exitCode: number | null): BackendAction[] => [
   setStatus(key, { state: "exited", exitCode, signal: null }),
 ]
 
@@ -119,15 +119,23 @@ export const asking = (kind: "permission" | "question" | "plan", count: number):
   attention: { kind, count },
 })
 
-export const withHelpers: AgentStatus = {
+export const withSubagents: AgentStatus = {
   working: true,
   subagents: [
     { id: "sub-1", type: "Explore" },
     { id: "sub-2", type: "code-reviewer" },
     { id: "sub-3", type: null },
   ],
-  background: { agents: 2, tasks: 1 },
 }
+
+// What its turn left running: subagents it works on until they finish, or work that
+// runs on without it, counted or not.
+export const finishingSubagents: AgentStatus = {
+  working: true,
+  background: { agents: 2, tasks: 0 },
+}
+export const backgroundWork: AgentStatus = { working: false, background: { agents: 1, tasks: 2 } }
+export const uncountedWork: AgentStatus = { working: false, background: { agents: 0, tasks: 0 } }
 
 // Context and rate limits, as an agent's records tell them.
 export const withUsage = (now: number): AgentStatus => ({
@@ -140,6 +148,12 @@ export const withUsage = (now: number): AgentStatus => ({
     ],
   },
 })
+
+// How much its context holds, where its harness doesn't say of how much.
+export const contextOnly: AgentStatus = {
+  working: false,
+  usage: { context: { occupied: 84_000, capacity: null }, limits: [] },
+}
 
 const replies: Record<AgentTurnEnd["outcome"], string | undefined> = {
   completed: "Done. The checkout total now rounds per line, and the tests pass.",

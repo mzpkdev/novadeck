@@ -6,6 +6,8 @@ import type { TerminalMetadata } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { render, type Rendered } from "../../test/render"
 import type { BackendConnectionState, TerminalKey } from "../port"
+import { terminalKeyId } from "../registry"
+import type { DemoScreen } from "./debug/types"
 import { createDemoTerminal } from "./DemoTerminal"
 import { createDemoEngine } from "./engine"
 
@@ -25,11 +27,12 @@ afterEach(() => mounted.splice(0).forEach((view) => view.unmount()))
 
 const mount = (terminal: TerminalMetadata, withRuntime: boolean) => {
   const connection = createStore<BackendConnectionState>("connected")
+  const screens = createStore<ReadonlyMap<string, DemoScreen>>(new Map())
   const restart = vi.fn<(key: TerminalKey) => void>()
   const Surface = createDemoTerminal(
     createDemoEngine(),
     undefined,
-    withRuntime ? { connection, restart } : undefined,
+    withRuntime ? { connection, screens, restart } : undefined,
   )
   const view = render(
     createElement(Surface, {
@@ -46,7 +49,9 @@ const mount = (terminal: TerminalMetadata, withRuntime: boolean) => {
   const input = view.container.querySelector<HTMLInputElement>("[data-terminal-input]")!
   const form = view.container.querySelector("form")!
   const press = (): void => act(() => form.requestSubmit())
-  return { view, connection, restart, input, press }
+  const showScreen = (screen: DemoScreen): void =>
+    act(() => void screens.update(() => new Map([[terminalKeyId(key), screen]])))
+  return { view, connection, showScreen, restart, input, press }
 }
 
 describe("demo terminal surface", () => {
@@ -100,6 +105,28 @@ describe("demo terminal surface", () => {
       act(() => void connection.update(() => "unavailable"))
       expect(view.container.querySelector(".terminal-lock")?.textContent).toBe("Runner offline")
       act(() => void connection.update(() => "connected"))
+      expect(view.container.querySelector(".terminal-lock")).toBeNull()
+    })
+
+    it("locks while its shell starts", () => {
+      const { view } = mount({ ...shell, state: "starting" }, true)
+      expect(view.container.querySelector(".terminal-lock")?.textContent).toBe("Starting shell…")
+    })
+
+    it("locks while its output is on the way", () => {
+      const { view, showScreen } = mount(shell, true)
+      showScreen({ attaching: true })
+      expect(view.container.querySelector(".terminal-lock")?.textContent).toBe("Loading output…")
+      showScreen({})
+      expect(view.container.querySelector(".terminal-lock")).toBeNull()
+    })
+
+    it("shows a notice at the top without locking", () => {
+      const { view, showScreen } = mount(shell, true)
+      showScreen({ notice: "Novadeck can't read the clipboard" })
+      expect(view.container.querySelector("[data-paste-notice]")?.textContent).toBe(
+        "Novadeck can't read the clipboard",
+      )
       expect(view.container.querySelector(".terminal-lock")).toBeNull()
     })
   })

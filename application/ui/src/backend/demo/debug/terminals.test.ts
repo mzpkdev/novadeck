@@ -1,3 +1,4 @@
+import { subagentsBadge } from "../../../model/agent-subagents"
 import { workspaceFromSeed } from "../../../model/seed"
 import { workspaceReducer } from "../../../model/state"
 import { terminalEnding } from "../../../model/terminal-ending"
@@ -21,7 +22,8 @@ import {
   terminalOf,
   turnEnded,
   unheardAgent,
-  withHelpers,
+  backgroundWork,
+  withSubagents,
   withUsage,
   working,
 } from "./terminals"
@@ -116,12 +118,14 @@ describe("terminal states", () => {
       expect(terminal).toMatchObject({ agent: { attention: { kind: "permission", count: 3 } } })
     })
 
-    it("reports subagents and what runs in the background", () => {
-      const terminal = shell(apply(agentIn(key("04"), undefined, withHelpers)))
-      expect(terminal).toMatchObject({
-        agent: { subagents: [{ id: "sub-1" }, { id: "sub-2" }, { id: "sub-3" }] },
-      })
-      expect(withHelpers.background).toEqual({ agents: 2, tasks: 1 })
+    it("reports the subagents it runs", () => {
+      const terminal = shell(apply(agentIn(key("04"), undefined, withSubagents)))
+      expect(subagentsBadge(terminal)).toBe("3 subagents")
+    })
+
+    it("reports what its turn left running in the background", () => {
+      const terminal = shell(apply(agentIn(key("04"), undefined, backgroundWork)))
+      expect(subagentsBadge(terminal)).toBe("1 agent · 2 tasks")
     })
 
     it("reports its context and limits", () => {

@@ -9,10 +9,19 @@ import type { Backend, BackendConnectionState, BackendSink, TerminalKey } from "
 // be put in. The shell composes the backend and the panel; the states provide the parts
 // below and the actions the panel lists.
 
+// What a terminal's screen is doing that its metadata doesn't say: its output still on
+// the way after a reconnection, or a notice for a moment, as a failed paste's.
+export type DemoScreen = { readonly attaching?: true; readonly notice?: string }
+
+// The demo's screens, by `terminalKeyId`; a terminal without an entry shows its output.
+export type DemoScreens = Store<ReadonlyMap<string, DemoScreen>>
+
 // What the demo's terminal surface reads beyond its engine: whether the far side is
-// there to type into, and how to start a fresh shell after one ended.
+// there to type into, what its screen is doing, and how to start a fresh shell after one
+// ended.
 export type DemoSurfaceRuntime = {
   readonly connection: Store<BackendConnectionState>
+  readonly screens: DemoScreens
   // Restart, or Enter, on an ended terminal.
   readonly restart: (key: TerminalKey) => void
 }
@@ -53,6 +62,7 @@ export type DemoStates = {
   readonly openWelcome: () => void
   readonly notices: NonNullable<Backend["notices"]>
   readonly pickDirectory: NonNullable<Backend["pickDirectory"]>
+  readonly screens: DemoScreens
   // A fresh shell in place of an ended one, through the backend's sink.
   readonly restart: (key: TerminalKey, dispatch: BackendSink["dispatch"]) => void
   // Always mounted while the demo runs: where `notices.show` puts its notifications.

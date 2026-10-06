@@ -63,7 +63,7 @@ export const createDebugDemo = (launch: DemoLaunch): Backend => {
   const restart = (key: TerminalKey): void => {
     if (sink) states.restart(key, sink.dispatch)
   }
-  const inner = createDemo(launch.variant, { connection, restart })
+  const inner = createDemo(launch.variant, { connection, screens: states.screens, restart })
   const total = Math.max(
     1,
     inner.seed.projects.reduce(
