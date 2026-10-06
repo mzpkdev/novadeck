@@ -36,6 +36,9 @@ export const insideSwitcherClose = (target: EventTarget | null): boolean =>
 export const navigateHome = (target: EventTarget | null): boolean =>
   target instanceof Element &&
   target.matches("[data-workspace-viewport], [data-workspace-canvas-node], .react-flow__node")
+// A region that takes its own keys and clicks (see `editingOrOverlay`).
+export const insideOwnKeys = (target: EventTarget | null): boolean =>
+  within(target, "[data-own-keys]")
 // A terminal's companion pane and its taskbar close themselves on Escape.
 export const insideCompanion = (target: EventTarget | null): boolean =>
   within(target, "[data-workspace-companion]")

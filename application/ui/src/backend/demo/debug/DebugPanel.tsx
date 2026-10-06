@@ -103,6 +103,9 @@ export const createDebugPanel = ({
             // Its keys are its own (see interaction/dom.ts): the workspace leaves them
             // alone, and a click here keeps focus here.
             data-own-keys
+            // Focusable, so a click off its controls lands focus here and Escape still
+            // closes it.
+            tabIndex={-1}
             onKeyDown={closeOnEscape}
             className="debug-panel fixed right-5 bottom-[110px] z-50 flex max-h-[min(720px,calc(100vh-170px))] w-100 max-w-[calc(100vw-2.5rem)] flex-col"
           >

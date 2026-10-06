@@ -31,6 +31,10 @@
       opacity var(--motion-state) var(--ease-interface),
       scale var(--motion-state) var(--ease-interface);
   }
+  /* Focused only to hold keys after a click off its controls; its controls show focus. */
+  .debug-panel:focus {
+    outline: none;
+  }
   @starting-style {
     .debug-panel {
       opacity: 0;

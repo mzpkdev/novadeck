@@ -16,14 +16,19 @@ const runnerSelection = (): BackendSelection => ({
 // no build for a runner carries it.
 const demoSelection = (): BackendSelection => {
   const rehearsals = createBootRehearsals()
-  // Made once it loads, as it remembers the variant and what the panel armed; a load
-  // that failed is tried again by the next attempt.
-  let connect: ConnectBackend | undefined
+  // One connection for every attempt, as it remembers the variant and what the panel
+  // armed. Attempts at once share its load; one that failed is tried again by the next.
+  let loading: Promise<ConnectBackend> | undefined
+  const load = (): Promise<ConnectBackend> =>
+    (loading ??= import("../backend/demo/debug/connect").then(
+      ({ connectDemo }) => connectDemo(rehearsals),
+      (error: unknown) => {
+        loading = undefined
+        throw error
+      },
+    ))
   return {
-    connect: async (signal, progress) => {
-      connect ??= (await import("../backend/demo/debug/connect")).connectDemo(rehearsals)
-      return connect(signal, progress)
-    },
+    connect: async (signal, progress) => (await load())(signal, progress),
     reboots: rehearsals.reboots,
   }
 }
