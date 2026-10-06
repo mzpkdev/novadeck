@@ -17,6 +17,8 @@
    --segmented-active-bg (paper), --segmented-active-fg (ink),
    --segmented-active-border-color (line), --segmented-active-shadow (shadow-control):
    the active segment, or the indicator.
+   --segmented-indicator-mark-bg (transparent), --segmented-indicator-mark-shadow (none):
+   a line along the indicator's foot, so the active choice reads by more than a fill.
    --segmented-disabled-opacity (0.6): a disabled segment.
    --tabs-fg (muted), --tabs-active-fg (ink): a tab at rest, and under the pointer or
    selected. --tabs-indicator-bg (strong): the line under the selected tab,
@@ -90,6 +92,16 @@
   /* Ark slides the indicator with these. */
   --transition-duration: var(--motion-state);
   --transition-timing-function: var(--ease-interface);
+}
+.segmented-indicator::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 2px;
+  background-color: var(--segmented-indicator-mark-bg, transparent);
+  box-shadow: var(--segmented-indicator-mark-shadow, none);
 }
 .tab {
   color: var(--tabs-fg, var(--color-muted));
