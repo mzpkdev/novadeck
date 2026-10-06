@@ -161,7 +161,8 @@ describe("Preferences Addons", () => {
       await expect.element(addons().getByText(/Downloading model/)).toBeVisible()
 
       const enabled = addons().getByRole("switch", { name: "Enabled" })
-      await expect.element(enabled).toHaveAttribute("aria-checked", "true")
+      // The demo's install takes a few seconds, its three steps together.
+      await expect.element(enabled, { timeout: 10_000 }).toHaveAttribute("aria-checked", "true")
       await expect.element(addons().getByText(/Checked: a test clip took/)).toBeVisible()
       await expect.element(addons().getByRole("button", { name: /Install · 574 MB/ })).toBeVisible()
     })
@@ -183,7 +184,7 @@ describe("Preferences Addons", () => {
       await showAddons()
       await addons().getByRole("button", { name: "Install" }).click()
       await expect
-        .element(addons().getByRole("switch", { name: "Enabled" }))
+        .element(addons().getByRole("switch", { name: "Enabled" }), { timeout: 10_000 })
         .toHaveAttribute("aria-checked", "true")
     }
 

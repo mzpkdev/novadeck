@@ -810,7 +810,7 @@ const installVoice = async (): Promise<void> => {
   const addons = preferencesDialog().getByRole("tabpanel", { name: "Addons" })
   await addons.getByRole("button", { name: "Install" }).click()
   await expect
-    .element(addons.getByRole("switch", { name: "Enabled" }))
+    .element(addons.getByRole("switch", { name: "Enabled" }), { timeout: 10_000 })
     .toHaveAttribute("aria-checked", "true")
   await press("{Escape}")
   await expect.element(preferencesDialog()).not.toBeInTheDocument()

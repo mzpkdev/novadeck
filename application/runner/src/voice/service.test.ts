@@ -202,6 +202,36 @@ describe("installing voice input", () => {
     expect(voice.state()).toMatchObject({ enabled: true, model: "small", failure: null })
   })
 
+  it("turns voice input on for a first install, but leaves a later one's switch as it was", async ({
+    resources,
+  }) => {
+    const { voice } = await installed(resources)
+    expect(voice.state().enabled).toBe(true)
+    voice.set({ enabled: false })
+
+    await voice.install("turbo")
+    await voice.settled()
+
+    expect(voice.state()).toMatchObject({ model: "turbo", enabled: false, failure: null })
+  })
+
+  it("keeps an unchecked model off when the one chosen had gone missing", async ({ resources }) => {
+    const { voice, directory } = await setup(resources, {
+      catalog: await modelCatalog(resources, { small: "small slow" }),
+      checkMs: 100,
+    })
+    await voice.install("turbo")
+    await voice.settled()
+    expect(voice.state()).toMatchObject({ model: "turbo", enabled: true })
+    await rm(join(directory, "models", "ggml-turbo.bin"))
+
+    await voice.install("small")
+    await voice.settled()
+
+    expect(voice.state().failure).toContain("did not transcribe")
+    expect(voice.state()).toMatchObject({ installed: ["small"], model: "small", enabled: false })
+  })
+
   it("stops on cancel without a failure, keeping what it fetched", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { small: "small slow" }),

@@ -146,6 +146,8 @@ export const VoiceInput = ({
   // has no field for a removal under way, so the card waits for the engine to be gone or a
   // new failure to turn up.
   const [removing, setRemoving] = useState<{ readonly failure: string | null } | null>(null)
+  // The model the person last asked to install, which Try again installs again.
+  const [asked, setAsked] = useState<VoiceModel | null>(null)
   if (
     removing &&
     voice &&
@@ -169,10 +171,15 @@ export const VoiceInput = ({
       {failure}
     </p>
   )
-  // What an installed card can still do about a failure: install again, which fetches an
-  // engine that is missing or out of date, runs the check, and skips models on disk.
+  const install = (model: VoiceModel): void => {
+    setAsked(model)
+    actions.install(model)
+  }
+  // What an installed card can still do about a failure: install again, the model asked
+  // for if there was one, or the one in use, which fetches an engine that is missing or out
+  // of date, runs the check, and skips models on disk. It leaves voice input off if it was.
   const retry = (): void =>
-    actions.install(installed.includes(state.model) ? state.model : installed[0]!)
+    install(asked ?? (installed.includes(state.model) ? state.model : installed[0]!))
   if (!state.available)
     return (
       <div className={settingsCardClasses}>
@@ -202,7 +209,7 @@ export const VoiceInput = ({
           <button
             type="button"
             className="button primary min-h-8 shrink-0 px-3 text-[11px]"
-            onClick={() => actions.install(choice)}
+            onClick={() => install(choice)}
           >
             Install
           </button>
@@ -254,7 +261,7 @@ export const VoiceInput = ({
               type="button"
               className="button min-h-8 shrink-0 px-3 text-[11px]"
               disabled={busy}
-              onClick={() => actions.install(other)}
+              onClick={() => install(other)}
             >
               {`Install · ${formatSize(installSize(state, other))}`}
             </button>

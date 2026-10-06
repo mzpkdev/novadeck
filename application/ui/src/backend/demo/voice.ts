@@ -29,7 +29,8 @@ export type DemoVoiceTiming = {
   readonly transcribe: number
 }
 
-const defaultTiming: DemoVoiceTiming = { step: 700, transcribe: 600 }
+// Each step long enough to see, and for a check that runs on a busy machine to catch.
+const defaultTiming: DemoVoiceTiming = { step: 1200, transcribe: 600 }
 
 // How many times a download reports progress.
 const ticks = 8

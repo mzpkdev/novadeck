@@ -439,6 +439,8 @@ export class Voice {
     signal: AbortSignal,
     engineOnly = false,
   ): Promise<void> {
+    // What was installed and chosen as the install began, before it or a refresh changes them.
+    const before = { installed: [...this.installed], settings: this.settings.voiceSettings() }
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -466,7 +468,12 @@ export class Voice {
       await this.fetchModel(model, signal)
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
       const check = await this.measure(model, manifest, signal)
-      this.settings.saveVoiceSettings({ model, enabled: true })
+      // The model checked out, so it is the one used. A first install turns voice input
+      // on, as the person installed it to use it; a later one leaves the switch as it was.
+      this.settings.saveVoiceSettings({
+        model,
+        enabled: before.installed.length === 0 || before.settings.enabled,
+      })
       await this.refresh()
       this.check = check
     } catch (error) {
@@ -479,8 +486,9 @@ export class Voice {
       // check again, rather than looking as if it had to download again.
       await this.refresh().catch(() => {})
       // A model that went unchecked never replaces one in use: it is chosen only when the
-      // one chosen is not there to use, as on a first install, and stays off until turned on.
-      const chosen = this.settings.voiceSettings().model
+      // one chosen before is not there to use, as on a first install, and stays off until
+      // turned on, even if the refresh above already chose it for a model gone missing.
+      const chosen = before.settings.model
       if (!engineOnly && this.installed.includes(model) && !this.installed.includes(chosen))
         this.settings.saveVoiceSettings({ model, enabled: false })
     } finally {
