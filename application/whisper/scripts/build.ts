@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs"
 import { cp, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises"
+import { availableParallelism } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { gzipSync } from "node:zlib"
@@ -177,6 +178,8 @@ const platformOptions = (): string[] => {
   // the best CPU module for the computer and Vulkan only where a driver answers.
   const modules = [
     "-DGGML_VULKAN=ON",
+    // The SDK's CMake packages, such as SPIRV-Headers, which the Vulkan backend looks for.
+    ...(process.env.VULKAN_SDK ? [`-DCMAKE_PREFIX_PATH=${process.env.VULKAN_SDK}`] : []),
     "-DGGML_BACKEND_DL=ON",
     // Variants are x86; arm64 Linux builds one CPU module.
     ...(process.arch === "x64" ? ["-DGGML_CPU_ALL_VARIANTS=ON"] : []),
@@ -206,7 +209,10 @@ const compile = (source: string, build: string): void => {
     "Release",
     "--target",
     "whisper-server",
+    // As many jobs as cores: a bare --parallel lets make start every compile at once,
+    // which a small CI machine runs out of memory for.
     "--parallel",
+    String(availableParallelism()),
   ])
 }
 

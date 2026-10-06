@@ -190,7 +190,7 @@ jobs:
         if: matrix.target == 'win'
         uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1.6.0
         with:
-          vulkan_version: 1.4.304.1
+          vulkan_version: 1.4.363.0
           install_runtime: false
           cache: true
 
