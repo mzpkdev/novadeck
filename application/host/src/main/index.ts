@@ -13,6 +13,7 @@ import {
   powerMonitor,
   session,
   shell,
+  systemPreferences,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron"
@@ -73,6 +74,22 @@ const relayPath = (): string => {
   return app.isPackaged
     ? join(process.resourcesPath, "relay", name)
     : join(app.getAppPath(), "..", "relay", "dist", name)
+}
+
+/**
+ * Where voice input finds its engine: the manifest shipped beside the UI, or the one
+ * `pnpm build:engine` leaves in application/whisper; and the folder or address its
+ * archive is downloaded from, which is the release this build came from once packaged.
+ */
+const voiceEngine = (): { engine: string; source: string } => {
+  if (!app.isPackaged) {
+    const dist = join(app.getAppPath(), "..", "whisper", "dist")
+    return { engine: join(dist, "engine.json"), source: dist }
+  }
+  return {
+    engine: join(process.resourcesPath, "voice", "engine.json"),
+    source: `https://github.com/mzpkdev/novadeck/releases/download/v${app.getVersion()}/`,
+  }
 }
 
 /** Whether a frame shows this app's own UI: the packaged page or the dev server. */
@@ -174,6 +191,7 @@ const launch = async (): Promise<void> => {
     entry: join(currentDirectory, "runner.js"),
     database: join(app.getPath("userData"), "workspace.sqlite"),
     relay: relayPath(),
+    ...voiceEngine(),
   })
   // A port is shell access: only the main frame of this app's own window showing its
   // own UI may ask for one.
@@ -233,7 +251,14 @@ app.setAppUserModelId(appId)
 app.whenReady().then(() => {
   // A system shutdown quits, which saves every page and terminal before the shells end.
   quitOnShutdown(powerMonitor, () => app.quit())
-  limitPermissions(session.defaultSession, isAppPage)
+  limitPermissions(
+    session.defaultSession,
+    isAppPage,
+    // macOS asks the person once, and remembers; elsewhere the page's own request is all.
+    process.platform === "darwin"
+      ? () => systemPreferences.askForMediaAccess("microphone")
+      : undefined,
+  )
   lockPagesSession(session.fromPartition(pagesPartition))
   app.on("web-contents-created", (_event, contents) => {
     if (contents.getType() === "webview") guardPage(contents, (url) => shell.openExternal(url))
