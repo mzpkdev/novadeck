@@ -88,7 +88,11 @@ const voiceEngine = (): { engine: string; source: string } => {
   }
   return {
     engine: join(process.resourcesPath, "voice", "engine.json"),
-    source: `https://github.com/mzpkdev/novadeck/releases/download/v${app.getVersion()}/`,
+    // NOVADECK_VOICE_SOURCE points a build at another folder or address, as a local or
+    // pull request build needs: it has no release of its own to download from.
+    source:
+      process.env.NOVADECK_VOICE_SOURCE ??
+      `https://github.com/mzpkdev/novadeck/releases/download/v${app.getVersion()}/`,
   }
 }
 
