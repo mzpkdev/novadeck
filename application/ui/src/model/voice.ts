@@ -38,7 +38,8 @@ export type VoiceState = {
     readonly gpu: boolean
     readonly recommended: VoiceModel
   } | null
-  // Why the last install, or the engine, failed.
+  // Why the last install, or the engine's update, failed; or why a change was refused.
+  // A clip that fails to transcribe rejects to its caller instead.
   readonly failure: string | null
 }
 
