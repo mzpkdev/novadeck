@@ -247,6 +247,14 @@ export type Runner = {
       actor: string,
     ): AsyncIterableIterator<TranscriptChange, undefined>
     /**
+     * Gives the terminal's agent a prompt as the person would type it: pasted into its
+     * input box, then Enter once it shows there. Rejects with `CONFLICT` without an agent
+     * bound, and `PROMPT_FAILED` when the paste never showed.
+     */
+    prompt(terminalId: string, text: string): Promise<void>
+    /** Presses Escape in the terminal's agent, stopping its turn; `CONFLICT` without one. */
+    interrupt(terminalId: string): Promise<void>
+    /**
      * Installs or removes Novadeck's plugin in the agent through its own commands;
      * rejects with `AGENT_SETUP_FAILED` saying why when that did not work.
      */
@@ -1117,6 +1125,8 @@ export const connectRunner = async (
           (wire, signal) => wire.agents.transcript({ terminalId, actor }, { signal }),
           { type: "reset" },
         ),
+      prompt: (terminalId, text) => call((wire) => wire.agents.prompt({ terminalId, text })),
+      interrupt: (terminalId) => call((wire) => wire.agents.interrupt({ terminalId })),
       set: (agent, connected) => call((wire) => wire.agents.set({ agent, connected })),
     },
     companions: {
