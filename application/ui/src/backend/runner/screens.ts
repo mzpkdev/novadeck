@@ -359,7 +359,13 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       // oxlint-disable-next-line no-control-regex -- Control characters are what this removes.
       const plain = text.replaceAll(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim()
       if (!plain) return false
-      screen.xterm.paste(plain)
+      // Dictating twice in a row, or after typing a word, would run the words together.
+      const buffer = screen.xterm.buffer.active
+      const before = buffer
+        .getLine(buffer.baseY + buffer.cursorY)
+        ?.getCell(buffer.cursorX - 1)
+        ?.getChars()
+      screen.xterm.paste(before && before.trim() ? ` ${plain}` : plain)
       return true
     },
   }

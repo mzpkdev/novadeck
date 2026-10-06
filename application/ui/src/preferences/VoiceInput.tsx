@@ -181,7 +181,7 @@ export const VoiceInput = ({
           detail={(model) => `Downloads ${formatSize(installSize(state, model))}, with the engine.`}
         />
         <div className={rowClasses}>
-          <span className={noteClasses}>Nothing leaves this computer.</span>
+          <span className={noteClasses}>Downloads once, then works offline.</span>
           <button
             type="button"
             className="button primary min-h-8 shrink-0 px-3 text-[11px]"

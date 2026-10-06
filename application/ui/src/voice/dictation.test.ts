@@ -407,12 +407,22 @@ describe("dictation", () => {
 })
 
 describe("dictationPrompt", () => {
-  it("names the project and the directory's last folder", () => {
-    expect(dictationPrompt("novadeck", "/home/mzpk/Workspace/novadeck/")).toBe("novadeck, novadeck")
-    expect(dictationPrompt("Checkout", "C:\\work\\api-gateway")).toBe("Checkout, api-gateway")
+  it("names the project and the directory's last folder in a sentence", () => {
+    expect(dictationPrompt("Checkout", "C:\\work\\api-gateway")).toBe(
+      "Working on Checkout, in the api-gateway folder.",
+    )
+    expect(dictationPrompt("Home", "/home/mzpk/")).toBe("Working on Home, in the mzpk folder.")
+  })
+
+  it("names a folder once when the project is named after it", () => {
+    expect(dictationPrompt("novadeck", "/home/mzpk/Workspace/novadeck/")).toBe(
+      "Working on novadeck.",
+    )
   })
 
   it("leaves out what is missing", () => {
-    expect(dictationPrompt("Checkout", "")).toBe("Checkout")
+    expect(dictationPrompt("Checkout", "")).toBe("Working on Checkout.")
+    expect(dictationPrompt("", "/srv/api")).toBe("Working in the api folder.")
+    expect(dictationPrompt(" ", "")).toBe("")
   })
 })

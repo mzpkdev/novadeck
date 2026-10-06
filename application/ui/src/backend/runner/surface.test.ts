@@ -930,6 +930,13 @@ describe("typing into a terminal's screen", () => {
     expect(written).toEqual(["run the tests"])
   })
 
+  it("puts a space between the text and a word the cursor follows", async () => {
+    const { screens, written, ready } = running("$ git")
+    await ready()
+    screens.typeInto(key, "status of the branch")
+    expect(written).toEqual([" status of the branch"])
+  })
+
   it("brackets the paste once the program asked for that", async () => {
     const { screens, written, ready } = running("\u001b[?2004h$ ")
     await ready()

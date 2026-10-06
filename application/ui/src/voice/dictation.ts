@@ -241,8 +241,17 @@ export const createDictation = (deps: DictationDeps): DictationController => {
 }
 
 // Words that help the engine spell what is said in a terminal: the project and the
-// folder it is in, which tend to be what names, paths and commands there are about.
+// folder it is in, which tend to be what names, paths and commands there are about. They
+// make a sentence, capitalised and punctuated, since Whisper writes in its prompt's style:
+// a bare list of names gets back lowercase text without punctuation.
 export const dictationPrompt = (projectName: string, directory: string): string => {
-  const folder = directory.split(/[\\/]/).findLast(Boolean)
-  return [projectName, folder].filter((word) => word && word.trim()).join(", ")
+  const project = projectName.trim()
+  const folder = directory
+    .split(/[\\/]/)
+    .findLast((part) => part.trim())
+    ?.trim()
+  if (!project) return folder ? `Working in the ${folder} folder.` : ""
+  return folder && folder !== project
+    ? `Working on ${project}, in the ${folder} folder.`
+    : `Working on ${project}.`
 }
