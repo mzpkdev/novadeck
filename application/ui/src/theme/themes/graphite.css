@@ -326,21 +326,6 @@
   --brand-tile-border-color: transparent;
 }
 
-/* A clipped corner, as on the cut cards of the look Graphite takes after: primary actions
-   and the logo tile lose their bottom-right corner to a bevel. corner-shape keeps the
-   border, the shadow and the focus ring on the cut, where clip-path would cut them off;
-   a browser without it keeps the square corner. */
-@supports (corner-shape: bevel) {
-  [data-theme="graphite"] .button.primary {
-    border-bottom-right-radius: 8px;
-    corner-bottom-right-shape: bevel;
-  }
-  [data-theme="graphite"] .deck-face {
-    border-bottom-right-radius: 32%;
-    corner-bottom-right-shape: bevel;
-  }
-}
-
 /* In both schemes: section labels are set in the mono, after the small capitals of a
    terminal's chrome. */
 [data-theme="graphite"] {
