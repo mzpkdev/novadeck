@@ -308,8 +308,8 @@ export class Engine {
     const path = `/${randomUUID().replaceAll("-", "")}`
     const threads = Math.min(8, Math.max(2, Math.floor(availableParallelism() / 2)))
     const program = join(config.folder, engineProgram)
-    // Changing these flags changes the interface: bump `engineInterface` in
-    // application/whisper/scripts/build.ts with it.
+    // Changing these flags, or the requests this class makes of the server, changes the
+    // interface: bump `engineInterface` in application/whisper/scripts/build.ts with it.
     const args = [
       "--host",
       "127.0.0.1",

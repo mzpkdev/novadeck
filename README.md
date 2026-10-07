@@ -880,7 +880,8 @@ increments. Documentation-only changes do not trigger a release. See
 [.release-it.json](.release-it.json) for the release configuration.
 
 Bump `engineInterface` in `application/whisper/scripts/build.ts` with any change to the
-server flags the runner passes or to the patched HTTP surface: during an update the
+server flags the runner passes, the requests it makes of the server or the patched HTTP
+surface: during an update the
 runner dictates with an older engine only if it speaks the same interface.
 
 Promote tested binaries on GitHub Releases by clearing **Set as a pre-release**

@@ -105,7 +105,10 @@ if (existsSync(engine)) {
       typeof manifest.file !== "string" ||
       !/^[0-9a-f]{64}$/.test(manifest.sha256) ||
       !Number.isInteger(manifest.size) ||
-      manifest.size <= 0
+      manifest.size <= 0 ||
+      // The runner reads a manifest with another interface as no manifest at all.
+      !Number.isInteger(manifest.interface ?? 1) ||
+      (manifest.interface ?? 1) < 1
     ) {
       throw new Error(JSON.stringify(manifest))
     }

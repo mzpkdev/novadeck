@@ -623,7 +623,7 @@ describe("voice input after the app brings a new engine", () => {
     await rm(join(directory, "engine", older ?? "", ".interface"), { force: true })
     await voice.refresh()
 
-    expect(() => voice.record("owner", "clip", 0, pcm(3200))).not.toThrow()
+    await expect(voice.record("owner", "clip", 0, pcm(3200))).resolves.toBeUndefined()
     await voice.settled()
   })
 
@@ -637,18 +637,16 @@ describe("voice input after the app brings a new engine", () => {
       catalog: await modelCatalog(resources),
     })
 
-    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrowError(
-      expect.objectContaining({
-        code: "VOICE_UNAVAILABLE",
-        message: expect.stringContaining("Updating the voice engine"),
-      }),
-    )
+    await expect(voice.record("owner", "clip", 0, pcm(2))).rejects.toMatchObject({
+      code: "VOICE_UNAVAILABLE",
+      data: { reason: "updating" },
+    })
     await voice.settled()
 
     // The engine that came with the update speaks the new interface, so it runs.
     const [unpacked] = await readdir(join(first.directory, "engine"))
     await expect(engineInterface(join(first.directory, "engine", unpacked ?? ""))).resolves.toBe(2)
-    voice.record("owner", "clip", 0, pcm(3200))
+    await voice.record("owner", "clip", 0, pcm(3200))
     await expect(voice.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
   })
 
