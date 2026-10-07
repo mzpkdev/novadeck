@@ -23,7 +23,7 @@ let showing: { readonly owner: object; readonly close: () => void } | undefined
 // How long the pointer rests on a trigger before its peek opens, and how long it lingers
 // once the pointer has left both, so a pointer that slips off doesn't lose it.
 const restDelay = 250
-const closeDelay = 750
+const closeDelay = 375
 
 // A peek above its trigger, for the pointer: it opens once the pointer rests on the
 // trigger and stays while the pointer is on either, so what's in it can be clicked. Focus doesn't open it, so give

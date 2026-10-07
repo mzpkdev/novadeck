@@ -15,7 +15,7 @@ export type TooltipProps = {
 // How long the pointer rests on a trigger before its tooltip opens, and how long it
 // lingers once the pointer leaves, so a pointer that slips off doesn't lose it.
 const restDelay = 400
-const closeDelay = 750
+const closeDelay = 375
 
 // A tooltip by its trigger: it opens once the pointer rests there, or at once for
 // keyboard focus, and closes a moment after the pointer leaves, as the focus moves, or
