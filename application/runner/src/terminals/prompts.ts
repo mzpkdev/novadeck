@@ -272,7 +272,7 @@ export class Prompts {
       if (Date.now() >= until)
         throw new DomainError(
           "CONFLICT",
-          "A message's doorbell is ringing the agent.",
+          "Another prompt, answer or message holds the agent's input.",
           undefined,
           "held",
         )
