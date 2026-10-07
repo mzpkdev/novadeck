@@ -54,7 +54,6 @@
 @import "./search/search.css" layer(components);
 
 @import "./theme/themes/graphite.css" layer(themes);
-@import "./theme/themes/sandstone.css" layer(themes);
 @import "./theme/accessibility.css" layer(accessibility);
 
 /* Only utilities the TSX arranges with: unit tests name utilities without using them,

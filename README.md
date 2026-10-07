@@ -567,7 +567,7 @@ This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 
 The UI runs real shells through the runner. Projects, sessions and their terminals
 live in the runner's SQLite metadata, and each session saves its terminals' order and
-layouts there too; preferences (the theme and its light, dark or system mode among
+layouts there too; preferences (the light, dark or system mode among
 them) and sidebar settings are stored locally. Unit tests
 and behaviour specs run on the demo adapter's sample data instead.
 

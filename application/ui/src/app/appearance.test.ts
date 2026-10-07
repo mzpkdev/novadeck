@@ -129,13 +129,13 @@ describe("watchAppearance", () => {
       schemes: ["light", "dark"],
     })
 
-    choose(ui, { theme: "sandstone", scheme: "dark" })
+    choose(ui, { theme: "graphite", scheme: "dark" })
 
-    expect(shown()).toEqual({ theme: "sandstone", scheme: "light" })
+    expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
     expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
-      theme: "sandstone",
+      theme: "graphite",
       scheme: "dark",
-      schemes: ["light"],
+      schemes: ["light", "dark"],
     })
   })
 
@@ -147,10 +147,10 @@ describe("watchAppearance", () => {
       const ui = uiWith({ theme: "graphite", scheme: "system" })
       watch(ui, (look) => reports.push(look))
 
-      choose(ui, { theme: "sandstone", scheme: "system" })
+      choose(ui, { theme: "graphite", scheme: "light" })
 
-      // While the page follows the system, native parts do too; a theme with one scheme
-      // pins them to it.
+      // While the page follows the system, native parts do too; a named scheme pins them
+      // to it.
       expect(reports).toEqual([
         { scheme: "system", ground: "#191c20" },
         { scheme: "light", ground: "#ffffff" },
@@ -179,7 +179,7 @@ describe("watchAppearance", () => {
     const stop = watchAppearance(ui, window, (look) => reports.push(look))
 
     stop()
-    choose(ui, { theme: "sandstone", scheme: "system" })
+    choose(ui, { theme: "graphite", scheme: "dark" })
     change(true)
 
     expect(listeners.size).toBe(0)

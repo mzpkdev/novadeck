@@ -2,9 +2,10 @@
 
 Novadeck's look is a theme. Components give the interface its shape; a theme decides
 how that shape is drawn: colours, borders, depth, corners, type, and the texture of the
-workspace. Graphite, the app's own look, is a theme like any other, with a light and a
-dark scheme; Sandstone, warm, flat and rounded, has a light scheme only and draws its
-sidebar on a dark ground. A new theme is one CSS file and one line in the theme list.
+workspace. The app ships one canonical theme, Graphite, with a light and a dark
+scheme, and offers no choice of theme: the person picks only the mode. The theme layer
+stays general, so Graphite is a theme like any other, and a new theme would be one CSS
+file and one line in the theme list.
 
 This guide is the contract between the two sides. Change it when the contract changes.
 
@@ -79,8 +80,7 @@ A token whose value reads another token is resolved where it is declared, and it
 descendants inherit the result. So an `--item-selected-bg` that a theme mixes from
 `--color-strong` on `[data-theme]` keeps the root's strong colour inside a restyled
 region. A theme that restyles a region declares each such token again on the region,
-in the same rule as on its root, so it reads the region's own foundation tokens;
-`theme/themes/sandstone.css` does this for its dark sidebar.
+in the same rule as on its root, so it reads the region's own foundation tokens.
 
 Optional foundation tokens with a plain value get their defaults in `theme/base.css`,
 on `:root` in the `base` layer, never in Tailwind's `@theme`, which would turn them
@@ -312,8 +312,8 @@ Theme rules match any element under `[data-theme]`. If the app ever renders a pr
 of another theme inside the page, scope theme rules with
 `@scope ([data-theme="x"]) to ([data-theme])` so they stop at the nested preview.
 
-`theme/themes.ts` lists the themes: an id, the name Preferences shows, and the schemes
-its file defines. To add a theme:
+`theme/themes.ts` lists the themes: an id, a name, and the schemes its file defines.
+Today it holds Graphite alone. To add a theme:
 
 1. Copy `theme/themes/graphite.css` to `theme/themes/<id>.css`, rename the selectors and
    change the values.
@@ -321,17 +321,17 @@ its file defines. To add a theme:
    `theme/themes.ts`.
 3. Run `pnpm --filter @novadeck/ui exec vitest run --project unit src/theme/`.
 
-## Choosing a theme
+## Choosing a mode
 
 Preferences holds `appearance: { theme, scheme }`, where `scheme` is `system`, `light`
-or `dark`; it starts as Graphite following the system. Preferences shows a Theme list
-from `theme/themes.ts` and a Mode choice (System, Light, Dark), disabled with a note for
-a theme with one scheme. `theme/apply.ts` resolves the preference against the system's
-scheme and the schemes the theme offers; a theme with one scheme always uses it, and
-an unknown theme falls back to the first in the list, Graphite. It then sets
-`data-theme` and `data-scheme` on `<html>` and dispatches `novadeck:themechange`.
-`app/appearance.ts` is the one place that does this while the app runs: whenever the
-preference changes, and whenever the system's scheme does.
+or `dark`; it starts as Graphite following the system. Preferences shows only a Mode
+choice (System, Light, Dark): there is no choice of theme, and `theme` stays Graphite.
+`theme/apply.ts` resolves the preference against the system's scheme and the schemes the
+theme offers; a theme with one scheme always uses it, and an unknown theme, such as a
+saved choice of the retired Sandstone, falls back to the first in the list, Graphite. It
+then sets `data-theme` and `data-scheme` on `<html>` and dispatches
+`novadeck:themechange`. `app/appearance.ts` is the one place that does this while the
+app runs: whenever the preference changes, and whenever the system's scheme does.
 
 - **Switching** sets `data-theme-switching` on `<html>`, which stills transitions so
   the whole page changes at once instead of fading control by control. `apply.ts` reads
