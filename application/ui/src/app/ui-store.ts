@@ -279,8 +279,9 @@ export const watchChatModes = (workspace: Store<Workspace>, ui: UiStore): (() =>
     ui.update((state) => {
       const chat = keepChatModes(state.chat, keep)
       const chatDrafts = keepChatDrafts(state.chatDrafts, open)
-      // A reply's question goes with its agent; the words stay with the draft.
-      const chatReplies = keepChatReplies(state.chatReplies, keep)
+      // What a draft replies to, or that it is held, stays as long as the draft: a reply
+      // whose question went with its agent comes back held, never as a message.
+      const chatReplies = keepChatReplies(state.chatReplies, open)
       return chat === state.chat &&
         chatDrafts === state.chatDrafts &&
         chatReplies === state.chatReplies

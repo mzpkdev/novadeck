@@ -1,5 +1,5 @@
 import type { AgentStatus } from "../../model/types"
-import { chatModeOn } from "../../terminals/chat/mode-state"
+import { chatModeOn, chatReplyOf } from "../../terminals/chat/mode-state"
 import { context, describe, expect, it } from "../../test"
 import { openCommands } from "../../test/commands"
 import { watchChatModes } from "../ui-store"
@@ -89,6 +89,22 @@ describe("chat commands", () => {
       expect(app.ui.getSnapshot().chatDrafts).toEqual({
         "project/initial": { "01": "meanwhile\nuse pnpm" },
       })
+    })
+  })
+
+  context("when the agent a reply was written for ends", () => {
+    it("keeps the reply's hold with its words, for the next agent there, until the terminal closes", () => {
+      const app = open({ working: false })
+      const stop = watchChatModes(app.workspace, app.ui)
+      app.commands.setChatDraft("01", "!important: pick X")
+      app.commands.setChatReply("project/initial", "01", "held")
+      app.status(undefined)
+      app.status({ working: false })
+      expect(chatReplyOf(app.ui.getSnapshot().chatReplies, "project/initial", "01")).toBe("held")
+      app.workspace.dispatch({ type: "terminal/close", target, terminalId: "01" })
+      expect(app.ui.getSnapshot().chatReplies).toEqual({})
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({})
+      stop()
     })
   })
 

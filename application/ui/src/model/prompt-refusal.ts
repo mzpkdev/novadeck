@@ -2,11 +2,11 @@
 // something else: control characters (the C0 range but for tab and line breaks, CRLF and CR
 // among them, DEL, and C1) act
 // as keys, a leading `/` is a slash command and a leading `!` a shell command, which the
-// chat's box sends as one when a command follows it, and a
-// trailing `@name` or `$name` leaves a file or skill picker open that takes the Enter. The text is judged as
-// it is sent, trimmed. This mirrors the protocol package's `promptRefusal`, which the
-// runner refuses with PROMPT_REFUSED (see `backend/runner/prompt-refusal.test.ts`); keep the two alike,
-// so the chat warns before the runner has to refuse.
+// chat's box sends as one when a command follows it, and a trailing `@name` or `$name`
+// leaves a file or skill picker open that takes the Enter. The text is judged as it is
+// sent, trimmed. This mirrors the protocol package's `promptRefusal`, which the runner
+// refuses with PROMPT_REFUSED (see `backend/runner/prompt-refusal.test.ts`); keep the two
+// alike, so the chat warns before the runner has to refuse.
 // The text with its line breaks as line feeds: a CRLF or a lone CR is one line break.
 const normalised = (text: string): string => text.replace(/\r\n?/g, "\n")
 

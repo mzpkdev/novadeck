@@ -164,7 +164,7 @@ const refusal = (error: unknown): Error => {
   if (hasCode(error, "DIALOG_CHANGED"))
     return new Error("The dialog changed — check it and answer again.")
   if (hasCode(error, "CONFLICT"))
-    return new Error("Couldn't answer that here. Answer it in the terminal.")
+    return new Error(said(error) ?? "Couldn't answer that here. Answer it in the terminal.")
   if (hasCode(error, "WORDS_NOT_SENT")) return new WordsLost()
   if (hasCode(error, "ANSWER_FAILED"))
     return new Error("That answer didn't take. Answer it in the terminal.")
