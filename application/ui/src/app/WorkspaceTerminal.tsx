@@ -1,6 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from "react"
 
-import { agentStats } from "../model/agent-usage"
 import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
 import type { CompanionWindowMeta, TerminalMetadata, Tile } from "../model/types"
@@ -273,7 +272,6 @@ export const WorkspaceTerminal = ({
             fresh={fresh}
             terminalName={(id) => terminalName[id]}
             commands={commands}
-            stats={agentStats(terminal)}
           >
             {Body ? <Body>{content}</Body> : content}
           </TerminalCompanion>

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
-import type { AgentStats as AgentStatsValue } from "../../model/agent-usage"
 import type { CompanionItem, CompanionKey, ItemId } from "../../model/companion"
 import { messagesKey, type Bar, type BarKey } from "../../model/companion-bar"
 import type { WindowPlace } from "../../model/layout/window-place"
@@ -9,7 +8,6 @@ import type { ViewMode } from "../../model/types"
 import { usePresence, type Presence } from "../../ui-toolkit/presence"
 import { useDrag, type BarDrag } from "../drag-session"
 import type { TerminalLayoutControls } from "../WindowShell"
-import { AgentStats } from "./AgentStats"
 import { barMembers, composeBar, dropOutcome, shownTab, slotKeys, type BarMember } from "./bar"
 import { CompanionPane } from "./CompanionPane"
 import { useMail } from "./mail"
@@ -140,7 +138,6 @@ export const TerminalCompanion = ({
   fresh,
   terminalName = unnamed,
   commands,
-  stats,
 }: {
   panes: Panes
   messages?: Messages | undefined
@@ -157,8 +154,6 @@ export const TerminalCompanion = ({
   // A terminal in this session by its id, as it's named.
   terminalName?: ((terminalId: string) => string | undefined) | undefined
   commands: ItemCommands
-  // What its agent runs on and how full its context is, which its taskbar shows.
-  stats?: AgentStatsValue | undefined
 }): React.JSX.Element => {
   const { terminalId: terminal, projectId, workspaceSessionId } = companionKey
   const target = useMemo(() => ({ projectId, workspaceSessionId }), [projectId, workspaceSessionId])
@@ -244,7 +239,7 @@ export const TerminalCompanion = ({
 
   const trigger = useRef<HTMLButtonElement>(null)
   const presentation = presentationOf(view)
-  const present = slots.length > 0 || stats !== undefined
+  const present = slots.length > 0
   // The pane stays while it animates out. Only the pane animates: the terminal beside
   // it takes its new size once, never frame by frame.
   const shown = usePresence(open)
@@ -280,9 +275,8 @@ export const TerminalCompanion = ({
       ) : (
         children
       )}
-      {/* A terminal gains its taskbar once its agent has a plan, shows something, can
-          message others, or says what it runs on, or once another terminal's item is
-          placed on it. */}
+      {/* A terminal gains its taskbar once its agent has a plan, shows something, or can
+          message others, or once another terminal's item is placed on it. */}
       {taskbar.mounted && (
         <Taskbar
           terminal={terminal}
@@ -295,7 +289,6 @@ export const TerminalCompanion = ({
           onHide={() => commands.closeBarPane(terminal)}
           presence={taskbar}
           dropTarget={overBar}
-          stats={stats && <AgentStats stats={stats} />}
         />
       )}
       {/* Nothing to show yet, but an icon is dragged over: an empty bar to drop it on. It

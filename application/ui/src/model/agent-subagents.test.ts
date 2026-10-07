@@ -28,7 +28,7 @@ const waiting = (agents: number, tasks: number): TerminalMetadata => ({
 })
 
 describe("an agent's subagents", () => {
-  it("count in its window's header", () => {
+  it("count in its tab's tooltip", () => {
     expect(subagentsBadge(terminal())).toBeUndefined()
     expect(subagentsBadge(terminal([{ id: "a", type: "explorer" }]))).toBe("1 subagent")
     expect(
@@ -42,7 +42,7 @@ describe("an agent's subagents", () => {
   })
 
   context("while its turn is over and what that left running runs on", () => {
-    it("counts that work in its window's header instead", () => {
+    it("counts that work in its tab's tooltip instead", () => {
       expect(subagentsBadge(waiting(3, 1))).toBe("3 agents · 1 task")
       expect(subagentsBadge(waiting(1, 0))).toBe("1 agent")
       expect(subagentsBadge(waiting(0, 2))).toBe("2 tasks")

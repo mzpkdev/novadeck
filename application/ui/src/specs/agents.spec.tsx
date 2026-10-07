@@ -79,21 +79,22 @@ describe("An agent's subagents", () => {
     expect(build.hasAttribute("data-terminal-subagents")).toBe(false)
   })
 
-  it("count beside a focused window's name, their kinds on hover", async () => {
+  it("are counted by kind in its tab's tooltip, and left to its terminal in its window", async () => {
     // The demo's Codex runs two explorers.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     await page.getByRole("button", { name: "Select Checkout review" }).click()
     const window = page.getByRole("region", { name: "Checkout review terminal" })
-    expect(await tooltipOf(window.getByText("2 subagents"))).toBe("2 explorer")
-    await chooseView("Grid")
+    // Pressed, a tab offers its tooltip again once the pointer has left it.
+    await userEvent.hover(window)
+    expect(await tooltipOf(terminalTab("Checkout review"))).toContain("2 subagents: 2 explorer")
     await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
   })
 })
 
 describe("An agent whose turn left work running", () => {
-  it("works on, counting that work beside a focused window's name", async () => {
+  it("works on, counting that work in its tab's tooltip", async () => {
     // The demo's Claude Code waits on two subagents and a command it started.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
@@ -101,10 +102,12 @@ describe("An agent whose turn left work running", () => {
     await page.getByRole("button", { name: "Select Tests" }).click()
     const window = page.getByRole("region", { name: "Tests terminal" })
     await expect.element(window).toHaveAttribute("data-terminal-phase", "running")
-    expect(await tooltipOf(window.getByText("2 agents · 1 task"))).toBe(
-      "Subagents it started still run: it works on until they finish",
+    // Pressed, a tab offers its tooltip again once the pointer has left it.
+    await userEvent.hover(window)
+    expect(await tooltipOf(terminalTab("Tests"))).toContain(
+      "2 agents · 1 task: Subagents it started still run: it works on until they finish",
     )
-    await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
+    await expect.element(window.getByText("2 agents · 1 task")).not.toBeInTheDocument()
   })
 
   it("is idle beside a command it left running, which shows but never keeps it working", async () => {
@@ -115,8 +118,10 @@ describe("An agent whose turn left work running", () => {
     await page.getByRole("button", { name: "Select Build" }).click()
     const window = page.getByRole("region", { name: "Build terminal" })
     await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
-    expect(await tooltipOf(window.getByText("1 task"))).toBe(
-      "Its turn is over; work it started runs on in the background",
+    // Pressed, a tab offers its tooltip again once the pointer has left it.
+    await userEvent.hover(window)
+    expect(await tooltipOf(terminalTab("Build"))).toContain(
+      "1 task: Its turn is over; work it started runs on in the background",
     )
   })
 })
@@ -205,24 +210,30 @@ describe("An agent that finishes", () => {
 })
 
 describe("An agent's model and context", () => {
-  it("show at the right end of its taskbar, in Focus and in compact windows", async () => {
+  it("show as a ring by its window's buttons, in words as the ring is hovered", async () => {
     // The demo's Codex reports its model, effort and context, and a five-hour window.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     await page.getByRole("button", { name: "Select Checkout review" }).click()
     const window = page.getByRole("region", { name: "Checkout review terminal" })
-    const bar = window.getByRole("group", { name: /^What .+ showed you$/ })
-    await expect.element(bar.getByText("gpt-6-astra · high")).toBeVisible()
-    // How full its context is shows as a ring alone, in words on hover.
-    const ring = bar.getByRole("img", { name: "Context 15% full · 30k of 200k tokens" })
+    const ring = window.getByRole("img", {
+      name: "gpt-6-astra · high, Context 15% full · 30k of 200k tokens",
+    })
+    const words = window.getByText("gpt-6-astra (high)")
+    const share = window.getByText("15% (30k/200k)")
     await expect.element(ring).toBeVisible()
-    await expect.element(bar.getByText("15%")).not.toBeInTheDocument()
+    // The rest of the header leaves the words folded away.
+    await userEvent.hover(window.getByRole("heading", { name: "Checkout review" }))
+    await expect.element(words).not.toBeVisible()
+    await userEvent.hover(ring)
+    await expect.element(words).toBeVisible()
+    await expect.element(share).toBeVisible()
     // Its rate limits stay out of the window.
     await expect.element(window.getByText(/5h 40%/)).not.toBeInTheDocument()
     await chooseView("Grid")
-    await expect.element(ring).toBeVisible()
-    expect(await tooltipOf(ring)).toBe("Context 15% full · 30k of 200k tokens")
+    await userEvent.hover(ring)
+    await expect.element(words).toBeVisible()
   })
 })
 

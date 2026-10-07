@@ -12,13 +12,14 @@ import {
 import { useRef, type ReactNode } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
-import { subagentsBadge, subagentsDetail } from "../model/agent-subagents"
+import { agentStats } from "../model/agent-usage"
 import { isWindow } from "../model/roster"
 import { attentionText, doneText, terminalPhase, unheardText } from "../model/terminal-ending"
 import type { Tile, WindowedView } from "../model/types"
 import { ContextMenu, type ContextMenuItem } from "../ui-toolkit/ContextMenu"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
+import { WindowStats } from "./WindowStats"
 
 // What a layout contributes to each terminal it places.
 export type TerminalLayoutControls = {
@@ -125,8 +126,8 @@ export const WindowShell = ({
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
   const shell = isWindow(terminal) ? undefined : terminal
-  const subagents = shell && subagentsBadge(shell)
   const planning = shell?.state === "running" && shell.agent?.planning === true
+  const stats = shell && agentStats(shell)
   const phase = shell ? terminalPhase(shell, unread !== undefined) : "idle"
   const failed = unread === "failed"
   // What the agent waits on the person for, that Novadeck can't hear from it, or that it
@@ -255,23 +256,18 @@ export const WindowShell = ({
           )}
         </>
       </div>
-      {(planning || subagents) && !compact && (
-        // Whether the agent plans, and its subagents, in full on hover. Only a focused
-        // window has room beside its name; a compact one leaves them to its tab's tooltip.
-        // What it runs on and how full its context is are its taskbar's.
+      {planning && !compact && (
+        // Whether the agent plans, in full on hover. Only a focused window has room beside
+        // its name; a compact one leaves it to its tab's tooltip. Its subagents are its
+        // tab's, as its own terminal shows them; what it runs on and how full its context
+        // is follow, by its buttons.
         <span className="terminal-metadata ml-auto flex min-w-0 items-center gap-2 overflow-hidden text-caption">
-          {planning && (
-            <Tooltip content="Planning, not changing anything yet">
-              <span className="terminal-planning shrink-0">planning</span>
-            </Tooltip>
-          )}
-          {shell && subagents && (
-            <Tooltip content={subagentsDetail(shell)}>
-              <span className="terminal-subagents shrink-0">{subagents}</span>
-            </Tooltip>
-          )}
+          <Tooltip content="Planning, not changing anything yet">
+            <span className="terminal-planning shrink-0">planning</span>
+          </Tooltip>
         </span>
       )}
+      {stats && <WindowStats stats={stats} />}
       <span className="terminal-actions flex shrink-0 items-center">
         {dictation && (
           <Tooltip

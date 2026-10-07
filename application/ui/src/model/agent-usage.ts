@@ -27,15 +27,17 @@ const lapsed = ({ resetsAt }: Limit, now: number): boolean => resetsAt !== null 
 const usageOf = (terminal: TerminalMetadata): AgentUsage | undefined =>
   terminal.state === "running" ? terminal.agent?.usage : undefined
 
-// What its taskbar says of the agent at its right end: the model it runs and its effort,
+// What its window says of the agent by its buttons: the model it runs and its effort,
 // where its harness says, and how full its context is, as a share where its capacity is
-// known, with the tokens in words for a tooltip. Undefined without any.
+// known, with the tokens it holds of how many, and all of it in words. Undefined without
+// any.
 export type AgentStats = {
   readonly model: string | null
   readonly effort: string | null
   readonly context: {
     readonly share: number | null
     readonly label: string
+    readonly tokens: string
     readonly detail: string
   } | null
 }
@@ -52,6 +54,9 @@ export const agentStats = (terminal: TerminalMetadata): AgentStats | undefined =
       share: context.capacity ? Math.min(1, context.occupied / context.capacity) : null,
       label: context.capacity
         ? percent(context.occupied / context.capacity)
+        : tokens(context.occupied),
+      tokens: context.capacity
+        ? `${tokens(context.occupied)}/${tokens(context.capacity)}`
         : tokens(context.occupied),
       detail: context.capacity
         ? `Context ${percent(context.occupied / context.capacity)} full · ${tokens(context.occupied)} of ${tokens(context.capacity)} tokens`

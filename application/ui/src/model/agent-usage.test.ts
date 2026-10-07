@@ -29,6 +29,7 @@ describe("an agent's usage", () => {
       context: {
         share: 0.15,
         label: "15%",
+        tokens: "30k/200k",
         detail: "Context 15% full · 30k of 200k tokens",
       },
     })
@@ -48,6 +49,7 @@ describe("an agent's usage", () => {
     expect(agentStats(terminal(only))?.context).toEqual({
       share: null,
       label: "1.2M",
+      tokens: "1.2M",
       detail: "Context: 1.2M tokens",
     })
   })
