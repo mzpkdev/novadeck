@@ -167,11 +167,17 @@ for (const setup of setups) {
       })
       await t1.reached("working", { after: mark })
       const stopped = await t1.interrupt()
+      // Let go only once the agent has taken the Escape, which Antigravity 1.2.14 does a
+      // moment after the key, on any prompt: a reply let go the instant `interrupt` resolves
+      // beats it, and one let go 100 ms or more after never does (probed,
+      // probes/interrupt-held-reply.e2e.ts).
+      await sleep(500)
       held.open()
       await sleep(1500)
 
       // The prompt is the chat's already: none of it goes back to the draft.
       expect(stopped.returned).toBeNull()
+      expect(await t1.screen()).not.toContain("Too late.")
 
       // The box is empty: the next prompt goes alone, as a normal turn.
       const next = t1.mark()
