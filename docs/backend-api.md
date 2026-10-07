@@ -829,8 +829,8 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   and Antigravity leave it echoed above their box, which stays empty; probed); the runner
   leaves the box as it was before the turn's prompt. Where the box read empty before the
   Escape, it looks up to 2 s at the box through the harness's adapter, and when the box
-  holds exactly the turn's prompt as its hooks told it (or the placeholder for a long
-  one), steady on two reads, it writes the adapter's clear keys, a double Escape for
+  holds exactly the turn's prompt as its hooks told it (Claude Code puts a long one back
+  as its text, never as a placeholder; probed), steady on two reads, it writes the adapter's clear keys, a double Escape for
   Claude Code (never pressed over an empty box, where it opens Claude Code's rewind
   picker, nor over text the person had typed or merged in, which is left). A harness
   without clear keys has nothing pressed.
