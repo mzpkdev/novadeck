@@ -19,6 +19,10 @@ export type ChatCommands = {
   readonly showTerminal: (terminalId: string) => void
   // Keeps what the person has typed in the terminal's chat and not sent.
   readonly setChatDraft: (terminalId: string, text: string) => void
+  // Adds words to the end of the draft of the terminal in a session, on a line of their
+  // own, reading the draft as it is when it changes: whatever the person typed meanwhile
+  // stays.
+  readonly appendChatDraft: (context: string, terminalId: string, words: string) => void
   // Clears the draft a prompt was sent from, in the session it was sent in, if the person
   // hasn't changed it since (words added after it, as dictated while it went, stay):
   // whether or not the chat is still on screen.
@@ -55,6 +59,15 @@ export const createChatCommands = (ctx: CommandContext): ChatCommands => {
         return chatDrafts === state.chatDrafts ? state : { ...state, chatDrafts }
       })
     },
+    appendChatDraft: (context, terminalId, words) =>
+      void ui.update((state) => {
+        const draft = chatDraftOf(state.chatDrafts, context, terminalId)
+        const next = draft.trim() ? `${draft}\n${words}` : words
+        return {
+          ...state,
+          chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, next),
+        }
+      }),
     clearChatDraft: (context, terminalId, sent) =>
       void ui.update((state) => {
         const draft = chatDraftOf(state.chatDrafts, context, terminalId)

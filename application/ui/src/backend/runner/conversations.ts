@@ -23,7 +23,7 @@ export type ConversationStreams = {
     actor: string,
   ) => AsyncIterableIterator<TranscriptChange, undefined>
   readonly prompt: (terminalId: string, text: string) => Promise<void>
-  readonly interrupt: (terminalId: string) => Promise<void>
+  readonly interrupt: (terminalId: string) => Promise<{ readonly returned: string | null }>
 }
 
 export type RunnerConversations = Conversations & {
@@ -116,6 +116,11 @@ const failure = (error: unknown, what: string): Error => {
     return new Error(
       said(error) ??
         "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
+    )
+  // Stopped, but the words queued behind the turn stay in the agent's own box.
+  if (hasCode(error, "BOX_NOT_CLEARED"))
+    return new Error(
+      "Stopped. Your queued message is still in the agent's box: clear it in the terminal.",
     )
   if (hasCode(error, "PROMPT_FAILED"))
     return new Error("The prompt didn't land in the agent's box. It may be there as a draft.")
@@ -338,9 +343,12 @@ export const createRunnerConversations = (
       return sent
     },
     interrupt: ({ terminalId }) =>
-      track(streams.interrupt(terminalId)).catch((error: unknown) => {
-        throw failure(error, "stop")
-      }),
+      track(streams.interrupt(terminalId)).then(
+        ({ returned }) => returned,
+        (error: unknown) => {
+          throw failure(error, "stop")
+        },
+      ),
     stop: () => {
       for (const halt of stoppers.values()) halt()
     },

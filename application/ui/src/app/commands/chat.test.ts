@@ -79,6 +79,21 @@ describe("chat commands", () => {
     })
   })
 
+  context("when words come back to the draft", () => {
+    it("adds them on a line of their own after what is there", () => {
+      const app = open({ working: false })
+      app.commands.appendChatDraft("project/initial", "01", "Queued beta")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({
+        "project/initial": { "01": "Queued beta" },
+      })
+      app.commands.setChatDraft("01", "typed")
+      app.commands.appendChatDraft("project/initial", "01", "Queued beta")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({
+        "project/initial": { "01": "typed\nQueued beta" },
+      })
+    })
+  })
+
   context("when a sent prompt's draft is cleared", () => {
     it("clears it where it was sent, unless it has changed since", () => {
       const app = open({ working: false })

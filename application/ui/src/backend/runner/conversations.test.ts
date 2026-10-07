@@ -87,7 +87,7 @@ const setup = () => {
       return next.stream
     }),
     prompt: vi.fn<ConversationStreams["prompt"]>(async () => {}),
-    interrupt: vi.fn<ConversationStreams["interrupt"]>(async () => {}),
+    interrupt: vi.fn<ConversationStreams["interrupt"]>(async () => ({ returned: null })),
   }
   const conversations = createRunnerConversations(streams)
   const store = conversations.conversation(key)
@@ -449,6 +449,15 @@ describe("the runner's conversations", () => {
       // Once it went, the same words are a prompt of their own.
       await conversations.send(key, "run the tests")
       expect(streams.prompt).toHaveBeenCalledTimes(2)
+    })
+
+    it("gives back the words the agent returned from its queue, or null", async () => {
+      const { conversations, streams } = setup()
+      expect(await conversations.interrupt(key)).toBeNull()
+      streams.interrupt.mockResolvedValueOnce({ returned: "Queued beta" })
+      expect(await conversations.interrupt(key)).toBe("Queued beta")
+      streams.interrupt.mockRejectedValueOnce(new RunnerError("BOX_NOT_CLEARED"))
+      await expect(conversations.interrupt(key)).rejects.toThrow("still in the agent's box")
     })
 
     it("tells the person why an interrupt didn't go", async () => {

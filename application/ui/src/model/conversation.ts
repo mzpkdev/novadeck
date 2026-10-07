@@ -78,6 +78,8 @@ export type Conversations = {
   // Gives the terminal's agent a prompt as the person would type it into its box, then
   // Enter. Rejects with an Error whose message tells the person why it didn't go.
   readonly send: (key: ConversationKey, text: string) => Promise<void>
-  // Stops the agent's turn, as Escape in its TUI does. Rejects as `send` does.
-  readonly interrupt: (key: ConversationKey) => Promise<void>
+  // Stops the agent's turn, as Escape in its TUI does. Resolves with the words the person
+  // had queued behind the turn, which the agent gave back and the chat's box takes again,
+  // or null. Rejects as `send` does.
+  readonly interrupt: (key: ConversationKey) => Promise<string | null>
 }

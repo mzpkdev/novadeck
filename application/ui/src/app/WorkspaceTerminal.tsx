@@ -227,7 +227,11 @@ export const WorkspaceTerminal = ({
                 // Cleared even if the chat has gone from the screen meanwhile.
                 commands.clearChatDraft(chatContext, terminalId, text)
               }}
-              onInterrupt={() => conversations!.interrupt(terminalKey)}
+              onInterrupt={async () => {
+                const returned = await conversations!.interrupt(terminalKey)
+                // Words queued behind the stopped turn come back to the box, to send again.
+                if (returned) commands.appendChatDraft(chatContext, terminalId, returned)
+              }}
               onAnswerInTerminal={() => commands.showTerminal(terminalId)}
               focusInput={wanted}
               onInputFocused={onInputFocused}

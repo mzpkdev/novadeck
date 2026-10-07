@@ -199,6 +199,8 @@ export const createDemoChat = (
       interrupt: async (key) => {
         const found = agentFor(key)
         turns.interrupt(found.key, agentOf(found.terminal))
+        // The demo queues nothing behind a turn: nothing comes back.
+        return null
       },
     },
     observe: (workspace) => {
