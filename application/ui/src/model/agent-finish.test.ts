@@ -1,6 +1,6 @@
 import { context, describe, expect, it } from "../test"
 import { terminalFixture } from "../test/fixtures"
-import { finishNotice, sightTurnEnd } from "./agent-finish"
+import { finishNotice, finishStands, sightTurnEnd } from "./agent-finish"
 import type { AgentStatus, TerminalMetadata } from "./types"
 
 const base = { ...terminalFixture(1, "~/project"), process: "claude" }
@@ -111,5 +111,20 @@ describe("a finish's notice", () => {
     expect(finishNotice(terminal, { failed: true, reply: "API error 529." }).body).toBe(
       "API error 529.",
     )
+  })
+})
+
+describe("whether a completed end stands", () => {
+  const rested = (outcome: "completed" | "interrupted", at: number) =>
+    agent({ working: false, lastTurn: { outcome, at } })
+
+  it("stands while the same completed end shows with the agent resting", () => {
+    expect(finishStands(rested("completed", 10), 10)).toBe(true)
+  })
+
+  it("falls once the end turned interrupted, was replaced, or the agent works", () => {
+    expect(finishStands(rested("interrupted", 12), 10)).toBe(false)
+    expect(finishStands(rested("completed", 20), 10)).toBe(false)
+    expect(finishStands(working, 10)).toBe(false)
   })
 })

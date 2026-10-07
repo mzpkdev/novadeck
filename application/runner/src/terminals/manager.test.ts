@@ -1555,7 +1555,8 @@ describe("a turn the person's Escape ended", () => {
   type Inside = {
     records: Map<string, { binding: unknown; activity: Activity | null }>
     applyFact: (record: unknown, fact: ActivityEvent) => boolean
-    awaitVerdict: (record: unknown, fact: ActivityEvent) => void
+    escaped: (record: unknown) => void
+    messaging: { escaped: (id: string, binding: unknown) => ActivityEvent | undefined }
   }
 
   it("reads completed once the window passes with a Stop told since, else interrupted", async ({
@@ -1581,8 +1582,10 @@ describe("a turn the person's Escape ended", () => {
       for (const stop of [true, false]) {
         record.activity = fresh(0)
         tell({ type: "turn-started", cause: "prompt", startedAt: 10 })
-        const escaped = tell({ type: "turn-escaped", startedAt: 20 })
-        inside.awaitVerdict(record, escaped)
+        // Delivery tells the Escape once, as the manager asks after the person's key.
+        const escaped = { ...binding, type: "turn-escaped", startedAt: 20 } as ActivityEvent
+        inside.messaging.escaped = () => escaped
+        inside.escaped(record)
         if (stop) tell({ type: "turn-ended", outcome: "completed", startedAt: 25, reply: "Done." })
         vi.advanceTimersByTime(escapeVerdictMs - 1)
         expect(lastTurn()).toMatchObject({ outcome: "interrupted" })

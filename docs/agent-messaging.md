@@ -304,7 +304,12 @@ the opener's, and `describe` names the caller's own terminal (see
   neither within `escapeVerdictMs` (1.5 s from the key) the Stop stands as the end.
   Antigravity fires no Stop for a turn it stopped, so its Stop is the end at once. With no
   Stop in the window the turn stays interrupted, and a Stop after it ends the turn as any
-  other.
+  other. A turn taken as completed is corrected to interrupted by its harness's record of
+  the interruption told within the window, and a Stop Novadeck continued after the Escape
+  continues the turn as it would have. A Stop that reached the runner before the key is a
+  plain finish, which Codex's `Interrupt` can then turn interrupted; clients hold a finish
+  notification and the unread mark for a short grace (`finishGraceMs`, 700 ms) and drop
+  them if the same turn's end turns interrupted meanwhile.
 - **A root turn event** is a decoded turn event, from any source the adapters read
   (hooks, Antigravity's status line, Claude Code's transcript for interrupts), of the
   terminal's bound agent instance and its root session: not of a nested agent run

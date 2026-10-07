@@ -5,7 +5,7 @@ import type { AgentName } from "@novadeck/protocol"
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
 import { loadProbe } from "../testing/probes.js"
-import { apply, started, subagentRef, summary, type Activity } from "./activity.js"
+import { apply, escapeVerdictMs, started, subagentRef, summary, type Activity } from "./activity.js"
 import type { Binding } from "./bindings.js"
 import type { ActivityEvent } from "./events.js"
 import { harnesses } from "./registry.js"
@@ -1189,6 +1189,71 @@ describe("a turn the person's Escape ended", () => {
     expect(
       apply(next, binding, fact({ type: "turn-escape-lapsed", startedAt: 20 })),
     ).toBeUndefined()
+  })
+
+  it("goes on with a Stop Novadeck continued after the Escape, held or settled", () => {
+    const continued = (activity: Activity, at: number) =>
+      on(activity, { type: "turn-continued", startedAt: at })
+    // Claude Code: the Stop is held; its record of the continued Stop ends nothing.
+    const held = continued(stop(stopped, 25, { reply: "First." }), 25)
+    expect(summary(held)).toMatchObject({ state: "working", lastTurn: null })
+    expect(held).toMatchObject({ continued: true, skips: 1, turnAt: 25 })
+    expect(
+      apply(
+        held,
+        binding,
+        fact({ type: "turn-ended", outcome: "completed", startedAt: 30, recorded: true }),
+      ),
+    ).toMatchObject({ state: "working", skips: 0 })
+    // Antigravity: its Stop settled the turn at once, though it started before the key.
+    const antigravity = escaped(turn(started(0, true, false), 10), 20)
+    const settled = continued(stop(antigravity, 19, { reply: "First." }), 19)
+    expect(summary(settled)).toMatchObject({ state: "working", lastTurn: null })
+    expect(settled).toMatchObject({ continued: true, skips: 1, turnAt: 19 })
+    // Should the continuation lapse, the Stop's end stands.
+    expect(outcome(on(settled, { type: "turn-lapsed", startedAt: 19 }))).toMatchObject({
+      outcome: "completed",
+      reply: "First.",
+    })
+  })
+
+  it("corrects a turn taken as completed when the harness then records its interruption", () => {
+    const completed = lapsed(stop(stopped, 30, { reply: "Too late." }), 20)
+    expect(outcome(completed)).toMatchObject({ outcome: "completed" })
+    // Claude Code's marker, polled after the window's lapse; Codex's record with no hook.
+    for (const extra of [{}, { recorded: true }]) {
+      const corrected = stop(completed, 110, { outcome: "interrupted", ...extra })
+      expect(outcome(corrected)).toMatchObject({ outcome: "interrupted", reply: null })
+      expect(outcome(corrected)!.at).toBeGreaterThan(outcome(completed)!.at)
+    }
+    // A record long after the key is not this turn's.
+    expect(
+      apply(
+        completed,
+        binding,
+        fact({
+          type: "turn-ended",
+          outcome: "interrupted",
+          recorded: true,
+          startedAt: 20 + escapeVerdictMs + 1,
+        }),
+      ),
+    ).toBeUndefined()
+  })
+
+  it("takes a failed end after the Escape as the turn's", () => {
+    expect(outcome(stop(stopped, 25, { outcome: "failed" }))).toMatchObject({ outcome: "failed" })
+  })
+
+  it("keeps a record's turn and word that it was recorded, so the hook's Stop says more of the end", () => {
+    const recorded = stop(stopped, 30, { recorded: true, reply: "Done." })
+    expect(outcome(recorded)).toEqual({ outcome: "completed", reply: "Done.", at: 30 })
+    expect(recorded.lastTurn?.recorded).toBe(true)
+    expect(outcome(stop(recorded, 35, { reply: "Done, fully." }))).toEqual({
+      outcome: "completed",
+      reply: "Done, fully.",
+      at: 30,
+    })
   })
 
   it("gives up the Escape when the turn goes on, so its Stop ends it as any other", () => {

@@ -40,6 +40,19 @@ export const sightTurnEnd = (
   }
 }
 
+// How long a completed end waits to be told before it counts as a finish: a harness that
+// took the person's Escape just after its reply fires its Stop, then records the
+// interruption (Claude Code's transcript, Codex's `Interrupt`) within about half a second
+// of the key, a turn the person stopped (docs/harness-coverage.md, "Escape against a reply
+// on its way"). The end shown at the time is only a finish if it still stands then.
+export const finishGraceMs = 700
+
+// Whether the end at `at` still stands as a completed one: shown still, the agent resting.
+export const finishStands = (terminal: TerminalMetadata, at: number): boolean => {
+  const end = turnEnd(terminal)
+  return end?.at === at && end.outcome === "completed" && !agentWorking(terminal)
+}
+
 // What a desktop notification says of a finish: who finished, by the terminal's handle
 // where it has one, whether it failed, and the start of its reply.
 export const finishNotice = (

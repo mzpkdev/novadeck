@@ -120,13 +120,22 @@ export type LastTurn = {
 type TurnEnded = Extract<ActivityEvent, { type: "turn-ended" }>
 
 /**
- * The person's Escape ended the turn that started at `from`, and its harness may not have
- * taken the key: a reply that reached it first finishes the turn, which fires a Stop (and
- * Claude Code's fires too when it took the key just after the reply, its transcript then
- * recording the interruption). `held` is the Stop that came since, waiting for the
- * harness to say more.
+ * The person's Escape, at `key`, ended the turn that started at `from`, and its harness may
+ * not have taken the key: a reply that reached it first finishes the turn, which fires a
+ * Stop (and Claude Code's and Codex's fires too when they took the key just after the
+ * reply, their records then telling the interruption). `held` is the Stop that came since,
+ * waiting for the harness to say more; `stop` is when the hook of the Stop that ended the
+ * turn started, held or settled, which a continuation of it names. `settled` says the turn
+ * was taken as completed, which a record of its interruption told within the window still
+ * corrects.
  */
-type Escape = { readonly from: number; readonly held: TurnEnded | null }
+type Escape = {
+  readonly from: number
+  readonly key: number
+  readonly held: TurnEnded | null
+  readonly stop: number | null
+  readonly settled: boolean
+}
 
 /**
  * How long after the person's Escape the harness has to say how the turn ended: Claude
@@ -317,36 +326,48 @@ const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined =
   }
 }
 
-/** The last turn as the Escape told it, once the harness has said how it ended. */
+/** The activity once the harness has said how the Escaped turn ended: the marker goes. */
 const confirmed = (activity: Activity): Activity => {
   const { escaped: _, ...lastTurn } = activity.lastTurn!
   return { ...activity, lastTurn }
 }
 
 /**
- * A turn the person's Escape ended that its harness finished all the same: the end it
- * reported, at a time after the Escape's, which tells it from the interruption it replaces.
+ * A turn's end for the Escaped turn, as `turnEnded` takes it, at a time after the last
+ * turn's end, which tells it from the one it replaces. A record of it is taken as for the
+ * turn still running, as it ended it.
  */
-const finished = (activity: Activity, event: TurnEnded): Activity | undefined =>
-  turnEnded(confirmed(activity), {
-    type: "turn-ended",
-    agent: event.agent,
-    sessionId: event.sessionId,
-    instance: event.instance,
-    startedAt: Math.max(event.startedAt, activity.turnAt + 1),
-    outcome: "completed",
-    ...(event.background && { background: event.background }),
-    ...(event.reply !== undefined && { reply: event.reply }),
+const ending = (activity: Activity, event: TurnEnded): Activity | undefined =>
+  turnEnded(event.recorded ? { ...confirmed(activity), state: "working" } : confirmed(activity), {
+    ...event,
+    startedAt: Math.max(event.startedAt, activity.lastTurn!.at + 1),
   })
 
 /**
+ * A turn the person's Escape ended that its harness finished all the same: the end it
+ * reported, kept as a correction's due should the harness yet record the interruption.
+ */
+const finished = (activity: Activity, event: TurnEnded): Activity | undefined => {
+  const { escaped } = activity.lastTurn!
+  const next = ending(activity, { ...event, outcome: "completed" })
+  const stop = event.recorded ? escaped!.stop : event.startedAt
+  return (
+    next && {
+      ...next,
+      lastTurn: { ...next.lastTurn!, escaped: { ...escaped!, held: null, stop, settled: true } },
+    }
+  )
+}
+
+/**
  * A turn's end told after the person's Escape ended it, for the turn the Escape ended
- * only. The harness's interruption stands as the Escape said. A finish counts once the
- * harness has said nothing more: its own record of it settles it at once, as does the Stop
- * of a harness with no other word (`Harness.records`), while a Stop hook alone waits for
- * the interruption its harness may still record, and for the window to pass
- * (`turn-escape-lapsed`). Undefined where it changes nothing, null where the end is for
- * the normal rules.
+ * only. A turn taken as completed is corrected by its harness's record of the interruption
+ * within the window. Otherwise the harness's interruption stands as the Escape said, and a
+ * finish counts once the harness has said nothing more: its own record of it settles it at
+ * once, as does the Stop of a harness with no other word (`Harness.records`), while a Stop
+ * hook alone waits for the interruption its harness may still record, and for the window
+ * to pass (`turn-escape-lapsed`). Undefined where it changes nothing, null where the end is
+ * for the normal rules.
  */
 const afterEscape = (
   activity: Activity,
@@ -354,17 +375,42 @@ const afterEscape = (
   event: TurnEnded,
 ): Activity | undefined | null => {
   if (event.outcome === "failed") return null
-  if (
-    event.startedAt < escaped.from ||
-    (event.turn && activity.turn && event.turn !== activity.turn)
-  )
-    return undefined
+  const other = event.turn && activity.turn && event.turn !== activity.turn
+  if (escaped.settled) {
+    // Only the turn's own interruption, near the key, corrects what the Stop said.
+    return event.outcome === "interrupted" &&
+      !other &&
+      event.startedAt >= escaped.from &&
+      event.startedAt <= escaped.key + escapeVerdictMs
+      ? ending(activity, event)
+      : null
+  }
+  if (event.startedAt < escaped.from || other) return undefined
   if (event.outcome === "interrupted") {
     // Its record names the Escape's own end; a hook's end older than the key, too.
     return event.recorded || event.startedAt < activity.turnAt ? confirmed(activity) : null
   }
   if (event.recorded || !activity.records) return finished(activity, escaped.held ?? event)
-  return { ...activity, lastTurn: { ...activity.lastTurn!, escaped: { ...escaped, held: event } } }
+  return {
+    ...activity,
+    lastTurn: {
+      ...activity.lastTurn!,
+      escaped: { ...escaped, held: event, stop: event.startedAt },
+    },
+  }
+}
+
+/**
+ * Novadeck continued the Stop that ended the Escaped turn, held or settled: the turn goes
+ * on from that Stop, as if the Escape had not come between.
+ */
+const continuedAfterEscape = (activity: Activity, escaped: Escape): Activity | undefined => {
+  const { held, stop } = escaped
+  if (stop === null) return undefined
+  const ended = held
+    ? turnEnded(confirmed(activity), held)
+    : { ...confirmed(activity), turnAt: stop }
+  return ended
 }
 
 /**
@@ -485,6 +531,10 @@ export const apply = (
     const told = afterEscape(activity, escaped, event)
     if (told !== null) return told
   }
+  if (escaped && event.type === "turn-continued" && event.startedAt === escaped.stop) {
+    const ended = continuedAfterEscape(activity, escaped)
+    return ended && apply(ended, binding, event)
+  }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
@@ -558,7 +608,13 @@ export const apply = (
           reply: null,
           at: event.startedAt,
           recorded: false,
-          escaped: { from: activity.turnAt, held: null },
+          escaped: {
+            from: activity.turnAt,
+            key: event.startedAt,
+            held: null,
+            stop: null,
+            settled: false,
+          },
         },
       }
     case "turn-working":
@@ -573,7 +629,12 @@ export const apply = (
     case "turn-escape-lapsed": {
       // The window passed: the Stop held since is the end, else the Escape stands.
       const { lastTurn } = activity
-      if (activity.state !== "idle" || !lastTurn?.escaped || lastTurn.at !== event.startedAt)
+      if (
+        activity.state !== "idle" ||
+        !lastTurn?.escaped ||
+        lastTurn.escaped.settled ||
+        lastTurn.escaped.key !== event.startedAt
+      )
         return undefined
       const { held } = lastTurn.escaped
       return held ? finished(activity, held) : confirmed(activity)

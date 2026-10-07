@@ -84,7 +84,8 @@ for (const setup of setups) {
           expect(activity?.lastTurn?.outcome, why).toBe("interrupted")
           // Where the Escape ended the turn first, a Stop after it is not the end until the
           // harness has said it didn't take the key. (A Stop told before the key ended the
-          // turn completed, and the harness's interruption after it is its own doing.)
+          // turn completed, and the harness's interruption after it replaces that: clients
+          // hold a finish for `finishGraceMs` for it.)
           if (read[0] === "interrupted") expect(read, why).not.toContain("completed")
         }
         await run.deck.terminals.close({ terminalId: t1.id }, "e2e").catch(() => {})
