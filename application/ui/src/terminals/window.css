@@ -14,6 +14,7 @@
    --window-bg (paper), --window-fg (ink), --window-border-color (line),
    --window-shadow (shadow-panel), --window-radius (radius-panel): the window at rest.
    --window-selected-border-color (line-strong): the selected window's outline.
+   --window-selected-shadow (the window's shadow): the selected window's lift.
    --window-header-bg (the window's bg), --window-header-border-color (line): the header
    and its hairline. --window-header-icon-fg (muted): the icons in it.
    --window-selected-header-bg (the header's bg): the selected window's header.
@@ -46,12 +47,15 @@
 .terminal-window {
   --_border-color: var(--window-border-color, var(--color-line));
   --_border-style: solid;
+  --_shadow: var(--window-shadow, var(--shadow-panel));
   border: var(--border-width) var(--_border-style) var(--_border-color);
   border-radius: var(--window-radius, var(--radius-panel));
   background-color: var(--window-bg, var(--color-paper));
   color: var(--window-fg, var(--color-ink));
-  box-shadow: var(--window-shadow, var(--shadow-panel));
-  transition: border-color var(--motion-state) var(--ease-interface);
+  box-shadow: var(--_shadow);
+  transition:
+    border-color var(--motion-state) var(--ease-interface),
+    box-shadow var(--motion-state) var(--ease-interface);
 }
 .terminal-header {
   --_bg: var(--window-header-bg, var(--window-bg, var(--color-paper)));
@@ -89,6 +93,7 @@
 .grid-terminal.selected .terminal-window,
 .canvas-node.selected .terminal-window {
   --_border-color: var(--window-selected-border-color, var(--color-line-strong));
+  --_shadow: var(--window-selected-shadow, var(--window-shadow, var(--shadow-panel)));
 }
 .terminal-focused .terminal-header,
 .grid-terminal.selected .terminal-header,

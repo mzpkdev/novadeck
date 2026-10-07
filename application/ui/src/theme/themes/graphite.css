@@ -76,17 +76,22 @@
   --terminal-ansi-magenta-bright: #9940a6;
   --terminal-ansi-cyan-bright: #0e727c;
   --terminal-ansi-white-bright: #76736c;
-  /* Depth */
-  --shadow-control: 0 1px 3px color-mix(in srgb, var(--color-shadow) 4%, transparent);
+  /* Depth: each level a close contact shadow and a wider, softer one, so surfaces lift
+     off the paper by layers: controls barely, windows and panels clearly, popovers and
+     dialogs well above. */
+  --shadow-control: 0 1px 2px color-mix(in srgb, var(--color-shadow) 7%, transparent);
   --shadow-panel:
-    0 1px 2px color-mix(in srgb, var(--color-shadow) 2.5%, transparent),
-    0 4px 12px -6px color-mix(in srgb, var(--color-shadow) 8%, transparent);
+    0 1px 2px color-mix(in srgb, var(--color-shadow) 5%, transparent),
+    0 3px 8px -2px color-mix(in srgb, var(--color-shadow) 7%, transparent),
+    0 14px 28px -14px color-mix(in srgb, var(--color-shadow) 14%, transparent);
   --shadow-floating:
-    0 2px 5px -2px color-mix(in srgb, var(--color-shadow) 6%, transparent),
-    0 10px 24px -12px color-mix(in srgb, var(--color-shadow) 16%, transparent);
+    0 2px 4px -1px color-mix(in srgb, var(--color-shadow) 8%, transparent),
+    0 10px 22px -6px color-mix(in srgb, var(--color-shadow) 14%, transparent),
+    0 28px 52px -22px color-mix(in srgb, var(--color-shadow) 18%, transparent);
   --shadow-modal:
-    0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 5%, transparent),
-    0 20px 60px -20px color-mix(in srgb, var(--color-shadow) 14%, transparent);
+    0 4px 8px -2px color-mix(in srgb, var(--color-shadow) 8%, transparent),
+    0 18px 40px -12px color-mix(in srgb, var(--color-shadow) 20%, transparent),
+    0 44px 88px -28px color-mix(in srgb, var(--color-shadow) 26%, transparent);
 
   /* Component tokens: an off switch and an unchecked box are drawn by their edges, which
      the soft lines leave faint; these keep 3:1 against the paper, as in dark. */
@@ -120,6 +125,13 @@
   --region-header-border-color: #d5d2cb;
   --region-footer-border-color: #d0cdc6;
   --window-selected-border-color: #bbb6ad;
+  /* Component tokens: the workspace sits recessed under the chrome, a soft inner shadow
+     along its top and left edges where the header and sidebar meet it, and the selected
+     window lifts to the floating level, above its neighbours. */
+  --workspace-inset-shadow:
+    inset 0 6px 10px -8px color-mix(in srgb, var(--color-shadow) 16%, transparent),
+    inset 6px 0 10px -8px color-mix(in srgb, var(--color-shadow) 12%, transparent);
+  --window-selected-shadow: var(--shadow-floating);
   /* Component tokens: the workspace's glow is a lighter paper and its edges a deeper
      one, a vignette stronger than dark's, which its near-black canvas already gives. */
   --workspace-glow-bg: #eae8e3;
@@ -222,17 +234,26 @@
   --terminal-ansi-magenta-bright: #dfb6ec;
   --terminal-ansi-cyan-bright: #a3dbe2;
   --terminal-ansi-white-bright: #f2f3f5;
-  /* Depth: deeper, so surfaces still lift off a dark ground. */
-  --shadow-control: 0 1px 3px color-mix(in srgb, var(--color-shadow) 30%, transparent);
+  /* Depth: deeper shadows than light's, and, since a shadow barely shows on a near-black
+     ground, a hairline of light along each raised surface's top edge that brightens with
+     its height. */
+  --shadow-control:
+    0 1px 2px color-mix(in srgb, var(--color-shadow) 45%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.04);
   --shadow-panel:
-    0 1px 2px color-mix(in srgb, var(--color-shadow) 25%, transparent),
-    0 4px 12px -6px color-mix(in srgb, var(--color-shadow) 40%, transparent);
+    0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent),
+    0 4px 12px -4px color-mix(in srgb, var(--color-shadow) 50%, transparent),
+    0 16px 32px -16px color-mix(in srgb, var(--color-shadow) 65%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.04);
   --shadow-floating:
-    0 2px 5px -2px color-mix(in srgb, var(--color-shadow) 35%, transparent),
-    0 10px 24px -12px color-mix(in srgb, var(--color-shadow) 55%, transparent);
+    0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 50%, transparent),
+    0 12px 28px -8px color-mix(in srgb, var(--color-shadow) 65%, transparent),
+    0 32px 56px -24px color-mix(in srgb, var(--color-shadow) 70%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
   --shadow-modal:
-    0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 35%, transparent),
-    0 20px 60px -20px color-mix(in srgb, var(--color-shadow) 60%, transparent);
+    0 4px 10px -4px color-mix(in srgb, var(--color-shadow) 55%, transparent),
+    0 24px 64px -16px color-mix(in srgb, var(--color-shadow) 75%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.07);
 
   /* Component tokens: an off switch and an unchecked box are drawn by their edges, which
      a line colour leaves near invisible on a dark ground; these keep 3:1 against it. */
@@ -296,6 +317,13 @@
   --region-header-border-color: #25282e;
   --region-footer-border-color: #23262c;
   --window-selected-border-color: #3d4047;
+  /* Component tokens: the workspace sits recessed under the chrome, a soft inner shadow
+     along its top and left edges where the header and sidebar meet it, and the selected
+     window lifts to the floating level, above its neighbours. */
+  --workspace-inset-shadow:
+    inset 0 8px 12px -8px color-mix(in srgb, var(--color-shadow) 70%, transparent),
+    inset 8px 0 12px -8px color-mix(in srgb, var(--color-shadow) 55%, transparent);
+  --window-selected-shadow: var(--shadow-floating);
   /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
      as a state. */
   --window-phase-ended-border-color: #cfd1d6;
