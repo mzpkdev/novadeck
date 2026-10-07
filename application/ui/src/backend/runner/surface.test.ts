@@ -129,6 +129,31 @@ const ended = (terminal: Partial<TerminalMetadata>) => {
   return { page, bar, restarts, connection }
 }
 
+// The page's font set while the bundled mono is on its way: it arrives when the test says.
+const loading = () => {
+  const arrival = later<FontFace[]>()
+  const original = Object.getOwnPropertyDescriptor(document, "fonts")
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: { check: () => false, load: () => arrival.promise },
+  })
+  const restore = () => {
+    if (original) Object.defineProperty(document, "fonts", original)
+    else delete (document as { fonts?: unknown }).fonts
+  }
+  return { arrive: () => arrival.give([]), restore }
+}
+// Collects each xterm as the surface opens it.
+const opening = () => {
+  const opened: Terminal[] = []
+  const originalOpen = Terminal.prototype.open
+  vi.spyOn(Terminal.prototype, "open").mockImplementation(function (this: Terminal, element) {
+    opened.push(this)
+    return originalOpen.call(this, element)
+  })
+  return opened
+}
+
 // Two programs' bodies, each its own component, so switching remounts the content.
 const Agent = (props: { children: ReactNode }) => createElement("section", props)
 const Plain = (props: { children: ReactNode }) => createElement("article", props)
@@ -495,6 +520,53 @@ describe("runner terminal surface", () => {
         expect(opened[0]?.options.fontFamily).toBe("New Mono")
       } finally {
         root.style.removeProperty("--font-mono")
+      }
+    })
+  })
+
+  context("while its bundled monospace font is still loading", () => {
+    it("measures again in the font once it arrives", async () => {
+      const font = loading()
+      const opened = opening()
+      const root = document.documentElement
+      root.style.setProperty("--font-mono", "Fallback Mono")
+      try {
+        show(starting().runtime)
+        expect(opened[0]?.options.fontFamily).toBe("Fallback Mono")
+
+        root.style.setProperty("--font-mono", "Bundled Mono")
+        await act(async () => font.arrive())
+
+        expect(opened[0]?.options.fontFamily).toBe("Bundled Mono")
+      } finally {
+        root.style.removeProperty("--font-mono")
+        font.restore()
+      }
+    })
+
+    it("leaves a screen alone that closed before the font arrived", async () => {
+      const font = loading()
+      const opened = opening()
+      const root = document.documentElement
+      root.style.setProperty("--font-mono", "Fallback Mono")
+      try {
+        const page = show(starting().runtime)
+        mounted.splice(mounted.indexOf(page), 1)
+        // A screen closes once its session has stayed off screen for its retention.
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+        try {
+          page.unmount()
+          vi.advanceTimersByTime(31 * 60 * 1000)
+        } finally {
+          vi.useRealTimers()
+        }
+        root.style.setProperty("--font-mono", "Bundled Mono")
+        await act(async () => font.arrive())
+
+        expect(opened[0]?.options.fontFamily).toBe("Fallback Mono")
+      } finally {
+        root.style.removeProperty("--font-mono")
+        font.restore()
       }
     })
   })
