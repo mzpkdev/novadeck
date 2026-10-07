@@ -106,9 +106,9 @@ if (existsSync(engine)) {
       !/^[0-9a-f]{64}$/.test(manifest.sha256) ||
       !Number.isInteger(manifest.size) ||
       manifest.size <= 0 ||
-      // The runner reads a manifest with another interface as no manifest at all.
-      !Number.isInteger(manifest.interface ?? 1) ||
-      (manifest.interface ?? 1) < 1
+      // The runner reads a manifest whose interface it cannot parse as no manifest at all.
+      (manifest.interface !== undefined &&
+        !(Number.isSafeInteger(manifest.interface) && manifest.interface > 0))
     ) {
       throw new Error(JSON.stringify(manifest))
     }
