@@ -67,6 +67,24 @@ describe("A terminal's taskbar", () => {
       .toBeVisible()
   })
 
+  it("minimizes its pane back to the taskbar, for what was shown and for messages", async () => {
+    await openShowcase()
+    const pane = companionPane("Build Studio")
+    const file = pane.getByText("src/content/projects.json", { exact: true })
+    await expect.element(file).toBeVisible()
+
+    await pane.getByRole("button", { name: "Minimize to the taskbar" }).click()
+
+    await expect.element(pane).not.toBeInTheDocument()
+    await taskbarIcon("Build Studio", "2 files").click()
+    await expect.element(file).toBeVisible()
+
+    await taskbarIcon("Build Studio", "Messages").click()
+    await expect.element(pane.getByText("Pause all agents' messages")).toBeVisible()
+    await pane.getByRole("button", { name: "Minimize to the taskbar" }).click()
+    await expect.element(pane).not.toBeInTheDocument()
+  })
+
   context("when an item is closed from its menu", () => {
     it("no longer shows the item", async () => {
       await openShowcase()
