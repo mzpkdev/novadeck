@@ -32,6 +32,8 @@ const terminal = (
     chat?: "field" | "prompt" | null
     /** Its keys come with a few hundred seconds' worth of waits, which hold at once. */
     longSteps?: boolean
+    /** Its keys type words with no check after that they showed. */
+    unchecked?: boolean
     /** Whether the other request "r2" still waits. */
     twinWaits?: () => boolean
     /** Other requests waiting. */
@@ -97,6 +99,18 @@ const terminal = (
         },
       }
     }
+    if (options.unchecked)
+      return {
+        read: (rows, each) => {
+          const read = plain.read(rows, each)
+          return (
+            read && {
+              ...read,
+              keys: (answer) => read.keys(answer)?.filter((step) => !("until" in step)),
+            }
+          )
+        },
+      }
     if (options.longSteps)
       return {
         read: (rows, each) => {
@@ -469,6 +483,14 @@ describe("answering a request through its dialog", () => {
     await give(tui, answers, { type: "choice", option: "1" }, shown(new FakeTui()))
     expect(tui.written).toEqual(["1"])
     expect(locks).toEqual([])
+  })
+
+  it("presses nothing where its adapter would type words without checking they showed", async () => {
+    const { tui, answers } = terminal({ unchecked: true })
+    await expect(
+      give(tui, answers, { type: "choice", option: "3", text: "words" }),
+    ).rejects.toThrow("without a check")
+    expect(tui.written).toEqual([])
   })
 
   it("is ANSWER_FAILED where typed text never shows, pressing no Enter", async () => {
