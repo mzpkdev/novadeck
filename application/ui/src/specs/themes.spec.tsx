@@ -29,9 +29,9 @@ describe("theme scoping", () => {
   })
 
   it("keeps Graphite's component tokens out of another theme", () => {
-    expect(tokenIn("phosphor", "dark", "--color-paper")).not.toBe(
+    expect(tokenIn("phosphor-green", "dark", "--color-paper")).not.toBe(
       tokenIn("graphite", "dark", "--color-paper"),
     )
-    expect(tokenIn("phosphor", "dark", "--sidebar-create-border-color")).toBe("")
+    expect(tokenIn("phosphor-green", "dark", "--sidebar-create-border-color")).toBe("")
   })
 })

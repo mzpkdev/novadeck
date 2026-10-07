@@ -2,8 +2,9 @@
 
 Novadeck's look is a theme. Components give the interface its shape; a theme decides
 how that shape is drawn: colours, borders, depth, corners, type, and the texture of the
-workspace. The app ships two themes: Graphite, the default, with a light and a dark
-scheme, and Phosphor, a green CRT in dark only. The person picks a theme, and a mode
+workspace. The app ships three themes: Graphite, the default, with a light and a dark
+scheme, and Phosphor Green and Phosphor Amber, a monochrome CRT in two tubes, in dark
+only. The person picks a theme, and a mode
 where the theme offers more than one. The token tiers and the component hooks below
 are general, so a theme can change them without touching a component.
 
@@ -315,9 +316,26 @@ each. Graphite is the default, so its scope also matches when no theme is set (t
   /* every required token again */
 }
 
-:root[data-theme="phosphor"] {
+:root[data-theme="phosphor-green"] {
   color-scheme: dark;
   /* a theme with one scheme: just this block */
+}
+```
+
+Themes that differ only in their palette may share a file. Its rules for all of them
+start with their shared scope, `:root:is()` over each one's `data-theme`, and each
+theme's own block holds what is its own; a token counts as set when either block sets
+it. Phosphor's two tubes share `theme/phosphor.css` this way:
+
+```css
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
+  color-scheme: dark;
+  /* what both tubes share, the CRT's effects included */
+}
+
+:root[data-theme="phosphor-amber"] {
+  --color-paper: #0e0803;
+  /* the rest of amber's palette */
 }
 ```
 
@@ -349,13 +367,16 @@ hover, selected and disabled looks; a rule that sets properties restates each st
 needs. When many such rules pile up, the recipe is missing a token: add it to the
 recipe instead, and every theme gains it.
 
-`theme/themes.ts` lists the themes: an id, the name Preferences shows, and the schemes
-its file defines. The first is the default, and the fallback for an unknown id. To add
-a theme:
+`theme/themes.ts` lists the themes: an id, the name Preferences shows, the schemes it
+defines, and its file, `theme/<id>.css` unless it names a shared one. The first is the
+default, and the fallback for an unknown id. To add a theme:
 
-1. Copy `theme/phosphor.css` to `theme/<id>.css`, rename the scope and change the values.
-2. Import it in `styles.css` into `layer(themes)`, add `{ id, name, schemes }` to
-   `theme/themes.ts`, and add it to the table in `public/theme-boot.js`.
+1. Copy `theme/graphite.css` to `theme/<id>.css`, rename the scope and change the
+   values; or, for another palette of an existing theme, add a block to its file and
+   its id to the shared scope.
+2. Import a new file in `styles.css` into `layer(themes)`, add `{ id, name, schemes }`
+   (and `file` when shared) to `theme/themes.ts`, and add it to the table in
+   `public/theme-boot.js`.
 3. Run `pnpm --filter @novadeck/ui exec vitest run --project unit src/theme/`.
 
 ## Choosing a theme

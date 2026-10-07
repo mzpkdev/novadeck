@@ -52,7 +52,9 @@ const schemes = ["system", "light", "dark"] as const
 describe("the boot script", () => {
   it("lists the themes theme/themes.ts does", () => {
     const listed = /const themes = (\{[^}]*\})/.exec(script)?.[1]
-    expect(JSON.parse(listed!.replace(/(\w+):/g, '"$1":'))).toEqual(
+    // The script's object literal as JSON: bare keys quoted, a trailing comma dropped.
+    const json = listed!.replace(/([{,]\s*)(\w+):/g, '$1"$2":').replace(/,(\s*\})/, "$1")
+    expect(JSON.parse(json)).toEqual(
       Object.fromEntries(themes.map((theme) => [theme.id, theme.schemes])),
     )
   })
@@ -81,8 +83,8 @@ describe("the boot script", () => {
   it("shows a theme with one scheme in it, whatever the mode or the system", () => {
     for (const scheme of schemes)
       for (const systemDark of systems) {
-        expect(boot(JSON.stringify({ theme: "phosphor", scheme }), systemDark)).toEqual({
-          theme: "phosphor",
+        expect(boot(JSON.stringify({ theme: "phosphor-green", scheme }), systemDark)).toEqual({
+          theme: "phosphor-green",
           scheme: "dark",
         })
         expect(document.documentElement.style.colorScheme).toBe("dark")

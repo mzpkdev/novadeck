@@ -445,18 +445,18 @@ describe("appearance preference", () => {
       await openPreferences()
 
       await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
-      await preferencesDialog().getByRole("option", { name: "Phosphor" }).click()
+      await preferencesDialog().getByRole("option", { name: "Phosphor Green" }).click()
 
       await expect
         .element(preferencesDialog().getByRole("combobox", { name: "Theme" }))
-        .toHaveTextContent("Phosphor")
+        .toHaveTextContent("Phosphor Green")
       await expect.element(modeChoice("Light")).toBeDisabled()
       await expect.element(modeChoice("Dark")).toBeChecked()
       await expect
         .element(preferencesDialog().getByRole("group", { name: "Mode" }))
-        .toHaveAccessibleDescription("Phosphor comes only in dark.")
+        .toHaveAccessibleDescription("Phosphor Green comes only in dark.")
       await expect.poll(pageScheme).toBe("dark")
-      expect(document.documentElement.dataset.theme).toBe("phosphor")
+      expect(document.documentElement.dataset.theme).toBe("phosphor-green")
     })
 
     it("keeps the theme after reloading and gives Graphite its mode back", async () => {
@@ -465,7 +465,7 @@ describe("appearance preference", () => {
       await openPreferences()
       await chooseMode("Light")
       await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
-      await preferencesDialog().getByRole("option", { name: "Phosphor" }).click()
+      await preferencesDialog().getByRole("option", { name: "Phosphor Green" }).click()
       await expect.poll(pageScheme).toBe("dark")
       await closePreferences()
 
@@ -473,7 +473,10 @@ describe("appearance preference", () => {
       document.documentElement.removeAttribute("data-theme")
       document.documentElement.removeAttribute("data-scheme")
       await reloadWorkspace()
-      expect(document.documentElement.dataset).toMatchObject({ theme: "phosphor", scheme: "dark" })
+      expect(document.documentElement.dataset).toMatchObject({
+        theme: "phosphor-green",
+        scheme: "dark",
+      })
       await openPreferences()
 
       await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()

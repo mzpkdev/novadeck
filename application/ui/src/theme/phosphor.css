@@ -1,69 +1,20 @@
-/* Phosphor, a P1 green CRT: glowing green on a near-black tube, in the dark only. A
-   theme for the wow more than the workday: its terminal colours are shades of one green,
+/* Phosphor, a monochrome CRT in two tubes: Phosphor Green, the P1 phosphor, and
+   Phosphor Amber, the warmer P3. Glowing text on a near-black tube, in the dark only. A
+   theme for the wow more than the workday: its terminal colours are shades of one hue,
    as a monochrome monitor draws them, so colour no longer tells red from blue.
+
+   Both tubes share this file: the first block holds what they have in common, the CRT
+   included, which draws in each tube's own colours; each tube's block holds its palette.
    Imported into `layer(themes)`; see docs/theming.md. */
 
-:root[data-theme="phosphor"] {
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
   color-scheme: dark;
 
-  /* Grounds: the tube's black with a trace of green, stepping up to the paper. */
-  --color-canvas: #020402;
-  --color-shell: #040904;
-  --color-paper: #061006;
-  --color-soft: #0c1d0e;
-  /* Text: the phosphor's own green, and a dimmer one for what is secondary. */
-  --color-ink: #7dff8a;
-  --color-muted: #3cae50;
-  /* Lines */
-  --color-line: #10331a;
-  --color-line-strong: #1f5a2b;
-  /* Emphasis: the brightest the beam draws. */
-  --color-strong: #39ff6b;
-  --color-strong-hover: #8dffa6;
-  --color-on-strong: #021004;
-  /* Overlays */
-  --color-scrim: rgb(0 6 0 / 0.65);
-  --color-selection: #134a20;
-  --color-shadow: rgb(0 0 0);
-  /* Tones: tints of the tube, each keeping its warning apart by hue as far as a green
-     monitor can. */
-  --color-success: #0d2a14;
-  --color-success-fg: #7dff8a;
-  --color-warning: #24260a;
-  --color-warning-fg: #e3ff7a;
-  --color-danger: #2c0e0a;
-  --color-danger-fg: #ff8a6a;
-  --color-note: #1c2408;
-  --color-note-fg: #c8ff6a;
-  /* Syntax: one green, from the beam's brightest to its dimmest. */
-  --color-syntax-keyword: #b8ffc2;
-  --color-syntax-string: #5fe07a;
-  --color-syntax-number: #a4ff7a;
-  --color-syntax-property: #7dffc4;
-  --color-syntax-definition: #d6ffda;
-  --color-syntax-type: #9dff9a;
-  --color-syntax-comment: #2f8f45;
-  /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
+  /* Terminal: the tube's own colours; its ANSI shades are each tube's. */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
   --terminal-cursor: var(--color-strong);
   --terminal-selection: var(--color-selection);
-  --terminal-ansi-black: #1c4a26;
-  --terminal-ansi-red: #4fd06a;
-  --terminal-ansi-green: #7dff8a;
-  --terminal-ansi-yellow: #a6ff8a;
-  --terminal-ansi-blue: #3cae50;
-  --terminal-ansi-magenta: #5fe07a;
-  --terminal-ansi-cyan: #8affb0;
-  --terminal-ansi-white: #b8ffc2;
-  --terminal-ansi-black-bright: #2f7a3e;
-  --terminal-ansi-red-bright: #7dff8a;
-  --terminal-ansi-green-bright: #a8ffb0;
-  --terminal-ansi-yellow-bright: #ccffaa;
-  --terminal-ansi-blue-bright: #5fe07a;
-  --terminal-ansi-magenta-bright: #8dffa6;
-  --terminal-ansi-cyan-bright: #b8ffd8;
-  --terminal-ansi-white-bright: #e6ffe8;
   /* Depth: no shadows on a tube; surfaces glow instead, faintly, at their edges. */
   --shadow-control: 0 0 0 1px color-mix(in srgb, var(--color-strong) 10%, transparent);
   --shadow-panel:
@@ -120,29 +71,145 @@
   );
 }
 
+/* Phosphor Green: P1. */
+:root[data-theme="phosphor-green"] {
+  /* Grounds: the tube's black with a trace of green, stepping up to the paper. */
+  --color-canvas: #020402;
+  --color-shell: #040904;
+  --color-paper: #061006;
+  --color-soft: #0c1d0e;
+  /* Text: the phosphor's own green, and a dimmer one for what is secondary. */
+  --color-ink: #7dff8a;
+  --color-muted: #3cae50;
+  /* Lines */
+  --color-line: #10331a;
+  --color-line-strong: #1f5a2b;
+  /* Emphasis: the brightest the beam draws. */
+  --color-strong: #39ff6b;
+  --color-strong-hover: #8dffa6;
+  --color-on-strong: #021004;
+  /* Overlays */
+  --color-scrim: rgb(0 6 0 / 0.65);
+  --color-selection: #134a20;
+  --color-shadow: rgb(0 0 0);
+  /* Tones: tints of the tube, each keeping its warning apart by hue as far as a green
+     monitor can. */
+  --color-success: #0d2a14;
+  --color-success-fg: #7dff8a;
+  --color-warning: #24260a;
+  --color-warning-fg: #e3ff7a;
+  --color-danger: #2c0e0a;
+  --color-danger-fg: #ff8a6a;
+  --color-note: #1c2408;
+  --color-note-fg: #c8ff6a;
+  /* Syntax: one green, from the beam's brightest to its dimmest. */
+  --color-syntax-keyword: #b8ffc2;
+  --color-syntax-string: #5fe07a;
+  --color-syntax-number: #a4ff7a;
+  --color-syntax-property: #7dffc4;
+  --color-syntax-definition: #d6ffda;
+  --color-syntax-type: #9dff9a;
+  --color-syntax-comment: #2f8f45;
+  /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
+  --terminal-ansi-black: #1c4a26;
+  --terminal-ansi-red: #4fd06a;
+  --terminal-ansi-green: #7dff8a;
+  --terminal-ansi-yellow: #a6ff8a;
+  --terminal-ansi-blue: #3cae50;
+  --terminal-ansi-magenta: #5fe07a;
+  --terminal-ansi-cyan: #8affb0;
+  --terminal-ansi-white: #b8ffc2;
+  --terminal-ansi-black-bright: #2f7a3e;
+  --terminal-ansi-red-bright: #7dff8a;
+  --terminal-ansi-green-bright: #a8ffb0;
+  --terminal-ansi-yellow-bright: #ccffaa;
+  --terminal-ansi-blue-bright: #5fe07a;
+  --terminal-ansi-magenta-bright: #8dffa6;
+  --terminal-ansi-cyan-bright: #b8ffd8;
+  --terminal-ansi-white-bright: #e6ffe8;
+}
+
+/* Phosphor Amber: P3. */
+:root[data-theme="phosphor-amber"] {
+  /* Grounds: the tube's black with a trace of amber, stepping up to the paper. */
+  --color-canvas: #040200;
+  --color-shell: #090502;
+  --color-paper: #0e0803;
+  --color-soft: #1e1306;
+  /* Text: the phosphor's own amber, and a dimmer one for what is secondary. */
+  --color-ink: #ffb84a;
+  --color-muted: #b37a26;
+  /* Lines */
+  --color-line: #36230a;
+  --color-line-strong: #5e3d12;
+  /* Emphasis: the brightest the beam draws. */
+  --color-strong: #ffa81a;
+  --color-strong-hover: #ffcd7a;
+  --color-on-strong: #140a00;
+  /* Overlays */
+  --color-scrim: rgb(6 3 0 / 0.65);
+  --color-selection: #4a2f0c;
+  --color-shadow: rgb(0 0 0);
+  /* Tones: tints of the tube, each keeping its warning apart by hue as far as an amber
+     monitor can. */
+  --color-success: #1c1c06;
+  --color-success-fg: #e2d86a;
+  --color-warning: #2a1a04;
+  --color-warning-fg: #ffd27a;
+  --color-danger: #2c0c06;
+  --color-danger-fg: #ff7a50;
+  --color-note: #261908;
+  --color-note-fg: #ffc890;
+  /* Syntax: one amber, from the beam's brightest to its dimmest. */
+  --color-syntax-keyword: #ffd9a0;
+  --color-syntax-string: #e09a3a;
+  --color-syntax-number: #ffc46a;
+  --color-syntax-property: #ffcf8a;
+  --color-syntax-definition: #ffe6c4;
+  --color-syntax-type: #ffbe70;
+  --color-syntax-comment: #8f6322;
+  /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
+  --terminal-ansi-black: #4a3010;
+  --terminal-ansi-red: #d08a2a;
+  --terminal-ansi-green: #ffb84a;
+  --terminal-ansi-yellow: #ffc870;
+  --terminal-ansi-blue: #b37a26;
+  --terminal-ansi-magenta: #e09a3a;
+  --terminal-ansi-cyan: #ffcf8a;
+  --terminal-ansi-white: #ffd9a0;
+  --terminal-ansi-black-bright: #7a5520;
+  --terminal-ansi-red-bright: #ffb84a;
+  --terminal-ansi-green-bright: #ffcf80;
+  --terminal-ansi-yellow-bright: #ffe0a8;
+  --terminal-ansi-blue-bright: #e09a3a;
+  --terminal-ansi-magenta-bright: #ffcd7a;
+  --terminal-ansi-cyan-bright: #ffe2b8;
+  --terminal-ansi-white-bright: #fff0dc;
+}
+
 /* Every line of text glows in its own colour: text-shadow inherits, so it reaches the
    terminals too, whose DOM renderer draws spans. */
-:root[data-theme="phosphor"] body {
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body {
   text-shadow: var(--crt-glow);
 }
 
 /* The tube over everything, dialogs included, never in the pointer's way: scanlines,
    vignette and bezel on one layer, and a faint band rolling down as the beam refreshes. */
-:root[data-theme="phosphor"] body::after,
-:root[data-theme="phosphor"] body::before {
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::after,
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 2147483647;
   pointer-events: none;
 }
-:root[data-theme="phosphor"] body::after {
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::after {
   background: var(--crt-scanlines), var(--crt-vignette);
   box-shadow: var(--crt-bezel-shadow);
   border-radius: 28px / 22px;
   animation: phosphor-flicker 4s steps(1) infinite;
 }
-:root[data-theme="phosphor"] body::before {
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::before {
   background: var(--crt-refresh) no-repeat;
   background-size: 100% 18%;
   animation: phosphor-refresh 7s linear infinite;

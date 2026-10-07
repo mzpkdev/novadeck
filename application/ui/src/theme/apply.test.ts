@@ -40,8 +40,10 @@ describe("resolveAppearance", () => {
     it("shows dark whatever was chosen or the system uses", () => {
       for (const scheme of ["system", "light", "dark"] as const)
         for (const systemDark of [false, true])
-          expect(resolveAppearance({ theme: "phosphor", scheme }, systemDark, themes)).toEqual({
-            theme: "phosphor",
+          expect(
+            resolveAppearance({ theme: "phosphor-green", scheme }, systemDark, themes),
+          ).toEqual({
+            theme: "phosphor-green",
             scheme: "dark",
           })
     })
@@ -56,14 +58,14 @@ describe("resolveAppearance", () => {
 
 describe("appearancePreferenceOf", () => {
   it("keeps a valid saved theme and scheme", () => {
-    expect(appearancePreferenceOf({ theme: "phosphor", scheme: "light" }, themes)).toEqual({
-      theme: "phosphor",
+    expect(appearancePreferenceOf({ theme: "phosphor-green", scheme: "light" }, themes)).toEqual({
+      theme: "phosphor-green",
       scheme: "light",
     })
   })
 
   it("keeps the mode a one-scheme theme overrides, for when the person switches back", () => {
-    const saved = appearancePreferenceOf({ theme: "phosphor", scheme: "light" }, themes)
+    const saved = appearancePreferenceOf({ theme: "phosphor-green", scheme: "light" }, themes)
 
     expect(resolveAppearance(saved, false, themes).scheme).toBe("dark")
     expect(resolveAppearance({ ...saved, theme: "graphite" }, false, themes).scheme).toBe("light")
@@ -81,8 +83,8 @@ describe("appearancePreferenceOf", () => {
   })
 
   it("replaces an invalid scheme with the system's", () => {
-    expect(appearancePreferenceOf({ theme: "phosphor", scheme: "dim" }, themes)).toEqual({
-      theme: "phosphor",
+    expect(appearancePreferenceOf({ theme: "phosphor-green", scheme: "dim" }, themes)).toEqual({
+      theme: "phosphor-green",
       scheme: "system",
     })
     expect(appearancePreferenceOf({ scheme: 2 }, themes).scheme).toBe("system")
@@ -98,8 +100,8 @@ describe("appearancePreferenceOf", () => {
 describe("parseBootRecord", () => {
   it("reads the theme and scheme", () => {
     expect(
-      parseBootRecord(JSON.stringify({ theme: "phosphor", scheme: "system" }), themes),
-    ).toEqual({ theme: "phosphor", scheme: "system" })
+      parseBootRecord(JSON.stringify({ theme: "phosphor-green", scheme: "system" }), themes),
+    ).toEqual({ theme: "phosphor-green", scheme: "system" })
   })
 
   it("gives a record without a theme the default theme", () => {
@@ -150,9 +152,15 @@ describe("startingAppearance", () => {
   })
 
   it("shows a one-scheme theme in its scheme", () => {
-    localStorage.setItem(bootRecordKey, JSON.stringify({ theme: "phosphor", scheme: "light" }))
+    localStorage.setItem(
+      bootRecordKey,
+      JSON.stringify({ theme: "phosphor-green", scheme: "light" }),
+    )
     try {
-      expect(startingAppearance(window, themes)).toEqual({ theme: "phosphor", scheme: "dark" })
+      expect(startingAppearance(window, themes)).toEqual({
+        theme: "phosphor-green",
+        scheme: "dark",
+      })
     } finally {
       localStorage.removeItem(bootRecordKey)
     }
@@ -237,7 +245,7 @@ describe("applyAppearance", () => {
     it("stills transitions and announces a change of theme alone", () => {
       vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0)
       const root = fresh()
-      applyAppearance(root, { theme: "phosphor", scheme: "dark" })
+      applyAppearance(root, { theme: "phosphor-green", scheme: "dark" })
       const changes: Event[] = []
       const listen = (event: Event): void => {
         changes.push(event)

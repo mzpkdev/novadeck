@@ -172,15 +172,15 @@ describe("watchAppearance", () => {
   context("with a theme that has only a dark scheme", () => {
     it("shows it dark whatever the system does, and saves the mode chosen", () => {
       const { change } = system(false)
-      watch(uiWith({ theme: "phosphor", scheme: "light" }))
-      expect(shown()).toEqual({ theme: "phosphor", scheme: "dark" })
+      watch(uiWith({ theme: "phosphor-green", scheme: "light" }))
+      expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
 
       change(true)
       change(false)
 
-      expect(shown()).toEqual({ theme: "phosphor", scheme: "dark" })
+      expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
       expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
-        theme: "phosphor",
+        theme: "phosphor-green",
         scheme: "light",
       })
     })
@@ -189,7 +189,7 @@ describe("watchAppearance", () => {
       system(false)
       resolvesPaper()
       const reports: WindowAppearance[] = []
-      const ui = uiWith({ theme: "phosphor", scheme: "system" })
+      const ui = uiWith({ theme: "phosphor-green", scheme: "system" })
       watch(ui, (look) => reports.push(look))
 
       choose(ui, { theme: "graphite", scheme: "system" })

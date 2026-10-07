@@ -5,9 +5,11 @@
 // Themes: every theme in `themes.ts` has a file in `theme/`, imported into
 // `layer(themes)`, whose selectors all start with its own scope: `:root[data-theme="<id>"]`,
 // or for Graphite, the default, `:root:where(:not([data-theme]), [data-theme="graphite"])`.
-// The file defines every required foundation token (`tokens.ts`, which the doc's table
-// matches) for each scheme the manifest lists. The first scheme lives on the scope, each
-// other one on the scope plus `[data-scheme="<scheme>"]`.
+// Themes that share a file may also start one with their shared scope,
+// `:root:is([data-theme="<id>"], …)`. The file defines every required foundation token
+// (`tokens.ts`, which the doc's table matches) for each scheme the manifest lists, on the
+// theme's scope or the shared one. The first scheme lives on the scope, each other one on
+// the scope plus `[data-scheme="<scheme>"]`.
 //
 // Rules: (a) to (d) below hold for every file. Rule (c) has a short list of
 // exceptions, each with its reason, which the guide's "Exceptions" section repeats; an
@@ -50,7 +52,7 @@ import { join, posix } from "node:path"
 import { parseAst, transformWithEsbuild } from "vite"
 
 import { describe, expect, it } from "../test"
-import { themes } from "./themes"
+import { themes, type ThemeEntry } from "./themes"
 import { requiredTokens } from "./tokens"
 
 const src = join(process.cwd(), "src")
@@ -60,14 +62,24 @@ const all = (readdirSync(src, { recursive: true }) as string[]).map((file) =>
 )
 const read = (file: string): string => readFileSync(join(src, file), "utf8")
 const stylesheets = all.filter((file) => file.endsWith(".css"))
-const themeFileOf = (id: string): string => `theme/${id}.css`
-const themeFile = (file: string): boolean => themes.some((theme) => file === themeFileOf(theme.id))
+const fileOf = (theme: ThemeEntry): string => `theme/${theme.file ?? theme.id}.css`
+const themeFile = (file: string): boolean => themes.some((theme) => file === fileOf(theme))
+// The themes drawn by the file that draws this one, itself included.
+const sharing = (theme: ThemeEntry): ThemeEntry[] =>
+  themes.filter((other) => fileOf(other) === fileOf(theme))
 // What a theme's selectors start with. The default theme applies when no theme is set,
 // so its scope also matches that; the others match their own `data-theme` only.
 const scopeOf = (id: string): string =>
   id === themes[0].id
     ? ':root:where(:not([data-theme]), [data-theme="graphite"])'
     : `:root[data-theme="${id}"]`
+// What rules for every theme in a shared file start with; none for a file of one theme.
+const sharedScopeOf = (theme: ThemeEntry): string | undefined => {
+  const together = sharing(theme)
+  return together.length < 2
+    ? undefined
+    : `:root:is(${together.map((other) => `[data-theme="${other.id}"]`).join(", ")})`
+}
 const scripts = all.filter(
   (file) =>
     /\.tsx?$/.test(file) &&
@@ -193,8 +205,9 @@ describe("theme contract", () => {
   })
 
   describe.each(themes.map((theme) => [theme.id, theme] as const))("theme %s", (id, theme) => {
-    const file = themeFileOf(id)
+    const file = fileOf(theme)
     const scope = scopeOf(id)
+    const shared = sharedScopeOf(theme)
 
     it("has a file imported into the themes layer", () => {
       expect(stylesheets).toContain(file)
@@ -212,23 +225,36 @@ describe("theme contract", () => {
                 ? selectors(node.body)
                 : selectorList(node.prelude),
         )
+      const scopes = [
+        ...sharing(theme).map((other) => scopeOf(other.id)),
+        ...(shared ? [shared] : []),
+      ]
       expect(
-        selectors(uncomment(read(file))).filter((selector) => !selector.startsWith(scope)),
+        selectors(uncomment(read(file))).filter(
+          (selector) => !scopes.some((start) => selector.startsWith(start)),
+        ),
       ).toEqual([])
+      const ids = new Set(sharing(theme).map((other) => other.id))
       expect(
         [...read(file).matchAll(/data-theme="([^"]*)"/g)]
-          .map((match) => match[1])
-          .filter((name) => name !== id),
+          .map((match) => match[1]!)
+          .filter((name) => !ids.has(name)),
       ).toEqual([])
     })
 
     it.each(theme.schemes.map((scheme, index) => [scheme, index] as const))(
       "defines every required token for its %s scheme",
       (scheme, index) => {
-        const selector = index === 0 ? scope : `${scope}[data-scheme="${scheme}"]`
-        const block = cssNodes(uncomment(read(file))).find((node) => node.prelude === selector)
+        const suffix = index === 0 ? "" : `[data-scheme="${scheme}"]`
+        const selector = `${scope}${suffix}`
+        const nodes = cssNodes(uncomment(read(file)))
+        const block = nodes.find((node) => node.prelude === selector)
         expect(block?.body, `${file} has no ${selector} block`).toBeDefined()
-        const tokens = declarations(block!.body!)
+        const common = shared && nodes.find((node) => node.prelude === `${shared}${suffix}`)
+        const tokens = new Map([
+          ...(common ? declarations(common.body!) : []),
+          ...declarations(block!.body!),
+        ])
 
         expect(tokens.get("color-scheme")).toBe(scheme)
         expect(requiredTokens.filter((token) => !tokens.has(token))).toEqual([])
@@ -264,15 +290,10 @@ describe("theme contract", () => {
   })
 
   it("imports only manifest themes into the themes layer", () => {
-    const ids = new Set<string>(themes.map((theme) => theme.id))
     const imported = [
       ...uncomment(read("styles.css")).matchAll(/@import "\.\/([^"]+)" layer\(themes\)/g),
     ]
-    expect(
-      imported
-        .map((match) => match[1])
-        .filter((file) => ![...ids].some((id) => file === themeFileOf(id))),
-    ).toEqual([])
+    expect(imported.map((match) => match[1]!).filter((file) => !themeFile(file))).toEqual([])
   })
 })
 

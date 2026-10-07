@@ -7,7 +7,11 @@
 ;(() => {
   // The themes and their schemes, as theme/themes.ts lists them (a test keeps the two
   // alike). The first is the default.
-  const themes = { graphite: ["light", "dark"], phosphor: ["dark"] }
+  const themes = {
+    graphite: ["light", "dark"],
+    "phosphor-green": ["dark"],
+    "phosphor-amber": ["dark"],
+  }
   let theme = "graphite"
   let choice = "system"
   try {
