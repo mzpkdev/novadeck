@@ -11,11 +11,13 @@ import { hasCode } from "@novadeck/protocol/client"
 
 import {
   noConversation,
+  type ChatAction,
   type ChatAnswer,
   type ChatDialog,
   type ChatItem,
   type ChatRequest,
   conflictFailure,
+  notCleared,
   SettleInTerminal,
   WordsLost,
   type Conversation,
@@ -133,17 +135,14 @@ const reasonOf = (error: { readonly data: unknown }) =>
   conflictReason.safeParse(error.data).data?.reason
 
 // What the person is told when the agent can't take what they sent.
-const failure = (error: unknown, what: string): Error => {
+const failure = (error: unknown, what: string, action: ChatAction): Error => {
   if (hasCode(error, "DISCONNECTED", "CLOSED")) return new Error("The runner is offline.")
   // Refused before anything was written: the text has a shape the agent reads as more than
   // a message, or the agent can't take one now, for the reason the runner gives.
   if (hasCode(error, "PROMPT_REFUSED")) return new Error(said(error) ?? promptRefusal)
-  if (hasCode(error, "CONFLICT")) return conflictFailure(reasonOf(error))
+  if (hasCode(error, "CONFLICT")) return conflictFailure(reasonOf(error), action)
   // Stopped, but the words queued behind the turn stay in the agent's own box.
-  if (hasCode(error, "BOX_NOT_CLEARED"))
-    return new SettleInTerminal(
-      "Stopped. Your queued message is still in the agent's box: clear it in the terminal.",
-    )
+  if (hasCode(error, "BOX_NOT_CLEARED")) return notCleared()
   if (hasCode(error, "PROMPT_FAILED"))
     return new SettleInTerminal(
       "The prompt didn't land in the agent's box. It may be there as a draft.",
@@ -172,7 +171,7 @@ const refusal = (error: unknown): Error => {
   if (hasCode(error, "CONFLICT")) {
     const reason = reasonOf(error)
     return reason
-      ? conflictFailure(reason)
+      ? conflictFailure(reason, "answer")
       : new Error("Couldn't answer that here. Answer it in the terminal.")
   }
   if (hasCode(error, "WORDS_NOT_SENT")) return new WordsLost()
@@ -379,13 +378,13 @@ export const createRunnerConversations = (
     conversation: ({ terminalId }) => entryOf(terminalId).conversation,
     send: ({ terminalId }, text) =>
       track(streams.prompt(terminalId, text)).catch((error: unknown) => {
-        throw failure(error, "reach")
+        throw failure(error, "reach", "send")
       }),
     interrupt: ({ terminalId }) =>
       track(streams.interrupt(terminalId)).then(
         ({ returned }) => returned,
         (error: unknown) => {
-          throw failure(error, "stop")
+          throw failure(error, "stop", "stop")
         },
       ),
     answer: ({ terminalId }, request, answer) =>

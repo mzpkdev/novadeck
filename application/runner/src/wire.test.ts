@@ -956,7 +956,7 @@ describe("agents API", () => {
 
     await expect(
       client.agents.prompt({ terminalId: terminal.id, text: "hello" }),
-    ).rejects.toMatchObject({ code: "CONFLICT", data: { reason: "no-box" } })
+    ).rejects.toMatchObject({ code: "CONFLICT", data: { reason: "no-agent" } })
   })
 })
 

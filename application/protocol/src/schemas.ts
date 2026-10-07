@@ -655,14 +655,24 @@ export const voiceState = z.strictObject({
  * - `pending`: a request waits on the person, whose dialog would take the text;
  * - `ringing`: another agent's message is reaching the agent (its doorbell rings);
  * - `draft`: the agent's input box holds text already;
- * - `no-box`: no input box (or no agent) is found on the screen;
+ * - `no-agent`: no agent is running in the terminal;
+ * - `no-box`: no input box is found on the agent's screen;
  * - `too-tall`: the text has no room in the box on this screen;
  * - `shell`: the box is in its shell mode;
  * - `no-paste`: the screen takes no bracketed paste yet.
  * Other conflicts carry no data; a client must take a reason it doesn't know as none.
  */
 export const conflictReason = z.strictObject({
-  reason: z.enum(["pending", "ringing", "draft", "no-box", "too-tall", "shell", "no-paste"]),
+  reason: z.enum([
+    "pending",
+    "ringing",
+    "draft",
+    "no-agent",
+    "no-box",
+    "too-tall",
+    "shell",
+    "no-paste",
+  ]),
 })
 
 /**

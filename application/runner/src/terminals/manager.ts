@@ -1135,7 +1135,7 @@ export class Terminals {
         "CONFLICT",
         "No agent is running in this terminal.",
         undefined,
-        "no-box",
+        "no-agent",
       )
     if ((record.activity?.pending.length ?? 0) > 0)
       throw new DomainError(
@@ -1299,7 +1299,7 @@ export class Terminals {
             "CONFLICT",
             "No agent is running in this terminal.",
             undefined,
-            "no-box",
+            "no-agent",
           )
         return profile
       },

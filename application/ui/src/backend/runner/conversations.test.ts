@@ -520,6 +520,9 @@ describe("the runner's conversations", () => {
       const unknown = await failing({ reason: "new-one" })
       expect(unknown).toBeInstanceOf(SettleInTerminal)
       expect(unknown).toHaveProperty("message", expect.not.stringContaining("own words"))
+      const none = await failing({ reason: "no-agent" })
+      expect(none).toBeInstanceOf(SettleInTerminal)
+      expect(none).toHaveProperty("message", "No agent is running in this terminal.")
     })
 
     it("says the runner's own reason for a refused prompt, where it gives one", async () => {
@@ -561,6 +564,14 @@ describe("the runner's conversations", () => {
         }),
       )
       await expect(conversations.interrupt(key)).rejects.toThrow("can't find the agent's input box")
+      streams.interrupt.mockRejectedValue(
+        new RunnerError("CONFLICT", "A request waits.", { data: { reason: "pending" } }),
+      )
+      await expect(conversations.interrupt(key)).rejects.toThrow("Answer it first, then stop it")
+      streams.interrupt.mockRejectedValue(
+        new RunnerError("CONFLICT", "Ringing.", { data: { reason: "ringing" } }),
+      )
+      await expect(conversations.interrupt(key)).rejects.toThrow("Stop it again in a moment")
       streams.interrupt.mockRejectedValue(new Error("boom"))
       await expect(conversations.interrupt(key)).rejects.toThrow("Couldn't stop the agent.")
     })
@@ -641,7 +652,7 @@ describe("the runner's conversations", () => {
       )
       await expect(
         conversations.answer(key, "r", { type: "choice", dialog: "d1", option: "1" }),
-      ).rejects.toThrow("Send again in a moment")
+      ).rejects.toThrow("Try the answer again in a moment")
     })
 
     it.each([
