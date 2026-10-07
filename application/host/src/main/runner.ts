@@ -10,6 +10,8 @@ import {
   databaseArgumentPrefix,
   relayArgumentPrefix,
   runnerPortChannel,
+  voiceEngineArgumentPrefix,
+  voiceSourceArgumentPrefix,
   type RunnerCommand,
 } from "../bridge.js"
 
@@ -23,8 +25,6 @@ export type RunnerHost = {
   close(timeoutMs?: number): Promise<void>
   /** Saves every terminal's restore state now, as when the system session is ending. */
   persist(): void
-  /** For the debug panel: kills the runner process as a crash would; false when none runs. */
-  kill(): boolean
 }
 
 const send = (worker: UtilityProcess, command: RunnerCommand, ports: MessagePortMain[] = []) =>
@@ -35,13 +35,21 @@ export const startRunner = (options: {
   entry: string
   database: string
   relay: string
+  /** The voice engine's manifest and where its archive is downloaded from. */
+  engine: string
+  source: string
 }): RunnerHost => {
   let child: UtilityProcess | undefined
   let closing: Promise<void> | undefined
   const spawn = () => {
     const worker = utilityProcess.fork(
       options.entry,
-      [`${databaseArgumentPrefix}${options.database}`, `${relayArgumentPrefix}${options.relay}`],
+      [
+        `${databaseArgumentPrefix}${options.database}`,
+        `${relayArgumentPrefix}${options.relay}`,
+        `${voiceEngineArgumentPrefix}${options.engine}`,
+        `${voiceSourceArgumentPrefix}${options.source}`,
+      ],
       { serviceName: "Novadeck Runner" },
     )
     worker.once("exit", (code) => {
@@ -62,9 +70,6 @@ export const startRunner = (options: {
     },
     persist() {
       if (child && !closing) send(child, { type: "persist" })
-    },
-    kill() {
-      return child?.kill() ?? false
     },
     close(timeoutMs = 5_000) {
       closing ??= new Promise<void>((resolve) => {

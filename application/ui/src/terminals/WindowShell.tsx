@@ -6,6 +6,7 @@ import {
   FoldHorizontal,
   UnfoldHorizontal,
   ArrowUpRight,
+  Mic,
   Minus,
   Plus,
   X,
@@ -40,6 +41,13 @@ export type TerminalLayoutControls = {
 
 const headerActionClasses = "icon-button dim"
 
+// The mic button an agent's header offers while voice input is ready: click to start
+// recording into the terminal, and again to send.
+export type DictationControls = {
+  readonly recording: boolean
+  readonly onToggle: () => void
+}
+
 export type WindowShellProps = {
   // A terminal, or a window undocked from a companion, which runs nothing.
   terminal: Tile
@@ -57,6 +65,7 @@ export type WindowShellProps = {
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
   minimize?: MinimizeControls
+  dictation?: DictationControls
   compact?: boolean
   active?: boolean
   fresh?: boolean
@@ -90,6 +99,7 @@ export const WindowShell = ({
   onClose,
   windowed,
   minimize,
+  dictation,
   compact = false,
   active = false,
   fresh = false,
@@ -289,6 +299,27 @@ export const WindowShell = ({
         </span>
       )}
       <span className="terminal-actions flex shrink-0 items-center">
+        {dictation && (
+          <Tooltip
+            content={
+              dictation.recording
+                ? "Stop and send"
+                : `Dictate · hold ${shortcutBindings().voice.display.join(" ")}`
+            }
+          >
+            <button
+              className={`${headerActionClasses} dictation-action nodrag nopan ${dictation.recording ? "dictation-active" : ""}`}
+              aria-label={`Dictate into ${terminal.name}`}
+              aria-pressed={dictation.recording}
+              onClick={(event) => {
+                event.stopPropagation()
+                dictation.onToggle()
+              }}
+            >
+              <Mic size={12} />
+            </button>
+          </Tooltip>
+        )}
         {chat && (
           <Tooltip content={chat.on ? "Show terminal" : "Show chat"}>
             <button

@@ -13,12 +13,14 @@ import type {
   TerminalKey,
 } from "../port"
 import { createDemoChat } from "./chat"
+import type { DemoSurfaceRuntime } from "./debug/types"
 import { createDemoTerminal } from "./DemoTerminal"
 import { createDemoEngine, type DemoEngine } from "./engine"
 import { checkoutMailboxes, createDemoMessages } from "./messages"
 import { createMockTerminal, demoSeed } from "./samples"
 import { agentTranscripts, type DemoTranscript } from "./transcripts"
 import { demoTurns, type DemoTurns } from "./turns"
+import { createDemoVoice } from "./voice"
 
 // Sample agents: Claude Code and Codex installed, Antigravity not.
 const sampleAgents: readonly AgentConnection[] = [
@@ -30,15 +32,18 @@ const sampleAgents: readonly AgentConnection[] = [
 // A self-contained backend with sample projects and simulated terminals. It keeps no
 // transcripts and connects no agents, but its settings switch like the runner's.
 // `welcome` opens the first-run welcome dialog; `introOf` gives terminals their own
-// opening output.
+// opening output. `runtime` is the debug layer's: what its terminals read of the
+// connection, and how they restart.
 export const demoBackend = (
   engine: DemoEngine,
   welcome = false,
   introOf?: (terminal: TerminalMetadata, key: TerminalKey) => ReactNode,
+  runtime?: DemoSurfaceRuntime,
 ): Backend => {
   const transcripts = createStore(true)
   const agents = createStore(sampleAgents)
   const welcomeOpen = createStore(welcome)
+  const voice = createDemoVoice()
   // Standing in for the runner, it numbers each session's terminals itself, never
   // giving a number twice, from the workspace it last saw.
   const seed = demoSeed(Date.now())
@@ -71,7 +76,13 @@ export const demoBackend = (
       latest = workspace
       engine.reconcile(workspace, actions)
     },
-    TerminalSurface: createDemoTerminal(engine, introOf),
+    TerminalSurface: createDemoTerminal(engine, introOf, runtime),
+    voice,
+    // The demo's command line takes dictation as typed text, which it never submits.
+    typeInto: (key, text) => {
+      engine.setDraft(key, engine.getSnapshot(key).draft + text.replaceAll(/\s*\r?\n\s*/g, " "))
+      return true
+    },
     transcripts: { enabled: transcripts, set: (enabled) => transcripts.update(() => enabled) },
     agents: {
       state: agents,
@@ -209,27 +220,39 @@ export const withConversations = (
   }
 }
 
-export const createDemoBackend: CreateBackend = () => {
-  const demo = new URLSearchParams(window.location.hash.split("?")[1]).get("demo")
-  const agents = demo === "agents"
-  // The agents demo's idle agents take a prompt, work a moment, and finish.
+// The demos with no content showcase: the plain one, the agents', the agents' with
+// messages between them, and the plain one with its first-run welcome dialog open.
+export type PlainVariant = "plain" | "agents" | "messages" | "welcome"
+
+export const plainDemo = (variant: PlainVariant, runtime?: DemoSurfaceRuntime): Backend => {
+  // The agents demo's idle agents take a prompt, work a moment, and finish; its chats'
+  // prompts drive the same turns.
   const turns = demoTurns()
-  const engine = createDemoEngine(agents ? turns.reply : undefined)
+  const engine = createDemoEngine(variant === "agents" ? turns.reply : undefined)
   const backend = demoBackend(
     engine,
-    demo === "welcome" || (import.meta.env.DEV && import.meta.env.VITE_WELCOME_PREVIEW === "true"),
+    variant === "welcome" ||
+      (import.meta.env.DEV && import.meta.env.VITE_WELCOME_PREVIEW === "true"),
+    undefined,
+    runtime,
   )
   const now = Date.now()
   const transcripts = agentTranscripts(now)
-  if (demo === "messages")
+  if (variant === "messages")
     return withConversations(
       withMessages({ ...backend, seed: demoSeed(now, true) }, now),
       transcripts,
       turns,
     )
   return withConversations(
-    agents ? { ...backend, seed: demoSeed(now, true) } : backend,
+    variant === "agents" ? { ...backend, seed: demoSeed(now, true) } : backend,
     transcripts,
     turns,
   )
+}
+
+// The variant the address's hash asks for, as specs do with `?demo=`.
+export const createDemoBackend: CreateBackend = () => {
+  const demo = new URLSearchParams(window.location.hash.split("?")[1]).get("demo")
+  return plainDemo(demo === "agents" || demo === "messages" || demo === "welcome" ? demo : "plain")
 }

@@ -17,6 +17,7 @@ import {
   type WindowShellProps,
 } from "../terminals/WindowShell"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
+import { useMicButton } from "./controller/dictation"
 import { useDockTarget } from "./dock-target"
 import {
   currentContext,
@@ -182,8 +183,10 @@ export const WorkspaceTerminal = ({
   const { bar, items, fresh } = useTerminalBar(terminalId)
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
+  const dictation = useMicButton(terminal, terminalKey)
   const frame: Omit<WindowShellProps, "children"> = {
     ...useWindowFrame(terminal, controls),
+    ...(dictation ? { dictation } : {}),
     icon: <Icon size={14} strokeWidth={1.5} />,
     ...(processWindow ? { processWindow } : {}),
   }

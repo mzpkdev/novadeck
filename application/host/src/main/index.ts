@@ -13,20 +13,19 @@ import {
   powerMonitor,
   session,
   shell,
+  systemPreferences,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron"
 
 import {
   apiUrlArgumentPrefix,
-  debugArgument,
   directoryPickerChannel,
   noticeClickChannel,
   runnerPortChannel,
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
 import { dataFolderName } from "./data-folder.js"
-import { debugEnabled, registerDebugIpc } from "./debug.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
@@ -42,9 +41,6 @@ if (!app.commandLine.getSwitchValue("user-data-dir"))
     "userData",
     join(app.getPath("appData"), dataFolderName({ packaged: app.isPackaged })),
   )
-// Whether this launch offers the debug panel: always in development, and in a
-// packaged app only with --debug-panel or NOVADECK_DEBUG=1.
-const debugging = debugEnabled({ argv: process.argv, env: process.env, packaged: app.isPackaged })
 const developmentOrigin = "http://127.0.0.1:5173"
 // How long quitting waits for the pages' last saves.
 const saveBeforeQuitMs = 1_500
@@ -78,6 +74,26 @@ const relayPath = (): string => {
   return app.isPackaged
     ? join(process.resourcesPath, "relay", name)
     : join(app.getAppPath(), "..", "relay", "dist", name)
+}
+
+/**
+ * Where voice input finds its engine: the manifest shipped beside the UI, or the one
+ * `pnpm build:engine` leaves in application/whisper; and the folder or address its
+ * archive is downloaded from, which is the release this build came from once packaged.
+ */
+const voiceEngine = (): { engine: string; source: string } => {
+  if (!app.isPackaged) {
+    const dist = join(app.getAppPath(), "..", "whisper", "dist")
+    return { engine: join(dist, "engine.json"), source: dist }
+  }
+  return {
+    engine: join(process.resourcesPath, "voice", "engine.json"),
+    // NOVADECK_VOICE_SOURCE points a build at another folder or address, as a local or
+    // pull request build needs: it has no release of its own to download from.
+    source:
+      process.env.NOVADECK_VOICE_SOURCE ??
+      `https://github.com/mzpkdev/novadeck/releases/download/v${app.getVersion()}/`,
+  }
 }
 
 /** Whether a frame shows this app's own UI: the packaged page or the dev server. */
@@ -128,10 +144,7 @@ const createWindow = (origin: string): BrowserWindow => {
     autoHideMenuBar: true,
     backgroundColor: appearance.current()?.ground ?? "#ffffff",
     webPreferences: {
-      additionalArguments: [
-        `${apiUrlArgumentPrefix}${apiUrl}`,
-        ...(debugging ? [debugArgument] : []),
-      ],
+      additionalArguments: [`${apiUrlArgumentPrefix}${apiUrl}`],
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(currentDirectory, "../preload/index.cjs"),
@@ -182,17 +195,13 @@ const launch = async (): Promise<void> => {
     entry: join(currentDirectory, "runner.js"),
     database: join(app.getPath("userData"), "workspace.sqlite"),
     relay: relayPath(),
+    ...voiceEngine(),
   })
   // A port is shell access: only the main frame of this app's own window showing its
   // own UI may ask for one.
   ipcMain.on(runnerPortChannel, (event, id: unknown) => {
     if (!appWindow(event) || typeof id !== "string") return
     runner?.connect(event.sender, id)
-  })
-  registerDebugIpc(ipcMain, {
-    enabled: debugging,
-    allowed: (event) => appWindow(event) !== undefined,
-    killRunner: () => runner?.kill() ?? false,
   })
   // The window follows the page: native menus and the page's prefers-color-scheme use
   // its scheme, and the window its ground.
@@ -246,7 +255,14 @@ app.setAppUserModelId(appId)
 app.whenReady().then(() => {
   // A system shutdown quits, which saves every page and terminal before the shells end.
   quitOnShutdown(powerMonitor, () => app.quit())
-  limitPermissions(session.defaultSession, isAppPage)
+  limitPermissions(
+    session.defaultSession,
+    isAppPage,
+    // macOS asks the person once, and remembers; elsewhere the page's own request is all.
+    process.platform === "darwin"
+      ? () => systemPreferences.askForMediaAccess("microphone")
+      : undefined,
+  )
   lockPagesSession(session.fromPartition(pagesPartition))
   app.on("web-contents-created", (_event, contents) => {
     if (contents.getType() === "webview") guardPage(contents, (url) => shell.openExternal(url))

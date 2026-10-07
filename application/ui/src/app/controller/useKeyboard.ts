@@ -2,6 +2,7 @@ import { useEffect } from "react"
 
 import {
   classifyKeyTarget,
+  insideOwnKeys,
   navigateHome,
   terminalTabInteractionActive,
   workspaceOverlayOpen,
@@ -14,6 +15,7 @@ import {
   type KeyPhase,
 } from "../../interaction/keymap"
 import { currentPlatform } from "../../interaction/shortcuts"
+import type { Dictation } from "../../voice/dictation-control"
 import { createKeyCommands, keyState, runKey } from "../commands/keys"
 import { currentState } from "../selectors"
 import { useWorkspaceServices } from "./context"
@@ -57,8 +59,9 @@ const blurInput: KeyInput = {
 // and a bubble keydown listener, plus keyup and blur, all on window. It also keeps the
 // keyboard's home in the selected terminal: navigating ends once focus moves into a
 // field or a terminal, or the mouse goes down, and a mouse click on the workspace's
-// chrome hands typing back to the selected terminal.
-export const useKeyboard = (): void => {
+// chrome hands typing back to the selected terminal. `dictation` is the backend's voice
+// input, if it has one.
+export const useKeyboard = (dictation?: Dictation): void => {
   const services = useWorkspaceServices()
   useEffect(() => {
     const { ui, workspace, navigation, commands, canvas, backend } = services
@@ -69,10 +72,17 @@ export const useKeyboard = (): void => {
       newTerminal: backend.newTerminal,
       canvas,
       effects: domEffects,
+      dictation,
     })
     const bindings = keymapFor(currentPlatform())
     const dispatch = (phase: KeyPhase, event: Event, input: KeyInput): void => {
-      const candidates = routeKey(bindings, phase, input, keyState(services, commands), environment)
+      const candidates = routeKey(
+        bindings,
+        phase,
+        input,
+        keyState({ ...services, dictation }, commands),
+        environment,
+      )
       if (runKey(keys, candidates, phase, input) !== "handled") return
       event.preventDefault()
       if (phase === "capture") event.stopPropagation()
@@ -88,20 +98,22 @@ export const useKeyboard = (): void => {
     }
     const pointerdown = (): void => commands.setNavigate(false)
     // Only a mouse: a tap that focused a terminal would raise a phone's keyboard. A click
-    // whose control moves focus itself, as Zen's do, keeps where it put it.
+    // whose control moves focus itself, as Zen's do, keeps where it put it, and one in a
+    // region that takes its own keys leaves focus to it, even off its controls.
     const click = (event: MouseEvent): void => {
       if (!(event instanceof PointerEvent) || event.pointerType !== "mouse") return
       const clicked = document.activeElement
       const on = classifyKeyTarget(event.target)
       // A chat holds text to select and controls that keep the focus they take.
-      if (on.companion || on.zenDock || on.chat) return
+      if (on.companion || on.zenDock || on.chat || insideOwnKeys(event.target)) return
       if (window.getSelection()?.isCollapsed === false) return
       requestAnimationFrame(() => {
         const now = document.activeElement
         if (now !== clicked && now !== document.body) return
         const target = classifyKeyTarget(now)
         if (target.editing || target.companion || target.zenDock || target.chat) return
-        if (keyState(services, commands).dialog || environment.overlayOpen()) return
+        if (keyState({ ...services, dictation }, commands).dialog || environment.overlayOpen())
+          return
         if (environment.tabInteraction() || ui.getSnapshot().shell.navigate) return
         const { selected, view } = currentState(workspace.getSnapshot())
         if (selected) commands.setKeyboardFocus({ id: selected, view })
@@ -123,5 +135,5 @@ export const useKeyboard = (): void => {
       window.removeEventListener("pointerdown", pointerdown, true)
       window.removeEventListener("click", click)
     }
-  }, [services])
+  }, [services, dictation])
 }

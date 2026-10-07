@@ -10,6 +10,7 @@ import type {
   Workspace,
 } from "../../model/types"
 import type { Backend, BackendSink, CreateBackend, TerminalKey } from "../port"
+import type { DemoSurfaceRuntime } from "./debug/types"
 import { createDemoEngine, type DemoEngine } from "./engine"
 import { demoBackend, windowReset, withConversations } from "./index"
 import { createDemoMessages, studioMailbox } from "./messages"
@@ -20,7 +21,7 @@ import { showcaseTranscripts } from "./transcripts"
 import { demoTurns } from "./turns"
 
 // A UI-only workspace. The previews never start processes or request a runner.
-export const createContentDemo: CreateBackend = () => {
+export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
   const terminals: TerminalMetadata[] = [
     {
       id: "01",
@@ -117,7 +118,7 @@ export const createContentDemo: CreateBackend = () => {
       if (command.trim()) showcase.told(key, command)
     },
   }
-  const backend = demoBackend(engine, false, (_terminal, key) => agentAt(key)?.transcript)
+  const backend = demoBackend(engine, false, (_terminal, key) => agentAt(key)?.transcript, runtime)
   let latest: Workspace | undefined
   let reset: BackendSink["dispatch"] | undefined
   // The showcase session's items as they stand, which an agent showing something again
@@ -204,3 +205,5 @@ export const createContentDemo: CreateBackend = () => {
   }
   return withConversations(content, showcaseTranscripts(Date.now()), demoTurns())
 }
+
+export const createContentDemo: CreateBackend = () => contentDemo()
