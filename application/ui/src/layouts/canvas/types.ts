@@ -19,7 +19,6 @@ export type CanvasProps = {
   presets: Record<string, SizePreset>
   onPresetChange: (id: string, preset: SizePreset) => void
   layout: CanvasLayout
-  matchCreatedTerminalRatio: boolean
   revealOnMount: boolean
   // Opened from another view: it frames every visible window as it mounts.
   fitOnMount: boolean

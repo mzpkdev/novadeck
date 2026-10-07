@@ -150,7 +150,6 @@ export const WorkspaceStage = memo(
                 setSizePreset(target, terminalId, "canvas", preset)
               }
               layout={canvasLayout}
-              matchCreatedTerminalRatio={zen}
               revealOnMount={revealCanvas}
               fitOnMount={opened.fromOtherView}
               fitOnNavigate={shellNavigation.fit}

@@ -23,11 +23,12 @@ const ratioSize = (fallback: Dimensions, viewport?: Dimensions): Dimensions => {
   }
 }
 
+// A window new to Canvas opens in the viewport's ratio, as an enlarged one does, at the
+// area it would have had.
 export const canvasNewTerminalSize = (
   viewport: Dimensions | undefined,
-  matchViewport: boolean,
   fallback: Dimensions = { width: 600, height: 400 },
-): Dimensions => (matchViewport ? ratioSize(fallback, viewport) : fallback)
+): Dimensions => ratioSize(fallback, viewport)
 
 export const canvasPresetSize = (preset: SizePreset, viewport?: Dimensions): Dimensions => {
   if (preset === "small") return { width: 600, height: 400 }

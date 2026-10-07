@@ -17,6 +17,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -53,7 +54,6 @@ const TerminalCanvas = ({
   presets,
   onPresetChange,
   layout,
-  matchCreatedTerminalRatio,
   revealOnMount,
   fitOnMount,
   fitOnNavigate,
@@ -91,6 +91,11 @@ const TerminalCanvas = ({
     Math.min(viewportWidth / 320, viewportHeight / 200),
   )
   const container = useRef<HTMLDivElement>(null)
+  // A new window's size: in the viewport's ratio, as a dropped window's ghost previews it.
+  const newWindowSize = useMemo(
+    () => canvasNewTerminalSize({ width: viewportWidth, height: viewportHeight }),
+    [viewportWidth, viewportHeight],
+  )
   const [initialViewport] = useState(layout.viewport)
   const { visit, animateVisit } = useCanvasVisit(handleRef)
   const persistence = useCanvasPersistence({ layout, terminals, onLayoutChange })
@@ -174,12 +179,12 @@ const TerminalCanvas = ({
         const overPane = under.some((element) => element.classList.contains("react-flow__pane"))
         const overNode = under.some((element) => element.closest(".react-flow__node"))
         if (!overPane || overNode) return null
-        // Its window would open with its header under the pointer, at its usual size.
+        // Its window would open with its header under the pointer, at a new window's size.
         const point = screenToFlowPosition({ x, y })
-        const { width } = canvasPresetSize("small")
+        const { width } = newWindowSize
         return { canvas: { x: point.x - width / 2, y: point.y - terminalHeaderHeight / 2 } }
       }),
-    [session, screenToFlowPosition],
+    [session, screenToFlowPosition, newWindowSize],
   )
   const ghost = useDrag((drag) =>
     drag?.place && "canvas" in drag.place ? drag.place.canvas : null,
@@ -369,7 +374,6 @@ const TerminalCanvas = ({
         const saved = geometryRef.current[terminal.id]
         const size = canvasNewTerminalSize(
           { width: viewportWidth, height: viewportHeight },
-          matchCreatedTerminalRatio,
           { width: saved?.width ?? 600, height: saved?.height ?? 400 },
         )
         // Dropped from a taskbar where the ghost was, its window opens exactly there, then
@@ -471,7 +475,6 @@ const TerminalCanvas = ({
     geometry,
     getNode,
     getViewport,
-    matchCreatedTerminalRatio,
     nodeFrom,
     selected,
     terminals,
@@ -601,7 +604,7 @@ const TerminalCanvas = ({
                 aria-hidden="true"
                 style={{
                   transform: `translate(${ghost.x}px, ${ghost.y}px)`,
-                  ...canvasPresetSize("small"),
+                  ...newWindowSize,
                 }}
               >
                 <span className="drop-ghost-header">{ghostName}</span>

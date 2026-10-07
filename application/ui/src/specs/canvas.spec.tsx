@@ -402,6 +402,17 @@ describe("Canvas", () => {
       for (const name of names) expect(sameBox(boxOf(terminal(name)), before[name]!)).toBe(true)
     })
 
+    it("opens it in the viewport's ratio, as Enlarge sizes a terminal", async () => {
+      await openCanvas()
+      await rightClickBackground({ x: 100, y: 120 })
+
+      await canvasMenu().getByRole("menuitem", { name: "Terminal" }).click()
+
+      await expect.element(terminal("Terminal 07")).toBeVisible()
+      const created = await settled(() => boxOf(terminal("Terminal 07")))
+      expect(near(ratio(created), ratio(viewBox()), 0.05)).toBe(true)
+    })
+
     it("focuses the new terminal instead of renaming it", async () => {
       await openCanvas()
       await rightClickBackground({ x: 100, y: 120 })
