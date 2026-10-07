@@ -63,12 +63,15 @@ describe("unpacking the engine", () => {
     const torn = join(directory, "torn")
     await mkdir(torn)
     await writeFile(join(torn, ".interface"), "two")
+    const unreadable = join(directory, "unreadable")
+    await mkdir(join(unreadable, ".interface"), { recursive: true })
 
     const target = await unpack(archive, directory, "c".repeat(64), 3)
 
     await expect(engineInterface(target)).resolves.toBe(3)
     await expect(engineInterface(bare)).resolves.toBe(1)
     await expect(engineInterface(torn)).resolves.toBe(0)
+    await expect(engineInterface(unreadable)).resolves.toBe(0)
   })
 
   it("fails in words for a file that is not an archive, leaving no folder behind", async ({

@@ -9,6 +9,7 @@ import type { Resources } from "../testing/resources.js"
 import { engineArchive, fakeLaunch, folder, modelCatalog } from "../testing/voice.js"
 import { WorkspaceStore } from "../workspaces/store.js"
 import type { Catalog } from "./catalog.js"
+import { engineInterface } from "./engine.js"
 import { updateRetryMs, Voice } from "./service.js"
 
 const pcm = (bytes: number) => Buffer.alloc(bytes).toString("base64")
@@ -645,6 +646,8 @@ describe("voice input after the app brings a new engine", () => {
     await voice.settled()
 
     // The engine that came with the update speaks the new interface, so it runs.
+    const [unpacked] = await readdir(join(first.directory, "engine"))
+    await expect(engineInterface(join(first.directory, "engine", unpacked ?? ""))).resolves.toBe(2)
     voice.record("owner", "clip", 0, pcm(3200))
     await expect(voice.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
   })

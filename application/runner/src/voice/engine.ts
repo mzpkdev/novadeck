@@ -48,17 +48,19 @@ const interfaceMarker = ".interface"
  * was unpacked before there was a marker. A marker that makes no sense matches nothing.
  */
 export const engineInterface = async (folder: string): Promise<number> => {
-  const text = await readFile(join(folder, interfaceMarker), "utf8").catch(() => undefined)
+  // Only a marker that is not there is the first interface; one that cannot be read matches nothing.
+  const text = await readFile(join(folder, interfaceMarker), "utf8").catch((error: unknown) =>
+    error instanceof Error && "code" in error && error.code === "ENOENT" ? undefined : "",
+  )
   if (text === undefined) return 1
   return /^\d+$/.test(text.trim()) ? Number(text) : 0
 }
 
 /**
  * Unpacks `archive` into its folder under `directory`, marked with the `version` of the
- * interface it speaks, and removes every other engine,
- * which an update has replaced. The system's `tar` does the unpacking, as Windows 10 and
- * later have one too. It unpacks beside the folder and renames it, so one that is there
- * is whole.
+ * interface it speaks, and removes every other engine, which an update has replaced. The
+ * system's `tar` does the unpacking, as Windows 10 and later have one too. It unpacks
+ * beside the folder and renames it, so one that is there is whole.
  */
 export const unpack = async (
   archive: string,
@@ -306,6 +308,8 @@ export class Engine {
     const path = `/${randomUUID().replaceAll("-", "")}`
     const threads = Math.min(8, Math.max(2, Math.floor(availableParallelism() / 2)))
     const program = join(config.folder, engineProgram)
+    // Changing these flags changes the interface: bump `engineInterface` in
+    // application/whisper/scripts/build.ts with it.
     const args = [
       "--host",
       "127.0.0.1",
