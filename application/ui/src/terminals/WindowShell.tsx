@@ -259,12 +259,6 @@ export const WindowShell = ({
           )}
         </>
       </div>
-      {phase === "done" && (
-        // Said in full as the window's description; a compact window keeps its name.
-        <span className="terminal-done ml-auto shrink-0 text-caption" aria-hidden>
-          {compact ? (failed ? "Error" : "Done") : doneText(failed)}
-        </span>
-      )}
       {(planning || usage || subagents) && !compact && (
         // Whether the agent plans, its subagents, context and busiest rate limit, in
         // full on hover. Only a focused window has room beside its name; a compact one

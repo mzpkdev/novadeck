@@ -174,8 +174,8 @@ describe("An agent that finishes", () => {
       const window = terminal("Build")
       await expect.element(window, { timeout: 5000 }).toHaveAttribute("data-terminal-phase", "done")
       await expect.element(window).toHaveAttribute("aria-description", "Done · reply unread")
-      // A compact window keeps room for its name: its chip says only that it's done.
-      await expect.element(window.getByText("Done", { exact: true })).toBeVisible()
+      // Its phase line marks it, its name bold; its description says it in words.
+      await expect.element(window.getByText("Done", { exact: true })).not.toBeInTheDocument()
       await terminalTab("Build").click()
       await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
     })
