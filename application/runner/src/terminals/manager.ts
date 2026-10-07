@@ -1100,8 +1100,9 @@ export class Terminals {
    * `Prompts`), once those before it are done.
    */
   async prompt(input: { terminalId: string; text: string }): Promise<void> {
-    // Nothing reaches the agent between an answer and the words that follow it, which the
-    // dialog's option takes as the person's feedback: a message waits for the whole answer.
+    // No message of the person's comes between an answer and the words that follow it, which
+    // the dialog's option takes as the person's feedback: it waits for the whole answer. (A
+    // doorbell ring isn't held off so; it rings only once a turn has settled.)
     for (let answering = this.answering.get(input.terminalId); answering;) {
       // eslint-disable-next-line no-await-in-loop -- Each answer under way is waited out.
       await answering

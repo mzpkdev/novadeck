@@ -728,7 +728,8 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   takes the `!` back out where the box reads in its shell mode and empty, which leaves the
   mode in all three, idle or mid-turn.
 
-  Prompts to one terminal go one at a time, in order; one that meets a doorbell ring under
+  Prompts to one terminal go one at a time, in order, and one given while an answer to a
+  request goes there waits for it and the words that follow it; one that meets a doorbell ring under
   way waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
   person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and
   its Enter, the person's prompt attributed from the harness's transcript, the terminal
@@ -830,8 +831,10 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   the runner never presses for that request again. Where the option chosen takes the
   person's words as the agent's next prompt (`prompt`, as Codex's "No, and tell Codex
   what to do differently" and Antigravity's feedback), the runner gives them as
-  one once the dialog took its key, waiting up to 10 s for the agent to take a prompt; if it
-  doesn't, the call fails `WORDS_NOT_SENT` though the dialog was answered (the words' paste may still sit in the agent's own input box as a draft, where its Enter was refused for a request that came meanwhile). The client's
+  one once the dialog took its key and the screen settled, trying again for up to 10 s while
+  the agent can't take a prompt yet for a reason that clears by itself (a request still
+  pending, a doorbell ring, another hold), and at once giving up on one that won't (a draft
+  in the box, no box, too tall, its shell mode); then the call fails `WORDS_NOT_SENT` though the dialog was answered (the words' paste may still sit in the agent's own input box as a draft, where its Enter was refused for a request that came meanwhile). The client's
   `agents.answer(terminalId, request, answer)` is that call.
 - `agents.interrupt({ terminalId })` presses Escape in the terminal's agent, which stops
   its turn in every harness (the turn ends without a normal Stop: its activity is
