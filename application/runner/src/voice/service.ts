@@ -113,6 +113,8 @@ export class Voice {
   private uninstalling = false
   private installing: VoiceInstall | null = null
   private failure: string | null = null
+  // The model whose install the failure is of; none for an engine update's.
+  private failureModel: VoiceModel | undefined
   private running:
     | { readonly done: Promise<void>; readonly controller: AbortController }
     | undefined
@@ -216,6 +218,8 @@ export class Voice {
   async *watch(owner: string, signal?: AbortSignal): AsyncGenerator<VoiceState> {
     this.assertOpen()
     await this.ready()
+    // The runner may have closed while the saved state loaded.
+    this.assertOpen()
     await this.refresh()
     this.updateEngine()
     const watch: Watch = { owner, finished: false, wake: undefined }
@@ -365,6 +369,12 @@ export class Voice {
       throw new DomainError("CONFLICT", `The ${change.model} model is not installed.`)
     if (change.enabled === true && !this.installed.includes(model))
       throw new DomainError("CONFLICT", "Install voice input before turning it on.")
+    // A check that ran out of time says to turn voice input on to try dictating anyway,
+    // which is the end of that failure; another model's, or the engine's, stays.
+    if (change.enabled === true && this.failure !== null && this.failureModel === model) {
+      this.failure = null
+      this.failureModel = undefined
+    }
     this.settings.saveVoiceSettings(change)
     // The engine holds one model, so the next clip starts it with the new one.
     if (change.model !== undefined) void this.engine.stop()
@@ -390,6 +400,7 @@ export class Voice {
   async transcribe(owner: string, clipId: string, prompt?: string): Promise<VoiceTranscript> {
     this.assertOpen()
     await this.ready()
+    this.assertOpen()
     const config = this.configuration()
     const pcm = this.clips.get(owner, clipId)
     if (pcm === undefined) throw new DomainError("NOT_FOUND", "That recording is gone.")
@@ -402,12 +413,6 @@ export class Voice {
     try {
       const result = await this.engine.transcribe(config, wav(pcm), { language, prompt })
       this.clips.discard(owner, clipId)
-      // A clip that works settles a failure that left voice input to be tried anyway, as a
-      // check that ran out of time; an install or update under way owns it until it ends.
-      if (this.failure !== null && this.installing === null) {
-        this.failure = null
-        this.changed()
-      }
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -543,6 +548,7 @@ export class Voice {
       // Cancelling is the person's choice, not a failure.
       if (!signal.aborted && !aborted(error)) {
         this.failure = explain(error).slice(0, 1024)
+        this.failureModel = engineOnly ? undefined : model
         this.updateFailedAt = engineOnly ? this.clock() : undefined
       }
       // What finished stays: a model that downloaded shows as installed, to turn on or

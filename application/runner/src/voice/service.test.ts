@@ -180,9 +180,7 @@ describe("installing voice input", () => {
     await expect(voice.set({ enabled: true })).resolves.toBeUndefined()
     expect(voice.state().enabled).toBe(true)
 
-    // Dictating anyway, as the failure suggests, settles it.
-    await voice.record("owner", "clip", 0, pcm(3200))
-    await expect(voice.transcribe("owner", "clip")).resolves.toBeDefined()
+    // Turning it on, as the failure suggests, settles it.
     expect(voice.state().failure).toBeNull()
   })
 
@@ -205,6 +203,11 @@ describe("installing voice input", () => {
       enabled: true,
       model: "small",
     })
+    // Dictating with small, or turning it on again, says nothing of turbo's failed check.
+    await voice.set({ enabled: true })
+    await voice.record("owner", "clip", 0, pcm(3200))
+    await voice.transcribe("owner", "clip")
+    expect(voice.state().failure).toContain("did not transcribe")
 
     const checking = watchUntil(voice, (state) => state.installing?.step === "check")
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -817,6 +820,22 @@ describe("closing voice input", () => {
 
     await expect(setting).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
     await expect(recording).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
+    await closing
+  })
+
+  it("refuses a watch or a transcription that waited for the saved state as it closed", async ({
+    resources,
+  }) => {
+    const { voice } = await installed(resources)
+    await voice.record("owner", "clip", 0, pcm(3200))
+    voice.start()
+
+    const watching = voice.watch("owner").next()
+    const transcribing = voice.transcribe("owner", "clip")
+    const closing = voice.close()
+
+    await expect(watching).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
+    await expect(transcribing).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
     await closing
   })
 
