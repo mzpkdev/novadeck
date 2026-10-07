@@ -160,6 +160,27 @@ describe("Antigravity's status line, as captured", () => {
     expect(JSON.stringify(decode(report(sparse)))).not.toContain("person@example.com")
   })
 
+  it("reads the model from every hook, splitting a trailing reasoning level off as the effort", () => {
+    const hook = (modelName: string): Report => ({
+      ...report({ conversationId: "c1", modelName }),
+      event: "PreInvocation",
+    })
+    const observed = (modelName: string) =>
+      decode(hook(modelName)).find(({ type }) => type === "telemetry-observed")
+    expect(observed("gemini-3.8-flash-high")).toMatchObject({
+      sessionId: "c1",
+      model: "gemini-3.8-flash",
+      effort: "high",
+    })
+    const plain = observed("gemini-3.8-flash")
+    expect(plain).toMatchObject({ model: "gemini-3.8-flash" })
+    expect(plain && "effort" in plain).toBe(false)
+    expect(observed("gemini-3.8-flash-turbo")).toMatchObject({ model: "gemini-3.8-flash-turbo" })
+    expect(decode({ ...hook("x"), payload: { conversationId: "c1" } })).not.toContainEqual(
+      expect.objectContaining({ type: "telemetry-observed" }),
+    )
+  })
+
   it("keep a terminal's activity true to the agent, whatever order their hooks start in", () => {
     const [, , , working, confirming, idle] = payloads
     const conversationId = working!.conversation_id as string

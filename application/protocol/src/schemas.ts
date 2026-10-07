@@ -130,6 +130,10 @@ export const agentTelemetry = z.strictObject({
       }),
     )
     .max(8),
+  // The model it runs, in its harness's words (a display name where it gives one), and
+  // the reasoning effort it was set to; null where its harness doesn't say.
+  model: z.string().min(1).max(128).nullable(),
+  effort: z.string().min(1).max(32).nullable(),
 })
 
 // A runner-issued reference to an agent's actor or request: clients compare it, and

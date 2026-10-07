@@ -13,14 +13,12 @@ import { useRef, type ReactNode } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import { subagentsBadge, subagentsDetail } from "../model/agent-subagents"
-import { nextReset, usageBadge, usageDetail } from "../model/agent-usage"
 import { isWindow } from "../model/roster"
 import { attentionText, doneText, terminalPhase, unheardText } from "../model/terminal-ending"
 import type { Tile, WindowedView } from "../model/types"
 import { ContextMenu, type ContextMenuItem } from "../ui-toolkit/ContextMenu"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
-import { useRenderAt } from "./use-render-at"
 
 // What a layout contributes to each terminal it places.
 export type TerminalLayoutControls = {
@@ -127,8 +125,6 @@ export const WindowShell = ({
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
   const shell = isWindow(terminal) ? undefined : terminal
-  useRenderAt(shell && nextReset(shell))
-  const usage = shell && usageBadge(shell)
   const subagents = shell && subagentsBadge(shell)
   const planning = shell?.state === "running" && shell.agent?.planning === true
   const phase = shell ? terminalPhase(shell, unread !== undefined) : "idle"
@@ -259,10 +255,10 @@ export const WindowShell = ({
           )}
         </>
       </div>
-      {(planning || usage || subagents) && !compact && (
-        // Whether the agent plans, its subagents, context and busiest rate limit, in
-        // full on hover. Only a focused window has room beside its name; a compact one
-        // leaves them to its tab's tooltip.
+      {(planning || subagents) && !compact && (
+        // Whether the agent plans, and its subagents, in full on hover. Only a focused
+        // window has room beside its name; a compact one leaves them to its tab's tooltip.
+        // What it runs on and how full its context is are its taskbar's.
         <span className="terminal-metadata ml-auto flex min-w-0 items-center gap-2 overflow-hidden text-caption">
           {planning && (
             <Tooltip content="Planning, not changing anything yet">
@@ -272,11 +268,6 @@ export const WindowShell = ({
           {shell && subagents && (
             <Tooltip content={subagentsDetail(shell)}>
               <span className="terminal-subagents shrink-0">{subagents}</span>
-            </Tooltip>
-          )}
-          {shell && usage && (
-            <Tooltip content={usageDetail(shell)}>
-              <span className="terminal-usage min-w-0 truncate">{usage}</span>
             </Tooltip>
           )}
         </span>

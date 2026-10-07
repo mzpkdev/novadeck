@@ -207,8 +207,9 @@ export type ActivityEvent = {
 )
 
 /**
- * What a session's own records said of its tokens and quotas, each part only when they
- * named it: how full its context is, and its rate-limit windows.
+ * What a session's own records said of its tokens, quotas and model, each part only when
+ * they named it: how full its context is, its rate-limit windows, the model's name and its
+ * reasoning effort.
  */
 export type TelemetryObserved = {
   readonly type: "telemetry-observed"
@@ -218,6 +219,8 @@ export type TelemetryObserved = {
   readonly startedAt: number
   readonly context?: AgentTelemetry["context"]
   readonly limits?: AgentTelemetry["limits"]
+  readonly model?: AgentTelemetry["model"]
+  readonly effort?: AgentTelemetry["effort"]
 }
 
 /**

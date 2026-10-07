@@ -141,6 +141,12 @@ export const projectTerminals = (project: Project, agents = false): TerminalMeta
             working: true,
             planning: true as const,
             attention: { kind: "plan" as const, count: 1 },
+            usage: {
+              context: { occupied: 124_000, capacity: 200_000 },
+              limits: [],
+              model: "Opus 5.5",
+              effort: null,
+            },
           },
         }
       : {}),
@@ -161,6 +167,8 @@ export const projectTerminals = (project: Project, agents = false): TerminalMeta
             usage: {
               context: { occupied: 30_000, capacity: 200_000 },
               limits: [{ minutes: 300, used: 0.4, resetsAt: null }],
+              model: "gpt-6-astra",
+              effort: "high",
             },
           },
         }

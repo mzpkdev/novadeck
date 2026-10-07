@@ -65,6 +65,7 @@ export const Taskbar = ({
   onHide,
   presence,
   dropTarget,
+  stats,
 }: {
   terminal: string
   // Who showed what's here, as the bar's label names them.
@@ -79,6 +80,8 @@ export const Taskbar = ({
   presence: Presence
   // An icon from another terminal's bar is over this one: a drop lands here.
   dropTarget: boolean
+  // What its agent runs on and how full its context is, at its right end.
+  stats?: ReactNode
 }): React.JSX.Element => {
   const bar = useRef<HTMLDivElement | null>(null)
   const { provider, grab, grabbed, grabbedIconRef } = useBarDrag({
@@ -132,6 +135,7 @@ export const Taskbar = ({
           ))}
         </span>
       </DragDropProvider>
+      {stats}
       {Grabbed && (
         <Portal>
           <div ref={grabbedIconRef} className="plan-tb-grabbed" aria-hidden="true">

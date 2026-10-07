@@ -27,25 +27,37 @@ const lapsed = ({ resetsAt }: Limit, now: number): boolean => resetsAt !== null 
 const usageOf = (terminal: TerminalMetadata): AgentUsage | undefined =>
   terminal.state === "running" ? terminal.agent?.usage : undefined
 
-// The agent's usage at a glance, for its window's header: how full its context is, and
-// the most used rate-limit window that has not reset since, e.g. "ctx 15% · 5h 40%".
-// Undefined without any.
-export const usageBadge = (terminal: TerminalMetadata, now = Date.now()): string | undefined => {
+// What its taskbar says of the agent at its right end: the model it runs and its effort,
+// where its harness says, and how full its context is, as a share where its capacity is
+// known, with the tokens in words for a tooltip. Undefined without any.
+export type AgentStats = {
+  readonly model: string | null
+  readonly effort: string | null
+  readonly context: {
+    readonly share: number | null
+    readonly label: string
+    readonly detail: string
+  } | null
+}
+
+export const agentStats = (terminal: TerminalMetadata): AgentStats | undefined => {
   const usage = usageOf(terminal)
   if (!usage) return undefined
-  const { context, limits } = usage
-  const parts: string[] = []
-  if (context)
-    parts.push(
-      context.capacity
-        ? `ctx ${percent(context.occupied / context.capacity)}`
-        : `ctx ${tokens(context.occupied)}`,
-    )
-  const busiest = limits
-    .filter((limit) => !lapsed(limit, now))
-    .toSorted((a, b) => b.used - a.used)[0]
-  if (busiest) parts.push(`${windowName(busiest.minutes)} ${percent(busiest.used)}`)
-  return parts.length > 0 ? parts.join(" · ") : undefined
+  const { model, effort, context } = usage
+  if (!model && !effort && !context) return undefined
+  return {
+    model,
+    effort,
+    context: context && {
+      share: context.capacity ? Math.min(1, context.occupied / context.capacity) : null,
+      label: context.capacity
+        ? percent(context.occupied / context.capacity)
+        : tokens(context.occupied),
+      detail: context.capacity
+        ? `Context ${percent(context.occupied / context.capacity)} full · ${tokens(context.occupied)} of ${tokens(context.capacity)} tokens`
+        : `Context: ${tokens(context.occupied)} tokens`,
+    },
+  }
 }
 
 // When a window resets, in the viewer's local time: the time alone within a day, the

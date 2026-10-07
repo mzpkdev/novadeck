@@ -204,18 +204,25 @@ describe("An agent that finishes", () => {
   })
 })
 
-describe("An agent's usage", () => {
-  it("shows beside a focused window's name, and leaves compact windows their name", async () => {
-    // The demo's Codex reports its context and a five-hour window.
+describe("An agent's model and context", () => {
+  it("show at the right end of its taskbar, in Focus and in compact windows", async () => {
+    // The demo's Codex reports its model, effort and context, and a five-hour window.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     await page.getByRole("button", { name: "Select Checkout review" }).click()
     const window = page.getByRole("region", { name: "Checkout review terminal" })
-    await expect.element(window.getByText("ctx 15% · 5h 40%")).toBeVisible()
+    const bar = window.getByRole("group", { name: /^What .+ showed you$/ })
+    await expect.element(bar.getByText("gpt-6-astra · high")).toBeVisible()
+    // How full its context is shows as a ring alone, in words on hover.
+    const ring = bar.getByRole("img", { name: "Context 15% full · 30k of 200k tokens" })
+    await expect.element(ring).toBeVisible()
+    await expect.element(bar.getByText("15%")).not.toBeInTheDocument()
+    // Its rate limits stay out of the window.
+    await expect.element(window.getByText(/5h 40%/)).not.toBeInTheDocument()
     await chooseView("Grid")
-    await expect.element(window.getByText("ctx 15% · 5h 40%")).not.toBeInTheDocument()
-    await expect.element(window.getByRole("heading", { name: "Checkout review" })).toBeVisible()
+    await expect.element(ring).toBeVisible()
+    expect(await tooltipOf(ring)).toBe("Context 15% full · 30k of 200k tokens")
   })
 })
 

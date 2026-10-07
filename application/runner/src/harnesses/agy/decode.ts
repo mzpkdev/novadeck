@@ -27,7 +27,45 @@ import { absolute, sessionId, text } from "../harness.js"
  * it asks nothing here; the latest of each conversation is only remembered, as the call a
  * confirmation the status line shows is about (see `confirmation`).
  */
-export const decode = ({ event, seq, instance, payload }: Report): readonly HarnessEvent[] => {
+export const decode = (report: Report): readonly HarnessEvent[] => {
+  const events = decodeEvent(report)
+  const { seq, instance, payload } = report
+  const id = sessionId(payload.conversationId)
+  const model = report.event === "StatusLine" ? undefined : reading(payload.modelName)
+  return id && model
+    ? [
+        ...events,
+        {
+          type: "telemetry-observed",
+          agent: "agy",
+          sessionId: id,
+          instance,
+          startedAt: seq,
+          ...model,
+        },
+      ]
+    : events
+}
+
+// The reasoning levels Antigravity's model names end in.
+const levels: ReadonlySet<string> = new Set(["minimal", "low", "medium", "high", "xhigh"])
+
+/**
+ * A hook's model name, with a trailing reasoning level split off as the effort. That the
+ * suffix is a level is an inference from the names seen (`gemini-3.8-flash-high`), not
+ * something Antigravity documents; any other name is the model whole, with no effort.
+ */
+const reading = (name: unknown): { model: string; effort?: string } | undefined => {
+  const whole = text(name)
+  if (!whole || whole.length > 128) return undefined
+  const cut = whole.lastIndexOf("-")
+  const level = whole.slice(cut + 1)
+  return cut > 0 && levels.has(level)
+    ? { model: whole.slice(0, cut), effort: level }
+    : { model: whole }
+}
+
+const decodeEvent = ({ event, seq, instance, payload }: Report): readonly HarnessEvent[] => {
   if (event === "StatusLine") return statusLine({ seq, instance, payload })
   const id = sessionId(payload.conversationId)
   if (!id) return []

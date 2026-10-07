@@ -61,6 +61,9 @@ export type AgentUsage = {
     readonly used: number
     readonly resetsAt: number | null
   }[]
+  // The model it runs and the reasoning effort it was set to, where its harness says.
+  readonly model: string | null
+  readonly effort: string | null
 }
 
 // What a terminal's process is doing. Exit and failure details replace each other.

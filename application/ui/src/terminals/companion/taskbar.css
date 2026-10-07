@@ -2,7 +2,9 @@
    the bar along the terminal's bottom (`.plan-taskbar`) with an icon (`.plan-tb-item`)
    for the plan and for each thing its agent showed, a mark under each as an OS taskbar
    has, and a count (`.plan-tb-count`) on a stack or on the messages. What the pane shows
-   is raised as the active segment of a segmented control is, and keeps its mark.
+   is raised as the active segment of a segmented control is, and keeps its mark. At its
+   right end, what the agent runs on (`.plan-tb-stats`): its model and effort
+   (`.plan-tb-model`) and how full its context is (`.plan-tb-context`, a `.plan-tb-ring`).
 
    Hooks: on the bar, data-state="open" | "closed" as it comes and goes, and
    data-drop-target while an icon from another bar is over it; `.plan-taskbar-empty`, the
@@ -32,7 +34,10 @@
    --taskbar-count-held-bg (warning), --taskbar-count-held-fg (warning-fg): messages
    waiting for release.
    --taskbar-count-paused-bg (paper), --taskbar-count-paused-fg (muted),
-   --taskbar-count-paused-border-color (line): the pause mark. */
+   --taskbar-count-paused-border-color (line): the pause mark.
+   --taskbar-stats-font (mono): what the agent runs on.
+   --taskbar-ring-track-color (line), --taskbar-ring-fill-color (muted): the context's
+   ring. */
 
 /* Host: the terminal body plus its taskbar. */
 .terminal-plan {
@@ -289,4 +294,69 @@
    this (see use-bar-drag.ts), so nothing here has to outrank it. */
 :root[data-drag-refused] {
   --_bar-drag-cursor: not-allowed;
+}
+/* What the agent runs on, at the bar's right end: its model and effort, then a ring for
+   how full its context is, its share in words on hover. All of it stays in the bar's
+   quiet grey whatever the share, and faint until the bar is hovered (below). A narrow
+   bar keeps only the ring. */
+.plan-taskbar {
+  container-type: inline-size;
+}
+.plan-tb-stats {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  padding-right: 14px;
+  color: var(--color-muted);
+  font-family: var(--taskbar-stats-font, var(--font-mono));
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.plan-tb-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-tb-context {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+}
+/* Digits stand above the middle of their line, where there's room for descenders below:
+   the ring rises the same to sit level with them. */
+.plan-tb-ring {
+  width: 14px;
+  height: 14px;
+  transform: rotate(-90deg);
+  translate: 0 -0.1em;
+}
+.plan-tb-ring circle {
+  fill: none;
+  stroke-width: 2.25;
+}
+.plan-tb-ring-track {
+  stroke: var(--taskbar-ring-track-color, var(--color-line));
+}
+.plan-tb-ring-fill {
+  stroke: var(--taskbar-ring-fill-color, var(--color-muted));
+  stroke-linecap: round;
+}
+@container (max-width: 360px) {
+  .plan-tb-model {
+    display: none;
+  }
+}
+/* It stays faint until the pointer is over the bar, or focus is in it: there when looked
+   for, out of the way otherwise. Without a pointer that hovers, it stays. */
+@media (hover: hover) {
+  .plan-tb-stats {
+    opacity: 0.5;
+    transition: opacity var(--motion-feedback) var(--ease-interface);
+  }
+  .plan-taskbar:is(:hover, :focus-within) .plan-tb-stats {
+    opacity: 1;
+  }
 }

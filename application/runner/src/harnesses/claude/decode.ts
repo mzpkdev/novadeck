@@ -222,10 +222,16 @@ const count = (value: unknown): number | undefined =>
 // Claude Code's rate-limit windows, by their names in its status line.
 const windows = { five_hour: 300, seven_day: 10_080 } as const
 
+// A name within the bounds the protocol allows, or undefined.
+const named = (value: unknown, max: number): string | undefined =>
+  typeof value === "string" && value.length > 0 && value.length <= max ? value : undefined
+
 /**
  * The status line Claude Code runs in Novadeck's shells hands over what no other source
- * says: the context window's size beside what it holds, and the account's five-hour and
- * seven-day rate limits, used percentage and reset time in epoch seconds.
+ * says: the context window's size beside what it holds, the account's five-hour and
+ * seven-day rate limits, used percentage and reset time in epoch seconds, and the model's
+ * display name with its reasoning effort level, which it leaves out for a model without
+ * one.
  */
 const statusLine = (
   base: { agent: "claude"; sessionId: string; instance: string | null; startedAt: number },
@@ -242,6 +248,8 @@ const statusLine = (
     .filter((each): each is number => each !== undefined)
   const capacity = count(window.context_window_size)
   const limits = (payload.rate_limits ?? {}) as Record<string, unknown>
+  const model = named((payload.model as { display_name?: unknown } | undefined)?.display_name, 128)
+  const effort = named((payload.effort as { level?: unknown } | undefined)?.level, 32)
   const known = Object.entries(windows).flatMap(([name, minutes]) => {
     const { used_percentage: used, resets_at: resets } = (limits[name] ?? {}) as Record<
       string,
@@ -265,6 +273,8 @@ const statusLine = (
         },
       }),
       ...(payload.rate_limits !== undefined && { limits: known }),
+      ...(model !== undefined && { model }),
+      ...(effort !== undefined && { effort }),
     },
   ]
 }

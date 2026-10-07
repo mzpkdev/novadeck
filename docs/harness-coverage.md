@@ -127,7 +127,8 @@ In the probe, a background subagent's result began a second turn with its own `U
 - **Status line:** the JSON on stdin has
   - `cost.total_cost_usd` (a client-side estimate),
   - `context_window` (size, `used_percentage`, current usage),
-  - `rate_limits.five_hour` and `rate_limits.seven_day`, each with `used_percentage` (0–100) and `resets_at` (epoch seconds).
+  - `rate_limits.five_hour` and `rate_limits.seven_day`, each with `used_percentage` (0–100) and `resets_at` (epoch seconds),
+  - `model.display_name`, and `effort.level` (`low` to `max`), which the statusline docs (https://code.claude.com/docs/en/statusline) say is absent for a model without an effort parameter; the probe fixture predates it.
 - `rate_limits` appears only for subscription accounts, and only after the first response. A missing window is unknown, not zero.
 - No other source carries rate limits.
 
@@ -202,6 +203,7 @@ In the probe, a background subagent's result began a second turn with its own `U
 
 - `info.total_token_usage` (cumulative for the thread) and `info.last_token_usage` (the latest response): input, cached, cache write, output, reasoning and total tokens.
 - `info.model_context_window`.
+- `turn_context` (a separate rollout record, one per turn) names the turn's `model` and `effort` (probed).
 - `rate_limits.primary` and `rate_limits.secondary`, each with `used_percent` (0–100, probed), `window_minutes` and `resets_at` (epoch seconds, probed). `secondary` can be null.
 
 Other facts:
@@ -274,6 +276,8 @@ Other facts:
 - `context_window` (size, used percentage, token totals),
 - `quota` per model (`remaining_fraction`, `reset_time`, `reset_in_seconds`),
 - `cost`, `task_count` and `pending_input_count`.
+
+The model is not in it: every hook's `modelName` names it, as `gemini-3.8-flash-high`. Novadeck reads a trailing `minimal`, `low`, `medium`, `high` or `xhigh` as the reasoning effort, an inference from the names seen.
 
 It also carries the account's `email`, which must not leave the adapter.
 

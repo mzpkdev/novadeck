@@ -27,12 +27,21 @@ export const observeTelemetry = (
           ? { ...event.context, capacity: telemetry.context.capacity }
           : event.context,
     limits: event.limits ?? telemetry?.limits ?? [],
+    model: event.model === undefined ? (telemetry?.model ?? null) : event.model,
+    effort: event.effort === undefined ? (telemetry?.effort ?? null) : event.effort,
     at: event.startedAt,
   }
 }
 
 /** The telemetry as clients see it. */
-export const telemetrySummary = ({ context, limits }: Telemetry): AgentTelemetry => ({
+export const telemetrySummary = ({
   context,
   limits,
+  model,
+  effort,
+}: Telemetry): AgentTelemetry => ({
+  context,
+  limits,
+  model,
+  effort,
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test"
-import { nextReset, usageBadge, usageDetail } from "./agent-usage"
+import { agentStats, nextReset, usageDetail } from "./agent-usage"
 import type { AgentUsage, TerminalMetadata } from "./types"
 
 const terminal = (usage?: AgentUsage): TerminalMetadata => ({
@@ -17,22 +17,39 @@ const codex: AgentUsage = {
     { minutes: 300, used: 0.4, resetsAt: 10_000 },
     { minutes: 10_080, used: 0.1, resetsAt: null },
   ],
+  model: "gpt-6-astra",
+  effort: "high",
 }
 
 describe("an agent's usage", () => {
-  it("shows the context's fill and the busiest window at a glance", () => {
-    expect(usageBadge(terminal(codex), 0)).toBe("ctx 15% · 5h 40%")
+  it("shows on its taskbar the model, its effort, and how full the context is", () => {
+    expect(agentStats(terminal(codex))).toEqual({
+      model: "gpt-6-astra",
+      effort: "high",
+      context: {
+        share: 0.15,
+        label: "15%",
+        detail: "Context 15% full · 30k of 200k tokens",
+      },
+    })
   })
 
-  it("passes over a window that has reset since the agent last said", () => {
-    expect(usageBadge(terminal(codex), 20_000)).toBe("ctx 15% · 7d 10%")
+  it("says a window that has reset since the agent last said has", () => {
     expect(usageDetail(terminal(codex), 20_000)).toContain("5h limit: reset since")
   })
 
   it("counts tokens where the capacity is unknown, as Claude Code's transcript leaves it", () => {
-    expect(
-      usageBadge(terminal({ context: { occupied: 1_234_567, capacity: null }, limits: [] })),
-    ).toBe("ctx 1.2M")
+    const only: AgentUsage = {
+      context: { occupied: 1_234_567, capacity: null },
+      limits: [],
+      model: null,
+      effort: null,
+    }
+    expect(agentStats(terminal(only))?.context).toEqual({
+      share: null,
+      label: "1.2M",
+      detail: "Context: 1.2M tokens",
+    })
   })
 
   it("details every window with when it resets", () => {
@@ -51,7 +68,10 @@ describe("an agent's usage", () => {
   })
 
   it("shows nothing without usage", () => {
-    expect(usageBadge(terminal())).toBeUndefined()
+    expect(agentStats(terminal())).toBeUndefined()
+    expect(
+      agentStats(terminal({ context: null, limits: codex.limits, model: null, effort: null })),
+    ).toBeUndefined()
     expect(usageDetail({ ...terminal(codex), state: "idle" })).toBeUndefined()
   })
 })

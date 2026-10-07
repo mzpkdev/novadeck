@@ -1,7 +1,7 @@
 import { describe, expect, it } from "../test.js"
 import type { Binding } from "./bindings.js"
 import type { TelemetryObserved } from "./events.js"
-import { observeTelemetry } from "./telemetry.js"
+import { observeTelemetry, telemetrySummary } from "./telemetry.js"
 
 const binding: Binding = { agent: "codex", sessionId: "s", instance: null }
 const seen = (fields: Partial<TelemetryObserved>): TelemetryObserved => ({
@@ -34,6 +34,24 @@ describe("observing telemetry", () => {
       seen({ startedAt: 11, context: { occupied: 5_000, capacity: null } }),
     )
     expect(next?.context).toEqual({ occupied: 5_000, capacity: 200_000 })
+  })
+
+  it("keeps the known model and effort when a record names neither, and takes a new one", () => {
+    const first = observeTelemetry(null, binding, seen({ model: "gpt-6", effort: "high" }))!
+    const next = observeTelemetry(first, binding, seen({ startedAt: 11, context }))!
+    expect(next).toMatchObject({ model: "gpt-6", effort: "high" })
+    const changed = observeTelemetry(next, binding, seen({ startedAt: 12, model: "gpt-7" }))!
+    expect(changed).toMatchObject({ model: "gpt-7", effort: "high" })
+    expect(telemetrySummary(changed)).toEqual({
+      context,
+      limits: [],
+      model: "gpt-7",
+      effort: "high",
+    })
+    expect(observeTelemetry(null, binding, seen({ context }))).toMatchObject({
+      model: null,
+      effort: null,
+    })
   })
 
   it("ignores an older record, and another session's", () => {
