@@ -90,7 +90,7 @@ export const TerminalSearch = ({
           content: (
             <>
               <TerminalIcon size={15} strokeWidth={1.5} />
-              <span className="search-result-copy flex min-w-0 flex-1 flex-col gap-1">
+              <span className="search-result-copy flex min-w-0 flex-1 flex-col gap-1.5">
                 <strong className="truncate text-body leading-4 font-medium">
                   {terminal.name}
                 </strong>
