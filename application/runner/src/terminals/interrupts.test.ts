@@ -24,6 +24,8 @@ const terminal = (
     clear?: boolean
     clears?: boolean
     /** What the box holds once the nth Escape has come. */
+    /** The most rows the box shows of a taller text, as its harness's `viewport` says. */
+    viewport?: number
     after?: (escapes: number) => string | undefined
   } = {},
 ) => {
@@ -44,6 +46,7 @@ const terminal = (
     shell: { expands: true, footer: () => false },
     queued: () => options.queued === true,
     collapses: () => false,
+    ...(options.viewport === undefined ? {} : { viewport: () => options.viewport! }),
     room: (rows) => rows - 3,
   }
   const host: InterruptHost = {
@@ -116,6 +119,25 @@ describe("interrupts", () => {
     const t = terminal({ prompt: "Say hi\nthere", after: () => "[Pasted text #1 +4 lines]" })
     await expect(t.interrupt()).rejects.toMatchObject({ code: "BOX_NOT_CLEARED" })
     expect(t.written).toEqual([])
+  })
+
+  it("clears the tail of a prompt too tall for the box, which is the turn's own, and returns nothing", async () => {
+    const prompt = ["Hold on", "two", "three", "four", "five"].join("\n")
+    const t = terminal({ viewport: 3, prompt, after: () => "three\nfour\nfive" })
+    expect(await t.interrupt()).toEqual({ returned: null })
+    expect(t.written).toEqual([CLEAR])
+  })
+
+  it("returns the words of a box shorter than the harness's tallest, though they end the prompt", async () => {
+    const prompt = ["Hold on", "two", "three", "four", "five"].join("\n")
+    const t = terminal({ viewport: 3, prompt, after: () => "four\nfive" })
+    expect(await t.interrupt()).toEqual({ returned: "four\nfive" })
+    expect(t.written).toEqual([CLEAR])
+  })
+
+  it("returns the words of a tall box that do not end the prompt", async () => {
+    const t = terminal({ viewport: 2, prompt: "Hold on\ntwo\nthree", after: () => "one\nthree" })
+    expect(await t.interrupt()).toEqual({ returned: "one\nthree" })
   })
 
   it("says so when the clear keys leave the box holding text", async () => {
