@@ -414,10 +414,9 @@ describe("appearance preference", () => {
       await expect.poll(pageScheme).toBe("dark")
       await closePreferences()
       // As a fresh load finds it: nothing on <html> until the app shows what it saved.
-      document.documentElement.removeAttribute("data-theme")
       document.documentElement.removeAttribute("data-scheme")
       await reloadWorkspace()
-      expect(document.documentElement.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
+      expect(document.documentElement.dataset).toMatchObject({ scheme: "dark" })
       await expect.poll(pageScheme).toBe("dark")
       await openPreferences()
       await expect.element(modeChoice("Dark")).toBeChecked()
@@ -461,7 +460,7 @@ describe("appearance preference", () => {
       const saved = JSON.parse(localStorage.getItem("novadeck.preferences") ?? "{}")
       saveFromAnotherWindow("novadeck.preferences", {
         ...saved,
-        appearance: { theme: "graphite", scheme: "dark" },
+        appearance: { scheme: "dark" },
       })
 
       await expect.poll(pageScheme).toBe("dark")

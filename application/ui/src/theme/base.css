@@ -1,5 +1,5 @@
 /* The base layer: defaults for the optional foundation tokens, element defaults, and the
-   rule that stills transitions while the theme changes. Imported into `layer(base)`;
+   rule that stills transitions while the scheme changes. Imported into `layer(base)`;
    see docs/theming.md. */
 
 /* Optional foundation tokens: a theme may set any of these, and these are Graphite's. */
@@ -34,11 +34,11 @@
   --brand-tile-border-color: transparent;
 }
 
-/* While the theme changes, nothing fades: the whole page changes at once. `!important`,
+/* While the scheme changes, nothing fades: the whole page changes at once. `!important`,
    one of the contract's exceptions, so inline transitions still too. */
-[data-theme-switching] *,
-[data-theme-switching] *::before,
-[data-theme-switching] *::after {
+[data-scheme-switching] *,
+[data-scheme-switching] *::before,
+[data-scheme-switching] *::after {
   transition: none !important;
 }
 

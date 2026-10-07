@@ -2,10 +2,10 @@
 
 Novadeck's look is a theme. Components give the interface its shape; a theme decides
 how that shape is drawn: colours, borders, depth, corners, type, and the texture of the
-workspace. The app ships one canonical theme, Graphite, with a light and a dark
-scheme, and offers no choice of theme: the person picks only the mode. The theme layer
-stays general, so Graphite is a theme like any other, and a new theme would be one CSS
-file and one line in the theme list.
+workspace. The app ships one theme, Graphite, with a light and a dark scheme, and
+offers no choice of theme: the person picks only the mode. The token tiers and the
+component hooks below stay general, so a theme could change them without touching a
+component.
 
 This guide is the contract between the two sides. Change it when the contract changes.
 
@@ -22,7 +22,7 @@ This guide is the contract between the two sides. Change it when the contract ch
 | `theme`         | Tailwind's layout scale: spacing, breakpoints, type sizes. No colours, radii or shadows (see below).  | `theme/contract.css`             |
 | `base`          | Defaults for optional tokens, element defaults (body, focus ring, scrollbars, selection), vendor CSS. | `theme/base.css`, vendor imports |
 | `components`    | Recipes: one per component, shape only, every visual value a token.                                   | beside each component            |
-| `themes`        | Theme files: token values, and the few rules tokens can't express.                                    | `theme/themes/*.css`             |
+| `themes`        | The theme file: token values, and the few rules tokens can't express.                                 | `theme/graphite.css`             |
 | `accessibility` | Reduced motion and forced colours, so no theme can defeat them.                                       | `theme/accessibility.css`        |
 | `utilities`     | Tailwind layout utilities from the TSX.                                                               | Tailwind                         |
 
@@ -46,7 +46,7 @@ of words the code uses in other senses, such as `outline` and `transition`.
 Three tiers, each reading only from the one above it.
 
 1. **Foundation tokens** are the theme's vocabulary. A theme defines every required one
-   for each scheme it offers; `theme/contract.test.ts` checks this.
+   for each scheme; `theme/contract.test.ts` checks this.
 2. **Component tokens** are each recipe's knobs, such as `--button-bg` or
    `--window-selected-border-color`. A recipe falls back to foundation tokens when a
    theme leaves one unset, so a theme that sets none still looks whole.
@@ -73,12 +73,12 @@ and its states change only private values:
 This is load-bearing. A declaration on an element beats the value it inherits, whatever
 the layers, so `.button { --button-bg: … }` in a recipe would hide the theme's
 `--button-bg` from every button. Reading tokens on the element also lets a theme
-restyle a region: `[data-theme="x"] .sidebar { --color-paper: … }` reaches every
+restyle a region: `.sidebar { --color-paper: … }` reaches every
 recipe inside the sidebar.
 
 A token whose value reads another token is resolved where it is declared, and its
 descendants inherit the result. So an `--item-selected-bg` that a theme mixes from
-`--color-strong` on `[data-theme]` keeps the root's strong colour inside a restyled
+`--color-strong` on `:root` keeps the root's strong colour inside a restyled
 region. A theme that restyles a region declares each such token again on the region,
 in the same rule as on its root, so it reads the region's own foundation tokens.
 
@@ -91,7 +91,7 @@ element and follows a restyled region.
 
 ### Foundation tokens
 
-Required in every scheme a theme offers:
+Required in every scheme:
 
 | Group    | Tokens                                                                                                                                                                                                 |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -200,10 +200,10 @@ A theme's rules may select:
   `data-highlighted`, `data-disabled`, `data-focus-visible`, `aria-checked`,
   `aria-pressed`, `aria-current`, `aria-disabled`, `data-tone`, `data-terminal-phase`
   and the others each recipe lists;
-- `data-theme` and `data-scheme` on `<html>`.
+- `data-scheme` on `<html>`, `dark` while the dark scheme shows.
 
 Recipe classes and the attributes a recipe lists are public. Renaming one breaks every
-theme that uses it, so rename it in the same change as the themes. Anything else in the
+theme that uses it, so rename it in the same change as the theme. Anything else in the
 DOM may change without notice. CSS modules aren't used, because their class names
 aren't stable.
 
@@ -258,7 +258,7 @@ list of `!important`s, pinned to the exact declarations, so a new one in a liste
 fails too, and fails when one is no longer needed.
 
 - `theme/base.css` uses `!important` in the rule that stills every transition, inline
-  ones too, while the theme changes.
+  ones too, while the scheme changes.
 - `theme/accessibility.css` uses `!important` for reduced motion, to beat the
   transitions libraries set inline or inject with `!important`, such as dnd-kit's drag
   feedback.
@@ -272,31 +272,34 @@ fails too, and fails when one is no longer needed.
   shows (the gutter, selection and caret) in an editor theme, which CodeMirror orders
   after its base theme, with token `var()`s and their fallbacks.
 
-## Themes
+## Schemes
 
-A theme file sets its schemes on `[data-theme]`: the first scheme `theme/themes.ts`
-lists for it on `[data-theme]` alone, each other one on `[data-scheme]` as well,
-with `color-scheme` and every required token in each:
+`theme/graphite.css` sets the light scheme on `:root` and the dark one on
+`:root[data-scheme="dark"]`, with `color-scheme` and every required token in each:
 
 ```css
-[data-theme="graphite"] {
+:root {
   color-scheme: light;
   --color-paper: #ffffff;
   /* every required token */
 }
 
-[data-theme="graphite"][data-scheme="dark"] {
+:root[data-scheme="dark"] {
   color-scheme: dark;
   --color-paper: #191c20;
   /* every required token again */
 }
 ```
 
+The light block is shared: what it declares holds in dark too, so aliases (`var()`) live
+only there and follow the scheme. The dark block restates every foundation token and
+only the component tokens whose value differs.
+
 Then any component tokens it wants to change, and last any rules tokens can't express,
 each against a [hook](#hooks):
 
 ```css
-[data-theme="blueprint"] .section-label {
+.section-label {
   letter-spacing: normal;
   text-transform: none;
 }
@@ -304,50 +307,34 @@ each against a [hook](#hooks):
 
 Prefer tokens. The `themes` layer beats every recipe whatever the specificity, so a
 theme rule that sets a property on a component's resting selector also overrides its
-hover, selected and disabled looks; a theme that sets properties restates each state it
-needs. When a theme needs many such rules, the recipe is missing a token: add it to the
-recipe instead, and every theme gains it.
-
-Theme rules match any element under `[data-theme]`. If the app ever renders a preview
-of another theme inside the page, scope theme rules with
-`@scope ([data-theme="x"]) to ([data-theme])` so they stop at the nested preview.
-
-`theme/themes.ts` lists the themes: an id, a name, and the schemes its file defines.
-Today it holds Graphite alone. To add a theme:
-
-1. Copy `theme/themes/graphite.css` to `theme/themes/<id>.css`, rename the selectors and
-   change the values.
-2. Import it in `styles.css` into `layer(themes)`, and add `{ id, name, schemes }` to
-   `theme/themes.ts`.
-3. Run `pnpm --filter @novadeck/ui exec vitest run --project unit src/theme/`.
+hover, selected and disabled looks; a rule that sets properties restates each state it
+needs. When many such rules pile up, the recipe is missing a token: add it to the
+recipe instead.
 
 ## Choosing a mode
 
-Preferences holds `appearance: { theme, scheme }`, where `scheme` is `system`, `light`
-or `dark`; it starts as Graphite following the system. Preferences shows only a Mode
-choice (System, Light, Dark): there is no choice of theme, and `theme` stays Graphite.
-`theme/apply.ts` resolves the preference against the system's scheme and the schemes the
-theme offers; a theme with one scheme always uses it, and an unknown theme, such as a
-saved choice of the retired Sandstone, falls back to the first in the list, Graphite. It
-then sets `data-theme` and `data-scheme` on `<html>` and dispatches
-`novadeck:themechange`. `app/appearance.ts` is the one place that does this while the
-app runs: whenever the preference changes, and whenever the system's scheme does.
+Preferences holds `appearance: { scheme }`, where `scheme` is `system`, `light` or
+`dark`; it starts as `system`. Preferences shows only a Mode choice (System, Light,
+Dark). `theme/apply.ts` resolves the preference against the system's scheme, then sets
+`data-scheme` on `<html>` and dispatches `novadeck:themechange`. Records older versions
+saved also name a theme, which is ignored. `app/appearance.ts` is the one place that
+does this while the app runs: whenever the preference changes, and whenever the system's
+scheme does.
 
-- **Switching** sets `data-theme-switching` on `<html>`, which stills transitions so
+- **Switching** sets `data-scheme-switching` on `<html>`, which stills transitions so
   the whole page changes at once instead of fading control by control. `apply.ts` reads
-  a style right after, so the browser applies the new theme while transitions are
+  a style right after, so the browser applies the new scheme while transitions are
   still, whatever started the change, and clears the attribute once a frame has drawn it.
-- **Before the first paint**, `public/theme-boot.js` sets the same attributes. It is a
+- **Before the first paint**, `public/theme-boot.js` sets the same attribute. It is a
   plain script loaded in the head without `defer`, because the Content Security Policy
   allows same-origin scripts but not inline ones. `apply.ts` saves what it needs under
-  `novadeck.theme-boot` (the theme, the chosen scheme and the theme's schemes), and the
-  script only resolves `system` against `matchMedia`. It also sets the scheme as
-  `<html>`'s inline `color-scheme`, so the browser's own ground matches it before the
-  stylesheets arrive; `apply.ts` removes that once the theme's file sets `color-scheme`.
-  A record naming a theme this version doesn't have shows unstyled until the app starts
-  and falls back to the first.
+  `novadeck.theme-boot` (`{ scheme }`, the chosen scheme), and the script only resolves
+  `system` against `matchMedia`. Older records, which also hold a theme and its schemes,
+  are still read for their scheme. The script also sets the scheme as `<html>`'s inline
+  `color-scheme`, so the browser's own ground matches it before the stylesheets arrive;
+  `apply.ts` removes that once the theme's file sets `color-scheme`.
 - **Windows** stay in step: each listens for the `storage` event and takes up the
-  preferences another window saved, theme included.
+  preferences another window saved.
 - **The desktop host** follows the page. On every change the page reports its scheme
   and its `--color-paper`, the ground `body` paints before anything draws on it, as
   `#rrggbb` through the preload bridge, so the window and the first paint are one

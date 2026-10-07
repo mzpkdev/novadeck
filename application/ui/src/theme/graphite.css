@@ -16,7 +16,7 @@
    requires it) and only the component tokens whose value differs. Change a step in both.
    Imported into `layer(themes)`; see docs/theming.md. */
 
-[data-theme="graphite"] {
+:root {
   color-scheme: light;
 
   /* Grounds */
@@ -203,7 +203,7 @@
 }
 
 /* Dark: slate grounds, greys with a trace of blue, and the cyan as the strong colour. */
-[data-theme="graphite"][data-scheme="dark"] {
+:root[data-scheme="dark"] {
   color-scheme: dark;
 
   /* Grounds */
@@ -351,11 +351,11 @@
 
 /* The welcome's start button is the dialog's one primary action, so it takes the accent
    as its fill, where the logo and icon tiles carry it only in their glyph. */
-[data-theme="graphite"] .welcome-start {
+.welcome-start {
   --brand-tile-bg: linear-gradient(180deg, #00877e, var(--color-strong));
   --brand-tile-fg: var(--color-on-strong);
   --brand-tile-border-color: transparent;
 }
-[data-theme="graphite"][data-scheme="dark"] .welcome-start {
+:root[data-scheme="dark"] .welcome-start {
   --brand-tile-bg: linear-gradient(180deg, #2ef0e2, #00d6c8);
 }

@@ -2,11 +2,9 @@
 
 // The theming contract in docs/theming.md, checked against the source.
 //
-// Themes: every theme in `themes.ts` has a file in `themes/`, imported into
-// `layer(themes)`, whose selectors all start with its own `[data-theme]`; the file
+// Theme: `graphite.css`, the app's one theme, is imported into `layer(themes)` and
 // defines every required foundation token (`tokens.ts`, which the doc's table matches)
-// for each scheme the manifest lists. The first scheme lives on `[data-theme="<id>"]`,
-// each other one on `[data-theme="<id>"][data-scheme="<scheme>"]`.
+// for each scheme: light on `:root`, dark on `:root[data-scheme="dark"]`.
 //
 // Rules: (a) to (d) below hold for every file. Rule (c) has a short list of
 // exceptions, each with its reason, which the guide's "Exceptions" section repeats; an
@@ -49,7 +47,6 @@ import { join, posix } from "node:path"
 import { parseAst, transformWithEsbuild } from "vite"
 
 import { describe, expect, it } from "../test"
-import { themes } from "./themes"
 import { requiredTokens } from "./tokens"
 
 const src = join(process.cwd(), "src")
@@ -59,7 +56,7 @@ const all = (readdirSync(src, { recursive: true }) as string[]).map((file) =>
 )
 const read = (file: string): string => readFileSync(join(src, file), "utf8")
 const stylesheets = all.filter((file) => file.endsWith(".css"))
-const themeFile = (file: string): boolean => /^theme\/themes\/[^/]+\.css$/.test(file)
+const themeFile = (file: string): boolean => file === "theme/graphite.css"
 const scripts = all.filter(
   (file) =>
     /\.tsx?$/.test(file) &&
@@ -128,24 +125,6 @@ const declarations = (body: string): Map<string, string> =>
     }),
   )
 
-// A selector list's selectors: split at its own commas, not those inside `:is()` or
-// another function.
-const selectorList = (prelude: string): string[] => {
-  const found: string[] = []
-  let depth = 0
-  let start = 0
-  for (let index = 0; index < prelude.length; index++) {
-    const char = prelude[index]
-    if (char === "(" || char === "[") depth++
-    else if (char === ")" || char === "]") depth--
-    else if (char === "," && depth === 0) {
-      found.push(prelude.slice(start, index).trim())
-      start = index + 1
-    }
-  }
-  return [...found, prelude.slice(start).trim()]
-}
-
 // ---- Reporting: what breaks a rule, by file, with how to fix it.
 
 type Rule = { readonly broken: string; readonly fix: string }
@@ -184,54 +163,25 @@ describe("theme contract", () => {
     })
   })
 
-  describe.each(themes.map((theme) => [theme.id, theme] as const))("theme %s", (id, theme) => {
-    const file = `theme/themes/${id}.css`
+  describe("the theme file", () => {
+    const file = "theme/graphite.css"
 
-    it("has a file imported into the themes layer", () => {
+    it("is imported into the themes layer", () => {
       expect(stylesheets).toContain(file)
       expect(uncomment(read("styles.css"))).toContain(`@import "./${file}" layer(themes);`)
     })
 
-    it("selects only its own theme", () => {
-      const prefix = `[data-theme="${id}"]`
-      const selectors = (css: string): string[] =>
-        cssNodes(css).flatMap((node) =>
-          node.body === undefined
-            ? []
-            : node.prelude.startsWith("@")
-              ? selectors(node.body)
-              : selectorList(node.prelude),
-        )
-      expect(
-        selectors(uncomment(read(file))).filter((selector) => !selector.startsWith(prefix)),
-      ).toEqual([])
-      expect(
-        [...read(file).matchAll(/data-theme="([^"]*)"/g)]
-          .map((match) => match[1])
-          .filter((name) => name !== id),
-      ).toEqual([])
+    it.each([
+      ["light", ":root"],
+      ["dark", ':root[data-scheme="dark"]'],
+    ])("defines every required token for its %s scheme", (scheme, selector) => {
+      const block = cssNodes(uncomment(read(file))).find((node) => node.prelude === selector)
+      expect(block?.body, `${file} has no ${selector} block`).toBeDefined()
+      const tokens = declarations(block!.body!)
+
+      expect(tokens.get("color-scheme")).toBe(scheme)
+      expect(requiredTokens.filter((token) => !tokens.has(token))).toEqual([])
     })
-
-    it.each(theme.schemes.map((scheme, index) => [scheme, index] as const))(
-      "defines every required token for its %s scheme",
-      (scheme, index) => {
-        const selector =
-          index === 0 ? `[data-theme="${id}"]` : `[data-theme="${id}"][data-scheme="${scheme}"]`
-        const block = cssNodes(uncomment(read(file))).find((node) => node.prelude === selector)
-        expect(block?.body, `${file} has no ${selector} block`).toBeDefined()
-        const tokens = declarations(block!.body!)
-
-        expect(tokens.get("color-scheme")).toBe(scheme)
-        expect(requiredTokens.filter((token) => !tokens.has(token))).toEqual([])
-      },
-    )
-  })
-
-  it("lists every theme file in the manifest", () => {
-    const ids = new Set<string>(themes.map((theme) => theme.id))
-    expect(
-      stylesheets.filter(themeFile).filter((file) => !ids.has(posix.basename(file, ".css"))),
-    ).toEqual([])
   })
 })
 
@@ -599,9 +549,9 @@ const importantExceptions: readonly {
 }[] = [
   {
     file: "theme/base.css",
-    reason: "stills every transition, inline ones too, while the theme changes",
+    reason: "stills every transition, inline ones too, while the scheme changes",
     declarations: [
-      "[data-theme-switching] *, [data-theme-switching] *::before, [data-theme-switching] *::after { transition }",
+      "[data-scheme-switching] *, [data-scheme-switching] *::before, [data-scheme-switching] *::after { transition }",
     ],
   },
   {
