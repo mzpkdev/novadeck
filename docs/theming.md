@@ -23,7 +23,7 @@ This guide is the contract between the two sides. Change it when the contract ch
 | `theme`         | Tailwind's layout scale: spacing, breakpoints, type sizes. No colours, radii or shadows (see below).                                               | `theme/contract.css`                                |
 | `base`          | Defaults for optional tokens, element defaults (body, focus ring, scrollbars, selection, font features, ligatures), the bundled fonts, vendor CSS. | `theme/base.css`, `theme/fonts.css`, vendor imports |
 | `components`    | Recipes: one per component, shape only, every visual value a token.                                                                                | beside each component                               |
-| `themes`        | The theme file: token values, and the few rules tokens can't express.                                                                              | `theme/graphite.css`                                |
+| `themes`        | Each theme's file: token values, and the rules tokens can't express.                                                                               | `theme/graphite.css`, `theme/phosphor.css`          |
 | `accessibility` | Reduced motion and forced colours, so no theme can defeat them.                                                                                    | `theme/accessibility.css`                           |
 | `utilities`     | Tailwind layout utilities from the TSX.                                                                                                            | Tailwind                                            |
 
@@ -199,11 +199,16 @@ not a theme token: every theme shares it.
 The app ships its fonts: Inter for the interface, the official build in
 `assets/fonts/` declared in `theme/fonts.css` (Google Fonts' build drops the character
 variants below), and JetBrains Mono from `@fontsource-variable/jetbrains-mono` for
-terminals and code. The Content Security Policy loads fonts only from the app itself,
-so they always ship as files: `vite.config.ts` never inlines a font as a `data:` URL,
-and `build.test.ts` checks the built stylesheets. A terminal measures its cells once,
-so one opened before its font arrives measures again when it does
-(`backend/runner/screens.ts`).
+terminals and code; Phosphor brings Share Tech Mono from `@fontsource/share-tech-mono`
+for both, and a face loads only once a theme uses it. The Content Security Policy loads
+fonts only from the app itself, so they always ship as files: `vite.config.ts` never
+inlines a font as a `data:` URL, and `build.test.ts` checks the built stylesheets.
+
+A terminal measures its cells when its font changes, with whatever has loaded by then
+(`backend/runner/screens.ts`). One opened before its font arrives measures again when it
+does; on a theme change it keeps the font it has until the new theme's font has loaded,
+then measures once, and a font that fails to load is taken all the same, so the family
+falls back.
 
 `theme/base.css` sets Inter's character variants on `body` (a tailed l, a serifed I, a
 slashed 0) and tabular digits; they belong to that face, so a theme that changes
@@ -223,8 +228,13 @@ A theme's rules may select:
   `data-highlighted`, `data-disabled`, `data-focus-visible`, `aria-checked`,
   `aria-pressed`, `aria-current`, `aria-disabled`, `data-tone`, `data-terminal-phase`
   and the others each recipe lists;
-- `data-scheme` on `<html>`, `dark` while the dark scheme shows, and `data-ligatures`,
-  `on` while the person has turned ligatures on (see [Fonts](#fonts)).
+- `data-theme` and `data-scheme` on `<html>` (each theme's own scope, see
+  [Themes](#themes)), and `data-ligatures`, `on` while the person has turned ligatures on
+  (see [Fonts](#fonts));
+- two layers no recipe draws on: `body::before` and `body::after`, for a layer over the
+  whole screen, and the workspace ground's `.workspace-background::after`, behind every
+  window. The ground's `::before` is the recipe's grain, which a theme that sets
+  `--canvas-grain-opacity` to 0 may take over.
 
 A theme may also apply the SVG filters `index.html` carries, by id: Chromium applies
 only filters in the page itself, so a theme file can't bring its own. `crt-barrel`

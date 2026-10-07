@@ -285,7 +285,8 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       followed.refit()
     }
     // The theme's font, once it has loaded: a bundled font still on its way arrives later,
-    // and the terminal keeps the font it has until then.
+    // and the terminal keeps the font it has until then. One that fails to load is taken
+    // all the same, so the family falls back as the browser would.
     let awaited: string | undefined
     const takeFont = (): void => {
       const font = monospace(element)
@@ -297,14 +298,12 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       }
       if (awaited === font) return
       awaited = font
-      fonts.load(`${xterm.options.fontSize}px ${font}`).then(
-        () => {
-          if (gone || awaited !== font) return
-          awaited = undefined
-          measure(font)
-        },
-        () => {},
-      )
+      const settle = (): void => {
+        if (gone || awaited !== font) return
+        awaited = undefined
+        measure(font)
+      }
+      fonts.load(`${xterm.options.fontSize}px ${font}`).then(settle, settle)
     }
     // A theme sets the colours and the font.
     const retheme = (): void => {

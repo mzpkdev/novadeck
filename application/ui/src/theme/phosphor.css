@@ -82,7 +82,7 @@
   --color-muted: #3cae50;
   /* Lines */
   --color-line: #10331a;
-  --color-line-strong: #266e34;
+  --color-line-strong: #287537;
   /* Emphasis: the brightest the beam draws. */
   --color-strong: #39ff6b;
   --color-strong-hover: #8dffa6;
@@ -108,7 +108,7 @@
   --color-syntax-property: #7dffc4;
   --color-syntax-definition: #d6ffda;
   --color-syntax-type: #9dff9a;
-  --color-syntax-comment: #2f8f45;
+  --color-syntax-comment: #319548;
   /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
   --terminal-ansi-black: #1c4a26;
   --terminal-ansi-red: #4fd06a;
@@ -140,7 +140,7 @@
   --color-muted: #b37a26;
   /* Lines */
   --color-line: #36230a;
-  --color-line-strong: #835519;
+  --color-line-strong: #8a591a;
   /* Emphasis: the brightest the beam draws. */
   --color-strong: #ffa81a;
   --color-strong-hover: #ffcd7a;
@@ -166,7 +166,7 @@
   --color-syntax-property: #ffcf8a;
   --color-syntax-definition: #ffe6c4;
   --color-syntax-type: #ffbe70;
-  --color-syntax-comment: #a27026;
+  --color-syntax-comment: #aa7628;
   /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
   --terminal-ansi-black: #4a3010;
   --terminal-ansi-red: #d08a2a;
@@ -189,14 +189,15 @@
 /* Every line of text glows in its own colour: text-shadow inherits, so it reaches the
    terminals too, whose DOM renderer draws spans. The tube powers on as it comes on
    screen, at start and when the person picks it: a bright dot draws out into a line,
-   then opens into the picture. A transform only, so nothing measures again; the tube's
-   black shows around it while it opens. Switching between the tubes keeps the picture. */
+   then opens into the picture. A transform and a brightness, so nothing measures again,
+   both let go once it ends, so the page keeps no layer of its own; the tube's black shows
+   around it while it opens. Switching between the tubes keeps the picture. */
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
   background-color: rgb(0 0 0);
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body {
   text-shadow: var(--crt-glow);
-  animation: phosphor-power-on 0.75s cubic-bezier(0.2, 0, 0, 1) both;
+  animation: phosphor-power-on 0.75s cubic-bezier(0.2, 0, 0, 1) backwards;
 }
 
 /* The tube over everything, dialogs included, never in the pointer's way: scanlines,
@@ -257,12 +258,12 @@
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .modal
-  .button:not(.link)::before {
+  .button:not(.link, .welcome-start)::before {
   content: "< ";
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .modal
-  .button:not(.link)::after {
+  .button:not(.link, .welcome-start)::after {
   content: " >";
 }
 
@@ -286,6 +287,11 @@
   --window-selected-border-color: transparent;
   --window-shadow: none;
   --window-selected-shadow: none;
+  --window-ended-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--color-ink) 3.5%, transparent) 6px 7px
+  );
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-window {
   position: relative;
@@ -346,13 +352,13 @@
     move to 6px 5px,
     curve to calc(100% - 6px) 5px with 50% 1px,
     curve to calc(100% - 6px) calc(100% - 5px) with calc(100% + 0px) 50%,
-    curve to 6px calc(100% - 5px) with 50% calc(100% + -1px),
+    curve to 6px calc(100% - 5px) with 50% calc(100% - 1px),
     curve to 6px 5px with 0px 50%,
     close,
     move to 7.5px 6.5px,
     curve to calc(100% - 7.5px) 6.5px with 50% 2.5px,
-    curve to calc(100% - 7.5px) calc(100% - 6.5px) with calc(100% + -1.5px) 50%,
-    curve to 7.5px calc(100% - 6.5px) with 50% calc(100% + -2.5px),
+    curve to calc(100% - 7.5px) calc(100% - 6.5px) with calc(100% - 1.5px) 50%,
+    curve to 7.5px calc(100% - 6.5px) with 50% calc(100% - 2.5px),
     curve to 7.5px 6.5px with 1.5px 50%,
     close
   );
@@ -366,14 +372,7 @@
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .terminal-window[data-terminal-phase="ended"]::after {
   background-image:
-    var(
-      --window-ended-image,
-      repeating-linear-gradient(
-        135deg,
-        transparent 0 6px,
-        color-mix(in srgb, var(--color-ink) 3.5%, transparent) 6px 7px
-      )
-    ),
+    var(--window-ended-image),
     radial-gradient(ellipse 60% 38% at 28% 10%, rgb(255 255 255 / 0.085), transparent 70%),
     radial-gradient(ellipse 120% 110% at 50% 50%, transparent 58%, rgb(0 0 0 / 0.5) 100%);
 }
@@ -392,8 +391,10 @@
 
 /* Code rains down the workspace, in two depths: near columns falling faster, far ones
    smaller, dimmer and slower. Each depth is a tile of glyph columns, a bright head over a
-   fading trail, used as a mask over the tube's colour, so both tubes share it; it slides
-   down by one tile and starts again, with a transform the compositor draws. The ground
+   fading trail, used as a mask over the tube's colour, so both tubes share it. It steps
+   down a glyph row at a time, as a terminal's text moves, by moving the mask within the
+   ground's own box: nothing overflows it, so a ground that scrolls, like the empty
+   workspace's, never grows, and the rain repaints only a few times a second. The ground
    is isolated so the rain lies behind every window. Reduced motion stills it; Zen
    quiets it. */
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .workspace-background {
@@ -405,7 +406,7 @@
   .workspace-background::after {
   content: "";
   position: absolute;
-  inset: auto 0 0;
+  inset: 0;
   z-index: -1;
   background: var(--color-strong);
   mask-repeat: repeat;
@@ -413,19 +414,17 @@
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .workspace-background::before {
-  top: -896px;
   mask-image: url("../assets/phosphor-rain-near.svg");
   mask-size: 1920px 896px;
   opacity: 0.11;
-  animation: phosphor-rain-near 16s linear infinite;
+  animation: phosphor-rain-near 16s steps(56) infinite;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .workspace-background::after {
-  top: -720px;
   mask-image: url("../assets/phosphor-rain-far.svg");
   mask-size: 1920px 720px;
   opacity: 0.06;
-  animation: phosphor-rain-far 24s linear infinite;
+  animation: phosphor-rain-far 24s steps(60) infinite;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .workspace[data-zen="true"]
@@ -440,17 +439,17 @@
 
 @keyframes phosphor-rain-near {
   to {
-    transform: translateY(896px);
+    mask-position: 0 896px;
   }
 }
 @keyframes phosphor-rain-far {
   to {
-    transform: translateY(720px);
+    mask-position: 0 720px;
   }
 }
 /* When the system asks for more contrast, the tube keeps its colours, shapes and idioms
    and drops what lies over or behind the text: the glow, the scanlines, vignette and
-   refresh band, the bend and the rain. */
+   refresh band, the glass, the bend and the rain. An ended window keeps its hatch. */
 @media (prefers-contrast: more) {
   :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body {
     text-shadow: none;
@@ -460,9 +459,15 @@
   :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
     .workspace-background::before,
   :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
-    .workspace-background::after,
-  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-window::after {
+    .workspace-background::after {
     display: none;
+  }
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-window::after {
+    background-image: none;
+  }
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+    .terminal-window[data-terminal-phase="ended"]::after {
+    background-image: var(--window-ended-image);
   }
   :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-content {
     filter: none;
