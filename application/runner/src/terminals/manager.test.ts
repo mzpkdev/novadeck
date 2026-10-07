@@ -9,8 +9,9 @@ import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 import { vi } from "vitest"
 
+import { started as freshActivity } from "../harnesses/activity.js"
 import { describe, expect, it as base } from "../test.js"
-import { command, ptyOptions } from "../testing/pty.js"
+import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { forceKill, Terminals } from "./manager.js"
 
@@ -96,6 +97,168 @@ describe("terminal creation ownership", () => {
     const replacement = terminals.attach(manager, terminal.id, "replacement")
     expect((await replacement.next()).value).toMatchObject({ type: "snapshot", exit: null })
     expect(() => manager.write({ terminalId: terminal.id, data: "" }, "replacement")).not.toThrow()
+  })
+})
+
+describe("holding the person's input", () => {
+  it("lasts as long as the caller asked, past the doorbell's 8 s cap on the resizes", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    type Hold = { holding: () => boolean; release: () => void; settle: () => void }
+    const hold = (
+      manager as unknown as {
+        holdInput: (
+          id: string,
+          budget: { inputMs: number; sizeMs: number },
+          options?: object,
+        ) => Hold
+      }
+    ).holdInput(terminal.id, { inputMs: 60_000, sizeMs: 70_000 }, { deferKeys: true })
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      // Timers armed before the clock was faked still run on real time: arm anew.
+      hold.settle()
+      const again = (
+        manager as unknown as {
+          holdInput: (
+            id: string,
+            budget: { inputMs: number; sizeMs: number },
+            options?: object,
+          ) => Hold
+        }
+      ).holdInput(terminal.id, { inputMs: 60_000, sizeMs: 70_000 }, { deferKeys: true })
+      vi.advanceTimersByTime(9_000)
+      expect(again.holding()).toBe(true)
+      vi.advanceTimersByTime(61_000)
+      expect(again.holding()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe("waiting for an agent's screen to settle before words follow an answer", () => {
+  type Calm = { calm: (id: string) => Promise<void> }
+  const calm = (manager: Terminals, id: string) => (manager as unknown as Calm).calm(id)
+
+  it("settles once a still screen has no turn running, after 0.6 s", async ({ terminals }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const started = Date.now()
+    await calm(manager, terminal.id)
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(550)
+    expect(took).toBeLessThan(1_400)
+  })
+
+  it("settles after 1.5 s of a still screen whatever the activity says", async ({ terminals }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    // An agent the activity says works, its screen quiet all the same.
+    const records = (manager as unknown as { records: Map<string, { activity: unknown }> }).records
+    records.get(terminal.id)!.activity = { ...freshActivity(Date.now()), state: "working" }
+    const started = Date.now()
+    await calm(manager, terminal.id)
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(1_450)
+    expect(took).toBeLessThan(2_600)
+  })
+
+  it("gives up after 6 s on a screen that never holds still, and goes on", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      {
+        id: randomUUID(),
+        sessionId: "session",
+        cwd,
+        cols: 80,
+        rows: 24,
+      },
+      "creator",
+    )
+    // A child that draws something new every 50 ms, as a spinner does.
+    let drawn = 0
+    const drawing = setInterval(() => {
+      drawn += 1
+      manager.write(
+        { terminalId: terminal.id, data: command({ type: "write", data: `tick ${drawn}\r\n` }) },
+        "creator",
+      )
+    }, 50)
+    const started = Date.now()
+    try {
+      await calm(manager, terminal.id)
+    } finally {
+      clearInterval(drawing)
+    }
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(5_900)
+    expect(took).toBeLessThan(7_500)
+  })
+
+  it("returns at once for a terminal that is gone, and prompts then fail as it does", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const gone = randomUUID()
+    const started = Date.now()
+    await calm(manager, gone)
+    expect(Date.now() - started).toBeLessThan(300)
+    await expect(
+      (
+        manager as unknown as { promptSoon: (id: string, text: string) => Promise<void> }
+      ).promptSoon(gone, "words"),
+    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+  })
+})
+
+describe("an answer's hold of the person's input", () => {
+  it("never replays the mouse's wheel and motion reports it held, once released", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    // The TUI asks for the mouse, as Claude Code and Codex do while a dialog shows.
+    manager.write(
+      { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
+      "creator",
+    )
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const hold = (
+      manager as unknown as {
+        holdInput: (
+          id: string,
+          cap: number,
+          options: object,
+        ) => { release: () => void; settle: () => void }
+      }
+    ).holdInput(terminal.id, 5_000, { deferKeys: true })
+    // 16 characters, which no other write of this test has: the child traces lengths.
+    manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
+    manager.write({ terminalId: terminal.id, data: "k" }, "creator")
+    hold.release()
+    hold.settle()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const trace = ptyTrace(40)
+    // The key went once released; the wheel report never did.
+    expect(trace).toContain("received 1 chars")
+    expect(trace).not.toContain("received 16 chars")
   })
 })
 

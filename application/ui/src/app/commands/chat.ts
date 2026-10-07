@@ -3,6 +3,8 @@ import {
   chatModeOn,
   chatDraftOf,
   setChatDraft,
+  setChatReply,
+  type ChatReplyTo,
   setChatMode,
 } from "../../terminals/chat/mode-state"
 import { currentContext, currentState } from "../selectors"
@@ -24,9 +26,11 @@ export type ChatCommands = {
   // stays.
   readonly appendChatDraft: (context: string, terminalId: string, words: string) => void
   // Clears the draft a prompt was sent from, in the session it was sent in, if the person
-  // hasn't changed it since (words added after it, as dictated while it went, stay):
-  // whether or not the chat is still on screen.
+  // hasn't changed it since (words added after it, given back or dictated while it went,
+  // stay): whether or not the chat is still on screen.
   readonly clearChatDraft: (context: string, terminalId: string, sent: string) => void
+  // Sets the question the terminal's draft replies to in a session, or that it is held.
+  readonly setChatReply: (context: string, terminalId: string, to: ChatReplyTo | null) => void
 }
 
 export const createChatCommands = (ctx: CommandContext): ChatCommands => {
@@ -68,12 +72,17 @@ export const createChatCommands = (ctx: CommandContext): ChatCommands => {
           chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, next),
         }
       }),
+    setChatReply: (context, terminalId, to) =>
+      void ui.update((state) => {
+        const chatReplies = setChatReply(state.chatReplies, context, terminalId, to)
+        return chatReplies === state.chatReplies ? state : { ...state, chatReplies }
+      }),
     clearChatDraft: (context, terminalId, sent) =>
       void ui.update((state) => {
         const draft = chatDraftOf(state.chatDrafts, context, terminalId)
         const words = sent.trim()
         const begun = draft.trimStart()
-        // Words added after it while it went, as dictated ones, stay without the sent prompt.
+        // Words added after it while it went, given back or dictated, stay without the sent prompt.
         const rest = begun.startsWith(words) ? begun.slice(words.length) : null
         const left =
           draft.trim() === words ? "" : rest !== null && /^\s/.test(rest) ? rest.trim() : null

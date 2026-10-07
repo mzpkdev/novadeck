@@ -79,17 +79,15 @@ describe("chat commands", () => {
     })
   })
 
-  context("when words come back to the draft", () => {
-    it("adds them on a line of their own after what is there", () => {
+  context("when words are given back to the draft", () => {
+    it("adds them after what was typed by then, in the session they were sent in", () => {
       const app = open({ working: false })
-      app.commands.appendChatDraft("project/initial", "01", "Queued beta")
+      app.commands.appendChatDraft("project/initial", "01", "use pnpm")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "use pnpm" } })
+      app.commands.setChatDraft("01", "meanwhile")
+      app.commands.appendChatDraft("project/initial", "01", "use pnpm")
       expect(app.ui.getSnapshot().chatDrafts).toEqual({
-        "project/initial": { "01": "Queued beta" },
-      })
-      app.commands.setChatDraft("01", "typed")
-      app.commands.appendChatDraft("project/initial", "01", "Queued beta")
-      expect(app.ui.getSnapshot().chatDrafts).toEqual({
-        "project/initial": { "01": "typed\nQueued beta" },
+        "project/initial": { "01": "meanwhile\nuse pnpm" },
       })
     })
   })
@@ -112,6 +110,23 @@ describe("chat commands", () => {
       expect(app.ui.getSnapshot().chatDrafts).toEqual({
         "project/initial": { "01": "and add a test" },
       })
+    })
+  })
+
+  context("when words were given back after a prompt's draft", () => {
+    it("clears the prompt that was sent and keeps the words", () => {
+      const app = open({ working: false })
+      app.commands.setChatDraft("01", "go")
+      app.commands.appendChatDraft("project/initial", "01", "use pnpm")
+      app.commands.clearChatDraft("project/initial", "01", "go")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "use pnpm" } })
+    })
+
+    it("does so though the sent prompt ended in spaces before them", () => {
+      const app = open({ working: false })
+      app.commands.setChatDraft("01", "go  \nuse pnpm")
+      app.commands.clearChatDraft("project/initial", "01", "go")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "use pnpm" } })
     })
   })
 

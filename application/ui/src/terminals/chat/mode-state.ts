@@ -81,3 +81,53 @@ export const keepChatDrafts = (
       if (!keep(context, id)) next = setChatDraft(next, context, id, "")
   return next
 }
+
+// The question a terminal's chat box replies to, by session context and terminal id: a
+// request's dialog while the person replies to it there, or "held" once it went with the
+// words still in the box, which then wait for the person's edit. Kept beside the draft, so
+// it outlives the chat leaving the screen as the draft does; none is not kept.
+export type ChatReplyTo = { readonly request: string; readonly dialog: string } | "held"
+
+export type ChatReplies = Readonly<Record<string, Readonly<Record<string, ChatReplyTo>>>>
+
+export const noChatReplies: ChatReplies = {}
+
+export const chatReplyOf = (
+  replies: ChatReplies,
+  context: string,
+  id: string,
+): ChatReplyTo | null => replies[context]?.[id] ?? null
+
+const sameReply = (a: ChatReplyTo | null, b: ChatReplyTo | null): boolean =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a !== "held" &&
+    b !== "held" &&
+    a.request === b.request &&
+    a.dialog === b.dialog)
+
+export const setChatReply = (
+  replies: ChatReplies,
+  context: string,
+  id: string,
+  to: ChatReplyTo | null,
+): ChatReplies => {
+  if (sameReply(chatReplyOf(replies, context, id), to)) return replies
+  if (to !== null) return { ...replies, [context]: { ...replies[context], [id]: to } }
+  const { [id]: _gone, ...left } = replies[context]!
+  const { [context]: _session, ...rest } = replies
+  return Object.keys(left).length > 0 ? { ...rest, [context]: left } : rest
+}
+
+// Keeps only the replies of terminals that `keep` says still show a chat.
+export const keepChatReplies = (
+  replies: ChatReplies,
+  keep: (context: string, id: string) => boolean,
+): ChatReplies => {
+  let next = replies
+  for (const [context, ids] of Object.entries(replies))
+    for (const id of Object.keys(ids))
+      if (!keep(context, id)) next = setChatReply(next, context, id, null)
+  return next
+}
