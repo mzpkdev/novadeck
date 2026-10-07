@@ -178,6 +178,18 @@ The shared recipes, and what they cover:
 `shell/panels.css`, `layouts/transition.css` and the Canvas and Grid stylesheets place
 and move what the recipes draw; they have no tokens of their own.
 
+### Type scale
+
+`theme/contract.css` holds one type scale, a size per role, in a `@theme static` block:
+`--text-label` (section labels, counts, badges), `--text-caption` (metadata, hints, the
+footer), `--text-control` (buttons, menus, tooltips), `--text-code` (code in panes),
+`--text-body` (names, dialog and pane text), `--text-lead` (the page's own size, plans'
+prose), `--text-heading` (dialog headings) and `--text-title` (a section's title). TSX
+takes a step as `text-<role>` and a recipe as `var(--text-<role>)`, so the whole app's
+type moves from one place. Miniatures (the welcome's stage, a peek's thumbnail), the
+brand's wordmark and display text keep their own sizes. It is layout, not look, so it is
+not a theme token: every theme shares it.
+
 ## Hooks
 
 A theme's rules may select:
@@ -205,7 +217,7 @@ selected, the DOM says so in an attribute.
   elements are arranged: display, flex and grid, gap, margin, outer padding, position,
   inset, overflow, z-index, order, visibility, transforms, pointer and scroll
   behaviour, opacity of exactly 0 or 1, sizes that come from the layout rather than
-  the component, and the size and flow of type (`text-sm` or `text-[11px]`, line
+  the component, and the size and flow of type (a step of the [type scale](#type-scale) such as `text-control`, line
   height, weight, alignment, wrapping and truncation). Everything a component looks
   like comes from its recipe: colour (every other `text-*`), background, borders
   (every `border*`: width, sides and colour), radius, shadow, ring, opacity between 0

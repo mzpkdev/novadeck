@@ -89,7 +89,7 @@
   gap: 6px;
   min-width: 0;
   padding: 0 2px;
-  font-size: 11.5px;
+  font-size: var(--text-code);
   color: var(--_fg);
 }
 .plan-peek-name svg {
@@ -134,7 +134,7 @@
 }
 .peek-plan b {
   margin-bottom: 2px;
-  font-size: 10px;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--prose-heading-fg, var(--color-ink));
 }
@@ -144,7 +144,7 @@
 }
 /* The agents its threads are with, by name: no heading marks. */
 .peek-mail {
-  font-size: 9px;
+  font-size: var(--text-label);
 }
 .peek-mail span::before {
   content: none;
@@ -173,14 +173,14 @@
   place-items: center;
   height: 100%;
   padding: 8px;
-  font-size: 11px;
+  font-size: var(--text-control);
   text-align: center;
   color: var(--peek-card-fg, var(--color-muted));
 }
 .peek-page-url {
   padding: 8px 6px;
   overflow: hidden;
-  font: 10px var(--font-mono);
+  font: var(--text-caption) var(--font-mono);
   color: var(--peek-card-fg, var(--color-muted));
   text-overflow: ellipsis;
   white-space: nowrap;

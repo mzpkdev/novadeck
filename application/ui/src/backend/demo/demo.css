@@ -24,7 +24,7 @@
     @apply p-6 text-[length:var(--terminal-font-size,13px)] leading-[1.75];
   }
   :where(.terminal-meta) {
-    @apply mb-8 gap-x-5 gap-y-0.5 text-[11px];
+    @apply mb-8 gap-x-5 gap-y-0.5 text-control;
   }
   :where(.file-list) {
     @apply grid-cols-3 gap-x-10;
@@ -102,7 +102,7 @@
     outline: none;
   }
   .terminal-compact .terminal-meta {
-    @apply mb-3 gap-x-3 text-[9px];
+    @apply mb-3 gap-x-3 text-label;
   }
   .terminal-compact .output-gap {
     margin-top: 13px;
@@ -121,7 +121,7 @@
     }
     .terminal-meta,
     .terminal-compact .terminal-meta {
-      font-size: 10px;
+      font-size: var(--text-caption);
       gap: 3px 10px;
     }
   }

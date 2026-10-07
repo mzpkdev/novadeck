@@ -64,7 +64,7 @@
   color: var(--window-header-icon-fg, var(--color-muted));
 }
 :where(.terminal-header) {
-  @apply h-12 gap-3 px-4 text-xs;
+  @apply h-12 gap-3 px-4 text-body leading-4;
 }
 :where(.terminal-title) {
   @apply gap-2.5;

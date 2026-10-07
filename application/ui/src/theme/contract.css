@@ -16,3 +16,18 @@
   --ease-*: initial;
   --animate-*: initial;
 }
+
+/* The type scale: one size per role, which TSX takes as `text-<role>` and recipes as
+   var(--text-<role>). Miniatures (the welcome's stage, a peek's thumbnail), the brand's
+   wordmark and display text keep their own sizes. `static`, so recipes can read the
+   variables whether or not TSX uses the utility. */
+@theme static {
+  --text-label: 9px; /* section labels, counts, badges */
+  --text-caption: 10px; /* metadata, hints, the footer */
+  --text-control: 11px; /* buttons, menus, tooltips, secondary rows */
+  --text-code: 11.5px; /* code in panes */
+  --text-body: 12px; /* names, dialog and pane text */
+  --text-lead: 13px; /* the page's own size, plans' prose */
+  --text-heading: 14px; /* dialog headings */
+  --text-title: 15px; /* a section's title */
+}

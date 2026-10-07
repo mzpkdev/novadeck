@@ -461,6 +461,7 @@ const layoutUtilities: readonly RegExp[] = [
   /^(pointer-events|cursor|select|touch|resize|scroll|snap|will-change|appearance)(-.+)?$/,
   /^opacity-(0|100)$/,
   /^text-(xs|sm|base|lg|[2-9]?xl)(\/.+)?$/,
+  /^text-(label|caption|control|code|body|lead|heading|title)(\/.+)?$/,
   /^text-\[(length:)?[\d.]+(px|rem|em)\](\/.+)?$/,
   /^text-\[length:.+\]$/,
   /^text-(left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip)$/,
@@ -629,9 +630,9 @@ const important: Rule = {
 
 // ---- (d) Every stylesheet is layered.
 
-// Holds only Tailwind's `@theme`, which Tailwind puts in its own layer.
+// Holds only Tailwind's `@theme` (or `@theme static`), which Tailwind puts in its own layer.
 const onlyTheme = (file: string): boolean =>
-  cssNodes(uncomment(read(file))).every((node) => node.prelude === "@theme")
+  cssNodes(uncomment(read(file))).every((node) => /^@theme( static)?$/.test(node.prelude))
 
 const imports = (css: string): { readonly target: string; readonly layered: boolean }[] =>
   cssNodes(css).flatMap((node) => {
