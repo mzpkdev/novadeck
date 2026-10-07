@@ -519,22 +519,6 @@ describe("the runner's conversations", () => {
       await expect(conversations.send(key, "hi")).rejects.toThrow("can't start with / or !")
     })
 
-    it("joins a send of the same text still under way, rather than prompting twice", async () => {
-      const { conversations, streams } = setup()
-      const finishers: (() => void)[] = []
-      streams.prompt.mockImplementationOnce(
-        () => new Promise<void>((resolve) => finishers.push(resolve)),
-      )
-      const first = conversations.send(key, "run the tests")
-      const again = conversations.send(key, "run the tests")
-      finishers[0]!()
-      await Promise.all([first, again])
-      expect(streams.prompt).toHaveBeenCalledTimes(1)
-      // Once it went, the same words are a prompt of their own.
-      await conversations.send(key, "run the tests")
-      expect(streams.prompt).toHaveBeenCalledTimes(2)
-    })
-
     it("gives back the words the agent returned from its queue, or null", async () => {
       const { conversations, streams } = setup()
       expect(await conversations.interrupt(key)).toBeNull()

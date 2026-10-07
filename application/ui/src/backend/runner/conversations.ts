@@ -363,30 +363,14 @@ export const createRunnerConversations = (
     return entry
   }
   const stoppers = new Map<string, () => void>()
-  // The send under way to each terminal: the same text sent again while it goes, as from a
-  // chat shown again whose box still holds it, is that send, not a second prompt.
-  const sending = new Map<string, { readonly text: string; readonly sent: Promise<void> }>()
 
   return {
     // The runner's terminal ids are unique, so the id alone names the terminal.
     conversation: ({ terminalId }) => entryOf(terminalId).conversation,
-    send: ({ terminalId }, text) => {
-      const under = sending.get(terminalId)
-      if (under?.text === text) return under.sent
-      const sent = track(streams.prompt(terminalId, text)).then(
-        () => {},
-        (error: unknown) => {
-          throw failure(error, "reach")
-        },
-      )
-      const entry = { text, sent }
-      sending.set(terminalId, entry)
-      void sent.then(
-        () => sending.get(terminalId) === entry && sending.delete(terminalId),
-        () => sending.get(terminalId) === entry && sending.delete(terminalId),
-      )
-      return sent
-    },
+    send: ({ terminalId }, text) =>
+      track(streams.prompt(terminalId, text)).catch((error: unknown) => {
+        throw failure(error, "reach")
+      }),
     interrupt: ({ terminalId }) =>
       track(streams.interrupt(terminalId)).then(
         ({ returned }) => returned,

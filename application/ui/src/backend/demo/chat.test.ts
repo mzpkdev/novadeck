@@ -151,9 +151,41 @@ describe("demo conversations", () => {
     const { chat } = open()
     await expect(chat.send(key("02"), "hello")).rejects.toThrow("No agent is running")
     await expect(chat.send(key("04"), "hello")).rejects.toThrow("waiting for your answer")
-    await expect(chat.send(key("03"), "hello")).rejects.toThrow("still working")
+  })
+
+  it("queues what is sent while the agent works, and takes it once the turn ends", async () => {
+    const { chat, agent } = open()
+    const conversation = chat.conversation(key("06"))
+    const before = conversation.getSnapshot().items.length
     await chat.send(key("06"), "one")
-    await expect(chat.send(key("06"), "two")).rejects.toThrow("still working")
+    await vi.advanceTimersByTimeAsync(0)
+    await chat.send(key("06"), "two")
+    await chat.send(key("06"), "!git status")
+    await chat.send(key("06"), "three")
+    const said = () =>
+      conversation
+        .getSnapshot()
+        .items.slice(before)
+        .filter((item) => item.role === "user")
+        .map((item) => item.text)
+    expect(said()).toEqual(["one"])
+    // "two" starts the next turn; the shell command and "three" wait behind it.
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(said()).toEqual(["one", "two"])
+    expect(agent("06")).toMatchObject({ agent: { working: true } })
+    // The shell command runs, and "three" starts the turn after.
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(said()).toEqual(["one", "two", "!git status", "three"])
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(conversation.getSnapshot().items.at(-1)?.text).toBe("Done: three. Nothing else changed.")
+  })
+
+  it("gives back what waited behind a turn when it is stopped", async () => {
+    const { chat } = open()
+    await chat.send(key("03"), "first")
+    await chat.send(key("03"), "second")
+    expect(await chat.interrupt(key("03"))).toBe("first\nsecond")
+    expect(await chat.interrupt(key("03"))).toBeNull()
   })
 
   it("answers a permission: the request goes, its tool result lands, the turn ends", async () => {
