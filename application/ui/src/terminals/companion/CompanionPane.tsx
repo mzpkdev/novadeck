@@ -1,4 +1,4 @@
-import { AppWindow, Minus } from "lucide-react"
+import { AppWindow, PanelRightClose } from "lucide-react"
 import { lazy, Suspense, useRef, type ReactNode } from "react"
 
 import { pathOf, notePattern, notesIn, type CompanionItem } from "../../model/companion"
@@ -89,7 +89,7 @@ const PaneActions = ({
         aria-label="Minimize to the taskbar"
         onClick={onHide}
       >
-        <Minus size={13} strokeWidth={1.75} aria-hidden />
+        <PanelRightClose size={13} strokeWidth={1.75} aria-hidden />
       </button>
     </Tooltip>
   </span>
