@@ -4,7 +4,7 @@ import type { WindowAppearance } from "../backend/port"
 import type { PreferencesValue } from "../model/types"
 import { context, describe, expect, it } from "../test"
 import { bootRecordKey } from "../theme/apply"
-import { watchAppearance } from "./appearance"
+import { releaseMs, watchAppearance } from "./appearance"
 import { createUiStore, initialUi, type UiStore } from "./ui-store"
 
 const root = document.documentElement
@@ -166,6 +166,44 @@ describe("watchAppearance", () => {
       choose(ui, { theme: "graphite", scheme: "light" })
 
       expect(reports).toEqual([{ scheme: "light", ground: "#ffffff" }])
+    })
+  })
+
+  context("in a window with a host, going back to the system from a pinned scheme", () => {
+    // A pinned window makes `prefers-color-scheme` report the pin: dark here, while the
+    // system itself is light.
+    it("releases the window first, then shows the system's scheme as it arrives", () => {
+      const { change } = system(true)
+      resolvesPaper()
+      const reports: WindowAppearance[] = []
+      const ui = uiWith({ theme: "phosphor-green", scheme: "system" })
+      watch(ui, (look) => reports.push(look))
+
+      choose(ui, { theme: "graphite", scheme: "system" })
+
+      expect(reports.map((look) => look.scheme)).toEqual(["dark", "system"])
+      expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
+
+      change(false)
+
+      expect(shown()).toEqual({ theme: "graphite", scheme: "light" })
+    })
+
+    it("shows it after a moment when the system's scheme was the pinned one", () => {
+      vi.useFakeTimers()
+      try {
+        system(true)
+        resolvesPaper()
+        const ui = uiWith({ theme: "graphite", scheme: "dark" })
+        watch(ui, () => {})
+
+        choose(ui, { theme: "graphite", scheme: "system" })
+        vi.advanceTimersByTime(releaseMs)
+
+        expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

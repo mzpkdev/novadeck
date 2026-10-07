@@ -18,6 +18,10 @@ const windowScheme = (
   return preference.scheme === "system" && theme.schemes.length > 1 ? "system" : shown
 }
 
+// How long a window released from a pinned scheme waits for the system's own to arrive,
+// for when it is the pinned one and nothing changes.
+export const releaseMs = 200
+
 // Shows the preferred appearance on the page and keeps it there: again whenever the
 // preference changes and, while it follows the system, whenever the system's scheme
 // does. Each time it saves what the boot script needs and tells the window around the
@@ -31,8 +35,31 @@ export const watchAppearance = (
   const system = view.matchMedia?.(darkSchemeQuery)
   let saved: string | undefined
   let shown: string | undefined
+  // Whether the window's native parts are pinned to a scheme, which then is all the
+  // page's `prefers-color-scheme` reports, not the system's.
+  let pinned = false
+  let releasing: ReturnType<typeof setTimeout> | undefined
+  // The ground the page paints first: the body's, before the workspace draws on it.
+  const groundOf = (): string | undefined =>
+    tokenColors(view.document.body, ["--color-paper"])["--color-paper"]?.slice(0, 7)
   const apply = (): void => {
+    clearTimeout(releasing)
+    releasing = undefined
     const preference = ui.getSnapshot().preferences.appearance
+    // A pinned window going back to the system is released first, and the page shows the
+    // system's scheme once the query reports it: as it changes, or after a moment when the
+    // system's scheme was the pinned one. Until then the page keeps what it shows, rather
+    // than painting the pin's scheme and then the system's.
+    if (pinned && showAppearance && windowScheme(preference, "dark") === "system") {
+      const ground = groundOf()
+      if (ground) {
+        pinned = false
+        shown = undefined
+        showAppearance({ scheme: "system", ground })
+        releasing = setTimeout(apply, releaseMs)
+        return
+      }
+    }
     const appearance = resolveAppearance(preference, system?.matches ?? false, themes)
     applyAppearance(root, appearance)
     const record = JSON.stringify({ theme: appearance.theme, scheme: preference.scheme })
@@ -45,13 +72,13 @@ export const watchAppearance = (
       }
     }
     if (!showAppearance) return
-    // The ground the page paints first: the body's, before the workspace draws on it.
-    const ground = tokenColors(view.document.body, ["--color-paper"])["--color-paper"]
-    if (!ground) return
+    const painted = groundOf()
+    if (!painted) return
     const look: WindowAppearance = {
       scheme: windowScheme(preference, appearance.scheme),
-      ground: ground.slice(0, 7),
+      ground: painted,
     }
+    pinned = look.scheme !== "system"
     const report = JSON.stringify(look)
     if (report === shown) return
     shown = report
@@ -68,6 +95,7 @@ export const watchAppearance = (
   system?.addEventListener("change", apply)
   return () => {
     stop()
+    clearTimeout(releasing)
     system?.removeEventListener("change", apply)
   }
 }

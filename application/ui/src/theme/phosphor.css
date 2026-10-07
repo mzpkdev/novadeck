@@ -280,7 +280,8 @@
    reach what lies behind, as they look. Its rim is a ring cut along the same curve
    (::before), doubled on the selected window as a text interface marks the active pane;
    the glass over it darkens toward the edges and catches a reflection (::after, which
-   also carries an ended window's hatch). Both lie over the output and let clicks
+   also carries an ended window's hatch). Both lie over everything the window holds, its
+   chat (z-index 10), taskbar (60) and a plan's menus (201) included, and let clicks
    through. */
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
   --window-border-color: transparent;
@@ -312,7 +313,7 @@
   pointer-events: none;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-window::before {
-  z-index: 4;
+  z-index: 301;
   background-color: var(--color-line-strong);
   clip-path: shape(
     evenodd from 3px 2px,
@@ -364,7 +365,7 @@
   );
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-window::after {
-  z-index: 3;
+  z-index: 300;
   background-image:
     radial-gradient(ellipse 60% 38% at 28% 10%, rgb(255 255 255 / 0.085), transparent 70%),
     radial-gradient(ellipse 120% 110% at 50% 50%, transparent 58%, rgb(0 0 0 / 0.5) 100%);
@@ -392,11 +393,11 @@
 /* Code rains down the workspace, in two depths: near columns falling faster, far ones
    smaller, dimmer and slower. Each depth is a tile of glyph columns, a bright head over a
    fading trail, used as a mask over the tube's colour, so both tubes share it. It steps
-   down a glyph row at a time, as a terminal's text moves, by moving the mask within the
-   ground's own box: nothing overflows it, so a ground that scrolls, like the empty
-   workspace's, never grows, and the rain repaints only a few times a second. The ground
-   is isolated so the rain lies behind every window. Reduced motion stills it; Zen
-   quiets it. */
+   down a glyph row at a time, as a terminal's text moves: on the views' grounds, which
+   clip what overflows them, a layer one tile taller slides down with a transform the
+   compositor draws; on the empty workspace, which scrolls, the mask moves within the
+   ground's own box instead, so the ground never grows. The ground is isolated so the
+   rain lies behind every window. Reduced motion stills it; Zen quiets it. */
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .workspace-background {
   isolation: isolate;
 }
@@ -414,6 +415,7 @@
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .workspace-background::before {
+  top: -896px;
   mask-image: url("../assets/phosphor-rain-near.svg");
   mask-size: 1920px 896px;
   opacity: 0.11;
@@ -421,10 +423,19 @@
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .workspace-background::after {
+  top: -720px;
   mask-image: url("../assets/phosphor-rain-far.svg");
   mask-size: 1920px 720px;
   opacity: 0.06;
   animation: phosphor-rain-far 24s steps(60) infinite;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .empty-workspace::before {
+  top: 0;
+  animation-name: phosphor-rain-near-in-place;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .empty-workspace::after {
+  top: 0;
+  animation-name: phosphor-rain-far-in-place;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .workspace[data-zen="true"]
@@ -439,10 +450,20 @@
 
 @keyframes phosphor-rain-near {
   to {
+    transform: translateY(896px);
+  }
+}
+@keyframes phosphor-rain-near-in-place {
+  to {
     mask-position: 0 896px;
   }
 }
 @keyframes phosphor-rain-far {
+  to {
+    transform: translateY(720px);
+  }
+}
+@keyframes phosphor-rain-far-in-place {
   to {
     mask-position: 0 720px;
   }
