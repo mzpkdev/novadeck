@@ -577,8 +577,8 @@ harness.
 - **Pressing keys.** It presses the keys the adapter gives for the answer: digits as the
   screen numbers them, and text as one bracketed paste where the screen takes it. Between
   moves it waits on the adapter's own `until` checks of the screen. Every `type` step is
-  followed by one that checks the words showed in the adapter's field, and an answer whose
-  steps would type unchecked presses nothing. Each key goes through the person's key
+  followed by one that checks the words showed in the adapter's field; an adapter whose
+  steps would type without one is an internal error, and nothing is pressed. Each key goes through the person's key
   bookkeeping, as `agents.prompt`'s do.
 - **Confirming.** It waits up to 5 s, on a screen that held still on two reads, for the
   adapter to see the dialog go as the answer should have it go, or for the request to be

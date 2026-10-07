@@ -733,7 +733,10 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   prompts, answers (an answer and the words that follow it are one entry), interrupts and
   the messaging doorbell's rings. So a prompt given while an answer to a request goes
   there waits for it and the words that follow it, and a ring never comes between them;
-  terminals' queues don't wait for each other. A prompt that meets a doorbell ring
+  terminals' queues don't wait for each other. The agent and the pending request are
+  looked at in the prompt's turn, not when it is called: only the text's shape
+  (`PROMPT_REFUSED`) is refused at once, so a prompt given during an answer is not refused
+  for the request that answer is for. A prompt that meets a doorbell ring
   whose prompt is yet to confirm it waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
   person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and
   its Enter, the person's prompt attributed from the harness's transcript, the terminal
@@ -742,7 +745,8 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   messages") and run it as its own turn once the turn ends; Codex shows it as "Messages to
   be submitted after next tool call", submitting it into the running turn then, or at its
   end when no tool follows. Each shows up as a separate user item in the transcript. The
-  window's resizes are held until a second after the Enter, or the next prompt. The
+  window's resizes are held until a second after the Enter; the next entry of the queue takes
+  them over and keeps that deadline, so one that is refused at once lets none go earlier. The
   client's `agents.prompt(terminalId, text)` is that call.
 
 - A request's `dialog` in `agents.detail` is what its harness's adapter (`harnesses/<harness>/dialogs.ts`,
@@ -799,13 +803,22 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
     pressed or locked, and the next `agents.detail` has the new read.
   - `CONFLICT`: nothing pressed. The dialog isn't on screen, isn't recognised as the
     request's, or reads for another request too; the dialog can't take that answer; words
-    hold control characters; the request was answered or turned raw already; the harness
-    has no adapter; the waits outlast what the keys can be held for; or a doorbell ring
-    awaiting confirmation outlasts 10 s (`ringing`). Where it is about
-    typing into the terminal its data gives a `reason` (see the errors below).
+    hold control characters (other than tab and line breaks, CRLF and CR among them); the
+    request was answered or turned raw already; the harness has no adapter; the waits
+    outlast what the keys can be held for; or a doorbell ring awaiting confirmation
+    outlasts 10 s (`ringing`, its only `reason`: see the errors below). A dialog that isn't
+    on screen, or isn't recognised as the request's, turns the request's dialog `raw`,
+    `unrecognized`, if one had shown; one dialog reading for more than one request makes
+    each of them show `raw`, answerable through none. A failure before any key was pressed
+    (the screen never showed what the first move needs, the request no longer waiting) is
+    a `CONFLICT` too, and locks the request `raw`, `unrecognized` as well. After any lock
+    the runner never presses for the request again. An answer to a request that shows
+    `raw` without a lock (the screen reads as nothing now) is a `CONFLICT` that locks
+    nothing.
   - `PROMPT_REFUSED`: words that follow as a prompt are ones `agents.prompt` refuses,
     judged before any key.
-  - `ANSWER_FAILED`: keys were pressed and the dialog didn't go as expected.
+  - `ANSWER_FAILED`: keys were pressed and the dialog didn't go as expected, or the screen
+    never showed what the next move needs; the request's dialog turns `raw`, `failed`.
   - `WORDS_NOT_SENT`: the dialog was answered, but the words that follow it did not reach
     the agent (they may sit in its input box as a draft).
 
@@ -830,7 +843,10 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   leaves the box as it was before the turn's prompt. Where the box read empty before the
   Escape, it looks up to 2 s at the box through the harness's adapter, and when the box
   holds exactly the turn's prompt as its hooks told it (Claude Code puts a long one back
-  as its text, never as a placeholder; probed), steady on two reads, it writes the adapter's clear keys, a double Escape for
+  as its text, never as a placeholder; probed), or, in Claude Code's, a box as tall as its
+  screen lets it be (the harness's `viewport`; none is taken for full on a screen too small
+  to know it) whose text ends with the turn's prompt, as only the tail of a prompt taller
+  than that shows, steady on two reads, it writes the adapter's clear keys, a double Escape for
   Claude Code (never pressed over an empty box, where it opens Claude Code's rewind
   picker, nor over text the person had typed or merged in, which is left). A harness
   without clear keys has nothing pressed.
@@ -927,9 +943,13 @@ Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
 `INVALID_CURSOR`, `UPLOAD_TOO_LARGE`, `RESOURCE_LIMIT` (too many calls in flight; retry later),
 `TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. A
 `CONFLICT` about typing into an agent's terminal (`agents.prompt`, `agents.answer`,
-`agents.interrupt`) carries `{ reason }` as its data (`conflictReason`): `pending`,
-`ringing` or `no-paste` clear by themselves, while `draft`, `shell`, `too-tall` and
-`no-box` are for the person to settle in the terminal. Other conflicts carry no data, and a
-client takes a reason it doesn't know as none, so it words each one itself rather than
-showing the runner's message. The schemas and contract in
+`agents.interrupt`) carries `{ reason }` as its data (`conflictReason`) where one applies:
+`agents.prompt` and `agents.interrupt` give one for every conflict about typing into the
+terminal, and `agents.answer` only `ringing` (a doorbell ring that outlasts 10 s), its
+other conflicts carrying none. `pending` (a request waits on the person), `ringing` or
+`no-paste` clear by themselves or by answering, while `draft`, `shell`, `too-tall`,
+`no-box` (the agent's input box is not found on its screen) and `no-agent` (no agent runs
+in the terminal) are for the person to settle in the terminal. Other conflicts carry no
+data, and a client takes a reason it doesn't know as none, so it words each one itself,
+by what the person did (send, stop, answer), rather than showing the runner's message. The schemas and contract in
 `application/protocol/src/` are the authoritative API definition.
