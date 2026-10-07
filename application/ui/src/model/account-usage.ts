@@ -29,8 +29,20 @@ export type AgentAccount = {
   readonly busiest: UsageWindow
 }
 
-// Each agent's subscription, as its running terminals report it, most used first. A
-// subscription is the account's, so every terminal of an agent reports the same windows;
+// Where an agent's subscription stands among the others until the person moves it: in
+// this order, then any other agent after them.
+const defaultOrder = ["claude", "codex", "agy"]
+
+const rank = (program: string, order: readonly string[]): number => {
+  const placed = order.indexOf(program)
+  if (placed >= 0) return placed
+  const known = defaultOrder.indexOf(program)
+  return order.length + (known >= 0 ? known : defaultOrder.length)
+}
+
+// Each agent's subscription, as its running terminals report it, in the order the person
+// left them (`order`, by program), then the default one; never by how much is used, so a
+// subscription stays where it was looked for. A subscription is the account's, so every terminal of an agent reports the same windows;
 // of two readings of a window the one resetting later is the newer, and of two resetting
 // together the one used more. A window whose reset has passed says nothing until its
 // agent reports again. Terminals that report no limits, as an API-key account's don't,
@@ -38,6 +50,7 @@ export type AgentAccount = {
 export const accountUsage = (
   terminals: readonly TerminalMetadata[],
   now = Date.now(),
+  order: readonly string[] = [],
 ): readonly AgentAccount[] => {
   const byAgent = new Map<string, Map<string, UsageWindow>>()
   for (const terminal of terminals) {
@@ -71,7 +84,22 @@ export const accountUsage = (
         busiest: sorted.toSorted((a, b) => b.used - a.used)[0]!,
       }
     })
-    .toSorted((a, b) => b.busiest.used - a.busiest.used)
+    .toSorted((a, b) => rank(a.program, order) - rank(b.program, order))
+}
+
+// The order after the person moves the subscription shown `from` to `to`: the ones shown,
+// as they now stand, then those not shown now, as they were left.
+export const movedOrder = (
+  accounts: readonly AgentAccount[],
+  order: readonly string[],
+  from: number,
+  to: number,
+): readonly string[] => {
+  const shown = accounts.map((account) => account.program)
+  const [moved] = shown.splice(from, 1)
+  if (moved === undefined) return order
+  shown.splice(to, 0, moved)
+  return [...shown, ...order.filter((program) => !shown.includes(program))]
 }
 
 // When the soonest window still to reset does, so a view can drop it then; undefined

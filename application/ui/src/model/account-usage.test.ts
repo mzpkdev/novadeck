@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test"
-import { accountUsage, nextAccountReset, resetText } from "./account-usage"
+import { accountUsage, movedOrder, nextAccountReset, resetText } from "./account-usage"
 import type { AgentUsage, TerminalMetadata } from "./types"
 
 const hour = 3_600_000
@@ -23,7 +23,7 @@ const agent = (
   }) as TerminalMetadata
 
 describe("the account's subscription usage", () => {
-  it("says each agent's windows once, shortest first, most used agent first", () => {
+  it("says each agent's windows once, shortest first, in a steady order of agents", () => {
     const accounts = accountUsage(
       [
         agent("1", "claude", [
@@ -34,9 +34,10 @@ describe("the account's subscription usage", () => {
       ],
       0,
     )
-    expect(accounts.map((account) => account.name)).toEqual(["Codex", "Claude Code"])
-    expect(accounts[1]!.windows.map((window) => window.name)).toEqual(["5h", "7d"])
-    expect(accounts[1]!.busiest).toMatchObject({ name: "5h", used: 0.42 })
+    // Codex is used more, but how much never moves a subscription.
+    expect(accounts.map((account) => account.name)).toEqual(["Claude Code", "Codex"])
+    expect(accounts[0]!.windows.map((window) => window.name)).toEqual(["5h", "7d"])
+    expect(accounts[0]!.busiest).toMatchObject({ name: "5h", used: 0.42 })
   })
 
   it("takes the newer of two terminals' readings of a window", () => {
@@ -82,5 +83,19 @@ describe("the account's subscription usage", () => {
     expect(resetText(now + 2 * hour + 14 * 60_000, now)).toMatch(/^in 2h 14m · \S/)
     expect(resetText(now + 48 * 60_000, now)).toMatch(/^in 48m · \S/)
     expect(resetText(new Date(2026, 9, 9, 9, 0).getTime(), now)).toMatch(/^Fri \S/)
+  })
+
+  it("keeps the order the person left, and remembers agents not shown now", () => {
+    const terminals = [
+      agent("1", "claude", [{ minutes: 300, used: 0.4, resetsAt: null }]),
+      agent("2", "codex", [{ minutes: 300, used: 0.4, resetsAt: null }]),
+    ]
+    const shown = accountUsage(terminals, 0)
+    const order = movedOrder(shown, ["agy", "claude"], 1, 0)
+    expect(order).toEqual(["codex", "claude", "agy"])
+    expect(accountUsage(terminals, 0, order).map((account) => account.program)).toEqual([
+      "codex",
+      "claude",
+    ])
   })
 })

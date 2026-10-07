@@ -1,11 +1,11 @@
-import { memo, useMemo, useSyncExternalStore } from "react"
+import { memo, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 
 import type { Backend, BackendConnectionState } from "../backend/port"
-import { accountUsage, nextAccountReset } from "../model/account-usage"
+import { accountUsage, movedOrder, nextAccountReset } from "../model/account-usage"
 import type { Workspace } from "../model/types"
+import { readSubscriptionOrder, writeSubscriptionOrder } from "../shell/shell-storage"
 import { SubscriptionUsage } from "../shell/SubscriptionUsage"
 import { WorkspaceFooter as Footer, type FooterStatus } from "../shell/WorkspaceFooter"
-import { useRenderAt } from "../terminals/use-render-at"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { currentState, sameItems, shallowEqual } from "./selectors"
 
@@ -40,9 +40,23 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
     }
   }, shallowEqual)
   const terminals = useWorkspaceState(allTerminals, sameItems)
-  const accounts = useMemo(() => accountUsage(terminals), [terminals])
-  // A window that resets drops out then, though no agent reports anything new.
-  useRenderAt(nextAccountReset(accounts))
+  // The order the person left the subscriptions in, kept for their next visit.
+  const [order, setOrder] = useState(readSubscriptionOrder)
+  // The time windows are measured against, moved on as the soonest one resets, so it
+  // drops out then though no agent reports anything new.
+  const [now, setNow] = useState(Date.now)
+  const accounts = useMemo(() => accountUsage(terminals, now, order), [terminals, now, order])
+  const nextReset = nextAccountReset(accounts)
+  useEffect(() => {
+    if (nextReset === undefined) return undefined
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, nextReset - Date.now()) + 50)
+    return () => clearTimeout(timer)
+  }, [nextReset])
+  const move = (from: number, to: number): void => {
+    const next = movedOrder(accounts, order, from, to)
+    setOrder(next)
+    writeSubscriptionOrder(next)
+  }
   const status: FooterStatus = crashes
     ? "restarting"
     : connection === "connected"
@@ -56,7 +70,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
       status={status}
       navigate={navigate}
       onRetry={backend.crashLoop ? commands.retryAfterCrashLoop : undefined}
-      usage={<SubscriptionUsage accounts={accounts} />}
+      usage={<SubscriptionUsage accounts={accounts} onMove={move} />}
     />
   )
 })

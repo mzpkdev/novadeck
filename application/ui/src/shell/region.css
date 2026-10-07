@@ -89,7 +89,9 @@
 }
 /* The account's subscriptions at the footer's end (SubscriptionUsage.tsx): a pill for
    each agent's, its icon, its most used window as a bar, and that window's name and
-   share, in the footer's quiet mono. Pressed, a pill opens its own `.usage-popover`. */
+   share, in the footer's quiet mono. Pressed, a pill opens its own `.usage-popover`;
+   dragged, or moved from its menu, it moves among the others (`.footer-usage-sortable`,
+   data-dragging while it's carried). */
 .footer-usage {
   display: flex;
   align-items: center;
@@ -123,6 +125,18 @@
 }
 .footer-usage-pill .usage-bar {
   width: 28px;
+}
+/* A pill being dragged rises over the footer, as the taskbar's icons do. */
+.footer-usage-sortable {
+  display: inline-flex;
+}
+.footer-usage-sortable[data-dragging] {
+  z-index: 1;
+}
+.footer-usage-sortable[data-dragging] .footer-usage-pill {
+  background-color: var(--color-soft);
+  color: var(--color-ink);
+  cursor: grabbing;
 }
 /* A window's share as a bar: a track in the line grey, filled in the text's colour. */
 .usage-bar {

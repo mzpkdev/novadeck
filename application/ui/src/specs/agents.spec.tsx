@@ -256,6 +256,34 @@ describe("The account's subscriptions", () => {
     await expect.element(claude.getByText(/^resets in 2h 1\dm · /)).toBeVisible()
     await expect.element(claude.getByText("Codex")).not.toBeInTheDocument()
   })
+
+  it("stay where the person moves them, from a pill's menu or by dragging it", async () => {
+    await openWorkspace("/?demo=agents")
+    const skip = page.getByRole("button", { name: "Skip for now" })
+    if (await skip.query()) await skip.click()
+    const pills = page.getByRole("group", { name: "Subscriptions" }).getByRole("button")
+    const order = () =>
+      pills.elements().map((pill) => pill.getAttribute("aria-label")!.split(" ")[0])
+    expect(order()).toEqual(["Claude", "Codex"])
+
+    await pills.first().click({ button: "right" })
+    await page.getByRole("menuitem", { name: "Move right" }).click()
+    await expect.poll(order).toEqual(["Codex", "Claude"])
+
+    // Kept for the next visit.
+    expect(JSON.parse(localStorage.getItem("novadeck.subscription-order") ?? "null")).toEqual([
+      "codex",
+      "claude",
+    ])
+
+    const box = pills.first().element().getBoundingClientRect()
+    await userEvent.dragAndDrop(pills.first(), pills.nth(1), {
+      sourcePosition: { x: box.width / 2, y: box.height / 2 },
+      targetPosition: { x: box.width - 4, y: box.height / 2 },
+      steps: 12,
+    })
+    await expect.poll(order).toEqual(["Claude", "Codex"])
+  })
 })
 
 describe("Connecting agents", () => {
