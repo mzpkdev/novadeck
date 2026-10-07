@@ -1,10 +1,18 @@
 import type { Scheme, SchemePreference } from "./scheme"
+import type { ThemeManifest } from "./themes"
 
-// What the person chose.
-export type AppearancePreference = { readonly scheme: SchemePreference }
+// What the person chose. The theme is a plain string until it is checked against the
+// manifest, because a saved choice may name a theme the app no longer has.
+export type AppearancePreference<Id extends string = string> = {
+  readonly theme: Id
+  readonly scheme: SchemePreference
+}
 
-// What the page shows.
-export type Appearance = { readonly scheme: Scheme }
+// What the page shows: a theme the manifest has, in a scheme that theme defines.
+export type Appearance<Id extends string = string> = {
+  readonly theme: Id
+  readonly scheme: Scheme
+}
 
 export const themeChangeEvent = "novadeck:themechange"
 
@@ -19,29 +27,49 @@ const schemePreferences = new Set<string>(["system", "light", "dark"])
 const isSchemePreference = (value: unknown): value is SchemePreference =>
   typeof value === "string" && schemePreferences.has(value)
 
-// Following the system's scheme.
-export const defaultPreference: AppearancePreference = { scheme: "system" }
+const themeOf = <Id extends string>(manifest: ThemeManifest<Id>, id: string) =>
+  manifest.find((entry) => entry.id === id) ?? manifest[0]
 
-// A saved preference made safe: a scheme that is not `system`, `light` or `dark` becomes
-// `system`. Other keys, such as the theme older versions saved, are ignored.
-export const appearancePreferenceOf = (value: unknown): AppearancePreference => {
+// The first theme, following the system's scheme.
+export const defaultPreference = <Id extends string>(
+  manifest: ThemeManifest<Id>,
+): AppearancePreference<Id> => ({ theme: manifest[0].id, scheme: "system" })
+
+// A saved preference made safe: a missing or unknown theme, such as one the app has
+// retired or older versions never saved, becomes the default, and a scheme that is not
+// `system`, `light` or `dark` becomes `system`.
+export const appearancePreferenceOf = <Id extends string>(
+  value: unknown,
+  manifest: ThemeManifest<Id>,
+): AppearancePreference<Id> => {
   const saved =
     typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {}
-  return { scheme: isSchemePreference(saved.scheme) ? saved.scheme : "system" }
+  const theme = typeof saved.theme === "string" ? themeOf(manifest, saved.theme).id : manifest[0].id
+  return { theme, scheme: isSchemePreference(saved.scheme) ? saved.scheme : "system" }
 }
 
-// `system` follows the system's scheme; a named scheme is shown as it is.
-export const resolveAppearance = (
+// An unknown theme falls back to the manifest's first. A theme with one scheme always
+// uses it; the chosen scheme stays in the preference for the theme that has it. `system`
+// follows the system's scheme where the theme has it.
+export const resolveAppearance = <Id extends string>(
   preference: AppearancePreference,
   systemDark: boolean,
-): Appearance => ({
-  scheme: preference.scheme === "system" ? (systemDark ? "dark" : "light") : preference.scheme,
-})
+  manifest: ThemeManifest<Id>,
+): Appearance<Id> => {
+  const theme = themeOf(manifest, preference.theme)
+  const wanted: Scheme =
+    preference.scheme === "system" ? (systemDark ? "dark" : "light") : preference.scheme
+  const scheme = theme.schemes.includes(wanted) ? wanted : theme.schemes[0]
+  return { theme: theme.id, scheme }
+}
 
-// Reads the chosen scheme from a saved boot record, or nothing when it is missing or
-// malformed. Records older versions saved also hold a theme and its schemes, which are
-// ignored.
-export const parseBootRecord = (text: string | null): AppearancePreference | undefined => {
+// Reads the theme and scheme from a saved boot record, or nothing when it is missing or
+// malformed. A record without a theme, as the previous version saved, is for the
+// default theme.
+export const parseBootRecord = <Id extends string>(
+  text: string | null,
+  manifest: ThemeManifest<Id>,
+): AppearancePreference | undefined => {
   if (!text) return undefined
   let value: unknown
   try {
@@ -50,21 +78,23 @@ export const parseBootRecord = (text: string | null): AppearancePreference | und
     return undefined
   }
   if (typeof value !== "object" || value === null) return undefined
-  const { scheme } = value as Record<string, unknown>
-  return isSchemePreference(scheme) ? { scheme } : undefined
+  const { theme, scheme } = value as Record<string, unknown>
+  if (!isSchemePreference(scheme)) return undefined
+  return { theme: typeof theme === "string" ? theme : manifest[0].id, scheme }
 }
 
-// Shows an appearance on the page: `data-scheme` on the root element. Changing a scheme
-// already shown stills transitions while it changes, so the page changes at once; every
-// change is announced on the window.
+// Shows an appearance on the page: `data-theme` and `data-scheme` on the root element.
+// Changing a theme or scheme already shown stills transitions while it changes, so the
+// page changes at once; every change is announced on the window.
 export const applyAppearance = (root: HTMLElement, appearance: Appearance): void => {
   // The boot script's color-scheme only stands in until the theme's stylesheet sets it.
   root.style.removeProperty("color-scheme")
-  const { scheme } = root.dataset
-  if (scheme === appearance.scheme) return
+  const { theme, scheme } = root.dataset
+  if (theme === appearance.theme && scheme === appearance.scheme) return
   const view = root.ownerDocument.defaultView
   const switching = scheme !== undefined && view !== null
   if (switching) root.dataset.schemeSwitching = ""
+  root.dataset.theme = appearance.theme
   root.dataset.scheme = appearance.scheme
   if (switching) {
     // Reading a style makes the browser apply the new scheme now, while transitions are
@@ -82,7 +112,10 @@ export const applyAppearance = (root: HTMLElement, appearance: Appearance): void
 
 // The appearance to show at startup, as the boot script resolves it: the boot record's
 // choice when one is saved, else the default, against the system's scheme.
-export const startingAppearance = (view: Window): Appearance => {
+export const startingAppearance = <Id extends string>(
+  view: Window,
+  manifest: ThemeManifest<Id>,
+): Appearance<Id> => {
   let saved: string | null = null
   try {
     saved = view.localStorage.getItem(bootRecordKey)
@@ -90,5 +123,6 @@ export const startingAppearance = (view: Window): Appearance => {
     // Storage can be unavailable; the fallback applies.
   }
   const systemDark = view.matchMedia?.(darkSchemeQuery).matches ?? false
-  return resolveAppearance(parseBootRecord(saved) ?? defaultPreference, systemDark)
+  const preference = parseBootRecord(saved, manifest) ?? defaultPreference(manifest)
+  return resolveAppearance(preference, systemDark, manifest)
 }

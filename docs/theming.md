@@ -2,10 +2,10 @@
 
 Novadeck's look is a theme. Components give the interface its shape; a theme decides
 how that shape is drawn: colours, borders, depth, corners, type, and the texture of the
-workspace. The app ships one theme, Graphite, with a light and a dark scheme, and
-offers no choice of theme: the person picks only the mode. The token tiers and the
-component hooks below stay general, so a theme could change them without touching a
-component.
+workspace. The app ships two themes: Graphite, the default, with a light and a dark
+scheme, and Phosphor, a green CRT in dark only. The person picks a theme, and a mode
+where the theme offers more than one. The token tiers and the component hooks below
+are general, so a theme can change them without touching a component.
 
 This guide is the contract between the two sides. Change it when the contract changes.
 
@@ -294,31 +294,45 @@ fails too, and fails when one is no longer needed.
   shows (the gutter, selection and caret) in an editor theme, which CodeMirror orders
   after its base theme, with token `var()`s and their fallbacks.
 
-## Schemes
+## Themes
 
-`theme/graphite.css` sets the light scheme on `:root` and the dark one on
-`:root[data-scheme="dark"]`, with `color-scheme` and every required token in each:
+A theme is one file in `theme/`, imported into `layer(themes)`, whose selectors all
+start with its own scope. A theme sets its first scheme on that scope and each other
+one on the scope plus `[data-scheme]`, with `color-scheme` and every required token in
+each. Graphite is the default, so its scope also matches when no theme is set (the
+`:where()` adds no specificity); every other theme matches only its own `data-theme`:
 
 ```css
-:root {
+:root:where(:not([data-theme]), [data-theme="graphite"]) {
   color-scheme: light;
   --color-paper: #f5f3ee;
   /* every required token */
 }
 
-:root[data-scheme="dark"] {
+:root:where(:not([data-theme]), [data-theme="graphite"])[data-scheme="dark"] {
   color-scheme: dark;
   --color-paper: #1d1f23;
   /* every required token again */
 }
+
+:root[data-theme="phosphor"] {
+  color-scheme: dark;
+  /* a theme with one scheme: just this block */
+}
 ```
 
-The light block is shared: what it declares holds in dark too. An alias (`var()`) or an
-offset from the paper declared there need not be repeated, since it resolves again
-against dark's values; a literal colour does, unless it truly holds in both schemes, and
-`theme/contract.test.ts` checks that each one is restated or listed with its reason. The
-dark block restates every foundation token, as the contract requires, and only the
-component tokens whose value differs.
+Scoping keeps themes apart: a theme declares the component tokens it wants to change
+and nothing else, so one that omits a token gets the recipe's own fallback, never
+another theme's value. The recipes' [hooks](#hooks) and component tokens are the theme
+author's surface.
+
+A theme with two schemes shares its first block: what it declares holds in the second
+too. An alias (`var()`) or an offset from the paper declared there need not be
+repeated, since it resolves again against the other scheme's values; a literal colour
+does, unless it truly holds in both schemes, and `theme/contract.test.ts` checks that
+each one is restated or listed with its reason. The second block restates every
+foundation token, as the contract requires, and only the component tokens whose value
+differs.
 
 After the tokens come any rules tokens can't express, each against a [hook](#hooks):
 
@@ -333,38 +347,52 @@ Prefer tokens. The `themes` layer beats every recipe whatever the specificity, s
 theme rule that sets a property on a component's resting selector also overrides its
 hover, selected and disabled looks; a rule that sets properties restates each state it
 needs. When many such rules pile up, the recipe is missing a token: add it to the
-recipe instead.
+recipe instead, and every theme gains it.
 
-## Choosing a mode
+`theme/themes.ts` lists the themes: an id, the name Preferences shows, and the schemes
+its file defines. The first is the default, and the fallback for an unknown id. To add
+a theme:
 
-Preferences holds `appearance: { scheme }`, where `scheme` is `system`, `light` or
-`dark`; it starts as `system`. Preferences shows only a Mode choice (System, Light,
-Dark). `theme/apply.ts` resolves the preference against the system's scheme, then sets
-`data-scheme` on `<html>` and dispatches `novadeck:themechange`. Records older versions
-saved also name a theme, which is ignored. `app/appearance.ts` is the one place that
-does this while the app runs: whenever the preference changes, and whenever the system's
-scheme does.
+1. Copy `theme/phosphor.css` to `theme/<id>.css`, rename the scope and change the values.
+2. Import it in `styles.css` into `layer(themes)`, add `{ id, name, schemes }` to
+   `theme/themes.ts`, and add it to the table in `public/theme-boot.js`.
+3. Run `pnpm --filter @novadeck/ui exec vitest run --project unit src/theme/`.
+
+## Choosing a theme
+
+Preferences holds `appearance: { theme, scheme }`, where `scheme` is `system`, `light`
+or `dark`; it starts as Graphite following the system. Preferences shows a Theme list
+from `theme/themes.ts` and a Mode choice (System, Light, Dark), disabled with a note
+for a theme with one scheme. `theme/apply.ts` resolves the preference against the
+system's scheme and the schemes the theme offers: a theme with one scheme always uses
+it, whatever was chosen, while the chosen mode stays saved for the theme that has it.
+An unknown theme, and a saved preference or boot record with no theme (older versions
+saved only `{ scheme }`, or a theme since retired such as Sandstone), is Graphite, with
+its mode kept. It then sets `data-theme` and `data-scheme` on `<html>` and dispatches
+`novadeck:themechange`. `app/appearance.ts` is the one place that does this while the
+app runs: whenever the preference changes, and whenever the system's scheme does.
 
 - **Switching** sets `data-scheme-switching` on `<html>`, which stills transitions so
   the whole page changes at once instead of fading control by control. `apply.ts` reads
   a style right after, so the browser applies the new scheme while transitions are
   still, whatever started the change, and clears the attribute once a frame has drawn it.
-- **Before the first paint**, `public/theme-boot.js` sets the same attribute. It is a
+- **Before the first paint**, `public/theme-boot.js` sets the same attributes. It is a
   plain script loaded in the head without `defer`, because the Content Security Policy
   allows same-origin scripts but not inline ones. `apply.ts` saves what it needs under
-  `novadeck.theme-boot` (`{ scheme }`, the chosen scheme), and the script only resolves
-  `system` against `matchMedia`. Older records, which also hold a theme and its schemes,
-  are still read for their scheme. The script also sets the scheme as `<html>`'s inline
-  `color-scheme`, so the browser's own ground matches it before the stylesheets arrive;
-  `apply.ts` removes that once the theme's file sets `color-scheme`.
+  `novadeck.theme-boot` (`{ theme, scheme }`, the chosen ones), and the script resolves
+  `system` against `matchMedia` and a one-scheme theme to its scheme, from a table of the
+  themes that a test keeps equal to `theme/themes.ts`. A record without a theme or with
+  an unknown one is read as Graphite. The script also sets the scheme as `<html>`'s
+  inline `color-scheme`, so the browser's own ground matches it before the stylesheets
+  arrive; `apply.ts` removes that once the theme's file sets `color-scheme`.
 - **Windows** stay in step: each listens for the `storage` event and takes up the
-  preferences another window saved.
+  preferences another window saved, theme included.
 - **The desktop host** follows the page. On every change the page reports its scheme
   and its `--color-paper`, the ground `body` paints before anything draws on it, as
   `#rrggbb` through the preload bridge, so the window and the first paint are one
   colour. The host sets `nativeTheme.themeSource` so native menus and
   `prefers-color-scheme` agree, sets the window's background, and keeps that ground to
   open new windows on, so a dark theme never flashes white. While the page follows the system it reports `system`, not the
-  scheme it resolved: a fixed `themeSource` would hide the system's own scheme from
+  scheme it resolved (a theme with one scheme reports its own, since it never follows): a fixed `themeSource` would hide the system's own scheme from
   `matchMedia`. The host accepts only `system`, `light` or `dark` and an opaque hex
   colour. In a browser there is no host, and nothing is reported.

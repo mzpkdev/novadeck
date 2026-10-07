@@ -1,4 +1,5 @@
 import type { SchemePreference } from "../theme/scheme"
+import type { ThemeId } from "../theme/themes"
 import type { CompanionItem, ItemId } from "./companion"
 import type { Bar } from "./companion-bar"
 
@@ -7,8 +8,8 @@ export type WindowedView = Exclude<ViewMode, "focus">
 export type PreferencesValue = {
   fontSize: number
   enabledViews: ViewMode[]
-  // The scheme chosen for the theme; see docs/theming.md.
-  appearance: { readonly scheme: SchemePreference }
+  // The theme and the scheme chosen for it; see docs/theming.md.
+  appearance: { readonly theme: ThemeId; readonly scheme: SchemePreference }
   // Whether the desktop app notifies the person when an agent finishes while they look
   // elsewhere.
   notifyFinished: boolean

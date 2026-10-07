@@ -78,7 +78,7 @@ const uiWith = (appearance: PreferencesValue["appearance"]): UiStore =>
 const choose = (ui: UiStore, appearance: PreferencesValue["appearance"]): void =>
   void ui.update((state) => ({ ...state, preferences: { ...state.preferences, appearance } }))
 
-const shown = () => ({ scheme: root.dataset.scheme })
+const shown = () => ({ theme: root.dataset.theme, scheme: root.dataset.scheme })
 
 const stops: (() => void)[] = []
 const watch = (ui: UiStore, report?: (look: WindowAppearance) => void): void =>
@@ -88,6 +88,7 @@ afterEach(() => {
   stops.splice(0).forEach((stop) => stop())
   delete (window as { matchMedia?: unknown }).matchMedia
   localStorage.removeItem(bootRecordKey)
+  root.removeAttribute("data-theme")
   root.removeAttribute("data-scheme")
   root.removeAttribute("data-scheme-switching")
 })
@@ -96,38 +97,44 @@ describe("watchAppearance", () => {
   context("while the preference follows the system", () => {
     it("shows the system's scheme, and changes with it", () => {
       const { change } = system(true)
-      watch(uiWith({ scheme: "system" }))
-      expect(shown()).toEqual({ scheme: "dark" })
+      watch(uiWith({ theme: "graphite", scheme: "system" }))
+      expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
 
       change(false)
 
-      expect(shown()).toEqual({ scheme: "light" })
+      expect(shown()).toEqual({ theme: "graphite", scheme: "light" })
     })
   })
 
   context("while the preference names a scheme", () => {
     it("keeps it whatever the system does", () => {
       const { change } = system(false)
-      watch(uiWith({ scheme: "dark" }))
-      expect(shown()).toEqual({ scheme: "dark" })
+      watch(uiWith({ theme: "graphite", scheme: "dark" }))
+      expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
 
       change(true)
       change(false)
 
-      expect(shown()).toEqual({ scheme: "dark" })
+      expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
     })
   })
 
   it("shows a new preference and saves what the boot script needs", () => {
     system(false)
-    const ui = uiWith({ scheme: "system" })
+    const ui = uiWith({ theme: "graphite", scheme: "system" })
     watch(ui)
-    expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({ scheme: "system" })
+    expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+      theme: "graphite",
+      scheme: "system",
+    })
 
-    choose(ui, { scheme: "dark" })
+    choose(ui, { theme: "graphite", scheme: "dark" })
 
-    expect(shown()).toEqual({ scheme: "dark" })
-    expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({ scheme: "dark" })
+    expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
+    expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+      theme: "graphite",
+      scheme: "dark",
+    })
   })
 
   context("in a window with a host", () => {
@@ -135,10 +142,10 @@ describe("watchAppearance", () => {
       system(true)
       resolvesPaper()
       const reports: WindowAppearance[] = []
-      const ui = uiWith({ scheme: "system" })
+      const ui = uiWith({ theme: "graphite", scheme: "system" })
       watch(ui, (look) => reports.push(look))
 
-      choose(ui, { scheme: "light" })
+      choose(ui, { theme: "graphite", scheme: "light" })
 
       // While the page follows the system, native parts do too; a named scheme pins them
       // to it.
@@ -152,13 +159,42 @@ describe("watchAppearance", () => {
       const { change } = system(false)
       resolvesPaper()
       const reports: WindowAppearance[] = []
-      const ui = uiWith({ scheme: "light" })
+      const ui = uiWith({ theme: "graphite", scheme: "light" })
       watch(ui, (look) => reports.push(look))
 
       change(true)
-      choose(ui, { scheme: "light" })
+      choose(ui, { theme: "graphite", scheme: "light" })
 
       expect(reports).toEqual([{ scheme: "light", ground: "#ffffff" }])
+    })
+  })
+
+  context("with a theme that has only a dark scheme", () => {
+    it("shows it dark whatever the system does, and saves the mode chosen", () => {
+      const { change } = system(false)
+      watch(uiWith({ theme: "phosphor", scheme: "light" }))
+      expect(shown()).toEqual({ theme: "phosphor", scheme: "dark" })
+
+      change(true)
+      change(false)
+
+      expect(shown()).toEqual({ theme: "phosphor", scheme: "dark" })
+      expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+        theme: "phosphor",
+        scheme: "light",
+      })
+    })
+
+    it("gives the window a dark scheme of its own, not the system's", () => {
+      system(false)
+      resolvesPaper()
+      const reports: WindowAppearance[] = []
+      const ui = uiWith({ theme: "phosphor", scheme: "system" })
+      watch(ui, (look) => reports.push(look))
+
+      choose(ui, { theme: "graphite", scheme: "system" })
+
+      expect(reports.map((look) => look.scheme)).toEqual(["dark", "system"])
     })
   })
 
@@ -166,15 +202,15 @@ describe("watchAppearance", () => {
     const { change, listeners } = system(false)
     const reports: WindowAppearance[] = []
     resolvesPaper()
-    const ui = uiWith({ scheme: "system" })
+    const ui = uiWith({ theme: "graphite", scheme: "system" })
     const stop = watchAppearance(ui, window, (look) => reports.push(look))
 
     stop()
-    choose(ui, { scheme: "dark" })
+    choose(ui, { theme: "graphite", scheme: "dark" })
     change(true)
 
     expect(listeners.size).toBe(0)
-    expect(shown()).toEqual({ scheme: "light" })
+    expect(shown()).toEqual({ theme: "graphite", scheme: "light" })
     expect(reports).toHaveLength(1)
   })
 })

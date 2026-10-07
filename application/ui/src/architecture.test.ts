@@ -13,7 +13,7 @@ import { describe, expect, it } from "./test"
 const base = ["model/", "interaction/", "ui-toolkit/", "theme/"]
 const features = ["sidebar/", "projects/", "preferences/", "search/"]
 const rules: Record<string, readonly string[]> = {
-  "model/": ["model/", "theme/scheme.ts"],
+  "model/": ["model/", "theme/scheme.ts", "theme/themes.ts"],
   "theme/": ["theme/"],
   "backend/": ["backend/", "model/"],
   "ui-toolkit/": ["ui-toolkit/", "class-name.ts"],

@@ -1,0 +1,176 @@
+/* Phosphor, a P1 green CRT: glowing green on a near-black tube, in the dark only. A
+   theme for the wow more than the workday: its terminal colours are shades of one green,
+   as a monochrome monitor draws them, so colour no longer tells red from blue.
+   Imported into `layer(themes)`; see docs/theming.md. */
+
+:root[data-theme="phosphor"] {
+  color-scheme: dark;
+
+  /* Grounds: the tube's black with a trace of green, stepping up to the paper. */
+  --color-canvas: #020402;
+  --color-shell: #040904;
+  --color-paper: #061006;
+  --color-soft: #0c1d0e;
+  /* Text: the phosphor's own green, and a dimmer one for what is secondary. */
+  --color-ink: #7dff8a;
+  --color-muted: #3cae50;
+  /* Lines */
+  --color-line: #10331a;
+  --color-line-strong: #1f5a2b;
+  /* Emphasis: the brightest the beam draws. */
+  --color-strong: #39ff6b;
+  --color-strong-hover: #8dffa6;
+  --color-on-strong: #021004;
+  /* Overlays */
+  --color-scrim: rgb(0 6 0 / 0.65);
+  --color-selection: #134a20;
+  --color-shadow: rgb(0 0 0);
+  /* Tones: tints of the tube, each keeping its warning apart by hue as far as a green
+     monitor can. */
+  --color-success: #0d2a14;
+  --color-success-fg: #7dff8a;
+  --color-warning: #24260a;
+  --color-warning-fg: #e3ff7a;
+  --color-danger: #2c0e0a;
+  --color-danger-fg: #ff8a6a;
+  --color-note: #1c2408;
+  --color-note-fg: #c8ff6a;
+  /* Syntax: one green, from the beam's brightest to its dimmest. */
+  --color-syntax-keyword: #b8ffc2;
+  --color-syntax-string: #5fe07a;
+  --color-syntax-number: #a4ff7a;
+  --color-syntax-property: #7dffc4;
+  --color-syntax-definition: #d6ffda;
+  --color-syntax-type: #9dff9a;
+  --color-syntax-comment: #2f8f45;
+  /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
+  --terminal-bg: var(--color-paper);
+  --terminal-fg: var(--color-ink);
+  --terminal-cursor: var(--color-strong);
+  --terminal-selection: var(--color-selection);
+  --terminal-ansi-black: #1c4a26;
+  --terminal-ansi-red: #4fd06a;
+  --terminal-ansi-green: #7dff8a;
+  --terminal-ansi-yellow: #a6ff8a;
+  --terminal-ansi-blue: #3cae50;
+  --terminal-ansi-magenta: #5fe07a;
+  --terminal-ansi-cyan: #8affb0;
+  --terminal-ansi-white: #b8ffc2;
+  --terminal-ansi-black-bright: #2f7a3e;
+  --terminal-ansi-red-bright: #7dff8a;
+  --terminal-ansi-green-bright: #a8ffb0;
+  --terminal-ansi-yellow-bright: #ccffaa;
+  --terminal-ansi-blue-bright: #5fe07a;
+  --terminal-ansi-magenta-bright: #8dffa6;
+  --terminal-ansi-cyan-bright: #b8ffd8;
+  --terminal-ansi-white-bright: #e6ffe8;
+  /* Depth: no shadows on a tube; surfaces glow instead, faintly, at their edges. */
+  --shadow-control: 0 0 0 1px color-mix(in srgb, var(--color-strong) 10%, transparent);
+  --shadow-panel:
+    0 0 0 1px color-mix(in srgb, var(--color-strong) 12%, transparent),
+    0 0 18px color-mix(in srgb, var(--color-strong) 8%, transparent);
+  --shadow-floating:
+    0 0 0 1px color-mix(in srgb, var(--color-strong) 18%, transparent),
+    0 0 28px color-mix(in srgb, var(--color-strong) 14%, transparent);
+  --shadow-modal:
+    0 0 0 1px color-mix(in srgb, var(--color-strong) 22%, transparent),
+    0 0 48px color-mix(in srgb, var(--color-strong) 18%, transparent);
+
+  /* Shape and type: square corners, and one face for the whole tube. */
+  --radius-control: 0;
+  --radius-panel: 0;
+  --radius-popover: 0;
+  --font-sans: "Share Tech Mono", "JetBrains Mono Variable", monospace;
+  --font-mono:
+    "Share Tech Mono", "JetBrains Mono Variable", "Symbols Nerd Font Mono", "Symbols Nerd Font",
+    monospace;
+  /* Texture: no grain; the dot grid glows faintly. */
+  --canvas-grain-opacity: 0;
+  --canvas-dots-opacity: 0.22;
+
+  /* Selection glows: the beam lingers where the person is. */
+  --item-selected-indicator-shadow: 0 0 8px var(--color-strong);
+  --tabs-indicator-shadow: 0 0 8px var(--color-strong);
+  --window-selected-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-strong) 35%, transparent),
+    0 0 26px color-mix(in srgb, var(--color-strong) 16%, transparent);
+  --window-selected-border-color: color-mix(in srgb, var(--color-strong) 70%, transparent);
+
+  /* The CRT, drawn over the whole screen: the beam's lines, its glow, the tube's darker
+     corners and the bezel around it. */
+  --crt-glow: 0 0 1px currentColor, 0 0 8px color-mix(in srgb, currentColor 55%, transparent);
+  --crt-scanlines: repeating-linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.28) 0 1px,
+    transparent 1px 3px
+  );
+  --crt-vignette: radial-gradient(
+    ellipse 120% 110% at 50% 50%,
+    transparent 55%,
+    rgb(0 0 0 / 0.55) 100%
+  );
+  --crt-bezel-shadow:
+    0 0 0 60px rgb(0 0 0), inset 0 0 6px 3px rgb(0 0 0), inset 0 0 48px 10px rgb(0 0 0 / 0.7),
+    inset 0 0 160px color-mix(in srgb, var(--color-strong) 7%, transparent);
+  --crt-refresh: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--color-strong) 5%, transparent) 50%,
+    transparent
+  );
+}
+
+/* Every line of text glows in its own colour: text-shadow inherits, so it reaches the
+   terminals too, whose DOM renderer draws spans. */
+:root[data-theme="phosphor"] body {
+  text-shadow: var(--crt-glow);
+}
+
+/* The tube over everything, dialogs included, never in the pointer's way: scanlines,
+   vignette and bezel on one layer, and a faint band rolling down as the beam refreshes. */
+:root[data-theme="phosphor"] body::after,
+:root[data-theme="phosphor"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+}
+:root[data-theme="phosphor"] body::after {
+  background: var(--crt-scanlines), var(--crt-vignette);
+  box-shadow: var(--crt-bezel-shadow);
+  border-radius: 28px / 22px;
+  animation: phosphor-flicker 4s steps(1) infinite;
+}
+:root[data-theme="phosphor"] body::before {
+  background: var(--crt-refresh) no-repeat;
+  background-size: 100% 18%;
+  animation: phosphor-refresh 7s linear infinite;
+}
+
+@keyframes phosphor-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  31% {
+    opacity: 0.88;
+  }
+  32% {
+    opacity: 1;
+  }
+  67% {
+    opacity: 0.93;
+  }
+  68% {
+    opacity: 1;
+  }
+}
+@keyframes phosphor-refresh {
+  from {
+    background-position: 0 -20%;
+  }
+  to {
+    background-position: 0 120%;
+  }
+}

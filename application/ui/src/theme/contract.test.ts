@@ -2,9 +2,12 @@
 
 // The theming contract in docs/theming.md, checked against the source.
 //
-// Theme: `graphite.css`, the app's one theme, is imported into `layer(themes)` and
-// defines every required foundation token (`tokens.ts`, which the doc's table matches)
-// for each scheme: light on `:root`, dark on `:root[data-scheme="dark"]`.
+// Themes: every theme in `themes.ts` has a file in `theme/`, imported into
+// `layer(themes)`, whose selectors all start with its own scope: `:root[data-theme="<id>"]`,
+// or for Graphite, the default, `:root:where(:not([data-theme]), [data-theme="graphite"])`.
+// The file defines every required foundation token (`tokens.ts`, which the doc's table
+// matches) for each scheme the manifest lists. The first scheme lives on the scope, each
+// other one on the scope plus `[data-scheme="<scheme>"]`.
 //
 // Rules: (a) to (d) below hold for every file. Rule (c) has a short list of
 // exceptions, each with its reason, which the guide's "Exceptions" section repeats; an
@@ -47,6 +50,7 @@ import { join, posix } from "node:path"
 import { parseAst, transformWithEsbuild } from "vite"
 
 import { describe, expect, it } from "../test"
+import { themes } from "./themes"
 import { requiredTokens } from "./tokens"
 
 const src = join(process.cwd(), "src")
@@ -56,7 +60,14 @@ const all = (readdirSync(src, { recursive: true }) as string[]).map((file) =>
 )
 const read = (file: string): string => readFileSync(join(src, file), "utf8")
 const stylesheets = all.filter((file) => file.endsWith(".css"))
-const themeFile = (file: string): boolean => file === "theme/graphite.css"
+const themeFileOf = (id: string): string => `theme/${id}.css`
+const themeFile = (file: string): boolean => themes.some((theme) => file === themeFileOf(theme.id))
+// What a theme's selectors start with. The default theme applies when no theme is set,
+// so its scope also matches that; the others match their own `data-theme` only.
+const scopeOf = (id: string): string =>
+  id === themes[0].id
+    ? ':root:where(:not([data-theme]), [data-theme="graphite"])'
+    : `:root[data-theme="${id}"]`
 const scripts = all.filter(
   (file) =>
     /\.tsx?$/.test(file) &&
@@ -101,6 +112,24 @@ const cssNodes = (css: string): CssNode[] => {
   }
   const rest = css.slice(start).trim()
   return rest ? [...found, { prelude: rest }] : found
+}
+
+// A selector list's selectors: split at its own commas, not those inside `:is()` or
+// another function.
+const selectorList = (prelude: string): string[] => {
+  const found: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < prelude.length; index++) {
+    const char = prelude[index]
+    if (char === "(" || char === "[") depth++
+    else if (char === ")" || char === "]") depth--
+    else if (char === "," && depth === 0) {
+      found.push(prelude.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  return [...found, prelude.slice(start).trim()]
 }
 
 // Every statement inside any block, with the prelude of the block that holds it.
@@ -163,48 +192,87 @@ describe("theme contract", () => {
     })
   })
 
-  describe("the theme file", () => {
-    const file = "theme/graphite.css"
+  describe.each(themes.map((theme) => [theme.id, theme] as const))("theme %s", (id, theme) => {
+    const file = themeFileOf(id)
+    const scope = scopeOf(id)
 
-    it("is imported into the themes layer", () => {
+    it("has a file imported into the themes layer", () => {
       expect(stylesheets).toContain(file)
       expect(uncomment(read("styles.css"))).toContain(`@import "./${file}" layer(themes);`)
     })
 
-    it.each([
-      ["light", ":root"],
-      ["dark", ':root[data-scheme="dark"]'],
-    ])("defines every required token for its %s scheme", (scheme, selector) => {
-      const block = cssNodes(uncomment(read(file))).find((node) => node.prelude === selector)
-      expect(block?.body, `${file} has no ${selector} block`).toBeDefined()
-      const tokens = declarations(block!.body!)
-
-      expect(tokens.get("color-scheme")).toBe(scheme)
-      expect(requiredTokens.filter((token) => !tokens.has(token))).toEqual([])
+    it("selects only its own theme", () => {
+      const selectors = (css: string): string[] =>
+        cssNodes(css).flatMap((node) =>
+          node.body === undefined
+            ? []
+            : node.prelude.startsWith("@keyframes")
+              ? []
+              : node.prelude.startsWith("@")
+                ? selectors(node.body)
+                : selectorList(node.prelude),
+        )
+      expect(
+        selectors(uncomment(read(file))).filter((selector) => !selector.startsWith(scope)),
+      ).toEqual([])
+      expect(
+        [...read(file).matchAll(/data-theme="([^"]*)"/g)]
+          .map((match) => match[1])
+          .filter((name) => name !== id),
+      ).toEqual([])
     })
 
-    // The light block is shared, so a colour it sets holds in dark unless dark restates
-    // it. Aliases and offsets from the paper resolve again against dark's values; a
-    // literal does not, so each one is restated or listed here with why it holds in both.
-    it("restates in dark every literal colour the light block sets", () => {
-      const holdsInBoth = new Map([
-        ["--brand-tile-fg", "the logo's glyph is the bright cyan in both schemes"],
-        ["--artifact-webview-bg", "a live page assumes a white ground in both schemes"],
-      ])
-      const nodes = cssNodes(uncomment(read(file)))
-      const light = declarations(nodes.find((node) => node.prelude === ":root")!.body!)
-      const dark = declarations(
-        nodes.find((node) => node.prelude === ':root[data-scheme="dark"]')!.body!,
-      )
-      const literal = /#[\da-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\((?!\s*from\b)/i
+    it.each(theme.schemes.map((scheme, index) => [scheme, index] as const))(
+      "defines every required token for its %s scheme",
+      (scheme, index) => {
+        const selector = index === 0 ? scope : `${scope}[data-scheme="${scheme}"]`
+        const block = cssNodes(uncomment(read(file))).find((node) => node.prelude === selector)
+        expect(block?.body, `${file} has no ${selector} block`).toBeDefined()
+        const tokens = declarations(block!.body!)
 
-      const leaking = [...light]
-        .filter(([name, value]) => literal.test(value) && !dark.has(name))
-        .map(([name]) => name)
-        .filter((name) => !holdsInBoth.has(name))
+        expect(tokens.get("color-scheme")).toBe(scheme)
+        expect(requiredTokens.filter((token) => !tokens.has(token))).toEqual([])
+      },
+    )
 
-      expect(leaking).toEqual([])
-    })
+    // A first scheme's block is shared with the others, so a colour it sets holds in the
+    // next unless that restates it. Aliases and offsets from the paper resolve again
+    // against the other scheme's values; a literal does not, so each one is restated or
+    // listed here with why it holds in both.
+    it.skipIf(theme.schemes.length < 2)(
+      "restates in dark every literal colour the light block sets",
+      () => {
+        const holdsInBoth = new Map([
+          ["--brand-tile-fg", "the logo's glyph is the bright cyan in both schemes"],
+          ["--artifact-webview-bg", "a live page assumes a white ground in both schemes"],
+        ])
+        const nodes = cssNodes(uncomment(read(file)))
+        const light = declarations(nodes.find((node) => node.prelude === scope)!.body!)
+        const dark = declarations(
+          nodes.find((node) => node.prelude === `${scope}[data-scheme="dark"]`)!.body!,
+        )
+        const literal = /#[\da-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\((?!\s*from\b)/i
+
+        const leaking = [...light]
+          .filter(([name, value]) => literal.test(value) && !dark.has(name))
+          .map(([name]) => name)
+          .filter((name) => !holdsInBoth.has(name))
+
+        expect(leaking).toEqual([])
+      },
+    )
+  })
+
+  it("imports only manifest themes into the themes layer", () => {
+    const ids = new Set<string>(themes.map((theme) => theme.id))
+    const imported = [
+      ...uncomment(read("styles.css")).matchAll(/@import "\.\/([^"]+)" layer\(themes\)/g),
+    ]
+    expect(
+      imported
+        .map((match) => match[1])
+        .filter((file) => ![...ids].some((id) => file === themeFileOf(id))),
+    ).toEqual([])
   })
 })
 

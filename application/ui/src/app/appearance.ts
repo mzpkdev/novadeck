@@ -4,15 +4,18 @@ import type { PreferencesValue } from "../model/types"
 import { preferencesStorageKey, readPreferences } from "../preferences/preferences-storage"
 import { applyAppearance, bootRecordKey, darkSchemeQuery, resolveAppearance } from "../theme/apply"
 import { tokenColors } from "../theme/probe"
+import { themes } from "../theme/themes"
 import type { UiState } from "./ui-store"
 
 // The scheme the window's native parts use: the system's while the page follows it, so
-// the page's `prefers-color-scheme` keeps reporting the system's own.
+// the page's `prefers-color-scheme` keeps reporting the system's own. A theme with one
+// scheme never follows the system, so the window takes the scheme the page shows.
 const windowScheme = (
   preference: PreferencesValue["appearance"],
   shown: WindowAppearance["scheme"],
 ): WindowAppearance["scheme"] => {
-  return preference.scheme === "system" ? "system" : shown
+  const theme = themes.find((entry) => entry.id === preference.theme) ?? themes[0]
+  return preference.scheme === "system" && theme.schemes.length > 1 ? "system" : shown
 }
 
 // Shows the preferred appearance on the page and keeps it there: again whenever the
@@ -30,9 +33,9 @@ export const watchAppearance = (
   let shown: string | undefined
   const apply = (): void => {
     const preference = ui.getSnapshot().preferences.appearance
-    const appearance = resolveAppearance(preference, system?.matches ?? false)
+    const appearance = resolveAppearance(preference, system?.matches ?? false, themes)
     applyAppearance(root, appearance)
-    const record = JSON.stringify({ scheme: preference.scheme })
+    const record = JSON.stringify({ theme: appearance.theme, scheme: preference.scheme })
     if (record !== saved) {
       saved = record
       try {
@@ -69,7 +72,7 @@ export const watchAppearance = (
   }
 }
 
-// Takes up preferences another window saved, so every window shows the same scheme and
+// Takes up preferences another window saved, so every window shows the same theme and
 // settings. Returns the stop.
 export const followSavedPreferences = (
   ui: Store<UiState>,

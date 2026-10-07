@@ -114,8 +114,9 @@ describe("Preferences", () => {
       await expect.element(tab("General")).toHaveAttribute("aria-selected", "true")
       await expect.element(tab("Shortcuts")).toHaveAttribute("aria-selected", "false")
       const general = preferencesDialog().getByRole("tabpanel", { name: "General" })
-      // One theme, in light and dark: Mode is the only appearance choice.
-      await expect.element(general.getByRole("combobox", { name: "Theme" })).not.toBeInTheDocument()
+      await expect
+        .element(general.getByRole("combobox", { name: "Theme" }))
+        .toHaveTextContent("Graphite")
       await expect.element(modeChoice("System")).toBeChecked()
       await expect
         .element(general.getByRole("combobox", { name: "Text size" }))
@@ -416,7 +417,7 @@ describe("appearance preference", () => {
       // As a fresh load finds it: nothing on <html> until the app shows what it saved.
       document.documentElement.removeAttribute("data-scheme")
       await reloadWorkspace()
-      expect(document.documentElement.dataset).toMatchObject({ scheme: "dark" })
+      expect(document.documentElement.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
       await expect.poll(pageScheme).toBe("dark")
       await openPreferences()
       await expect.element(modeChoice("Dark")).toBeChecked()
@@ -433,6 +434,53 @@ describe("appearance preference", () => {
       await chooseMode("Light")
 
       await expect.poll(pageScheme).toBe("light")
+    })
+  })
+
+  context("when a theme with only a dark scheme is chosen", () => {
+    it("disables Mode and keeps the page dark while the system is light", async () => {
+      await systemScheme("light")
+      await openWorkspace()
+      await expect.poll(pageScheme).toBe("light")
+      await openPreferences()
+
+      await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
+      await preferencesDialog().getByRole("option", { name: "Phosphor" }).click()
+
+      await expect
+        .element(preferencesDialog().getByRole("combobox", { name: "Theme" }))
+        .toHaveTextContent("Phosphor")
+      await expect.element(modeChoice("Light")).toBeDisabled()
+      await expect.element(modeChoice("Dark")).toBeChecked()
+      await expect
+        .element(preferencesDialog().getByRole("group", { name: "Mode" }))
+        .toHaveAccessibleDescription("Phosphor comes only in dark.")
+      await expect.poll(pageScheme).toBe("dark")
+      expect(document.documentElement.dataset.theme).toBe("phosphor")
+    })
+
+    it("keeps the theme after reloading and gives Graphite its mode back", async () => {
+      await systemScheme("light")
+      await openWorkspace()
+      await openPreferences()
+      await chooseMode("Light")
+      await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
+      await preferencesDialog().getByRole("option", { name: "Phosphor" }).click()
+      await expect.poll(pageScheme).toBe("dark")
+      await closePreferences()
+
+      // As a fresh load finds it: nothing on <html> until the app shows what it saved.
+      document.documentElement.removeAttribute("data-theme")
+      document.documentElement.removeAttribute("data-scheme")
+      await reloadWorkspace()
+      expect(document.documentElement.dataset).toMatchObject({ theme: "phosphor", scheme: "dark" })
+      await openPreferences()
+
+      await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
+      await preferencesDialog().getByRole("option", { name: "Graphite" }).click()
+
+      await expect.poll(pageScheme).toBe("light")
+      await expect.element(modeChoice("Light")).toBeChecked()
     })
   })
 
@@ -460,7 +508,7 @@ describe("appearance preference", () => {
       const saved = JSON.parse(localStorage.getItem("novadeck.preferences") ?? "{}")
       saveFromAnotherWindow("novadeck.preferences", {
         ...saved,
-        appearance: { scheme: "dark" },
+        appearance: { theme: "graphite", scheme: "dark" },
       })
 
       await expect.poll(pageScheme).toBe("dark")
