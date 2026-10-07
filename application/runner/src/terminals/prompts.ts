@@ -57,6 +57,8 @@ export type PromptOptions = {
   readonly ringMs?: number
   /** How long after its Enter the window's resizes stay held, in milliseconds. */
   readonly settleMs?: number
+  /** How long a box holding text is waited on to read empty before the prompt is refused. */
+  readonly emptyMs?: number
 }
 
 /**
@@ -64,6 +66,9 @@ export type PromptOptions = {
  * lines]") rather than its text: more than one line, or long.
  */
 export const collapsible = (text: string): boolean => /[\r\n]/.test(text) || text.length > 200
+
+/** Rows added to the estimate of a text's height, as harnesses' wrapping may differ a little. */
+const wrapMargin = 1
 
 /** A prompt's lines as a terminal takes them in a paste: its line breaks are bare returns. */
 const inPaste = (text: string): string => text.replace(/\r\n?|\n/g, "\r")
@@ -85,6 +90,7 @@ export class Prompts {
   private readonly pasteMs: number
   private readonly ringMs: number
   private readonly settleMs: number
+  private readonly emptyMs: number
   /** The latest prompt of each terminal that is not yet done. */
   private readonly tails = new Map<string, Promise<void>>()
   /** Lets go of the resizes each terminal's latest prompt holds, until they lapse. */
@@ -98,6 +104,7 @@ export class Prompts {
     this.pasteMs = options.pasteMs ?? 5_000
     this.ringMs = options.ringMs ?? 10_000
     this.settleMs = options.settleMs ?? 1_000
+    this.emptyMs = options.emptyMs ?? 3_000
   }
 
   /**
@@ -135,27 +142,21 @@ export class Prompts {
     const hold = await this.held(terminalId)
     let pressed = false
     try {
-      const before = await this.host.screen(terminalId)
-      if (!before) throw new DomainError("TERMINAL_NOT_FOUND")
-      if (!before.bracketedPaste)
+      const first = await this.host.screen(terminalId)
+      if (!first) throw new DomainError("TERMINAL_NOT_FOUND")
+      if (!first.bracketedPaste)
         throw new DomainError("CONFLICT", "The agent's screen takes no bracketed paste.")
       const profile = this.host.box(terminalId)
-      if (profile) {
-        const box = profile.read(before)
-        if (!box) throw new DomainError("CONFLICT", "The agent's input box is not on its screen.")
-        if (!isEmpty(box))
-          throw new DomainError(
-            "CONFLICT",
-            "The agent's input box holds text already: a draft the prompt would merge into.",
-          )
-      }
+      // Where the box can be read, it is waited on a while to read empty, as the text of
+      // the prompt before this one may still show as the TUI clears it after its Enter.
+      const before = profile ? await this.emptied(terminalId, profile, first, hold.holding) : first
       // A text that shows whole in a box with no room for it has no first row to read,
       // and would stay as a draft the next prompt is refused for.
       if (
         profile &&
         before.columns !== undefined &&
         !profile.collapses(text) &&
-        wrappedRows(text, before.columns) > profile.room(before.rows.length)
+        wrappedRows(text, before.columns) + wrapMargin > profile.room(before.rows.length)
       )
         throw new DomainError(
           "CONFLICT",
@@ -211,6 +212,38 @@ export class Prompts {
       // eslint-disable-next-line no-await-in-loop -- The hold is tried in turn.
       await sleep(this.pollMs)
       this.host.admit(terminalId)
+    }
+  }
+
+  /**
+   * The screen once the box reads empty, within `emptyMs`: a draft the person left, or a
+   * failed paste's, never goes, and is refused then; the TUI still clearing the text of a
+   * prompt just sent does.
+   */
+  private async emptied(
+    terminalId: string,
+    profile: BoxProfile,
+    first: ScreenText,
+    holding: () => boolean,
+  ): Promise<ScreenText> {
+    const until = Date.now() + this.emptyMs
+    let now = first
+    for (;;) {
+      const box = profile.read(now)
+      if (box && isEmpty(box)) return now
+      if (Date.now() >= until || !holding())
+        throw new DomainError(
+          "CONFLICT",
+          box
+            ? "The agent's input box holds text already: a draft the prompt would merge into."
+            : "The agent's input box is not on its screen.",
+        )
+      // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
+      await sleep(this.pollMs)
+      // eslint-disable-next-line no-await-in-loop -- As above.
+      const next = await this.host.screen(terminalId)
+      if (!next) throw new DomainError("TERMINAL_NOT_FOUND")
+      now = next
     }
   }
 

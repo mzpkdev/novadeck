@@ -43,15 +43,52 @@ export type BoxProfile = {
 const cells = (line: string): number =>
   [...line].reduce((sum, char) => sum + ((char.codePointAt(0) ?? 0) >= 0x1100 ? 2 : 1), 0)
 
+/** A line with its tabs spread to the next multiple of eight columns. */
+const untabbed = (line: string): string => {
+  let out = ""
+  let column = 0
+  for (const char of line) {
+    if (char === "\t") {
+      const to = 8 - (column % 8)
+      out += " ".repeat(to)
+      column += to
+    } else {
+      out += char
+      column += cells(char)
+    }
+  }
+  return out
+}
+
+/**
+ * How many rows a line takes at `width` columns, wrapped greedily at word boundaries as
+ * the harnesses' boxes do (a word longer than a row breaks across rows).
+ */
+const wrappedLine = (line: string, width: number): number => {
+  let rows = 1
+  let used = 0
+  for (const word of untabbed(line).split(/(?<= )/)) {
+    const size = cells(word.trimEnd())
+    if (used + size > width && used > 0) {
+      rows += 1
+      used = 0
+    }
+    if (size > width) {
+      rows += Math.ceil(size / width) - 1
+      used = size % width
+    } else used += cells(word)
+  }
+  return rows
+}
+
 /**
  * How many rows the text takes in a box on a screen `columns` wide, the marker and indent
- * (two columns) aside: each line wrapped, wide characters (CJK, emoji) counting two.
+ * (two columns) aside: each line wrapped at word boundaries, tabs spread to multiples of
+ * eight columns, wide characters (CJK, emoji) counting two.
  */
 export const wrappedRows = (text: string, columns: number): number => {
   const width = Math.max(columns - 2, 1)
-  return text
-    .split("\n")
-    .reduce((rows, line) => rows + Math.max(Math.ceil(cells(line) / width), 1), 0)
+  return text.split("\n").reduce((rows, line) => rows + wrappedLine(line, width), 0)
 }
 
 /** Text without its whitespace, as a TUI may wrap and indent it anywhere. */

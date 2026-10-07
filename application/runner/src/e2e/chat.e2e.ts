@@ -230,6 +230,36 @@ for (const setup of setups) {
       await through(t1, ["working", "settled"], { after: next })
     })
 
+    it("gives its agent prompts back to back, awaited one by one and queued together", async ({
+      e2e: run,
+    }) => {
+      run.model.use(
+        replies("First quick", "Did first."),
+        replies("Second quick", "Did second."),
+        replies("Third one", "Did third."),
+        replies("Fourth one", "Did fourth."),
+        replies("Five\nlines\nof\nit\nhere", "Did five."),
+        replies("Then one", "Did then."),
+      )
+      const t1 = await start(run, setup)
+
+      // Each group goes back to back; between them the turns end, as an agent that is given
+      // a prompt as its turn ends may drop it from its queue (Antigravity 1.3.1 did, once).
+      await t1.prompt("First quick")
+      await t1.prompt("Second quick")
+      await item(t1, "assistant", (text) => text.includes("Did second."))
+      await Promise.all([t1.prompt("Third one"), t1.prompt("Fourth one")])
+      await item(t1, "assistant", (text) => text.includes("Did fourth."))
+      await t1.prompt("Five\nlines\nof\nit\nhere")
+      await t1.prompt("Then one")
+
+      for (const reply of ["Did first.", "Did second.", "Did third.", "Did fourth.", "Did then."])
+        await item(t1, "assistant", (text) => text.includes(reply))
+      const users = await texts(t1, "user")
+      for (const sent of ["First quick", "Second quick", "Third one", "Fourth one", "Then one"])
+        expect(users.filter((text) => text === sent)).toHaveLength(1)
+    })
+
     it("queues a prompt given mid-turn as the person's would be, and answers both", async ({
       e2e: run,
     }) => {

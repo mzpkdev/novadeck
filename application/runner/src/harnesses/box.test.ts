@@ -251,6 +251,12 @@ describe("boxes read from synthetic screens", () => {
     expect(wrappedRows("a\n\nb", 80)).toBe(3)
     expect(wrappedRows("x".repeat(100), 42)).toBe(3)
     expect(wrappedRows("日".repeat(30), 32)).toBe(2)
+    // Words wrap whole, as Codex drew 18 rows at 80 columns for these six lines.
+    const seven = Array.from({ length: 7 }, () => "w".repeat(20)).join(" ")
+    expect(wrappedRows(Array.from({ length: 6 }, () => seven).join("\n"), 80)).toBe(18)
+    expect(wrappedRows("a\tb", 80)).toBe(1)
+    expect(wrappedRows(`${"x".repeat(5)}\t${"y".repeat(10)}`, 12)).toBe(2)
+    expect(wrappedRows("x".repeat(25), 12)).toBe(3)
     expect(claude.collapses(lines(4))).toBe(true)
     expect(claude.collapses(lines(3))).toBe(false)
     expect(codex.collapses(lines(30))).toBe(false)

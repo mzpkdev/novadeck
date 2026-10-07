@@ -656,9 +656,10 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   sent. The runner holds the person's keys and reads the agent's input box off its
   screen, through the harness's adapter (`harnesses/*/box.ts`, which knows how that
   harness draws it and which of its text is a faint suggestion, not the person's):
-  where the box is not on the screen, or holds anything (the person's draft, or what a
-  failed paste left), the call is a `CONFLICT` that wrote nothing, as the text would
-  merge into it. Otherwise it writes the text as one bracketed paste and presses Enter
+  where the box is not on the screen, or still holds anything after waiting up to 3 s for
+  it to read empty (the TUI may be clearing the text of the prompt just sent before; the
+  person's draft, or what a failed paste left, never clears), the call is a `CONFLICT`
+  that wrote nothing, as the text would merge into it. Otherwise it writes the text as one bracketed paste and presses Enter
   once the box holds exactly the text (whitespace aside: the TUI wraps and indents it) or,
   for text a TUI may collapse (several lines, or over 200 characters), only the
   placeholder it shows for it (`[Pasted text #1 +N lines]`), on two reads running; the
@@ -671,7 +672,8 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   unchanged. A text that shows whole in a box taller than the screen has no first row to
   read and would stay as a draft, so it is refused first with a `CONFLICT` (nothing
   written, the message saying to enlarge the terminal or shorten the text): its lines,
-  wrapped at the screen's columns less the marker's two, take more rows than the harness
+  wrapped at word boundaries at the screen's columns less the marker's two (tabs spread
+  to multiples of eight columns), plus a row of margin, take more rows than the harness
   leaves for its box (Codex: the screen's rows less 3; Claude Code and Antigravity: less
   4). A text the harness certainly collapses to a placeholder is not refused: Claude Code
   collapses more than 3 lines or over about 900 characters, Antigravity more than 15

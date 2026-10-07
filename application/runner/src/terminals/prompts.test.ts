@@ -42,6 +42,8 @@ const terminal = (
     unread?: boolean
     /** Whether its screen shows no box at all. */
     noBox?: boolean
+    /** How long the box goes on showing a message after its Enter, as a TUI clears it, in ms. */
+    clearMs?: number
     /** What the box holds already, as the person's draft. */
     draft?: string
     /** What the screen shows above the box: earlier turns, or anything else. */
@@ -67,12 +69,16 @@ const terminal = (
   let logo = options.logo ?? false
   // A screen of fixed height, its box at the bottom, growing up.
   const history = [...(options.history ?? [])]
+  let clearAt = 0
+  let sent: string[] = []
   const draw = (): string[] => {
     const body = options.noBox
       ? ["a dialog"]
-      : box.length === 0
-        ? ["> "]
-        : box.map((line, index) => (index === 0 ? `> ${line}` : `  ${line}`))
+      : box.length === 0 && Date.now() < clearAt
+        ? sent.map((line, index) => (index === 0 ? `> ${line}` : `  ${line}`))
+        : box.length === 0
+          ? ["> "]
+          : box.map((line, index) => (index === 0 ? `> ${line}` : `  ${line}`))
     const top = [options.spinner ? `spinner ${looks}` : "header", logo ? "  logo" : "", ...history]
     return [
       ...top,
@@ -124,6 +130,8 @@ const terminal = (
       // Enter sends the box's text as a turn, whose echo joins the history above it.
       if (data === "\r" && box.length > 0) {
         history.push(`> ${box.join(" ")}`, "", "Done.")
+        sent = box
+        clearAt = Date.now() + (options.clearMs ?? 0)
         box = []
         return true
       }
@@ -143,7 +151,7 @@ const terminal = (
   return { host, written, state: () => ({ held, sizes, holds }) }
 }
 
-const fast = { pollMs: 5, pasteMs: 150, ringMs: 100, settleMs: 40 }
+const fast = { pollMs: 5, pasteMs: 150, ringMs: 100, settleMs: 40, emptyMs: 60 }
 const enters = (written: readonly string[]) => written.filter((data) => data === "\r").length
 const refusal = async (promise: Promise<unknown>): Promise<string> => {
   try {
@@ -223,6 +231,36 @@ describe("prompts", () => {
     })
   })
 
+  describe("the prompt before it, whose text the TUI is still clearing", () => {
+    it("is waited for, one after the other", async () => {
+      const { host, written } = terminal({ clearMs: 30 })
+      const prompts = new Prompts(host, fast)
+      await prompts.prompt("t", "First quick")
+      await prompts.prompt("t", "Second quick")
+      expect(enters(written)).toBe(2)
+    })
+
+    it("is waited for, queued together", async () => {
+      const { host, written } = terminal({ clearMs: 30 })
+      const prompts = new Prompts(host, fast)
+      await Promise.all([prompts.prompt("t", "Third one"), prompts.prompt("t", "Fourth one")])
+      expect(written).toEqual([
+        "\x1b[200~Third one\x1b[201~",
+        "\r",
+        "\x1b[200~Fourth one\x1b[201~",
+        "\r",
+      ])
+    })
+
+    it("is waited for only so long, and a draft that stays is refused", async () => {
+      const { host, written } = terminal({ draft: "Mine" })
+      const started = Date.now()
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Hello"))).toBe("CONFLICT")
+      expect(Date.now() - started).toBeGreaterThanOrEqual(55)
+      expect(written).toEqual([])
+    })
+  })
+
   describe("a box that holds text already", () => {
     it("refuse where it holds the person's draft, writing nothing", async () => {
       const { host, written, state } = terminal({ draft: "Say hello" })
@@ -284,7 +322,7 @@ describe("prompts", () => {
 
     it("is sent where it fits", async () => {
       const { host, written } = terminal()
-      await new Prompts(host, fast).prompt("t", lines(12))
+      await new Prompts(host, fast).prompt("t", lines(11))
       expect(enters(written)).toBe(1)
     })
 
