@@ -51,6 +51,99 @@ for (const setup of setups) {
       expect(await t1.screen()).not.toMatch(setup.rewind?.shows ?? /(?!)/)
     })
 
+    it("stops a turn that has a message queued behind it, and gives the queued words back out of the box", async ({
+      e2e: run,
+    }) => {
+      const held = gate()
+      const queuedHeld = gate()
+      run.model.use(
+        replies("Carry on", "Carried on."),
+        own(async (call) => {
+          // The queued message may start a turn of its own (Claude Code, Codex): held too.
+          if (asked(call, "Queued beta")) {
+            await queuedHeld.opened
+            return { text: "Queued late." }
+          }
+          if (!asked(call, "Hold on")) return undefined
+          await held.opened
+          return { text: "Too late." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const calls = run.model.mark()
+      const mark = t1.mark()
+
+      await t1.prompt("Hold on")
+      await run.model.waitFor((call) => !call.side && latest(call).includes("Hold on"), {
+        after: calls,
+      })
+      await t1.reached("working", { after: mark })
+      await t1.prompt("Queued beta")
+      await sleep(1000)
+      const stopped = await t1.interrupt()
+      held.open()
+      queuedHeld.open()
+      await sleep(2500)
+
+      // Antigravity and Claude Code hand the queued words back; Codex sent them as a
+      // steer, which the second Escape stopped.
+      expect(stopped.returned).toBe(setup.agent === "codex" ? null : "Queued beta")
+      const shown = await t1.screen()
+      if (setup.rewind) expect(shown).not.toMatch(setup.rewind.shows)
+      expect(shown).not.toContain("Too late.")
+      expect(shown).not.toContain("Queued late.")
+      expect(t1.summary().activity?.state).not.toBe("working")
+
+      // The box is empty: the next prompt goes alone, as a normal turn.
+      const next = t1.mark()
+      await t1.prompt("Carry on")
+      await t1.until("Carried on.")
+      await through(t1, ["working", "settled"], { after: next })
+    })
+
+    it("gives back both of two queued messages, or what was left of them", async ({ e2e: run }) => {
+      const held = gate()
+      const queuedHeld = gate()
+      run.model.use(
+        replies("Carry on", "Carried on."),
+        own(async (call) => {
+          if (asked(call, "Queued")) {
+            await queuedHeld.opened
+            return { text: "Queued late." }
+          }
+          if (!asked(call, "Hold on")) return undefined
+          await held.opened
+          return { text: "Too late." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const calls = run.model.mark()
+      const mark = t1.mark()
+
+      await t1.prompt("Hold on")
+      await run.model.waitFor((call) => !call.side && latest(call).includes("Hold on"), {
+        after: calls,
+      })
+      await t1.reached("working", { after: mark })
+      await t1.prompt("Queued beta")
+      await t1.prompt("Queued gamma")
+      await sleep(1000)
+      const stopped = await t1.interrupt()
+      held.open()
+      queuedHeld.open()
+      await sleep(2500)
+
+      expect(stopped.returned).toBe(setup.agent === "codex" ? null : "Queued beta\nQueued gamma")
+      const shown = await t1.screen()
+      expect(shown).not.toContain("Too late.")
+      expect(shown).not.toContain("Queued late.")
+
+      const next = t1.mark()
+      await t1.prompt("Carry on")
+      await t1.until("Carried on.")
+      await through(t1, ["working", "settled"], { after: next })
+    })
+
     it("sends nothing for a Stop while idle, however often, so no picker opens", async ({
       e2e: run,
     }) => {

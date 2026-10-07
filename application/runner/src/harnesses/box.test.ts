@@ -89,6 +89,8 @@ const harnesses: readonly {
     states: {
       ...alike,
       "text indented": "collapsed",
+      queued: "empty",
+      "queued pulled back": { text: "Queued beta" },
       "size 10 lines": "collapsed",
       "size 25 lines": "collapsed",
     },
@@ -100,6 +102,8 @@ const harnesses: readonly {
     states: {
       ...alike,
       "text indented": { text: indented },
+      queued: "empty",
+      "queued steered": "empty",
       "size 10 lines": { text: ten },
       "size 25 lines": { text: twentyFive },
     },
@@ -111,6 +115,9 @@ const harnesses: readonly {
     states: {
       ...alike,
       "text indented": { text: indented },
+      queued: "empty",
+      "queued pulled back": { text: "Queued beta" },
+      "two queued pulled back": { text: "Queued beta\nQueued gamma" },
       "size 10 lines": { text: ten },
       "size 25 lines": "collapsed",
     },
@@ -138,6 +145,11 @@ describe.each(harnesses)("the input box of $name", ({ name, profile, versions, s
         expect(profile.collapsed(read!)).toBe(false)
         expect(sameText(read!.text, expected.text)).toBe(true)
       }
+    })
+
+    it("tells queued messages on the screen in the state that has them and no other", () => {
+      for (const [state, screen] of Object.entries(shown))
+        expect(profile.queued(screenOf(screen)), state).toBe(state === "queued")
     })
 
     it("does not take a collapsed placeholder with more text for the placeholder alone", () => {
@@ -264,9 +276,29 @@ describe("boxes read from synthetic screens", () => {
     expect(codex.room(20)).toBe(17)
   })
 
-  it("clears an interrupted prompt's draft only in Claude Code, the one that puts it back", () => {
-    expect(claude.clear).toBe("\x1b\x1b")
+  it("clears text put back in the box only where a harness puts some back", () => {
+    const box = { text: "a\nb", first: 3, last: 4 }
+    expect(claude.clear?.(box)).toBe("\x1b\x1b")
+    expect(agy.clear?.(box)).toBe("\x15\x7f\x15")
+    expect(agy.clear?.({ text: "a", first: 3, last: 3 })).toBe("\x15")
     expect(codex.clear).toBe(undefined)
-    expect(agy.clear).toBe(undefined)
+  })
+
+  it("takes the cursor's cell over a placeholder's first letter for no draft", () => {
+    // Claude Code draws it undimmed: "Press up to edit queued messages" reads as "P".
+    const rows = [rule, "❯\u00a0Press up to edit queued messages", rule]
+    const lit = [rule, "❯\u00a0P", rule]
+    const faint = screenWith({ rows, bright: lit, cursor: { row: 1, column: 2 } })
+    expect(isEmpty(claude.read(faint)!)).toBe(true)
+    // A draft of one letter has nothing faint after it.
+    const one = screenWith({
+      rows: [rule, "❯\u00a0P", rule],
+      bright: [rule, "❯\u00a0P", rule],
+      cursor: { row: 1, column: 2 },
+    })
+    expect(isEmpty(claude.read(one)!)).toBe(false)
+    // With the cursor past it, it is a draft.
+    const typed = screenWith({ rows, bright: lit, cursor: { row: 1, column: 3 } })
+    expect(isEmpty(claude.read(typed)!)).toBe(false)
   })
 })

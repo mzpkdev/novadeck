@@ -21,6 +21,7 @@ const profile: BoxProfile = {
     return { text: lines.join("\n").trimEnd(), first, last }
   },
   collapsed: ({ text }) => /^\[Pasted text #\d+ \+\d+ lines\]$/.test(text),
+  queued: () => false,
   collapses: (text) => text.length > 500,
   room: (rows) => rows - 3,
 }

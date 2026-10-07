@@ -12,6 +12,10 @@ export const box: BoxProfile = {
   collapsed: ({ text }) => /^\[Pasted text #\d+ (?:\+\d+ lines?|\d+ chars?)\]$/.test(text.trim()),
   // 15 lines showed whole, even of 100 characters each; 16 did not. One line of 1,000
   // characters showed whole, 1,024 did not.
+  // Ctrl-U clears the line the cursor is on and Backspace joins the line before it; the
+  // queued messages an Escape put back are one to a line (probed 2026-10-07).
+  clear: ({ first, last }) => `${"\x15\x7f".repeat(last - first)}\x15`,
+  queued: (screen) => screen.rows.some((row) => row.includes("Press up to edit queued messages")),
   collapses: (text) => text.split("\n").length > 15 || (!text.includes("\n") && text.length > 1024),
   room: (rows) => rows - 4,
 }

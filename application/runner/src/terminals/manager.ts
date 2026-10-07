@@ -10,6 +10,7 @@ import type {
   AgentDetail,
   AgentName,
   ForegroundProcess,
+  InterruptResult,
   TerminalAttached,
   TerminalChange,
   TerminalEvent,
@@ -38,7 +39,7 @@ import {
   type Activity,
 } from "../harnesses/activity.js"
 import { observe, type Binding } from "../harnesses/bindings.js"
-import { isEmpty, sameText, type BoxProfile } from "../harnesses/box.js"
+import { isEmpty, sameText, type BoxProfile, type InputBox } from "../harnesses/box.js"
 import { actorOf, agentDetail } from "../harnesses/detail.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
 import type {
@@ -1074,18 +1075,23 @@ export class Terminals {
 
   /**
    * Presses Escape in the terminal's agent as the person would, which stops its turn, and
-   * leaves its box as it was before the turn's prompt: where the harness put that prompt
-   * back in it (Claude Code, before any reply), it is cleared, only when the box holds
-   * exactly it and nothing else, read by the harness's box adapter.
+   * leaves its box as it was before: where the harness put the turn's prompt back in it
+   * (Claude Code, before any reply), it is cleared, only when the box holds exactly it and
+   * nothing else, read by the harness's box adapter; where messages the person queued
+   * behind the turn came back into the box (Antigravity's Escape; Claude Code's second
+   * one, the first having sent them as the next turn), they are taken out again and
+   * given back as `returned`, for the chat to put in the person's draft. Codex sends them
+   * as a steer, which its second Escape stops, and returns none. A box left holding text
+   * that could not be cleared with certainty is `BOX_NOT_CLEARED`.
    *
    * Presses it only while the agent's turn is working, once the person's input is no
    * longer held for a prompt's paste or a ring: at an idle prompt Escape does nothing
    * the chat wants, and two of them open Claude Code's rewind picker. Otherwise it
    * resolves having sent nothing, as the turn it was asked to stop is already over. Those
-   * of one terminal go one at a time, each given its settle wait (`InterruptOptions`) after the last to
-   * show its turn ended before the next looks.
+   * of one terminal go one at a time, each given its settle wait (`InterruptOptions`)
+   * after the last to show its turn ended before the next looks.
    */
-  async interrupt(input: { terminalId: string }): Promise<void> {
+  async interrupt(input: { terminalId: string }): Promise<InterruptResult> {
     const { terminalId } = input
     this.promptable(terminalId)
     const previous = this.interrupts.get(terminalId) ?? Promise.resolve()
@@ -1103,10 +1109,11 @@ export class Terminals {
     void tail.then(() => {
       if (this.interrupts.get(terminalId) === tail) this.interrupts.delete(terminalId)
     })
-    await run
+    return await run
   }
 
-  private async interruptOnce(terminalId: string): Promise<void> {
+  private async interruptOnce(terminalId: string): Promise<InterruptResult> {
+    const none = { returned: null }
     // The person's input is held while a prompt's paste or a ring's is on screen; an
     // Escape then would cut into it. The hold lets go by its own cap at the latest, which a
     // prompt's is longer than a ring's.
@@ -1117,74 +1124,108 @@ export class Terminals {
       await new Promise((resolve) => setTimeout(resolve, 25))
     }
     const record = this.promptable(terminalId)
-    if (record.activity?.state !== "working") return
-    // How its box reads, and the keys that clear it, if its harness puts the prompt back.
+    if (record.activity?.state !== "working") return none
+    // How its box reads, and the keys that clear it, if its harness puts text back.
     const profile = this.boxOf(record)
     // The turn's prompt, as its hooks told it, ends with the turn Escape ends.
     const prompt = this.messaging.personPrompt(terminalId)
-    // Only an empty box has the prompt put back alone: text the person has typed there
-    // would be merged with it, and is theirs.
-    const emptyBefore =
-      profile?.clear !== undefined && prompt !== undefined
-        ? await this.boxEmpty(terminalId, profile)
-        : false
-    if (this.live(terminalId) !== record || record.activity?.state !== "working") return
+    // Only an empty box has text put back alone: text the person has typed there would be
+    // merged with it, and is theirs.
+    const first = profile ? await this.screenOf(terminalId) : undefined
+    const boxBefore = first && profile?.read(first)
+    const emptyBefore = boxBefore !== undefined && isEmpty(boxBefore)
+    const queued = first !== undefined && profile?.queued(first) === true
+    if (this.live(terminalId) !== record || record.activity?.state !== "working") return none
     this.keyed(record, "\x1b")
     record.process.write("\x1b")
-    if (profile?.clear !== undefined && prompt !== undefined && emptyBefore)
-      await this.clearRestored(record, profile, profile.clear, prompt)
+    if (!profile || !emptyBefore) return none
+    if (prompt === undefined && !queued) return none
+    let box = await this.settledBox(record, profile)
+    // Claude Code and Codex send what was queued as the next turn, or a steer, which a
+    // second Escape stops; Claude Code then puts that message back in its box. One Escape
+    // does nothing at an idle prompt, and two are never written here.
+    if (box !== undefined && isEmpty(box) && queued && this.live(terminalId) === record) {
+      this.keyed(record, "\x1b")
+      record.process.write("\x1b")
+      box = await this.settledBox(record, profile)
+    }
+    if (this.live(terminalId) !== record) return none
+    // Text that may be there and can't be seen is left, and said.
+    if (box === undefined && queued) throw this.notCleared()
+    if (box === undefined || isEmpty(box)) return none
+    // The prompt put back is the turn's own, which the chat shows already; with messages
+    // queued, what is there is theirs (the hooks name the queued one the person's latest).
+    const restored =
+      !queued &&
+      prompt !== undefined &&
+      (sameText(box.text, prompt) || (collapsible(prompt) && profile.collapsed(box)))
+    const words = box.text.trim()
+    // A placeholder stands for words that clearing would lose: they are left, and said.
+    if (!profile.clear || (!restored && profile.collapsed(box))) throw this.notCleared()
+    if (!(await this.cleared(record, profile, box))) throw this.notCleared()
+    return restored ? none : { returned: words }
   }
 
-  /** Whether the agent's box reads empty now; false where it can't be read. */
-  private async boxEmpty(terminalId: string, profile: BoxProfile): Promise<boolean> {
-    const screen = await this.screenOf(terminalId)
-    const box = screen && profile.read(screen)
-    return box !== undefined && isEmpty(box)
+  private notCleared(): DomainError {
+    return new DomainError(
+      "BOX_NOT_CLEARED",
+      "The turn is stopped, but the agent's input box holds the message you queued: clear it in the terminal.",
+    )
   }
 
   /**
-   * Waits for the screen to show whether the harness put the interrupted `prompt` back in
-   * its box (Claude Code does), and clears it with the profile's `clear` keys: never
-   * written unless the box held exactly the prompt, or the placeholder its harness shows
-   * for a long one, steady on two reads running. Gives up once the screen has been still
-   * for `restoreCalmMs` with no draft, or after `restoreMs`.
+   * Clears the text of the box with the profile's keys, written, not typed (the box is
+   * empty after them, which the person's keys never say), and looks that it reads empty,
+   * writing them again up to twice if not. False where it does not.
    */
-  private async clearRestored(
-    record: Record,
-    profile: BoxProfile,
-    clear: string,
-    prompt: string,
-  ): Promise<void> {
+  private async cleared(record: Record, profile: BoxProfile, box: InputBox): Promise<boolean> {
+    const id = record.summary.id
+    let now = box
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      record.process.write(profile.clear!(now))
+      const until = Date.now() + this.interruptWaits.restoreCalmMs
+      while (Date.now() < until) {
+        // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        // eslint-disable-next-line no-await-in-loop -- As above.
+        const after = await this.screenOf(id)
+        const read = after && profile.read(after)
+        if (!after || this.live(id) !== record) return false
+        if (read === undefined) continue
+        if (isEmpty(read)) return true
+        now = read
+      }
+    }
+    return false
+  }
+
+  /**
+   * The box once it has held still: steady on two reads running where it holds text, or
+   * for `restoreCalmMs` where it is empty, the harness putting something back in it
+   * quickly if it does at all. Whatever it reads after `restoreMs`; undefined where the
+   * terminal is gone or the box is not found.
+   */
+  private async settledBox(record: Record, profile: BoxProfile): Promise<InputBox | undefined> {
     const id = record.summary.id
     const until = Date.now() + this.interruptWaits.restoreMs
-    let last: string | undefined
+    let key: string | undefined
     let since = Date.now()
-    let seen: string | undefined
+    let last: InputBox | undefined
     while (Date.now() < until) {
       // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
       await new Promise((resolve) => setTimeout(resolve, 50))
       // eslint-disable-next-line no-await-in-loop -- As above.
       const after = await this.screenOf(id)
-      if (!after || this.live(id) !== record) return
-      const text = after.rows.join("\n")
-      if (text !== last) {
-        last = text
-        since = Date.now()
-      }
+      if (!after || this.live(id) !== record) return undefined
       const box = profile.read(after)
-      const restored =
-        box !== undefined &&
-        !isEmpty(box) &&
-        (sameText(box.text, prompt) || (collapsible(prompt) && profile.collapsed(box)))
-      const key = restored ? `${box.first}:${box.last}:${box.text}` : undefined
-      if (key !== undefined && key === seen) {
-        // Written, not typed: the box is empty after it, which the person's keys never say.
-        record.process.write(clear)
-        return
-      }
-      seen = key
-      if (key === undefined && Date.now() - since >= this.interruptWaits.restoreCalmMs) return
+      const now = box ? `${box.first}:${box.last}:${box.text}` : undefined
+      if (now !== key) since = Date.now()
+      else if (box && (!isEmpty(box) || Date.now() - since >= this.interruptWaits.restoreCalmMs))
+        return box
+      key = now
+      last = box
     }
+    return last
   }
 
   /** The harness of the agent bound to the terminal, or shown at its prompt, as its box reads. */

@@ -5,6 +5,7 @@ import {
   agentDetail,
   agentIntegration,
   agentRef,
+  interruptResult,
   transcriptChange,
   agentName,
   clientState,
@@ -67,6 +68,9 @@ export const errors = {
   // command (a leading `/` or `!`) or a file or skill mention left open at its end (`@name`,
   // `$name`); or one of nothing but white space. Nothing is written.
   PROMPT_REFUSED: { status: 409 },
+  // The turn was stopped, but the agent's input box holds text (the person's queued
+  // messages, put back by the Escape) that could not be cleared out with certainty.
+  BOX_NOT_CLEARED: { status: 409 },
   VOICE_UNAVAILABLE: { status: 409, data: voiceUnavailable },
   VOICE_FAILED: { status: 500 },
 }
@@ -241,9 +245,12 @@ export const contract = {
     prompt: procedure
       .input(z.strictObject({ terminalId: id, text: z.string().min(1).max(16_384) }))
       .output(z.void()),
-    // Presses Escape in the terminal's agent, which stops its turn in every harness. A
-    // terminal without an agent bound is a CONFLICT.
-    interrupt: procedure.input(z.strictObject({ terminalId: id })).output(z.void()),
+    // Presses Escape in the terminal's agent, which stops its turn in every harness, and
+    // takes back out of the agent's box what stopping put there (see `interruptResult`). A
+    // terminal without an agent bound is a CONFLICT; a box that still holds the queued
+    // messages, which could not be read or cleared with certainty, is BOX_NOT_CLEARED: the
+    // turn is stopped, and the person is to clear the box in the terminal.
+    interrupt: procedure.input(z.strictObject({ terminalId: id })).output(interruptResult),
     // Installs or removes the plugin through the agent's own commands.
     set: procedure
       .input(z.strictObject({ agent: agentName, connected: z.boolean() }))

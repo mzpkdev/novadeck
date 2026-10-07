@@ -7,6 +7,7 @@ import {
   protocolVersion,
   type AgentDetail,
   type AgentIntegration,
+  type InterruptResult,
   type AgentName,
   type CompanionChange,
   type CompanionItem,
@@ -261,8 +262,14 @@ export type Runner = {
      * character, or nothing but white space; see `promptRefusal`.
      */
     prompt(terminalId: string, text: string): Promise<void>
-    /** Presses Escape in the terminal's agent, stopping its turn; `CONFLICT` without one. */
-    interrupt(terminalId: string): Promise<void>
+    /**
+     * Presses Escape in the terminal's agent, stopping its turn; `CONFLICT` without one.
+     * Resolves with the queued words the agent's box took back, cleared out of it, for the
+     * chat to put back in the person's draft (`returned`, null for none, and for Codex);
+     * rejects with `BOX_NOT_CLEARED` when the box still holds them: the turn is stopped, and
+     * the person is to clear the box in the terminal.
+     */
+    interrupt(terminalId: string): Promise<InterruptResult>
     /**
      * Installs or removes Novadeck's plugin in the agent through its own commands;
      * rejects with `AGENT_SETUP_FAILED` saying why when that did not work.

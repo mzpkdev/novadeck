@@ -537,8 +537,9 @@ input box is empty, and what it holds. A `BoxProfile` has `read(screen)`, which 
 box on a `ScreenText` (rows, the rows with dim cells blanked, the cursor, the columns),
 `collapsed(box)`, which tells the placeholder a long paste shows as, `collapses(text)` and
 `room(rows)`, which say before a paste whether it will collapse and whether it fits, and
-for a harness that puts an interrupted prompt back in its box, `clear`, the keys that
-clear it. Shared code (`terminals/prompts.ts`, the terminal manager's interrupt) knows
+`queued(screen)`, which tells messages the person queued behind a turn, and for a harness
+that puts text back in its box (an interrupted prompt, queued messages), `clear(box)`, the
+keys that clear it. Shared code (`terminals/prompts.ts`, the terminal manager's interrupt) knows
 no marker, rule or placeholder.
 
 A reader fails closed: it recognises the box in full, or returns `undefined`. It never

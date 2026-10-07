@@ -197,6 +197,70 @@ describe("terminal interrupts", () => {
     await second
   })
 
+  it("fails closed, saying so, where an Escape puts the queued message back and the box won't clear", async ({
+    terminals,
+  }) => {
+    // A Claude Code lookalike: its box shows the queued-messages hint while empty, takes one
+    // byte, then holds text no key clears.
+    const rule = "────────────────────────────────────────"
+    const script = [
+      "stty raw -echo",
+      `printf '\\033[10;1H${rule}\\033[11;1H❯\\302\\240\\033[2mPress up to edit queued messages\\033[22m\\033[12;1H${rule}\\033[11;3H'`,
+      "dd bs=1 count=1 >/dev/null 2>&1",
+      "printf '\\033[11;1H\\033[K❯\\302\\240Stuck words\\033[11;15H'",
+      "sleep 30",
+    ].join("; ")
+    const manager = terminals.manager({
+      shell: "/bin/sh",
+      shellArgs: ["-c", script],
+      interrupts: { restoreMs: 600, restoreCalmMs: 150 },
+    })
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const record = (manager as unknown as Inside).records.get(terminal.id)
+    if (!record) throw new Error("No record")
+    record.binding = { agent: "claude" }
+    record.activity = { state: "working", pending: [], plans: [], background: null }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await expect(manager.interrupt({ terminalId: terminal.id })).rejects.toMatchObject({
+      code: "BOX_NOT_CLEARED",
+    })
+  })
+
+  it("gives back the queued words an Escape put in the box, once the keys cleared it", async ({
+    terminals,
+  }) => {
+    const rule = "────────────────────────────────────────"
+    const script = [
+      "stty raw -echo",
+      `printf '\\033[10;1H${rule}\\033[11;1H❯\\302\\240\\033[2mPress up to edit queued messages\\033[22m\\033[12;1H${rule}\\033[11;3H'`,
+      "dd bs=1 count=1 >/dev/null 2>&1",
+      "printf '\\033[11;1H\\033[K❯\\302\\240Queued words\\033[11;15H'",
+      "dd bs=1 count=2 >/dev/null 2>&1",
+      "printf '\\033[11;1H\\033[K❯\\302\\240\\033[11;3H'",
+      "sleep 30",
+    ].join("; ")
+    const manager = terminals.manager({
+      shell: "/bin/sh",
+      shellArgs: ["-c", script],
+      interrupts: { restoreMs: 1_500, restoreCalmMs: 150 },
+    })
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const record = (manager as unknown as Inside).records.get(terminal.id)
+    if (!record) throw new Error("No record")
+    record.binding = { agent: "claude" }
+    record.activity = { state: "working", pending: [], plans: [], background: null }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(await manager.interrupt({ terminalId: terminal.id })).toEqual({
+      returned: "Queued words",
+    })
+  })
+
   it("waits for the person's input to be let go before pressing Escape", async ({ terminals }) => {
     const { manager, id, writes, record } = await agent(terminals, "working")
     record.held = { input: [], until: Date.now() + 5000, size: null }

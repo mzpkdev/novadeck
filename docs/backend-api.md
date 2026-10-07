@@ -714,9 +714,28 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   one), steady on two reads, it writes the adapter's clear keys, a double Escape for
   Claude Code (never pressed over an empty box, where it opens Claude Code's rewind
   picker, nor over text the person had typed or merged in, which is left). A harness
-  without clear keys has nothing pressed. The call resolves after that, so
-  `agents.interrupt` takes up to about half a second longer where no draft comes. The
-  client's `agents.interrupt(terminalId)` is that call.
+  without clear keys has nothing pressed.
+
+  Messages the person queued behind the turn (a prompt given mid-turn) are not lost. It
+  looks at the screen before the Escape for the harness's own sign of queued messages
+  (`BoxProfile.queued`), and what comes of the Escape then is each harness's, probed
+  (`harness-coverage.md`): Antigravity stops the turn and puts the queued messages back in
+  its box, one to a line; Claude Code stops the turn and sends the queued messages as the
+  next turn, which the runner stops with a second Escape, and Claude Code then puts them
+  back in its box; Codex sends them as a steer, which a second Escape stops, and its box
+  stays empty. Whatever the box then holds, steady, which was empty before the Escape, is
+  the queued words: the runner writes the adapter's clear keys (Ctrl-U and Backspace per
+  line for Antigravity, a double Escape for Claude Code), looks that the box reads empty,
+  and gives the words as `returned`. The call resolves with `{ returned: string | null }`
+  (`InterruptResult`): the words with line breaks as line feeds, for the chat to put back
+  in the person's draft; `null` when there were none, and always for Codex. It fails
+  closed: where the box holds text that can't be cleared and seen empty, that is only a
+  placeholder standing for the words (clearing it would lose them), or can't be read,
+  after the Escape stopped the turn, it rejects with `BOX_NOT_CLEARED` and leaves the box
+  as it is: the person is to clear it in the terminal. The call takes up to about half a
+  second longer where nothing comes back, and a few seconds more with queued messages. The
+  client's `agents.interrupt(terminalId)` is that call, and resolves with the result.
+
 - `companions.*` keeps what agents show and the person attaches beside terminals: items,
   each a pointer to a file, a page or a plan, never a copy of it, held by exactly one
   terminal's bar or one undocked window. Items and windows live in the runner's database,

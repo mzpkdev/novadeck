@@ -320,7 +320,17 @@ for (const setup of setups) {
       const ended = await t1.reached("unknown", { after: mark })
       // The harness takes the key a moment after it is written: its own account of the
       // interruption shows before the held reply is let go, which must never show.
-      await t1.until(setup.interrupted("Take your time"))
+      // Claude Code's account is the prompt back in its box, which the runner clears before
+      // `interrupt` resolves: then the prompt shows nowhere, its echo gone with the turn.
+      const account = setup.interrupted("Take your time")
+      await t1.poll(
+        async () => {
+          const shown = await t1.screen()
+          return account.test(shown) || !shown.includes("Take your time") ? true : undefined
+        },
+        "the harness to take the interrupt",
+        30_000,
+      )
       held.open()
       await answered.opened
       await sleep(3000)

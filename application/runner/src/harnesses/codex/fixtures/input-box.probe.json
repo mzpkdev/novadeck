@@ -562,6 +562,62 @@
           "1": "  >_ OpenAI Codex",
           "2": ""
         }
+      },
+      "queued": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 2
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.159.3)",
+          "2": "     /tmp/novadeck-e2e-UscQkh/project",
+          "4": "  Shall we put some verbs after that cursor?",
+          "7": "› Hold on",
+          "30": "◦ Working (1s • esc to interrupt)",
+          "32": "• Messages to be submitted after next tool call (press esc to interrupt and send immediately)",
+          "33": "  ↳ Queued beta",
+          "36": "› Ask Codex to do anything",
+          "38": "  fake-model default · /tmp/novadeck-e2e-UscQkh/project",
+          "39": "  ? for shortcuts                                                                             ⚠ 2 warnings · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": "",
+          "7": "  Hold on",
+          "30": "                esc",
+          "32": "  Messages to be submitted after next tool call        esc",
+          "33": "",
+          "36": "›"
+        }
+      },
+      "queued steered": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 2
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.159.3)",
+          "2": "     /tmp/novadeck-e2e-UscQkh/project",
+          "4": "  Whoa, fancy meeting you here!",
+          "7": "› Hold on",
+          "10": "• Model interrupted to submit steer instructions.",
+          "13": "› Queued beta",
+          "33": "• Working (1s • esc to interrupt)",
+          "36": "› Ask Codex to do anything",
+          "38": "  fake-model default · /tmp/novadeck-e2e-UscQkh/project",
+          "39": "  ? for shortcuts                                                                             ⚠ 2 warnings · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": "",
+          "7": "  Hold on",
+          "10": "  Model interrupted to submit steer instructions.",
+          "13": "  Queued beta",
+          "33": "•               esc",
+          "36": "›"
+        }
       }
     },
     "0.160.1": {
@@ -1122,6 +1178,62 @@
         "bright": {
           "1": "  >_ OpenAI Codex",
           "2": ""
+        }
+      },
+      "queued": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 2
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.160.1)",
+          "2": "     /tmp/novadeck-e2e-E3ZsNy/project",
+          "4": "  Is this a plan day or a poke-around day?",
+          "7": "› Hold on",
+          "30": "• Working (1s • esc to interrupt)",
+          "32": "• Messages to be submitted after next tool call (press esc to interrupt and send immediately)",
+          "33": "  ↳ Queued beta",
+          "36": "› Ask Codex to do anything",
+          "38": "  fake-model default · /tmp/novadeck-e2e-E3ZsNy/project",
+          "39": "  ? for shortcuts                                                                             ⚠ 2 warnings · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": "",
+          "7": "  Hold on",
+          "30": "•               esc",
+          "32": "  Messages to be submitted after next tool call        esc",
+          "33": "",
+          "36": "›"
+        }
+      },
+      "queued steered": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 2
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.160.1)",
+          "2": "     /tmp/novadeck-e2e-E3ZsNy/project",
+          "4": "  What are we getting into today?",
+          "7": "› Hold on",
+          "10": "• Model interrupted to submit steer instructions.",
+          "13": "› Queued beta",
+          "33": "• Working (1s • esc to interrupt)",
+          "36": "› Ask Codex to do anything",
+          "38": "  fake-model default · /tmp/novadeck-e2e-E3ZsNy/project",
+          "39": "  ? for shortcuts                                                                             ⚠ 2 warnings · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": "",
+          "7": "  Hold on",
+          "10": "  Model interrupted to submit steer instructions.",
+          "13": "  Queued beta",
+          "33": "•               esc",
+          "36": "›"
         }
       }
     }

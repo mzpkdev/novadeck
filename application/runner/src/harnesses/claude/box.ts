@@ -11,7 +11,10 @@ import { ruledBox, type BoxProfile } from "../box.js"
 export const box: BoxProfile = {
   read: (screen) => ruledBox(screen, "❯"),
   collapsed: ({ text }) => /^\[Pasted text #\d+(?: \+\d+ lines?)?\]$/.test(text.trim()),
-  clear: "\x1b\x1b",
+  // Escape twice, over text seen in the box only; it clears a restored prompt or the queued
+  // messages an Escape put back, of any number of lines (probed 2026-10-07).
+  clear: () => "\x1b\x1b",
+  queued: (screen) => screen.rows.some((row) => row.includes("Press up to edit queued messages")),
   collapses: (text) => text.split("\n").length > 3 || text.length > 900,
   room: (rows) => rows - 4,
 }

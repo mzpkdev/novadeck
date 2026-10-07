@@ -28,12 +28,18 @@ export type BoxProfile = {
    */
   readonly collapsed: (box: InputBox) => boolean
   /**
-   * The keys that clear a box's text, written for a harness that puts an interrupted
-   * prompt back in its box (Claude Code's Escape twice; over an empty box they open its
-   * rewind picker, so they are written only over text seen there). Omitted where nothing
-   * comes back (probed: Codex and Antigravity leave the box empty), and nothing is pressed.
+   * The keys that clear the text a box holds, for a harness that puts text back in its box
+   * (an interrupted prompt: Claude Code; the messages the person queued: Claude Code and
+   * Antigravity): written only over text seen there, as Claude Code's Escape twice open
+   * its rewind picker over an empty box. Omitted where nothing comes back (probed: Codex
+   * leaves the box empty), and nothing is pressed.
    */
-  readonly clear?: string
+  readonly clear?: (box: InputBox) => string
+  /**
+   * Whether the screen shows messages the person queued behind the running turn, which
+   * the harness holds until the turn ends (or, for Codex, steers the turn with).
+   */
+  readonly queued: (screen: ScreenText) => boolean
   /**
    * Whether a paste of the text certainly shows as a placeholder, however small the
    * screen (probed thresholds); false where it may show whole.
@@ -136,13 +142,19 @@ const read = (
   const lit = screen.bright.slice(first, last + 1)
   const lines = (shown: readonly string[]): string =>
     shown
-      .map((row, index) => (index === 0 ? row.slice(marker.length) : row).replace(/^ {1,2}/, ""))
+      .map((row, index) =>
+        (index === 0 ? row.slice(marker.length) : row).replace(/^[ \u00a0]{1,2}/, ""),
+      )
       .join("\n")
       .trimEnd()
   const text = lines(lit)
-  if (compact(text) !== "") return { text, first, last }
   const faint = lines(rows)
   const home = screen.cursor.row === first && screen.cursor.column <= marker.length + 1
+  // The cursor's cell over a placeholder's first letter is drawn undimmed (Claude Code's
+  // "Press up to edit queued messages" read as "P"): with the cursor at home and the rest
+  // of the text faint, it is the placeholder, not a draft of one letter.
+  const letter = compact(text).length === 1 && compact(faint).length > 1 && home
+  if (compact(text) !== "" && !letter) return { text, first, last }
   return { text: compact(faint) === "" || home ? "" : faint, first, last }
 }
 

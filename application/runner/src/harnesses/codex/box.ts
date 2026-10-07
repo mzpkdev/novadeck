@@ -13,6 +13,10 @@ export const box: BoxProfile = {
   collapsed: ({ text }) => /^\[Pasted Content \d+ chars?\]$/.test(text.trim()),
   // 999 and 1,000 characters showed whole, 1,024 did not, whatever the lines: 30 short
   // lines showed whole.
+  // A queued message waits "to be submitted after next tool call", and an Escape sends it
+  // at once as a steer, which a second Escape stops; the box stays empty (probed).
+  queued: (screen) =>
+    screen.rows.some((row) => row.includes("Messages to be submitted after next tool call")),
   collapses: (text) => text.length > 1024,
   // The cursor's row is the box's last, a blank row, its status line and its hints below.
   room: (rows) => rows - 3,
