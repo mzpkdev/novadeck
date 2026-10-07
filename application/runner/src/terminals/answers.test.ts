@@ -4,6 +4,7 @@ import { DomainError } from "../errors.js"
 import type { DialogAdapter, RequestFacts } from "../harnesses/dialogs.js"
 import { describe, expect, it } from "../test.js"
 import { fakeAdapter, FakeTui } from "../testing/dialogs.js"
+import { screen } from "../testing/screens.js"
 import { Answers, type AnswerHost } from "./answers.js"
 import { identified } from "./dialogs.js"
 
@@ -39,6 +40,10 @@ const terminal = (
     shown?: boolean
     /** The tracker shows its dialog raw. */
     raw?: boolean
+    /** Refusals the words' prompt meets, one per try, before it goes. */
+    refusals?: DomainError[]
+    /** Whether the agent's turn runs, per its hooks. */
+    working?: boolean
     /** Runs after each write, as the TUI redraws. */
     after?: (tui: FakeTui) => void
   } = {},
@@ -165,8 +170,11 @@ const terminal = (
     },
     prompt: (_terminal, text) => {
       calls.push(`prompt ${text}`)
+      const refusal = options.refusals?.shift()
+      if (refusal) return Promise.reject(refusal)
       return options.promptFails ? Promise.reject(new Error("no")) : Promise.resolve()
     },
+    working: () => options.working ?? false,
     closed: () => closed,
     answered: (_terminal, ref) => options.answeredRefs?.includes(ref) ?? false,
     shown: () => options.shown ?? true,
@@ -190,6 +198,8 @@ const terminal = (
     answeredMs: 100,
     typedMs: 100,
     settleMs: 10,
+    followMs: 200,
+    calmMs: 200,
   })
   return {
     tui,
@@ -230,6 +240,18 @@ const fails = async (run: Promise<unknown>): Promise<string> => {
   }
   throw new Error("It did not fail.")
 }
+
+// A refusal of the words that follow an answer, for the reason given.
+const refusal = (reason: "pending" | "ringing" | "held" | "draft" | "no-box") =>
+  new DomainError("CONFLICT", "no", undefined, reason)
+
+// The answer that picks option 3 of the dialog read, with words that follow it.
+const choose = (read: () => { dialog: Parameters<typeof identified>[0] } | undefined) => ({
+  dialog: identified(read()!.dialog)!.id,
+  type: "choice" as const,
+  option: "3",
+  text: "do it differently",
+})
 
 describe("answering a request through its dialog", () => {
   it("presses the option's key, holds the person's keys meanwhile and marks it answered", async () => {
@@ -421,11 +443,11 @@ describe("answering a request through its dialog", () => {
     const { tui, answers } = terminal()
     // The noise row changes with every look for a while, as a redraw does.
     let looks = 0
-    const screen = tui.screen.bind(tui)
+    const drawn = tui.screen.bind(tui)
     tui.screen = () => {
       looks += 1
       if (looks < 6) tui.noise = looks
-      return screen()
+      return drawn()
     }
     await give(tui, answers, { type: "choice", option: "1" })
     expect(looks).toBeGreaterThan(6)
@@ -636,6 +658,48 @@ describe("answering a request through its dialog", () => {
     expect(calls).toContain("done")
   })
 
+  describe("the words that follow an answer", () => {
+    it.each(["pending", "ringing", "held"] as const)(
+      "are tried again while the refusal is %s, which clears by itself",
+      async (reason) => {
+        const { answers, calls, read } = terminal({
+          prompting: true,
+          refusals: [refusal(reason), refusal(reason)],
+        })
+        await answers.answer("t", "r1", choose(read))
+        expect(calls.filter((call) => call.startsWith("prompt"))).toHaveLength(3)
+      },
+    )
+
+    it.each(["draft", "no-box"] as const)(
+      "fail at once as WORDS_NOT_SENT where the refusal is %s",
+      async (reason) => {
+        const { answers, calls, read } = terminal({ prompting: true, refusals: [refusal(reason)] })
+        expect(await fails(answers.answer("t", "r1", choose(read)))).toBe("WORDS_NOT_SENT")
+        expect(calls.filter((call) => call.startsWith("prompt"))).toHaveLength(1)
+      },
+    )
+
+    it("give up on a refusal that never clears once their time is up", async () => {
+      const { answers, read } = terminal({
+        prompting: true,
+        refusals: Array.from({ length: 1_000 }, () => refusal("pending")),
+      })
+      expect(await fails(answers.answer("t", "r1", choose(read)))).toBe("WORDS_NOT_SENT")
+    })
+
+    it("wait for the screen to settle before they go, longer while a turn runs", async () => {
+      const quiet = terminal({ prompting: true })
+      const began = Date.now()
+      await quiet.answers.answer("t", "r1", choose(quiet.read))
+      const idle = Date.now() - began
+      const busy = terminal({ prompting: true, working: true })
+      const started = Date.now()
+      await busy.answers.answer("t", "r1", choose(busy.read))
+      expect(Date.now() - started).toBeGreaterThan(idle)
+    })
+  })
+
   it("refuses follow-up words a prompt can't carry before pressing any key", async () => {
     const { tui, answers, calls, read } = terminal({ prompting: true })
     const run = answers.answer("t", "r1", {
@@ -660,5 +724,56 @@ describe("answering a request through its dialog", () => {
     expect(await fails(run)).toBe("PROMPT_REFUSED")
     expect(tui.written).toEqual([])
     expect(calls).not.toContain("done")
+  })
+})
+
+describe("waiting for an agent's screen to settle before words follow an answer", () => {
+  type Calm = { calm: (id: string) => Promise<void> }
+  /** Answers on a screen that `drawing` changes on each look, with the default waits. */
+  const settling = (options: { working?: boolean; drawing?: boolean; gone?: boolean }) => {
+    const { host } = terminal({ working: options.working ?? false })
+    let looks = 0
+    const answers = new Answers(
+      {
+        ...host,
+        screen: () => {
+          looks += 1
+          if (options.gone) return Promise.resolve(undefined)
+          return Promise.resolve(screen({ rows: [options.drawing ? `tick ${looks}` : "still"] }))
+        },
+      },
+      {},
+    )
+    return (answers as unknown as Calm).calm("t")
+  }
+
+  it("settles once a still screen has no turn running, after 0.6 s", async () => {
+    const started = Date.now()
+    await settling({})
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(550)
+    expect(took).toBeLessThan(1_400)
+  })
+
+  it("settles after 1.5 s of a still screen whatever the activity says", async () => {
+    const started = Date.now()
+    await settling({ working: true })
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(1_450)
+    expect(took).toBeLessThan(2_600)
+  })
+
+  it("gives up after 6 s on a screen that never holds still, and goes on", async () => {
+    const started = Date.now()
+    await settling({ drawing: true })
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(5_900)
+    expect(took).toBeLessThan(7_500)
+  })
+
+  it("returns at once for a terminal that is gone", async () => {
+    const started = Date.now()
+    await settling({ gone: true })
+    expect(Date.now() - started).toBeLessThan(300)
   })
 })

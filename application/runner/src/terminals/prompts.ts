@@ -158,7 +158,12 @@ export class Prompts {
       const first = await this.host.screen(terminalId)
       if (!first) throw new DomainError("TERMINAL_NOT_FOUND")
       if (!first.bracketedPaste)
-        throw new DomainError("CONFLICT", "The agent's screen takes no bracketed paste.")
+        throw new DomainError(
+          "CONFLICT",
+          "The agent's screen takes no bracketed paste.",
+          undefined,
+          "no-paste",
+        )
       // The box is waited on a while to read empty, in its prompt mode, as the text of the
       // prompt before this one may still show as the TUI clears it after its Enter, and a
       // command's shell mode ends a moment after its Enter. A screen it is not found on,
@@ -173,6 +178,8 @@ export class Prompts {
         throw new DomainError(
           "CONFLICT",
           "The message is too tall for the agent's input box on this screen: make the terminal larger or the message shorter.",
+          undefined,
+          "too-tall",
         )
       // A request may have come while the hold was taken: no paste into its dialog.
       this.host.admit(terminalId)
@@ -263,7 +270,12 @@ export class Prompts {
       const hold = this.host.hold(terminalId, this.budget)
       if (hold.holding()) return hold
       if (Date.now() >= until)
-        throw new DomainError("CONFLICT", "A message's doorbell is ringing the agent.")
+        throw new DomainError(
+          "CONFLICT",
+          "A message's doorbell is ringing the agent.",
+          undefined,
+          "held",
+        )
       // eslint-disable-next-line no-await-in-loop -- The hold is tried in turn.
       await sleep(this.pollMs)
       this.host.admit(terminalId)
@@ -296,6 +308,8 @@ export class Prompts {
             : box.mode === "shell"
               ? "The agent's input box is in its shell mode: clear it in the terminal first."
               : "The agent's input box holds text already: a draft the prompt would merge into.",
+          undefined,
+          !box ? "no-box" : box.mode === "shell" ? "shell" : "draft",
         )
       // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
       await sleep(this.pollMs)
@@ -351,7 +365,12 @@ export class Prompts {
     const until = Date.now() + this.ringMs
     while (this.host.ringing(terminalId) !== undefined) {
       if (Date.now() >= until)
-        throw new DomainError("CONFLICT", "A message's doorbell is ringing the agent.")
+        throw new DomainError(
+          "CONFLICT",
+          "A message's doorbell is ringing the agent.",
+          undefined,
+          "ringing",
+        )
       // eslint-disable-next-line no-await-in-loop -- The ring is looked at in turn.
       await sleep(this.pollMs)
     }

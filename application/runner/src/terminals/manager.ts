@@ -42,6 +42,7 @@ import {
 import { observe, type Binding } from "../harnesses/bindings.js"
 import { isEmpty, sameText, type BoxProfile, type InputBox } from "../harnesses/box.js"
 import { actorOf, agentDetail, requestRef } from "../harnesses/detail.js"
+import type { RequestFacts } from "../harnesses/dialogs.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
 import type {
   ActivityEvent,
@@ -661,6 +662,8 @@ export class Terminals {
   private readonly interruptWaits: Required<InterruptOptions>
   /** Answers requests through their dialogs, and the dialogs it reads for `agents.detail`. */
   private readonly answers: Answers
+  /** The latest answer of each terminal not yet done, the words after it included. */
+  private readonly answering = new Map<string, Promise<void>>()
   private readonly dialogs: Dialogs
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
@@ -1096,8 +1099,15 @@ export class Terminals {
    * Gives the terminal's agent a prompt as the person would paste and submit it (see
    * `Prompts`), once those before it are done.
    */
-  prompt(input: { terminalId: string; text: string }): Promise<void> {
-    return this.prompts.prompt(input.terminalId, input.text)
+  async prompt(input: { terminalId: string; text: string }): Promise<void> {
+    // Nothing reaches the agent between an answer and the words that follow it, which the
+    // dialog's option takes as the person's feedback: a message waits for the whole answer.
+    for (let answering = this.answering.get(input.terminalId); answering;) {
+      // eslint-disable-next-line no-await-in-loop -- Each answer under way is waited out.
+      await answering
+      answering = this.answering.get(input.terminalId)
+    }
+    return await this.prompts.prompt(input.terminalId, input.text)
   }
 
   /**
@@ -1105,7 +1115,17 @@ export class Terminals {
    * person would with its keys (see `Answers`).
    */
   answer(input: { terminalId: string; request: string; answer: RequestAnswer }): Promise<void> {
-    return this.answers.answer(input.terminalId, input.request, input.answer)
+    const run = this.answers.answer(input.terminalId, input.request, input.answer)
+    // Held for the whole call, the follow-up words included (see `prompt`).
+    const done = run.then(
+      () => {},
+      () => {},
+    )
+    this.answering.set(input.terminalId, done)
+    void done.then(() => {
+      if (this.answering.get(input.terminalId) === done) this.answering.delete(input.terminalId)
+    })
+    return run
   }
 
   /**
@@ -1280,9 +1300,19 @@ export class Terminals {
     const record = this.record(terminalId)
     this.running(record)
     if (!record.binding && this.messaging.shownAgent(terminalId) === undefined)
-      throw new DomainError("CONFLICT", "No agent is running in this terminal.")
+      throw new DomainError(
+        "CONFLICT",
+        "No agent is running in this terminal.",
+        undefined,
+        "no-box",
+      )
     if ((record.activity?.pending.length ?? 0) > 0)
-      throw new DomainError("CONFLICT", "The agent waits on the person's answer to a request.")
+      throw new DomainError(
+        "CONFLICT",
+        "The agent waits on the person's answer to a request.",
+        undefined,
+        "pending",
+      )
     return record
   }
 
@@ -1410,7 +1440,13 @@ export class Terminals {
       admit: (terminalId) => {
         const profile = this.boxOf(this.promptable(terminalId))
         // No harness to read its box, no prompt: nothing tells where the text would land.
-        if (!profile) throw new DomainError("CONFLICT", "No agent is running in this terminal.")
+        if (!profile)
+          throw new DomainError(
+            "CONFLICT",
+            "No agent is running in this terminal.",
+            undefined,
+            "no-box",
+          )
         return profile
       },
       ringing: (terminalId) => this.messaging.ringing(terminalId),
@@ -1423,6 +1459,16 @@ export class Terminals {
         record.process.write(data)
         return true
       },
+    }
+  }
+
+  /** What the dialog adapters need of a pending request: what it asks, and where. */
+  private factsOf(record: Record, request: Activity["pending"][number]): RequestFacts {
+    return {
+      kind: request.kind,
+      tool: request.toolName,
+      input: request.input,
+      cwd: request.cwd ?? record.summary.cwd,
     }
   }
 
@@ -1446,24 +1492,14 @@ export class Terminals {
         const { binding, request } = found
         return {
           actor: request.actor,
-          facts: {
-            kind: request.kind,
-            tool: request.toolName,
-            input: request.input,
-            cwd: request.cwd ?? record.summary.cwd,
-          },
+          facts: this.factsOf(record, request),
           adapter: harnesses[binding.agent].dialogs,
           others: (record.activity?.pending ?? [])
             .filter((each) => each !== request)
             .map((each) => ({
               ref: requestRef(binding, each),
               actor: each.actor,
-              facts: {
-                kind: each.kind,
-                tool: each.toolName,
-                input: each.input,
-                cwd: each.cwd ?? record.summary.cwd,
-              },
+              facts: this.factsOf(record, each),
             })),
         }
       },
@@ -1477,7 +1513,8 @@ export class Terminals {
         record.process.write(data)
         return true
       },
-      prompt: (terminalId, text) => this.promptSoon(terminalId, text),
+      prompt: (terminalId, text) => this.prompts.prompt(terminalId, text),
+      working: (terminalId) => this.records.get(terminalId)?.activity?.state === "working",
       closed: (terminalId, ref) => this.dialogs.closed(terminalId, ref),
       shown: (terminalId, ref) => {
         const dialog = this.dialogs.shown(terminalId, ref)
@@ -1502,56 +1539,6 @@ export class Terminals {
     }
   }
 
-  /**
-   * Gives the agent a prompt once it takes one: the answer that sends it is just done, and
-   * the hook that ends the request, or the turn it aborted, may be a moment behind.
-   */
-  private async promptSoon(terminalId: string, text: string): Promise<void> {
-    await this.calm(terminalId)
-    // Ten seconds for the agent to take a prompt, counted from when its screen settled.
-    const until = Date.now() + 10_000
-    for (;;) {
-      try {
-        // eslint-disable-next-line no-await-in-loop -- Tried in turn.
-        return await this.prompt({ terminalId, text })
-      } catch (error) {
-        if (!(error instanceof DomainError) || error.code !== "CONFLICT" || Date.now() >= until)
-          throw error
-        // eslint-disable-next-line no-await-in-loop -- As above.
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-    }
-  }
-
-  /**
-   * Waits for the agent's screen to settle after an answer, before words follow it as a
-   * prompt: an answer may let the turn go on (Claude Code's "Chat about this" has the model
-   * reply), and a prompt pasted while its reply draws never sees a steady screen to check
-   * its paste against. It settles once the screen held still for 0.6 s with no turn
-   * running, or 1.5 s whatever the activity says, and gives up after 6 s: a turn that goes
-   * on takes a prompt as the person's typing would, which the prompt's own check allows for.
-   */
-  private async calm(terminalId: string): Promise<void> {
-    const until = Date.now() + 6_000
-    let last: string | undefined
-    let since = Date.now()
-    while (Date.now() < until) {
-      const record = this.live(terminalId)
-      // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
-      const screen = record && (await this.screenOf(terminalId))
-      if (!record || !screen) return
-      const text = screen.rows.join("\n")
-      if (text !== last) {
-        last = text
-        since = Date.now()
-      }
-      const still = Date.now() - since
-      if (still >= 1_500 || (still >= 600 && record.activity?.state !== "working")) return
-      // eslint-disable-next-line no-await-in-loop -- As above.
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  }
-
   /** What the dialogs tracker asks of the terminals. */
   private dialogsHost(): DialogsHost {
     return {
@@ -1564,12 +1551,7 @@ export class Terminals {
           requests: activity.pending.map((request) => ({
             ref: requestRef(binding, request),
             actor: request.actor,
-            facts: {
-              kind: request.kind,
-              tool: request.toolName,
-              input: request.input,
-              cwd: request.cwd ?? record.summary.cwd,
-            },
+            facts: this.factsOf(record, request),
             subject: request.subject,
             screen: request.screen === true,
             askedAt: request.askedAt,

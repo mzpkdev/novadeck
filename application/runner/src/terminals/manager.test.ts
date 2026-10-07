@@ -9,7 +9,6 @@ import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 import { vi } from "vitest"
 
-import { started as freshActivity } from "../harnesses/activity.js"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
@@ -142,89 +141,6 @@ describe("holding the person's input", () => {
   })
 })
 
-describe("waiting for an agent's screen to settle before words follow an answer", () => {
-  type Calm = { calm: (id: string) => Promise<void> }
-  const calm = (manager: Terminals, id: string) => (manager as unknown as Calm).calm(id)
-
-  it("settles once a still screen has no turn running, after 0.6 s", async ({ terminals }) => {
-    const manager = terminals.manager(ptyOptions)
-    const terminal = await manager.create(
-      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
-      "creator",
-    )
-    const started = Date.now()
-    await calm(manager, terminal.id)
-    const took = Date.now() - started
-    expect(took).toBeGreaterThanOrEqual(550)
-    expect(took).toBeLessThan(1_400)
-  })
-
-  it("settles after 1.5 s of a still screen whatever the activity says", async ({ terminals }) => {
-    const manager = terminals.manager(ptyOptions)
-    const terminal = await manager.create(
-      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
-      "creator",
-    )
-    // An agent the activity says works, its screen quiet all the same.
-    const records = (manager as unknown as { records: Map<string, { activity: unknown }> }).records
-    records.get(terminal.id)!.activity = { ...freshActivity(Date.now()), state: "working" }
-    const started = Date.now()
-    await calm(manager, terminal.id)
-    const took = Date.now() - started
-    expect(took).toBeGreaterThanOrEqual(1_450)
-    expect(took).toBeLessThan(2_600)
-  })
-
-  it("gives up after 6 s on a screen that never holds still, and goes on", async ({
-    terminals,
-  }) => {
-    const manager = terminals.manager(ptyOptions)
-    const terminal = await manager.create(
-      {
-        id: randomUUID(),
-        sessionId: "session",
-        cwd,
-        cols: 80,
-        rows: 24,
-      },
-      "creator",
-    )
-    // A child that draws something new every 50 ms, as a spinner does.
-    let drawn = 0
-    const drawing = setInterval(() => {
-      drawn += 1
-      manager.write(
-        { terminalId: terminal.id, data: command({ type: "write", data: `tick ${drawn}\r\n` }) },
-        "creator",
-      )
-    }, 50)
-    const started = Date.now()
-    try {
-      await calm(manager, terminal.id)
-    } finally {
-      clearInterval(drawing)
-    }
-    const took = Date.now() - started
-    expect(took).toBeGreaterThanOrEqual(5_900)
-    expect(took).toBeLessThan(7_500)
-  })
-
-  it("returns at once for a terminal that is gone, and prompts then fail as it does", async ({
-    terminals,
-  }) => {
-    const manager = terminals.manager(ptyOptions)
-    const gone = randomUUID()
-    const started = Date.now()
-    await calm(manager, gone)
-    expect(Date.now() - started).toBeLessThan(300)
-    await expect(
-      (
-        manager as unknown as { promptSoon: (id: string, text: string) => Promise<void> }
-      ).promptSoon(gone, "words"),
-    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
-  })
-})
-
 describe("an answer's hold of the person's input", () => {
   it("never replays the mouse's wheel and motion reports it held, once released", async ({
     terminals,
@@ -259,6 +175,74 @@ describe("an answer's hold of the person's input", () => {
     // The key went once released; the wheel report never did.
     expect(trace).toContain("received 1 chars")
     expect(trace).not.toContain("received 16 chars")
+  })
+})
+
+describe("answers and the prompts after them", () => {
+  it("keeps a chat prompt behind an answer's follow-up words, which go first", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const order: string[] = []
+    const inside = manager as unknown as {
+      answers: { answer: () => Promise<void> }
+      prompts: { prompt: (id: string, text: string) => Promise<void> }
+    }
+    // The answer takes a while to press its keys, then sends its words as a prompt of its own.
+    inside.answers = {
+      answer: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        await inside.prompts.prompt("t", "the person's words")
+      },
+    }
+    inside.prompts = {
+      prompt: async (_, text) => {
+        // Whatever goes first takes its time, as a paste does: nothing may slip in beside it.
+        order.push(`start ${text}`)
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        order.push(`end ${text}`)
+      },
+    }
+    const answer = manager.answer({
+      terminalId: "t",
+      request: "r",
+      answer: { type: "choice", dialog: "d", option: "1" },
+    })
+    // A message from the chat box, sent while the answer is under way.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const chat = manager.prompt({ terminalId: "t", text: "chat message" })
+    await Promise.all([answer, chat])
+    expect(order).toEqual([
+      "start the person's words",
+      "end the person's words",
+      "start chat message",
+      "end chat message",
+    ])
+  })
+
+  it("lets prompts through again once an answer failed", async ({ terminals }) => {
+    const manager = terminals.manager(ptyOptions)
+    const inside = manager as unknown as {
+      answers: { answer: () => Promise<void> }
+      prompts: { prompt: () => Promise<void> }
+    }
+    inside.answers = { answer: () => Promise.reject(new Error("no")) }
+    let sent = 0
+    inside.prompts = {
+      prompt: () => {
+        sent += 1
+        return Promise.resolve()
+      },
+    }
+    await expect(
+      manager.answer({
+        terminalId: "t",
+        request: "r",
+        answer: { type: "choice", dialog: "d", option: "1" },
+      }),
+    ).rejects.toThrow("no")
+    await manager.prompt({ terminalId: "t", text: "after" })
+    expect(sent).toBe(1)
   })
 })
 

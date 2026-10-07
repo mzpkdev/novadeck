@@ -77,10 +77,13 @@ export type AnswerHost = {
   /** The request was answered. */
   readonly done: (terminalId: string, ref: string) => void
   /**
-   * Gives the agent `text` as its next prompt once it takes one (see `Prompts`), as the
-   * person's words after an option that only tells it to expect them.
+   * Gives the agent `text` as its next prompt (see `Prompts`), as the person's words after
+   * an option that only tells it to expect them: the plain call, which `Answers` retries
+   * and times.
    */
   readonly prompt: (terminalId: string, text: string) => Promise<void>
+  /** Whether its agent's turn runs now, per its hooks. */
+  readonly working: (terminalId: string) => boolean
   /** An answer begins or ends there, so the dialogs tracker leaves its screens alone. */
   readonly busy: (terminalId: string, on: boolean) => void
 }
@@ -102,6 +105,13 @@ export type AnswerOptions = {
   readonly readMs?: number
   /** How far apart the two reads that say the screen settled are, in milliseconds. */
   readonly stillMs?: number
+  /**
+   * How long the agent is given to take the words that follow an answer as a prompt, from
+   * when its screen settled, in milliseconds.
+   */
+  readonly followMs?: number
+  /** How long the screen is given to settle after an answer, before the words, in milliseconds. */
+  readonly calmMs?: number
 }
 
 /** A failure to answer, after some key was pressed or not. */
@@ -114,7 +124,6 @@ class Failed extends Error {
   }
 }
 
-/** Text as a single-line field takes it where the screen takes no paste: no line breaks. */
 /** Every piece of the person's own words in an answer. */
 const wordsOf = (answer: RequestAnswer): string[] => {
   switch (answer.type) {
@@ -154,6 +163,8 @@ export class Answers {
   private readonly holdMs: number
   private readonly readMs: number
   private readonly stillMs: number
+  private readonly followMs: number
+  private readonly calmMs: number
   /** The latest answer of each terminal that is not yet done. */
   private readonly tails = new Map<string, Promise<void>>()
   private readonly settles = new Map<string, () => void>()
@@ -170,6 +181,8 @@ export class Answers {
     this.holdMs = options.holdMs ?? 600_000
     this.readMs = options.readMs ?? 3_000
     this.stillMs = options.stillMs ?? 100
+    this.followMs = options.followMs ?? 10_000
+    this.calmMs = options.calmMs ?? 6_000
   }
 
   /**
@@ -288,13 +301,73 @@ export class Answers {
     }
     if (words === undefined) return
     try {
-      await this.host.prompt(terminalId, words)
+      await this.follow(terminalId, words)
     } catch {
       // The dialog took its answer; only the words did not follow it.
       throw new DomainError(
         "WORDS_NOT_SENT",
         "The answer took, but the agent did not take the words that follow it.",
       )
+    }
+  }
+
+  /**
+   * Gives the agent the words once it takes a prompt: the answer that sends them is just
+   * done, and the hook that ends the request, or the turn it aborted, may be a moment
+   * behind. Retried only while the refusal is of the kind that clears by itself (a request
+   * still pending, a doorbell ring, another hold on the agent's input), for `followMs`
+   * from when the screen settled; a draft in the box, no box, a text too tall or a shell
+   * mode never clear, and fail at once.
+   */
+  private async follow(terminalId: string, words: string): Promise<void> {
+    await this.calm(terminalId)
+    const until = Date.now() + this.followMs
+    for (;;) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- Tried in turn.
+        return await this.host.prompt(terminalId, words)
+      } catch (error) {
+        const transient =
+          error instanceof DomainError &&
+          error.code === "CONFLICT" &&
+          (error.reason === "pending" || error.reason === "ringing" || error.reason === "held")
+        if (!transient || Date.now() >= until) throw error
+        // eslint-disable-next-line no-await-in-loop -- As above.
+        await sleep(this.pollMs * 2)
+      }
+    }
+  }
+
+  /**
+   * Waits for the agent's screen to settle after an answer, before words follow it as a
+   * prompt: an answer may let the turn go on (Claude Code's "Chat about this" has the model
+   * reply), and a prompt pasted while its reply draws never sees a steady screen to check
+   * its paste against. It settles once the screen held still for six reads' time
+   * (`stillMs`, 0.6 s) with no turn running, or fifteen's (1.5 s) whatever the activity
+   * says, and gives up after `calmMs`: a turn that goes on takes a prompt as the person's
+   * typing would, which the prompt's own check allows for.
+   */
+  private async calm(terminalId: string): Promise<void> {
+    const until = Date.now() + this.calmMs
+    let last: string | undefined
+    let since = Date.now()
+    while (Date.now() < until) {
+      // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
+      const screen = await this.host.screen(terminalId)
+      if (!screen) return
+      const text = screen.rows.join("\n")
+      if (text !== last) {
+        last = text
+        since = Date.now()
+      }
+      const still = Date.now() - since
+      if (
+        still >= 15 * this.stillMs ||
+        (still >= 6 * this.stillMs && !this.host.working(terminalId))
+      )
+        return
+      // eslint-disable-next-line no-await-in-loop -- As above.
+      await sleep(this.pollMs * 2)
     }
   }
 
@@ -337,7 +410,12 @@ export class Answers {
       })
       if (hold.holding()) return hold
       if (Date.now() >= until)
-        throw new DomainError("CONFLICT", "Another prompt or message holds the agent's input.")
+        throw new DomainError(
+          "CONFLICT",
+          "Another prompt or message holds the agent's input.",
+          undefined,
+          "held",
+        )
       // eslint-disable-next-line no-await-in-loop -- The hold is tried in turn.
       await sleep(this.pollMs)
     }
