@@ -18,8 +18,8 @@ type NavigationProps = Pick<
   "navigation" | "selected" | "hidden" | "fitOnNavigate" | "revealOnMount" | "fitOnMount"
 > & {
   initialViewport: CanvasViewport | undefined
-  viewportWidth: number
-  viewportHeight: number
+  // Read when needed: it changes every frame while the sidebar slides.
+  viewportSize: () => { width: number; height: number }
   container: RefObject<HTMLDivElement | null>
   geometryRef: RefObject<CanvasLayout["geometry"]>
   createdPositions: RefObject<Map<string, XYPosition>>
@@ -36,8 +36,7 @@ export const useCanvasNavigation = ({
   revealOnMount,
   fitOnMount,
   initialViewport,
-  viewportWidth,
-  viewportHeight,
+  viewportSize,
   container,
   geometryRef,
   createdPositions,
@@ -72,6 +71,7 @@ export const useCanvasNavigation = ({
       const margin = 24 / viewport.zoom
       const left = -viewport.x / viewport.zoom
       const top = -viewport.y / viewport.zoom
+      const { width: viewportWidth, height: viewportHeight } = viewportSize()
       const right = (viewportWidth - viewport.x) / viewport.zoom
       const bottom = (viewportHeight - viewport.y) / viewport.zoom
       if (
@@ -111,8 +111,7 @@ export const useCanvasNavigation = ({
     getViewport,
     setCenter,
     visit,
-    viewportHeight,
-    viewportWidth,
+    viewportSize,
     geometryRef,
     pointerCreated,
     createdPositions,

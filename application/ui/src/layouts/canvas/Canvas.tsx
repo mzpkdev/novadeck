@@ -17,7 +17,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -83,19 +82,20 @@ const TerminalCanvas = ({
     screenToFlowPosition,
   } = useReactFlow<TerminalNode>()
   const store = useStoreApi<TerminalNode>()
-  const viewportWidth = useStore((state) => state.width)
-  const viewportHeight = useStore((state) => state.height)
-  const maxZoom = Math.max(
-    1.5,
-    layout.viewport?.zoom ?? 1,
-    Math.min(viewportWidth / 320, viewportHeight / 200),
-  )
+  // The viewport's size is read where it's needed, never subscribed to: it changes every
+  // frame while the sidebar slides, and a render per frame rebuilds every window. What
+  // renders from it subscribes coarsely: whether it's measured, and the zoom limit in
+  // whole steps.
+  const viewportSize = useCallback((): { width: number; height: number } => {
+    const { width, height } = store.getState()
+    return { width, height }
+  }, [store])
+  const measured = useStore((state) => state.width > 0 && state.height > 0)
+  const fitZoom = useStore((state) => Math.ceil(Math.min(state.width / 320, state.height / 200)))
+  const maxZoom = Math.max(1.5, layout.viewport?.zoom ?? 1, fitZoom)
   const container = useRef<HTMLDivElement>(null)
   // A new window's size: in the viewport's ratio, as a dropped window's ghost previews it.
-  const newWindowSize = useMemo(
-    () => canvasNewTerminalSize({ width: viewportWidth, height: viewportHeight }),
-    [viewportWidth, viewportHeight],
-  )
+  const newWindowSize = useCallback(() => canvasNewTerminalSize(viewportSize()), [viewportSize])
   const [initialViewport] = useState(layout.viewport)
   const { visit, animateVisit } = useCanvasVisit(handleRef)
   const persistence = useCanvasPersistence({ layout, terminals, onLayoutChange })
@@ -181,7 +181,7 @@ const TerminalCanvas = ({
         if (!overPane || overNode) return null
         // Its window would open with its header under the pointer, at a new window's size.
         const point = screenToFlowPosition({ x, y })
-        const { width } = newWindowSize
+        const { width } = newWindowSize()
         return { canvas: { x: point.x - width / 2, y: point.y - terminalHeaderHeight / 2 } }
       }),
     [session, screenToFlowPosition, newWindowSize],
@@ -207,8 +207,7 @@ const TerminalCanvas = ({
     revealOnMount,
     fitOnMount,
     initialViewport,
-    viewportWidth,
-    viewportHeight,
+    viewportSize,
     container,
     geometryRef,
     createdPositions,
@@ -229,12 +228,10 @@ const TerminalCanvas = ({
   const resizeToViewport = useCallback(
     (id: string) => {
       const node = getNode(id)
-      if (!node || !viewportWidth || !viewportHeight) return
+      const viewport = viewportSize()
+      if (!node || !viewport.width || !viewport.height) return
       const preset = presets[id] === "large" ? "small" : "large"
-      const { width, height } = canvasPresetSize(preset, {
-        width: viewportWidth,
-        height: viewportHeight,
-      })
+      const { width, height } = canvasPresetSize(preset, viewport)
       const center = centerOf(node)
       const next = {
         position: { x: center.x - width / 2, y: center.y - height / 2 },
@@ -247,7 +244,7 @@ const TerminalCanvas = ({
       }))
       onPresetChange(id, preset)
     },
-    [getNode, onLayoutChange, viewportWidth, viewportHeight, presets, onPresetChange],
+    [getNode, onLayoutChange, viewportSize, presets, onPresetChange],
   )
 
   const flyTo = useCallback(
@@ -256,15 +253,16 @@ const TerminalCanvas = ({
       const node = getNode(terminal.id)
       if (!node) return
       onSelect(terminal.id)
-      if (!viewportWidth || !viewportHeight) return
+      const size = viewportSize()
+      if (!size.width || !size.height) return
       const viewport = getViewportForBounds(
         {
           ...node.position,
           width: node.width ?? 550,
           height: node.height ?? 400,
         },
-        viewportWidth,
-        viewportHeight,
+        size.width,
+        size.height,
         0,
         Infinity,
         0,
@@ -273,7 +271,7 @@ const TerminalCanvas = ({
       if (!flight) return
       animateVisit(flight)
     },
-    [animateVisit, getNode, getViewport, onSelect, viewportHeight, viewportWidth, visit],
+    [animateVisit, getNode, getViewport, onSelect, viewportSize, visit],
   )
 
   const nodeFrom = useCallback(
@@ -357,7 +355,8 @@ const TerminalCanvas = ({
         }
     }
     const created = terminals.filter((terminal) => !knownTerminals.current.has(terminal.id))
-    if (created.length && viewportWidth && viewportHeight) {
+    const { width: viewportWidth, height: viewportHeight } = viewportSize()
+    if (created.length && measured) {
       const viewport = getViewport()
       const occupied = terminals
         .filter((terminal) => knownTerminals.current.has(terminal.id))
@@ -480,8 +479,8 @@ const TerminalCanvas = ({
     terminals,
     setNodes,
     updateNode,
-    viewportHeight,
-    viewportWidth,
+    viewportSize,
+    measured,
   ])
 
   const canvas = (
@@ -604,7 +603,7 @@ const TerminalCanvas = ({
                 aria-hidden="true"
                 style={{
                   transform: `translate(${ghost.x}px, ${ghost.y}px)`,
-                  ...newWindowSize,
+                  ...newWindowSize(),
                 }}
               >
                 <span className="drop-ghost-header">{ghostName}</span>
