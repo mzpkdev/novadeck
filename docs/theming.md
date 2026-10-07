@@ -225,6 +225,12 @@ A theme's rules may select:
 - `data-scheme` on `<html>`, `dark` while the dark scheme shows, and `data-ligatures`,
   `on` while the person has turned ligatures on (see [Fonts](#fonts)).
 
+A theme may also apply the SVG filters `index.html` carries, by id: Chromium applies
+only filters in the page itself, so a theme file can't bring its own. `crt-barrel`
+bulges an element like a tube's face, its bend a share of the element's size; it moves
+pixels without moving clicks, so apply it where a few pixels' error near the edge does
+no harm. `theme/contract.test.ts` checks that every filter a theme uses is there.
+
 Recipe classes and the attributes a recipe lists are public. Renaming one breaks every
 theme that uses it, so rename it in the same change as the theme. Anything else in the
 DOM may change without notice. CSS modules aren't used, because their class names
