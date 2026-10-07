@@ -16,6 +16,7 @@ import {
   chatKept,
   keepChatDrafts,
   keepChatReplies,
+  settleChatReplies,
   keepChatModes,
   noChatDrafts,
   noChatReplies,
@@ -280,8 +281,13 @@ export const watchChatModes = (workspace: Store<Workspace>, ui: UiStore): (() =>
       const chat = keepChatModes(state.chat, keep)
       const chatDrafts = keepChatDrafts(state.chatDrafts, open)
       // What a draft replies to, or that it is held, stays as long as the draft: a reply
-      // whose question went with its agent comes back held, never as a message.
-      const chatReplies = keepChatReplies(state.chatReplies, open)
+      // whose question went with its agent comes back held, never as a message, and never
+      // replies to a later agent's question.
+      const chatReplies = settleChatReplies(
+        keepChatReplies(state.chatReplies, open),
+        chatDrafts,
+        (context, id) => open(context, id) && !keep(context, id),
+      )
       return chat === state.chat &&
         chatDrafts === state.chatDrafts &&
         chatReplies === state.chatReplies

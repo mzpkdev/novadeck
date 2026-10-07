@@ -131,3 +131,24 @@ export const keepChatReplies = (
       if (!keep(context, id)) next = setChatReply(next, context, id, null)
   return next
 }
+
+// Settles what a terminal's draft replies to once its agent ended, the terminal still
+// there: a question asked by that agent is gone for good, so words written for it are held
+// for the person's edit, and with no words the reply goes. A held reply stays held.
+export const settleChatReplies = (
+  replies: ChatReplies,
+  drafts: ChatDrafts,
+  ended: (context: string, id: string) => boolean,
+): ChatReplies => {
+  let next = replies
+  for (const [context, ids] of Object.entries(replies))
+    for (const [id, to] of Object.entries(ids))
+      if (to !== "held" && ended(context, id))
+        next = setChatReply(
+          next,
+          context,
+          id,
+          chatDraftOf(drafts, context, id).trim() === "" ? null : "held",
+        )
+  return next
+}

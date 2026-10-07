@@ -103,6 +103,23 @@ describe("chat commands", () => {
     })
   })
 
+  context("when the agent whose question was being replied to ends", () => {
+    it("holds the words written for it, or drops the reply where there are none", () => {
+      const app = open({ working: false })
+      const stop = watchChatModes(app.workspace, app.ui)
+      app.commands.setChatDraft("01", "the second one")
+      app.commands.setChatReply("project/initial", "01", { request: "r1", dialog: "d1" })
+      app.status(undefined)
+      app.status({ working: false })
+      expect(chatReplyOf(app.ui.getSnapshot().chatReplies, "project/initial", "01")).toBe("held")
+      app.commands.setChatDraft("01", "")
+      app.commands.setChatReply("project/initial", "01", { request: "r2", dialog: "d2" })
+      app.status(undefined)
+      expect(chatReplyOf(app.ui.getSnapshot().chatReplies, "project/initial", "01")).toBeNull()
+      stop()
+    })
+  })
+
   context("when a shell command went while words came back before it", () => {
     it("clears the command and keeps the words", () => {
       const app = open({ working: false })

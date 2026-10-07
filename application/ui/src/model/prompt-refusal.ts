@@ -1,7 +1,7 @@
 // Whether a text can't be given to an agent as a message, because its TUI would read it as
 // something else: control characters (the C0 range but for tab and line breaks, CRLF and CR
-// among them, DEL, and C1) act
-// as keys, a leading `/` is a slash command and a leading `!` a shell command, which the
+// among them, DEL, and C1) act as keys, a leading `/` is a slash command and a leading `!` a
+// shell command, which the
 // chat's box sends as one when a command follows it, and a trailing `@name` or `$name`
 // leaves a file or skill picker open that takes the Enter. The text is judged as it is
 // sent, trimmed. This mirrors the protocol package's `promptRefusal`, which the runner
