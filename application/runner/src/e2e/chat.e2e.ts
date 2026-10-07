@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop -- A scenario's steps run in order, each after the one before. */
 import { setTimeout as sleep } from "node:timers/promises"
 
 import type { TranscriptItem } from "@novadeck/protocol"
@@ -105,6 +106,92 @@ for (const setup of setups) {
 
       const user = await item(t1, "user", (text) => text.includes("Line 40 of the long prompt"))
       expect(user.split("\n").map((line) => line.trim())).toEqual(lines)
+    })
+
+    it("gives its agent the same message twice, each as its own turn", async ({ e2e: run }) => {
+      run.model.use(replies("Say hello", "Hello there."))
+      const t1 = await start(run, setup)
+
+      for (const round of [1, 2]) {
+        const mark = t1.mark()
+        await t1.prompt("Say hello")
+        await through(t1, ["working", "settled"], { after: mark })
+        await t1.poll(
+          async () =>
+            (await texts(t1, "assistant")).filter((text) => text.includes("Hello there."))
+              .length === round
+              ? true
+              : undefined,
+          `its transcript to hold ${round} replies`,
+          30_000,
+        )
+      }
+      expect((await texts(t1, "user")).filter((text) => text === "Say hello")).toHaveLength(2)
+    })
+
+    it("gives its agent a short answer that its screen already shows in a reply", async ({
+      e2e: run,
+    }) => {
+      run.model.use(
+        replies("Ask me something", "Answer yes to continue, or no."),
+        replies("yes", "Understood, going on."),
+      )
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+
+      await t1.prompt("Ask me something")
+      await t1.until("Answer yes to continue, or no.")
+      await through(t1, ["working", "settled"], { after: mark })
+      const next = t1.mark()
+      await t1.prompt("yes")
+      await t1.until("Understood, going on.")
+      await through(t1, ["working", "settled"], { after: next })
+
+      expect(await item(t1, "user", (text) => text === "yes")).toBe("yes")
+    })
+
+    it("refuses a prompt while a draft is in the box, rather than merging into it", async ({
+      e2e: run,
+    }) => {
+      run.model.use(replies("Shall I go on", "Going on."))
+      const t1 = await start(run, setup)
+      const write = (data: string) => run.deck.terminals.write({ terminalId: t1.id, data }, "e2e")
+
+      // What a failed send leaves: text in the box that no Enter followed.
+      write("\x1b[200~Say hello\x1b[201~")
+      await t1.until("Say hello")
+      await expect(t1.prompt("Shall I go on")).rejects.toMatchObject({ code: "CONFLICT" })
+      await sleep(500)
+      // Nothing was pasted or pressed: the box holds the draft alone, and no turn started.
+      const shown = await t1.screen()
+      expect(shown).not.toContain("Shall I go on")
+      expect(shown.split("Say hello")).toHaveLength(2)
+      expect(await texts(t1, "user")).toEqual([])
+
+      // The person clears it, line by line as every harness's box takes, and the next
+      // prompt goes alone.
+      for (let step = 0; step < 4; step += 1) {
+        write("\x15\x7f".repeat(5))
+        await sleep(150)
+      }
+      write("\x15")
+      await sleep(500)
+      const mark = t1.mark()
+      await t1.prompt("Shall I go on")
+      await t1.until("Going on.")
+      await through(t1, ["working", "settled"], { after: mark })
+      expect(await item(t1, "user", (text) => text.includes("Shall I go on"))).toBe("Shall I go on")
+    })
+
+    it("refuses a prompt a TUI would read as a command, writing nothing", async ({ e2e: run }) => {
+      const t1 = await start(run, setup)
+
+      for (const text of ["/clear", "!ls", "see @src", "use $", "Hello\x15there", "\x1b[201~x"])
+        await expect(t1.prompt(text)).rejects.toMatchObject({ code: "PROMPT_REFUSED" })
+      await sleep(500)
+      const shown = await t1.screen()
+      for (const typed of ["@src", "/clear", "!ls"]) expect(shown).not.toContain(typed)
+      expect(await texts(t1, "user")).toEqual([])
     })
 
     it("queues a prompt given mid-turn as the person's would be, and answers both", async ({

@@ -6,16 +6,46 @@ import { doorbellLine } from "../harnesses/harness.js"
 import { coalesced } from "./coalesce.js"
 import { bracketedPaste, calmMs, checkPaste, freshNonce, gate } from "./ring.js"
 
-/** A terminal's screen as the doorbell reads it: its rows' text, and its paste mode. */
-export type ScreenText = { readonly rows: readonly string[]; readonly bracketedPaste: boolean }
+/**
+ * A terminal's screen as the doorbell and prompts read it: its rows' text, its paste mode,
+ * and what only some sources can say of it.
+ */
+export type ScreenText = {
+  readonly rows: readonly string[]
+  readonly bracketedPaste: boolean
+  /**
+   * Each row's text with the dim cells blanked, same columns: what a TUI draws faint
+   * (a box's placeholder suggestion, a hint) is not what the person typed.
+   */
+  readonly bright?: readonly string[]
+  /** Where the cursor is, in rows and columns of the visible screen. */
+  readonly cursor?: { readonly row: number; readonly column: number }
+}
 
-/** The screen's visible rows as text, and whether it takes pastes bracketed. */
+/** The screen's visible rows as text, with its dim cells blanked, its cursor, and its paste mode. */
 export const screenText = (screen: Screen): ScreenText => {
   const buffer = screen.buffer.active
   const rows: string[] = []
-  for (let row = 0; row < screen.rows; row += 1)
-    rows.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "")
-  return { rows, bracketedPaste: screen.modes.bracketedPasteMode }
+  const bright: string[] = []
+  const cell = buffer.getNullCell()
+  for (let row = 0; row < screen.rows; row += 1) {
+    const line = buffer.getLine(buffer.viewportY + row)
+    rows.push(line?.translateToString(true) ?? "")
+    let lit = ""
+    if (line)
+      for (let column = 0; column < screen.cols; column += 1) {
+        const at = line.getCell(column, cell)
+        if (!at || at.getWidth() === 0) continue
+        lit += at.isDim() ? " ".repeat(Math.max(at.getWidth(), 1)) : at.getChars() || " "
+      }
+    bright.push(lit.trimEnd())
+  }
+  return {
+    rows,
+    bright,
+    cursor: { row: buffer.cursorY, column: buffer.cursorX },
+    bracketedPaste: screen.modes.bracketedPasteMode,
+  }
 }
 
 /** What the doorbell needs of the terminal manager and messaging, by terminal. */

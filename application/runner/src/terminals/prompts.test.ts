@@ -1,12 +1,30 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
 import { DomainError } from "../errors.js"
+import type { BoxProfile, InputBox } from "../harnesses/box.js"
 import { describe, expect, it } from "../test.js"
+import type { ScreenText } from "./doorbell.js"
 import { Prompts, type PromptHost } from "./prompts.js"
 
 /**
- * A terminal as prompts see it: a screen that a paste changes as `takes` says, and what
- * messaging says of it.
+ * An adapter for the fake terminal's box: its first row led by `> `, the rest indented,
+ * the lowest such row the box, and `[Pasted text #1 +4 lines]` for a collapsed paste.
+ */
+const profile: BoxProfile = {
+  read: (screen: ScreenText): InputBox | undefined => {
+    const first = screen.rows.findLastIndex((row) => row.startsWith("> "))
+    if (first < 0) return undefined
+    let last = first
+    while (screen.rows[last + 1]?.startsWith("  ")) last += 1
+    const lines = screen.rows.slice(first, last + 1).map((row) => row.slice(2))
+    return { text: lines.join("\n").trimEnd(), first, last }
+  },
+  collapsed: ({ text }) => /^\[Pasted text #\d+ \+\d+ lines\]$/.test(text),
+}
+
+/**
+ * A terminal as prompts see it: a box whose lines a paste changes as `takes` says, a
+ * screen around it, and what messaging says of it.
  */
 const terminal = (
   options: {
@@ -14,11 +32,20 @@ const terminal = (
     takes?: "box" | "placeholder" | "nothing"
     /** Whether a far row changes with every look, as a spinner does. */
     spinner?: boolean
-    working?: boolean
     ready?: boolean
     /** Whether its first screen draws a logo, which a paste takes away whole. */
     logo?: boolean
     bracketedPaste?: boolean
+    /** Whether no adapter reads its box: the prompt goes by the screen alone. */
+    unread?: boolean
+    /** Whether its screen shows no box at all. */
+    noBox?: boolean
+    /** What the box holds already, as the person's draft. */
+    draft?: string
+    /** What the screen shows above the box: earlier turns, or anything else. */
+    history?: string[]
+    /** A draft the box takes on its own as the paste comes, which the screen did not show. */
+    lateDraft?: string
     /** A reason `admit` refuses. */
     refuses?: DomainError
     /** The nonce of a ring under way, which `ringEnds` ms from the first look ends. */
@@ -28,15 +55,30 @@ const terminal = (
     holdMs?: number
   } = {},
 ) => {
-  const rows = options.logo
-    ? ["header", "", "  logo", "", "", "", "> ", "", "footer"]
-    : ["header", "", "", "", "", "", "> ", "", "footer"]
+  let box: string[] = options.draft === undefined ? [] : options.draft.split("\n")
   const written: string[] = []
   const started = Date.now()
   let looks = 0
   let held = false
   let sizes = false
   let holds = 0
+  let logo = options.logo ?? false
+  // A screen of fixed height, its box at the bottom, growing up.
+  const history = [...(options.history ?? [])]
+  const draw = (): string[] => {
+    const body = options.noBox
+      ? ["a dialog"]
+      : box.length === 0
+        ? ["> "]
+        : box.map((line, index) => (index === 0 ? `> ${line}` : `  ${line}`))
+    const top = [options.spinner ? `spinner ${looks}` : "header", logo ? "  logo" : "", ...history]
+    return [
+      ...top,
+      ...Array<string>(Math.max(0, 14 - top.length - body.length)).fill(""),
+      ...body,
+      "footer",
+    ]
+  }
   const host: PromptHost = {
     admit: () => {
       if (options.refuses) throw options.refuses
@@ -46,12 +88,10 @@ const terminal = (
         ? options.ringing
         : undefined,
     ready: () => options.ready ?? false,
-    working: () => options.working ?? false,
+    box: () => (options.unread ? undefined : profile),
     screen: () => {
       looks += 1
-      const shown = [...rows]
-      if (options.spinner) shown[1] = `spinner ${looks}`
-      return Promise.resolve({ rows: shown, bracketedPaste: options.bracketedPaste ?? true })
+      return Promise.resolve({ rows: draw(), bracketedPaste: options.bracketedPaste ?? true })
     },
     hold: () => {
       if (held || sizes) return { release: () => {}, settle: () => {}, holding: () => false }
@@ -75,11 +115,22 @@ const terminal = (
     },
     type: (_, data) => {
       written.push(data)
+      // Enter sends the box's text as a turn, whose echo joins the history above it.
+      if (data === "\r" && box.length > 0) {
+        history.push(`> ${box.join(" ")}`, "", "Done.")
+        box = []
+        return true
+      }
       const pasted = /^\x1b\[200~([\s\S]*)\x1b\[201~$/.exec(data)?.[1] // eslint-disable-line no-control-regex -- A bracketed paste's markers.
       if (pasted === undefined || options.takes === "nothing") return true
-      if (options.takes === "placeholder") rows[6] = "> [Pasted text #1 +4 lines]"
-      else rows[6] = `> ${pasted}`
-      if (options.logo) rows[2] = ""
+      if (options.lateDraft !== undefined) box = options.lateDraft.split("\n")
+      if (options.takes === "placeholder") box = [...box.slice(0, -1), "[Pasted text #1 +4 lines]"]
+      else {
+        const [first = "", ...rest] = pasted.split("\r")
+        // A paste goes where the cursor is: after what the box holds already.
+        box = [...box.slice(0, -1), `${box.at(-1) ?? ""}${first}`, ...rest]
+      }
+      logo = false
       return true
     },
   }
@@ -98,7 +149,7 @@ const refusal = async (promise: Promise<unknown>): Promise<string> => {
 }
 
 describe("prompts", () => {
-  it("paste a line as one bracketed paste and press Enter once it landed", async () => {
+  it("paste a line as one bracketed paste and press Enter once the box shows it", async () => {
     const { host, written, state } = terminal()
     await new Prompts(host, fast).prompt("t", "Hello there")
     expect(written).toEqual(["\x1b[200~Hello there\x1b[201~", "\r"])
@@ -106,15 +157,27 @@ describe("prompts", () => {
   })
 
   it("take a multi-line prompt as one paste whose line breaks are returns", async () => {
-    const { host, written } = terminal({ takes: "box" })
+    const { host, written } = terminal()
     await new Prompts(host, fast).prompt("t", "one\ntwo\r\nthree")
     expect(written).toEqual(["\x1b[200~one\rtwo\rthree\x1b[201~", "\r"])
   })
 
-  it("press Enter on text the TUI collapsed to a placeholder once the screen held still", async () => {
+  it("send a message without the white space around it, a trailing line break included", async () => {
+    const { host, written } = terminal()
+    await new Prompts(host, fast).prompt("t", "\n  Hello there \n\n")
+    expect(written).toEqual(["\x1b[200~Hello there\x1b[201~", "\r"])
+  })
+
+  it("press Enter on a long paste once the box shows only its placeholder, steady", async () => {
     const { host, written } = terminal({ takes: "placeholder" })
     await new Prompts(host, fast).prompt("t", "one\ntwo\nthree\nfour\nfive")
     expect(enters(written)).toBe(1)
+  })
+
+  it("never take a placeholder for text a TUI would not collapse", async () => {
+    const { host, written } = terminal({ takes: "placeholder" })
+    expect(await refusal(new Prompts(host, fast).prompt("t", "Hello"))).toBe("PROMPT_FAILED")
+    expect(enters(written)).toBe(0)
   })
 
   it("never press Enter after a paste that did not show, and leave the draft", async () => {
@@ -128,6 +191,99 @@ describe("prompts", () => {
     const { host, written } = terminal({ takes: "nothing" })
     expect(await refusal(new Prompts(host, fast).prompt("t", "one\ntwo"))).toBe("PROMPT_FAILED")
     expect(enters(written)).toBe(0)
+  })
+
+  describe("a short text the screen shows already", () => {
+    it.each([
+      ["yes", ["Answer yes to continue, or no."]],
+      ["1", ["Opus 4.1 · API Usage Billing"]],
+      ["go", ["The algorithm is good."]],
+      ["Say hello", ["> Say hello", "", "Hello there."]],
+    ])("send %s, where the box is empty", async (text, history) => {
+      const { host, written } = terminal({ history })
+      await new Prompts(host, fast).prompt("t", text)
+      expect(written).toEqual([`\x1b[200~${text}\x1b[201~`, "\r"])
+    })
+
+    it("send the same message twice, each with its own Enter", async () => {
+      const { host, written } = terminal({ history: ["> Say hello", "Hello there."] })
+      const prompts = new Prompts(host, fast)
+      await prompts.prompt("t", "Say hello")
+      await prompts.prompt("t", "Say hello")
+      expect(enters(written)).toBe(2)
+    })
+  })
+
+  describe("a box that holds text already", () => {
+    it("refuse where it holds the person's draft, writing nothing", async () => {
+      const { host, written, state } = terminal({ draft: "Say hello" })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Shall I go on"))).toBe("CONFLICT")
+      expect(written).toEqual([])
+      expect(state()).toMatchObject({ held: false, sizes: false })
+    })
+
+    it("refuse where it holds what a failed paste left, writing nothing", async () => {
+      const { host, written } = terminal({ draft: "[Pasted text #1 +4 lines]" })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "one\ntwo\nthree"))).toBe("CONFLICT")
+      expect(written).toEqual([])
+    })
+
+    it("refuse a draft of the very text sent, writing nothing", async () => {
+      const { host, written } = terminal({ draft: "Hello" })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Hello"))).toBe("CONFLICT")
+      expect(written).toEqual([])
+    })
+
+    it("never press Enter where a draft came with the paste, merged into it", async () => {
+      const { host, written } = terminal({ lateDraft: "Say hello" })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Shall I go on"))).toBe(
+        "PROMPT_FAILED",
+      )
+      expect(enters(written)).toBe(0)
+    })
+
+    it("refuse where the screen shows no box, writing nothing", async () => {
+      const { host, written } = terminal({ noBox: true })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Hello"))).toBe("CONFLICT")
+      expect(written).toEqual([])
+    })
+
+    it("go on with the next prompt after a refused one", async () => {
+      const { host, written } = terminal({ draft: "Draft" })
+      const prompts = new Prompts(host, fast)
+      expect(await refusal(prompts.prompt("t", "First"))).toBe("CONFLICT")
+      expect(written).toEqual([])
+    })
+  })
+
+  describe("text a TUI would read as more than a message", () => {
+    it.each([
+      ["a control character", "Hello\x15there"],
+      ["an escape that would end the paste", "Hello\x1b[201~\rmore"],
+      ["a DEL", "Hello\x7f"],
+      ["a C1 control", "Hello\x9bthere"],
+      ["a leading slash", "/clear"],
+      ["a leading bang", "!ls"],
+      ["a leading slash after white space", "  \n/compact"],
+      ["a trailing mention", "see @src"],
+      ["a bare trailing @", "write to @"],
+      ["a trailing $", "use $"],
+      ["a trailing skill mention", "run $pdf"],
+      ["nothing but white space", " \n\t "],
+    ])("refuse %s, writing nothing", async (_, text) => {
+      const { host, written } = terminal()
+      expect(await refusal(new Prompts(host, fast).prompt("t", text))).toBe("PROMPT_REFUSED")
+      expect(written).toEqual([])
+    })
+
+    it.each(["Mind the 5$ fee", "mail me@home now", "Say #1 & more?", "Line one\n\tindented"])(
+      "send %j",
+      async (text) => {
+        const { host, written } = terminal()
+        await new Prompts(host, fast).prompt("t", text)
+        expect(enters(written)).toBe(1)
+      },
+    )
   })
 
   it("refuse a screen that takes no bracketed paste, writing nothing", async () => {
@@ -156,25 +312,10 @@ describe("prompts", () => {
     expect(enters(written)).toBe(0)
   })
 
-  it("take a line that landed among a spinner's changes only while a turn runs", async () => {
-    const busy = terminal({ spinner: true, working: true })
-    await new Prompts(busy.host, fast).prompt("t", "Then sum it up")
-    expect(enters(busy.written)).toBe(1)
-    const idle = terminal({ spinner: true })
-    expect(await refusal(new Prompts(idle.host, fast).prompt("t", "Then sum it up"))).toBe(
-      "PROMPT_FAILED",
-    )
-    expect(enters(idle.written)).toBe(0)
-  })
-
-  it("take a first screen's logo going as the line lands only when the terminal is Ready", async () => {
-    const ready = terminal({ logo: true, ready: true })
-    await new Prompts(ready.host, fast).prompt("t", "Hello")
-    expect(enters(ready.written)).toBe(1)
-    const settled = terminal({ logo: true })
-    expect(await refusal(new Prompts(settled.host, fast).prompt("t", "Hello"))).toBe(
-      "PROMPT_FAILED",
-    )
+  it("take a line while a spinner changes the screen around its box", async () => {
+    const { host, written } = terminal({ spinner: true })
+    await new Prompts(host, fast).prompt("t", "Then sum it up")
+    expect(enters(written)).toBe(1)
   })
 
   it("give prompts to one terminal one at a time, each with its own Enter", async () => {
@@ -222,5 +363,39 @@ describe("prompts", () => {
     await new Prompts(host, fast).prompt("t", "First")
     await sleep(80)
     expect(state().sizes).toBe(false)
+  })
+
+  describe("where no adapter reads the box", () => {
+    it("press Enter once the line landed alone on the screen", async () => {
+      const { host, written } = terminal({ unread: true })
+      await new Prompts(host, fast).prompt("t", "Hello there")
+      expect(written).toEqual(["\x1b[200~Hello there\x1b[201~", "\r"])
+    })
+
+    it("press Enter on text collapsed to a placeholder once the screen held still", async () => {
+      const { host, written } = terminal({ unread: true, takes: "placeholder" })
+      await new Prompts(host, fast).prompt("t", "one\ntwo\nthree\nfour\nfive")
+      expect(enters(written)).toBe(1)
+    })
+
+    it("never press Enter for text the screen showed before the paste", async () => {
+      const { host, written } = terminal({ unread: true, history: ["Answer yes to continue."] })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "yes"))).toBe("PROMPT_FAILED")
+      expect(enters(written)).toBe(0)
+    })
+
+    it("never press Enter where a spinner changes the screen as it lands", async () => {
+      const { host, written } = terminal({ unread: true, spinner: true })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Then sum it up"))).toBe(
+        "PROMPT_FAILED",
+      )
+      expect(enters(written)).toBe(0)
+    })
+
+    it("never press Enter where a logo goes as the line lands, even at a Ready prompt", async () => {
+      const { host, written } = terminal({ unread: true, logo: true, ready: true })
+      expect(await refusal(new Prompts(host, fast).prompt("t", "Hello"))).toBe("PROMPT_FAILED")
+      expect(enters(written)).toBe(0)
+    })
   })
 })

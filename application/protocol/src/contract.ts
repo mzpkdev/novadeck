@@ -63,6 +63,10 @@ export const errors = {
   RUNTIME_CLOSING: { status: 503 },
   AGENT_SETUP_FAILED: { status: 500 },
   PROMPT_FAILED: { status: 409 },
+  // A prompt a TUI would read as more than text (`promptRefusal`): a control character, a
+  // command (a leading `/` or `!`) or a file or skill mention left open at its end (`@name`,
+  // `$name`); or one of nothing but white space. Nothing is written.
+  PROMPT_REFUSED: { status: 409 },
   VOICE_UNAVAILABLE: { status: 409, data: voiceUnavailable },
   VOICE_FAILED: { status: 500 },
 }
@@ -228,8 +232,12 @@ export const contract = {
     // Gives the terminal's agent a prompt as the person would: the text pasted into its own
     // input box as one bracketed paste, then Enter once the paste shows there, the person's
     // keys held meanwhile. A terminal without an agent bound, or one that takes no
-    // bracketed paste, is a CONFLICT; a paste that never showed is PROMPT_FAILED, and what
-    // landed of it stays in the box as a draft.
+    // bracketed paste, is a CONFLICT, as is one whose input box holds a draft already (the
+    // person's, or a failed paste's), which a prompt would merge into; a paste that never
+    // showed, or showed other than exactly the text, is PROMPT_FAILED, and what landed of it
+    // stays in the box as a draft; text a TUI would read as a command or a file pick (a
+    // leading `/` or `!`, a trailing `@name` or `$name`, a control character), or that is
+    // nothing but white space, is PROMPT_REFUSED, writing nothing.
     prompt: procedure
       .input(z.strictObject({ terminalId: id, text: z.string().min(1).max(16_384) }))
       .output(z.void()),

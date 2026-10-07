@@ -125,6 +125,90 @@ describe("terminal prompts", () => {
   })
 })
 
+describe("terminal interrupts", () => {
+  type Inside = {
+    records: Map<
+      string,
+      {
+        binding: unknown
+        activity: unknown
+        held: { input: string[] | null; size: null } | null
+        process: { write: (data: string) => void }
+      }
+    >
+  }
+  /** A shell made to look as if its agent were in the given state, and what is written to it. */
+  const agent = async (
+    terminals: ReturnType<typeof fixture>,
+    state: "working" | "idle",
+  ): Promise<{
+    manager: Terminals
+    id: string
+    writes: string[]
+    record: Inside["records"] extends Map<string, infer R> ? R : never
+  }> => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const record = (manager as unknown as Inside).records.get(terminal.id)
+    if (!record) throw new Error("No record")
+    record.binding = { agent: "claude" }
+    record.activity = { state, pending: [], plans: [], background: null }
+    const writes: string[] = []
+    record.process = { ...record.process, write: (data: string) => void writes.push(data) }
+    return { manager, id: terminal.id, writes, record }
+  }
+
+  it("sends nothing while the agent is idle, even asked twice at once", async ({ terminals }) => {
+    const { manager, id, writes } = await agent(terminals, "idle")
+    await Promise.all([
+      manager.interrupt({ terminalId: id }),
+      manager.interrupt({ terminalId: id }),
+    ])
+    expect(writes).toEqual([])
+  })
+
+  it("presses one Escape for two interrupts of one turn", async ({ terminals }) => {
+    const { manager, id, writes, record } = await agent(terminals, "working")
+    const write = record.process.write
+    // The turn ends as the harness takes the Escape.
+    record.process.write = (data) => {
+      write(data)
+      record.activity = { state: "idle", pending: [], plans: [], background: null }
+    }
+    await Promise.all([
+      manager.interrupt({ terminalId: id }),
+      manager.interrupt({ terminalId: id }),
+    ])
+    expect(writes).toEqual(["\x1b"])
+  })
+
+  it("does not press a second Escape while the hooks still say the turn works", async ({
+    terminals,
+  }) => {
+    const { manager, id, writes } = await agent(terminals, "working")
+    // Its activity is still working a moment after Escape, as a late hook may leave it.
+    await manager.interrupt({ terminalId: id })
+    const second = manager.interrupt({ terminalId: id })
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(writes).toEqual(["\x1b"])
+    await second
+  })
+
+  it("waits for the person's input to be let go before pressing Escape", async ({ terminals }) => {
+    const { manager, id, writes, record } = await agent(terminals, "working")
+    record.held = { input: [], size: null }
+    const done = manager.interrupt({ terminalId: id })
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(writes).toEqual([])
+    record.held = null
+    await done
+    expect(writes).toEqual(["\x1b"])
+  })
+})
+
 /** Reads until `predicate` holds; `text` joins all screen data so far, across chunk splits. */
 const until = async (
   manager: Terminals,

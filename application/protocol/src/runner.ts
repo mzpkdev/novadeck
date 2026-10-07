@@ -253,8 +253,12 @@ export type Runner = {
     ): AsyncIterableIterator<TranscriptChange, undefined>
     /**
      * Gives the terminal's agent a prompt as the person would type it: pasted into its
-     * input box, then Enter once it shows there. Rejects with `CONFLICT` without an agent
-     * bound, and `PROMPT_FAILED` when the paste never showed.
+     * input box, then Enter once exactly the text shows there. Rejects with `CONFLICT`
+     * without an agent bound or when its box holds a draft already, `PROMPT_FAILED` when the
+     * paste never showed as exactly the text, and `PROMPT_REFUSED`, writing nothing, for
+     * text the agent's TUI would read as more than a message: one starting with `/` or `!`,
+     * ending in an `@` or `$` mention a picker would take the Enter for, holding a control
+     * character, or nothing but white space; see `promptRefusal`.
      */
     prompt(terminalId: string, text: string): Promise<void>
     /** Presses Escape in the terminal's agent, stopping its turn; `CONFLICT` without one. */

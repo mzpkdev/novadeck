@@ -480,6 +480,11 @@ const sizeCapMs = 8_000
 const restoreMs = 2_000
 const restoreCalmMs = 500
 
+// How long after an interrupt the next one of the terminal waits before it looks at the
+// turn, in milliseconds: its hooks may still report the turn working a moment after
+// Escape ended it, and a second Escape then would stop nothing.
+const interruptSettleMs = 1_000
+
 // How much time a prompt's hook must have left for drift to be read, in milliseconds:
 // a git branch and a plan's file, each with its own short timeout.
 const driftReadMs = 1_500
@@ -632,6 +637,8 @@ export class Terminals {
   /** Wakes idle agents for their messages; none when switched off. */
   private readonly doorbell: Doorbell | undefined
   private readonly prompts: Prompts
+  /** The latest interrupt of each terminal that is not yet done, with its settling time. */
+  private readonly interrupts = new Map<string, Promise<void>>()
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
   /** Sessions whose project is going, whose terminals no restart starts again. */
@@ -1054,12 +1061,45 @@ export class Terminals {
    * leaves its box as it was before the turn's prompt: where the harness put that prompt
    * back in it (Claude Code, before any reply), it is cleared, only when the box holds
    * exactly it and nothing else (see `restoredDraft`).
+   *
+   * Presses it only while the agent's turn is working, once the person's input is no
+   * longer held for a prompt's paste or a ring: at an idle prompt Escape does nothing
+   * the chat wants, and two of them open Claude Code's rewind picker. Otherwise it
+   * resolves having sent nothing, as the turn it was asked to stop is already over. Those
+   * of one terminal go one at a time, each given `interruptSettleMs` after the last to
+   * show its turn ended before the next looks.
    */
   async interrupt(input: { terminalId: string }): Promise<void> {
-    const record = this.promptable(input.terminalId)
+    const { terminalId } = input
+    this.promptable(terminalId)
+    const previous = this.interrupts.get(terminalId) ?? Promise.resolve()
+    const run = previous.then(() => this.interruptOnce(terminalId))
+    const tail = run
+      .then(
+        () => {},
+        () => {},
+      )
+      .then(() => new Promise<void>((resolve) => setTimeout(resolve, interruptSettleMs).unref()))
+    this.interrupts.set(terminalId, tail)
+    void tail.then(() => {
+      if (this.interrupts.get(terminalId) === tail) this.interrupts.delete(terminalId)
+    })
+    await run
+  }
+
+  private async interruptOnce(terminalId: string): Promise<void> {
+    // The person's input is held while a prompt's paste or a ring's is on screen; an
+    // Escape then would cut into it. The hold lets go by its cap at the latest.
+    const until = Date.now() + holdCapMs + 500
+    while (this.live(terminalId)?.held?.input && Date.now() < until)
+      // eslint-disable-next-line no-await-in-loop -- The hold is waited out in turn.
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    const record = this.promptable(terminalId)
+    if (record.activity?.state !== "working") return
     // The turn's prompt, as its hooks told it, ends with the turn Escape ends.
-    const prompt = this.messaging.personPrompt(input.terminalId)
-    const before = prompt === undefined ? undefined : await this.screenOf(input.terminalId)
+    const prompt = this.messaging.personPrompt(terminalId)
+    const before = prompt === undefined ? undefined : await this.screenOf(terminalId)
+    if (this.live(terminalId) !== record || record.activity?.state !== "working") return
     this.keyed(record, "\x1b")
     record.process.write("\x1b")
     if (prompt !== undefined && before) await this.clearRestored(record, prompt, before)
@@ -1217,7 +1257,11 @@ export class Terminals {
       admit: (terminalId) => void this.promptable(terminalId),
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       ready: (terminalId) => this.messaging.ready(terminalId),
-      working: (terminalId) => this.records.get(terminalId)?.activity?.state === "working",
+      box: (terminalId) => {
+        const agent =
+          this.records.get(terminalId)?.binding?.agent ?? this.messaging.shownAgent(terminalId)
+        return agent === undefined ? undefined : harnesses[agent].box
+      },
       screen: (terminalId) => this.screenOf(terminalId),
       hold: (terminalId, capMs) => this.holdInput(terminalId, capMs),
       type: (terminalId, data) => {

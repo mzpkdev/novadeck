@@ -1,8 +1,11 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
+import { normalisedText, promptRefusal } from "@novadeck/protocol"
+
 import { DomainError } from "../errors.js"
+import { compact, isEmpty, type BoxProfile } from "../harnesses/box.js"
 import type { ScreenText } from "./doorbell.js"
-import { bracketedPaste, checkPaste, findLine } from "./ring.js"
+import { bracketedPaste, checkPaste } from "./ring.js"
 
 /** What prompts need of the terminal manager and messaging, by terminal. */
 export type PromptHost = {
@@ -18,10 +21,11 @@ export type PromptHost = {
   /** Whether it is Ready: a session at its own prompt before its first turn, its box empty. */
   readonly ready: (terminalId: string) => boolean
   /**
-   * Whether its agent's turn runs, which the person's text queues behind or steers, and
-   * whose spinner redraws the screen all the while.
+   * How its agent's input box reads off the screen, from the harness of the agent bound
+   * there, or shown at its prompt before its first session binds; undefined where none is
+   * known, and the box can't be read.
    */
-  readonly working: (terminalId: string) => boolean
+  readonly box: (terminalId: string) => BoxProfile | undefined
   /** The screen once it has drawn all pending output; undefined once the terminal is gone. */
   readonly screen: (terminalId: string) => Promise<ScreenText | undefined>
   /**
@@ -61,25 +65,20 @@ export type PromptOptions = {
  */
 export const collapsible = (text: string): boolean => /[\r\n]/.test(text) || text.length > 200
 
-/**
- * Whether the text shows once on the screen and didn't before. At a Ready prompt, where
- * its box is known empty, and while a turn runs, that is enough to say it landed in the
- * box, however the TUI redraws around it: Codex's welcome screen goes whole, and its box
- * moves up; a spinner and its timers change rows all the while.
- */
-const alone = (before: readonly string[], after: readonly string[], text: string): boolean =>
-  findLine(before, text).length === 0 && findLine(after, text).length === 1
-
 /** A prompt's lines as a terminal takes them in a paste: its line breaks are bare returns. */
-const pasted = (text: string): string => text.replace(/\r\n?|\n/g, "\r")
+const inPaste = (text: string): string => text.replace(/\r\n?|\n/g, "\r")
 
 /**
  * Gives agents prompts as the person would (see docs/backend-api.md, `agents.prompt`): the
- * text as one bracketed paste with the person's keys held, then Enter once the paste
- * shows and the screen is still, both through the same bookkeeping the person's keys get.
- * It never presses Enter after a failed check: the text stays as a draft. Prompts to one
- * terminal go one at a time, and wait for a doorbell ring under way, so the two never
- * share a box. Knows nothing of how any harness draws its screen.
+ * text as one bracketed paste with the person's keys held, then Enter once the box shows
+ * exactly that text, or its placeholder for it, on two reads running, both through the
+ * same bookkeeping the person's keys get. The harness's adapter reads the box (see
+ * `harnesses/box.ts`): the paste goes in only where it is empty, so it never merges into
+ * a draft, and Enter only where it holds nothing else. It never presses Enter after a
+ * failed check: the text stays as a draft. Prompts to one terminal go one at a time, and
+ * wait for a doorbell ring under way, so the two never share a box. Where no adapter
+ * reads the box, the text must show once on the screen where it didn't before, and the
+ * rest of the screen must go on as it was.
  */
 export class Prompts {
   private readonly pollMs: number
@@ -103,13 +102,21 @@ export class Prompts {
 
   /**
    * Gives the terminal's agent `text` as a prompt, once those before it are done. Refuses
-   * as `admit` says, with `CONFLICT` too where the screen takes no bracketed paste;
-   * `PROMPT_FAILED` where the paste never showed, leaving what landed of it as a draft.
+   * as `admit` says, with `CONFLICT` too where the screen takes no bracketed paste, or its
+   * input box is not on it or holds a draft already; `PROMPT_REFUSED` for text a TUI
+   * would take for more than a message (`promptRefusal`); `PROMPT_FAILED` where the paste
+   * never showed as exactly the text, leaving what landed of it as a draft. All but the
+   * last write nothing.
    */
   async prompt(terminalId: string, text: string): Promise<void> {
+    const refusal = promptRefusal(text)
+    if (refusal !== undefined) throw new DomainError("PROMPT_REFUSED", refusal)
     this.host.admit(terminalId)
+    // A message's edges are no part of it, and no harness shows them: the cursor of a
+    // trailing line break would sit below its box.
+    const message = normalisedText(text).trim()
     const previous = this.tails.get(terminalId) ?? Promise.resolve()
-    const run = previous.then(() => this.send(terminalId, text))
+    const run = previous.then(() => this.send(terminalId, message))
     const tail = run.then(
       () => {},
       () => {},
@@ -124,21 +131,34 @@ export class Prompts {
   private async send(terminalId: string, text: string): Promise<void> {
     await this.ringDone(terminalId)
     this.host.admit(terminalId)
-    const before = await this.host.screen(terminalId)
-    if (!before) throw new DomainError("TERMINAL_NOT_FOUND")
-    if (!before.bracketedPaste)
-      throw new DomainError("CONFLICT", "The agent's screen takes no bracketed paste.")
-    // Asked before the paste, which the person's own keys make a draft.
-    const vanish = this.host.ready(terminalId)
-    const working = this.host.working(terminalId)
+    // The person's keys are held from before the box is looked at, so none comes between.
     const hold = await this.held(terminalId)
     let pressed = false
     try {
+      const before = await this.host.screen(terminalId)
+      if (!before) throw new DomainError("TERMINAL_NOT_FOUND")
+      if (!before.bracketedPaste)
+        throw new DomainError("CONFLICT", "The agent's screen takes no bracketed paste.")
+      const profile = this.host.box(terminalId)
+      if (profile) {
+        const box = profile.read(before)
+        if (!box) throw new DomainError("CONFLICT", "The agent's input box is not on its screen.")
+        if (!isEmpty(box))
+          throw new DomainError(
+            "CONFLICT",
+            "The agent's input box holds text already: a draft the prompt would merge into.",
+          )
+      }
+      // Asked before the paste, which the person's own keys make a draft.
+      const vanish = this.host.ready(terminalId)
       // A person's paste, whose line breaks the TUI takes as text, never as Enter.
-      if (!this.host.type(terminalId, bracketedPaste(pasted(text)))) throw this.failed()
-      pressed = await this.landed(terminalId, text, before, { vanish, working }, hold.holding)
+      if (!this.host.type(terminalId, bracketedPaste(inPaste(text)))) throw this.failed()
+      pressed = await this.landed(terminalId, text, before, { vanish, profile }, hold.holding)
       // Their keys wait until the Enter is out, so none comes between the paste and it.
       if (pressed) this.host.type(terminalId, "\r")
+    } catch (error) {
+      hold.settle()
+      throw error
     } finally {
       hold.release()
     }
@@ -198,19 +218,21 @@ export class Prompts {
   }
 
   /**
-   * Whether the pasted text showed in time, and the screen held still: a short line as the
-   * doorbell's check takes it, twice running on the same screen; text a TUI may collapse
-   * when the screen changed and showed the same on two reads running. While a turn runs,
-   * its spinner redraws the screen all the while: the line landing alone on two reads.
+   * Whether the pasted text showed in time, steady on two reads running. Where the box
+   * can be read: the box holds exactly the text, or only the placeholder its harness shows
+   * for a long paste. Where not: the text appears once, and didn't before, as the doorbell's
+   * check takes it, or a screen that changed showed the same on two reads (a placeholder,
+   * for text a TUI may collapse).
    */
   private async landed(
     terminalId: string,
     text: string,
     before: ScreenText,
-    { vanish, working }: { readonly vanish: boolean; readonly working: boolean },
+    { vanish, profile }: { readonly vanish: boolean; readonly profile: BoxProfile | undefined },
     holding: () => boolean,
   ): Promise<boolean> {
     const shown = before.rows.join("\n")
+    const expected = compact(text)
     const until = Date.now() + this.pasteMs
     let last: string | undefined
     let accepted = false
@@ -220,13 +242,20 @@ export class Prompts {
       // eslint-disable-next-line no-await-in-loop -- As above.
       const after = await this.host.screen(terminalId)
       if (!after) return false
+      if (profile) {
+        const box = profile.read(after)
+        const fits =
+          box !== undefined &&
+          (compact(box.text) === expected || (collapsible(text) && profile.collapsed(box)))
+        const key = fits ? `${box.first}:${box.last}:${box.text}` : undefined
+        if (key !== undefined && key === last) return holding()
+        last = key
+        continue
+      }
       const now = after.rows.join("\n")
       const steady = now === last
-      const lands =
-        checkPaste(before.rows, after.rows, text, { vanish }).accepted ||
-        ((vanish || working) && alone(before.rows, after.rows, text))
-      // A running turn's spinner never lets the whole screen hold still.
-      if (lands && accepted && (steady || working)) return holding()
+      const lands = checkPaste(before.rows, after.rows, text, { vanish }).accepted
+      if (lands && accepted && steady) return holding()
       // A TUI that shows a placeholder for it changed its screen, then held it still.
       if (collapsible(text) && steady && now !== shown) return holding()
       accepted = lands
