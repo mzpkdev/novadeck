@@ -194,13 +194,64 @@ describe("watchAppearance", () => {
       try {
         system(true)
         resolvesPaper()
-        const ui = uiWith({ theme: "graphite", scheme: "dark" })
-        watch(ui, () => {})
+        const reports: WindowAppearance[] = []
+        const ui = uiWith({ theme: "phosphor-green", scheme: "system" })
+        watch(ui, (look) => reports.push(look))
 
         choose(ui, { theme: "graphite", scheme: "system" })
+
+        // Released, but still showing and saving what it showed.
+        expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
+        expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+          theme: "phosphor-green",
+          scheme: "system",
+        })
+
         vi.advanceTimersByTime(releaseMs)
 
         expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
+        expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+          theme: "graphite",
+          scheme: "system",
+        })
+        expect(reports.map((look) => look.scheme)).toEqual(["dark", "system", "system"])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("shows the latest choice when another comes while it waits", () => {
+      vi.useFakeTimers()
+      try {
+        system(true)
+        resolvesPaper()
+        const ui = uiWith({ theme: "phosphor-green", scheme: "system" })
+        watch(ui, () => {})
+
+        choose(ui, { theme: "graphite", scheme: "system" })
+        choose(ui, { theme: "graphite", scheme: "light" })
+
+        expect(shown()).toEqual({ theme: "graphite", scheme: "light" })
+        vi.advanceTimersByTime(releaseMs)
+        expect(shown()).toEqual({ theme: "graphite", scheme: "light" })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("shows nothing more once stopped while it waits", () => {
+      vi.useFakeTimers()
+      try {
+        system(true)
+        resolvesPaper()
+        const ui = uiWith({ theme: "phosphor-green", scheme: "system" })
+        const stop = watchAppearance(ui, window, () => {})
+
+        choose(ui, { theme: "graphite", scheme: "system" })
+        stop()
+        vi.advanceTimersByTime(releaseMs)
+
+        expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
       } finally {
         vi.useRealTimers()
       }

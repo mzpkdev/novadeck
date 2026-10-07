@@ -394,9 +394,10 @@
    smaller, dimmer and slower. Each depth is a tile of glyph columns, a bright head over a
    fading trail, used as a mask over the tube's colour, so both tubes share it. It steps
    down a glyph row at a time, as a terminal's text moves: on the views' grounds, which
-   clip what overflows them, a layer one tile taller slides down with a transform the
-   compositor draws; on the empty workspace, which scrolls, the mask moves within the
-   ground's own box instead, so the ground never grows. The ground is isolated so the
+   clip what overflows them and never scroll (`overflow: clip`), a layer one tile taller
+   slides down with a transform the compositor draws; on the empty workspace, which
+   scrolls, the mask moves within the ground's own box instead, so the ground never
+   grows. The ground is isolated so the
    rain lies behind every window. Reduced motion stills it; Zen quiets it. */
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .workspace-background {
   isolation: isolate;

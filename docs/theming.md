@@ -430,7 +430,12 @@ app runs: whenever the preference changes, and whenever the system's scheme does
   `#rrggbb` through the preload bridge, so the window and the first paint are one
   colour. The host sets `nativeTheme.themeSource` so native menus and
   `prefers-color-scheme` agree, sets the window's background, and keeps that ground to
-  open new windows on, so a dark theme never flashes white. While the page follows the system it reports `system`, not the
-  scheme it resolved (a theme with one scheme reports its own, since it never follows): a fixed `themeSource` would hide the system's own scheme from
-  `matchMedia`. The host accepts only `system`, `light` or `dark` and an opaque hex
-  colour. In a browser there is no host, and nothing is reported.
+  open new windows on, so a dark theme never flashes white. While the page follows the
+  system it reports `system`, not the scheme it resolved (a theme with one scheme
+  reports its own, since it never follows): a fixed `themeSource` would hide the
+  system's own scheme from `matchMedia`. For the same reason, a window pinned to a
+  scheme that goes back to the system is released first: the page reports `system`,
+  keeps what it shows, and shows the system's scheme once `matchMedia` reports it, or
+  after `releaseMs` (200ms) when nothing changes (`app/appearance.ts`). The host
+  accepts only `system`, `light` or `dark` and an opaque hex colour. In a browser
+  there is no host, and nothing is reported.
