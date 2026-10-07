@@ -2,6 +2,7 @@ import { createElement } from "react"
 import { afterEach } from "vitest"
 
 import { describe, expect, it } from "../../test"
+import { refusing } from "../../test/fixtures"
 import { render } from "../../test/render"
 import { Composer } from "./Composer"
 import { composerState } from "./mode-state"
@@ -25,6 +26,8 @@ const show = (draft: string, sent: string[] = []): HTMLElement => {
       focusInput: false,
       onInputFocused: () => {},
       onCancelReply: () => {},
+      // As the backend says of each text these cases give.
+      refused: refusing("ask @alice ", "!", "!echo $", "hi\f"),
     }),
   )
   unmounts.push(unmount)

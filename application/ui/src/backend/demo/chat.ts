@@ -5,12 +5,13 @@ import {
   type Conversation,
   type Conversations,
 } from "../../model/conversation"
-import { promptRefusal, promptRefused, shellCommand } from "../../model/prompt-refusal"
+import { promptRefusal, shellCommand } from "../../model/prompt-refusal"
 import type { WorkspaceSeed } from "../../model/seed"
 import { createStore, type MutableStore } from "../../model/store"
 import type { AgentStatus, TerminalMetadata, Workspace } from "../../model/types"
 import type { TerminalKey } from "../port"
 import { terminalKeyId } from "../registry"
+import { promptRefused } from "./prompt-refusal"
 import { chatAgent, chatAgents } from "./samples"
 import type { DemoDraft, DemoTranscript } from "./transcripts"
 import type { DemoTurns, TurnEvent } from "./turns"
@@ -264,6 +265,7 @@ export const createDemoChat = (
   return {
     conversations: {
       conversation: storeOf,
+      refused: promptRefused,
       send: async (key, prompt) => {
         const found = agentFor(key)
         const name = chatAgents[chatAgent(found.terminal)!]

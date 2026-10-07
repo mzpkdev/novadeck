@@ -151,6 +151,7 @@ describe("chat commands", () => {
           send: (_key, text) => (sent.push(text), wait()),
           interrupt: async () => null,
           answer: (_key, request, answer) => (answers.push([request, answer]), wait()),
+          refused: () => false,
         },
       )
       const draft = () => chatDraftOf(app.ui.getSnapshot().chatDrafts, "project/initial", "01")

@@ -11,7 +11,7 @@ import {
 
 import { WordsLost, type ChatAnswer, type Conversation } from "../../model/conversation"
 import { agentName, groupItems, turnStatus } from "../../model/conversation-turns"
-import { shellCommand } from "../../model/prompt-refusal"
+import { shellCommand, type Refused } from "../../model/prompt-refusal"
 import type { Store } from "../../model/store"
 import type { AgentStatus } from "../../model/types"
 import { wordsOf } from "./answers"
@@ -47,6 +47,7 @@ export const ChatView = ({
   onWordsLost,
   focusInput,
   onInputFocused,
+  refused,
 }: {
   readonly conversation: Store<Conversation>
   readonly terminalName: string
@@ -72,6 +73,8 @@ export const ChatView = ({
   readonly onWordsLost: (words: string) => void
   readonly focusInput: boolean
   readonly onInputFocused: () => void
+  // Whether text would be refused as a message for its shape, as the backend says.
+  readonly refused: Refused
 }): React.JSX.Element => {
   const {
     agent: harness,
@@ -257,6 +260,7 @@ export const ChatView = ({
         }}
         // The dialog went to talk it over: the person's words go in the box, as a prompt.
         onChatting={focusBox}
+        refused={refused}
       />
       {/* Always in the page, so a screen reader announces the note as it appears. */}
       <div role="status">
@@ -308,6 +312,7 @@ export const ChatView = ({
           onReplyTo(null)
           focusBox()
         }}
+        refused={refused}
       />
     </section>
   )

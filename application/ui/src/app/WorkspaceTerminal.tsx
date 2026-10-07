@@ -246,6 +246,7 @@ export const WorkspaceTerminal = ({
               onAnswerInTerminal={() => commands.showTerminal(terminalId)}
               focusInput={wanted}
               onInputFocused={onInputFocused}
+              refused={conversations!.refused}
             />
           </div>
         )}

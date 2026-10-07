@@ -1,8 +1,10 @@
-import type {
-  AgentDetail,
-  RequestAnswer,
-  TranscriptChange,
-  TranscriptItem,
+import {
+  normalisedText,
+  promptRefusal as protocolRefusal,
+  type AgentDetail,
+  type RequestAnswer,
+  type TranscriptChange,
+  type TranscriptItem,
 } from "@novadeck/protocol"
 import { hasCode } from "@novadeck/protocol/client"
 
@@ -384,6 +386,9 @@ export const createRunnerConversations = (
           throw refusal(error)
         },
       ),
+    // The protocol's rule, which the runner refuses by; blank text has nothing to warn of yet.
+    refused: (text, options) =>
+      normalisedText(text).trim() !== "" && protocolRefusal(text, options) !== undefined,
     stop: () => {
       for (const halt of stoppers.values()) halt()
     },

@@ -11,6 +11,7 @@ import {
 import { createStore, type Store } from "../../model/store"
 import { describe, expect, it } from "../../test"
 import { openCommands } from "../../test/commands"
+import { refusing } from "../../test/fixtures"
 import { render } from "../../test/render"
 import { ChatView } from "./ChatView"
 import { chatDraftOf, chatReplyOf, chatSendOf } from "./mode-state"
@@ -45,6 +46,7 @@ const host = (
     send: (_key, text) => sent(text),
     interrupt: async () => null,
     answer: (_key, request, reply) => answered(request, reply),
+    refused: refusing(),
   }
   const app = openCommands({ conversations })
   app.commands.setChatDraft("01", draft)
@@ -69,6 +71,7 @@ const host = (
           onAnswerInTerminal: () => {},
           focusInput: false,
           onInputFocused: () => {},
+          refused: conversations.refused,
         })
       : null
   }

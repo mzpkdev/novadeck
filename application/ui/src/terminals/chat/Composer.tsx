@@ -5,8 +5,8 @@ import {
   controlHint,
   hasControlCharacters,
   messageHint,
-  promptRefused,
   shellCommand,
+  type Refused,
 } from "../../model/prompt-refusal"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
 import { oneLine } from "./answers"
@@ -37,6 +37,7 @@ export const Composer = ({
   focusInput,
   onInputFocused,
   onCancelReply,
+  refused: refusedText,
 }: {
   // The agent it writes to, for the box's name.
   readonly label: string
@@ -54,6 +55,8 @@ export const Composer = ({
   readonly focusInput: boolean
   readonly onInputFocused: () => void
   readonly onCancelReply: () => void
+  // Whether a message would be refused for its shape, as the backend says.
+  readonly refused: Refused
 }): React.JSX.Element => {
   const input = useRef<HTMLTextAreaElement>(null)
   const [stopping, setStopping] = useState(false)
@@ -86,7 +89,7 @@ export const Composer = ({
   const long = replying && oneLine(draft).trim().length > replyMax
   const refused =
     orphaned ||
-    (replying ? hasControlCharacters(draft) || long : promptRefused(draft, { shell: true }))
+    (replying ? hasControlCharacters(draft) || long : refusedText(draft, { shell: true }))
   const command = mode === "shell" ? shellCommand(draft) : undefined
   // A `!` still waiting for its command: nothing to send yet, nothing to warn about either.
   const waiting = command === ""
