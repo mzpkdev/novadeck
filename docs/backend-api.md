@@ -828,8 +828,9 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
 
 - `agents.interrupt({ terminalId })` presses Escape in the terminal's agent, which stops
   its turn in every harness (the turn ends without a normal Stop: its activity is
-  `unknown` until the next prompt, see `agent-messaging.md`); `CONFLICT` without an agent
-  bound, or one showing its own prompt. It presses the key only while the agent's activity
+  `unknown` until the next prompt, see `agent-messaging.md`); `CONFLICT` (`no-agent`)
+  without an agent bound or showing its own prompt, or (`pending`) with one that waits on
+  the person's answer to a request. It presses the key only while the agent's activity
   is `working`; otherwise it resolves having sent nothing, as the turn is already over (a
   Stop clicked as the turn ends, or a second one), since Escape at an idle prompt does
   nothing the chat wants and two of them open Claude Code's rewind picker. It takes its

@@ -44,6 +44,11 @@ describe("the debug panel's chat failures", () => {
     const paste = await armed("not ready")
     expect(paste).not.toBeInstanceOf(SettleInTerminal)
     expect(paste).toHaveProperty("message", expect.stringContaining("in a moment"))
+
+    // As an older runner says nothing of why: the terminal is where to look.
+    const none = await armed("no reason")
+    expect(none).toBeInstanceOf(SettleInTerminal)
+    expect(none).toHaveProperty("message", expect.stringContaining("Check its terminal"))
   })
 
   it("arm the next Stop to leave the queued words in the box, once", async () => {
@@ -53,6 +58,18 @@ describe("the debug panel's chat failures", () => {
     const failure = await conversations.interrupt(key).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(SettleInTerminal)
     expect(failure).toHaveProperty("message", expect.stringContaining("still in the agent's box"))
+    expect(await conversations.interrupt(key)).toBeNull()
+  })
+
+  it("arm the next Stop to meet a request waiting, saying to answer it first", async () => {
+    const chat = createDebugChat()
+    const conversations = chat.wrap(inner())
+    await chat.actions
+      .find((action) => action.label === "Next Stop: request waiting")!
+      .run({} as never)
+    const failure = await conversations.interrupt(key).catch((error: unknown) => error)
+    expect(failure).not.toBeInstanceOf(SettleInTerminal)
+    expect(failure).toHaveProperty("message", expect.stringContaining("then stop it"))
     expect(await conversations.interrupt(key)).toBeNull()
   })
 })

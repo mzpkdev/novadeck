@@ -569,8 +569,10 @@ last one chosen.
 - **Chat:** arm the next send from a chat to fail as the runner turns it away: a draft
   in the agent's box, its shell mode, too tall a message, no box on screen, or no agent
   running (each with Open terminal), a request waiting (answer it first), or a doorbell
-  ringing or a screen not ready (try again in a moment). Arm the next Stop to fail as the
-  runner's does when the words queued behind the turn stay in the box (with Open terminal).
+  ringing or a screen not ready (try again in a moment), or no reason given, as from an
+  older runner (check the terminal). Arm the next Stop to fail as the runner's does when the
+  words queued behind the turn stay in the box (with Open terminal), or when a request
+  waits (answer it first).
 - **Connection:** show Reconnecting for 5 s, then Reconnected, or go offline until
   you toggle it back.
 - **Crash loop:** count four crashes, which shows the footer and the dialog and fails
