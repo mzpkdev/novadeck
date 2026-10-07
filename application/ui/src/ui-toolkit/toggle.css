@@ -35,15 +35,16 @@
 .switch:disabled {
   opacity: var(--toggle-disabled-opacity, 0.5);
 }
+/* The thumb sits 3px inside the track's edge on every side. */
 .switch-thumb {
-  left: calc(var(--spacing) * 0.5);
+  left: 3px;
   border: var(--border-width) solid var(--toggle-thumb-border-color, var(--color-line-strong));
   border-radius: var(--toggle-thumb-radius, var(--radius-control));
   background-color: var(--toggle-thumb-bg, var(--color-paper));
   transition: left var(--motion-feedback) var(--ease-interface);
 }
 .switch[aria-checked="true"] .switch-thumb {
-  left: 18px;
+  left: 19px;
 }
 
 .checkbox-input {
