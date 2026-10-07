@@ -16,6 +16,7 @@ import {
   unheardText,
 } from "../model/terminal-ending"
 import { titleSourceText } from "../model/title-source"
+import { nextTurnAge, turnAge } from "../model/turn-age"
 import type { Tile } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { ContextMenu } from "../ui-toolkit/ContextMenu"
@@ -107,6 +108,10 @@ export const TerminalTab = ({
     onClose,
   })
   useRenderAt(shell && nextReset(shell))
+  // How long ago a done tab's agent finished, beside its program, kept current.
+  const finished = phase === "done" ? shell : undefined
+  const age = finished && turnAge(finished)
+  useRenderAt(finished && nextTurnAge(finished))
   const usage = shell && usageDetail(shell)
   const subagentKinds = shell && subagents ? `${subagents}: ${subagentsDetail(shell)}` : undefined
   const planning = shell?.state === "running" && shell.agent?.planning ? "Planning" : undefined
@@ -136,11 +141,13 @@ export const TerminalTab = ({
             {phase === "starting" ? (
               <span className="terminal-tab-starting truncate italic">starting…</span>
             ) : phase === "done" ? (
-              // The tab's line is short beside its actions: the words in full are its
-              // description's.
-              <span className="terminal-tab-done truncate">
-                {failed ? "error · unread" : "done · unread"}
-              </span>
+              // How its turn ended is its glyph's (tabs.css), in words its description's;
+              // beside its program, how long ago, set apart by colour alone, as the line
+              // fits "claude" and "now" but no dot between.
+              <>
+                <span className="terminal-tab-process truncate">{process}</span>
+                {age && <span className="terminal-tab-age shrink-0">{age}</span>}
+              </>
             ) : (
               <>
                 <span className="terminal-tab-process truncate">{process}</span>

@@ -156,7 +156,10 @@ describe("An agent that finishes", () => {
       await expect
         .poll(() => tabDescription("Build"), { timeout: 5000 })
         .toBe("Done · reply unread")
-      await expect.element(terminalTab("Build").getByText("done · unread")).toBeVisible()
+      const row = terminalTab("Build").element().closest(".terminal-tab")!
+      expect(row.getAttribute("data-terminal-phase")).toBe("done")
+      // Beside its program, how long ago it finished.
+      await expect.element(terminalTab("Build").getByText("now", { exact: true })).toBeVisible()
       await terminalTab("Build").click()
       const window = terminal("Build")
       await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
