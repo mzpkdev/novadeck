@@ -17,14 +17,14 @@ This guide is the contract between the two sides. Change it when the contract ch
 @layer theme, base, components, themes, accessibility, utilities;
 ```
 
-| Layer           | Holds                                                                                                 | Written in                       |
-| --------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `theme`         | Tailwind's layout scale: spacing, breakpoints, type sizes. No colours, radii or shadows (see below).  | `theme/contract.css`             |
-| `base`          | Defaults for optional tokens, element defaults (body, focus ring, scrollbars, selection), vendor CSS. | `theme/base.css`, vendor imports |
-| `components`    | Recipes: one per component, shape only, every visual value a token.                                   | beside each component            |
-| `themes`        | The theme file: token values, and the few rules tokens can't express.                                 | `theme/graphite.css`             |
-| `accessibility` | Reduced motion and forced colours, so no theme can defeat them.                                       | `theme/accessibility.css`        |
-| `utilities`     | Tailwind layout utilities from the TSX.                                                               | Tailwind                         |
+| Layer           | Holds                                                                                                                                              | Written in                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `theme`         | Tailwind's layout scale: spacing, breakpoints, type sizes. No colours, radii or shadows (see below).                                               | `theme/contract.css`                                |
+| `base`          | Defaults for optional tokens, element defaults (body, focus ring, scrollbars, selection, font features, ligatures), the bundled fonts, vendor CSS. | `theme/base.css`, `theme/fonts.css`, vendor imports |
+| `components`    | Recipes: one per component, shape only, every visual value a token.                                                                                | beside each component                               |
+| `themes`        | The theme file: token values, and the few rules tokens can't express.                                                                              | `theme/graphite.css`                                |
+| `accessibility` | Reduced motion and forced colours, so no theme can defeat them.                                                                                    | `theme/accessibility.css`                           |
+| `utilities`     | Tailwind layout utilities from the TSX.                                                                                                            | Tailwind                                            |
 
 Every stylesheet is layered, vendor CSS included: CSS outside a layer beats every
 layer, so one unlayered rule would override every theme. `styles.css` imports each
@@ -192,6 +192,25 @@ type moves from one place. Miniatures (the welcome's stage, a peek's thumbnail),
 brand's wordmark and display text keep their own sizes. It is layout, not look, so it is
 not a theme token: every theme shares it.
 
+### Fonts
+
+The app ships its fonts: Inter for the interface, the official build in
+`assets/fonts/` declared in `theme/fonts.css` (Google Fonts' build drops the character
+variants below), and JetBrains Mono from `@fontsource-variable/jetbrains-mono` for
+terminals and code. The Content Security Policy loads fonts only from the app itself,
+so they always ship as files: `vite.config.ts` never inlines a font as a `data:` URL,
+and `build.test.ts` checks the built stylesheets. A terminal measures its cells once,
+so one opened before its font arrives measures again when it does
+(`backend/runner/screens.ts`).
+
+`theme/base.css` sets Inter's character variants on `body` (a tailed l, a serifed I, a
+slashed 0) and tabular digits; they belong to that face, so a theme that changes
+`--font-sans` should reconsider them. Ligatures stay off in terminals and code unless
+the person turns them on in Preferences, which sets `data-ligatures="on"` on `<html>`;
+`theme/base.css` lists the surfaces that count as code. A recipe that sets its type
+should use the font longhands: the `font` shorthand resets the variants and features
+these rules set.
+
 ## Hooks
 
 A theme's rules may select:
@@ -202,7 +221,8 @@ A theme's rules may select:
   `data-highlighted`, `data-disabled`, `data-focus-visible`, `aria-checked`,
   `aria-pressed`, `aria-current`, `aria-disabled`, `data-tone`, `data-terminal-phase`
   and the others each recipe lists;
-- `data-scheme` on `<html>`, `dark` while the dark scheme shows.
+- `data-scheme` on `<html>`, `dark` while the dark scheme shows, and `data-ligatures`,
+  `on` while the person has turned ligatures on (see [Fonts](#fonts)).
 
 Recipe classes and the attributes a recipe lists are public. Renaming one breaks every
 theme that uses it, so rename it in the same change as the theme. Anything else in the
@@ -282,23 +302,25 @@ fails too, and fails when one is no longer needed.
 ```css
 :root {
   color-scheme: light;
-  --color-paper: #ffffff;
+  --color-paper: #f5f3ee;
   /* every required token */
 }
 
 :root[data-scheme="dark"] {
   color-scheme: dark;
-  --color-paper: #191c20;
+  --color-paper: #1d1f23;
   /* every required token again */
 }
 ```
 
-The light block is shared: what it declares holds in dark too, so aliases (`var()`) live
-only there and follow the scheme. The dark block restates every foundation token and
-only the component tokens whose value differs.
+The light block is shared: what it declares holds in dark too. An alias (`var()`) or an
+offset from the paper declared there need not be repeated, since it resolves again
+against dark's values; a literal colour does, unless it truly holds in both schemes, and
+`theme/contract.test.ts` checks that each one is restated or listed with its reason. The
+dark block restates every foundation token, as the contract requires, and only the
+component tokens whose value differs.
 
-Then any component tokens it wants to change, and last any rules tokens can't express,
-each against a [hook](#hooks):
+After the tokens come any rules tokens can't express, each against a [hook](#hooks):
 
 ```css
 .section-label {

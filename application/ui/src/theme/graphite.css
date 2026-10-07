@@ -13,12 +13,15 @@
 
    Plain steps are written as offsets from the paper in OKLCH lightness,
    `oklch(from var(--color-paper) calc(l - n) c h)`, so they keep its hue and follow it
-   if it changes; an offset shared by both schemes is declared once. Warmer or tinted
-   colours (strong lines, the selected outline, selection, tones), the near Deck card
-   and the grain-compensated grounds stay literal.
+   if it changes; a component token whose offset both schemes share is declared once
+   (foundation tokens are restated, as below). Warmer or tinted colours (strong lines,
+   the selected outline, selection, tones), the near Deck card and the grain-compensated
+   grounds stay literal.
 
-   The light block is shared: what it declares holds in dark too, so aliases (var()) live
-   only here and follow the scheme. Dark restates every foundation token (the contract
+   The light block is shared: what it declares holds in dark too. An alias (var()) or an
+   offset from the paper need not be repeated, since it resolves again against dark's
+   values; a literal colour is restated in dark unless it truly holds in both (the
+   contract test checks this). Dark restates every foundation token (the contract
    requires it) and only the component tokens whose value differs. Change a step in both.
    Imported into `layer(themes)`; see docs/theming.md. */
 
