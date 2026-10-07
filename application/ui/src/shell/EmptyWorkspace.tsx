@@ -28,7 +28,7 @@ export const EmptyWorkspace = ({
     )}
     <section className="panel empty-state pointer-events-auto relative z-1 flex w-full max-w-96 flex-col items-center p-8">
       <DeckMark size={44} className="empty-state-icon mb-4" />
-      <h2 className="empty-state-title text-base font-medium">No terminals open</h2>
+      <h2 className="empty-state-title text-title leading-6 font-medium">No terminals open</h2>
       <p className="empty-state-description mt-2 max-w-60 text-body leading-relaxed">
         Open a terminal or pick up a previous session.
       </p>
