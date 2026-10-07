@@ -47,6 +47,8 @@ const terminal = (
     refusals?: DomainError[]
     /** Whether the agent's turn runs, per its hooks. */
     working?: boolean
+    /** When the agent's running turn began, on the clock of `Date.now`. */
+    turnStartedAt?: () => number | undefined
     /** Runs after each write, as the TUI redraws. */
     after?: (tui: FakeTui) => void
   } = {},
@@ -181,6 +183,7 @@ const terminal = (
       return options.promptFails ? Promise.reject(new Error("no")) : Promise.resolve()
     },
     working: () => options.working ?? false,
+    turnStartedAt: () => options.turnStartedAt?.(),
     closed: () => closed,
     answered: (_terminal, ref) => options.answeredRefs?.includes(ref) ?? false,
     shown: () => options.shown ?? true,
@@ -283,6 +286,14 @@ describe("answering a request through its dialog", () => {
     expect(calls).toEqual(["discard", "release", "done"])
     expect(holds()).toBe(1)
     expect(busy()).toBe(0)
+  })
+
+  it("presses nothing until the turn that put the dialog up has run for the settle time", async () => {
+    const began = Date.now()
+    const { tui, answers } = terminal({ turnStartedAt: () => began })
+    await give(tui, answers, { type: "choice", option: "2" })
+    expect(Date.now() - began).toBeGreaterThanOrEqual(10)
+    expect(tui.written).toEqual(["2"])
   })
 
   it("opens a field, types the person's words as one bracketed paste and presses Enter", async () => {

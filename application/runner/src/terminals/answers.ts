@@ -69,6 +69,8 @@ export type AnswerHost = {
   readonly prompt: (entry: InputEntry, terminalId: string, text: string) => Promise<void>
   /** Whether its agent's turn runs now, per its hooks. */
   readonly working: (terminalId: string) => boolean
+  /** When its agent's running turn began, on the runner's clock; undefined where none runs. */
+  readonly turnStartedAt: (terminalId: string) => number | undefined
   /** An answer begins or ends there, so the dialogs tracker leaves its screens alone. */
   readonly busy: (terminalId: string, on: boolean) => void
 }
@@ -82,7 +84,10 @@ export type AnswerOptions = {
   readonly typedMs?: number
   /** How long a doorbell ring under way is waited for, in milliseconds. */
   readonly ringMs?: number
-  /** How long after the last key the window's resizes stay held, in milliseconds. */
+  /**
+   * How long after the last key the window's resizes stay held, and how long a turn is
+   * left to start before an answer presses its first key, in milliseconds.
+   */
   readonly settleMs?: number
   /** The longest the person's keys are held for one answer, in milliseconds. */
   readonly holdMs?: number
@@ -214,6 +219,7 @@ export class Answers {
     let words: string | undefined
     try {
       await this.ringDone(terminalId)
+      await this.turnSettled(terminalId)
       // Their keys wait from before the dialog is read until the screen has settled after
       // the last key, and are dropped then, so none lands in the dialog or the next one.
       hold = entry.hold({
@@ -358,6 +364,22 @@ export class Answers {
    */
   private settleLater(hold: InputHold): void {
     setTimeout(hold.settle, this.settleMs).unref()
+  }
+
+  /**
+   * Waits for the turn that put the dialog up to have run for `settleMs`: a dialog drawn
+   * as the turn starts is still in flux (the agent registers its parallel calls, and
+   * identical ones fold into one request), and a key pressed then may be taken without the
+   * screen or the hooks ever showing it. An answer after the prompt that began the turn
+   * used to wait for that prompt's lingering resize hold, which lapsed on this time; the
+   * queue hands the hold over at once, so the wait is made here. The turn's later
+   * dialogs, and answers after answers, wait for nothing.
+   */
+  private async turnSettled(terminalId: string): Promise<void> {
+    const began = this.host.turnStartedAt(terminalId)
+    if (began === undefined) return
+    const wait = began + this.settleMs - Date.now()
+    if (wait > 0) await sleep(wait)
   }
 
   /** Waits for the ring under way, if any, to end; a ring that outlasts it is a conflict. */

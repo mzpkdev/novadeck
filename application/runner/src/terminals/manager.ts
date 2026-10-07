@@ -1362,6 +1362,10 @@ export class Terminals {
       },
       prompt: (entry, terminalId, text) => this.prompts.promptIn(entry, terminalId, text),
       working: (terminalId) => this.records.get(terminalId)?.activity?.state === "working",
+      turnStartedAt: (terminalId) => {
+        const activity = this.records.get(terminalId)?.activity
+        return activity?.state === "working" ? activity.turnAt : undefined
+      },
       closed: (terminalId, ref) => this.dialogs.closed(terminalId, ref),
       shown: (terminalId, ref) => {
         const dialog = this.dialogs.shown(terminalId, ref)
