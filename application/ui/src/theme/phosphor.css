@@ -35,9 +35,10 @@
   --font-mono:
     "Share Tech Mono", "JetBrains Mono Variable", "Symbols Nerd Font Mono", "Symbols Nerd Font",
     monospace;
-  /* Texture: no grain; the dot grid glows faintly. */
+  /* Texture: no grain and no dot grid; code rains down the workspace instead. */
   --canvas-grain-opacity: 0;
-  --canvas-dots-opacity: 0.22;
+  --canvas-dots-opacity: 0;
+  --workspace-spotlight-opacity: 0;
 
   /* Selection glows: the beam lingers where the person is. */
   --item-selected-indicator-shadow: 0 0 8px var(--color-strong);
@@ -391,6 +392,64 @@
   }
 }
 
+/* Code rains down the workspace, in two depths: near columns falling faster, far ones
+   smaller, dimmer and slower. Each depth is a tile of glyph columns, a bright head over a
+   fading trail, used as a mask over the tube's colour, so both tubes share it; it slides
+   down by one tile and starts again, with a transform the compositor draws. The ground
+   is isolated so the rain lies behind every window. Reduced motion stills it; Zen
+   quiets it. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .workspace-background {
+  isolation: isolate;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace-background::before,
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace-background::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  z-index: -1;
+  background: var(--color-strong);
+  mask-repeat: repeat;
+  pointer-events: none;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace-background::before {
+  top: -896px;
+  mask-image: url("../assets/phosphor-rain-near.svg");
+  mask-size: 1920px 896px;
+  opacity: 0.16;
+  animation: phosphor-rain-near 16s linear infinite;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace-background::after {
+  top: -720px;
+  mask-image: url("../assets/phosphor-rain-far.svg");
+  mask-size: 1920px 720px;
+  opacity: 0.09;
+  animation: phosphor-rain-far 24s linear infinite;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace[data-zen="true"]
+  .workspace-background::before {
+  opacity: 0.06;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace[data-zen="true"]
+  .workspace-background::after {
+  opacity: 0.03;
+}
+
+@keyframes phosphor-rain-near {
+  to {
+    transform: translateY(896px);
+  }
+}
+@keyframes phosphor-rain-far {
+  to {
+    transform: translateY(720px);
+  }
+}
 @keyframes phosphor-power-on {
   0% {
     transform: scale(0.01, 0.003);
