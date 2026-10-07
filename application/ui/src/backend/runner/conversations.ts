@@ -8,6 +8,7 @@ import {
   type Conversation,
   type Conversations,
 } from "../../model/conversation"
+import { promptRefusal } from "../../model/prompt-refusal"
 import { createStore, type MutableStore, type Store } from "../../model/store"
 
 // The runner's conversations: each terminal's agent as `agents.detail` follows it, and
@@ -96,12 +97,25 @@ const sameRequests = (a: readonly ChatRequest[], b: readonly ChatRequest[]): boo
       request.choices.every((choice, at) => choice === b[index]!.choices[at]),
   )
 
+// The runner's own words for why it refused, where it gave any beyond its code.
+const said = (error: unknown): string | undefined =>
+  error instanceof Error &&
+  error.message.trim() !== "" &&
+  error.message !== (error as { code?: unknown }).code
+    ? error.message
+    : undefined
+
 // What the person is told when the agent can't take what they sent.
 const failure = (error: unknown, what: string): Error => {
   if (hasCode(error, "DISCONNECTED", "CLOSED")) return new Error("The runner is offline.")
+  // Refused before anything was written: the text has a shape the agent reads as more than
+  // a message, or the agent can't take one now (its box holds a draft, or it waits on the
+  // person's answer). The runner says which.
+  if (hasCode(error, "PROMPT_REFUSED")) return new Error(said(error) ?? promptRefusal)
   if (hasCode(error, "CONFLICT"))
     return new Error(
-      "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
+      said(error) ??
+        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
     )
   if (hasCode(error, "PROMPT_FAILED"))
     return new Error("The prompt didn't land in the agent's box. It may be there as a draft.")
@@ -299,14 +313,30 @@ export const createRunnerConversations = (
     return entry
   }
   const stoppers = new Map<string, () => void>()
+  // The send under way to each terminal: the same text sent again while it goes, as from a
+  // chat shown again whose box still holds it, is that send, not a second prompt.
+  const sending = new Map<string, { readonly text: string; readonly sent: Promise<void> }>()
 
   return {
     // The runner's terminal ids are unique, so the id alone names the terminal.
     conversation: ({ terminalId }) => entryOf(terminalId).conversation,
-    send: ({ terminalId }, text) =>
-      track(streams.prompt(terminalId, text)).catch((error: unknown) => {
-        throw failure(error, "reach")
-      }),
+    send: ({ terminalId }, text) => {
+      const under = sending.get(terminalId)
+      if (under?.text === text) return under.sent
+      const sent = track(streams.prompt(terminalId, text)).then(
+        () => {},
+        (error: unknown) => {
+          throw failure(error, "reach")
+        },
+      )
+      const entry = { text, sent }
+      sending.set(terminalId, entry)
+      void sent.then(
+        () => sending.get(terminalId) === entry && sending.delete(terminalId),
+        () => sending.get(terminalId) === entry && sending.delete(terminalId),
+      )
+      return sent
+    },
     interrupt: ({ terminalId }) =>
       track(streams.interrupt(terminalId)).catch((error: unknown) => {
         throw failure(error, "stop")

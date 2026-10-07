@@ -78,6 +78,16 @@ describe("Sending a prompt from the chat", () => {
       .toBeVisible()
   })
 
+  it("warns of a message the agent would read as a command and keeps Send disabled", async () => {
+    await openChatDemo()
+    const chat = await openChat("Build")
+    await userEvent.type(composer(chat), "/tmp is full")
+    await expect.element(chat.getByText(/Can't start with \/ or !/)).toBeVisible()
+    await expect.element(chat.getByRole("button", { name: "Send" })).toBeDisabled()
+    await userEvent.keyboard("{Enter}")
+    await expect.element(composer(chat)).toHaveValue("/tmp is full")
+  })
+
   it("keeps Shift+Enter for a new line", async () => {
     await openChatDemo()
     const chat = await openChat("Build")

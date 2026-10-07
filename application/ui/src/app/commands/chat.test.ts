@@ -66,12 +66,14 @@ describe("chat commands", () => {
   })
 
   context("when typing a draft", () => {
-    it("keeps it for the terminal until its agent ends", () => {
+    it("keeps it for the terminal past its agent's end, for the next agent there, until it closes", () => {
       const app = open({ working: false })
       const stop = watchChatModes(app.workspace, app.ui)
       app.commands.setChatDraft("01", "hello")
       expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "hello" } })
       app.status(undefined)
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "hello" } })
+      app.workspace.dispatch({ type: "terminal/close", target, terminalId: "01" })
       expect(app.ui.getSnapshot().chatDrafts).toEqual({})
       stop()
     })
@@ -124,7 +126,8 @@ describe("chat commands", () => {
         status: { state: "exited", exitCode: 0, signal: null },
       })
       expect(app.on()).toBe(false)
-      expect(app.ui.getSnapshot().chatDrafts).toEqual({})
+      // The words typed stay, for whatever runs there next.
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "draft" } })
       stop()
     })
 

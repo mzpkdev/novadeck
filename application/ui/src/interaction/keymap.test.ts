@@ -317,6 +317,12 @@ describe("keymap", () => {
           ).toEqual([])
         })
 
+        it("starts dictation from a chat's box, which its words fill", () => {
+          const chat = { editing: true, terminalInput: true, chat: true }
+          const voice = { key: "M", ctrlKey: true, shiftKey: true, code: "KeyM" }
+          expect(route(platform, "capture", { ...voice, target: chat })).toEqual(["voice.press"])
+        })
+
         it("leaves a chat's box its word selection, but Shift+Esc still leaves it", () => {
           const jump =
             platform === "mac" ? { metaKey: true, altKey: true } : { ctrlKey: true, shiftKey: true }

@@ -4,6 +4,7 @@ import {
   type Conversation,
   type Conversations,
 } from "../../model/conversation"
+import { promptRefusal, promptRefused } from "../../model/prompt-refusal"
 import type { WorkspaceSeed } from "../../model/seed"
 import { createStore, type MutableStore } from "../../model/store"
 import type { AgentStatus, TerminalMetadata, Workspace } from "../../model/types"
@@ -191,6 +192,8 @@ export const createDemoChat = (
         if (agent.working || turns.working(found.key))
           throw new Error(`${name} is still working. Stop it or wait until it finishes.`)
         if (!prompt.trim()) return
+        // As the runner refuses it: text the agent would read as more than a message.
+        if (promptRefused(prompt)) throw new Error(promptRefusal)
         turns.prompt(prompt, found.terminal, found.key)
       },
       interrupt: async (key) => {

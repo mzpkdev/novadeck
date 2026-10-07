@@ -249,7 +249,8 @@ const contextOf = (key: string, terminal: TerminalMetadata): string =>
   key.slice(0, key.length - terminal.id.length - 1)
 
 // A terminal shows its chat only while an agent runs in it: once the agent ends, or the
-// terminal goes, the screen comes back, and a later agent starts on it too.
+// terminal goes, the screen comes back, and a later agent starts on it too. What was typed
+// in the chat and not sent stays until the terminal goes, for the next agent there.
 export const watchChatModes = (workspace: Store<Workspace>, ui: UiStore): (() => void) => {
   let projects = workspace.getSnapshot().projects
   return workspace.subscribe(() => {
@@ -263,9 +264,10 @@ export const watchChatModes = (workspace: Store<Workspace>, ui: UiStore): (() =>
       const terminal = terminals.get(`${context}/${id}`)
       return terminal !== undefined && chatKept(terminal)
     }
+    const open = (context: string, id: string): boolean => terminals.has(`${context}/${id}`)
     ui.update((state) => {
       const chat = keepChatModes(state.chat, keep)
-      const chatDrafts = keepChatDrafts(state.chatDrafts, keep)
+      const chatDrafts = keepChatDrafts(state.chatDrafts, open)
       return chat === state.chat && chatDrafts === state.chatDrafts
         ? state
         : { ...state, chat, chatDrafts }

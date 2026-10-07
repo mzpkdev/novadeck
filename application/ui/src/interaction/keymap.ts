@@ -61,6 +61,7 @@ export type KeyLayer =
   | "escape"
   | "navigation"
   | "jump"
+  | "voice-chord"
   | "switcher"
   | "anywhere"
   | "app"
@@ -118,7 +119,7 @@ export type KeyEnvironment = {
 const phaseLayers: Record<KeyPhase, readonly KeyLayer[]> = {
   // Jumps run in capture, before a terminal's input takes its modified arrows.
   // Escape drops a recording before anything else can take it.
-  capture: ["dictation", "switcher-nav", "escape", "navigation", "jump"],
+  capture: ["dictation", "switcher-nav", "escape", "navigation", "jump", "voice-chord"],
   bubble: ["switcher", "anywhere", "app", "navigate", "workspace"],
   keyup: ["voice", "release"],
   blur: ["voice", "release"],
@@ -186,6 +187,9 @@ const gates: Record<
     !state.switcher &&
     (!input.target.editing ||
       (input.target.terminalInput && !(input.target.chat && input.key !== "Escape"))),
+  // Dictation's chord works where the jumps do, and in a chat's box too, which it fills.
+  "voice-chord": (input, state) =>
+    !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,
@@ -290,7 +294,12 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
     // Shift+Esc, from a terminal too: the one way into navigating.
     { layer: "jump", keys: { shortcut: chord.navigate }, command: "navigate.enter", repeat: "run" },
     // Dictation starts in capture, so a terminal's input can't take the chord first.
-    { layer: "jump", keys: { shortcut: chord.voice }, command: "voice.press", repeat: "swallow" },
+    {
+      layer: "voice-chord",
+      keys: { shortcut: chord.voice },
+      command: "voice.press",
+      repeat: "swallow",
+    },
     ...arrowDirections.map((arrow, args): KeyBinding => ({
       layer: "jump",
       keys: { shortcut: jumpShortcut(arrow, platform) },

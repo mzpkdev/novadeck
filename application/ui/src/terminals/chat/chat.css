@@ -553,6 +553,11 @@
   font-size: 11px;
   color: var(--chat-error-fg, var(--color-danger-fg));
 }
+/* An empty hint stays in the page, taking no room, for a reader to announce what appears. */
+.chat-error:empty {
+  position: absolute;
+  margin: 0;
+}
 .chat-composer-box {
   --_border-color: var(--chat-composer-border-color, var(--color-line-strong));
   display: flex;

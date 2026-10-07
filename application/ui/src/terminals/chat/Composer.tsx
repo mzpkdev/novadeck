@@ -1,7 +1,9 @@
 import { ArrowUp, Square } from "lucide-react"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 
+import { promptHint, promptRefused } from "../../model/prompt-refusal"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
+import { Hint } from "./Hint"
 
 const reason = (failure: unknown): string =>
   failure instanceof Error && failure.message ? failure.message : "It didn't go through."
@@ -58,7 +60,8 @@ export const Composer = ({
   }, [draft])
   const send = (): void => {
     const text = draft.trim()
-    if (!text || sending) return
+    // The draft is judged as the hint judges it, so Enter refuses what Send does.
+    if (!text || sending || promptRefused(draft)) return
     setSending(true)
     setError(null)
     onSend(text).then(
@@ -87,6 +90,8 @@ export const Composer = ({
     )
   }
   const empty = draft.trim() === ""
+  const refused = promptRefused(draft)
+  const hint = useId()
   return (
     <form
       className="chat-composer nodrag nopan"
@@ -101,6 +106,7 @@ export const Composer = ({
           {error}
         </p>
       )}
+      <Hint id={hint} className="chat-error" text={refused ? promptHint : ""} />
       <div className="chat-composer-box">
         <textarea
           ref={input}
@@ -110,6 +116,7 @@ export const Composer = ({
           placeholder={`Message ${label}…`}
           rows={1}
           value={draft}
+          aria-describedby={hint}
           readOnly={sending}
           aria-busy={sending}
           spellCheck
@@ -144,7 +151,7 @@ export const Composer = ({
               type="submit"
               className="chat-send"
               aria-label="Send"
-              disabled={empty || sending}
+              disabled={empty || sending || refused}
             >
               <ArrowUp size={15} strokeWidth={2} aria-hidden />
             </button>
