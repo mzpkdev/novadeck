@@ -254,6 +254,9 @@ importers:
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0
+      '@xterm/addon-unicode-graphemes':
+        specifier: 0.4.0
+        version: 0.4.0
       '@xterm/addon-web-links':
         specifier: 0.12.0
         version: 0.12.0
