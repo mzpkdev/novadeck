@@ -176,7 +176,10 @@ for (const setup of setups) {
       await t1.poll(
         async () => {
           const shown = await t1.screen()
-          return account.test(shown) || !shown.includes("Hold on") ? true : undefined
+          // Only Claude Code's account is the prompt gone: elsewhere a tall prompt's first
+          // line may scroll off before the key is taken.
+          const gone = setup.agent === "claude" && !shown.includes("Hold on")
+          return account.test(shown) || gone ? true : undefined
         },
         "the harness to take the interrupt",
         30_000,
