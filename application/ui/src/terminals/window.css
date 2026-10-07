@@ -7,8 +7,9 @@
    `.terminal-compact` (Grid, Canvas); a selected window is `.terminal-focused`, or sits
    in a `.grid-terminal.selected` or `.canvas-node.selected`. Parts: `.terminal-header`,
    `.terminal-heading` (whose ::before is the selection bar and ::after the phase line),
-   `.terminal-title`, `.terminal-metadata`, `.terminal-stats` (what the agent runs on: its
-   `.terminal-stats-runs`, and its context's `.terminal-stats-ring`), `.terminal-actions`,
+   `.terminal-title`, `.terminal-metadata`, `.terminal-host` (the terminal's content, and
+   `.terminal-stats` over it: what the agent runs on, its `.terminal-stats-runs` and its
+   context's `.terminal-stats-ring`), `.terminal-actions`,
    `.terminal-rename-input`.
 
    Tokens, each optional (its fallback in brackets):
@@ -80,32 +81,44 @@
   color: var(--window-metadata-fg, var(--color-muted));
   font-family: var(--window-metadata-font, var(--font-mono));
 }
-/* What the agent runs on, by the window's buttons (WindowStats.tsx): a ring for how full
-   its context is, faint at rest. Hovered or focused, it comes up and the model, its
-   effort and the context in words slide out beside it. Without a pointer that hovers it
-   stays up, its words a tap away. */
-/* Its padding widens what the pointer can rest on; its margin takes that back on three
-   sides and, on the fourth, keeps it a header gap further from the window's buttons. */
+/* What the agent runs on, floating over its terminal's top right (WindowStats.tsx), over
+   the agent's old scrollback, away from the window's buttons and from its prompt below:
+   a ring for how full its context is, faint at rest on a soft backing in the terminal's
+   ground, so it reads over text without looking like a button. Hovered or focused, it comes up and the model, its effort and the context in
+   words slide out leftwards over the terminal, no wider than it. Without a pointer that
+   hovers it stays up, its words a tap away. */
+.terminal-host {
+  container-type: inline-size;
+}
 .terminal-stats {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
   gap: 8px;
-  margin: -4px calc(var(--spacing) * 3) -4px -6px;
-  padding: 4px 6px;
+  max-width: calc(100cqw - 16px);
+  padding: 6px 8px;
   border-radius: var(--radius-control);
+  background-color: color-mix(in srgb, var(--terminal-bg, var(--color-paper)) 85%, transparent);
   color: var(--window-metadata-fg, var(--color-muted));
   font-family: var(--window-metadata-font, var(--font-mono));
   font-size: var(--text-caption);
   white-space: nowrap;
 }
+/* Opened up, its backing turns solid and feathers out a little, so the words never mix
+   with the text beneath. */
+.terminal-stats:is(:hover, :focus) {
+  background-color: var(--terminal-bg, var(--color-paper));
+  box-shadow: 0 0 6px 6px var(--terminal-bg, var(--color-paper));
+}
 .terminal-stats:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color, var(--color-strong));
-}
-.terminal-title + .terminal-stats {
-  margin-left: auto;
 }
 /* Its two groups of words, set apart by space alone: each holds its detail in brackets.
    Short of room, the context's ends in an ellipsis first, its share still showing. */
 .terminal-stats-runs {
   display: flex;
+  min-width: 0;
   gap: 14px;
   overflow: hidden;
 }
@@ -128,33 +141,11 @@
     visibility 0s linear var(--motion-state);
 }
 .terminal-stats[data-ring]:is(:hover, :focus) .terminal-stats-runs {
-  max-width: 20rem;
+  max-width: 24rem;
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
 }
-/* A compact window has no room beside its name, so the words slide out over it instead,
-   from the ring leftwards, over a fade into the header, and nothing else moves. */
-.terminal-compact .terminal-header {
-  container-type: inline-size;
-}
-.terminal-compact .terminal-stats {
-  position: relative;
-}
-.terminal-compact .terminal-stats[data-ring] .terminal-stats-runs {
-  position: absolute;
-  top: 50%;
-  right: calc(100% - 6px);
-  translate: 0 -50%;
-  padding: 4px 6px 4px 20px;
-  background: linear-gradient(to right, transparent, var(--_bg) 16px);
-}
-/* No further than the header's left edge, less its buttons and the ring: past that, the
-   words end in an ellipsis. */
-.terminal-compact .terminal-stats[data-ring]:is(:hover, :focus) .terminal-stats-runs {
-  max-width: calc(100cqw - 9rem);
-}
-/* Centred on the header, as the window's buttons beside it are. */
 .terminal-stats-ring {
   flex-shrink: 0;
   width: 14px;

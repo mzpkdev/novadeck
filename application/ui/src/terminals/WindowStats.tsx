@@ -17,9 +17,10 @@ const ContextRing = ({ share }: { share: number }): React.JSX.Element => (
   </svg>
 )
 
-// What the agent runs on, by its window's buttons: a ring for how full its context is,
-// faint until it's hovered or focused, when it comes up and two groups of words slide out
-// beside it (window.css), each a value with its detail in brackets: the model and its
+// What the agent runs on, floating over its terminal's top right: a ring for how full its
+// context is, faint until it's hovered or focused, when it comes up and two groups of
+// words slide out leftwards beside it (window.css), each a value with its detail in
+// brackets: the model and its
 // effort, "Opus 5.5 (high)", and the context's share and tokens, "62% (124k/200k)". Where
 // its harness doesn't say the context's capacity there's no share to draw, so the tokens
 // it holds stand in for the ring; without a context at all, the model shows as it is.

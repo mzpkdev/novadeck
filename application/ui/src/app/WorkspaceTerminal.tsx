@@ -1,5 +1,6 @@
 import { useCallback, useMemo, type ReactNode } from "react"
 
+import { agentStats } from "../model/agent-usage"
 import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
 import type { CompanionWindowMeta, TerminalMetadata, Tile } from "../model/types"
@@ -22,6 +23,7 @@ import {
   type TerminalLayoutControls,
   type WindowShellProps,
 } from "../terminals/WindowShell"
+import { WindowStats } from "../terminals/WindowStats"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { useMicButton } from "./controller/dictation"
 import { useDockTarget } from "./dock-target"
@@ -254,6 +256,16 @@ export const WorkspaceTerminal = ({
     ) : (
       content
     )
+  const stats = agentStats(terminal)
+  // The terminal's content, with what its agent runs on floating over its top right while
+  // the terminal shows, not its chat. The host is there whatever runs, so the content
+  // never remounts as an agent starts.
+  const hosted = (content: ReactNode): ReactNode => (
+    <div className="terminal-host relative flex min-h-0 min-w-0 flex-1 flex-col">
+      {Body ? <Body>{content}</Body> : content}
+      {stats && !chatShown && <WindowStats stats={stats} />}
+    </div>
+  )
   // One shell element whatever runs, so only the body around the content changes.
   const renderWindow = (surface: ReactNode): ReactNode => {
     const content = withChat(surface)
@@ -273,12 +285,10 @@ export const WorkspaceTerminal = ({
             terminalName={(id) => terminalName[id]}
             commands={commands}
           >
-            {Body ? <Body>{content}</Body> : content}
+            {hosted(content)}
           </TerminalCompanion>
-        ) : Body ? (
-          <Body>{content}</Body>
         ) : (
-          content
+          hosted(content)
         )}
       </WindowShell>
     )
