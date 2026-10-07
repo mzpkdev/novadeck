@@ -239,6 +239,42 @@ describe("watchAppearance", () => {
       }
     })
 
+    it("waits afresh when it is pinned and released again before the first wait ends", () => {
+      vi.useFakeTimers()
+      try {
+        system(true)
+        resolvesPaper()
+        const ui = uiWith({ theme: "phosphor-green", scheme: "system" })
+        watch(ui, () => {})
+
+        choose(ui, { theme: "graphite", scheme: "system" })
+        vi.advanceTimersByTime(releaseMs / 2)
+        choose(ui, { theme: "graphite", scheme: "light" })
+        choose(ui, { theme: "graphite", scheme: "system" })
+        vi.advanceTimersByTime(releaseMs / 2)
+
+        // The first wait would have ended here; only the second one counts.
+        expect(shown()).toEqual({ theme: "graphite", scheme: "light" })
+        vi.advanceTimersByTime(releaseMs / 2)
+        expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("pins the window again when a scheme is named while it waits", () => {
+      system(true)
+      resolvesPaper()
+      const reports: WindowAppearance[] = []
+      const ui = uiWith({ theme: "graphite", scheme: "dark" })
+      watch(ui, (look) => reports.push(look))
+
+      choose(ui, { theme: "graphite", scheme: "system" })
+      choose(ui, { theme: "graphite", scheme: "dark" })
+
+      expect(reports.map((look) => look.scheme)).toEqual(["dark", "system", "dark"])
+    })
+
     it("shows nothing more once stopped while it waits", () => {
       vi.useFakeTimers()
       try {
