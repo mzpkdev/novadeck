@@ -2,13 +2,16 @@
    its layout), and the sashes between the workspace's panels.
 
    Tokens, each optional (its fallback in brackets):
-   --separator-bg (line): the hairline, and a sash at rest.
+   --separator-bg (line): the hairline.
+   --region-sidebar-border-color (separator-bg): a sash at rest, which stands in for the
+   sidebar's edge (the region recipe's token), since the sidebar drops its own border
+   between the panels.
    --sash-hover-bg (strong): a sash under the pointer or being dragged. */
 .separator {
   background-color: var(--separator-bg, var(--color-line));
 }
 /* Allotment draws its sashes from these. */
 .workspace-panels {
-  --separator-border: var(--separator-bg, var(--color-line));
+  --separator-border: var(--region-sidebar-border-color, var(--separator-bg, var(--color-line)));
   --focus-border: var(--sash-hover-bg, var(--color-strong));
 }
