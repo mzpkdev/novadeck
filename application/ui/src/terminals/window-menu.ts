@@ -1,3 +1,4 @@
+import { titleSourceText } from "../model/title-source"
 import type { Tile } from "../model/types"
 import type { ContextMenuAction } from "../ui-toolkit/ContextMenu"
 
@@ -8,9 +9,9 @@ export type DockTarget = {
   readonly onDock: (() => void) | undefined
 }
 
-// A window's own actions, the same in its sidebar tab's menu and its header's: rename,
-// hand a name the person gave back to Novadeck, dock an undocked window back in its
-// terminal, and close.
+// A window's own actions, the same in its sidebar tab's menu and its header's: who named
+// it, as a line to read rather than choose, then rename, hand a name the person gave back
+// to Novadeck, dock an undocked window back in its terminal, and close.
 export const windowMenu = ({
   terminal,
   onRename,
@@ -26,6 +27,17 @@ export const windowMenu = ({
   dockIn?: DockTarget | undefined
   onClose: () => void
 }): ContextMenuAction[] => [
+  // A name nobody chose says nothing worth a line.
+  ...(terminal.titleSource && terminal.titleSource.kind !== "default"
+    ? [
+        {
+          value: "named",
+          label: titleSourceText(terminal.titleSource),
+          disabled: true,
+          onSelect: () => {},
+        },
+      ]
+    : []),
   { value: "rename", label: "Rename", onSelect: onRename },
   ...(onResetTitle && terminal.titleSource?.kind === "person"
     ? [{ value: "reset-title", label: "Reset to automatic", onSelect: onResetTitle }]

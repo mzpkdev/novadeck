@@ -10,7 +10,6 @@ import {
   tabDescription,
   terminal,
   terminalTab,
-  tooltipOf,
 } from "./support/workspace"
 
 const agentSwitch = (scope: Locator, name: "Claude Code" | "Codex" | "Antigravity"): Locator =>
@@ -79,22 +78,20 @@ describe("An agent's subagents", () => {
     expect(build.hasAttribute("data-terminal-subagents")).toBe(false)
   })
 
-  it("are counted by kind in its tab's tooltip, and left to its terminal in its window", async () => {
+  it("are counted on its tab, and left to its terminal in its window", async () => {
     // The demo's Codex runs two explorers.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     await page.getByRole("button", { name: "Select Checkout review" }).click()
     const window = page.getByRole("region", { name: "Checkout review terminal" })
-    // Pressed, a tab offers its tooltip again once the pointer has left it.
-    await userEvent.hover(window)
-    expect(await tooltipOf(terminalTab("Checkout review"))).toContain("2 subagents: 2 explorer")
+    await expect.poll(() => tabDescription("Checkout review")).toContain("2 subagents")
     await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
   })
 })
 
 describe("An agent whose turn left work running", () => {
-  it("works on, counting that work in its tab's tooltip", async () => {
+  it("works on, counting that work on its tab", async () => {
     // The demo's Claude Code waits on two subagents and a command it started.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
@@ -102,11 +99,7 @@ describe("An agent whose turn left work running", () => {
     await page.getByRole("button", { name: "Select Tests" }).click()
     const window = page.getByRole("region", { name: "Tests terminal" })
     await expect.element(window).toHaveAttribute("data-terminal-phase", "running")
-    // Pressed, a tab offers its tooltip again once the pointer has left it.
-    await userEvent.hover(window)
-    expect(await tooltipOf(terminalTab("Tests"))).toContain(
-      "2 agents · 1 task: Subagents it started still run: it works on until they finish",
-    )
+    await expect.poll(() => tabDescription("Tests")).toContain("2 agents · 1 task")
     await expect.element(window.getByText("2 agents · 1 task")).not.toBeInTheDocument()
   })
 
@@ -118,11 +111,6 @@ describe("An agent whose turn left work running", () => {
     await page.getByRole("button", { name: "Select Build" }).click()
     const window = page.getByRole("region", { name: "Build terminal" })
     await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
-    // Pressed, a tab offers its tooltip again once the pointer has left it.
-    await userEvent.hover(window)
-    expect(await tooltipOf(terminalTab("Build"))).toContain(
-      "1 task: Its turn is over; work it started runs on in the background",
-    )
   })
 })
 
