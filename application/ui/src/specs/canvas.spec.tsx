@@ -113,7 +113,8 @@ describe("Canvas", () => {
     it("frames every terminal, however its camera was left", async () => {
       await openCanvas()
       expect(allInView()).toBe(true)
-      await pushTestsOffScreen("Checkout implementation")
+      await clearMiddle()
+      expect(allInView()).toBe(false)
 
       await chooseView("Grid")
       await chooseView("Canvas")
