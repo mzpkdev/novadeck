@@ -13,7 +13,7 @@
    root while a dragged icon is somewhere nothing takes it.
 
    Tokens, each optional (its fallback in brackets):
-   --taskbar-bg (shell), --taskbar-border-color (line), --taskbar-shadow (none): the bar.
+   --taskbar-bg (shell), --taskbar-border-color (line): the bar.
    --taskbar-drop-bg (soft), --taskbar-drop-ring-color (line-strong): a bar a drop
    lands on.
    --taskbar-hint-fg (muted): the empty bar's hint.
@@ -56,7 +56,6 @@
   padding: 0 10px;
   border-top: var(--border-width) solid var(--taskbar-border-color, var(--color-line));
   background-color: var(--taskbar-bg, var(--color-shell));
-  box-shadow: var(--taskbar-shadow, none);
   /* Lighting up as a drop target, and back. */
   transition:
     background-color var(--motion-feedback) var(--ease-interface),

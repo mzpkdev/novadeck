@@ -94,10 +94,8 @@
   outline: none;
 }
 .checkbox-mark {
-  color: var(--toggle-mark-fg, var(--color-on-strong));
-}
-.checkbox-mark {
   visibility: hidden;
+  color: var(--toggle-mark-fg, var(--color-on-strong));
 }
 .checkbox-input:checked ~ .checkbox-mark {
   visibility: visible;
