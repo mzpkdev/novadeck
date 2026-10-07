@@ -6,8 +6,7 @@ import { DomainError } from "../errors.js"
 import type { DialogAdapter, DialogRead, KeyStep, RequestFacts } from "../harnesses/dialogs.js"
 import { identified, twin } from "./dialogs.js"
 import type { InputEntry, InputHold, InputQueue } from "./input-queue.js"
-import { collapsible } from "./prompts.js"
-import { bracketedPaste, findLine } from "./ring.js"
+import { bracketedPaste } from "./ring.js"
 import type { ScreenText } from "./screen.js"
 
 /** Another request waiting: its ref, who asks and what it asks. */
@@ -79,7 +78,7 @@ export type AnswerOptions = {
   readonly pollMs?: number
   /** How long the dialog may take to show it was answered, in milliseconds. */
   readonly answeredMs?: number
-  /** How long typed text may take to show in its field, in milliseconds. */
+  /** How long a key step is allowed in the hold's budget, in milliseconds. */
   readonly typedMs?: number
   /** How long a doorbell ring under way is waited for, in milliseconds. */
   readonly ringMs?: number
@@ -440,7 +439,7 @@ export class Answers {
   /**
    * Runs the steps. The dialog was read and matched once, before the first press; between
    * moves the adapter's own `until` steps wait for the screen to show what the next needs,
-   * and the answer ends with its `answered` check. Before each press the request must
+   * one after each `type` step among them, and the answer ends with its `answered` check. Before each press the request must
    * still wait on the person. Keys already pressed stay pressed when one fails.
    */
   private async run(
@@ -449,6 +448,10 @@ export class Answers {
     steps: readonly KeyStep[],
     check: { readonly adapter: DialogAdapter; readonly facts: RequestFacts; readonly id: string },
   ): Promise<void> {
+    // Words typed into a field are checked by the adapter's own `until` right after, which
+    // knows where its field shows them; an answer that would type unchecked presses nothing.
+    if (steps.some((step, at) => "type" in step && !(steps[at + 1] && "until" in steps[at + 1]!)))
+      throw new Error("The adapter types words without a check that they showed.")
     let pressed = false
     for (const step of steps) {
       if ("until" in step) {
@@ -473,9 +476,6 @@ export class Answers {
       if (!this.host.type(terminalId, text))
         throw new Failed("The terminal went away before the keys were pressed.", pressed)
       pressed = true
-      if ("type" in step)
-        // eslint-disable-next-line no-await-in-loop -- As above.
-        await this.shownTyped(terminalId, step.type, screen)
     }
   }
 
@@ -505,31 +505,6 @@ export class Answers {
       // eslint-disable-next-line no-await-in-loop -- As above.
       await sleep(this.pollMs)
     }
-  }
-
-  /**
-   * Waits for typed text to show, or its start, once more than before. Text a TUI may
-   * collapse into a placeholder (several lines, or long) shows as the screen changing and
-   * holding still on two reads instead.
-   */
-  private async shownTyped(terminalId: string, typed: string, before: ScreenText): Promise<void> {
-    const shown = before.rows.join("\n")
-    const start = typed.replace(/\s+/g, " ").trim().slice(0, 30)
-    const had = findLine(before.rows, start).length
-    const placeholder = collapsible(typed)
-    const until = Date.now() + this.typedMs
-    let last: string | undefined
-    while (Date.now() < until) {
-      // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
-      await sleep(this.pollMs)
-      // eslint-disable-next-line no-await-in-loop -- As above.
-      const screen = await this.screen(terminalId, true)
-      const now = screen.rows.join("\n")
-      if (placeholder ? now !== shown && now === last : findLine(screen.rows, start).length > had)
-        return
-      last = now
-    }
-    throw new Failed("The typed text never showed in the dialog.", true)
   }
 
   /**
