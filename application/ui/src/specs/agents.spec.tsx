@@ -33,7 +33,7 @@ describe("An agent waiting on the person", () => {
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     const tab = page.getByRole("button", { name: "Select Checkout review" })
-    await expect.poll(() => tabDescription("Checkout review")).toBe("Needs permission")
+    await expect.poll(() => tabDescription("Checkout review")).toBe("Needs permission, 2 subagents")
     await tab.click()
     await expect
       .element(page.getByRole("region", { name: "Checkout review terminal" }))
@@ -57,6 +57,28 @@ describe("An agent that plans", () => {
 })
 
 describe("An agent's subagents", () => {
+  it("are marked on its tab, and listed by kind under it while it's selected", async () => {
+    // The demo's Codex runs two explorers.
+    await openWorkspace("/?demo=agents")
+    const skip = page.getByRole("button", { name: "Skip for now" })
+    if (await skip.query()) await skip.click()
+    const tab = terminalTab("Checkout review")
+    const row = () => tab.element().closest(".terminal-tab")!
+    await expect.poll(() => row().getAttribute("data-terminal-subagents")).toBe("working")
+    expect(row().querySelectorAll(".terminal-tab-subagents .terminal-tab-subagent")).toHaveLength(2)
+    await expect.element(tab.getByText("explorer").first()).not.toBeVisible()
+    await tab.click()
+    await expect.element(tab.getByText("explorer").first()).toBeVisible()
+    await expect.element(tab.getByText("explorer").nth(1)).toBeVisible()
+    // The rows take the place of the marks on its line.
+    await expect
+      .poll(() => row().querySelector(".terminal-tab-subagents")!.getBoundingClientRect().width)
+      .toBe(0)
+    // A command its turn left running is no subagent.
+    const build = terminalTab("Build").element().closest(".terminal-tab")!
+    expect(build.hasAttribute("data-terminal-subagents")).toBe(false)
+  })
+
   it("count beside a focused window's name, their kinds on hover", async () => {
     // The demo's Codex runs two explorers.
     await openWorkspace("/?demo=agents")

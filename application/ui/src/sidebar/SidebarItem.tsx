@@ -14,6 +14,7 @@ export const SidebarItem = ({
   name,
   icon,
   detail,
+  below,
   selected,
   selectLabel,
   tooltip,
@@ -33,6 +34,8 @@ export const SidebarItem = ({
   name: string
   icon: ReactNode
   detail: ReactNode
+  // Under the detail line, such as rows of what the item runs.
+  below?: ReactNode
   selected: boolean
   selectLabel: string
   tooltip: string
@@ -90,6 +93,7 @@ export const SidebarItem = ({
             <span className="sidebar-item-detail item-detail flex h-6 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-caption leading-[18px] [.sidebar-item:has(.sidebar-item-actions)_&]:pr-[var(--_sidebar-actions-space,52px)]">
               {detail}
             </span>
+            {below}
           </span>
         </button>
       </Tooltip>

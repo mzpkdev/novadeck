@@ -3,7 +3,7 @@ import { Check, Eye, EyeOff, Pencil, X, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
-import { subagentsBadge, subagentsDetail } from "../model/agent-subagents"
+import { subagentMarks, subagentsBadge, subagentsDetail } from "../model/agent-subagents"
 import { nextReset, usageDetail } from "../model/agent-usage"
 import { mailBadgeLabel, type MailBadge } from "../model/messages"
 import { isWindow } from "../model/roster"
@@ -20,6 +20,7 @@ import type { Tile } from "../model/types"
 import { SidebarItem } from "../sidebar/SidebarItem"
 import { ContextMenu } from "../ui-toolkit/ContextMenu"
 import { Tooltip } from "../ui-toolkit/Tooltip"
+import { SubagentBranches, SubagentLine } from "./TabSubagents"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 import { tabInstructionsId } from "./TerminalTabs"
 import { useRenderAt } from "./use-render-at"
@@ -93,7 +94,11 @@ export const TerminalTab = ({
   const note = ended ?? waiting ?? (phase === "done" ? doneText(failed) : undefined)
   const named = terminal.titleSource ? titleSourceText(terminal.titleSource) : undefined
   const messages = mail ? mailBadgeLabel(mail) : undefined
-  const description = [note, messages].filter(Boolean).join(", ")
+  // The subagents its agent runs: marked on its line, their kinds under it while selected,
+  // and counted in words wherever it marks them.
+  const subagents = shell && subagentsBadge(shell)
+  const marks = shell && subagentMarks(shell)
+  const description = [note, messages, marks && subagents].filter(Boolean).join(", ")
   const menu = windowMenu({
     terminal,
     onRename: onBeginRename,
@@ -103,7 +108,6 @@ export const TerminalTab = ({
   })
   useRenderAt(shell && nextReset(shell))
   const usage = shell && usageDetail(shell)
-  const subagents = shell && subagentsBadge(shell)
   const subagentKinds = shell && subagents ? `${subagents}: ${subagentsDetail(shell)}` : undefined
   const planning = shell?.state === "running" && shell.agent?.planning ? "Planning" : undefined
   // A window runs no program; its tab says where it came from instead.
@@ -138,10 +142,14 @@ export const TerminalTab = ({
                 {failed ? "error · unread" : "done · unread"}
               </span>
             ) : (
-              <span className="terminal-tab-process truncate">{process}</span>
+              <>
+                <span className="terminal-tab-process truncate">{process}</span>
+                {marks && <SubagentLine marks={marks} />}
+              </>
             )}
           </>
         }
+        {...(marks && !editing ? { below: <SubagentBranches marks={marks} /> } : {})}
         selected={selected}
         emphasized={phase === "done"}
         selectLabel={`Select ${terminal.name}${hidden ? " (hidden)" : ""}`}
@@ -156,6 +164,7 @@ export const TerminalTab = ({
         {...(phase === "attention" && shell?.state === "running" && shell.agent?.attention
           ? { "data-terminal-attention": shell.agent.attention.kind }
           : {})}
+        {...(marks ? { "data-terminal-subagents": marks.working ? "working" : "background" } : {})}
         data-terminal-hidden={hidden}
 
         className={`terminal-tab [--_sidebar-actions-space:76px] ${selected ? "selected" : ""} ${editing ? "editing" : ""} ${isDragSource ? "dragging" : ""}`}

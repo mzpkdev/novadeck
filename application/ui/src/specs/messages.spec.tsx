@@ -24,7 +24,7 @@ describe("Messages waiting for an agent", () => {
     // Codex has one message being delivered and one queued; what it sent doesn't count.
     await expect
       .poll(() => description("Checkout review"))
-      .toBe("Needs permission, 2 messages waiting")
+      .toBe("Needs permission, 2 messages waiting, 2 subagents")
     // The dev server's message is gone, never waiting.
     expect(description("Dev server")).toBeNull()
   })
@@ -144,13 +144,13 @@ describe("Pausing messaging", () => {
     await expect.poll(() => textOf(items.nth(2))).toMatch(/Delivering/)
     await expect
       .poll(() => description("Checkout review"))
-      .toBe("Needs permission, 2 messages waiting, held while messaging is paused")
+      .toBe("Needs permission, 2 messages waiting, held while messaging is paused, 2 subagents")
     await pause.click()
     await expect.poll(() => textOf(items.nth(3))).toMatch(/Waiting/)
     await expect.element(pane.getByRole("status")).not.toBeInTheDocument()
     await expect
       .poll(() => description("Checkout review"))
-      .toBe("Needs permission, 2 messages waiting")
+      .toBe("Needs permission, 2 messages waiting, 2 subagents")
   })
 })
 

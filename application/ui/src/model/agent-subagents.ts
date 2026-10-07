@@ -41,3 +41,24 @@ export const subagentsDetail = (terminal: TerminalMetadata): string | undefined 
   if (counts.size === 0) return undefined
   return [...counts].map(([kind, count]) => `${count} ${kind}`).join(", ")
 }
+
+// The subagents an agent's tab marks one by one: each one's kind, in the harness's words
+// where it tells it (null where it doesn't), and whether the agent works on while they
+// run, which spins their marks, or they run on without it. Where its harness only counts
+// what its turn left running, the count and no kinds. Undefined when none runs.
+export type SubagentMarks = {
+  readonly kinds: readonly (string | null)[]
+  readonly working: boolean
+}
+
+export const subagentMarks = (terminal: TerminalMetadata): SubagentMarks | undefined => {
+  const agent = agentOf(terminal)
+  if (!agent) return undefined
+  const listed = agent.subagents ?? []
+  const count = Math.max(listed.length, agent.background?.agents ?? 0)
+  if (count === 0) return undefined
+  return {
+    kinds: Array.from({ length: count }, (_, index) => listed[index]?.type ?? null),
+    working: agent.working,
+  }
+}
