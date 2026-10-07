@@ -227,7 +227,7 @@ A theme's rules may select:
 
 A theme may also apply the SVG filters `index.html` carries, by id: Chromium applies
 only filters in the page itself, so a theme file can't bring its own. `crt-barrel`
-bulges an element like a tube's face, its bend a share of the element's size; it moves
+bulges an element like a tube's face, by the same pixels whatever its size; it moves
 pixels without moving clicks, so apply it where a few pixels' error near the edge does
 no harm. `theme/contract.test.ts` checks that every filter a theme uses is there.
 

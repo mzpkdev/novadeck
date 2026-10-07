@@ -43,23 +43,21 @@
   /* Selection glows: the beam lingers where the person is. */
   --item-selected-indicator-shadow: 0 0 8px var(--color-strong);
   --tabs-indicator-shadow: 0 0 8px var(--color-strong);
-  --window-selected-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-strong) 35%, transparent),
-    0 0 26px color-mix(in srgb, var(--color-strong) 16%, transparent);
-  --window-selected-border-color: color-mix(in srgb, var(--color-strong) 70%, transparent);
 
   /* The CRT, drawn over the whole screen: the beam's lines, its glow, the tube's darker
-     corners and the bezel around it. */
-  --crt-glow: 0 0 1px currentColor, 0 0 8px color-mix(in srgb, currentColor 55%, transparent);
+     corners and the bezel around it. Each is kept light enough that text holds its
+     contrast through it: the glow haloes a glyph without thickening it, the scanlines
+     darken one row in three by a fifth, and the corners fall off gently. */
+  --crt-glow: 0 0 6px color-mix(in srgb, currentColor 40%, transparent);
   --crt-scanlines: repeating-linear-gradient(
     to bottom,
-    rgb(0 0 0 / 0.28) 0 1px,
+    rgb(0 0 0 / 0.18) 0 1px,
     transparent 1px 3px
   );
   --crt-vignette: radial-gradient(
     ellipse 120% 110% at 50% 50%,
     transparent 55%,
-    rgb(0 0 0 / 0.55) 100%
+    rgb(0 0 0 / 0.4) 100%
   );
   --crt-bezel-shadow:
     0 0 0 60px rgb(0 0 0), inset 0 0 6px 3px rgb(0 0 0), inset 0 0 48px 10px rgb(0 0 0 / 0.7),
@@ -67,7 +65,7 @@
   --crt-refresh: linear-gradient(
     to bottom,
     transparent,
-    color-mix(in srgb, var(--color-strong) 5%, transparent) 50%,
+    color-mix(in srgb, var(--color-strong) 3%, transparent) 50%,
     transparent
   );
 }
@@ -84,7 +82,7 @@
   --color-muted: #3cae50;
   /* Lines */
   --color-line: #10331a;
-  --color-line-strong: #1f5a2b;
+  --color-line-strong: #266e34;
   /* Emphasis: the brightest the beam draws. */
   --color-strong: #39ff6b;
   --color-strong-hover: #8dffa6;
@@ -142,7 +140,7 @@
   --color-muted: #b37a26;
   /* Lines */
   --color-line: #36230a;
-  --color-line-strong: #5e3d12;
+  --color-line-strong: #835519;
   /* Emphasis: the brightest the beam draws. */
   --color-strong: #ffa81a;
   --color-strong-hover: #ffcd7a;
@@ -168,7 +166,7 @@
   --color-syntax-property: #ffcf8a;
   --color-syntax-definition: #ffe6c4;
   --color-syntax-type: #ffbe70;
-  --color-syntax-comment: #8f6322;
+  --color-syntax-comment: #a27026;
   /* Terminal: a monochrome monitor, every colour a shade of the phosphor. */
   --terminal-ansi-black: #4a3010;
   --terminal-ansi-red: #d08a2a;
@@ -220,7 +218,7 @@
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::before {
   background: var(--crt-refresh) no-repeat;
   background-size: 100% 18%;
-  animation: phosphor-refresh 7s linear infinite;
+  animation: phosphor-refresh 11s linear infinite;
 }
 
 /* A terminal's own idioms, where Graphite has a designer's. */
@@ -384,8 +382,8 @@
    bends by copying the nearest pixel, which tears text at one pixel per point, so only
    denser screens bend; the rest keep the glass alone. The header stays flat, so its
    buttons are where they look; within the output a click lands off from where it
-   shows, by nothing at the middle and a few per cent of the output's size at its
-   corners. */
+   shows, by nothing at the middle, 10px at the middle of an edge and 20px at a
+   corner. */
 @media (min-resolution: 2dppx) {
   :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-content {
     filter: url("#crt-barrel");
@@ -418,7 +416,7 @@
   top: -896px;
   mask-image: url("../assets/phosphor-rain-near.svg");
   mask-size: 1920px 896px;
-  opacity: 0.16;
+  opacity: 0.11;
   animation: phosphor-rain-near 16s linear infinite;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
@@ -426,7 +424,7 @@
   top: -720px;
   mask-image: url("../assets/phosphor-rain-far.svg");
   mask-size: 1920px 720px;
-  opacity: 0.09;
+  opacity: 0.06;
   animation: phosphor-rain-far 24s linear infinite;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
@@ -450,18 +448,39 @@
     transform: translateY(720px);
   }
 }
+/* When the system asks for more contrast, the tube keeps its colours, shapes and idioms
+   and drops what lies over or behind the text: the glow, the scanlines, vignette and
+   refresh band, the bend and the rain. */
+@media (prefers-contrast: more) {
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body {
+    text-shadow: none;
+  }
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::before,
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body::after,
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+    .workspace-background::before,
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+    .workspace-background::after,
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-window::after {
+    display: none;
+  }
+  :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .terminal-content {
+    filter: none;
+  }
+}
+
 @keyframes phosphor-power-on {
   0% {
     transform: scale(0.01, 0.003);
-    filter: brightness(8);
+    filter: brightness(4);
   }
   30% {
     transform: scale(1, 0.003);
-    filter: brightness(5);
+    filter: brightness(3);
   }
   70% {
     transform: scale(1, 1);
-    filter: brightness(1.6);
+    filter: brightness(1.3);
   }
   100% {
     transform: none;
@@ -474,13 +493,13 @@
     opacity: 1;
   }
   31% {
-    opacity: 0.88;
+    opacity: 0.96;
   }
   32% {
     opacity: 1;
   }
   67% {
-    opacity: 0.93;
+    opacity: 0.98;
   }
   68% {
     opacity: 1;
