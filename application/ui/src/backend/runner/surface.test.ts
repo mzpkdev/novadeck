@@ -143,15 +143,19 @@ const loading = () => {
   }
   return { arrive: () => arrival.give([]), restore }
 }
-// Collects each xterm as the surface opens it.
-const opening = () => {
-  const opened: Terminal[] = []
-  const originalOpen = Terminal.prototype.open
-  vi.spyOn(Terminal.prototype, "open").mockImplementation(function (this: Terminal, element) {
-    opened.push(this)
-    return originalOpen.call(this, element)
+// Records each font family xterm is told to use after it opens, in order.
+const fontChanges = () => {
+  const changes: string[] = []
+  const options = Object.getOwnPropertyDescriptor(Terminal.prototype, "options")!.get!
+  vi.spyOn(Terminal.prototype, "options", "get").mockImplementation(function (this: Terminal) {
+    return new Proxy(options.call(this), {
+      set: (target, name, value) => {
+        if (name === "fontFamily") changes.push(value as string)
+        return Reflect.set(target, name, value)
+      },
+    })
   })
-  return opened
+  return changes
 }
 
 // Two programs' bodies, each its own component, so switching remounts the content.
@@ -527,17 +531,18 @@ describe("runner terminal surface", () => {
   context("while its bundled monospace font is still loading", () => {
     it("measures again in the font once it arrives", async () => {
       const font = loading()
-      const opened = opening()
+      const changes = fontChanges()
       const root = document.documentElement
-      root.style.setProperty("--font-mono", "Fallback Mono")
+      root.style.setProperty("--font-mono", "Bundled Mono")
       try {
         show(starting().runtime)
-        expect(opened[0]?.options.fontFamily).toBe("Fallback Mono")
+        const before = changes.length
 
-        root.style.setProperty("--font-mono", "Bundled Mono")
         await act(async () => font.arrive())
 
-        expect(opened[0]?.options.fontFamily).toBe("Bundled Mono")
+        // The family is unchanged, so xterm is told another one first: only a change
+        // makes it measure its cells again.
+        expect(changes.slice(before)).toEqual(["monospace", "Bundled Mono"])
       } finally {
         root.style.removeProperty("--font-mono")
         font.restore()
@@ -546,9 +551,9 @@ describe("runner terminal surface", () => {
 
     it("leaves a screen alone that closed before the font arrived", async () => {
       const font = loading()
-      const opened = opening()
+      const changes = fontChanges()
       const root = document.documentElement
-      root.style.setProperty("--font-mono", "Fallback Mono")
+      root.style.setProperty("--font-mono", "Bundled Mono")
       try {
         const page = show(starting().runtime)
         mounted.splice(mounted.indexOf(page), 1)
@@ -560,10 +565,11 @@ describe("runner terminal surface", () => {
         } finally {
           vi.useRealTimers()
         }
-        root.style.setProperty("--font-mono", "Bundled Mono")
+        const before = changes.length
+
         await act(async () => font.arrive())
 
-        expect(opened[0]?.options.fontFamily).toBe("Fallback Mono")
+        expect(changes.slice(before)).toEqual([])
       } finally {
         root.style.removeProperty("--font-mono")
         font.restore()
