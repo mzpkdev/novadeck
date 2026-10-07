@@ -61,7 +61,13 @@ export const clipFailure = (error: unknown): Error => {
     // A runner that sends no reason, or one this client doesn't know, still says why in
     // words; a bare code says nothing.
     const why = voiceUnavailable.safeParse(error.data)
-    if (why.success) return new Error(unavailable[why.data.reason])
+    // A missing engine's own message says more, such as that the disk is full.
+    if (why.success)
+      return new Error(
+        why.data.reason === "missing" && reason(error) !== "VOICE_UNAVAILABLE"
+          ? reason(error)
+          : unavailable[why.data.reason],
+      )
     return new Error(reason(error) !== "VOICE_UNAVAILABLE" ? reason(error) : unavailable.off)
   }
   if (hasCode(error, "VOICE_FAILED")) return new Error(`The speech engine failed: ${reason(error)}`)

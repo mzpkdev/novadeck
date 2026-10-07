@@ -178,9 +178,7 @@ describe("the runner's voice input", () => {
       ] as const) {
         const refused = runner({
           record: async () => {
-            throw new RunnerError("VOICE_UNAVAILABLE", "The runner's words.", {
-              data: { reason: why },
-            })
+            throw new RunnerError("VOICE_UNAVAILABLE", undefined, { data: { reason: why } })
           },
         })
         const refusedClip = refused.voice.record()
@@ -188,6 +186,18 @@ describe("the runner's voice input", () => {
         // eslint-disable-next-line no-await-in-loop -- One reason after the other.
         await expect(refusedClip.finish()).rejects.toThrow(words)
       }
+
+      // A missing engine's own message says more than the fixed words.
+      const full = runner({
+        record: async () => {
+          throw new RunnerError("VOICE_UNAVAILABLE", "There is not enough disk space.", {
+            data: { reason: "missing" },
+          })
+        },
+      })
+      const fullClip = full.voice.record()
+      fullClip.append(Int16Array.of(1))
+      await expect(fullClip.finish()).rejects.toThrow("not enough disk space")
 
       // A runner that sends no reason, or one this client doesn't know, is still heard.
       for (const data of [undefined, { reason: "newer" }]) {

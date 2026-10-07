@@ -511,8 +511,9 @@ export const voiceState = z.strictObject({
   sizes: z.strictObject({ engine: z.int().nonnegative(), turbo: z.int(), small: z.int() }),
   installing: voiceInstall.nullable(),
   check: voiceCheck.nullable(),
-  // Why the last install, or the engine's update, failed, until the next install or
-  // update. A clip that fails to transcribe is its caller's error alone.
+  // Why the last install, or the engine's update, failed, until the next install, update
+  // or removal, or a clip that transcribes anyway. A clip that fails to transcribe is its
+  // caller's error alone.
   failure: z.string().max(1024).nullable(),
 })
 

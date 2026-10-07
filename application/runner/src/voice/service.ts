@@ -357,6 +357,8 @@ export class Voice {
   async set(change: VoiceSettingsChange): Promise<void> {
     this.assertOpen()
     await this.ready()
+    // The runner may have closed while the saved state loaded.
+    this.assertOpen()
     if (this.uninstalling) throw new DomainError("CONFLICT", "Voice input is being removed.")
     const model = change.model ?? this.settings.voiceSettings().model
     if (change.model !== undefined && !this.installed.includes(change.model))
@@ -373,6 +375,7 @@ export class Voice {
   async record(owner: string, clipId: string, offset: number, data: string): Promise<void> {
     this.assertOpen()
     await this.ready()
+    this.assertOpen()
     const config = this.configuration()
     if (this.clips.write(owner, clipId, offset, Buffer.from(data, "base64")))
       this.engine.start(config).catch(() => {
@@ -399,6 +402,12 @@ export class Voice {
     try {
       const result = await this.engine.transcribe(config, wav(pcm), { language, prompt })
       this.clips.discard(owner, clipId)
+      // A clip that works settles a failure that left voice input to be tried anyway, as a
+      // check that ran out of time; an install or update under way owns it until it ends.
+      if (this.failure !== null && this.installing === null) {
+        this.failure = null
+        this.changed()
+      }
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

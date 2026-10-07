@@ -179,6 +179,11 @@ describe("installing voice input", () => {
     expect(voice.state()).toMatchObject({ installed: ["small"], enabled: false, installing: null })
     await expect(voice.set({ enabled: true })).resolves.toBeUndefined()
     expect(voice.state().enabled).toBe(true)
+
+    // Dictating anyway, as the failure suggests, settles it.
+    await voice.record("owner", "clip", 0, pcm(3200))
+    await expect(voice.transcribe("owner", "clip")).resolves.toBeDefined()
+    expect(voice.state().failure).toBeNull()
   })
 
   it("keeps the model in use when another fails its check or is cancelled", async ({
@@ -798,6 +803,21 @@ describe("closing voice input", () => {
     await expect(voice.transcribe("owner", "clip")).rejects.toMatchObject({
       code: "RUNTIME_CLOSING",
     })
+  })
+
+  it("refuses a setting or a recording that waited for the saved state as it closed", async ({
+    resources,
+  }) => {
+    const { voice } = await installed(resources)
+    voice.start()
+
+    const setting = voice.set({ language: "de" })
+    const recording = voice.record("owner", "clip", 0, pcm(2))
+    const closing = voice.close()
+
+    await expect(setting).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
+    await expect(recording).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
+    await closing
   })
 
   it("ends a watch when its owner is released", async ({ resources }) => {
