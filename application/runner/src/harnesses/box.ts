@@ -1,4 +1,5 @@
 import type { ScreenText } from "../terminals/screen.js"
+import { cells } from "../terminals/width.js"
 
 /**
  * What a harness's input box holds, as its adapter reads it off the screen. Only a
@@ -76,22 +77,18 @@ export type BoxProfile = {
   readonly room: (rows: number) => number
 }
 
-/** How many columns a line takes: wide characters (CJK, emoji) count two. */
-const cells = (line: string): number =>
-  [...line].reduce((sum, char) => sum + ((char.codePointAt(0) ?? 0) >= 0x1100 ? 2 : 1), 0)
-
 /** A line with its tabs spread to the next multiple of eight columns. */
 const untabbed = (line: string): string => {
   let out = ""
   let column = 0
-  for (const char of line) {
-    if (char === "\t") {
+  const parts = line.split("\t")
+  for (const [index, part] of parts.entries()) {
+    out += part
+    column += cells(part)
+    if (index < parts.length - 1) {
       const to = 8 - (column % 8)
       out += " ".repeat(to)
       column += to
-    } else {
-      out += char
-      column += cells(char)
     }
   }
   return out
@@ -121,7 +118,7 @@ const wrappedLine = (line: string, width: number): number => {
 /**
  * How many rows the text takes in a box on a screen `columns` wide, the marker and indent
  * (two columns) aside: each line wrapped at word boundaries, tabs spread to multiples of
- * eight columns, wide characters (CJK, emoji) counting two.
+ * eight columns, each character as wide as the terminal emulator draws it (`cells`).
  */
 export const wrappedRows = (text: string, columns: number): number => {
   const width = Math.max(columns - 2, 1)
