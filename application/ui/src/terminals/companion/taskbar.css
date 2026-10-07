@@ -223,7 +223,11 @@
   outline-offset: calc(var(--border-width) * -1);
   background-color: var(--_bg);
   color: var(--_fg);
-  font: 600 var(--text-label)/13px var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  font-style: normal;
+  line-height: 13px;
 }
 .plan-tb-count[data-mail="held"] {
   --_bg: var(--taskbar-count-held-bg, var(--color-warning));

@@ -185,7 +185,11 @@
 }
 .plan-spine-label {
   margin: 0 8px 8px;
-  font: var(--text-label) var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: normal;
+  font-style: normal;
+  line-height: normal;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--spine-label-fg, var(--color-muted));
@@ -220,7 +224,11 @@
   border-radius: var(--radius-control);
   background-color: var(--spine-count-bg, var(--color-strong));
   color: var(--spine-count-fg, var(--color-on-strong));
-  font: var(--text-label)/16px var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: normal;
+  font-style: normal;
+  line-height: 16px;
   font-style: normal;
   text-align: center;
 }

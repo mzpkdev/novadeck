@@ -42,7 +42,11 @@
   margin: auto;
   background: transparent;
   color: var(--prose-fg, var(--color-ink));
-  font: var(--text-lead)/1.75 var(--prose-font, var(--font-sans));
+  font-family: var(--prose-font, var(--font-sans));
+  font-size: var(--text-lead);
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1.75;
 }
 .cm-plan-h1 {
   font-size: 26px;
@@ -71,7 +75,11 @@
   border-radius: var(--radius-control);
   background-color: var(--prose-code-bg, var(--color-soft));
   color: var(--prose-code-fg, currentColor);
-  font: var(--text-code) var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  font-weight: normal;
+  font-style: normal;
+  line-height: normal;
 }
 .cm-plan-path {
   border: var(--border-width) solid var(--prose-path-border-color, var(--color-line));
@@ -79,7 +87,11 @@
   font-size: var(--text-control);
 }
 .cm-plan-listmark {
-  font: var(--text-control) var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-control);
+  font-weight: normal;
+  font-style: normal;
+  line-height: normal;
   color: var(--prose-muted-fg, var(--color-muted));
 }
 .cm-plan-quote {
@@ -88,7 +100,11 @@
 }
 .cm-plan-codeblock {
   background-color: var(--prose-codeblock-bg, var(--color-shell));
-  font: var(--text-control)/1.9 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-control);
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1.9;
 }
 .cm-plan-fence {
   font-size: 0;

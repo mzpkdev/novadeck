@@ -72,7 +72,11 @@
   white-space: nowrap;
 }
 .mail-thread-head code {
-  font: var(--text-control) var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-control);
+  font-weight: normal;
+  font-style: normal;
+  line-height: normal;
   color: var(--mail-meta-fg, var(--color-muted));
 }
 .mail-thread-count {

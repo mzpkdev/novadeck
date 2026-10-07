@@ -91,7 +91,11 @@
   color: var(--artifact-meta-fg, var(--color-muted));
 }
 .artifact-meta code {
-  font: var(--text-control) var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-control);
+  font-weight: normal;
+  font-style: normal;
+  line-height: normal;
   color: var(--artifact-meta-code-fg, var(--color-ink));
 }
 .artifact-meta-push {
@@ -155,7 +159,11 @@
   min-height: 0;
   padding: 10px 0;
   overflow: auto;
-  font: var(--text-code)/1.75 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1.75;
   user-select: text;
 }
 .artifact-code div {
@@ -203,7 +211,11 @@
   border-radius: var(--radius-control);
   background-color: var(--artifact-url-bg, var(--color-paper));
   color: var(--artifact-url-fg, var(--color-ink));
-  font: var(--text-control) var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-control);
+  font-weight: normal;
+  font-style: normal;
+  line-height: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
