@@ -216,8 +216,8 @@ describe("demo conversations", () => {
   it("drops what waited for an agent that ended, never giving it to the next", async () => {
     const { chat, status, said } = open()
     await chat.send(key("03"), "stale for the old agent")
+    // The agent ends and another starts at once, with no moment between.
     status("03", { state: "idle" })
-    await vi.advanceTimersByTimeAsync(0)
     status("03", { state: "running", agent: { working: false } })
     await chat.send(key("03"), "fresh")
     await vi.advanceTimersByTimeAsync(demoTurnMs * 3)

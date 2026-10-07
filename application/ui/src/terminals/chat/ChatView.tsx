@@ -300,8 +300,9 @@ export const ChatView = ({
           setLost(false)
           setUnrecorded(false)
           // Words held as a reply whose question went are the person's message once edited,
-          // as the hold is written or not yet.
-          if (mode === "held" && replyTo !== "held") onReplyTo(null)
+          // as the hold is written or not yet; not while that reply is on its way, whose
+          // words, should it fail, come back held.
+          if (mode === "held" && replyTo !== "held" && !replyGoing) onReplyTo(null)
           onDraft(text)
         }}
         mode={mode}

@@ -360,6 +360,8 @@ export const createDemoChat = (
     },
     observe: (workspace) => {
       latest = workspace
+      // What waited for an agent that ended goes at once, before another can start there.
+      for (const [id, entry] of queues) if (!runs(locate(entry.key))) queues.delete(id)
       // After the commit that freed an agent has said all it says, as its turn's reply.
       if (queues.size > 0) queueMicrotask(() => [...queues.keys()].forEach(drain))
       for (const entry of stores.values()) {

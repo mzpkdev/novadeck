@@ -433,6 +433,26 @@ describe("a reply to the agent's question, as its dialog changes", () => {
     expect(chat.replyTo()).toBeNull()
   })
 
+  it("brings back held the words of a reply that failed after its question went, though more were typed", async () => {
+    const store = createStore<Conversation>(withDialog("q1"))
+    const failures: ((failure: unknown) => void)[] = []
+    const chat = host(store, {
+      draft: "pick X",
+      program: "agy",
+      answer: () => new Promise<void>((_resolve, reject) => failures.push(reject)),
+    })
+    const { container } = chat
+    press(container, "Chat about this")
+    await send(container)
+    act(() => store.update(() => withDialog(null)))
+    set(box(container), "n")
+    set(box(container), "ne")
+    await act(async () => failures[0]!(new Error("Couldn't answer for the agent.")))
+    expect(chat.draft()).toBe("pick X\nne")
+    expect(chat.replyTo()).toBe("held")
+    expect(sendButton(container).disabled).toBe(true)
+  })
+
   it("refuses a reply past what the agent's field takes, saying so", () => {
     const { container } = host(createStore<Conversation>(withDialog("q1")), {
       draft: "x".repeat(16_385),
