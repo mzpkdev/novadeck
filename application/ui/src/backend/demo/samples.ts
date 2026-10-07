@@ -143,7 +143,10 @@ export const projectTerminals = (project: Project, agents = false): TerminalMeta
             attention: { kind: "plan" as const, count: 1 },
             usage: {
               context: { occupied: 124_000, capacity: 200_000 },
-              limits: [],
+              limits: [
+                { minutes: 300, used: 0.42, resetsAt: Date.now() + (2 * 60 + 14) * 60_000 },
+                { minutes: 10_080, used: 0.18, resetsAt: Date.now() + 3 * 86_400_000 },
+              ],
               model: "Opus 5.5",
               effort: null,
             },
@@ -166,7 +169,10 @@ export const projectTerminals = (project: Project, agents = false): TerminalMeta
             ],
             usage: {
               context: { occupied: 30_000, capacity: 200_000 },
-              limits: [{ minutes: 300, used: 0.4, resetsAt: null }],
+              limits: [
+                { minutes: 300, used: 0.4, resetsAt: Date.now() + 48 * 60_000 },
+                { minutes: 10_080, used: 0.12, resetsAt: Date.now() + 5 * 86_400_000 },
+              ],
               model: "gpt-6-astra",
               effort: "high",
             },

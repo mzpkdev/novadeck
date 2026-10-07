@@ -3,7 +3,7 @@ import type { AgentUsage, TerminalMetadata } from "./types"
 type Limit = AgentUsage["limits"][number]
 
 // A window's length as people say it: "5h", "7d", or minutes when neither fits.
-const windowName = (minutes: number | null): string => {
+export const windowName = (minutes: number | null): string => {
   if (minutes === null) return "limit"
   if (minutes % 1440 === 0) return `${minutes / 1440}d`
   if (minutes % 60 === 0) return `${minutes / 60}h`

@@ -237,6 +237,27 @@ describe("An agent's model and context", () => {
   })
 })
 
+describe("The account's subscriptions", () => {
+  it("show as a pill each in the footer, busiest window first, each opening its own", async () => {
+    // The demo's Claude Code and Codex report their five-hour and weekly windows.
+    await openWorkspace("/?demo=agents")
+    const skip = page.getByRole("button", { name: "Skip for now" })
+    if (await skip.query()) await skip.click()
+    const pills = page.getByRole("group", { name: "Subscriptions" }).getByRole("button")
+    expect(pills.elements().map((pill) => pill.getAttribute("aria-label"))).toEqual([
+      "Claude Code subscription: 5h 42% used",
+      "Codex subscription: 5h 40% used",
+    ])
+
+    await pills.first().click()
+
+    const claude = page.getByRole("dialog", { name: "Claude Code subscription" })
+    await expect.element(claude.getByText("18%")).toBeVisible()
+    await expect.element(claude.getByText(/^resets in 2h 1\dm · /)).toBeVisible()
+    await expect.element(claude.getByText("Codex")).not.toBeInTheDocument()
+  })
+})
+
 describe("Connecting agents", () => {
   context("in Preferences", () => {
     it("offers each installed agent switched off, and not the ones missing", async () => {
