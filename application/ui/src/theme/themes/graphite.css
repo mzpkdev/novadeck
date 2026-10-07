@@ -1,4 +1,4 @@
-/* Graphite, Novadeck's own look: steel greys in light, deep navies in dark, each with
+/* Graphite, Novadeck's own look: steel greys in light, slate in dark, each with
    one accent as its strong colour: deep teal in light, electric cyan in dark.
    The strong colour is for primary actions, on states (filled buttons, switches,
    checkboxes), what is selected, and focus rings; everything else stays grey.
@@ -118,31 +118,31 @@
   --artifact-webview-bg: #ffffff;
 }
 
-/* The dark scheme: deep navy grounds, stepping lighter from the canvas to the paper,
-   each step wide enough to tell the regions apart. The strong colour is the cyan, so
-   on states, what is selected and focus read in it. */
+/* The dark scheme: slate grounds, greys with a trace of blue, stepping lighter from the
+   canvas to the paper, each step wide enough to tell the regions apart. The strong
+   colour is the cyan, so on states, what is selected and focus read in it. */
 [data-theme="graphite"][data-scheme="dark"] {
   color-scheme: dark;
 
   /* Grounds */
-  --color-canvas: #080b10;
-  --color-shell: #0f131d;
-  --color-paper: #181d28;
-  --color-soft: #222835;
+  --color-canvas: #0a0c0e;
+  --color-shell: #131519;
+  --color-paper: #1d1f23;
+  --color-soft: #282a2f;
   /* Text */
-  --color-ink: #e5e8f0;
-  --color-muted: #99a2b8;
+  --color-ink: #e8e9ed;
+  --color-muted: #a2a6af;
   /* Lines */
-  --color-line: #2d3444;
-  --color-line-strong: #3e4556;
+  --color-line: #34373d;
+  --color-line-strong: #45484f;
   /* Emphasis: an electric cyan, kept to the few things it marks. */
   --color-strong: #00e5d6;
   --color-strong-hover: #5cefe4;
   --color-on-strong: #04161a;
   /* Overlays */
-  --color-scrim: rgb(3 6 14 / 0.55);
-  --color-selection: #313b54;
-  --color-shadow: rgb(2 4 10);
+  --color-scrim: rgb(6 7 9 / 0.55);
+  --color-selection: #3b3f4a;
+  --color-shadow: rgb(3 4 6);
   /* Tones: deep tints with light text of the same hue. */
   --color-success: #1f3326;
   --color-success-fg: #b9dcc0;
@@ -159,29 +159,29 @@
   --color-syntax-property: #8fc3f0;
   --color-syntax-definition: #adb3f5;
   --color-syntax-type: #e4c07a;
-  --color-syntax-comment: #99a2b8;
+  --color-syntax-comment: #a2a6af;
   /* Terminal: the cursor is a block of the cyan, the character under it in the paper. */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
   --terminal-cursor: #00e5d6;
   --terminal-selection: var(--color-selection);
   /* Black stays a step above the paper so text drawn in it still reads. */
-  --terminal-ansi-black: #484f60;
+  --terminal-ansi-black: #4f5259;
   --terminal-ansi-red: #e5807a;
   --terminal-ansi-green: #8cc796;
   --terminal-ansi-yellow: #e0c070;
   --terminal-ansi-blue: #82b1e8;
   --terminal-ansi-magenta: #cf9ae0;
   --terminal-ansi-cyan: #7cc6cf;
-  --terminal-ansi-white: #c7cdd8;
-  --terminal-ansi-black-bright: #7f879a;
+  --terminal-ansi-white: #ccced3;
+  --terminal-ansi-black-bright: #878a92;
   --terminal-ansi-red-bright: #f1a39d;
   --terminal-ansi-green-bright: #aedbb5;
   --terminal-ansi-yellow-bright: #ecd592;
   --terminal-ansi-blue-bright: #a7c8f0;
   --terminal-ansi-magenta-bright: #dfb6ec;
   --terminal-ansi-cyan-bright: #a3dbe2;
-  --terminal-ansi-white-bright: #f0f2f7;
+  --terminal-ansi-white-bright: #f2f3f5;
   /* Depth: deeper, so surfaces still lift off a dark ground. */
   --shadow-control: 0 1px 3px color-mix(in srgb, var(--color-shadow) 30%, transparent);
   --shadow-panel:
@@ -196,21 +196,21 @@
 
   /* Component tokens: an off switch and an unchecked box are drawn by their edges, which
      a line colour leaves near invisible on a dark ground; these keep 3:1 against it. */
-  --toggle-track-off-border-color: #656d81;
-  --toggle-thumb-border-color: #656d81;
-  --toggle-box-border-color: #656d81;
+  --toggle-track-off-border-color: #6d7079;
+  --toggle-thumb-border-color: #6d7079;
+  --toggle-box-border-color: #6d7079;
   /* Component tokens: the brand tile (the logo, the welcome's start button, a checked
-     choice's icon) stays navy with a light edge, its glyph in the cyan, rather than a
+     choice's icon) stays slate with a light edge, its glyph in the cyan, rather than a
      cyan block. */
-  --brand-tile-bg: linear-gradient(180deg, #2a2f3c, #1f2430);
+  --brand-tile-bg: linear-gradient(180deg, #2f3137, #24262b);
   --brand-tile-fg: #00e5d6;
-  --brand-tile-border-color: #51596c;
+  --brand-tile-border-color: #595c64;
   /* Component tokens: fills inside a panel restated on the soft and shell grounds, so
      light's lighter steps don't carry over. */
-  --artifact-code-pointed-bg: #222835;
-  --prose-code-bg: #222835;
-  --demo-request-bg: #222835;
-  --demo-form-bg: #0f131d;
+  --artifact-code-pointed-bg: #282a2f;
+  --prose-code-bg: #282a2f;
+  --demo-request-bg: #282a2f;
+  --demo-form-bg: #131519;
   /* Component tokens: the cyan's stripes glow like neon tubes, a bright core with a soft
      bloom: the selection bars, the tab underline and the running sweep. Only the thin
      lines glow, never text or fills, and only here, where a dark ground lets light read
@@ -219,7 +219,7 @@
   --tabs-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
   --segmented-indicator-mark-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
   --window-phase-running-shadow: drop-shadow(0 0 3px rgb(0 229 214 / 0.75));
-  /* Component tokens: the chrome's grain in light specks, so it reads on navy. */
+  /* Component tokens: the chrome's grain in light specks, so it reads on slate. */
   --region-header-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.07 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --region-footer-image: var(--region-header-image);
   --region-rail-image: var(--region-header-image);
@@ -230,16 +230,16 @@
   --canvas-dots-opacity: 0.07;
   /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
      as a state. */
-  --window-phase-ended-border-color: #c9d0dc;
+  --window-phase-ended-border-color: #cfd1d6;
   /* Component tokens: the Deck mark's cards, stepping back from the tile into the
      ground. */
-  --deck-mark-card-near-bg: #3a4050;
-  --deck-mark-card-far-bg: #262b39;
+  --deck-mark-card-near-bg: #40434a;
+  --deck-mark-card-far-bg: #2c2e33;
   /* Component tokens: the workspace's edges shade darker than its ground, as in light;
      the soft ground, lighter here, would make them glow instead. Its glow is the paper,
      restated so light's steel glow doesn't carry over. */
-  --workspace-glow-bg: #181d28;
-  --workspace-edge-bg: #040609;
+  --workspace-glow-bg: #1d1f23;
+  --workspace-edge-bg: #050608;
   /* Component tokens: behind a live page while it loads. Pages assume a white ground
      whatever the scheme, so this stays white in both. */
   --artifact-webview-bg: #ffffff;
