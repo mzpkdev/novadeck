@@ -167,11 +167,20 @@ for (const setup of setups) {
       })
       await t1.reached("working", { after: mark })
       const stopped = await t1.interrupt()
-      // Let go only once the agent has taken the Escape, which Antigravity 1.2.14 does a
-      // moment after the key, on any prompt: a reply let go the instant `interrupt` resolves
-      // beats it, and one let go 100 ms or more after never does (probed,
-      // probes/interrupt-held-reply.e2e.ts).
-      await sleep(500)
+      // Let go only once the agent has taken the Escape: Antigravity and Codex take the key a
+      // moment after it is written, and a reply let go before then still draws, its turn
+      // finished (probes/interrupt-held-reply.e2e.ts). Their own account of the
+      // interruption says they took it; Claude Code's is the prompt gone from the screen,
+      // which the runner clears from its box before `interrupt` resolves.
+      const account = setup.interrupted("Hold on")
+      await t1.poll(
+        async () => {
+          const shown = await t1.screen()
+          return account.test(shown) || !shown.includes("Hold on") ? true : undefined
+        },
+        "the harness to take the interrupt",
+        30_000,
+      )
       held.open()
       await sleep(1500)
 

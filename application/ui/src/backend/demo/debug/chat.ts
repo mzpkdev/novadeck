@@ -8,7 +8,8 @@ import type { DemoAction } from "./types"
 
 // The ways the runner turns a chat's send away, which the demo's agents never do of their
 // own accord: one can be armed for the next send, which fails as the runner's would. The
-// next Stop can be armed to fail as the runner's does when the queued words stay in the box.
+// next Stop can be armed to fail as the runner's does when the queued words stay in the
+// box, or when a request waits on the person.
 const failures: readonly {
   // No reason: as an older runner, or one this client doesn't know, says nothing of why.
   readonly reason: ConflictReason | null

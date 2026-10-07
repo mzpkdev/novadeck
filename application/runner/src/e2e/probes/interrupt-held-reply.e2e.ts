@@ -95,11 +95,13 @@ for (const setup of setups) {
               record.stateAfter = t.summary().activity?.state
               record.modelCallsAfter = run.model.calls.slice(calls).filter((c) => !c.side).length
               record.msSinceEscape = Date.now() - sent
-              record.screenAfter = screenRecord(shown).rows
+              record.screenAfter = screenRecord(shown)
             } catch (error) {
               record.error = String(error)
             }
             held.open()
+            // Each run's terminal goes, so later cases don't run under the load of earlier ones.
+            await run.deck.terminals.close({ terminalId: t.id }, "e2e").catch(() => {})
             out[key].push(record)
             writeFileSync(
               join(

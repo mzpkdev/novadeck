@@ -32,21 +32,21 @@ describe("the debug panel's chat failures", () => {
     const chat = createDebugChat()
     const conversations = chat.wrap(inner())
     const armed = async (label: string) => {
-      await chat.actions.find((action) => action.label.includes(label))!.run({} as never)
+      await chat.actions.find((action) => action.label === `Next send: ${label}`)!.run({} as never)
       return conversations.send(key, "hi").catch((error: unknown) => error)
     }
-    const agent = await armed("no agent")
+    const agent = await armed("no agent running")
     expect(agent).toBeInstanceOf(SettleInTerminal)
     expect(agent).toHaveProperty("message", expect.stringContaining("No agent is running"))
     const pending = await armed("request waiting")
     expect(pending).not.toBeInstanceOf(SettleInTerminal)
     expect(pending).toHaveProperty("message", expect.stringContaining("waiting for your answer"))
-    const paste = await armed("not ready")
+    const paste = await armed("screen not ready")
     expect(paste).not.toBeInstanceOf(SettleInTerminal)
     expect(paste).toHaveProperty("message", expect.stringContaining("in a moment"))
 
     // As an older runner says nothing of why: the terminal is where to look.
-    const none = await armed("no reason")
+    const none = await armed("no reason given")
     expect(none).toBeInstanceOf(SettleInTerminal)
     expect(none).toHaveProperty("message", expect.stringContaining("Check its terminal"))
   })
