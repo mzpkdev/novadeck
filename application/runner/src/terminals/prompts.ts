@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { normalisedText, promptRefusal } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import { compact, isEmpty, type BoxProfile } from "../harnesses/box.js"
+import { isEmpty, sameText, wrappedRows, type BoxProfile } from "../harnesses/box.js"
 import type { ScreenText } from "./doorbell.js"
 import { bracketedPaste, checkPaste } from "./ring.js"
 
@@ -103,7 +103,7 @@ export class Prompts {
   /**
    * Gives the terminal's agent `text` as a prompt, once those before it are done. Refuses
    * as `admit` says, with `CONFLICT` too where the screen takes no bracketed paste, or its
-   * input box is not on it or holds a draft already; `PROMPT_REFUSED` for text a TUI
+   * input box is not on it, holds a draft already, or has no room on the screen for the text; `PROMPT_REFUSED` for text a TUI
    * would take for more than a message (`promptRefusal`); `PROMPT_FAILED` where the paste
    * never showed as exactly the text, leaving what landed of it as a draft. All but the
    * last write nothing.
@@ -149,6 +149,18 @@ export class Prompts {
             "The agent's input box holds text already: a draft the prompt would merge into.",
           )
       }
+      // A text that shows whole in a box with no room for it has no first row to read,
+      // and would stay as a draft the next prompt is refused for.
+      if (
+        profile &&
+        before.columns !== undefined &&
+        !profile.collapses(text) &&
+        wrappedRows(text, before.columns) > profile.room(before.rows.length)
+      )
+        throw new DomainError(
+          "CONFLICT",
+          "The message is too tall for the agent's input box on this screen: make the terminal larger or the message shorter.",
+        )
       // Asked before the paste, which the person's own keys make a draft.
       const vanish = this.host.ready(terminalId)
       // A person's paste, whose line breaks the TUI takes as text, never as Enter.
@@ -232,7 +244,6 @@ export class Prompts {
     holding: () => boolean,
   ): Promise<boolean> {
     const shown = before.rows.join("\n")
-    const expected = compact(text)
     const until = Date.now() + this.pasteMs
     let last: string | undefined
     let accepted = false
@@ -246,7 +257,7 @@ export class Prompts {
         const box = profile.read(after)
         const fits =
           box !== undefined &&
-          (compact(box.text) === expected || (collapsible(text) && profile.collapsed(box)))
+          (sameText(box.text, text) || (collapsible(text) && profile.collapsed(box)))
         const key = fits ? `${box.first}:${box.last}:${box.text}` : undefined
         if (key !== undefined && key === last) return holding()
         last = key

@@ -11,4 +11,9 @@ import { markedBox, type BoxProfile } from "../box.js"
 export const box: BoxProfile = {
   read: (screen) => markedBox(screen, "›"),
   collapsed: ({ text }) => /^\[Pasted Content \d+ chars?\]$/.test(text.trim()),
+  // 999 and 1,000 characters showed whole, 1,024 did not, whatever the lines: 30 short
+  // lines showed whole.
+  collapses: (text) => text.length > 1024,
+  // The cursor's row is the box's last, a blank row, its status line and its hints below.
+  room: (rows) => rows - 3,
 }

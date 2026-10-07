@@ -20,6 +20,8 @@ const profile: BoxProfile = {
     return { text: lines.join("\n").trimEnd(), first, last }
   },
   collapsed: ({ text }) => /^\[Pasted text #\d+ \+\d+ lines\]$/.test(text),
+  collapses: (text) => text.length > 500,
+  room: (rows) => rows - 3,
 }
 
 /**
@@ -91,7 +93,11 @@ const terminal = (
     box: () => (options.unread ? undefined : profile),
     screen: () => {
       looks += 1
-      return Promise.resolve({ rows: draw(), bracketedPaste: options.bracketedPaste ?? true })
+      return Promise.resolve({
+        rows: draw(),
+        columns: 40,
+        bracketedPaste: options.bracketedPaste ?? true,
+      })
     },
     hold: () => {
       if (held || sizes) return { release: () => {}, settle: () => {}, holding: () => false }
@@ -147,6 +153,9 @@ const refusal = async (promise: Promise<unknown>): Promise<string> => {
   }
   return "none"
 }
+
+const lines = (count: number) =>
+  Array.from({ length: count }, (_, index) => `Line ${index + 1}`).join("\n")
 
 describe("prompts", () => {
   it("paste a line as one bracketed paste and press Enter once the box shows it", async () => {
@@ -253,6 +262,36 @@ describe("prompts", () => {
       const prompts = new Prompts(host, fast)
       expect(await refusal(prompts.prompt("t", "First"))).toBe("CONFLICT")
       expect(written).toEqual([])
+    })
+  })
+
+  describe("a message taller than the box's room on the screen", () => {
+    it("is refused where it shows whole and would scroll its first row off, writing nothing", async () => {
+      const { host, written, state } = terminal()
+      // The screen has 15 rows, so the box has room for 12.
+      expect(await refusal(new Prompts(host, fast).prompt("t", lines(13)))).toBe("CONFLICT")
+      expect(written).toEqual([])
+      expect(state()).toMatchObject({ held: false, sizes: false })
+    })
+
+    it("counts the rows a long line wraps to", async () => {
+      const { host, written } = terminal()
+      // 40 columns leave 38 for text: 6 lines of 77 characters take 18 rows.
+      const text = Array.from({ length: 6 }, () => "w".repeat(77)).join("\n")
+      expect(await refusal(new Prompts(host, fast).prompt("t", text))).toBe("CONFLICT")
+      expect(written).toEqual([])
+    })
+
+    it("is sent where it fits", async () => {
+      const { host, written } = terminal()
+      await new Prompts(host, fast).prompt("t", lines(12))
+      expect(enters(written)).toBe(1)
+    })
+
+    it("is sent where the harness collapses it to a placeholder", async () => {
+      const { host, written } = terminal({ takes: "placeholder" })
+      await new Prompts(host, fast).prompt("t", lines(100))
+      expect(enters(written)).toBe(1)
     })
   })
 

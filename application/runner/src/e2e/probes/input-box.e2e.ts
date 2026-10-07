@@ -181,6 +181,23 @@ for (const setup of setups) {
         await clear()
       }
 
+      // Text a person's own: indented lines, a tab, trailing spaces, blank lines; and wide
+      // characters (a VS16 emoji, a ZWJ family, CJK), which TUIs and terminals count alike
+      // only with the right width tables.
+      for (const [name, words] of [
+        ["indented", "def check():\n\tif x:   \n        return 1  # trailing   \n\n\nend"],
+        [
+          "emoji",
+          "Thanks \u2764\ufe0f heart \u{1f468}\u200d\u{1f469}\u200d\u{1f467} family \u65e5\u672c\u8a9e",
+        ],
+      ] as const) {
+        raw(paste(words))
+        await sleep(1500)
+        await look(`text ${name}`)
+        await clear()
+        await look(`text ${name} cleared`)
+      }
+
       raw(paste("Say hello"))
       await sleep(800)
       raw("\r")

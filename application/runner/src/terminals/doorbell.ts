@@ -13,6 +13,8 @@ import { bracketedPaste, calmMs, checkPaste, freshNonce, gate } from "./ring.js"
 export type ScreenText = {
   readonly rows: readonly string[]
   readonly bracketedPaste: boolean
+  /** How many columns the screen has. */
+  readonly columns?: number
   /**
    * Each row's text with the dim cells blanked, same columns: what a TUI draws faint
    * (a box's placeholder suggestion, a hint) is not what the person typed.
@@ -43,6 +45,7 @@ export const screenText = (screen: Screen): ScreenText => {
   return {
     rows,
     bright,
+    columns: screen.cols,
     cursor: { row: buffer.cursorY, column: buffer.cursorX },
     bracketedPaste: screen.modes.bracketedPasteMode,
   }

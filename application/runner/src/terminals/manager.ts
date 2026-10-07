@@ -21,6 +21,7 @@ import type {
 } from "@novadeck/protocol"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import type { SerializeAddon as Serializer } from "@xterm/addon-serialize"
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
 import headless from "@xterm/headless"
 import type { Terminal as Screen } from "@xterm/headless"
 import * as pty from "node-pty"
@@ -334,6 +335,8 @@ type Record = {
    */
   held: {
     input: string[] | null
+    /** When the input's hold lapses by its cap at the latest, in epoch milliseconds. */
+    readonly until: number
     size: {
       readonly cols: number
       readonly rows: number
@@ -1089,11 +1092,14 @@ export class Terminals {
 
   private async interruptOnce(terminalId: string): Promise<void> {
     // The person's input is held while a prompt's paste or a ring's is on screen; an
-    // Escape then would cut into it. The hold lets go by its cap at the latest.
-    const until = Date.now() + holdCapMs + 500
-    while (this.live(terminalId)?.held?.input && Date.now() < until)
+    // Escape then would cut into it. The hold lets go by its own cap at the latest, which a
+    // prompt's is longer than a ring's.
+    while (this.live(terminalId)?.held?.input) {
+      const lapse = this.live(terminalId)?.held?.until ?? 0
+      if (Date.now() >= lapse + 500) break
       // eslint-disable-next-line no-await-in-loop -- The hold is waited out in turn.
       await new Promise((resolve) => setTimeout(resolve, 25))
+    }
     const record = this.promptable(terminalId)
     if (record.activity?.state !== "working") return
     // The turn's prompt, as its hooks told it, ends with the turn Escape ends.
@@ -1208,7 +1214,11 @@ export class Terminals {
     const record = live(terminalId)
     // A hold already in force is another's: this one has none.
     if (!record || record.held) return { release: () => {}, settle: () => {}, holding: () => false }
-    const held: NonNullable<Record["held"]> = { input: [], size: null }
+    const held: NonNullable<Record["held"]> = {
+      input: [],
+      until: Date.now() + inputCapMs,
+      size: null,
+    }
     record.held = held
     const release = () => {
       clearTimeout(inputCap)
@@ -2562,6 +2572,10 @@ export class Terminals {
     const screen = new Terminal({ cols, rows, scrollback: 1000, allowProposedApi: true })
     const serializer = new SerializeAddon()
     screen.loadAddon(serializer)
+    // Widths as a TUI's own (Ink's) count them, emoji sequences and CJK included: by the
+    // default's, a row it erased is a different number of rows, and stale ones stay.
+    screen.loadAddon(new UnicodeGraphemesAddon())
+    screen.unicode.activeVersion = "15-graphemes"
     const mouseEncoding = watchMouseEncoding(screen)
     try {
       const args = this.options.shellArgs ?? launched.args

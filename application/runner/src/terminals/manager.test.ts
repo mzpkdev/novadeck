@@ -132,7 +132,7 @@ describe("terminal interrupts", () => {
       {
         binding: unknown
         activity: unknown
-        held: { input: string[] | null; size: null } | null
+        held: { input: string[] | null; until: number; size: null } | null
         process: { write: (data: string) => void }
       }
     >
@@ -199,7 +199,7 @@ describe("terminal interrupts", () => {
 
   it("waits for the person's input to be let go before pressing Escape", async ({ terminals }) => {
     const { manager, id, writes, record } = await agent(terminals, "working")
-    record.held = { input: [], size: null }
+    record.held = { input: [], until: Date.now() + 5000, size: null }
     const done = manager.interrupt({ terminalId: id })
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(writes).toEqual([])

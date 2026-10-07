@@ -194,6 +194,42 @@ for (const setup of setups) {
       expect(await texts(t1, "user")).toEqual([])
     })
 
+    it("gives its agent indented code with a tab, trailing spaces and blank lines, then the next prompt", async ({
+      e2e: run,
+    }) => {
+      run.model.use(replies("def check", "Checked."), replies("Carry on", "Carried on."))
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+
+      await t1.prompt("def check():\n\tif x:   \n        return 1  # trailing   \n\n\nend")
+      await t1.until("Checked.")
+      await through(t1, ["working", "settled"], { after: mark })
+      const user = await item(t1, "user", (text) => text.includes("return 1"))
+      expect(user.replace(/\s+/g, "")).toBe("defcheck():ifx:return1#trailingend")
+      const next = t1.mark()
+      await t1.prompt("Carry on")
+      await t1.until("Carried on.")
+      await through(t1, ["working", "settled"], { after: next })
+    })
+
+    it("gives its agent emoji sequences and CJK, then the next prompt", async ({ e2e: run }) => {
+      run.model.use(replies("Thanks", "You are welcome."), replies("Carry on", "Carried on."))
+      const t1 = await start(run, setup)
+      const mark = t1.mark()
+
+      await t1.prompt(
+        "Thanks \u2764\ufe0f heart \u{1f468}\u200d\u{1f469}\u200d\u{1f467} family \u65e5\u672c\u8a9e",
+      )
+      await t1.until("You are welcome.")
+      await through(t1, ["working", "settled"], { after: mark })
+      await item(t1, "user", (text) => text.includes("\u65e5\u672c\u8a9e"))
+      // What the box drew of it is gone, so the next prompt finds it empty.
+      const next = t1.mark()
+      await t1.prompt("Carry on")
+      await t1.until("Carried on.")
+      await through(t1, ["working", "settled"], { after: next })
+    })
+
     it("queues a prompt given mid-turn as the person's would be, and answers both", async ({
       e2e: run,
     }) => {

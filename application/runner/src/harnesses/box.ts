@@ -27,10 +27,50 @@ export type BoxProfile = {
    * (Claude Code's `[Pasted text #1 +39 lines]`), which stands for the pasted text.
    */
   readonly collapsed: (box: InputBox) => boolean
+  /**
+   * Whether a paste of the text certainly shows as a placeholder, however small the
+   * screen (probed thresholds); false where it may show whole.
+   */
+  readonly collapses: (text: string) => boolean
+  /**
+   * How many rows the box may take on a screen of `rows` rows, with what the harness
+   * draws around it kept: a paste that shows whole and needs more has no first row to read.
+   */
+  readonly room: (rows: number) => number
+}
+
+/** How many columns a line takes: wide characters (CJK, emoji) count two. */
+const cells = (line: string): number =>
+  [...line].reduce((sum, char) => sum + ((char.codePointAt(0) ?? 0) >= 0x1100 ? 2 : 1), 0)
+
+/**
+ * How many rows the text takes in a box on a screen `columns` wide, the marker and indent
+ * (two columns) aside: each line wrapped, wide characters (CJK, emoji) counting two.
+ */
+export const wrappedRows = (text: string, columns: number): number => {
+  const width = Math.max(columns - 2, 1)
+  return text
+    .split("\n")
+    .reduce((rows, line) => rows + Math.max(Math.ceil(cells(line) / width), 1), 0)
 }
 
 /** Text without its whitespace, as a TUI may wrap and indent it anywhere. */
 export const compact = (text: string): string => text.replace(/\s+/g, "")
+
+// What a screen may draw differently from the emoji it was given: Codex and Antigravity
+// left a ZWJ family sequence blank (probed), so a box's text is compared without them.
+const pictures = /\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f/gu
+
+/**
+ * Whether the box's text is exactly the text sent, whitespace aside, and emoji as the
+ * screen drew them: a text of nothing but emoji must match as drawn.
+ */
+export const sameText = (shown: string, sent: string): boolean => {
+  const [a, b] = [compact(shown), compact(sent)]
+  if (a === b) return true
+  const [x, y] = [a.replace(pictures, ""), b.replace(pictures, "")]
+  return x !== "" && x === y
+}
 
 /** Whether the box holds nothing. */
 export const isEmpty = (box: InputBox): boolean => compact(box.text) === ""
@@ -68,16 +108,21 @@ const rule = (row: string | undefined): boolean => /^─{8,}$/.test((row ?? "").
 /**
  * A box drawn between two horizontal rules, its first row led by `marker` (Claude Code's
  * `❯`, Antigravity's `>`): the lowest pair of rules on the screen, the cursor between them.
- * History above it, a spinner, and the footer below do not matter.
+ * It starts at the nearest row led by the marker at or above the cursor, so rows a TUI's
+ * redraw left stale between the rules above its first row (it counts a wide character's
+ * width differently, and erases the wrong rows) are no part of it. History above the
+ * rules, a spinner, and the footer below do not matter.
  */
 export const ruledBox = (screen: ScreenText, marker: string): InputBox | undefined => {
   const bottom = screen.rows.findLastIndex(rule)
   if (bottom < 0) return undefined
   const top = screen.rows.slice(0, bottom).findLastIndex(rule)
   if (top < 0 || bottom - top < 2) return undefined
-  const box = read(screen, top + 1, bottom - 1, marker)
   const { cursor } = screen
-  return box && (!cursor || (cursor.row > top && cursor.row < bottom)) ? box : undefined
+  if (cursor && (cursor.row <= top || cursor.row >= bottom)) return undefined
+  for (let first = cursor?.row ?? bottom - 1; first > top; first -= 1)
+    if (screen.rows[first]?.startsWith(marker)) return read(screen, first, bottom - 1, marker)
+  return undefined
 }
 
 /**
@@ -92,9 +137,10 @@ export const markedBox = (screen: ScreenText, marker: string): InputBox | undefi
   for (; first >= 0; first -= 1) {
     const row = screen.rows[first] ?? ""
     if (row.startsWith(marker)) break
-    // The body is indented under the marker; a blank line may lie inside it, but the
-    // cursor's own row holds text, or the cursor is elsewhere.
-    const body = /^ {2}\S/.test(row) || (row.trim() === "" && first !== cursor.row)
+    // The body is indented under the marker, however much more the person's own lines
+    // are; a blank line may lie inside it, but the cursor's own row holds text, or the
+    // cursor is elsewhere.
+    const body = /^ {2}.*\S/.test(row) || (row.trim() === "" && first !== cursor.row)
     if (!body) return undefined
   }
   return first >= 0 ? read(screen, first, cursor.row, marker) : undefined

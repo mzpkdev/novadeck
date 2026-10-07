@@ -521,6 +521,55 @@
         "bright": {
           "22": "esc to cancel"
         }
+      },
+      "text indented": {
+        "height": 40,
+        "cursor": {
+          "row": 16,
+          "column": 4
+        },
+        "rows": {
+          "0": "To run a command as administrator (user \"root\"), use \"sudo <command>\".",
+          "1": "See \"man sudo_root\" for details.",
+          "4": "      ▄▀▀▄        Antigravity CLI 1.2.14",
+          "5": "     ▀▀▀▀▀▀       Gemini API key",
+          "6": "    ▀▀▀▀▀▀▀▀      Gemini 3.1 Pro (Low)",
+          "7": "   ▄▀▀    ▀▀▄     /tmp/novadeck-e2e-ZQOCUk/project",
+          "8": "  ▄▀▀      ▀▀▄",
+          "10": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "11": "> def check():",
+          "12": "      if x:",
+          "13": "          return 1  # trailing",
+          "16": "  end",
+          "17": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "18": "                                                                                                    Gemini 3.1 Pro · low"
+        },
+        "bright": {
+          "18": ""
+        }
+      },
+      "text emoji": {
+        "height": 40,
+        "cursor": {
+          "row": 11,
+          "column": 37
+        },
+        "rows": {
+          "0": "To run a command as administrator (user \"root\"), use \"sudo <command>\".",
+          "1": "See \"man sudo_root\" for details.",
+          "4": "      ▄▀▀▄        Antigravity CLI 1.2.14",
+          "5": "     ▀▀▀▀▀▀       Gemini API key",
+          "6": "    ▀▀▀▀▀▀▀▀      Gemini 3.1 Pro (Low)",
+          "7": "   ▄▀▀    ▀▀▄     /tmp/novadeck-e2e-ZQOCUk/project",
+          "8": "  ▄▀▀      ▀▀▄",
+          "10": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "11": "> Thanks ❤️ heart  family 日本語",
+          "12": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "13": "                                                                                                     Gmini 3.1 Pro · low"
+        },
+        "bright": {
+          "13": ""
+        }
       }
     },
     "1.3.1": {
@@ -1037,6 +1086,55 @@
         },
         "bright": {
           "21": "esc to cancel"
+        }
+      },
+      "text indented": {
+        "height": 40,
+        "cursor": {
+          "row": 16,
+          "column": 4
+        },
+        "rows": {
+          "0": "To run a command as administrator (user \"root\"), use \"sudo <command>\".",
+          "1": "See \"man sudo_root\" for details.",
+          "4": "      ▄▀▀▄        Antigravity CLI 1.3.1",
+          "5": "     ▀▀▀▀▀▀       Gemini API key",
+          "6": "    ▀▀▀▀▀▀▀▀      Gemini 3.1 Pro (Low)",
+          "7": "   ▄▀▀    ▀▀▄     /tmp/novadeck-e2e-sJy49l/project",
+          "8": "  ▄▀▀      ▀▀▄",
+          "10": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "11": "> def check():",
+          "12": "      if x:",
+          "13": "          return 1  # trailing",
+          "16": "  end",
+          "17": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "18": "                                                                                                    Gemini 3.1 Pro · low"
+        },
+        "bright": {
+          "18": ""
+        }
+      },
+      "text emoji": {
+        "height": 40,
+        "cursor": {
+          "row": 11,
+          "column": 37
+        },
+        "rows": {
+          "0": "To run a command as administrator (user \"root\"), use \"sudo <command>\".",
+          "1": "See \"man sudo_root\" for details.",
+          "4": "      ▄▀▀▄        Antigravity CLI 1.3.1",
+          "5": "     ▀▀▀▀▀▀       Gemini API key",
+          "6": "    ▀▀▀▀▀▀▀▀      Gemini 3.1 Pro (Low)",
+          "7": "   ▄▀▀    ▀▀▄     /tmp/novadeck-e2e-sJy49l/project",
+          "8": "  ▄▀▀      ▀▀▄",
+          "10": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "11": "> Thanks ❤️ heart  family 日本語",
+          "12": "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+          "13": "                                                                                                     Gmini 3.1 Pro · low"
+        },
+        "bright": {
+          "13": ""
         }
       }
     }

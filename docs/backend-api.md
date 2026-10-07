@@ -668,8 +668,20 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   in the box as a draft. Where no adapter reads the box (an agent not known by its
   harness), the text must instead show once on the screen where it didn't before, as the
   doorbell's test paste does (see `agent-messaging.md`), with the rest of the screen
-  unchanged. A box taller than the screen shows no first row and is not read, so a
-  prompt of some 35 lines that no harness collapses (it takes short lines) fails.
+  unchanged. A text that shows whole in a box taller than the screen has no first row to
+  read and would stay as a draft, so it is refused first with a `CONFLICT` (nothing
+  written, the message saying to enlarge the terminal or shorten the text): its lines,
+  wrapped at the screen's columns less the marker's two, take more rows than the harness
+  leaves for its box (Codex: the screen's rows less 3; Claude Code and Antigravity: less
+  4). A text the harness certainly collapses to a placeholder is not refused: Claude Code
+  collapses more than 3 lines or over about 900 characters, Antigravity more than 15
+  lines or one line over 1,024 characters, Codex over 1,024 characters (all probed
+  2026-10-07). A box's own lines may be indented, tab and trailing spaces included, and
+  hold blank lines; text is compared without its white space, and without the emoji a
+  harness drew blank (Codex and Antigravity did for a ZWJ family sequence), unless the
+  text is only emoji. The runner's headless terminal counts wide characters (emoji
+  sequences, CJK) as a TUI's own do (`@xterm/addon-unicode-graphemes`), so a redraw erases
+  the rows the TUI means.
   Prompts to one terminal go one at a time, in order; one that meets a doorbell ring under
   way waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
   person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and

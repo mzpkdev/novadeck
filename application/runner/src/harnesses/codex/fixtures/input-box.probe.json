@@ -521,6 +521,47 @@
           "15": "  Hold on",
           "33": "•                esc"
         }
+      },
+      "text indented": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 5
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.159.3)",
+          "2": "     /tmp/novadeck-e2e-Us3fOw/project",
+          "4": "  Greetings, fellow tinkerer.",
+          "31": "› def check():",
+          "32": "   if x:",
+          "33": "          return 1  # trailing",
+          "36": "  end",
+          "38": "  fake-model default · /tmp/novadeck-e2e-Us3fOw/project",
+          "39": "                                                                                               ⚠ 1 warning · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": ""
+        }
+      },
+      "text emoji": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 34
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.159.3)",
+          "2": "     /tmp/novadeck-e2e-Us3fOw/project",
+          "4": "  Greetings, fellow tinkerer.",
+          "36": "› Thanks ❤️  heart   family 日本語",
+          "38": "  fake-model default · /tmp/novadeck-e2e-Us3fOw/project",
+          "39": "                                                                                               ⚠ 1 warning · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": ""
+        }
       }
     },
     "0.160.1": {
@@ -1040,6 +1081,47 @@
           "12": "",
           "15": "  Hold on",
           "33": "•                esc"
+        }
+      },
+      "text indented": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 5
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.160.1)",
+          "2": "     /tmp/novadeck-e2e-tY0ND1/project",
+          "4": "  Anything interesting on the docket?",
+          "31": "› def check():",
+          "32": "   if x:",
+          "33": "          return 1  # trailing",
+          "36": "  end",
+          "38": "  fake-model default · /tmp/novadeck-e2e-tY0ND1/project",
+          "39": "                                                                                               ⚠ 1 warning · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": ""
+        }
+      },
+      "text emoji": {
+        "height": 40,
+        "cursor": {
+          "row": 36,
+          "column": 34
+        },
+        "rows": {
+          "1": "  >_ OpenAI Codex (v0.160.1)",
+          "2": "     /tmp/novadeck-e2e-tY0ND1/project",
+          "4": "  Anything interesting on the docket?",
+          "36": "› Thanks ❤️  heart   family 日本語",
+          "38": "  fake-model default · /tmp/novadeck-e2e-tY0ND1/project",
+          "39": "                                                                                               ⚠ 1 warning · f2 to view"
+        },
+        "bright": {
+          "1": "  >_ OpenAI Codex",
+          "2": ""
         }
       }
     }

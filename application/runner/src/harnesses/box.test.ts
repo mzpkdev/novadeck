@@ -6,7 +6,7 @@ import headless from "@xterm/headless"
 import { screenText, type ScreenText } from "../terminals/doorbell.js"
 import { describe, expect, it } from "../test.js"
 import { box as agy } from "./agy/box.js"
-import { compact, isEmpty, type BoxProfile } from "./box.js"
+import { compact, isEmpty, sameText, wrappedRows, type BoxProfile } from "./box.js"
 import { box as claude } from "./claude/box.js"
 import { box as codex } from "./codex/box.js"
 
@@ -42,6 +42,9 @@ const three = hold("one", "two", "three")
 const wrapped = Array.from({ length: 30 }, () => "wrapping words").join(" ")
 const ten = hold(...Array.from({ length: 10 }, (_, index) => `Short line ${index + 1}`))
 const twentyFive = hold(...Array.from({ length: 25 }, (_, index) => `Short line ${index + 1}`))
+const indented = "def check():\n\tif x:   \n        return 1  # trailing   \n\n\nend"
+const emoji =
+  "Thanks \u2764\ufe0f heart \u{1f468}\u200d\u{1f469}\u200d\u{1f467} family \u65e5\u672c\u8a9e"
 const words = (count: number) => Array.from({ length: count }, (_, i) => `w${i % 10}`).join(" ")
 
 /** What a state's box holds: nothing, exactly some text, or a collapsed paste. */
@@ -63,6 +66,7 @@ const alike: { readonly [name: string]: Expect } = {
   "15 mid-turn short pasted": { text: "go" },
   "16 mid-turn three lines": { text: three },
   "17 mid-turn long collapsed": "collapsed",
+  "text emoji": { text: emoji },
   "size 700 chars": { text: words(240) },
   "size 1500 chars": "collapsed",
 }
@@ -79,19 +83,34 @@ const harnesses: readonly {
     name: "Claude Code",
     profile: claude,
     versions: ["2.1.287", "2.1.292"],
-    states: { ...alike, "size 10 lines": "collapsed", "size 25 lines": "collapsed" },
+    states: {
+      ...alike,
+      "text indented": "collapsed",
+      "size 10 lines": "collapsed",
+      "size 25 lines": "collapsed",
+    },
   },
   {
     name: "Codex",
     profile: codex,
     versions: ["0.159.3", "0.160.1"],
-    states: { ...alike, "size 10 lines": { text: ten }, "size 25 lines": { text: twentyFive } },
+    states: {
+      ...alike,
+      "text indented": { text: indented },
+      "size 10 lines": { text: ten },
+      "size 25 lines": { text: twentyFive },
+    },
   },
   {
     name: "Antigravity",
     profile: agy,
     versions: ["1.2.14", "1.3.1"],
-    states: { ...alike, "size 10 lines": { text: ten }, "size 25 lines": "collapsed" },
+    states: {
+      ...alike,
+      "text indented": { text: indented },
+      "size 10 lines": { text: ten },
+      "size 25 lines": "collapsed",
+    },
   },
 ]
 
@@ -114,7 +133,7 @@ describe.each(harnesses)("the input box of $name", ({ name, profile, versions, s
       else {
         expect(isEmpty(read!)).toBe(false)
         expect(profile.collapsed(read!)).toBe(false)
-        expect(compact(read!.text)).toBe(compact(expected.text))
+        expect(sameText(read!.text, expected.text)).toBe(true)
       }
     })
 
@@ -186,5 +205,58 @@ describe("a box whose placeholder is drawn dim", () => {
     expect(compact(codex.read(typed)!.text)).toBe("AskCodextodoanything")
     const faint = await drawn(`\x1b[11;1H› ${dim("Ask Codex")}\x1b[11;12H`)
     expect(isEmpty(codex.read(faint)!)).toBe(false)
+  })
+})
+
+const screen = (rows: string[], row: number, column = 0): ScreenText => ({
+  rows,
+  cursor: { row, column },
+  bracketedPaste: true,
+})
+const lines = (count: number) => Array.from({ length: count }, () => "l").join("\n")
+
+describe("boxes read from synthetic screens", () => {
+  const rule = "─".repeat(40)
+
+  it("reads Codex lines indented more than the body, with blank lines inside", () => {
+    const read = codex.read(screen(["› def check():", "    return 1", "", "", "  end"], 4, 5))
+    expect(read?.text).toBe("def check():\n  return 1\n\n\nend")
+    expect(read?.first).toBe(0)
+  })
+
+  it("stops Codex's box at the nearest marker row, not the history above", () => {
+    const read = codex.read(screen(["› Say hello", "", "  Hello there.", "", "› go"], 4, 4))
+    expect(read).toMatchObject({ first: 4, last: 4, text: "go" })
+  })
+
+  it("reads Claude's box from its marker row, not from stale rows between the rules", () => {
+    const rows = [rule, "❯ Thanks ❤️ heart", "✢ Churning…", "❯", rule]
+    const read = claude.read(screen(rows, 3, 2))
+    expect(read).toMatchObject({ first: 3, last: 3 })
+    expect(isEmpty(read!)).toBe(true)
+  })
+
+  it("finds no Claude box where no row between the rules holds its marker", () => {
+    expect(claude.read(screen([rule, "  stale", rule], 1))).toBe(undefined)
+  })
+
+  it("compares text without the emoji a TUI left blank, but not emoji alone", () => {
+    expect(sameText("Hi  there", "Hi 👨‍👩‍👧 there")).toBe(true)
+    expect(sameText("", "👍")).toBe(false)
+    expect(sameText("👍", "👍")).toBe(true)
+    expect(sameText("Hi there too", "Hi there")).toBe(false)
+  })
+
+  it("tells how tall a text is, and which harness collapses it", () => {
+    expect(wrappedRows("a\n\nb", 80)).toBe(3)
+    expect(wrappedRows("x".repeat(100), 42)).toBe(3)
+    expect(wrappedRows("日".repeat(30), 32)).toBe(2)
+    expect(claude.collapses(lines(4))).toBe(true)
+    expect(claude.collapses(lines(3))).toBe(false)
+    expect(codex.collapses(lines(30))).toBe(false)
+    expect(codex.collapses("x".repeat(1100))).toBe(true)
+    expect(agy.collapses(lines(16))).toBe(true)
+    expect(agy.collapses(lines(15))).toBe(false)
+    expect(codex.room(20)).toBe(17)
   })
 })
