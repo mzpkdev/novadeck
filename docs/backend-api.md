@@ -952,6 +952,11 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
 Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
 `INVALID_DIRECTORY`, `INVALID_FILE`, `NOT_FOUND`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,
 `INVALID_CURSOR`, `UPLOAD_TOO_LARGE`, `RESOURCE_LIMIT` (too many calls in flight; retry later),
-`TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. The
-schemas and contract in
+`TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. A
+`CONFLICT` about typing into an agent's terminal (`agents.prompt`, `agents.answer`,
+`agents.interrupt`) carries `{ reason }` as its data (`conflictReason`): `pending`,
+`ringing` or `no-paste` clear by themselves, while `draft`, `shell`, `too-tall` and
+`no-box` are for the person to settle in the terminal. Other conflicts carry no data, and a
+client takes a reason it doesn't know as none, so it words each one itself rather than
+showing the runner's message. The schemas and contract in
 `application/protocol/src/` are the authoritative API definition.

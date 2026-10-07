@@ -312,6 +312,7 @@ export const ChatView = ({
           onReplyTo(null)
           focusBox()
         }}
+        onOpenTerminal={onAnswerInTerminal}
         refused={refused}
       />
     </section>

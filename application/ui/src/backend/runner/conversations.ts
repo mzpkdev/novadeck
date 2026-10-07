@@ -1,4 +1,5 @@
 import {
+  conflictReason,
   normalisedText,
   promptRefusal as protocolRefusal,
   type AgentDetail,
@@ -14,6 +15,8 @@ import {
   type ChatDialog,
   type ChatItem,
   type ChatRequest,
+  conflictFailure,
+  SettleInTerminal,
   WordsLost,
   type Conversation,
   type Conversations,
@@ -125,25 +128,26 @@ const said = (error: unknown): string | undefined =>
     ? error.message
     : undefined
 
+// Why the runner says a CONFLICT is one, where it says and this client knows the reason.
+const reasonOf = (error: { readonly data: unknown }) =>
+  conflictReason.safeParse(error.data).data?.reason
+
 // What the person is told when the agent can't take what they sent.
 const failure = (error: unknown, what: string): Error => {
   if (hasCode(error, "DISCONNECTED", "CLOSED")) return new Error("The runner is offline.")
   // Refused before anything was written: the text has a shape the agent reads as more than
-  // a message, or the agent can't take one now (its box holds a draft, or it waits on the
-  // person's answer). The runner says which.
+  // a message, or the agent can't take one now, for the reason the runner gives.
   if (hasCode(error, "PROMPT_REFUSED")) return new Error(said(error) ?? promptRefusal)
-  if (hasCode(error, "CONFLICT"))
-    return new Error(
-      said(error) ??
-        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
-    )
+  if (hasCode(error, "CONFLICT")) return conflictFailure(reasonOf(error))
   // Stopped, but the words queued behind the turn stay in the agent's own box.
   if (hasCode(error, "BOX_NOT_CLEARED"))
-    return new Error(
+    return new SettleInTerminal(
       "Stopped. Your queued message is still in the agent's box: clear it in the terminal.",
     )
   if (hasCode(error, "PROMPT_FAILED"))
-    return new Error("The prompt didn't land in the agent's box. It may be there as a draft.")
+    return new SettleInTerminal(
+      "The prompt didn't land in the agent's box. It may be there as a draft.",
+    )
   return new Error(`Couldn't ${what} the agent.`)
 }
 
@@ -165,8 +169,12 @@ const refusal = (error: unknown): Error => {
   if (hasCode(error, "PROMPT_REFUSED")) return new Error(said(error) ?? promptRefusal)
   if (hasCode(error, "DIALOG_CHANGED"))
     return new Error("The dialog changed — check it and answer again.")
-  if (hasCode(error, "CONFLICT"))
-    return new Error(said(error) ?? "Couldn't answer that here. Answer it in the terminal.")
+  if (hasCode(error, "CONFLICT")) {
+    const reason = reasonOf(error)
+    return reason
+      ? conflictFailure(reason)
+      : new Error("Couldn't answer that here. Answer it in the terminal.")
+  }
   if (hasCode(error, "WORDS_NOT_SENT")) return new WordsLost()
   if (hasCode(error, "ANSWER_FAILED"))
     return new Error("That answer didn't take. Answer it in the terminal.")
