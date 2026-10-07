@@ -7,7 +7,7 @@ const subagentsOf = (terminal: TerminalMetadata) => agentOf(terminal)?.subagents
 
 const counted = (count: number, one: string): string => `${count} ${one}${count === 1 ? "" : "s"}`
 
-// What the agent's ended turn left running, for its window's header: "3 agents · 1 task",
+// What the agent's turn left running, or while it runs, its harness counts, for its window's header: "3 agents · 1 task",
 // or "background work" where its harness doesn't count it. Else how many subagents it
 // runs: "2 subagents". Undefined without either.
 export const subagentsBadge = (terminal: TerminalMetadata): string | undefined => {
@@ -31,7 +31,7 @@ export const subagentsDetail = (terminal: TerminalMetadata): string | undefined 
   const agent = agentOf(terminal)
   if (agent?.background)
     return agent.working
-      ? "Its turn is over, but subagents it started still run: it works on until they finish"
+      ? "Subagents it started still run: it works on until they finish"
       : "Its turn is over; work it started runs on in the background"
   const counts = new Map<string, number>()
   for (const { type } of subagentsOf(terminal)) {

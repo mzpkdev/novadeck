@@ -52,7 +52,7 @@ describe("an agent's subagents", () => {
 
     it("says on hover whether it works on until that work finishes", () => {
       expect(subagentsDetail(waiting(1, 0))).toBe(
-        "Its turn is over, but subagents it started still run: it works on until they finish",
+        "Subagents it started still run: it works on until they finish",
       )
       const command: TerminalMetadata = {
         ...waiting(0, 1),

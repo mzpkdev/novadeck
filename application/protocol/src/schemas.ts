@@ -70,8 +70,9 @@ export const agentActivity = z.strictObject({
   state: z.enum(["working", "idle", "unknown"]),
   // What its ended turn left running that wakes it once done: subagents, which keep it
   // working, and other tasks such as commands, which don't, as one may run for ever,
-  // counted; both zero where its harness says only that something runs. Null while its
-  // turn runs, and once nothing it started runs.
+  // counted; both zero where its harness says only that something runs. While its turn
+  // runs, only the subagents its harness counts running then, as Antigravity's do; null
+  // otherwise, and once nothing it started runs.
   background: z
     .strictObject({
       agents: z.number().int().nonnegative(),

@@ -269,7 +269,7 @@ export const createDemoStates = (): DemoStates => {
         agentAction("Subagents", "Three subagents while it works", () => withSubagents),
         agentAction(
           "Finishing subagents",
-          "Turn over, two subagents run on; it works until they finish",
+          "Two subagents run, mid-turn or after it; it works until they finish",
           () => finishingSubagents,
         ),
         agentAction(

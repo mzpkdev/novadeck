@@ -265,7 +265,10 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
   // the turn waited on. A snapshot's hook may start after the next turn's, so none of
   // these holds for long against a wrong one.
   const working = payload.agent_state === "working" || payload.agent_state === "tool_use"
-  if (working) events.push({ type: "turn-working", ...base })
+  // It lists its subagents while the turn runs too, so a working snapshot tells how many
+  // run, by status and not position, as the list's order flips (probed 2026-10-07, 1.2.16).
+  if (working)
+    events.push({ type: "turn-working", ...base, running: subagentsRunning(payload.subagents) })
   if (payload.agent_state === "idle")
     events.push({
       type: "turn-idle",

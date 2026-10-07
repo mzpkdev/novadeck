@@ -80,7 +80,7 @@ describe("An agent whose turn left work running", () => {
     const window = page.getByRole("region", { name: "Tests terminal" })
     await expect.element(window).toHaveAttribute("data-terminal-phase", "running")
     expect(await tooltipOf(window.getByText("2 agents · 1 task"))).toBe(
-      "Its turn is over, but subagents it started still run: it works on until they finish",
+      "Subagents it started still run: it works on until they finish",
     )
     await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
   })

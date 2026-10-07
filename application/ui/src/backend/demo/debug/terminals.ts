@@ -137,8 +137,8 @@ export const withSubagents: AgentStatus = {
   ],
 }
 
-// What its turn left running: subagents it works on until they finish, or work that
-// runs on without it, counted or not.
+// Subagents it runs, counted, in the middle of its turn or after it: it works until they
+// finish. Else work its turn left that runs on without it, counted or not.
 export const finishingSubagents: AgentStatus = {
   working: true,
   background: { agents: 2, tasks: 0 },
