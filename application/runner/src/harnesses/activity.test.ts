@@ -1049,3 +1049,164 @@ describe("how an agent's latest turn ended", () => {
     })
   })
 })
+
+const outcome = (activity: Activity) => summary(activity).lastTurn
+
+describe("a turn the person's Escape ended", () => {
+  const binding: Binding = { agent: "claude", sessionId: "s", instance: "7" }
+  type Fields = Parameters<typeof fact>[0]
+  const on = (activity: Activity, fields: object) =>
+    apply(activity, binding, fact(fields as Fields))!
+  const turn = (activity: Activity, startedAt: number) =>
+    on(activity, { type: "turn-started", cause: "prompt", startedAt })
+  const stop = (activity: Activity, startedAt: number, extra: object = {}) =>
+    on(activity, { type: "turn-ended", outcome: "completed", startedAt, ...extra })
+  const escaped = (activity: Activity, startedAt: number) =>
+    on(activity, { type: "turn-escaped", startedAt })
+  const lapsed = (activity: Activity, startedAt: number) =>
+    on(activity, { type: "turn-escape-lapsed", startedAt })
+
+  // A turn that started at 10, its Escape at 20.
+  const stopped = escaped(turn(started(0), 10), 20)
+
+  it("reads interrupted from the Escape at once, before its harness says anything", () => {
+    expect(summary(stopped)).toMatchObject({ state: "idle" })
+    expect(outcome(stopped)).toEqual({ outcome: "interrupted", reply: null, at: 20 })
+  })
+
+  it("reads completed once the window passes with a Stop told since, its reply as the last turn's", () => {
+    const told = stop(stopped, 25, { reply: "Too late." })
+    // Claude Code's Stop fires too when it took the Escape just after the reply: not yet.
+    expect(outcome(told)).toEqual({ outcome: "interrupted", reply: null, at: 20 })
+    expect(outcome(lapsed(told, 20))).toEqual({
+      outcome: "completed",
+      reply: "Too late.",
+      at: 25,
+    })
+  })
+
+  it("reads completed at once on the Stop of a harness with no other word on the turn", () => {
+    const antigravity = escaped(turn(started(0, true, false), 10), 20)
+    expect(outcome(stop(antigravity, 25, { reply: "Too late." }))).toEqual({
+      outcome: "completed",
+      reply: "Too late.",
+      at: 25,
+    })
+    // Nor is there a window left to wait out.
+    expect(lapsed(stop(antigravity, 25), 20)).toBeUndefined()
+  })
+
+  it("reads completed at once when the harness's own record says the turn finished", () => {
+    const told = stop(stopped, 25, { reply: "Too late." })
+    expect(outcome(stop(told, 30, { recorded: true }))).toEqual({
+      outcome: "completed",
+      reply: "Too late.",
+      at: 25,
+    })
+    // Its record with no Stop told yet is the end too.
+    expect(outcome(stop(stopped, 30, { recorded: true }))).toEqual({
+      outcome: "completed",
+      reply: null,
+      at: 30,
+    })
+  })
+
+  it("counts a Stop that started before the key, though told after it, as the same turn's", () => {
+    const told = stop(stopped, 19, { reply: "Too late." })
+    expect(outcome(lapsed(told, 20))).toEqual({ outcome: "completed", reply: "Too late.", at: 21 })
+  })
+
+  it("reads interrupted when the harness records the interruption, though a Stop came first", () => {
+    const told = stop(stopped, 25, { reply: "Too late." })
+    const interrupted = stop(told, 30, { outcome: "interrupted" })
+    expect(outcome(interrupted)).toEqual({ outcome: "interrupted", reply: null, at: 30 })
+    // Nothing is left to lapse, so the Stop held before is never the end.
+    expect(lapsed(interrupted, 20)).toBeUndefined()
+    // Nor does a record of the interruption: it names the Escape's own end.
+    const recorded = stop(told, 30, { outcome: "interrupted", recorded: true })
+    expect(outcome(recorded)).toEqual({ outcome: "interrupted", reply: null, at: 20 })
+    expect(lapsed(recorded, 20)).toBeUndefined()
+  })
+
+  it("reads interrupted when the harness says so with no Stop", () => {
+    const interrupted = stop(stopped, 22, { outcome: "interrupted" })
+    expect(outcome(interrupted)).toEqual({ outcome: "interrupted", reply: null, at: 22 })
+  })
+
+  it("reads interrupted when the window passes with nothing said", () => {
+    const quiet = lapsed(stopped, 20)
+    expect(outcome(quiet)).toEqual({ outcome: "interrupted", reply: null, at: 20 })
+    // The window is closed: a lapse again changes nothing.
+    expect(
+      apply(quiet, binding, fact({ type: "turn-escape-lapsed", startedAt: 20 })),
+    ).toBeUndefined()
+  })
+
+  it("does not count a Stop from an earlier turn", () => {
+    const earlier = turn(stop(turn(started(0), 1), 5, { reply: "First." }), 10)
+    const second = escaped(earlier, 20)
+    // The earlier turn's Stop, told late: it started before this turn did.
+    expect(
+      apply(second, binding, fact({ type: "turn-ended", outcome: "completed", startedAt: 8 })),
+    ).toBeUndefined()
+    expect(outcome(lapsed(second, 20))).toEqual({ outcome: "interrupted", reply: null, at: 20 })
+    // Codex names the turn each record is of.
+    const codex: Binding = { agent: "codex", sessionId: "s", instance: "7" }
+    const named = apply(
+      apply(
+        started(0, false),
+        codex,
+        fact({ agent: "codex", type: "turn-started", startedAt: 10, turn: "t2" }),
+      )!,
+      codex,
+      fact({ agent: "codex", type: "turn-escaped", startedAt: 20 }),
+    )!
+    expect(
+      apply(
+        named,
+        codex,
+        fact({
+          agent: "codex",
+          type: "turn-ended",
+          outcome: "completed",
+          startedAt: 25,
+          turn: "t1",
+        }),
+      ),
+    ).toBeUndefined()
+  })
+
+  it("leaves a lapse of an earlier Escape, and a Stop after the window, to the turn they belong to", () => {
+    const quiet = lapsed(stopped, 20)
+    // A reply the harness took a long time to finish still ends the turn, as before.
+    expect(outcome(stop(quiet, 40, { reply: "Late." }))).toEqual({
+      outcome: "completed",
+      reply: "Late.",
+      at: 40,
+    })
+    // A new turn's own Escape is not closed by the earlier one's lapse.
+    const next = escaped(turn(quiet, 50), 60)
+    expect(
+      apply(next, binding, fact({ type: "turn-escape-lapsed", startedAt: 20 })),
+    ).toBeUndefined()
+  })
+
+  it("gives up the Escape when the turn goes on, so its Stop ends it as any other", () => {
+    const asking = on(stopped, {
+      type: "attention-requested",
+      requestId: "a",
+      actor: null,
+      toolName: "Bash",
+      kind: "permission",
+      subject: null,
+      choices: [],
+      startedAt: 30,
+    })
+    expect(summary(asking).state).toBe("working")
+    expect(outcome(stop(asking, 40, { reply: "Done." }))).toEqual({
+      outcome: "completed",
+      reply: "Done.",
+      at: 40,
+    })
+  })
+})
