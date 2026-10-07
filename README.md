@@ -566,6 +566,9 @@ last one chosen.
   failure" fails the first attempt as the runner would, so a transient one retries
   on its own and the others wait for Retry (an incompatible runner only for Quit).
   "Welcome dialog" opens the first-run dialog for connecting agents again.
+- **Chat:** arm the next send from a chat to fail as the runner turns it away: a draft
+  in the agent's box, its shell mode, too tall a message, or no box on screen (each with
+  Open terminal), or a doorbell ringing (try again in a moment).
 - **Connection:** show Reconnecting for 5 s, then Reconnected, or go offline until
   you toggle it back.
 - **Crash loop:** count four crashes, which shows the footer and the dialog and fails

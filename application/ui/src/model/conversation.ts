@@ -204,3 +204,58 @@ export class WordsLost extends Error {
     this.name = "WordsLost"
   }
 }
+
+// Why the agent couldn't take what was typed into its terminal for the person, as the
+// backend says: a request waits on the person (`pending`), another agent's message is
+// reaching it (`ringing`), its input box holds text already (`draft`), is in its shell mode
+// (`shell`) or isn't found on its screen (`no-box`), the text has no room in the box on
+// this screen (`too-tall`), or the screen takes no pasted text yet (`no-paste`).
+export type ConflictReason =
+  | "pending"
+  | "ringing"
+  | "draft"
+  | "no-box"
+  | "too-tall"
+  | "shell"
+  | "no-paste"
+
+// A failure the person settles in the agent's terminal, which the chat offers to show.
+export class SettleInTerminal extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "SettleInTerminal"
+  }
+}
+
+// What the person is told when the agent couldn't take what the chat typed for them, by
+// why: what clears by itself says to try again, and what the person settles in the
+// terminal says so and offers it. Without a reason the backend gave, the terminal is where
+// to look.
+export const conflictFailure = (reason: ConflictReason | undefined): Error => {
+  switch (reason) {
+    case "pending":
+      return new Error("The agent is waiting for your answer. Answer it here, then send again.")
+    case "ringing":
+      return new Error("Another agent's message is reaching it right now. Send again in a moment.")
+    case "no-paste":
+      return new Error("The agent isn't ready for a message yet. Send again in a moment.")
+    case "draft":
+      return new SettleInTerminal(
+        "The agent's input box already holds text. Clear it in the terminal, then send again.",
+      )
+    case "shell":
+      return new SettleInTerminal(
+        "The agent's input box is in shell mode. Leave it in the terminal, then send again.",
+      )
+    case "too-tall":
+      return new SettleInTerminal(
+        "This is too long for the agent's input box on this screen. Make the terminal larger or the message shorter.",
+      )
+    case "no-box":
+      return new SettleInTerminal(
+        "Novadeck can't find the agent's input box on its screen. Check the terminal.",
+      )
+    default:
+      return new SettleInTerminal("The agent can't take that right now. Check its terminal.")
+  }
+}

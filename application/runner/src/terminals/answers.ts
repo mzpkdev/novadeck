@@ -366,7 +366,12 @@ export class Answers {
     const until = Date.now() + this.ringMs
     while (this.host.ringing(terminalId) !== undefined) {
       if (Date.now() >= until)
-        throw new DomainError("CONFLICT", "A message's doorbell is ringing the agent.")
+        throw new DomainError(
+          "CONFLICT",
+          "A message's doorbell is ringing the agent.",
+          undefined,
+          "ringing",
+        )
       // eslint-disable-next-line no-await-in-loop -- The ring is looked at in turn.
       await sleep(this.pollMs)
     }
