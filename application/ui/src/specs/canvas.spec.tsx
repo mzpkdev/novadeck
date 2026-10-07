@@ -342,7 +342,8 @@ describe("Canvas", () => {
         .element(enlarge("Checkout implementation"))
         .toHaveAttribute("aria-pressed", "false")
       const compacted = await settled(() => boxOf(terminal("Checkout implementation")))
-      expect(ratio(compacted)).toBeCloseTo(3 / 2, 2)
+      // Compact takes the view's shape too, as a new terminal does.
+      expect(ratio(compacted)).toBeCloseTo(shape.width / shape.height, 1)
       expect(area(enlarged) / area(compacted)).toBeCloseTo(4, 1)
     })
 
@@ -382,6 +383,23 @@ describe("Canvas", () => {
         expect(near(after[name]!.width, before[name]!.width)).toBe(true)
         expect(near(after[name]!.height, before[name]!.height)).toBe(true)
       }
+    })
+  })
+
+  context("when a terminal is added in another view", () => {
+    it("opens it in Canvas in the viewport's ratio, as one added there", async () => {
+      // A tall window gives the view a portrait shape, far from the compact 3:2.
+      await page.viewport(1440, 1600)
+      onTestFinished(() => page.viewport(1440, 900))
+      await openWorkspace()
+      await chooseView("Grid")
+      await page.getByRole("button", { name: "New terminal" }).click()
+      await expect.element(terminal("Terminal 07")).toBeVisible()
+
+      await chooseView("Canvas")
+
+      const created = await settled(() => boxOf(terminal("Terminal 07")))
+      expect(near(ratio(created), ratio(viewBox()), 0.05)).toBe(true)
     })
   })
 

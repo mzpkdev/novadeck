@@ -70,16 +70,20 @@ export type TerminalPlacement = {
   readonly anchor: Placed | undefined
   readonly gridLayouts?: GridLayouts | undefined
   readonly canvasGeometry?: CanvasGeometry | undefined
+  // Its size on Canvas, where the caller measured the stage: a new window's, in the
+  // stage's ratio. The compact preset's otherwise.
+  readonly canvasSize?: { readonly width: number; readonly height: number } | undefined
 }
 
 // Places a new terminal at its small size: beside the anchor on Canvas, and in the
 // given Grid layouts when the caller measured them.
 export const placeTerminal = (
   layout: TerminalLayout,
-  { terminal, terminals, anchor, gridLayouts, canvasGeometry }: TerminalPlacement,
+  { terminal, terminals, anchor, gridLayouts, canvasGeometry, canvasSize }: TerminalPlacement,
 ): TerminalLayout => {
+  const size = canvasSize ?? canvasPresetSize("small")
   const position = anchor
-    ? adjacentCanvasPosition(anchor, terminals, layout.canvas, canvasPresetSize("small").height)
+    ? adjacentCanvasPosition(anchor, terminals, layout.canvas, size.height)
     : { x: 80, y: 80 }
   return {
     ...layout,
@@ -87,7 +91,7 @@ export const placeTerminal = (
       ...layout.canvas,
       geometry: {
         ...layout.canvas.geometry,
-        [terminal.id]: canvasGeometry ?? { position, ...canvasPresetSize("small") },
+        [terminal.id]: canvasGeometry ?? { position, width: size.width, height: size.height },
       },
     },
     grid: gridLayouts ? pruneGridLayouts(gridLayouts, [...terminals, terminal]) : layout.grid,

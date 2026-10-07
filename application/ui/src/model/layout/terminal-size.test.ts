@@ -18,8 +18,15 @@ describe("Canvas terminal sizes", () => {
     expect(size.height).toBeGreaterThanOrEqual(200)
   })
 
-  it("retains the compact preset and ignores an invalid viewport", () => {
-    expect(canvasPresetSize("small", { width: 2000, height: 100 })).toEqual({
+  it("makes compact in the viewport ratio too, at its own area", () => {
+    const size = canvasPresetSize("small", { width: 1600, height: 900 })
+    expect(size.width / size.height).toBeCloseTo(1600 / 900, 2)
+    expect(size.width * size.height).toBeCloseTo(600 * 400, -3)
+    expect(canvasPresetSize("small")).toEqual({ width: 600, height: 400 })
+  })
+
+  it("ignores an invalid viewport", () => {
+    expect(canvasPresetSize("small", { width: 2000, height: 0 })).toEqual({
       width: 600,
       height: 400,
     })
