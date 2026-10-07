@@ -5,11 +5,13 @@ import { boxOf, canvasView, dragBackground, settled, viewBox } from "./support/c
 import {
   cancelPointerOver,
   chooseFromIconMenu,
+  chooseFromIconSubmenu,
   companionPane,
   dragCardToBar,
   dragIconToBar,
   dragIconToFreeSpace,
   freeSpaceIn,
+  iconMenu,
   openShowcase,
   taskbar,
   taskbarIcon,
@@ -192,10 +194,26 @@ describe("A terminal's tab", () => {
   })
 })
 
+describe("A stack's menu", () => {
+  it("offers only what's done with all of it, and each of its things to open", async () => {
+    await openShowcase()
+    const menu = await iconMenu("Dev server", "7 files")
+    const entries = menu
+      .getByRole("menuitem")
+      .elements()
+      .map((entry) => entry.textContent)
+    expect(entries).toEqual(["Open", "Move left", "Move right", "Close 7 files"])
+
+    await menu.getByRole("menuitem", { name: "Close 7 files" }).click()
+
+    await expect.element(taskbarIcon("Dev server", "7 files")).not.toBeInTheDocument()
+  })
+})
+
 describe("Something that can't show", () => {
   it("says why, with its path to copy", async () => {
     await openShowcase()
-    await chooseFromIconMenu("Dev server", "7 files", "Open notes.md")
+    await chooseFromIconSubmenu("Dev server", "7 files", "Open", "notes.md")
     const pane = companionPane("Dev server")
     await expect.element(pane.getByText("notes.md isn't there any more.")).toBeVisible()
     await expect.element(pane.getByRole("button", { name: "Copy path" })).toBeVisible()
@@ -215,7 +233,7 @@ describe("Something that can't show", () => {
     await openShowcase()
     await taskbarIcon("Dev server", "7 files").hover()
     await expect.element(page.getByText("May hold secrets. Click to open.")).toBeVisible()
-    await chooseFromIconMenu("Dev server", "7 files", "Open .env.local")
+    await chooseFromIconSubmenu("Dev server", "7 files", "Open", ".env.local")
     const pane = companionPane("Dev server")
     await expect.element(pane.getByText("VITE_API_URL=http://localhost:8787")).toBeVisible()
   })

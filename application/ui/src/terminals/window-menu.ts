@@ -1,5 +1,5 @@
 import type { Tile } from "../model/types"
-import type { ContextMenuItem } from "../ui-toolkit/ContextMenu"
+import type { ContextMenuAction } from "../ui-toolkit/ContextMenu"
 
 // Where a window undocked from a terminal's companion docks back in: that terminal's
 // name, and what docks it there, both absent once that terminal has closed.
@@ -25,7 +25,7 @@ export const windowMenu = ({
   // Present on a window undocked from a terminal's companion.
   dockIn?: DockTarget | undefined
   onClose: () => void
-}): ContextMenuItem[] => [
+}): ContextMenuAction[] => [
   { value: "rename", label: "Rename", onSelect: onRename },
   ...(onResetTitle && terminal.titleSource?.kind === "person"
     ? [{ value: "reset-title", label: "Reset to automatic", onSelect: onResetTitle }]
