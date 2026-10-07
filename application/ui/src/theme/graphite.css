@@ -11,6 +11,12 @@
    (the chrome, the workspace) are set off their step to make up for what the grain does
    to them; re-measure them if the grain or a ground changes.
 
+   Plain steps are written as offsets from the paper in OKLCH lightness,
+   `oklch(from var(--color-paper) calc(l - n) c h)`, so they keep its hue and follow it
+   if it changes; an offset shared by both schemes is declared once. Warmer or tinted
+   colours (strong lines, the selected outline, selection, tones), the near Deck card
+   and the grain-compensated grounds stay literal.
+
    The light block is shared: what it declares holds in dark too, so aliases (var()) live
    only here and follow the scheme. Dark restates every foundation token (the contract
    requires it) and only the component tokens whose value differs. Change a step in both.
@@ -20,15 +26,15 @@
   color-scheme: light;
 
   /* Grounds */
-  --color-canvas: #e5e2dc;
-  --color-shell: #ebe9e3;
+  --color-canvas: oklch(from var(--color-paper) calc(l - 0.051) c h);
+  --color-shell: oklch(from var(--color-paper) calc(l - 0.03) c h);
   --color-paper: #f5f3ee;
-  --color-soft: #e3e0da;
+  --color-soft: oklch(from var(--color-paper) calc(l - 0.057) c h);
   /* Text */
   --color-ink: #181816;
   --color-muted: #5c5a55;
   /* Lines */
-  --color-line: #dedbd4;
+  --color-line: oklch(from var(--color-paper) calc(l - 0.072) c h);
   --color-line-strong: #c3beb5;
   /* Emphasis: a deep teal, 4.7:1 on the paper, so it reads as a line or a ring too. */
   --color-strong: #007a72;
@@ -133,7 +139,7 @@
   /* Window: the selected window takes a stronger outline and lifts to the floating
      level. An ended terminal's line stays neutral, so the accent never reads as a
      state. */
-  --window-border-color: #d8d5ce;
+  --window-border-color: oklch(from var(--color-paper) calc(l - 0.091) c h);
   --window-selected-border-color: #bbb6ad;
   --window-selected-shadow: var(--shadow-floating);
   --window-phase-ended-border-color: var(--color-ink);
@@ -153,12 +159,12 @@
      wells, the thumb a lighter knob raised out of its track; on, the well fills flush
      with the accent, unshaded, so no rim shows. No borders, under the pointer either: an
      unchecked box's well deepens instead. */
-  --field-bg: #efede8;
+  --field-bg: oklch(from var(--color-paper) calc(l - 0.018) c h);
   --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 8%, transparent);
   --segmented-shadow:
     inset 0 1px 1px color-mix(in srgb, var(--color-shadow) 7%, transparent),
     0 1px 0 rgb(255 255 255 / 0.5);
-  --toggle-track-off-bg: #dbd9d5;
+  --toggle-track-off-bg: oklch(from var(--color-paper) calc(l - 0.079) c h);
   --toggle-track-off-border-color: transparent;
   --toggle-track-on-border-color: transparent;
   --toggle-track-shadow:
@@ -166,13 +172,13 @@
     inset 0 2px 5px -2px color-mix(in srgb, var(--color-shadow) 10%, transparent),
     0 1px 0 rgb(255 255 255 / 0.65);
   --toggle-track-on-shadow: none;
-  --toggle-thumb-bg: #fefcf7;
+  --toggle-thumb-bg: oklch(from var(--color-paper) calc(l + 0.027) c h);
   --toggle-thumb-border-color: transparent;
   --toggle-thumb-shadow:
     0 1px 2px color-mix(in srgb, var(--color-shadow) 20%, transparent),
     0 1px 1px color-mix(in srgb, var(--color-shadow) 10%, transparent);
   --toggle-box-bg: var(--toggle-track-off-bg);
-  --toggle-box-hover-bg: #d0ceca;
+  --toggle-box-hover-bg: oklch(from var(--color-paper) calc(l - 0.112) c h);
   --toggle-box-radius: var(--radius-control);
   --toggle-box-border-width: 0;
   --toggle-box-shadow:
@@ -183,9 +189,9 @@
      on it. The lines an agent pointed at take a trace of the accent; inline code and the
      demo's requests share a fill; the demo's command form is carved as fields are. */
   --artifact-code-pointed-bg: #e6eae4;
-  --prose-code-bg: #ece9e3;
+  --prose-code-bg: oklch(from var(--color-paper) calc(l - 0.03) c h);
   --demo-request-bg: var(--prose-code-bg);
-  --demo-form-bg: #eeece8;
+  --demo-form-bg: oklch(from var(--color-paper) calc(l - 0.021) c h);
   --demo-form-shadow: var(--field-shadow);
 
   /* Brand: the logo tile is dark in both schemes, its glyph the bright cyan; the Deck
@@ -193,7 +199,7 @@
   --brand-tile-bg: linear-gradient(180deg, #2e2d2a, #181816);
   --brand-tile-fg: #00e5d6;
   --deck-mark-card-near-bg: #c3bfb6;
-  --deck-mark-card-far-bg: #d5d2cb;
+  --deck-mark-card-far-bg: oklch(from var(--color-paper) calc(l - 0.1) c h);
 
   /* Fixed: a live page assumes a white ground whatever the scheme, so the ground behind
      one while it loads stays white; section labels are set in the mono, after the small
@@ -207,15 +213,15 @@
   color-scheme: dark;
 
   /* Grounds */
-  --color-canvas: #111314;
-  --color-shell: #16181c;
+  --color-canvas: oklch(from var(--color-paper) calc(l - 0.054) c h);
+  --color-shell: oklch(from var(--color-paper) calc(l - 0.03) c h);
   --color-paper: #1d1f23;
-  --color-soft: #26282d;
+  --color-soft: oklch(from var(--color-paper) calc(l + 0.038) c h);
   /* Text */
   --color-ink: #e8e9ed;
   --color-muted: #a2a6af;
   /* Lines */
-  --color-line: #2e3137;
+  --color-line: oklch(from var(--color-paper) calc(l + 0.074) c h);
   --color-line-strong: #45484f;
   /* Emphasis: an electric cyan, kept to the few things it marks. */
   --color-strong: #00e5d6;
@@ -305,40 +311,38 @@
 
   /* Window: outlines here are softer than the line, since the ground around them is
      darker still; the ended line is a soft light grey. */
-  --window-border-color: #292c31;
+  --window-border-color: oklch(from var(--color-paper) calc(l + 0.053) c h);
   --window-selected-border-color: #3d4047;
   --window-phase-ended-border-color: #cfd1d6;
 
   /* Controls */
-  --field-bg: #191b1f;
   --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
   --segmented-shadow:
     inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 35%, transparent),
     0 1px 0 rgb(255 255 255 / 0.04);
-  --toggle-track-off-bg: #0e1015;
+  --toggle-track-off-bg: oklch(from var(--color-paper) calc(l - 0.066) c h);
   --toggle-track-shadow:
     inset 0 1px 3px color-mix(in srgb, var(--color-shadow) 60%, transparent),
     inset 0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 45%, transparent),
     0 1px 0 rgb(255 255 255 / 0.05);
-  --toggle-thumb-bg: #36393d;
+  --toggle-thumb-bg: oklch(from var(--color-paper) calc(l + 0.104) c h);
   --toggle-thumb-shadow:
     0 1px 2px color-mix(in srgb, var(--color-shadow) 65%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 0.08);
-  --toggle-box-hover-bg: #0a0c0f;
+  --toggle-box-hover-bg: oklch(from var(--color-paper) calc(l - 0.085) c h);
   --toggle-box-shadow:
     inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 70%, transparent),
     0 1px 0 rgb(255 255 255 / 0.06);
 
   /* Fills inside a panel: a step lighter than it; the command form a step darker. */
   --artifact-code-pointed-bg: #24262b;
-  --prose-code-bg: #24262b;
-  --demo-form-bg: #181a1e;
+  --prose-code-bg: oklch(from var(--color-paper) calc(l + 0.03) c h);
 
   /* Brand: the tile stays slate with a light edge, its glyph the cyan. */
   --brand-tile-bg: linear-gradient(180deg, #2f3137, #24262b);
   --brand-tile-border-color: #595c64;
   --deck-mark-card-near-bg: #34373e;
-  --deck-mark-card-far-bg: #26282d;
+  --deck-mark-card-far-bg: oklch(from var(--color-paper) calc(l + 0.038) c h);
 
   /* Glow: the accent's thin lines (the selection bars, the tab underline, the running
      sweep) glow like neon tubes, a bright core with a soft bloom, in the cyan. Only
