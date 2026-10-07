@@ -16,17 +16,17 @@
 //     `!` and `-`) begins with a Tailwind utility root must match `layoutUtilities`.
 //     Allowed: display, flex and grid, gap, margin, padding, position and inset,
 //     z-index, order, overflow, visibility, sizes, transforms, pointer and scroll
-//     behaviour, `opacity-0` and `opacity-100`, and type that sets size and flow:
-//     text sizes (`text-sm`, `text-[11px]`), alignment (`text-center`), wrapping and
-//     truncation, line height (`leading-*`) and weight (`font-medium`). Everything
-//     else is a look: colours and backgrounds (`text-muted`, `bg-*`), every `border*`
-//     (width, sides and colour), `rounded*`, `shadow*`, `ring*`, `outline*`, opacity
-//     between 0 and 1, fill, stroke, filters and backdrops, font family
-//     (`font-mono`), letter spacing, text transform and decoration, and motion
-//     (`transition*`, `duration-*`, `ease-*`, `animate-*`). An arbitrary property
-//     (`[overflow-wrap:anywhere]`) follows the same split by its property name. Class
-//     strings are found in each script's syntax tree; see `classStrings`. `@apply` in
-//     a stylesheet follows the same split.
+//     behaviour, `opacity-0` and `opacity-100`, and type that sets size and flow: text
+//     sizes (a step of the type scale such as `text-body`, or `text-[11px]`), alignment
+//     (`text-center`), wrapping and truncation, line height (`leading-*`) and weight
+//     (`font-medium`). Everything else is a look: colours and backgrounds
+//     (`text-muted`, `bg-*`), every `border*` (width, sides and colour), `rounded*`,
+//     `shadow*`, `ring*`, `outline*`, opacity between 0 and 1, fill, stroke, filters
+//     and backdrops, font family (`font-mono`), letter spacing, text transform and
+//     decoration, and motion (`transition*`, `duration-*`, `ease-*`, `animate-*`). An
+//     arbitrary property (`[overflow-wrap:anywhere]`) follows the same split by its
+//     property name. Class strings are found in each script's syntax tree; see
+//     `classStrings`. `@apply` in a stylesheet follows the same split.
 // (b) No colour literals in CSS outside theme files: hex, colour functions (`rgb()`,
 //     `hsl()`, `oklch()`, …), named colours, Tailwind palette colours in `@apply`, and
 //     system colours, in any case, outside `accessibility.css`. `transparent`, `currentColor` and
@@ -181,6 +181,29 @@ describe("theme contract", () => {
 
       expect(tokens.get("color-scheme")).toBe(scheme)
       expect(requiredTokens.filter((token) => !tokens.has(token))).toEqual([])
+    })
+
+    // The light block is shared, so a colour it sets holds in dark unless dark restates
+    // it. Aliases and offsets from the paper resolve again against dark's values; a
+    // literal does not, so each one is restated or listed here with why it holds in both.
+    it("restates in dark every literal colour the light block sets", () => {
+      const holdsInBoth = new Map([
+        ["--brand-tile-fg", "the logo's glyph is the bright cyan in both schemes"],
+        ["--artifact-webview-bg", "a live page assumes a white ground in both schemes"],
+      ])
+      const nodes = cssNodes(uncomment(read(file)))
+      const light = declarations(nodes.find((node) => node.prelude === ":root")!.body!)
+      const dark = declarations(
+        nodes.find((node) => node.prelude === ':root[data-scheme="dark"]')!.body!,
+      )
+      const literal = /#[\da-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\((?!\s*from\b)/i
+
+      const leaking = [...light]
+        .filter(([name, value]) => literal.test(value) && !dark.has(name))
+        .map(([name]) => name)
+        .filter((name) => !holdsInBoth.has(name))
+
+      expect(leaking).toEqual([])
     })
   })
 })
@@ -410,7 +433,6 @@ const layoutUtilities: readonly RegExp[] = [
   /^((translate|scale|rotate|skew)(-[xyz])?-.+|transform(-.+)?|origin-.+)$/,
   /^(pointer-events|cursor|select|touch|resize|scroll|snap|will-change|appearance)(-.+)?$/,
   /^opacity-(0|100)$/,
-  /^text-(xs|sm|base|lg|[2-9]?xl)(\/.+)?$/,
   /^text-(label|caption|control|code|body|lead|heading|title)(\/.+)?$/,
   /^text-\[(length:)?[\d.]+(px|rem|em)\](\/.+)?$/,
   /^text-\[length:.+\]$/,
