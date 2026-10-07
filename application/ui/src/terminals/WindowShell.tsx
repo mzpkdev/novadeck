@@ -1,5 +1,4 @@
 import {
-  MessageSquare,
   Minimize2,
   Scaling,
   Shrink,
@@ -66,9 +65,6 @@ export type WindowShellProps = {
   onRenameCancel: () => void
   // The window's own actions, on its header's right-click, as on its sidebar tab's.
   menu?: ContextMenuItem[]
-  // Present while its agent has a conversation to show: whether the window shows it in
-  // place of the terminal, and the switch between the two.
-  chat?: { on: boolean; onToggle: () => void }
 }
 
 // The window every terminal shares, whatever program runs in it.
@@ -96,7 +92,6 @@ export const WindowShell = ({
   onRenameSave,
   onRenameCancel,
   menu,
-  chat,
 }: WindowShellProps): React.JSX.Element => {
   const resizeLabel = large
     ? resizeView === "grid"
@@ -283,21 +278,6 @@ export const WindowShell = ({
               }}
             >
               <Mic size={12} />
-            </button>
-          </Tooltip>
-        )}
-        {chat && (
-          <Tooltip content={chat.on ? "Show terminal" : "Show chat"}>
-            <button
-              className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-              aria-label={`Chat view: ${terminal.name}`}
-              aria-pressed={chat.on}
-              onClick={(event) => {
-                event.stopPropagation()
-                chat.onToggle()
-              }}
-            >
-              <MessageSquare size={13} />
             </button>
           </Tooltip>
         )}

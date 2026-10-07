@@ -4,7 +4,7 @@ import type { TerminalKey } from "../../backend/port"
 import { tilesOf } from "../../model/roster"
 import { activeProject } from "../../model/state"
 import type { TerminalMetadata } from "../../model/types"
-import { chatDraftOf, chatModeOn, setChatDraft } from "../../terminals/chat/mode-state"
+import { chatDraftOf, chatShown, setChatDraft } from "../../terminals/chat/mode-state"
 import { isAgentTerminal } from "../../voice/agent-terminal"
 import { startCapture } from "../../voice/capture"
 import {
@@ -22,11 +22,19 @@ export const DictationContext = createContext<DictationController | undefined>(u
 
 // Where dictated words go: a terminal showing its agent's chat takes them in the chat's box,
 // after what is there, for the person to send; any other takes them typed into it.
+// `terminalOf` finds the terminal a key names, on a backend that reads conversations.
 export const dictateInto =
-  (ui: UiStore, typeInto: (key: TerminalKey, text: string) => boolean) =>
+  (
+    ui: UiStore,
+    typeInto: (key: TerminalKey, text: string) => boolean,
+    terminalOf: (key: TerminalKey) => TerminalMetadata | undefined,
+  ) =>
   (key: TerminalKey, text: string): boolean => {
     const context = `${key.projectId}/${key.workspaceSessionId}`
-    if (!chatModeOn(ui.getSnapshot().chat, context, key.terminalId)) return typeInto(key, text)
+    const terminal = terminalOf(key)
+    const { preferences, answering } = ui.getSnapshot()
+    if (!terminal || !chatShown(preferences.chatView, answering, context, terminal))
+      return typeInto(key, text)
     ui.update((state) => {
       const draft = chatDraftOf(state.chatDrafts, context, key.terminalId)
       const next =
@@ -53,7 +61,15 @@ export const useDictationController = ({
       typeInto &&
       createDictation({
         voice,
-        typeInto: dictateInto(ui, typeInto),
+        typeInto: dictateInto(ui, typeInto, (key) =>
+          backend.conversations
+            ? workspace
+                .getSnapshot()
+                .projects.find((project) => project.id === key.projectId)
+                ?.history.find((session) => session.id === key.workspaceSessionId)
+                ?.state.roster.terminals.find((each) => each.id === key.terminalId)
+            : undefined,
+        ),
         startCapture,
         promptFor: (key) => {
           const snapshot = workspace.getSnapshot()
@@ -67,7 +83,7 @@ export const useDictationController = ({
         now: domEffects.now,
         after: domEffects.after,
       }),
-    [voice, typeInto, workspace, ui],
+    [voice, typeInto, backend.conversations, workspace, ui],
   )
   useEffect(() => () => controller?.dictation.cancel(), [controller])
   return controller

@@ -5,13 +5,7 @@ import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
 import type { CompanionWindowMeta, TerminalMetadata, Tile } from "../model/types"
 import { ChatView } from "../terminals/chat/ChatView"
-import {
-  chatAvailable,
-  chatDraftOf,
-  chatModeOn,
-  chatReplyOf,
-  chatSendOf,
-} from "../terminals/chat/mode-state"
+import { chatDraftOf, chatReplyOf, chatSendOf, chatShown } from "../terminals/chat/mode-state"
 import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"
 import { UndockedWindow } from "../terminals/companion/UndockedWindow"
 import { presentedProgram, terminalProfile, windowProfile } from "../terminals/processes/profiles"
@@ -59,13 +53,12 @@ const useWindowFrame = (
       large: state.view !== "focus" && state.layout.sizePresets[state.view][id] === "large",
     }
   }, shallowEqual)
-  const { fresh, rename, enabledViews, unread, chatOn } = useUiState(
+  const { fresh, rename, enabledViews, unread } = useUiState(
     (state) => ({
       fresh: state.created?.context === context && state.created.id === id,
       rename: state.rename?.context === context && state.rename.id === id ? state.rename : null,
       enabledViews: state.preferences.enabledViews,
       unread: unreadEnd(state.unread, context, id),
-      chatOn: chatModeOn(state.chat, context, id),
     }),
     shallowEqual,
   )
@@ -73,11 +66,6 @@ const useWindowFrame = (
   const destination = windowedDestination(windowedView, enabledViews)
   const windowedLabel = destination === "canvas" ? "Canvas" : "Grid"
   const dockIn = useDockTarget(tile)
-  // A terminal whose agent has a conversation to show, on a backend that reads it.
-  const chat =
-    backend.conversations && !isWindow(tile) && chatAvailable(tile)
-      ? { on: chatOn, onToggle: () => commands.toggleChat(id) }
-      : undefined
   return {
     terminal: tile,
     active,
@@ -96,7 +84,6 @@ const useWindowFrame = (
       onClose: () => close(id),
     }),
     compact,
-    ...(chat ? { chat } : {}),
     switcher: { onOpen: (button) => openSwitcher(id, button) },
     onClose: () => close(id),
     ...(onFlyTo ? { onFlyTo } : {}),
@@ -201,13 +188,19 @@ export const WorkspaceTerminal = ({
   // keeps its dimensions and its emulator its state. The content is inert beneath, where
   // neither focus nor typing can reach it, and the chat's box takes keyboard focus.
   const conversations = backend.conversations
-  const chatShown = frame.chat?.on === true
+  // A terminal whose agent has a conversation to show, with the chat view on, on a backend
+  // that reads it.
+  const showChat = useUiState(
+    (state) =>
+      conversations !== undefined &&
+      chatShown(state.preferences.chatView, state.answering, chatContext, terminal),
+  )
   const draft = useUiState((state) => chatDraftOf(state.chatDrafts, chatContext, terminalId))
   const replyTo = useUiState((state) => chatReplyOf(state.chatReplies, chatContext, terminalId))
   const sending = useUiState((state) => chatSendOf(state.chatSends, chatContext, terminalId))
   const conversation = useMemo(
-    () => (chatShown ? conversations?.conversation(terminalKey) : undefined),
-    [chatShown, conversations, terminalKey],
+    () => (showChat ? conversations?.conversation(terminalKey) : undefined),
+    [showChat, conversations, terminalKey],
   )
   const wanted = keyboardFocus?.view === view && active
   const withChat = (content: ReactNode): ReactNode =>
@@ -247,8 +240,8 @@ export const WorkspaceTerminal = ({
         )}
         <div
           className="flex min-h-0 min-w-0 flex-1 flex-col"
-          aria-hidden={chatShown || undefined}
-          inert={chatShown}
+          aria-hidden={showChat || undefined}
+          inert={showChat}
         >
           {content}
         </div>
@@ -263,7 +256,7 @@ export const WorkspaceTerminal = ({
   const hosted = (content: ReactNode): ReactNode => (
     <div className="terminal-host relative flex min-h-0 min-w-0 flex-1 flex-col">
       {Body ? <Body>{content}</Body> : content}
-      {stats && !chatShown && <WindowStats stats={stats} />}
+      {stats && !showChat && <WindowStats stats={stats} />}
     </div>
   )
   // One shell element whatever runs, so only the body around the content changes.
@@ -299,7 +292,7 @@ export const WorkspaceTerminal = ({
       terminal={terminal}
       projectName={projectName}
       fontSize={fontSize}
-      focusInput={wanted && !chatShown}
+      focusInput={wanted && !showChat}
       onInputFocused={onInputFocused}
       renderWindow={renderWindow}
     />

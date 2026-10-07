@@ -12,6 +12,7 @@ import type {
   WorkspaceSession,
   WorkspaceTarget,
 } from "../../model/types"
+import { noTerminalAnswers } from "../../terminals/chat/mode-state"
 import {
   currentContext,
   currentState,
@@ -250,7 +251,12 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const snapshot = workspace.getSnapshot()
       const { view } = currentState(snapshot)
       effects.cancelTransition()
-      ui.update((state) => ({ ...state, preferences: next }))
+      // Turning the chat view on or off starts every terminal afresh on it.
+      ui.update((state) => ({
+        ...state,
+        preferences: next,
+        ...(next.chatView !== state.preferences.chatView && { answering: noTerminalAnswers }),
+      }))
       workspace.dispatch({
         type: "preferences/reconcile",
         target: currentTarget(snapshot),

@@ -50,6 +50,7 @@ export const openCommands = ({
     appearance,
     notifyFinished: true,
     ligatures: false,
+    chatView: false,
   },
   desktop = true,
   canvas,

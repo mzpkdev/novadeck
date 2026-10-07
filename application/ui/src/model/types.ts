@@ -15,6 +15,9 @@ export type PreferencesValue = {
   // Whether monospace text joins pairs such as => and != into one glyph. Off by default:
   // a terminal shows what a program printed.
   ligatures: boolean
+  // Whether a terminal an agent runs in shows its conversation rather than its screen, on
+  // a backend that reads conversations.
+  chatView: boolean
 }
 export type Project = { id: string; name: string; directory: string }
 
