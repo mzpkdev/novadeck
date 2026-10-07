@@ -93,11 +93,29 @@
     0 18px 40px -12px color-mix(in srgb, var(--color-shadow) 20%, transparent),
     0 44px 88px -28px color-mix(in srgb, var(--color-shadow) 26%, transparent);
 
-  /* Component tokens: an off switch and an unchecked box are drawn by their edges, which
-     the soft lines leave faint; these keep 3:1 against the paper, as in dark. */
-  --toggle-track-off-border-color: #8f8b83;
-  --toggle-thumb-border-color: #8f8b83;
-  --toggle-box-border-color: #8f8b83;
+  /* Component tokens: selects and inputs are carved only a little, a hair below the
+     paper with a soft inner shade, so they read as places to put a value without the
+     depth of a switch's track. */
+  --field-bg: #efede8;
+  --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 8%, transparent);
+  /* Component tokens: the switch and the checkbox are drawn by depth, not edges: an off
+     track and an unchecked box are wells a step darker, the thumb a lighter
+     knob raised out of its track. On, the well fills flush with the accent, unshaded, so
+     no rim shows around it. No borders, under the pointer too: an unchecked box's well
+     deepens instead. */
+  --toggle-track-off-bg: #dbd9d5;
+  --toggle-track-off-border-color: transparent;
+  --toggle-track-on-border-color: transparent;
+  --toggle-track-on-shadow: none;
+  --toggle-thumb-bg: #fefcf7;
+  --toggle-thumb-border-color: transparent;
+  --toggle-box-bg: #dbd9d5;
+  --toggle-box-border-color: transparent;
+  --toggle-box-hover-border-color: transparent;
+  --toggle-box-hover-bg: #d0ceca;
+  --toggle-box-radius: var(--radius-control);
+  --toggle-box-border-width: 0;
+  --toggle-box-checked-shadow: none;
   /* Component tokens: outlines of what sits on another ground (a window on the canvas,
      a sidebar row, card or button on the shell) take their own line, darker than the
      line since the ground around it is darker than the paper, so their edge reads as
@@ -132,6 +150,25 @@
     inset 0 6px 10px -8px color-mix(in srgb, var(--color-shadow) 16%, transparent),
     inset 6px 0 10px -8px color-mix(in srgb, var(--color-shadow) 12%, transparent);
   --window-selected-shadow: var(--shadow-floating);
+  /* Component tokens: carved where something sits in or slides along a track, raised
+     where it is pressed: the on/off switch's track is a well with a lip of light along
+     its foot, the segmented switches' a shallower one, and their thumb and active segment
+     stand up out of them; an unchecked box is sunk, and the message box a little, as
+     fields are. */
+  --segmented-shadow:
+    inset 0 1px 1px color-mix(in srgb, var(--color-shadow) 7%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.5);
+  --toggle-track-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 12%, transparent),
+    inset 0 2px 5px -2px color-mix(in srgb, var(--color-shadow) 10%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.65);
+  --toggle-thumb-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-shadow) 20%, transparent),
+    0 1px 1px color-mix(in srgb, var(--color-shadow) 10%, transparent);
+  --toggle-box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 16%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.6);
+  --demo-form-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 8%, transparent);
   /* Component tokens: the workspace's glow is a lighter paper and its edges a deeper
      one, a vignette stronger than dark's, which its near-black canvas already gives. */
   --workspace-glow-bg: #eae8e3;
@@ -143,12 +180,12 @@
   --brand-tile-fg: #00e5d6;
   /* Component tokens: fills inside a panel stay a light step off it, where the soft
      ground would weigh on the paper: the lines an agent pointed at take a trace of the
-     teal, inline code and the demo's requests a step darker, and its command form a step
-     lighter. */
+     teal, inline code and the demo's requests a step darker, and its command form a
+     smaller step, carved in. */
   --artifact-code-pointed-bg: #e6eae4;
   --prose-code-bg: #ece9e3;
   --demo-request-bg: #ece9e3;
-  --demo-form-bg: #fcfaf6;
+  --demo-form-bg: #eeece8;
   /* Component tokens: a faint grain over the chrome (header, footer, rail and
      sidebar), dark specks a few percent strong, as faint as dark's. Reading surfaces
      (terminals, code, plans) stay clean. */
@@ -255,11 +292,29 @@
     0 24px 64px -16px color-mix(in srgb, var(--color-shadow) 75%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 0.07);
 
-  /* Component tokens: an off switch and an unchecked box are drawn by their edges, which
-     a line colour leaves near invisible on a dark ground; these keep 3:1 against it. */
-  --toggle-track-off-border-color: #6d7079;
-  --toggle-thumb-border-color: #6d7079;
-  --toggle-box-border-color: #6d7079;
+  /* Component tokens: selects and inputs are carved only a little, a hair below the
+     paper with a soft inner shade, so they read as places to put a value without the
+     depth of a switch's track. */
+  --field-bg: #191b1f;
+  --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
+  /* Component tokens: the switch and the checkbox are drawn by depth, not edges: an off
+     track and an unchecked box are wells a step below the paper, the thumb a lighter
+     knob raised out of its track. On, the well fills flush with the accent, unshaded, so
+     no rim shows around it. No borders, under the pointer too: an unchecked box's well
+     deepens instead. */
+  --toggle-track-off-bg: #0e1015;
+  --toggle-track-off-border-color: transparent;
+  --toggle-track-on-border-color: transparent;
+  --toggle-track-on-shadow: none;
+  --toggle-thumb-bg: #36393d;
+  --toggle-thumb-border-color: transparent;
+  --toggle-box-bg: #0e1015;
+  --toggle-box-border-color: transparent;
+  --toggle-box-hover-border-color: transparent;
+  --toggle-box-hover-bg: #0a0c0f;
+  --toggle-box-radius: var(--radius-control);
+  --toggle-box-border-width: 0;
+  --toggle-box-checked-shadow: none;
   /* Component tokens: the brand tile (the logo, the welcome's start button, a checked
      choice's icon) stays slate with a light edge, its glyph in the cyan, rather than a
      cyan block. */
@@ -324,6 +379,25 @@
     inset 0 8px 12px -8px color-mix(in srgb, var(--color-shadow) 70%, transparent),
     inset 8px 0 12px -8px color-mix(in srgb, var(--color-shadow) 55%, transparent);
   --window-selected-shadow: var(--shadow-floating);
+  /* Component tokens: carved where something sits in or slides along a track, raised
+     where it is pressed: the on/off switch's track is a well with a lip of light along
+     its foot, the segmented switches' a shallower one, and their thumb and active segment
+     stand up out of them; an unchecked box is sunk, and the message box a little, as
+     fields are. */
+  --segmented-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 35%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.04);
+  --toggle-track-shadow:
+    inset 0 1px 3px color-mix(in srgb, var(--color-shadow) 60%, transparent),
+    inset 0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 45%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.05);
+  --toggle-thumb-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-shadow) 65%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --toggle-box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 70%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.06);
+  --demo-form-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
   /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
      as a state. */
   --window-phase-ended-border-color: #cfd1d6;

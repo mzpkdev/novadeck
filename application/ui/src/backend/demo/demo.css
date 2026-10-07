@@ -14,7 +14,7 @@
    --demo-rule-color (line): the rules and boxes beside requests, plans and summaries.
    --demo-request-bg (soft): a request to an agent.
    --demo-badge-bg (strong), --demo-badge-fg (on-strong): a PASS badge.
-   --demo-form-bg (shell), --demo-form-border-color (line),
+   --demo-form-bg (shell), --demo-form-border-color (line), --demo-form-shadow (none),
    --demo-form-focus-border-color (line-strong): the command form, and while typing. */
 
 @layer components {
@@ -82,6 +82,7 @@
     border: var(--border-width) solid var(--_border-color);
     border-radius: var(--radius-control);
     background-color: var(--demo-form-bg, var(--color-shell));
+    box-shadow: var(--demo-form-shadow, none);
     transition: border-color var(--motion-state) var(--ease-interface);
   }
   .command-form:focus-within {
