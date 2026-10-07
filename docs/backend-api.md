@@ -703,7 +703,7 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   text is only emoji. The runner's headless terminal counts wide characters (emoji
   sequences, CJK) as a TUI's own do (`@xterm/addon-unicode-graphemes`), so a redraw erases
   the rows the TUI means. The person's keys are held from before the box is looked at until
-  the Enter is out, at most the wait for an empty box, the paste's 5 s and a margin of 2 s.
+  the Enter is out, at most the wait for an empty box, a shell command's switch (up to 5 s), the paste's 5 s and a margin of 2 s.
 
   A text whose trimmed form starts with `!` is a shell command (`shellCommand`, the rest
   after the `!`, trimmed), which Claude Code, Codex and Antigravity run in their shell mode

@@ -103,6 +103,17 @@ describe("chat commands", () => {
     })
   })
 
+  context("when a shell command went while words came back before it", () => {
+    it("clears the command and keeps the words", () => {
+      const app = open({ working: false })
+      app.commands.setChatDraft("01", "also update the changelog\n!npm test")
+      app.commands.clearChatDraft("project/initial", "01", "!npm test")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({
+        "project/initial": { "01": "also update the changelog" },
+      })
+    })
+  })
+
   context("when the agent a reply was written for ends", () => {
     it("keeps the reply's hold with its words, for the next agent there, until the terminal closes", () => {
       const app = open({ working: false })
