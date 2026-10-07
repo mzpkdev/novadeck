@@ -103,6 +103,7 @@ import {
   terminalForeground,
   type Foreground,
 } from "./foreground.js"
+import { InputQueue, type HoldBudget, type InputHold } from "./input-queue.js"
 import { keysOf, splitReports } from "./keys.js"
 import { Latest } from "./latest.js"
 import { type MouseEncoding, mouseReporting, watchMouseEncoding } from "./mouse.js"
@@ -129,13 +130,7 @@ import {
   type OpenAnswer,
 } from "./opens.js"
 import { TerminalPeers } from "./peers.js"
-import {
-  collapsible,
-  Prompts,
-  type HoldBudget,
-  type PromptHost,
-  type PromptOptions,
-} from "./prompts.js"
+import { collapsible, Prompts, type PromptHost, type PromptOptions } from "./prompts.js"
 import type {
   AgentReport,
   ListedTerminal,
@@ -351,16 +346,15 @@ type Record = {
   /** What the root session worked on, kept with the terminal; null before any did. */
   work: Work | null
   /**
-   * What waits while the doorbell rings: the person's input, while its test paste is on
+   * What waits while the input queue's work is at the agent's box (see `InputQueue`): the
+   * person's input, while a ring's test paste, a prompt's paste or an answer's keys are on
    * screen (null once that's let go, after its Enter), and the latest size the app asked
-   * for, until its prompt confirms the ring or the ring fails, as a resize redraws the
-   * screen the paste is checked on, and one landing as the doorbell's turn starts crashed
-   * Codex (0.159.3); null otherwise.
+   * for, until the work has settled (a ring's prompt confirms it or it fails), as a
+   * resize redraws the screen the paste is checked on, and one landing as the doorbell's
+   * turn starts crashed Codex (0.159.3); null otherwise.
    */
   held: {
     input: string[] | null
-    /** When the input's hold lapses by its cap at the latest, in epoch milliseconds. */
-    readonly until: number
     /** Whether the keys held count as the person's only once delivered (an answer's hold may drop them). */
     deferred?: boolean
     size: {
@@ -494,14 +488,6 @@ const unopened = {
 
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-
-// The longest the doorbell holds the person's input, in milliseconds: a safety cap,
-// well beyond a ring's test paste.
-const holdCapMs = 3_000
-
-// The longest it holds the app's resizes, in milliseconds: a safety cap beyond the wait
-// for the ring's prompt to confirm it.
-const sizeCapMs = 8_000
 
 // How much time a prompt's hook must have left for drift to be read, in milliseconds:
 // a git branch and a plan's file, each with its own short timeout.
@@ -657,13 +643,13 @@ export class Terminals {
   /** Wakes idle agents for their messages; none when switched off. */
   private readonly doorbell: Doorbell | undefined
   private readonly prompts: Prompts
-  /** The latest interrupt of each terminal that is not yet done, with its settling time. */
-  private readonly interrupts = new Map<string, Promise<void>>()
+  /** Each terminal's input queue: every piece of work that puts keys in its agent's box. */
+  private readonly inputs: InputQueue
+  /** When each terminal's latest interrupt has settled, while it has not, in epoch milliseconds. */
+  private readonly interruptSettles = new Map<string, number>()
   private readonly interruptWaits: Required<InterruptOptions>
   /** Answers requests through their dialogs, and the dialogs it reads for `agents.detail`. */
   private readonly answers: Answers
-  /** The latest answer of each terminal not yet done, the words after it included. */
-  private readonly answering = new Map<string, Promise<void>>()
   private readonly dialogs: Dialogs
   /** Sessions given out to resume, as agent:session, and the terminal each went to. */
   private readonly claims = new Map<string, string>()
@@ -717,22 +703,27 @@ export class Terminals {
       exists: (terminalId) =>
         this.records.has(terminalId) || this.identity(terminalId) !== undefined,
     })
+    this.inputs = new InputQueue({
+      hold: (terminalId, budget) => this.holdInput(terminalId, budget),
+    })
     this.doorbell =
-      options.doorbell === false ? undefined : new Doorbell(this.ringHost(), options.doorbell)
+      options.doorbell === false
+        ? undefined
+        : new Doorbell(this.ringHost(), this.inputs, options.doorbell)
     // A Stop Novadeck continued whose lease lapsed ended its turn after all.
     this.messaging.subscribe((change) => {
       if (change.kind !== "terminal") return
       const record = this.records.get(change.terminalId)
       if (record) this.lapsed(record)
     })
-    this.prompts = new Prompts(this.promptHost(), options.prompts)
+    this.prompts = new Prompts(this.promptHost(), this.inputs, options.prompts)
     this.interruptWaits = {
       restoreMs: options.interrupts?.restoreMs ?? 2_000,
       restoreCalmMs: options.interrupts?.restoreCalmMs ?? 500,
       settleMs: options.interrupts?.settleMs ?? 1_000,
     }
     this.dialogs = new Dialogs(this.dialogsHost(), options.answers)
-    this.answers = new Answers(this.answerHost(), options.answers)
+    this.answers = new Answers(this.answerHost(), this.inputs, options.answers)
     const doorbell = this.doorbell
     if (doorbell)
       this.messaging.subscribe((change) => {
@@ -1097,36 +1088,19 @@ export class Terminals {
 
   /**
    * Gives the terminal's agent a prompt as the person would paste and submit it (see
-   * `Prompts`), once those before it are done.
+   * `Prompts`), once those before it in the terminal's input queue are done.
    */
   async prompt(input: { terminalId: string; text: string }): Promise<void> {
-    // No message of the person's comes between an answer and the words that follow it, which
-    // the dialog's option takes as the person's feedback: it waits for the whole answer. (A
-    // doorbell ring isn't held off so; it rings only once a turn has settled.)
-    for (let answering = this.answering.get(input.terminalId); answering;) {
-      // eslint-disable-next-line no-await-in-loop -- Each answer under way is waited out.
-      await answering
-      answering = this.answering.get(input.terminalId)
-    }
     return await this.prompts.prompt(input.terminalId, input.text)
   }
 
   /**
    * Answers a request waiting on the person through its dialog in the agent's TUI, as the
-   * person would with its keys (see `Answers`).
+   * person would with its keys (see `Answers`). No message of the person's, nor a doorbell
+   * ring, comes between the answer and the words that follow it.
    */
   answer(input: { terminalId: string; request: string; answer: RequestAnswer }): Promise<void> {
-    const run = this.answers.answer(input.terminalId, input.request, input.answer)
-    // Held for the whole call, the follow-up words included (see `prompt`).
-    const done = run.then(
-      () => {},
-      () => {},
-    )
-    this.answering.set(input.terminalId, done)
-    void done.then(() => {
-      if (this.answering.get(input.terminalId) === done) this.answering.delete(input.terminalId)
-    })
-    return run
+    return this.answers.answer(input.terminalId, input.request, input.answer)
   }
 
   /**
@@ -1143,42 +1117,33 @@ export class Terminals {
    * Presses it only while the agent's turn is working, once the person's input is no
    * longer held for a prompt's paste or a ring: at an idle prompt Escape does nothing
    * the chat wants, and two of them open Claude Code's rewind picker. Otherwise it
-   * resolves having sent nothing, as the turn it was asked to stop is already over. Those
-   * of one terminal go one at a time, each given its settle wait (`InterruptOptions`)
-   * after the last to show its turn ended before the next looks.
+   * resolves having sent nothing, as the turn it was asked to stop is already over. It
+   * takes its turn in the terminal's input queue, so its Escape never cuts into a
+   * prompt's paste, an answer's keys or a ring's; those of one terminal are each given
+   * their settle wait (`InterruptOptions`) after the last to show its turn ended before
+   * the next looks.
    */
   async interrupt(input: { terminalId: string }): Promise<InterruptResult> {
     const { terminalId } = input
     this.promptable(terminalId)
-    const previous = this.interrupts.get(terminalId) ?? Promise.resolve()
-    const run = previous.then(() => this.interruptOnce(terminalId))
-    const tail = run
-      .then(
-        () => {},
-        () => {},
-      )
-      .then(
-        () =>
-          new Promise<void>((resolve) => setTimeout(resolve, this.interruptWaits.settleMs).unref()),
-      )
-    this.interrupts.set(terminalId, tail)
-    void tail.then(() => {
-      if (this.interrupts.get(terminalId) === tail) this.interrupts.delete(terminalId)
+    return await this.inputs.run(terminalId, async () => {
+      const settling = (this.interruptSettles.get(terminalId) ?? 0) - Date.now()
+      if (settling > 0) await new Promise((resolve) => setTimeout(resolve, settling))
+      try {
+        return await this.interruptOnce(terminalId)
+      } finally {
+        const until = Date.now() + this.interruptWaits.settleMs
+        this.interruptSettles.set(terminalId, until)
+        setTimeout(() => {
+          if (this.interruptSettles.get(terminalId) === until)
+            this.interruptSettles.delete(terminalId)
+        }, this.interruptWaits.settleMs).unref()
+      }
     })
-    return await run
   }
 
   private async interruptOnce(terminalId: string): Promise<InterruptResult> {
     const none = { returned: null }
-    // The person's input is held while a prompt's paste or a ring's is on screen; an
-    // Escape then would cut into it. The hold lets go by its own cap at the latest, which a
-    // prompt's is longer than a ring's.
-    while (this.live(terminalId)?.held?.input) {
-      const lapse = this.live(terminalId)?.held?.until ?? 0
-      if (Date.now() >= lapse + 500) break
-      // eslint-disable-next-line no-await-in-loop -- The hold is waited out in turn.
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
     const record = this.promptable(terminalId)
     if (record.activity?.state !== "working") return none
     // How its box reads, and the keys that clear it, if its harness puts text back.
@@ -1369,23 +1334,19 @@ export class Terminals {
 
   /**
    * Holds the person's input to a running terminal for at most `budget.inputMs`, and the app's
-   * resizes until the hold settles (see `DoorbellHost.hold`).
+   * resizes until the hold settles (see `InputQueueHost.hold`). The queue gives one piece of
+   * work the terminal at a time, so none holds it in force: only the resizes of the one
+   * before may be, which this hold takes over.
    */
-  private holdInput(
-    terminalId: string,
-    budget: HoldBudget,
-    options: { readonly deferKeys?: boolean } = {},
-  ): ReturnType<DoorbellHost["hold"]> & { readonly discard: () => void } {
+  private holdInput(terminalId: string, budget: HoldBudget): InputHold {
     const live = (id: string) => this.live(id)
     const record = live(terminalId)
-    // A hold already in force is another's: this one has none.
-    if (!record || record.held)
-      return { release: () => {}, settle: () => {}, holding: () => false, discard: () => {} }
+    const none = { release: () => {}, settle: () => {}, holding: () => false, discard: () => {} }
+    if (!record || record.held?.input) return none
     const held: NonNullable<Record["held"]> = {
       input: [],
-      until: Date.now() + budget.inputMs,
-      size: null,
-      ...(options.deferKeys && { deferred: true }),
+      size: record.held?.size ?? null,
+      ...(budget.deferred && { deferred: true }),
     }
     record.held = held
     const release = () => {
@@ -1452,7 +1413,6 @@ export class Terminals {
       },
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       screen: (terminalId) => this.screenOf(terminalId),
-      hold: (terminalId, budget) => this.holdInput(terminalId, budget),
       type: (terminalId, data) => {
         const record = this.live(terminalId)
         if (!record) return false
@@ -1506,7 +1466,6 @@ export class Terminals {
       },
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       screen: (terminalId) => this.screenOf(terminalId),
-      hold: (terminalId, budget) => this.holdInput(terminalId, budget, { deferKeys: true }),
       type: (terminalId, data) => {
         const record = this.live(terminalId)
         if (!record) return false
@@ -1514,7 +1473,7 @@ export class Terminals {
         record.process.write(data)
         return true
       },
-      prompt: (terminalId, text) => this.prompts.prompt(terminalId, text),
+      prompt: (entry, terminalId, text) => this.prompts.promptIn(entry, terminalId, text),
       working: (terminalId) => this.records.get(terminalId)?.activity?.state === "working",
       closed: (terminalId, ref) => this.dialogs.closed(terminalId, ref),
       shown: (terminalId, ref) => {
@@ -1667,7 +1626,6 @@ export class Terminals {
         return held === undefined || own === undefined ? undefined : held === own
       },
       resizedAt: (terminalId) => live(terminalId)?.resizedAt ?? 0,
-      hold: (terminalId) => this.holdInput(terminalId, { inputMs: holdCapMs, sizeMs: sizeCapMs }),
       write: (terminalId, data) => {
         const record = live(terminalId)
         if (!record) return false

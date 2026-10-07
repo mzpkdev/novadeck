@@ -12,7 +12,6 @@ export type DomainErrorCode = Exclude<ErrorCode, "UNAUTHORIZED" | "INCOMPATIBLE_
  * itself from what won't; never sent to a client.
  * - `pending`: a request waits on the person, whose dialog would take the text;
  * - `ringing`: a doorbell ring is under way;
- * - `held`: another hold on the person's input is in force;
  * - `draft`: the input box holds text already;
  * - `no-box`: no input box (or no agent) is found on the screen;
  * - `too-tall`: the text has no room in the box on this screen;
@@ -22,7 +21,6 @@ export type DomainErrorCode = Exclude<ErrorCode, "UNAUTHORIZED" | "INCOMPATIBLE_
 export type ConflictReason =
   | "pending"
   | "ringing"
-  | "held"
   | "draft"
   | "no-box"
   | "too-tall"

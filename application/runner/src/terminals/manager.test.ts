@@ -178,74 +178,6 @@ describe("an answer's hold of the person's input", () => {
   })
 })
 
-describe("answers and the prompts after them", () => {
-  it("keeps a chat prompt behind an answer's follow-up words, which go first", async ({
-    terminals,
-  }) => {
-    const manager = terminals.manager(ptyOptions)
-    const order: string[] = []
-    const inside = manager as unknown as {
-      answers: { answer: () => Promise<void> }
-      prompts: { prompt: (id: string, text: string) => Promise<void> }
-    }
-    // The answer takes a while to press its keys, then sends its words as a prompt of its own.
-    inside.answers = {
-      answer: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 60))
-        await inside.prompts.prompt("t", "the person's words")
-      },
-    }
-    inside.prompts = {
-      prompt: async (_, text) => {
-        // Whatever goes first takes its time, as a paste does: nothing may slip in beside it.
-        order.push(`start ${text}`)
-        await new Promise((resolve) => setTimeout(resolve, 30))
-        order.push(`end ${text}`)
-      },
-    }
-    const answer = manager.answer({
-      terminalId: "t",
-      request: "r",
-      answer: { type: "choice", dialog: "d", option: "1" },
-    })
-    // A message from the chat box, sent while the answer is under way.
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    const chat = manager.prompt({ terminalId: "t", text: "chat message" })
-    await Promise.all([answer, chat])
-    expect(order).toEqual([
-      "start the person's words",
-      "end the person's words",
-      "start chat message",
-      "end chat message",
-    ])
-  })
-
-  it("lets prompts through again once an answer failed", async ({ terminals }) => {
-    const manager = terminals.manager(ptyOptions)
-    const inside = manager as unknown as {
-      answers: { answer: () => Promise<void> }
-      prompts: { prompt: () => Promise<void> }
-    }
-    inside.answers = { answer: () => Promise.reject(new Error("no")) }
-    let sent = 0
-    inside.prompts = {
-      prompt: () => {
-        sent += 1
-        return Promise.resolve()
-      },
-    }
-    await expect(
-      manager.answer({
-        terminalId: "t",
-        request: "r",
-        answer: { type: "choice", dialog: "d", option: "1" },
-      }),
-    ).rejects.toThrow("no")
-    await manager.prompt({ terminalId: "t", text: "after" })
-    expect(sent).toBe(1)
-  })
-})
-
 describe("terminal prompts", () => {
   it("refuse a plain shell, which runs no agent, writing nothing to it", async ({ terminals }) => {
     const manager = terminals.manager(ptyOptions)
@@ -279,7 +211,7 @@ describe("terminal interrupts", () => {
       {
         binding: unknown
         activity: unknown
-        held: { input: string[] | null; until: number; size: null } | null
+        held: { input: string[] | null; size: null } | null
         process: { write: (data: string) => void }
       }
     >
@@ -307,6 +239,41 @@ describe("terminal interrupts", () => {
     record.process = { ...record.process, write: (data: string) => void writes.push(data) }
     return { manager, id: terminal.id, writes, record }
   }
+
+  it("hands the resizes a lapsed hold left held to the next hold, and applies them once it settles", async ({
+    terminals,
+  }) => {
+    const { manager, id, record } = await agent(terminals, "idle")
+    const inside = manager as unknown as {
+      holdInput: (
+        id: string,
+        budget: { inputMs: number; sizeMs: number },
+      ) => {
+        release: () => void
+        settle: () => void
+        holding: () => boolean
+      }
+    }
+    const budget = { inputMs: 1_000, sizeMs: 2_000 }
+    const first = inside.holdInput(id, budget)
+    // Another hold is refused while this one holds the input.
+    expect(inside.holdInput(id, budget).holding()).toBe(false)
+    ;(record.held as unknown as { size: unknown }).size = {
+      cols: 100,
+      rows: 30,
+      owner: "nobody",
+      attachment: undefined,
+    }
+    first.release()
+    const second = inside.holdInput(id, budget)
+    expect(second.holding()).toBe(true)
+    expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
+    // The first's late settle changes nothing: the second holds them now.
+    first.settle()
+    expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
+    second.settle()
+    expect(record.held).toBeNull()
+  })
 
   it("sends nothing while the agent is idle, even asked twice at once", async ({ terminals }) => {
     const { manager, id, writes } = await agent(terminals, "idle")
@@ -412,13 +379,19 @@ describe("terminal interrupts", () => {
     },
   )
 
-  it("waits for the person's input to be let go before pressing Escape", async ({ terminals }) => {
-    const { manager, id, writes, record } = await agent(terminals, "working")
-    record.held = { input: [], until: Date.now() + 5000, size: null }
+  it("waits for the entries ahead of it in the terminal's input queue before pressing Escape", async ({
+    terminals,
+  }) => {
+    const { manager, id, writes } = await agent(terminals, "working")
+    const inside = manager as unknown as {
+      inputs: { run: (id: string, work: () => Promise<unknown>) => Promise<unknown> }
+    }
+    // A prompt's paste, an answer with its words or a ring, whose keys no Escape may cut into.
+    const ahead = inside.inputs.run(id, () => new Promise((resolve) => setTimeout(resolve, 400)))
     const done = manager.interrupt({ terminalId: id })
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(writes).toEqual([])
-    record.held = null
+    await ahead
     await done
     expect(writes).toEqual(["\x1b"])
   })

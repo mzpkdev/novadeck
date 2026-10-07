@@ -7,6 +7,7 @@ import { fakeAdapter, FakeTui } from "../testing/dialogs.js"
 import { screen } from "../testing/screens.js"
 import { Answers, type AnswerHost } from "./answers.js"
 import { identified } from "./dialogs.js"
+import { InputQueue } from "./input-queue.js"
 
 const facts: RequestFacts = {
   kind: "permission",
@@ -154,21 +155,12 @@ const terminal = (
           : undefined,
     ringing: () => undefined,
     screen: () => Promise.resolve(tui.screen()),
-    hold: () => {
-      holds += 1
-      return {
-        release: () => calls.push("release"),
-        settle: () => (settled += 1),
-        holding: () => true,
-        discard: () => calls.push("discard"),
-      }
-    },
     type: (_terminal, data) => {
       tui.write(data)
       options.after?.(tui)
       return true
     },
-    prompt: (_terminal, text) => {
+    prompt: (_entry, _terminal, text) => {
       calls.push(`prompt ${text}`)
       const refusal = options.refusals?.shift()
       if (refusal) return Promise.reject(refusal)
@@ -191,7 +183,22 @@ const terminal = (
       busy += on ? 1 : -1
     },
   }
-  const answers = new Answers(host, {
+  const queue = new InputQueue({
+    hold: () => {
+      holds += 1
+      let released = false
+      return {
+        release: () => {
+          if (!released) calls.push("release")
+          released = true
+        },
+        settle: () => (settled += 1),
+        holding: () => true,
+        discard: () => calls.push("discard"),
+      }
+    },
+  })
+  const answers = new Answers(host, queue, {
     stillMs: 5,
     readMs: 100,
     pollMs: 5,
@@ -204,6 +211,7 @@ const terminal = (
   return {
     tui,
     answers,
+    queue,
     calls,
     locks,
     read: () => adapter().read(tui.rows(), facts),
@@ -242,7 +250,7 @@ const fails = async (run: Promise<unknown>): Promise<string> => {
 }
 
 // A refusal of the words that follow an answer, for the reason given.
-const refusal = (reason: "pending" | "ringing" | "held" | "draft" | "no-box") =>
+const refusal = (reason: "pending" | "draft" | "no-box") =>
   new DomainError("CONFLICT", "no", undefined, reason)
 
 // The answer that picks option 3 of the dialog read, with words that follow it.
@@ -493,7 +501,12 @@ describe("answering a request through its dialog", () => {
 
   it("refuses an answer that outlasts the longest the keys can be held", async () => {
     const t = terminal()
-    const short = new Answers(t.host, { stillMs: 5, readMs: 100, pollMs: 5, holdMs: 1_000 })
+    const short = new Answers(t.host, t.queue, {
+      stillMs: 5,
+      readMs: 100,
+      pollMs: 5,
+      holdMs: 1_000,
+    })
     expect(
       await fails(
         short.answer("t", "r1", {
@@ -659,17 +672,14 @@ describe("answering a request through its dialog", () => {
   })
 
   describe("the words that follow an answer", () => {
-    it.each(["pending", "ringing", "held"] as const)(
-      "are tried again while the refusal is %s, which clears by itself",
-      async (reason) => {
-        const { answers, calls, read } = terminal({
-          prompting: true,
-          refusals: [refusal(reason), refusal(reason)],
-        })
-        await answers.answer("t", "r1", choose(read))
-        expect(calls.filter((call) => call.startsWith("prompt"))).toHaveLength(3)
-      },
-    )
+    it("are tried again while a request is still pending, which clears by itself", async () => {
+      const { answers, calls, read } = terminal({
+        prompting: true,
+        refusals: [refusal("pending"), refusal("pending")],
+      })
+      await answers.answer("t", "r1", choose(read))
+      expect(calls.filter((call) => call.startsWith("prompt"))).toHaveLength(3)
+    })
 
     it.each(["draft", "no-box"] as const)(
       "fail at once as WORDS_NOT_SENT where the refusal is %s",
@@ -686,6 +696,18 @@ describe("answering a request through its dialog", () => {
         refusals: Array.from({ length: 1_000 }, () => refusal("pending")),
       })
       expect(await fails(answers.answer("t", "r1", choose(read)))).toBe("WORDS_NOT_SENT")
+    })
+
+    it("are one entry of the terminal's input queue with their answer: nothing comes between", async () => {
+      const { answers, queue, calls, read } = terminal({ prompting: true })
+      const answered = answers.answer("t", "r1", choose(read))
+      // Queued behind the answer as it begins, as a doorbell ring or a prompt would be.
+      const other = queue.run("t", () => Promise.resolve(void calls.push("other entry")))
+      await Promise.all([answered, other])
+      expect(calls.indexOf("prompt do it differently")).toBeGreaterThan(-1)
+      expect(calls.indexOf("other entry")).toBeGreaterThan(
+        calls.indexOf("prompt do it differently"),
+      )
     })
 
     it("wait for the screen to settle before they go, longer while a turn runs", async () => {
@@ -731,7 +753,7 @@ describe("waiting for an agent's screen to settle before words follow an answer"
   type Calm = { calm: (id: string) => Promise<void> }
   /** Answers on a screen that `drawing` changes on each look, with the default waits. */
   const settling = (options: { working?: boolean; drawing?: boolean; gone?: boolean }) => {
-    const { host } = terminal({ working: options.working ?? false })
+    const { host, queue } = terminal({ working: options.working ?? false })
     let looks = 0
     const answers = new Answers(
       {
@@ -742,6 +764,7 @@ describe("waiting for an agent's screen to settle before words follow an answer"
           return Promise.resolve(screen({ rows: [options.drawing ? `tick ${looks}` : "still"] }))
         },
       },
+      queue,
       {},
     )
     return (answers as unknown as Calm).calm("t")
