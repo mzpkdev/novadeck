@@ -49,6 +49,8 @@ const terminal = (
     working?: boolean
     /** When the agent's running turn began, on the clock of `Date.now`. */
     turnStartedAt?: () => number | undefined
+    /** How long a turn is left to run before the first key, in milliseconds; 10 by default. */
+    settleMs?: number
     /** Runs after each write, as the TUI redraws. */
     after?: (tui: FakeTui) => void
   } = {},
@@ -210,6 +212,7 @@ const terminal = (
           released = true
         },
         settle: () => (settled += 1),
+        settleAfter: (ms) => void setTimeout(() => (settled += 1), ms).unref(),
         holding: () => true,
         discard: () => calls.push("discard"),
       }
@@ -221,7 +224,7 @@ const terminal = (
     pollMs: 5,
     answeredMs: 100,
     typedMs: 100,
-    settleMs: 10,
+    settleMs: options.settleMs ?? 10,
     followMs: 200,
     calmMs: 200,
   })
@@ -290,10 +293,55 @@ describe("answering a request through its dialog", () => {
 
   it("presses nothing until the turn that put the dialog up has run for the settle time", async () => {
     const began = Date.now()
-    const { tui, answers } = terminal({ turnStartedAt: () => began })
+    let firstKey: number | undefined
+    const { tui, answers } = terminal({
+      settleMs: 150,
+      turnStartedAt: () => began,
+      after: () => (firstKey ??= Date.now()),
+    })
     await give(tui, answers, { type: "choice", option: "2" })
-    expect(Date.now() - began).toBeGreaterThanOrEqual(10)
+    // A timer may fire a millisecond early.
+    expect(firstKey! - began).toBeGreaterThanOrEqual(148)
     expect(tui.written).toEqual(["2"])
+  })
+
+  it("waits for no turn that has not begun, or began long ago", async () => {
+    for (const turnStartedAt of [undefined, Date.now() - 60_000]) {
+      const started = Date.now()
+      let firstKey: number | undefined
+      const { tui, answers } = terminal({
+        settleMs: 150,
+        turnStartedAt: () => turnStartedAt,
+        after: () => (firstKey ??= Date.now()),
+      })
+      // eslint-disable-next-line no-await-in-loop -- One after the other, as timed.
+      await give(tui, answers, { type: "choice", option: "2" })
+      expect(firstKey! - started).toBeLessThan(100)
+    }
+  })
+
+  it("waits no longer than the settle time for a turn that began, by the clock, in the future", async () => {
+    const started = Date.now()
+    let firstKey: number | undefined
+    const { tui, answers } = terminal({
+      settleMs: 150,
+      turnStartedAt: () => started + 60_000,
+      after: () => (firstKey ??= Date.now()),
+    })
+    await give(tui, answers, { type: "choice", option: "2" })
+    expect(firstKey! - started).toBeLessThan(1_000)
+  })
+
+  it("refuses a dialog read for a request that registered during the turn's settle wait", async () => {
+    const others: { ref: string; facts: RequestFacts }[] = []
+    const { tui, answers } = terminal({
+      settleMs: 100,
+      turnStartedAt: () => Date.now(),
+      others,
+    })
+    setTimeout(() => others.push({ ref: "r2", facts: { ...facts, cwd: "/elsewhere" } }), 30)
+    expect(await fails(give(tui, answers, { type: "choice", option: "1" }))).toBe("CONFLICT")
+    expect(tui.written).toEqual([])
   })
 
   it("opens a field, types the person's words as one bracketed paste and presses Enter", async () => {

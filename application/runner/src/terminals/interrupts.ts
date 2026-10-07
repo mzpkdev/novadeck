@@ -47,6 +47,9 @@ export type InterruptHost = {
   readonly write: (terminalId: string, data: string) => boolean
 }
 
+/** The fewest rows a harness's viewport can be and say a box is full by its height. */
+const minViewport = 2
+
 const notCleared = (): DomainError =>
   new DomainError(
     "BOX_NOT_CLEARED",
@@ -128,7 +131,9 @@ export class Interrupts {
     // long (probed 2026-10-07, `e2e/probes/interrupted-paste.e2e.ts`); a prompt taller than
     // its box shows only its tail, the box then as tall as it gets.
     const rows = first?.rows.length ?? 0
-    const full = box.last - box.first + 1 >= (profile.viewport?.(rows) ?? Infinity)
+    const viewport = profile.viewport?.(rows) ?? Infinity
+    // A viewport of one row is every box's: on a screen too small to know it, none is full.
+    const full = viewport >= minViewport && box.last - box.first + 1 >= viewport
     const restored =
       !queued &&
       prompt !== undefined &&

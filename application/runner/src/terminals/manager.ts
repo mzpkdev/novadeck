@@ -344,6 +344,11 @@ type Record = {
     input: string[] | null
     /** Whether the keys held count as the person's only once delivered (an answer's hold may drop them). */
     deferred?: boolean
+    /**
+     * When the resizes may be applied at the earliest, in epoch milliseconds: a settle
+     * before it waits (see `InputHold.settleAfter`), and the next hold takes it over.
+     */
+    notBefore?: number
     size: {
       readonly cols: number
       readonly rows: number
@@ -1201,14 +1206,22 @@ export class Terminals {
   private holdInput(terminalId: string, budget: HoldBudget): InputHold {
     const live = (id: string) => this.live(id)
     const record = live(terminalId)
-    const none = { release: () => {}, settle: () => {}, holding: () => false, discard: () => {} }
+    const none = {
+      release: () => {},
+      settle: () => {},
+      settleAfter: () => {},
+      holding: () => false,
+      discard: () => {},
+    }
     if (!record || record.held?.input) return none
     const held: NonNullable<Record["held"]> = {
       input: [],
       size: record.held?.size ?? null,
+      ...(record.held?.notBefore !== undefined && { notBefore: record.held.notBefore }),
       ...(budget.deferred && { deferred: true }),
     }
     record.held = held
+    let lapse: ReturnType<typeof setTimeout> | undefined
     const release = () => {
       clearTimeout(inputCap)
       const { input } = held
@@ -1220,7 +1233,22 @@ export class Terminals {
     }
     const settle = () => {
       release()
+      if (record.held !== held) return
+      // Taken over from a hold whose last key was pressed lately: the resizes keep waiting
+      // until it has lapsed, as one landing as a turn starts crashed Codex.
+      const wait = (held.notBefore ?? 0) - Date.now()
+      if (wait > 0) {
+        clearTimeout(lapse)
+        lapse = setTimeout(settle, wait)
+        lapse.unref()
+        return
+      }
+      finish()
+    }
+    const finish = () => {
+      release()
       clearTimeout(sizeCap)
+      clearTimeout(lapse)
       if (record.held !== held) return
       record.held = null
       if (live(terminalId) !== record) return
@@ -1244,11 +1272,15 @@ export class Terminals {
     const inputCap = setTimeout(release, budget.inputMs)
     inputCap.unref()
     // Past the input's own cap, as an answer's hold needs, the resizes stay held too.
-    const sizeCap = setTimeout(settle, budget.sizeMs)
+    const sizeCap = setTimeout(finish, budget.sizeMs)
     sizeCap.unref()
     return {
       release,
       settle,
+      settleAfter: (ms) => {
+        held.notBefore = Date.now() + ms
+        settle()
+      },
       holding: () => record.held === held && held.input !== null && live(terminalId) === record,
       discard: () => {
         if (held.input) held.input.length = 0

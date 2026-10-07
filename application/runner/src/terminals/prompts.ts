@@ -98,7 +98,7 @@ export class Prompts {
 
   /**
    * Gives the terminal's agent `text` as a prompt, once those before it in the terminal's
-   * input queue are done. Refuses
+   * input queue are done. Refuses, in its turn,
    * as `admit` says, with `CONFLICT` too where the screen takes no bracketed paste, or its
    * input box is not on it, holds a draft already, or has no room on the screen for the text; `PROMPT_REFUSED` for text a TUI
    * would take for more than a message (`promptRefusal`); `PROMPT_FAILED` where the paste
@@ -106,7 +106,7 @@ export class Prompts {
    * typed `!`), leaving what landed of it as a draft. All but the last write nothing.
    */
   async prompt(terminalId: string, text: string): Promise<void> {
-    this.refuse(terminalId, text)
+    this.refuse(text)
     await this.queue.run(terminalId, (entry) => this.give(entry, terminalId, text))
   }
 
@@ -115,14 +115,14 @@ export class Prompts {
    * as the words that follow an answer, which are one entry with it.
    */
   async promptIn(entry: InputEntry, terminalId: string, text: string): Promise<void> {
-    this.refuse(terminalId, text)
+    this.refuse(text)
     await this.give(entry, terminalId, text)
   }
 
-  private refuse(terminalId: string, text: string): void {
+  /** The shape of the text is refused at call time; `admit` is asked in the entry's turn. */
+  private refuse(text: string): void {
     const refusal = promptRefusal(text, { shell: true })
     if (refusal !== undefined) throw new DomainError("PROMPT_REFUSED", refusal)
-    this.host.admit(terminalId)
   }
 
   private async give(entry: InputEntry, terminalId: string, text: string): Promise<void> {
@@ -238,8 +238,7 @@ export class Prompts {
     }
     // A resize as the turn starts may crash a TUI, as the doorbell's ring found of Codex.
     // The next entry there takes this hold over, with the resizes it holds.
-    const timer = setTimeout(hold.settle, this.settleMs)
-    timer.unref()
+    hold.settleAfter(this.settleMs)
   }
 
   /**

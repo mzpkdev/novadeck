@@ -118,7 +118,7 @@ const terminal = (
     admit: () => {
       if (options.refuses) throw options.refuses
       admits += 1
-      if (options.refusesLater && admits > (options.laterFrom ?? 3)) throw options.refusesLater
+      if (options.refusesLater && admits > (options.laterFrom ?? 2)) throw options.refusesLater
       return profile
     },
     ringing: () =>
@@ -183,7 +183,13 @@ const terminal = (
   const hold = (budget: HoldBudget): InputHold => {
     budgets.push(budget)
     if (held)
-      return { release: () => {}, settle: () => {}, holding: () => false, discard: () => {} }
+      return {
+        release: () => {},
+        settle: () => {},
+        settleAfter: () => {},
+        holding: () => false,
+        discard: () => {},
+      }
     holds += 1
     held = true
     sizes = true
@@ -199,6 +205,13 @@ const terminal = (
       settle: () => {
         release()
         if (current === mine) sizes = false
+      },
+      settleAfter: (ms) => {
+        const timer = setTimeout(() => {
+          release()
+          if (current === mine) sizes = false
+        }, ms)
+        timer.unref()
       },
       holding: () => held && current === mine,
       discard: () => {},
@@ -645,7 +658,7 @@ describe("shell commands", () => {
       takes: "box",
       expands: false,
       refusesLater: new DomainError("CONFLICT"),
-      laterFrom: 4,
+      laterFrom: 3,
     })
     const failure = await new Prompts(host, host.queue, fast)
       .prompt("t", "!one\ntwo")
@@ -698,7 +711,7 @@ describe("shell commands", () => {
     const { host, written } = terminal({
       shell: true,
       refusesLater: new DomainError("CONFLICT"),
-      laterFrom: 4,
+      laterFrom: 3,
     })
     expect(await refusal(new Prompts(host, host.queue, fast).prompt("t", "!ls"))).toBe(
       "PROMPT_FAILED",
@@ -710,7 +723,7 @@ describe("shell commands", () => {
     const { host, written, state } = terminal({
       shell: true,
       refusesLater: new DomainError("CONFLICT"),
-      laterFrom: 3,
+      laterFrom: 2,
     })
     expect(await refusal(new Prompts(host, host.queue, fast).prompt("t", "!rm -rf build"))).toBe(
       "CONFLICT",

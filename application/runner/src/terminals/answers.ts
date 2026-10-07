@@ -195,20 +195,6 @@ export class Answers {
     ref: string,
     answer: RequestAnswer,
   ): Promise<void> {
-    const request = this.host.request(terminalId, ref)
-    if (!request) throw new DomainError("NOT_FOUND", "The agent has no such request.")
-    if (this.host.closed(terminalId, ref))
-      throw new DomainError(
-        "CONFLICT",
-        "The request was answered, or its dialog can only be answered in the terminal.",
-      )
-    const { facts, adapter, others } = request
-    const self = { facts, actor: request.actor }
-    if (!adapter)
-      throw new DomainError("CONFLICT", "The agent's dialogs can't be answered from outside.")
-    // Its dialog reads as nothing now: nothing is pressed, and nothing is locked either.
-    if (this.host.raw(terminalId, ref))
-      throw new DomainError("CONFLICT", "The request's dialog isn't one the adapter reads.")
     // Keys the person's words can't carry: an escape sequence would be pressed, not typed.
     if (wordsOf(answer).some(hasControlCharacters))
       throw new DomainError("CONFLICT", "The answer's words hold control characters.")
@@ -220,6 +206,22 @@ export class Answers {
     try {
       await this.ringDone(terminalId)
       await this.turnSettled(terminalId)
+      // The request is read after the waits: a twin may register during them, and the
+      // dialog's reading and its confirmation must see it.
+      const request = this.host.request(terminalId, ref)
+      if (!request) throw new DomainError("NOT_FOUND", "The agent has no such request.")
+      if (this.host.closed(terminalId, ref))
+        throw new DomainError(
+          "CONFLICT",
+          "The request was answered, or its dialog can only be answered in the terminal.",
+        )
+      const { facts, adapter, others } = request
+      const self = { facts, actor: request.actor }
+      if (!adapter)
+        throw new DomainError("CONFLICT", "The agent's dialogs can't be answered from outside.")
+      // Its dialog reads as nothing now: nothing is pressed, and nothing is locked either.
+      if (this.host.raw(terminalId, ref))
+        throw new DomainError("CONFLICT", "The request's dialog isn't one the adapter reads.")
       // Their keys wait from before the dialog is read until the screen has settled after
       // the last key, and are dropped then, so none lands in the dialog or the next one.
       hold = entry.hold({
@@ -363,7 +365,7 @@ export class Answers {
    * next entry of the terminal takes the hold over with them before that.
    */
   private settleLater(hold: InputHold): void {
-    setTimeout(hold.settle, this.settleMs).unref()
+    hold.settleAfter(this.settleMs)
   }
 
   /**
@@ -378,7 +380,8 @@ export class Answers {
   private async turnSettled(terminalId: string): Promise<void> {
     const began = this.host.turnStartedAt(terminalId)
     if (began === undefined) return
-    const wait = began + this.settleMs - Date.now()
+    // Bounded by the settle time: a clock that stepped must not hold an answer longer.
+    const wait = Math.min(began + this.settleMs - Date.now(), this.settleMs)
     if (wait > 0) await sleep(wait)
   }
 

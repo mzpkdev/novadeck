@@ -32,5 +32,6 @@ export const box: BoxProfile = {
   collapses: (text) => text.split("\n").length > 3 || text.length > 900,
   room: (rows) => rows - 4,
   // Probed on 24, 40 and 60 rows: 7, 15 and 25 (2.1.287, `e2e/probes/interrupted-paste.e2e.ts`).
-  viewport: (rows) => Math.floor(rows / 2) - 5,
+  // Never below 1 on a screen of 11 rows or fewer, which the formula takes to nothing.
+  viewport: (rows) => Math.max(Math.floor(rows / 2) - 5, 1),
 }

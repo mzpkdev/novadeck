@@ -12,6 +12,7 @@ import { vi } from "vitest"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
+import { InputQueue } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -178,6 +179,65 @@ describe("an answer's hold of the person's input", () => {
   })
 })
 
+describe("answers and the prompts after them", () => {
+  it("keeps a chat prompt behind an answer's follow-up words, which go first, though the answered request is still pending", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as {
+      inputs: InputQueue
+      answers: { answer: () => Promise<void> }
+      prompts: {
+        host: { admit: (id: string) => unknown }
+        give: (entry: unknown, id: string, text: string) => Promise<void>
+        promptIn: (entry: unknown, id: string, text: string) => Promise<void>
+      }
+      records: Map<string, { binding: unknown; activity: unknown }>
+    }
+    const record = inside.records.get(terminal.id)!
+    // The agent waits on a request, which the answer's keys take.
+    record.binding = { agent: "claude" }
+    const waiting = { state: "idle", pending: [{}], plans: [], background: null }
+    record.activity = waiting
+    const order: string[] = []
+    // What the paste does is not under test: it admits as the real prompt does, and takes its time.
+    inside.prompts.give = async (_entry, id, text) => {
+      inside.prompts.host.admit(id)
+      order.push(`start ${text}`)
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      order.push(`end ${text}`)
+    }
+    inside.answers = {
+      answer: () =>
+        inside.inputs.run(terminal.id, async (entry) => {
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          // The dialog took the answer; the hook that ends its request is a moment behind.
+          record.activity = { ...waiting, pending: [] }
+          await inside.prompts.promptIn(entry, terminal.id, "the person's words")
+        }),
+    }
+    const answer = manager.answer({
+      terminalId: terminal.id,
+      request: "r",
+      answer: { type: "choice", dialog: "d", option: "1" },
+    })
+    // A message from the chat box, sent while the answer is under way.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const chat = manager.prompt({ terminalId: terminal.id, text: "chat message" })
+    await Promise.all([answer, chat])
+    expect(order).toEqual([
+      "start the person's words",
+      "end the person's words",
+      "start chat message",
+      "end chat message",
+    ])
+  })
+})
+
 describe("terminal prompts", () => {
   it("refuse a plain shell, which runs no agent, writing nothing to it", async ({ terminals }) => {
     const manager = terminals.manager(ptyOptions)
@@ -273,6 +333,39 @@ describe("terminal interrupts", () => {
     expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
     second.settle()
     expect(record.held).toBeNull()
+  })
+
+  it("keeps the resizes of a hold taken over waiting for the deadline of the hold before, past an early settle", async ({
+    terminals,
+  }) => {
+    const { manager, id, record } = await agent(terminals, "idle")
+    const inside = manager as unknown as {
+      holdInput: (
+        id: string,
+        budget: { inputMs: number; sizeMs: number },
+      ) => {
+        release: () => void
+        settle: () => void
+        settleAfter: (ms: number) => void
+      }
+    }
+    const budget = { inputMs: 5_000, sizeMs: 10_000 }
+    const first = inside.holdInput(id, budget)
+    ;(record.held as unknown as { size: unknown }).size = {
+      cols: 100,
+      rows: 30,
+      owner: "nobody",
+      attachment: undefined,
+    }
+    // The prompt's Enter is out: its resizes are to wait 200 ms more.
+    first.settleAfter(200)
+    // The next entry fails at once and settles: the resizes are not let go by it.
+    const second = inside.holdInput(id, budget)
+    second.settle()
+    expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(record.held).not.toBeNull()
+    await vi.waitFor(() => expect(record.held).toBeNull())
   })
 
   it("sends nothing while the agent is idle, even asked twice at once", async ({ terminals }) => {

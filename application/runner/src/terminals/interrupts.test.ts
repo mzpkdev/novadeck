@@ -135,6 +135,15 @@ describe("interrupts", () => {
     expect(t.written).toEqual([CLEAR])
   })
 
+  it("takes no box for full on a screen too small to know its viewport, returning the words that end the prompt", async () => {
+    const prompt = ["Hold on", "two", "three"].join("\n")
+    for (const viewport of [-2, 0, 1]) {
+      const t = terminal({ viewport, prompt, after: () => "three" })
+      // eslint-disable-next-line no-await-in-loop -- One after the other.
+      expect(await t.interrupt()).toEqual({ returned: "three" })
+    }
+  })
+
   it("returns the words of a tall box that do not end the prompt", async () => {
     const t = terminal({ viewport: 2, prompt: "Hold on\ntwo\nthree", after: () => "one\nthree" })
     expect(await t.interrupt()).toEqual({ returned: "one\nthree" })

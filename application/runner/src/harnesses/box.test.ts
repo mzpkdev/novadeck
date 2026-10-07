@@ -353,3 +353,10 @@ describe.each([
     expect(profile.shell.expands).toBe(key !== "agy")
   })
 })
+
+describe("the viewport of Claude Code's input box", () => {
+  it("is what was probed on the screens it was, and never below one row on a small one", () => {
+    expect([24, 40, 60].map((rows) => claude.viewport!(rows))).toEqual([7, 15, 25])
+    for (const rows of [0, 4, 10, 11, 12]) expect(claude.viewport!(rows)).toBeGreaterThanOrEqual(1)
+  })
+})

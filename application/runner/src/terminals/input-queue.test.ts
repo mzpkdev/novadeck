@@ -14,6 +14,7 @@ const queued = () => {
       const hold: InputHold = {
         release: () => events.push(`release ${terminalId}`),
         settle: () => events.push(`settle ${terminalId}`),
+        settleAfter: () => {},
         holding: () => true,
         discard: () => {},
       }

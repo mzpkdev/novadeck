@@ -243,6 +243,12 @@ export class Doorbell {
           if (this.now() >= until) break
         }
       }
+    } catch (error) {
+      // A throw (the screen's) fails the ring as any other end does: the nonce no longer
+      // blocks prompts and answers, and the resizes go on.
+      hold.settle()
+      this.host.ringFailed(terminalId, nonce)
+      throw error
     } finally {
       hold.release()
     }

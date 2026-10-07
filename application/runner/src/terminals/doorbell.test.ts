@@ -27,6 +27,8 @@ const terminal = (
     ready?: boolean
     /** Whether its first screen draws a logo, far from its box, only while the box is empty. */
     logo?: boolean
+    /** Its screen can't be read once a ring is under way. */
+    screenThrowsWhileRinging?: boolean
     /** Resizes it as the foreground is looked at, once: after the calm, before the ring. */
     resizeAtForeground?: boolean
   } = {},
@@ -64,6 +66,7 @@ const terminal = (
       failed.push(nonce)
     },
     screen: async () => {
+      if (options.screenThrowsWhileRinging && ringing !== undefined) throw new Error("no screen")
       const text = screen({ rows: [...rows], bracketedPaste: options.bracketedPaste ?? true })
       if (options.screenMs) await sleep(options.screenMs)
       return text
@@ -104,6 +107,7 @@ const terminal = (
           release()
           sizes = false
         },
+        settleAfter: () => {},
         holding: () => held,
         discard: () => {},
       }
@@ -194,6 +198,22 @@ describe("the doorbell", () => {
     await vi.waitFor(() => expect(unconfirmed.failed).toHaveLength(1))
     expect(unconfirmed.state().sizes).toBe(false)
     lapsed.close()
+  })
+
+  it("fails a ring and lets the resizes go when reading the screen throws once it is under way", async () => {
+    const { host, state, failed } = terminal({ screenThrowsWhileRinging: true })
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const doorbell = new Doorbell(host, host.queue, fast)
+      doorbell.changed("t")
+      await vi.waitFor(() => expect(failed).toHaveLength(1))
+      expect(state().ringing).toBeUndefined()
+      expect(state().sizes).toBe(false)
+      expect(state().held).toBe(false)
+      doorbell.close()
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it("takes a first screen's logo vanishing as the line lands only when the terminal is Ready", async () => {

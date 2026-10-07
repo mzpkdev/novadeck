@@ -17,6 +17,12 @@ export type InputHold = {
   readonly release: () => void
   /** Lets the window's resizes go on too, releasing the input if it is still held. */
   readonly settle: () => void
+  /**
+   * Lets the window's resizes go on in `ms`, after the work's last key: a `settle` before
+   * then, by this hold or by the one that takes it over, waits until then instead of
+   * applying them, as a resize as a turn starts may crash a TUI.
+   */
+  readonly settleAfter: (ms: number) => void
   /** Whether the input is still held. */
   readonly holding: () => boolean
   /** Drops what the person typed while their input was held. */
