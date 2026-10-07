@@ -7,10 +7,9 @@ export type CanvasGeometry = CanvasLayout["geometry"][string]
 export const emptyLayout = (
   initial: { canvas?: CanvasLayout; grid?: GridLayouts } = {},
 ): TerminalLayout => ({
-  canvas: initial.canvas ?? { geometry: {}, minimized: {} },
+  canvas: initial.canvas ?? { geometry: {} },
   grid: initial.grid ?? {},
   gridRestoreWidths: {},
-  gridMinimized: {},
   sizePresets: { grid: {}, canvas: {} },
   hidden: {},
 })
@@ -43,13 +42,7 @@ export const pruneCanvasLayout = (
   const geometry = Object.fromEntries(
     Object.entries(layout.geometry).filter(([id]) => ids.has(id)),
   ) as CanvasLayout["geometry"]
-  const minimized = Object.fromEntries(
-    Object.entries(layout.minimized).filter(([id]) => ids.has(id)),
-  ) as CanvasLayout["minimized"]
-  return Object.keys(layout.geometry).every((id) => ids.has(id)) &&
-    Object.keys(layout.minimized).every((id) => ids.has(id))
-    ? layout
-    : { ...layout, geometry, minimized }
+  return Object.keys(layout.geometry).every((id) => ids.has(id)) ? layout : { ...layout, geometry }
 }
 
 export const pruneGridLayouts = (
@@ -108,16 +101,11 @@ export const placeTerminal = (
 // Forgets every saved reference to a closed terminal.
 export const removeFromLayout = (layout: TerminalLayout, terminalId: string): TerminalLayout => {
   const geometry = withoutKey(layout.canvas.geometry, terminalId)
-  const minimized = withoutKey(layout.canvas.minimized, terminalId)
   return {
     ...layout,
-    canvas:
-      geometry === layout.canvas.geometry && minimized === layout.canvas.minimized
-        ? layout.canvas
-        : { ...layout.canvas, geometry, minimized },
+    canvas: geometry === layout.canvas.geometry ? layout.canvas : { ...layout.canvas, geometry },
     grid: withoutGridItem(layout.grid, terminalId),
     gridRestoreWidths: withoutKey(layout.gridRestoreWidths, terminalId),
-    gridMinimized: withoutKey(layout.gridMinimized, terminalId),
     sizePresets: {
       grid: withoutKey(layout.sizePresets.grid, terminalId),
       canvas: withoutKey(layout.sizePresets.canvas, terminalId),
@@ -141,9 +129,6 @@ export const resizeGridTerminal = (
       widths === null
         ? withoutKey(layout.gridRestoreWidths, terminalId)
         : { ...layout.gridRestoreWidths, [terminalId]: widths },
-    gridMinimized: layout.gridMinimized[terminalId]
-      ? { ...layout.gridMinimized, [terminalId]: false }
-      : layout.gridMinimized,
     sizePresets: {
       ...layout.sizePresets,
       grid: { ...layout.sizePresets.grid, [terminalId]: widths === null ? "small" : "large" },

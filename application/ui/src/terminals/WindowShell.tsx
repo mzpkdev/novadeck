@@ -7,8 +7,6 @@ import {
   UnfoldHorizontal,
   ArrowUpRight,
   Mic,
-  Minus,
-  Plus,
   X,
 } from "lucide-react"
 import { useRef, type ReactNode } from "react"
@@ -24,15 +22,8 @@ import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 import { useRenderAt } from "./use-render-at"
 
-export type MinimizeControls = {
-  minimized: boolean
-  clipContent?: boolean
-  onToggle: () => void
-}
-
 // What a layout contributes to each terminal it places.
 export type TerminalLayoutControls = {
-  readonly minimize?: MinimizeControls
   readonly onFlyTo?: () => void
   readonly onResizePreset?: (button: HTMLButtonElement) => void
   // Frames the terminal together with content hanging past its right edge.
@@ -64,7 +55,6 @@ export type WindowShellProps = {
   large?: boolean
   windowed?: { destination: string; onOpen: () => void }
   onClose?: () => void
-  minimize?: MinimizeControls
   dictation?: DictationControls
   compact?: boolean
   active?: boolean
@@ -98,7 +88,6 @@ export const WindowShell = ({
   large = false,
   onClose,
   windowed,
-  minimize,
   dictation,
   compact = false,
   active = false,
@@ -332,21 +321,6 @@ export const WindowShell = ({
               }}
             >
               <MessageSquare size={13} />
-            </button>
-          </Tooltip>
-        )}
-        {minimize && (
-          <Tooltip content={minimize.minimized ? "Restore" : "Minimize"}>
-            <button
-              className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-              aria-label={`${minimize.minimized ? "Restore" : "Minimize"} ${terminal.name}`}
-              aria-expanded={!minimize.minimized}
-              onClick={(event) => {
-                event.stopPropagation()
-                minimize.onToggle()
-              }}
-            >
-              {minimize.minimized ? <Plus size={12} /> : <Minus size={12} />}
             </button>
           </Tooltip>
         )}

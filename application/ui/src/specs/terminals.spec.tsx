@@ -751,57 +751,6 @@ describe("hiding terminals from Grid and Canvas", () => {
   })
 })
 
-describe("minimizing Grid terminals", () => {
-  context("when clicking Minimize in the header", () => {
-    it("folds the terminal and offers Restore", async () => {
-      await openWorkspace()
-      await chooseView("Grid")
-      const minimize = headerAction("Dev server", "Minimize Dev server")
-      await expect.element(minimize).toHaveAttribute("aria-expanded", "true")
-
-      await minimize.click()
-
-      const restore = headerAction("Dev server", "Restore Dev server")
-      await expect.element(restore).toHaveAttribute("aria-expanded", "false")
-      await expect.element(commandInput("Dev server")).not.toBeInTheDocument()
-      await expect.element(headerName("Dev server")).toBeVisible()
-    })
-  })
-
-  context("when clicking Restore", () => {
-    it("unfolds the terminal with its draft intact", async () => {
-      await openWorkspace()
-      await chooseView("Grid")
-      await commandInput("Dev server").fill("unfinished command")
-      await headerAction("Dev server", "Minimize Dev server").click()
-      await expect.element(commandInput("Dev server")).not.toBeInTheDocument()
-
-      await headerAction("Dev server", "Restore Dev server").click()
-
-      await expect
-        .element(headerAction("Dev server", "Minimize Dev server"))
-        .toHaveAttribute("aria-expanded", "true")
-      await expect.element(commandInput("Dev server")).toHaveValue("unfinished command")
-    })
-  })
-
-  context("when leaving Grid and coming back", () => {
-    it("keeps the terminal minimized", async () => {
-      await openWorkspace()
-      await chooseView("Grid")
-      await headerAction("Dev server", "Minimize Dev server").click()
-      await expect.element(headerAction("Dev server", "Restore Dev server")).toBeVisible()
-
-      await chooseView("Focus")
-      await chooseView("Grid")
-
-      await expect
-        .element(headerAction("Dev server", "Restore Dev server"))
-        .toHaveAttribute("aria-expanded", "false")
-    })
-  })
-})
-
 describe("reordering terminal tabs", () => {
   context("when dragging a tab onto another", () => {
     it("moves it to that position", async () => {

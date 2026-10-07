@@ -196,7 +196,6 @@ export type WorkspaceAction =
       view: WindowedView
       preset: SizePreset
     }
-  | { type: "grid/minimize"; target: WorkspaceTarget; terminalId: string }
 
 export const createWorkspaceSession = (
   input: WorkspaceSessionInput,
@@ -780,18 +779,6 @@ export const workspaceReducer = (workspace: Workspace, action: WorkspaceAction):
                   ...layout.sizePresets[action.view],
                   [action.terminalId]: action.preset,
                 },
-              },
-            }))
-          : state,
-      )
-    case "grid/minimize":
-      return updateTarget(workspace, action.target, (state) =>
-        hasTile(state.roster, action.terminalId)
-          ? updateLayout(state, (layout) => ({
-              ...layout,
-              gridMinimized: {
-                ...layout.gridMinimized,
-                [action.terminalId]: !layout.gridMinimized[action.terminalId],
               },
             }))
           : state,

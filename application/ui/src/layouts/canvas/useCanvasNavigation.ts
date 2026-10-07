@@ -97,7 +97,7 @@ export const useCanvasNavigation = ({
       return
     }
     const targetZoom = getViewport().zoom
-    const center = centerOf(node, targetZoom)
+    const center = centerOf(node)
     void setCenter(center.x, center.y, { zoom: targetZoom, duration, interpolate: "linear" })
   }, [
     initialized,
@@ -122,7 +122,7 @@ export const useCanvasNavigation = ({
     const selectedNode = navigation ? instance.getNode(selected) : undefined
     const target = selectedNode?.hidden ? undefined : selectedNode
     if (initialViewport && target && !fitOnNavigate) {
-      const center = centerOf(target, initialViewport.zoom)
+      const center = centerOf(target)
       lastNavigation.current = navigation
       void instance.setCenter(center.x, center.y, { zoom: initialViewport.zoom })
       return

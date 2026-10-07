@@ -283,30 +283,6 @@ describe("Canvas", () => {
         .poll(() => sameBox(boxOf(terminal("Checkout implementation")), visited))
         .toBe(true)
     })
-
-    it("restores a minimized terminal and keeps it restored when returning", async () => {
-      await openCanvas()
-      await terminal("Checkout implementation")
-        .getByRole("button", { name: "Minimize Checkout implementation" })
-        .click()
-      await expect
-        .element(page.getByRole("textbox", { name: "Command for Checkout implementation" }))
-        .not.toBeInTheDocument()
-
-      await doubleClickHeader("Checkout implementation")
-
-      await expect
-        .element(page.getByRole("textbox", { name: "Command for Checkout implementation" }))
-        .toBeVisible()
-      await expect.poll(() => fillsView(boxOf(terminal("Checkout implementation")))).toBe(true)
-
-      await doubleClickHeader("Checkout implementation")
-
-      await expect.poll(() => fillsView(boxOf(terminal("Checkout implementation")))).toBe(false)
-      await expect
-        .element(page.getByRole("textbox", { name: "Command for Checkout implementation" }))
-        .toBeVisible()
-    })
   })
 
   context("when using the header resize control", () => {
@@ -362,29 +338,6 @@ describe("Canvas", () => {
       const zoomedOut = await relativeArea()
 
       expect(zoomedOut / atStart).toBeCloseTo(1, 1)
-    })
-
-    it("restores a minimized terminal", async () => {
-      await openCanvas()
-      await terminal("Checkout implementation")
-        .getByRole("button", { name: "Minimize Checkout implementation" })
-        .click()
-      await expect
-        .element(page.getByRole("textbox", { name: "Command for Checkout implementation" }))
-        .not.toBeInTheDocument()
-
-      await enlarge("Checkout implementation").click()
-
-      await expect
-        .element(page.getByRole("textbox", { name: "Command for Checkout implementation" }))
-        .toBeVisible()
-      await expect
-        .element(
-          terminal("Checkout implementation").getByRole("button", {
-            name: "Minimize Checkout implementation",
-          }),
-        )
-        .toBeVisible()
     })
   })
 

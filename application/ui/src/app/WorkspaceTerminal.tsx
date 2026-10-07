@@ -41,7 +41,7 @@ import { useTerminalBar } from "./terminal-bar"
 // undocked from a companion: its header, its menu, and the controls its layout offers.
 const useWindowFrame = (
   tile: Tile,
-  { minimize, onFlyTo, onResizePreset }: TerminalLayoutControls,
+  { onFlyTo, onResizePreset }: TerminalLayoutControls,
 ): Omit<WindowShellProps, "children" | "icon"> => {
   const { backend, commands } = useWorkspaceServices()
   const { setSelected, openWindowed, openFocus, close, startRename, openSwitcher } = commands
@@ -97,7 +97,6 @@ const useWindowFrame = (
     ...(chat ? { chat } : {}),
     switcher: { onOpen: (button) => openSwitcher(id, button) },
     onClose: () => close(id),
-    ...(minimize ? { minimize } : {}),
     ...(onFlyTo ? { onFlyTo } : {}),
     ...(onResizePreset
       ? {
@@ -154,7 +153,7 @@ export const WorkspaceTerminal = ({
   readonly terminal: TerminalMetadata
   readonly controls: TerminalLayoutControls
 }): React.JSX.Element => {
-  const { minimize, onReveal } = controls
+  const { onReveal } = controls
   const { backend, commands, panes } = useWorkspaceServices()
   const { setKeyboardFocus } = commands
   const terminalId = terminal.id
@@ -209,7 +208,6 @@ export const WorkspaceTerminal = ({
     [chatShown, conversations, terminalKey],
   )
   const wanted = keyboardFocus?.view === view && active
-  const hidden = minimize?.minimized === true && !minimize.clipContent
   const withChat = (content: ReactNode): ReactNode =>
     conversations ? (
       <div className="chat-host relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -218,9 +216,6 @@ export const WorkspaceTerminal = ({
           <div
             className="chat-pane absolute inset-0 z-10 nodrag nopan nowheel"
             data-workspace-chat=""
-            hidden={hidden}
-            aria-hidden={minimize?.minimized}
-            inert={minimize?.minimized}
           >
             <ChatView
               conversation={conversation}
@@ -272,8 +267,6 @@ export const WorkspaceTerminal = ({
             companionKey={terminalKey}
             view={view}
             onReveal={onReveal}
-            minimized={minimize?.minimized}
-            clipContent={minimize?.clipContent}
             bar={bar}
             items={items}
             fresh={fresh}
@@ -296,8 +289,6 @@ export const WorkspaceTerminal = ({
       terminal={terminal}
       projectName={projectName}
       fontSize={fontSize}
-      minimized={minimize?.minimized}
-      clipContent={minimize?.clipContent}
       focusInput={wanted && !chatShown}
       onInputFocused={onInputFocused}
       renderWindow={renderWindow}

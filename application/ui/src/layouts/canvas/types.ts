@@ -7,7 +7,6 @@ import type { TerminalLayoutControls } from "../../terminals/WindowShell"
 export type TerminalNode = Node<
   {
     compactHeader: boolean
-    minimized: boolean
     hiding: boolean
     preview: boolean
     focusRequest: number | null

@@ -49,7 +49,6 @@ export const WorkspaceStage = memo(
       canvas: canvasLayout,
       grid: gridLayouts,
       gridRestoreWidths,
-      gridMinimized,
       sizePresets,
       hidden,
     } = layout
@@ -74,7 +73,6 @@ export const WorkspaceStage = memo(
       setCanvasLayout: saveCanvasLayout,
       setGridLayouts: saveGridLayouts,
       toggleGridWidth,
-      toggleGridMinimized,
       setSizePreset,
       showAll,
     } = commands
@@ -130,8 +128,6 @@ export const WorkspaceStage = memo(
               onToggleWidth={(terminalId, change) => toggleGridWidth(target, terminalId, change)}
               layouts={gridLayouts}
               onLayoutsChange={setGridLayouts}
-              minimized={gridMinimized}
-              onMinimize={(terminalId) => toggleGridMinimized(target, terminalId)}
               onCreate={() => {
                 add()
               }}

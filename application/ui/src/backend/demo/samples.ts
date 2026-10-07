@@ -110,7 +110,6 @@ export const sampleOutput = (terminal: TerminalMetadata): SampleOutput =>
   outputs.get(terminal.id) ?? "shell"
 
 export const demoCanvasLayout = (): CanvasLayout => ({
-  minimized: {},
   geometry: Object.fromEntries(
     samples.map(({ id, x, y, height }) => [
       id,
