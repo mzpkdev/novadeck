@@ -104,6 +104,18 @@ const TerminalCanvas = ({
     trackViewport,
     commitViewport,
   } = persistence
+  // Leaving Canvas ends a visit as though the person came back from it: the camera it
+  // keeps is where the visit began, so a double-click on returning flies in again, not to
+  // where the camera already is. After the unmount snapshot above, so it wins.
+  useEffect(
+    () => () => {
+      const { home } = visit
+      if (!home) return
+      trackViewport(home)
+      commitViewport()
+    },
+    [visit, trackViewport, commitViewport],
+  )
   // Zoom reaches the nodes only where it changes them: a header turning compact. The
   // chrome itself scales in CSS (below), so zooming rerenders no terminal until one does.
   useStore(

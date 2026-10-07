@@ -574,6 +574,27 @@ describe("Canvas", () => {
         },
       ],
     ]
+    it("flies to the terminal again after opening it in Focus and back in Canvas", async () => {
+      await openCanvas()
+      await doubleClickHeader("Checkout implementation")
+      expect(await flownTo("Checkout implementation")).toBe(true)
+      await terminal("Checkout implementation")
+        .getByRole("button", { name: "Focus Checkout implementation" })
+        .click()
+      await expect.element(view("Focus")).toBeChecked()
+
+      await page.getByRole("button", { name: "Open in Canvas" }).click()
+      await expect.element(view("Canvas")).toBeChecked()
+      const back = await settled(() => boxOf(terminal("Checkout implementation")))
+      expect(fillsView(back)).toBe(false)
+
+      await doubleClickHeader("Checkout implementation")
+      expect(await flownTo("Checkout implementation")).toBe(true)
+      await doubleClickHeader("Checkout implementation")
+      const returned = await settled(() => boxOf(terminal("Checkout implementation")))
+      expect(sameBox(returned, back)).toBe(true)
+    })
+
     for (const [move, perform] of moves) {
       it(`flies to the terminal again after ${move} instead of returning`, async () => {
         await openCanvas()
