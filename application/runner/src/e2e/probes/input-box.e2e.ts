@@ -12,7 +12,7 @@ import { join } from "node:path"
 
 import headless from "@xterm/headless"
 
-import { screenText } from "../../terminals/doorbell.js"
+import { screenText } from "../../terminals/screen.js"
 import { setups } from "../agents/index.js"
 import { describe, e2e, supported } from "../fixture.js"
 import { asked, gate } from "../model/script.js"

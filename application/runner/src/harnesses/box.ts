@@ -1,4 +1,4 @@
-import type { ScreenText } from "../terminals/doorbell.js"
+import type { ScreenText } from "../terminals/screen.js"
 
 /**
  * What a harness's input box holds, as its adapter reads it off the screen. Only a
@@ -27,6 +27,13 @@ export type BoxProfile = {
    * (Claude Code's `[Pasted text #1 +39 lines]`), which stands for the pasted text.
    */
   readonly collapsed: (box: InputBox) => boolean
+  /**
+   * The keys that clear a box's text, written for a harness that puts an interrupted
+   * prompt back in its box (Claude Code's Escape twice; over an empty box they open its
+   * rewind picker, so they are written only over text seen there). Omitted where nothing
+   * comes back (probed: Codex and Antigravity leave the box empty), and nothing is pressed.
+   */
+  readonly clear?: string
   /**
    * Whether a paste of the text certainly shows as a placeholder, however small the
    * screen (probed thresholds); false where it may show whole.
@@ -126,7 +133,7 @@ const read = (
 ): InputBox | undefined => {
   const rows = screen.rows.slice(first, last + 1)
   if (!rows[0]?.startsWith(marker)) return undefined
-  const lit = (screen.bright ?? screen.rows).slice(first, last + 1)
+  const lit = screen.bright.slice(first, last + 1)
   const lines = (shown: readonly string[]): string =>
     shown
       .map((row, index) => (index === 0 ? row.slice(marker.length) : row).replace(/^ {1,2}/, ""))
@@ -135,7 +142,7 @@ const read = (
   const text = lines(lit)
   if (compact(text) !== "") return { text, first, last }
   const faint = lines(rows)
-  const home = screen.cursor?.row === first && screen.cursor.column <= marker.length + 1
+  const home = screen.cursor.row === first && screen.cursor.column <= marker.length + 1
   return { text: compact(faint) === "" || home ? "" : faint, first, last }
 }
 
@@ -156,8 +163,8 @@ export const ruledBox = (screen: ScreenText, marker: string): InputBox | undefin
   const top = screen.rows.slice(0, bottom).findLastIndex(rule)
   if (top < 0 || bottom - top < 2) return undefined
   const { cursor } = screen
-  if (cursor && (cursor.row <= top || cursor.row >= bottom)) return undefined
-  for (let first = cursor?.row ?? bottom - 1; first > top; first -= 1)
+  if (cursor.row <= top || cursor.row >= bottom) return undefined
+  for (let first = cursor.row; first > top; first -= 1)
     if (screen.rows[first]?.startsWith(marker)) return read(screen, first, bottom - 1, marker)
   return undefined
 }
@@ -169,7 +176,6 @@ export const ruledBox = (screen: ScreenText, marker: string): InputBox | undefin
  */
 export const markedBox = (screen: ScreenText, marker: string): InputBox | undefined => {
   const { cursor } = screen
-  if (!cursor) return undefined
   let first = cursor.row
   for (; first >= 0; first -= 1) {
     const row = screen.rows[first] ?? ""

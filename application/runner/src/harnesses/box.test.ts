@@ -3,8 +3,9 @@ import { join } from "node:path"
 
 import headless from "@xterm/headless"
 
-import { screenText, type ScreenText } from "../terminals/doorbell.js"
+import { screenText, type ScreenText } from "../terminals/screen.js"
 import { describe, expect, it } from "../test.js"
+import { screen as screenWith } from "../testing/screens.js"
 import { box as agy } from "./agy/box.js"
 import { compact, isEmpty, sameText, wrappedRows, type BoxProfile } from "./box.js"
 import { box as claude } from "./claude/box.js"
@@ -33,6 +34,7 @@ const screenOf = ({ height, cursor, rows, bright }: State): ScreenText => {
     rows: all,
     bright: all.map((row, index) => bright[index] ?? row),
     cursor,
+    columns: 120,
     bracketedPaste: true,
   }
 }
@@ -71,8 +73,9 @@ const alike: { readonly [name: string]: Expect } = {
   "size 1500 chars": "collapsed",
 }
 
-// Where a harness collapses a paste, which differs: Claude Code from ten lines, Antigravity
-// from some number of lines between ten and twenty-five, Codex from about a thousand characters.
+// Where a harness collapses a paste, which differs: Claude Code from more than three lines,
+// Antigravity from more than fifteen, Codex from about a thousand characters (box.ts has
+// the probed thresholds).
 const harnesses: readonly {
   readonly name: string
   readonly profile: BoxProfile
@@ -155,9 +158,7 @@ describe.each(harnesses)("the input box of $name", ({ name, profile, versions, s
     })
 
     it("finds no box on a screen that shows none", () => {
-      expect(profile.read({ rows: Array<string>(40).fill(""), bracketedPaste: true })).toBe(
-        undefined,
-      )
+      expect(profile.read(screenWith({ rows: Array<string>(40).fill("") }))).toBe(undefined)
       const text = screenOf(shown["12 after turn"]!)
       const noCursor = { ...text, cursor: { row: 2, column: 4 } }
       expect(profile.read(noCursor)).toBe(undefined)
@@ -208,11 +209,8 @@ describe("a box whose placeholder is drawn dim", () => {
   })
 })
 
-const screen = (rows: string[], row: number, column = 0): ScreenText => ({
-  rows,
-  cursor: { row, column },
-  bracketedPaste: true,
-})
+const screen = (rows: string[], row: number, column = 0): ScreenText =>
+  screenWith({ rows, cursor: { row, column } })
 const lines = (count: number) => Array.from({ length: count }, () => "l").join("\n")
 
 describe("boxes read from synthetic screens", () => {
@@ -264,5 +262,11 @@ describe("boxes read from synthetic screens", () => {
     expect(agy.collapses(lines(16))).toBe(true)
     expect(agy.collapses(lines(15))).toBe(false)
     expect(codex.room(20)).toBe(17)
+  })
+
+  it("clears an interrupted prompt's draft only in Claude Code, the one that puts it back", () => {
+    expect(claude.clear).toBe("\x1b\x1b")
+    expect(codex.clear).toBe(undefined)
+    expect(agy.clear).toBe(undefined)
   })
 })

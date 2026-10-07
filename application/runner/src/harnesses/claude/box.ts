@@ -11,6 +11,7 @@ import { ruledBox, type BoxProfile } from "../box.js"
 export const box: BoxProfile = {
   read: (screen) => ruledBox(screen, "❯"),
   collapsed: ({ text }) => /^\[Pasted text #\d+(?: \+\d+ lines?)?\]$/.test(text.trim()),
+  clear: "\x1b\x1b",
   collapses: (text) => text.split("\n").length > 3 || text.length > 900,
   room: (rows) => rows - 4,
 }
