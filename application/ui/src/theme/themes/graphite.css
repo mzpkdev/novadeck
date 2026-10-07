@@ -1,13 +1,20 @@
-/* Graphite, Novadeck's own look: warm paper in light, slate in dark, each with
-   one accent as its strong colour: deep teal in light, electric cyan in dark.
-   The strong colour is for primary actions, on states (filled buttons, switches,
-   checkboxes), what is selected, and focus rings; everything else stays grey.
-   The two schemes step the same perceived distance (CIELAB ΔL*) from the paper at each
-   layer, so they feel alike: shell 3.5, canvas 6, hover 4.5, lines 8.5, selection 11,
-   fills inside a panel 3.5, tone tints 6; light steps darker, dark mostly lighter. Outlines
-   of what sits on the shell or canvas match by their edge instead (the mean of the step
-   inside and out, about 8). Change a step in both. Imported into `layer(themes)`; see
-   docs/theming.md. */
+/* Graphite, Novadeck's look: warm paper and a deep teal in light, slate and an electric
+   cyan in dark. The strong colour marks primary actions, on states, what is selected and
+   focus; everything else stays grey.
+
+   Both schemes step the same perceived distance (CIELAB ΔL*) from the paper at each
+   layer: shell 3.5, canvas 6, lines 8.5, selection 11, fills inside a panel 3.5, fields
+   2, tone tints 6. Hover is 4.5 in dark and 6.5 in light, so it still reads on the light
+   shell. Grounds step darker than the paper in both; fills, lines and selection step
+   darker in light and lighter in dark. Outlines of what sits on the shell or canvas match
+   by their edge instead, the mean of the step inside and out (about 8). Grained grounds
+   (the chrome, the workspace) are set off their step to make up for what the grain does
+   to them; re-measure them if the grain or a ground changes.
+
+   The light block is shared: what it declares holds in dark too, so aliases (var()) live
+   only here and follow the scheme. Dark restates every foundation token (the contract
+   requires it) and only the component tokens whose value differs. Change a step in both.
+   Imported into `layer(themes)`; see docs/theming.md. */
 
 [data-theme="graphite"] {
   color-scheme: light;
@@ -23,8 +30,7 @@
   /* Lines */
   --color-line: #dedbd4;
   --color-line-strong: #c3beb5;
-  /* Emphasis */
-  /* Emphasis: a deep teal, dark's cyan brought down to read on paper, as a line too. */
+  /* Emphasis: a deep teal, 4.7:1 on the paper, so it reads as a line or a ring too. */
   --color-strong: #007a72;
   --color-strong-hover: #00665f;
   --color-on-strong: #ffffff;
@@ -43,8 +49,8 @@
   --color-danger-fg: #8a2a22;
   --color-note: #ebe0d9;
   --color-note-fg: #97502c;
-  /* Syntax: muted hues that each meet WCAG AA on paper and on the lighter fill where the
-     lines an agent pointed at sit. */
+  /* Syntax: muted hues that each meet WCAG AA on the paper and on the fill behind the
+     lines an agent pointed at. */
   --color-syntax-keyword: #8b3a8f;
   --color-syntax-string: #2f6b3a;
   --color-syntax-number: #a1460f;
@@ -52,13 +58,12 @@
   --color-syntax-definition: #4a4fb0;
   --color-syntax-type: #8a5300;
   --color-syntax-comment: var(--color-muted);
-  /* Terminal: the page's own paper and ink, a block cursor in the teal, and muted ANSI
-     hues that read on paper: each at 5:1 or more, each bright one at 4.5:1 or more, and
-     white, a grey here so text a program prints in it still reads, at 5:1 (its bright at
-     about 4:1). */
+  /* Terminal: the paper and ink, a block cursor in the accent, and ANSI hues that read
+     on the paper: each at 5:1 or more, each bright one at 4.5:1 or more, and white a
+     grey here, so text a program prints in it still reads (its bright at about 4:1). */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
-  --terminal-cursor: #007a72;
+  --terminal-cursor: var(--color-strong);
   --terminal-selection: var(--color-selection);
   --terminal-ansi-black: #181816;
   --terminal-ansi-red: #b02a22;
@@ -93,123 +98,111 @@
     0 18px 40px -12px color-mix(in srgb, var(--color-shadow) 20%, transparent),
     0 44px 88px -28px color-mix(in srgb, var(--color-shadow) 26%, transparent);
 
-  /* Component tokens: selects and inputs are carved only a little, a hair below the
-     paper with a soft inner shade, so they read as places to put a value without the
-     depth of a switch's track. */
-  --field-bg: #efede8;
-  --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 8%, transparent);
-  /* Component tokens: the switch and the checkbox are drawn by depth, not edges: an off
-     track and an unchecked box are wells a step darker, the thumb a lighter
-     knob raised out of its track. On, the well fills flush with the accent, unshaded, so
-     no rim shows around it. No borders, under the pointer too: an unchecked box's well
-     deepens instead. */
-  --toggle-track-off-bg: #dbd9d5;
-  --toggle-track-off-border-color: transparent;
-  --toggle-track-on-border-color: transparent;
-  --toggle-track-on-shadow: none;
-  --toggle-thumb-bg: #fefcf7;
-  --toggle-thumb-border-color: transparent;
-  --toggle-box-bg: #dbd9d5;
-  --toggle-box-border-color: transparent;
-  --toggle-box-hover-border-color: transparent;
-  --toggle-box-hover-bg: #d0ceca;
-  --toggle-box-radius: var(--radius-control);
-  --toggle-box-border-width: 0;
-  --toggle-box-checked-shadow: none;
-  /* Component tokens: outlines of what sits on another ground (a window on the canvas,
-     a sidebar row, card or button on the shell) take their own line, darker than the
-     line since the ground around it is darker than the paper, so their edge reads as
-     strongly in both schemes; dividers inside the paper keep the line. */
-  --window-border-color: #d8d5ce;
-  --item-selected-border-color: #d8d5ce;
-  --card-border-color: #d8d5ce;
-  --sidebar-create-border-color: #d8d5ce;
-  --choice-card-border-color: #d8d5ce;
-  /* Component tokens: the chrome's and the workspace's grounds and edges, set from what
-     the screen shows once their texture is laid over them. Grain shifts a ground's
-     lightness (dark specks darken light grounds, light specks lift dark ones), so these
-     grounds sit off the shell, paper and canvas by that much and land where the steps
-     say: the sidebar and rail 3.5 below the paper, the header and footer 1.5, the
-     workspace 6 (here a little deeper, by choice, with a stronger vignette). Their edges, the workspace's sash among them, and a selected window's
-     match by the mean of the step inside and out. Measured against the running app;
-     retune both schemes together. */
-  --workspace-bg: #e2dfd9;
-  --region-sidebar-bg: #f4f2ec;
-  --region-rail-bg: #f4f2ec;
+  /* Chrome: the header and footer sit 1.5 below the paper, the sidebar and rail 3.5,
+     each under a faint grain of dark specks; reading surfaces (terminals, code, plans)
+     stay clean. Their grounds are set off those steps to make up for the grain (see the
+     header). */
   --region-header-bg: #faf8f3;
-  --region-footer-bg: #faf8f3;
-  --region-sidebar-border-color: #d0cdc6;
-  --region-rail-border-color: #d0cdc6;
+  --region-footer-bg: var(--region-header-bg);
+  --region-sidebar-bg: #f4f2ec;
+  --region-rail-bg: var(--region-sidebar-bg);
   --region-header-border-color: #d5d2cb;
-  --region-footer-border-color: #d0cdc6;
-  --window-selected-border-color: #bbb6ad;
-  /* Component tokens: the workspace sits recessed under the chrome, a soft inner shadow
-     along its top and left edges where the header and sidebar meet it, and the selected
-     window lifts to the floating level, above its neighbours. */
-  --workspace-inset-shadow:
-    inset 0 6px 10px -8px color-mix(in srgb, var(--color-shadow) 16%, transparent),
-    inset 6px 0 10px -8px color-mix(in srgb, var(--color-shadow) 12%, transparent);
-  --window-selected-shadow: var(--shadow-floating);
-  /* Component tokens: carved where something sits in or slides along a track, raised
-     where it is pressed: the on/off switch's track is a well with a lip of light along
-     its foot, the segmented switches' a shallower one, and their thumb and active segment
-     stand up out of them; an unchecked box is sunk, and the message box a little, as
-     fields are. */
-  --segmented-shadow:
-    inset 0 1px 1px color-mix(in srgb, var(--color-shadow) 7%, transparent),
-    0 1px 0 rgb(255 255 255 / 0.5);
-  --toggle-track-shadow:
-    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 12%, transparent),
-    inset 0 2px 5px -2px color-mix(in srgb, var(--color-shadow) 10%, transparent),
-    0 1px 0 rgb(255 255 255 / 0.65);
-  --toggle-thumb-shadow:
-    0 1px 2px color-mix(in srgb, var(--color-shadow) 20%, transparent),
-    0 1px 1px color-mix(in srgb, var(--color-shadow) 10%, transparent);
-  --toggle-box-shadow:
-    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 16%, transparent),
-    0 1px 0 rgb(255 255 255 / 0.6);
-  --demo-form-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 8%, transparent);
-  /* Component tokens: the workspace's glow is a lighter paper and its edges a deeper
-     one, a vignette stronger than dark's, which its near-black canvas already gives. */
-  --workspace-glow-bg: #eae8e3;
-  --workspace-edge-bg: #d1cec7;
-  /* Component tokens: an ended terminal's line stays neutral, so the teal never reads
-     as a state. The logo tile is black, its glyph the bright cyan of dark. */
-  --window-phase-ended-border-color: #181816;
-  --brand-tile-bg: linear-gradient(180deg, #2e2d2a, #181816);
-  --brand-tile-fg: #00e5d6;
-  /* Component tokens: fills inside a panel stay a light step off it, where the soft
-     ground would weigh on the paper: the lines an agent pointed at take a trace of the
-     teal, inline code and the demo's requests a step darker, and its command form a
-     smaller step, carved in. */
-  --artifact-code-pointed-bg: #e6eae4;
-  --prose-code-bg: #ece9e3;
-  --demo-request-bg: #ece9e3;
-  --demo-form-bg: #eeece8;
-  /* Component tokens: a faint grain over the chrome (header, footer, rail and
-     sidebar), dark specks a few percent strong, as faint as dark's. Reading surfaces
-     (terminals, code, plans) stay clean. */
+  --region-sidebar-border-color: #d0cdc6;
+  --region-rail-border-color: var(--region-sidebar-border-color);
+  --region-footer-border-color: var(--region-sidebar-border-color);
   --region-header-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.07 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --region-footer-image: var(--region-header-image);
   --region-rail-image: var(--region-header-image);
   --region-sidebar-image: var(--region-header-image);
-  /* Component tokens: the workspace's dot grid takes the teal, faint enough to stay a
-     texture on the paper. */
-  --workspace-dots-fg: #007a72;
+
+  /* Workspace: recessed under the chrome, with a soft inner shadow along its top and
+     left edges. Its ground is grain-compensated and here a little deeper than the step,
+     with a stronger vignette than dark's near-black canvas needs: the glow a step above
+     the ground, the edges well below. A faint dot grid in the accent; dots under the
+     pointer light up a little less on the paper than in dark. */
+  --workspace-bg: #e2dfd9;
+  --workspace-glow-bg: #eae8e3;
+  --workspace-edge-bg: #d1cec7;
+  --workspace-inset-shadow:
+    inset 0 6px 10px -8px color-mix(in srgb, var(--color-shadow) 16%, transparent),
+    inset 6px 0 10px -8px color-mix(in srgb, var(--color-shadow) 12%, transparent);
+  --workspace-dots-fg: var(--color-strong);
   --canvas-dots-opacity: 0.12;
-  /* Dots under the pointer light up a little less on the paper than in dark. */
   --workspace-spotlight-opacity: 0.36;
-  /* Component tokens: the Deck mark's cards, two steps lighter than the tile. */
+
+  /* Window: the selected window takes a stronger outline and lifts to the floating
+     level. An ended terminal's line stays neutral, so the accent never reads as a
+     state. */
+  --window-border-color: #d8d5ce;
+  --window-selected-border-color: #bbb6ad;
+  --window-selected-shadow: var(--shadow-floating);
+  --window-phase-ended-border-color: var(--color-ink);
+
+  /* Outlines: what sits on another ground (a sidebar row, a card or button on the
+     shell) takes the window's outline rather than the line, so its edge reads as
+     strongly in both schemes; dividers inside the paper keep the line. */
+  --item-selected-border-color: var(--window-border-color);
+  --card-border-color: var(--window-border-color);
+  --sidebar-create-border-color: var(--window-border-color);
+  --choice-card-border-color: var(--window-border-color);
+
+  /* Controls: carved where something holds a value or slides along a track, raised where
+     it is pressed. Fields (selects, the message box) are a little carved; the segmented
+     switches' track is a shallow channel the active segment stands up out of. The switch
+     and the checkbox are drawn by depth, not edges: an off track and an unchecked box are
+     wells, the thumb a lighter knob raised out of its track; on, the well fills flush
+     with the accent, unshaded, so no rim shows. No borders, under the pointer either: an
+     unchecked box's well deepens instead. */
+  --field-bg: #efede8;
+  --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 8%, transparent);
+  --segmented-shadow:
+    inset 0 1px 1px color-mix(in srgb, var(--color-shadow) 7%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.5);
+  --toggle-track-off-bg: #dbd9d5;
+  --toggle-track-off-border-color: transparent;
+  --toggle-track-on-border-color: transparent;
+  --toggle-track-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 12%, transparent),
+    inset 0 2px 5px -2px color-mix(in srgb, var(--color-shadow) 10%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.65);
+  --toggle-track-on-shadow: none;
+  --toggle-thumb-bg: #fefcf7;
+  --toggle-thumb-border-color: transparent;
+  --toggle-thumb-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-shadow) 20%, transparent),
+    0 1px 1px color-mix(in srgb, var(--color-shadow) 10%, transparent);
+  --toggle-box-bg: var(--toggle-track-off-bg);
+  --toggle-box-hover-bg: #d0ceca;
+  --toggle-box-radius: var(--radius-control);
+  --toggle-box-border-width: 0;
+  --toggle-box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 16%, transparent),
+    0 1px 0 rgb(255 255 255 / 0.6);
+
+  /* Fills inside a panel: a light step off the paper, where the soft ground would weigh
+     on it. The lines an agent pointed at take a trace of the accent; inline code and the
+     demo's requests share a fill; the demo's command form is carved as fields are. */
+  --artifact-code-pointed-bg: #e6eae4;
+  --prose-code-bg: #ece9e3;
+  --demo-request-bg: var(--prose-code-bg);
+  --demo-form-bg: #eeece8;
+  --demo-form-shadow: var(--field-shadow);
+
+  /* Brand: the logo tile is dark in both schemes, its glyph the bright cyan; the Deck
+     mark's cards step back from the face into the paper. */
+  --brand-tile-bg: linear-gradient(180deg, #2e2d2a, #181816);
+  --brand-tile-fg: #00e5d6;
   --deck-mark-card-near-bg: #c3bfb6;
   --deck-mark-card-far-bg: #d5d2cb;
-  /* Component tokens: behind a live page while it loads. Pages assume a white ground
-     whatever the scheme, so this stays white in both. */
+
+  /* Fixed: a live page assumes a white ground whatever the scheme, so the ground behind
+     one while it loads stays white; section labels are set in the mono, after the small
+     capitals of a terminal's chrome. */
   --artifact-webview-bg: #ffffff;
+  --section-label-font: var(--font-mono);
 }
 
-/* The dark scheme: slate grounds, greys with a trace of blue, stepping lighter from the
-   canvas to the paper, each step wide enough to tell the regions apart. The strong
-   colour is the cyan, so on states, what is selected and focus read in it. */
+/* Dark: slate grounds, greys with a trace of blue, and the cyan as the strong colour. */
 [data-theme="graphite"][data-scheme="dark"] {
   color-scheme: dark;
 
@@ -248,13 +241,12 @@
   --color-syntax-property: #8fc3f0;
   --color-syntax-definition: #adb3f5;
   --color-syntax-type: #e4c07a;
-  --color-syntax-comment: #a2a6af;
-  /* Terminal: the cursor is a block of the cyan, the character under it in the paper. */
+  --color-syntax-comment: var(--color-muted);
+  /* Terminal: ANSI black stays a step above the paper, so text drawn in it shows. */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
-  --terminal-cursor: #00e5d6;
+  --terminal-cursor: var(--color-strong);
   --terminal-selection: var(--color-selection);
-  /* Black stays a step above the paper so text drawn in it still reads. */
   --terminal-ansi-black: #4f5259;
   --terminal-ansi-red: #e5807a;
   --terminal-ansi-green: #8cc796;
@@ -271,9 +263,9 @@
   --terminal-ansi-magenta-bright: #dfb6ec;
   --terminal-ansi-cyan-bright: #a3dbe2;
   --terminal-ansi-white-bright: #f2f3f5;
-  /* Depth: deeper shadows than light's, and, since a shadow barely shows on a near-black
-     ground, a hairline of light along each raised surface's top edge that brightens with
-     its height. */
+  /* Depth: deeper shadows than light's and, since a shadow barely shows on a near-black
+     ground, a hairline of light along each raised surface's top edge that brightens
+     with its height. */
   --shadow-control:
     0 1px 2px color-mix(in srgb, var(--color-shadow) 45%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 0.04);
@@ -292,144 +284,78 @@
     0 24px 64px -16px color-mix(in srgb, var(--color-shadow) 75%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 0.07);
 
-  /* Component tokens: selects and inputs are carved only a little, a hair below the
-     paper with a soft inner shade, so they read as places to put a value without the
-     depth of a switch's track. */
-  --field-bg: #191b1f;
-  --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
-  /* Component tokens: the switch and the checkbox are drawn by depth, not edges: an off
-     track and an unchecked box are wells a step below the paper, the thumb a lighter
-     knob raised out of its track. On, the well fills flush with the accent, unshaded, so
-     no rim shows around it. No borders, under the pointer too: an unchecked box's well
-     deepens instead. */
-  --toggle-track-off-bg: #0e1015;
-  --toggle-track-off-border-color: transparent;
-  --toggle-track-on-border-color: transparent;
-  --toggle-track-on-shadow: none;
-  --toggle-thumb-bg: #36393d;
-  --toggle-thumb-border-color: transparent;
-  --toggle-box-bg: #0e1015;
-  --toggle-box-border-color: transparent;
-  --toggle-box-hover-border-color: transparent;
-  --toggle-box-hover-bg: #0a0c0f;
-  --toggle-box-radius: var(--radius-control);
-  --toggle-box-border-width: 0;
-  --toggle-box-checked-shadow: none;
-  /* Component tokens: the brand tile (the logo, the welcome's start button, a checked
-     choice's icon) stays slate with a light edge, its glyph in the cyan, rather than a
-     cyan block. */
-  --brand-tile-bg: linear-gradient(180deg, #2f3137, #24262b);
-  --brand-tile-fg: #00e5d6;
-  --brand-tile-border-color: #595c64;
-  /* Component tokens: fills inside a panel, a step lighter than it (the command form a
-     step darker), as far from the paper as light's. */
-  --artifact-code-pointed-bg: #24262b;
-  --prose-code-bg: #24262b;
-  --demo-request-bg: #24262b;
-  --demo-form-bg: #181a1e;
-  /* Component tokens: the cyan's stripes glow like neon tubes, a bright core with a soft
-     bloom: the selection bars, the tab underline and the running sweep. Only the thin
-     lines glow, never text or fills, and only here, where a dark ground lets light read
-     as light; on light paper a bloom would read as a smudge. */
-  --item-selected-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
-  --tabs-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
-  --window-phase-running-shadow: drop-shadow(0 0 3px rgb(0 229 214 / 0.75));
-  /* Component tokens: the chrome's grain in light specks at half light's strength:
-     near black, the eye reads the same specks twice as strongly. */
-  --region-header-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.035 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
-  --region-footer-image: var(--region-header-image);
-  --region-rail-image: var(--region-header-image);
-  --region-sidebar-image: var(--region-header-image);
-  /* Component tokens: the workspace's dot grid takes the cyan, faint enough to stay a
-     texture. */
-  --workspace-dots-fg: #00e5d6;
-  --canvas-dots-opacity: 0.07;
-  --workspace-spotlight-opacity: 0.48;
-  /* Component tokens: outlines of what sits on another ground (a window on the canvas,
-     a sidebar row, card or button on the shell) take their own line, softer than the
-     line since the ground around it is darker still, so their edge reads as strongly in
-     both schemes; dividers inside the paper keep the line. */
-  --window-border-color: #292c31;
-  --item-selected-border-color: #292c31;
-  --card-border-color: #292c31;
-  --sidebar-create-border-color: #292c31;
-  --choice-card-border-color: #292c31;
-  /* Component tokens: the chrome's and the workspace's grounds and edges, set from what
-     the screen shows once their texture is laid over them. Grain shifts a ground's
-     lightness (dark specks darken light grounds, light specks lift dark ones), so these
-     grounds sit off the shell, paper and canvas by that much and land where the steps
-     say: the sidebar and rail 3.5 below the paper, the header and footer 1.5, the
-     workspace 6. Their edges, the workspace's sash among them, and a selected window's
-     match by the mean of the step inside and out. Measured against the running app;
-     retune both schemes together. */
-  --workspace-bg: #0f1112;
-  --region-sidebar-bg: #111418;
-  --region-rail-bg: #111418;
+  /* Chrome: the grain is light specks at half light's strength, since near black the
+     eye reads the same specks twice as strongly. */
   --region-header-bg: #16181c;
-  --region-footer-bg: #16181c;
-  --region-sidebar-border-color: #23262c;
-  --region-rail-border-color: #23262c;
+  --region-sidebar-bg: #111418;
   --region-header-border-color: #25282e;
-  --region-footer-border-color: #23262c;
-  --window-selected-border-color: #3d4047;
-  /* Component tokens: the workspace sits recessed under the chrome, a soft inner shadow
-     along its top and left edges where the header and sidebar meet it, and the selected
-     window lifts to the floating level, above its neighbours. */
+  --region-sidebar-border-color: #23262c;
+  --region-header-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.035 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+
+  /* Workspace: the edges shade darker than the ground, as in light; the soft ground,
+     lighter here, would make them glow instead. */
+  --workspace-bg: #0f1112;
+  --workspace-glow-bg: #191b1f;
+  --workspace-edge-bg: #0b0c0e;
   --workspace-inset-shadow:
     inset 0 8px 12px -8px color-mix(in srgb, var(--color-shadow) 70%, transparent),
     inset 8px 0 12px -8px color-mix(in srgb, var(--color-shadow) 55%, transparent);
-  --window-selected-shadow: var(--shadow-floating);
-  /* Component tokens: carved where something sits in or slides along a track, raised
-     where it is pressed: the on/off switch's track is a well with a lip of light along
-     its foot, the segmented switches' a shallower one, and their thumb and active segment
-     stand up out of them; an unchecked box is sunk, and the message box a little, as
-     fields are. */
+  --canvas-dots-opacity: 0.07;
+  --workspace-spotlight-opacity: 0.48;
+
+  /* Window: outlines here are softer than the line, since the ground around them is
+     darker still; the ended line is a soft light grey. */
+  --window-border-color: #292c31;
+  --window-selected-border-color: #3d4047;
+  --window-phase-ended-border-color: #cfd1d6;
+
+  /* Controls */
+  --field-bg: #191b1f;
+  --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
   --segmented-shadow:
     inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 35%, transparent),
     0 1px 0 rgb(255 255 255 / 0.04);
+  --toggle-track-off-bg: #0e1015;
   --toggle-track-shadow:
     inset 0 1px 3px color-mix(in srgb, var(--color-shadow) 60%, transparent),
     inset 0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 45%, transparent),
     0 1px 0 rgb(255 255 255 / 0.05);
+  --toggle-thumb-bg: #36393d;
   --toggle-thumb-shadow:
     0 1px 2px color-mix(in srgb, var(--color-shadow) 65%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --toggle-box-hover-bg: #0a0c0f;
   --toggle-box-shadow:
     inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 70%, transparent),
     0 1px 0 rgb(255 255 255 / 0.06);
-  --demo-form-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
-  /* Component tokens: an ended terminal's line stays neutral, so the cyan never reads
-     as a state. */
-  --window-phase-ended-border-color: #cfd1d6;
-  /* Component tokens: the Deck mark's cards, stepping back from the tile into the
-     ground. */
+
+  /* Fills inside a panel: a step lighter than it; the command form a step darker. */
+  --artifact-code-pointed-bg: #24262b;
+  --prose-code-bg: #24262b;
+  --demo-form-bg: #181a1e;
+
+  /* Brand: the tile stays slate with a light edge, its glyph the cyan. */
+  --brand-tile-bg: linear-gradient(180deg, #2f3137, #24262b);
+  --brand-tile-border-color: #595c64;
   --deck-mark-card-near-bg: #34373e;
   --deck-mark-card-far-bg: #26282d;
-  /* Component tokens: the workspace's edges shade darker than its ground, as in light;
-     the soft ground, lighter here, would make them glow instead. Its glow sits a step
-     above the canvas, as light's does. */
-  --workspace-glow-bg: #191b1f;
-  --workspace-edge-bg: #0b0c0e;
-  /* Component tokens: behind a live page while it loads. Pages assume a white ground
-     whatever the scheme, so this stays white in both. */
-  --artifact-webview-bg: #ffffff;
+
+  /* Glow: the accent's thin lines (the selection bars, the tab underline, the running
+     sweep) glow like neon tubes, a bright core with a soft bloom, in the cyan. Only
+     here, where a dark ground lets light read as light; on the paper a bloom would read
+     as a smudge. Never text or fills. */
+  --item-selected-indicator-shadow: 0 0 2px rgb(0 229 214 / 0.7), 0 0 8px rgb(0 229 214 / 0.35);
+  --tabs-indicator-shadow: var(--item-selected-indicator-shadow);
+  --window-phase-running-shadow: drop-shadow(0 0 3px rgb(0 229 214 / 0.75));
 }
 
 /* The welcome's start button is the dialog's one primary action, so it takes the accent
-   fill, where the logo and icon tiles only carry it in their glyph. */
+   as its fill, where the logo and icon tiles carry it only in their glyph. */
 [data-theme="graphite"] .welcome-start {
-  --brand-tile-bg: linear-gradient(180deg, #00877e, #007a72);
-  --brand-tile-fg: #ffffff;
+  --brand-tile-bg: linear-gradient(180deg, #00877e, var(--color-strong));
+  --brand-tile-fg: var(--color-on-strong);
   --brand-tile-border-color: transparent;
 }
 [data-theme="graphite"][data-scheme="dark"] .welcome-start {
   --brand-tile-bg: linear-gradient(180deg, #2ef0e2, #00d6c8);
-  --brand-tile-fg: #04161a;
-  --brand-tile-border-color: transparent;
-}
-
-/* In both schemes: section labels are set in the mono, after the small capitals of a
-   terminal's chrome. */
-[data-theme="graphite"] {
-  --section-label-font: var(--font-mono);
 }
