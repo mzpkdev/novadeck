@@ -47,10 +47,13 @@ export const sightTurnEnd = (
 // on its way"). The end shown at the time is only a finish if it still stands then.
 export const finishGraceMs = 700
 
-// Whether the end at `at` still stands as a completed one: shown still, the agent resting.
-export const finishStands = (terminal: TerminalMetadata, at: number): boolean => {
+// The finish the completed end at `at` still makes, shown still with the agent resting,
+// with its reply as told by then (a Stop may add it after a record ended the turn); none
+// once it turned interrupted, was replaced, or the agent works again.
+export const standingFinish = (terminal: TerminalMetadata, at: number): AgentFinish | undefined => {
   const end = turnEnd(terminal)
-  return end?.at === at && end.outcome === "completed" && !agentWorking(terminal)
+  if (end?.at !== at || end.outcome !== "completed" || agentWorking(terminal)) return undefined
+  return end.reply === undefined ? { failed: false } : { failed: false, reply: end.reply }
 }
 
 // What a desktop notification says of a finish: who finished, by the terminal's handle

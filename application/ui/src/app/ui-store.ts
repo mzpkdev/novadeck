@@ -2,7 +2,7 @@ import {
   agentWorking,
   finishGraceMs,
   finishNotice,
-  finishStands,
+  standingFinish,
   sightTurnEnd,
   type AgentFinish,
   type SeenEnd,
@@ -376,8 +376,9 @@ export const watchFinishes = (
         const timer = setTimeout(() => {
           waiting.delete(timer)
           const current = terminals.get(each.key)
-          if (current && at !== null && at !== undefined && finishStands(current, at))
-            announce([{ ...each, terminal: current }])
+          const finish =
+            current && at !== null && at !== undefined ? standingFinish(current, at) : undefined
+          if (current && finish) announce([{ key: each.key, terminal: current, finish }])
         }, graceMs)
         waiting.add(timer)
       }
