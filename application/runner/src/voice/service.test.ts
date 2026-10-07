@@ -614,6 +614,41 @@ describe("voice input after the app brings a new engine", () => {
     expect(voice.state()).toMatchObject({ installing: null, failure: null, enabled: true })
   })
 
+  it("keeps dictating with an older engine that has no marker, as the first interface", async ({
+    resources,
+  }) => {
+    const { voice, directory } = await updated(resources)
+    const [older] = await readdir(join(directory, "engine"))
+    await rm(join(directory, "engine", older ?? "", ".interface"), { force: true })
+    await voice.refresh()
+
+    expect(() => voice.record("owner", "clip", 0, pcm(3200))).not.toThrow()
+    await voice.settled()
+  })
+
+  it("does not fall back to an older engine of another interface", async ({ resources }) => {
+    const first = await installed(resources)
+    const next = await engineArchive(resources, "2", { interface: 2 })
+    const { voice } = await setup(resources, {
+      store: first.store,
+      directory: first.directory,
+      engine: next,
+      catalog: await modelCatalog(resources),
+    })
+
+    expect(() => voice.record("owner", "clip", 0, pcm(2))).toThrowError(
+      expect.objectContaining({
+        code: "VOICE_UNAVAILABLE",
+        message: expect.stringContaining("Updating the voice engine"),
+      }),
+    )
+    await voice.settled()
+
+    // The engine that came with the update speaks the new interface, so it runs.
+    voice.record("owner", "clip", 0, pcm(3200))
+    await expect(voice.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
+  })
+
   it("tells a dictation that no engine is there that it is updating", async ({ resources }) => {
     const { voice, directory } = await updated(resources)
     await rm(join(directory, "engine"), { recursive: true })
