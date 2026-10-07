@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { InterruptResult } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import { isEmpty, sameText, type BoxProfile, type InputBox } from "../harnesses/box.js"
+import { endsText, isEmpty, sameText, type BoxProfile, type InputBox } from "../harnesses/box.js"
 import type { ScreenText } from "./screen.js"
 
 /** The waits of an interrupt, in milliseconds. */
@@ -125,8 +125,14 @@ export class Interrupts {
     // The prompt put back is the turn's own, which the chat shows already; with messages
     // queued, what is there is theirs (the hooks name the queued one the person's latest).
     // Claude Code puts it back as its text, never as a "[Pasted text]" placeholder, however
-    // long (probed 2026-10-07, `e2e/probes/interrupted-paste.e2e.ts`).
-    const restored = !queued && prompt !== undefined && sameText(box.text, prompt)
+    // long (probed 2026-10-07, `e2e/probes/interrupted-paste.e2e.ts`); a prompt taller than
+    // its box shows only its tail, the box then as tall as it gets.
+    const rows = first?.rows.length ?? 0
+    const full = box.last - box.first + 1 >= (profile.viewport?.(rows) ?? Infinity)
+    const restored =
+      !queued &&
+      prompt !== undefined &&
+      (sameText(box.text, prompt) || (full && endsText(box.text, prompt)))
     // Words given back in the box's shell mode are a shell command, `!` and all.
     const words = box.mode === "shell" ? `!${box.text.trim()}` : box.text.trim()
     // A placeholder stands for words that clearing would lose: they are left, and said.

@@ -144,6 +144,42 @@ for (const setup of setups) {
       await through(t1, ["working", "settled"], { after: next })
     })
 
+    it("clears a long prompt put back in the box, though it shows only its tail, and gives nothing back", async ({
+      e2e: run,
+    }) => {
+      const held = gate()
+      run.model.use(
+        replies("Carry on", "Carried on."),
+        own(async (call) => {
+          if (!asked(call, "Hold on")) return undefined
+          await held.opened
+          return { text: "Too late." }
+        }),
+      )
+      const t1 = await start(run, setup)
+      const calls = run.model.mark()
+      const mark = t1.mark()
+      const long = ["Hold on", ...Array.from({ length: 24 }, (_, i) => `line ${i + 2} of it`)]
+
+      await t1.prompt(long.join("\n"))
+      await run.model.waitFor((call) => !call.side && latest(call).includes("Hold on"), {
+        after: calls,
+      })
+      await t1.reached("working", { after: mark })
+      const stopped = await t1.interrupt()
+      held.open()
+      await sleep(1500)
+
+      // The prompt is the chat's already: none of it goes back to the draft.
+      expect(stopped.returned).toBeNull()
+
+      // The box is empty: the next prompt goes alone, as a normal turn.
+      const next = t1.mark()
+      await t1.prompt("Carry on")
+      await t1.until("Carried on.")
+      await through(t1, ["working", "settled"], { after: next })
+    })
+
     it("sends nothing for a Stop while idle, however often, so no picker opens", async ({
       e2e: run,
     }) => {

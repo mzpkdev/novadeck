@@ -28,7 +28,11 @@ const profiles = { claude: claudeBox, codex: codexBox, agy: agyBox }
 const lines = (n: number) =>
   ["Hold on", ...Array.from({ length: n - 1 }, (_, i) => `line ${i + 2} of the prompt`)].join("\n")
 const long = (n: number) => `Hold on ${"words ".repeat(Math.ceil(n / 6))}`.slice(0, n)
-const shapes: readonly { name: string; text: string }[] = [
+const shapes: readonly { name: string; text: string; rows?: number }[] = [
+  // The same tall prompt on screens of other heights: what caps the box's viewport.
+  { name: "40 lines on 24 rows", text: lines(40), rows: 24 },
+  { name: "40 lines on 60 rows", text: lines(40), rows: 60 },
+  { name: "2000 chars on 24 rows", text: long(2000), rows: 24 },
   { name: "3 lines", text: lines(3) },
   { name: "6 lines", text: lines(6) },
   { name: "20 lines", text: lines(20) },
@@ -56,6 +60,10 @@ for (const setup of setups) {
       for (const shape of shapes) {
         held = gate()
         const t = await start(run, setup)
+        if (shape.rows) {
+          run.deck.terminals.resize({ terminalId: t.id, cols: 120, rows: shape.rows }, "e2e")
+          await sleep(500)
+        }
         const look = async (label: string) => {
           const { terminals } = run.deck
           const controller = new AbortController()

@@ -75,6 +75,12 @@ export type BoxProfile = {
    * draws around it kept: a paste that shows whole and needs more has no first row to read.
    */
   readonly room: (rows: number) => number
+  /**
+   * How many rows the box shows of a text taller than that on a screen of `rows` rows: it
+   * shows the text's tail, so a box that tall may hold only the end of what was put in it.
+   * Omitted where the harness's box shows all (or grows to `room`).
+   */
+  readonly viewport?: (rows: number) => number
 }
 
 /** A line with its tabs spread to the next multiple of eight columns. */
@@ -141,6 +147,17 @@ export const sameText = (shown: string, sent: string): boolean => {
   if (a === b) return true
   const [x, y] = [a.replace(pictures, ""), b.replace(pictures, "")]
   return x !== "" && x === y
+}
+
+/**
+ * Whether the text shown is the end of the text sent, whitespace aside and emoji as the
+ * screen drew them, as a box too short for the text shows only its tail.
+ */
+export const endsText = (shown: string, sent: string): boolean => {
+  const [a, b] = [compact(shown), compact(sent)]
+  if (a !== "" && b.endsWith(a)) return true
+  const [x, y] = [a.replace(pictures, ""), b.replace(pictures, "")]
+  return x !== "" && y.endsWith(x)
 }
 
 /** Whether the box holds nothing. */
