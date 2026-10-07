@@ -728,9 +728,13 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   takes the `!` back out where the box reads in its shell mode and empty, which leaves the
   mode in all three, idle or mid-turn.
 
-  Prompts to one terminal go one at a time, in order, and one given while an answer to a
-  request goes there waits for it and the words that follow it; one that meets a doorbell ring under
-  way waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
+  Everything that puts keys in one terminal's agent box takes its turn in that terminal's
+  input queue (`terminals/input-queue.ts`), one entry at a time, in the order it came:
+  prompts, answers (an answer and the words that follow it are one entry), interrupts and
+  the messaging doorbell's rings. So a prompt given while an answer to a request goes
+  there waits for it and the words that follow it, and a ring never comes between them;
+  terminals' queues don't wait for each other. A prompt that meets a doorbell ring
+  whose prompt is yet to confirm it waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
   person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and
   its Enter, the person's prompt attributed from the harness's transcript, the terminal
   named from its first prompt. A prompt given while the agent works behaves as typing it
@@ -819,21 +823,21 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
 "accept", values }`, a value per field id, or `action: "decline"`; the adapter's keys get the
   whole answer, and a harness that raises no request for a form (Codex) shows none. Adapters get the session's
   working directory (`cwd`) with each request, to resolve the paths a dialog shows. Each key goes through the
-  person's key bookkeeping, as `agents.prompt`'s do. Answers to one terminal go one at a time. A
+  person's key bookkeeping, as `agents.prompt`'s do. Answers take their turn in the terminal's input queue (see `agents.prompt`). A
   request the agent doesn't have is `NOT_FOUND`. An answer whose `dialog` is not the id the screen reads
   now is `DIALOG_CHANGED`: nothing is pressed or locked, and the next `agents.detail` has the new read. `CONFLICT`, with nothing pressed, is a dialog that
   isn't on screen, that the adapter doesn't recognise as the request's (the request's dialog
   turns `raw`, `unrecognized`, if one had shown), that reads for another request waiting too (nothing
   can tell whose it is: no dialog on the terminal is answerable then, and each shows `raw`), an answer whose waits outlast the 10 minutes the keys can be held, an answer the dialog can't take, a harness without
-  an adapter, a request answered or turned raw already, or a doorbell ring or hold on the
-  person's keys that outlasts 10 s. `ANSWER_FAILED` is keys pressed without the dialog going as
+  an adapter, a request answered or turned raw already, or a doorbell ring whose prompt
+  is yet to confirm it that outlasts 10 s. `ANSWER_FAILED` is keys pressed without the dialog going as
   expected, or a screen that never showed what its next move needs; its dialog turns `raw`, `failed`. After either
   the runner never presses for that request again. Where the option chosen takes the
   person's words as the agent's next prompt (`prompt`, as Codex's "No, and tell Codex
   what to do differently" and Antigravity's feedback), the runner gives them as
   one once the dialog took its key and the screen settled, trying again for up to 10 s while
   the agent can't take a prompt yet for a reason that clears by itself (a request still
-  pending, a doorbell ring, another hold), and at once giving up on one that won't (a draft
+  pending), and at once giving up on one that won't (a draft
   in the box, no box, too tall, its shell mode); then the call fails `WORDS_NOT_SENT` though the dialog was answered (the words' paste may still sit in the agent's own input box as a draft, where its Enter was refused for a request that came meanwhile). The client's
   `agents.answer(terminalId, request, answer)` is that call.
 - `agents.interrupt({ terminalId })` presses Escape in the terminal's agent, which stops
@@ -842,12 +846,11 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   bound, or one showing its own prompt. It presses the key only while the agent's activity
   is `working`; otherwise it resolves having sent nothing, as the turn is already over (a
   Stop clicked as the turn ends, or a second one), since Escape at an idle prompt does
-  nothing the chat wants and two of them open Claude Code's rewind picker. Interrupts of
-  one terminal go one at a time, each looking at the activity only a second after the
-  one before, so a double Stop sends one Escape. It waits for the person's input to be
-  let go, as held for a prompt's paste or the doorbell's test paste, for as long as that
-  hold's own cap allows (about 10 s for a prompt's, 3 s for a ring's), so its
-  Escape never cuts into one. It goes through the person's key bookkeeping too:
+  nothing the chat wants and two of them open Claude Code's rewind picker. It takes its
+  turn in the terminal's input queue, so its Escape never cuts into a prompt's paste, an
+  answer's keys or a ring's test paste; those of one terminal are each given a second
+  after the one before to show its turn ended before the next looks at the activity, so a
+  double Stop sends one Escape. It goes through the person's key bookkeeping too:
   the turn ends as an Escape of theirs ends it. The harness takes the key a moment later.
   Claude Code puts a prompt interrupted before any reply back in its box as a draft (Codex
   and Antigravity leave it echoed above their box, which stays empty; probed); the runner
