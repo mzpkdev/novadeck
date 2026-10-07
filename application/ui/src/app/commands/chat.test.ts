@@ -85,9 +85,18 @@ describe("chat commands", () => {
       app.commands.setChatDraft("01", "go")
       app.commands.clearChatDraft("project/initial", "01", "go")
       expect(app.ui.getSnapshot().chatDrafts).toEqual({})
-      app.commands.setChatDraft("01", "go on")
+      app.commands.setChatDraft("01", "going")
       app.commands.clearChatDraft("project/initial", "01", "go")
-      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "go on" } })
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({ "project/initial": { "01": "going" } })
+    })
+
+    it("keeps words dictated after it while it went, without the sent prompt", () => {
+      const app = open({ working: false })
+      app.commands.setChatDraft("01", "Fix the login bug and add a test")
+      app.commands.clearChatDraft("project/initial", "01", "Fix the login bug")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({
+        "project/initial": { "01": "and add a test" },
+      })
     })
   })
 

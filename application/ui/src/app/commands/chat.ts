@@ -20,7 +20,8 @@ export type ChatCommands = {
   // Keeps what the person has typed in the terminal's chat and not sent.
   readonly setChatDraft: (terminalId: string, text: string) => void
   // Clears the draft a prompt was sent from, in the session it was sent in, if the person
-  // hasn't changed it since: whether or not the chat is still on screen.
+  // hasn't changed it since (words added after it, as dictated while it went, stay):
+  // whether or not the chat is still on screen.
   readonly clearChatDraft: (context: string, terminalId: string, sent: string) => void
 }
 
@@ -55,10 +56,17 @@ export const createChatCommands = (ctx: CommandContext): ChatCommands => {
       })
     },
     clearChatDraft: (context, terminalId, sent) =>
-      void ui.update((state) =>
-        chatDraftOf(state.chatDrafts, context, terminalId).trim() === sent.trim()
-          ? { ...state, chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, "") }
-          : state,
-      ),
+      void ui.update((state) => {
+        const draft = chatDraftOf(state.chatDrafts, context, terminalId)
+        const words = sent.trim()
+        const begun = draft.trimStart()
+        // Words added after it while it went, as dictated ones, stay without the sent prompt.
+        const rest = begun.startsWith(words) ? begun.slice(words.length) : null
+        const left =
+          draft.trim() === words ? "" : rest !== null && /^\s/.test(rest) ? rest.trim() : null
+        return left === null
+          ? state
+          : { ...state, chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, left) }
+      }),
   }
 }
