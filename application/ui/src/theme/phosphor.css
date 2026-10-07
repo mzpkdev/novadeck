@@ -188,9 +188,16 @@
 }
 
 /* Every line of text glows in its own colour: text-shadow inherits, so it reaches the
-   terminals too, whose DOM renderer draws spans. */
+   terminals too, whose DOM renderer draws spans. The tube powers on as it comes on
+   screen, at start and when the person picks it: a bright dot draws out into a line,
+   then opens into the picture. A transform only, so nothing measures again; the tube's
+   black shows around it while it opens. Switching between the tubes keeps the picture. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
+  background-color: rgb(0 0 0);
+}
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) body {
   text-shadow: var(--crt-glow);
+  animation: phosphor-power-on 0.75s cubic-bezier(0.2, 0, 0, 1) both;
 }
 
 /* The tube over everything, dialogs included, never in the pointer's way: scanlines,
@@ -215,6 +222,88 @@
   animation: phosphor-refresh 7s linear infinite;
 }
 
+/* A terminal's own idioms, where Graphite has a designer's. */
+
+/* Inverse video: what the keyboard or pointer is on, and the chosen segment, is drawn as
+   a solid bar of the beam with the tube's black for text. Item and segment tokens have
+   no foreground for these states, so the text's colour is set here. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .item[data-highlighted],
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .segment:is(
+    [data-state="checked"],
+    [data-selected],
+    [aria-pressed="true"],
+    :has(> input:checked)
+  ) {
+  --item-highlighted-bg: var(--color-strong);
+  --item-highlighted-border-color: var(--color-strong);
+  --item-icon-fg: var(--color-on-strong);
+  --item-detail-fg: var(--color-on-strong);
+  color: var(--color-on-strong);
+  text-shadow: none;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
+  --segmented-active-bg: var(--color-strong);
+  --segmented-active-fg: var(--color-on-strong);
+  --segmented-active-border-color: var(--color-strong);
+  --segmented-active-shadow: 0 0 10px color-mix(in srgb, var(--color-strong) 45%, transparent);
+}
+
+/* Labels in brackets, and a dialog's buttons in angles: [ TERMINALS ], < Cancel >. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .section-label::before {
+  content: "[ ";
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .section-label::after {
+  content: " ]";
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .modal
+  .button:not(.link)::before {
+  content: "< ";
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .modal
+  .button:not(.link)::after {
+  content: " >";
+}
+
+/* A block caret, blinking as the field's beam does. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  :is(input, textarea, [contenteditable="true"]) {
+  caret-shape: block;
+  caret-color: var(--color-strong);
+}
+
+/* The selected window framed in a double rule, as a text interface marks the active
+   pane. An outline, so the frame never takes room from the terminal inside. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  :is(
+    .terminal-focused,
+    .grid-terminal.selected .terminal-window,
+    .canvas-node.selected .terminal-window
+  ) {
+  outline: 3px double var(--color-strong);
+  outline-offset: 3px;
+}
+
+@keyframes phosphor-power-on {
+  0% {
+    transform: scale(0.01, 0.003);
+    filter: brightness(8);
+  }
+  30% {
+    transform: scale(1, 0.003);
+    filter: brightness(5);
+  }
+  70% {
+    transform: scale(1, 1);
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: none;
+    filter: none;
+  }
+}
 @keyframes phosphor-flicker {
   0%,
   100% {
