@@ -106,8 +106,12 @@ export const createDemoChat = (
     string,
     { key: TerminalKey; store: MutableStore<Conversation>; attended: boolean }
   >()
-  // What each terminal's agent was sent while it worked, oldest first.
-  const queues = new Map<string, readonly string[]>()
+  // What each terminal's agent was sent while it worked, oldest first, and which agent it
+  // was for: a later agent in the terminal never gets it.
+  const queues = new Map<
+    string,
+    { readonly key: TerminalKey; readonly agent: string; readonly prompts: readonly string[] }
+  >()
   // The terminal at the full address, in the workspace as it stands, or in the seed.
   const locate = (key: TerminalKey): Found | undefined => {
     const terminals = latest
@@ -194,28 +198,30 @@ export const createDemoChat = (
         },
       )
   }
-  // Once a turn ends, the agent takes what waits: shell commands until a message, which
-  // starts the next turn.
-  const dequeue = (key: TerminalKey): void => {
-    const id = terminalKeyId(key)
-    const found = locate(key)
-    if (!runs(found) || found.terminal.state !== "running") return
-    // Its turn is over, whether or not its status says so yet.
-    const terminal: TerminalMetadata = {
-      ...found.terminal,
-      agent: { ...agentOf(found.terminal), working: false },
-    }
-    for (let next = queues.get(id) ?? []; next.length > 0; next = queues.get(id) ?? []) {
-      const [prompt, ...rest] = next
-      if (rest.length > 0) queues.set(id, rest)
+  // Whether the agent can't take a prompt now: it works, or waits on the person.
+  const busy = (found: Found): boolean => {
+    const agent = agentOf(found.terminal)
+    return agent.working || agent.attention !== undefined || turns.working(found.key)
+  }
+  // Once the agent is free, it takes what waits: shell commands until a message, which
+  // starts its next turn. What waited for an agent that has gone goes with it.
+  const drain = (id: string): void => {
+    for (let entry = queues.get(id); entry; entry = queues.get(id)) {
+      const found = locate(entry.key)
+      if (!runs(found) || String(found.terminal.process) !== entry.agent) {
+        queues.delete(id)
+        return
+      }
+      if (busy(found)) return
+      const [prompt, ...rest] = entry.prompts
+      if (rest.length > 0) queues.set(id, { ...entry, prompts: rest })
       else queues.delete(id)
-      deliver({ key: found.key, terminal }, prompt!)
+      deliver(found, prompt!)
       if (shellCommand(prompt!) === undefined) return
     }
   }
   turns.watch((event: TurnEvent) => {
     const { key } = event
-    if (event.type === "end" && event.outcome === "completed") queueMicrotask(() => dequeue(key))
     if (event.type === "begin") append(key, text("user", event.prompt))
     else if (event.type === "tool") {
       const found = locate(key)
@@ -277,9 +283,16 @@ export const createDemoChat = (
         if (!prompt.trim()) return
         // As the runner refuses it: text the agent would read as more than a message.
         if (promptRefused(prompt, { shell: true })) throw new Error(promptRefusal)
-        if (agent.working || turns.working(found.key)) {
-          const id = terminalKeyId(found.key)
-          queues.set(id, [...(queues.get(id) ?? []), prompt])
+        // Behind a turn, or behind what already waits for one, it waits its turn.
+        const id = terminalKeyId(found.key)
+        const waiting = queues.get(id)
+        if (busy(found) || waiting) {
+          queues.set(id, {
+            key: found.key,
+            agent: String(found.terminal.process),
+            prompts: [...(waiting?.prompts ?? []), prompt],
+          })
+          drain(id)
           return
         }
         deliver(found, prompt)
@@ -291,7 +304,7 @@ export const createDemoChat = (
         queues.delete(id)
         turns.interrupt(found.key, agentOf(found.terminal))
         // What waited behind the turn comes back, for the person to send again.
-        return queued ? queued.join("\n") : null
+        return queued ? queued.prompts.join("\n") : null
       },
       answer: async (key, id, answer) => {
         const found = agentFor(key)
@@ -347,6 +360,8 @@ export const createDemoChat = (
     },
     observe: (workspace) => {
       latest = workspace
+      // After the commit that freed an agent has said all it says, as its turn's reply.
+      if (queues.size > 0) queueMicrotask(() => [...queues.keys()].forEach(drain))
       for (const entry of stores.values()) {
         const { key, store } = entry
         const found = locate(key)

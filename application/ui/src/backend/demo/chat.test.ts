@@ -41,7 +41,27 @@ const open = () => {
     activeSession(store.getSnapshot())!.state.roster.terminals.find(
       (terminal) => terminal.id === terminalId,
     )
-  return { chat: backend.conversations!, agent }
+  // Sets a terminal's status as the runner would report it.
+  const status = (
+    terminalId: string,
+    next: { state: "idle" } | { state: "running"; agent: { working: boolean } },
+  ) =>
+    store.transact([
+      {
+        type: "terminal/status",
+        target: { projectId: "storefront", workspaceSessionId: "initial" },
+        terminalId,
+        status: next,
+      },
+    ] as never)
+  const said = (terminalId: string) =>
+    chat
+      .conversation(key(terminalId))
+      .getSnapshot()
+      .items.filter((item) => item.role === "user")
+      .map((item) => item.text)
+  const chat = backend.conversations!
+  return { chat, agent, status, said }
 }
 
 describe("demo conversations", () => {
@@ -178,6 +198,31 @@ describe("demo conversations", () => {
     expect(said()).toEqual(["one", "two", "!git status", "three"])
     await vi.advanceTimersByTimeAsync(demoTurnMs)
     expect(conversation.getSnapshot().items.at(-1)?.text).toBe("Done: three. Nothing else changed.")
+  })
+
+  it("takes what waits, in order, once a turn ends however it ends", async () => {
+    const { chat, status, said } = open()
+    const before = said("03").length
+    await chat.send(key("03"), "first")
+    // The turn ends without the demo's turns, as the debug panel ends one.
+    status("03", { state: "running", agent: { working: false } })
+    await chat.send(key("03"), "second")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(said("03").slice(before)).toEqual(["first"])
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(said("03").slice(before)).toEqual(["first", "second"])
+  })
+
+  it("drops what waited for an agent that ended, never giving it to the next", async () => {
+    const { chat, status, said } = open()
+    await chat.send(key("03"), "stale for the old agent")
+    status("03", { state: "idle" })
+    await vi.advanceTimersByTimeAsync(0)
+    status("03", { state: "running", agent: { working: false } })
+    await chat.send(key("03"), "fresh")
+    await vi.advanceTimersByTimeAsync(demoTurnMs * 3)
+    expect(said("03")).not.toContain("stale for the old agent")
+    expect(said("03")).toContain("fresh")
   })
 
   it("gives back what waited behind a turn when it is stopped", async () => {

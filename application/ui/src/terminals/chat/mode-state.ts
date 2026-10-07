@@ -86,15 +86,15 @@ export const setChatDraft = (
 
 // Words joined to a draft, each on lines of its own: `later` after `earlier`, unless
 // `earlier` is a shell command, which `later` would only make more lines of: then they go
-// before it, which makes the draft a message to look over before it is sent again.
-export const joinDraft = (earlier: string, later: string): string =>
-  !earlier.trim()
-    ? later
-    : !later.trim()
-      ? earlier
-      : earlier.trimStart().startsWith("!")
-        ? `${later}\n${earlier}`
-        : `${earlier}\n${later}`
+// before it, which makes the draft a message to look over before it is sent again. Two shell
+// commands make one of two lines, the second without its `!`, to look over before it runs.
+export const joinDraft = (earlier: string, later: string): string => {
+  if (!earlier.trim()) return later
+  if (!later.trim()) return earlier
+  if (!earlier.trimStart().startsWith("!")) return `${earlier}\n${later}`
+  if (!later.trimStart().startsWith("!")) return `${later}\n${earlier}`
+  return `${earlier}\n${later.trimStart().slice(1).trimStart()}`
+}
 
 // Keeps only the drafts of terminals that `keep` says still show a chat.
 export const keepChatDrafts = (
@@ -220,19 +220,22 @@ export const composerState = (
   return shellCommand(draft) !== undefined ? "shell" : "message"
 }
 
+// Words on their way to a terminal's agent: the draft they were sent from, as typed, which
+// goes back in the box should they not arrive, and the question they answer, for a reply.
+export type ChatSend = { readonly draft: string; readonly to: ChatReply | null }
+
 // The words on their way to each terminal's agent, by session context and terminal id:
-// taken out of the draft as they go, and put back in it should they not arrive. A terminal
-// sends one at a time.
-export type ChatSends = ByTerminal<string>
+// taken out of the draft as they go. A terminal sends one at a time.
+export type ChatSends = ByTerminal<ChatSend>
 
 export const noChatSends: ChatSends = {}
 
-export const chatSendOf = (sends: ChatSends, context: string, id: string): string | null =>
+export const chatSendOf = (sends: ChatSends, context: string, id: string): ChatSend | null =>
   valueOf(sends, context, id) ?? null
 
 export const setChatSend = (
   sends: ChatSends,
   context: string,
   id: string,
-  text: string | null,
-): ChatSends => withValue(sends, context, id, text ?? undefined)
+  send: ChatSend | null,
+): ChatSends => withValue(sends, context, id, send ?? undefined)

@@ -63,7 +63,7 @@ const host = (
           onDraft: (text) => app.commands.setChatDraft("01", text),
           replyTo: chatReplyOf(ui.chatReplies, context, "01"),
           onReplyTo: (to) => app.commands.setChatReply(context, "01", to),
-          sending: chatSendOf(ui.chatSends, context, "01") !== null,
+          sending: chatSendOf(ui.chatSends, context, "01"),
           onSend: (text, to) => app.commands.sendChat(key, text, to),
           onInterrupt: async () => {},
           onAnswer: (request, reply) => conversations.answer(key, request, reply),
@@ -408,6 +408,29 @@ describe("a reply to the agent's question, as its dialog changes", () => {
     expect(chat.replyTo()).toBeNull()
     expect(container.querySelector(".chat-reply")?.textContent).toContain("Runs in")
     expect(sendButton(container).disabled).toBe(false)
+  })
+
+  it("lets an edit release words held while an unrelated message is on its way", async () => {
+    const store = createStore<Conversation>(withDialog("q1"))
+    const sends: (() => void)[] = []
+    const chat = host(store, {
+      draft: "first",
+      program: "agy",
+      send: () => new Promise<void>((resolve) => sends.push(resolve)),
+    })
+    const { container } = chat
+    await send(container)
+    press(container, "Chat about this")
+    // The reply's Cancel isn't locked by the message on its way.
+    expect(button(container, "Cancel").disabled).toBe(false)
+    set(box(container), "pick X")
+    act(() => store.update(() => withDialog(null)))
+    expect(container.querySelector(".chat-reply")?.textContent).toContain("no longer a reply")
+    set(box(container), "pick X please")
+    expect(chat.replyTo()).toBeNull()
+    expect(container.querySelector(".chat-reply")).toBeNull()
+    await act(async () => sends[0]!())
+    expect(chat.replyTo()).toBeNull()
   })
 
   it("refuses a reply past what the agent's field takes, saying so", () => {

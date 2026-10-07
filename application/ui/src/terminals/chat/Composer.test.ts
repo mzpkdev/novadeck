@@ -18,6 +18,7 @@ const show = (draft: string, sent: string[] = []): HTMLElement => {
       onDraft: () => {},
       mode: composerState(draft, null, [], true),
       sending: false,
+      replySending: false,
       working: false,
       onSend: async (text: string) => {
         sent.push(text)

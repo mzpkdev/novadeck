@@ -16,7 +16,13 @@ import type { Store } from "../../model/store"
 import type { AgentStatus } from "../../model/types"
 import { wordsOf } from "./answers"
 import { Composer } from "./Composer"
-import { composerState, type ChatReply, type ChatReplyTo } from "./mode-state"
+import {
+  composerState,
+  sameReply,
+  type ChatReply,
+  type ChatReplyTo,
+  type ChatSend,
+} from "./mode-state"
 import { Requests } from "./Requests"
 import { Transcript } from "./Transcript"
 
@@ -61,8 +67,8 @@ export const ChatView = ({
   // The question the draft replies to, or that it is held, kept with the draft by the owner.
   readonly replyTo: ChatReplyTo | null
   readonly onReplyTo: (to: ChatReplyTo | null) => void
-  // Whether words from the box are on their way to the agent, which the owner keeps.
-  readonly sending: boolean
+  // The words from the box on their way to the agent, if any, which the owner keeps.
+  readonly sending: ChatSend | null
   // Sends the box's words, as a prompt or as the reply `to` names: the owner takes them
   // out of the draft as they go, and puts them back should they not arrive.
   readonly onSend: (text: string, to: ChatReply | null) => Promise<void>
@@ -153,11 +159,12 @@ export const ChatView = ({
   // A reply ends with its dialog, for good: the same dialog read again doesn't bring it
   // back. Words still in the box are held, as a reply whose question went, until the
   // person edits them, whether the chat was on screen as it went or comes back after.
-  // Never while the reply is on its way, whose arrival ends it.
+  // Never while the reply itself is on its way, whose arrival ends it.
   const lapsed = replyTo !== null && replyTo !== "held" && mode !== "reply" && mode !== "waiting"
+  const replyGoing = replyTo !== null && replyTo !== "held" && sameReply(sending?.to, replyTo)
   useLayoutEffect(() => {
-    if (lapsed && !sending) onReplyTo(draft.trim() !== "" ? "held" : null)
-  }, [lapsed, sending, draft, onReplyTo])
+    if (lapsed && !replyGoing) onReplyTo(draft.trim() !== "" ? "held" : null)
+  }, [lapsed, replyGoing, draft, onReplyTo])
   const focusBox = (): void =>
     scroller.current
       ?.closest(".chat")
@@ -252,7 +259,7 @@ export const ChatView = ({
           focusBox()
         }}
         replying={reply?.request ?? null}
-        replySending={reply !== null && sending}
+        replySending={reply !== null && replyGoing}
         onReply={(request, dialog) => {
           // A new reply takes the words in the box as its own.
           onReplyTo(dialog === null ? null : { request, dialog })
@@ -292,10 +299,14 @@ export const ChatView = ({
         onDraft={(text) => {
           setLost(false)
           setUnrecorded(false)
+          // Words held as a reply whose question went are the person's message once edited,
+          // as the hold is written or not yet.
+          if (mode === "held" && replyTo !== "held") onReplyTo(null)
           onDraft(text)
         }}
         mode={mode}
-        sending={sending}
+        sending={sending !== null}
+        replySending={replyGoing}
         working={working}
         onSend={async (text) => {
           if (mode === "waiting")

@@ -31,6 +31,7 @@ export const Composer = ({
   onDraft,
   mode,
   sending,
+  replySending,
   working,
   onSend,
   onStop,
@@ -44,8 +45,10 @@ export const Composer = ({
   readonly draft: string
   readonly onDraft: (draft: string) => void
   readonly mode: ComposerMode
-  // Whether earlier words are still on their way, which the owner keeps.
+  // Whether earlier words are still on their way, which the owner keeps, and whether they
+  // are this reply's, which can't be cancelled meanwhile.
   readonly sending: boolean
+  readonly replySending: boolean
   readonly working: boolean
   // Resolves once the agent has it. Taking the words out of the draft, and putting them
   // back on a failure, is the owner's, which may outlive this box.
@@ -139,7 +142,7 @@ export const Composer = ({
             type="button"
             className="button quiet chat-reply-cancel"
             aria-label="Cancel the reply"
-            disabled={sending}
+            disabled={replySending}
             onClick={onCancelReply}
           >
             <X size={12} aria-hidden />

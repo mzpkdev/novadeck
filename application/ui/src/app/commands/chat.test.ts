@@ -164,7 +164,7 @@ describe("chat commands", () => {
       app.commands.setChatDraft("01", "go")
       const going = app.commands.sendChat(key, "go", null)
       expect(draft()).toBe("")
-      expect(inFlight()).toBe("go")
+      expect(inFlight()).toEqual({ draft: "go", to: null })
       app.commands.setChatDraft("01", "next")
       settle[0]!.resolve()
       await going
@@ -191,6 +191,34 @@ describe("chat commands", () => {
       settle[0]!.reject(new Error("no"))
       await expect(going).rejects.toThrow()
       expect(draft()).toBe("also update the changelog\n!npm test")
+    })
+
+    it("puts back the draft as it was typed, not the words as sent", async () => {
+      const { app, settle, draft } = sending()
+      app.commands.setChatDraft("01", "  go\n")
+      const going = app.commands.sendChat(key, "go", null)
+      settle[0]!.reject(new Error("no"))
+      await expect(going).rejects.toThrow()
+      expect(draft()).toBe("  go\n")
+    })
+
+    it("joins a shell command that didn't go and one typed meanwhile into one to look over", async () => {
+      const { app, settle, draft } = sending()
+      const going = app.commands.sendChat(key, "!npm test", null)
+      app.commands.setChatDraft("01", "!ls")
+      settle[0]!.reject(new Error("no"))
+      await expect(going).rejects.toThrow()
+      expect(draft()).toBe("!npm test\nls")
+    })
+
+    it("puts nothing back for a terminal that closed meanwhile", async () => {
+      const { app, settle, inFlight } = sending()
+      const going = app.commands.sendChat(key, "go", null)
+      app.workspace.dispatch({ type: "terminal/close", target, terminalId: "01" })
+      settle[0]!.reject(new Error("no"))
+      await expect(going).rejects.toThrow()
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({})
+      expect(inFlight()).toBeNull()
     })
 
     it("sends one at a time", async () => {

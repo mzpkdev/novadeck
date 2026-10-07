@@ -203,9 +203,7 @@ export const WorkspaceTerminal = ({
   const chatShown = frame.chat?.on === true
   const draft = useUiState((state) => chatDraftOf(state.chatDrafts, chatContext, terminalId))
   const replyTo = useUiState((state) => chatReplyOf(state.chatReplies, chatContext, terminalId))
-  const sending = useUiState(
-    (state) => chatSendOf(state.chatSends, chatContext, terminalId) !== null,
-  )
+  const sending = useUiState((state) => chatSendOf(state.chatSends, chatContext, terminalId))
   const conversation = useMemo(
     () => (chatShown ? conversations?.conversation(terminalKey) : undefined),
     [chatShown, conversations, terminalKey],

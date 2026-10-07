@@ -1,4 +1,5 @@
 import type { TerminalKey } from "../../backend/port"
+import type { Workspace } from "../../model/types"
 import {
   chatAvailable,
   chatModeOn,
@@ -43,6 +44,13 @@ export type ChatCommands = {
   // Sets the question the terminal's draft replies to in a session, or that it is held.
   readonly setChatReply: (context: string, terminalId: string, to: ChatReplyTo | null) => void
 }
+
+// Whether the terminal is still in its session.
+const terminalOpen = (snapshot: Workspace, key: TerminalKey): boolean =>
+  snapshot.projects
+    .find((project) => project.id === key.projectId)
+    ?.history.find((session) => session.id === key.workspaceSessionId)
+    ?.state.roster.terminals.some((terminal) => terminal.id === key.terminalId) === true
 
 export const createChatCommands = (ctx: CommandContext): ChatCommands => {
   const { workspace, ui, navigation, conversations } = ctx
@@ -96,25 +104,31 @@ export const createChatCommands = (ctx: CommandContext): ChatCommands => {
       if (!conversations) throw new Error("This backend can't reach the agent.")
       if (chatSendOf(ui.getSnapshot().chatSends, context, terminalId) !== null)
         throw new Error("Your last message is still on its way. Send again once it arrives.")
+      // The draft as typed goes back on a failure, not the words as sent, trimmed.
+      const draft = chatDraftOf(ui.getSnapshot().chatDrafts, context, terminalId) || text
       ui.update((state) => ({
         ...state,
         chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, ""),
-        chatSends: setChatSend(state.chatSends, context, terminalId, text),
+        chatSends: setChatSend(state.chatSends, context, terminalId, { draft, to }),
       }))
       try {
         await (to
           ? conversations.answer(key, to.request, replyAnswer(to, text))
           : conversations.send(key, text))
       } catch (failure) {
-        // Back in the box, before what came meanwhile, for the person to send again.
+        // Back in the box, before what came meanwhile, for the person to send again; not
+        // for a terminal that closed meanwhile, whose draft went with it.
+        const open = terminalOpen(workspace.getSnapshot(), key)
         ui.update((state) => ({
           ...state,
-          chatDrafts: setChatDraft(
-            state.chatDrafts,
-            context,
-            terminalId,
-            joinDraft(text, chatDraftOf(state.chatDrafts, context, terminalId)),
-          ),
+          ...(open && {
+            chatDrafts: setChatDraft(
+              state.chatDrafts,
+              context,
+              terminalId,
+              joinDraft(draft, chatDraftOf(state.chatDrafts, context, terminalId)),
+            ),
+          }),
           chatSends: setChatSend(state.chatSends, context, terminalId, null),
         }))
         throw failure

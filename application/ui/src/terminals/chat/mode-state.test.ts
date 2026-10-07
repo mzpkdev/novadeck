@@ -73,6 +73,10 @@ describe("words joined to a draft", () => {
   it("go before a shell command, never becoming more of its lines", () => {
     expect(joinDraft("!npm test", "also the changelog")).toBe("also the changelog\n!npm test")
   })
+
+  it("make one command of two shell commands, the second without its !", () => {
+    expect(joinDraft("!npm test", " ! ls")).toBe("!npm test\nls")
+  })
 })
 
 const asked = (dialog: string, chat: "field" | "prompt" = "field"): ChatRequest => ({
