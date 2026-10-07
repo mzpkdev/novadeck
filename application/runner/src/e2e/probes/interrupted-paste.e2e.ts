@@ -16,6 +16,7 @@ import { box as claudeBox } from "../../harnesses/claude/box.js"
 import { box as codexBox } from "../../harnesses/codex/box.js"
 import { collapsible } from "../../terminals/prompts.js"
 import { screenText } from "../../terminals/screen.js"
+import { screenRecord } from "../../testing/probes.js"
 import { setups } from "../agents/index.js"
 import { describe, e2e, supported } from "../fixture.js"
 import { asked, gate } from "../model/script.js"
@@ -91,7 +92,7 @@ for (const setup of setups) {
                 state: terminals.get(t.id).activity?.state,
                 box: box ? { text: box.text, first: box.first, last: box.last } : null,
                 collapsed: box ? profile.collapsed(box) : null,
-                rows: read.rows.map((row) => row.trimEnd()).filter((row) => row !== ""),
+                ...screenRecord(read),
               }
             }
           } finally {
