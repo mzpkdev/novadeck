@@ -1,4 +1,4 @@
-import { memo, Suspense, useCallback, useEffect, useMemo, type RefObject } from "react"
+import { memo, Suspense, useCallback, useEffect, useMemo, useState, type RefObject } from "react"
 
 import type { CanvasHandle } from "../layouts/canvas/types"
 import { Focus } from "../layouts/focus/Focus"
@@ -64,6 +64,12 @@ export const WorkspaceStage = memo(
         }),
         shallowEqual,
       )
+    // Whether Canvas opened from another view, which frames every window; returning to a
+    // session already in Canvas keeps the camera it was left with. The stage outlives each
+    // session's view, so it sees the view change.
+    const [opened, setOpened] = useState({ context, view, fromOtherView: false })
+    if (opened.context !== context || opened.view !== view)
+      setOpened({ context, view, fromOtherView: opened.view !== view })
     // The terminal Focus shows: the selection, a kept preview, or the first terminal.
     const displayed = activeTerminal(terminals, selected, context, focusPreview)?.id
     const {
@@ -146,6 +152,7 @@ export const WorkspaceStage = memo(
               layout={canvasLayout}
               matchCreatedTerminalRatio={zen}
               revealOnMount={revealCanvas}
+              fitOnMount={opened.fromOtherView}
               fitOnNavigate={shellNavigation.fit}
               onLayoutChange={setCanvasLayout}
               terminals={terminals}

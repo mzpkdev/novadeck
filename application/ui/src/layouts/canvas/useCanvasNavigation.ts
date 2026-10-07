@@ -15,7 +15,7 @@ import type { createCanvasVisit } from "./visit"
 
 type NavigationProps = Pick<
   CanvasProps,
-  "navigation" | "selected" | "hidden" | "fitOnNavigate" | "revealOnMount"
+  "navigation" | "selected" | "hidden" | "fitOnNavigate" | "revealOnMount" | "fitOnMount"
 > & {
   initialViewport: CanvasViewport | undefined
   viewportWidth: number
@@ -34,6 +34,7 @@ export const useCanvasNavigation = ({
   hidden,
   fitOnNavigate,
   revealOnMount,
+  fitOnMount,
   initialViewport,
   viewportWidth,
   viewportHeight,
@@ -45,7 +46,7 @@ export const useCanvasNavigation = ({
 }: NavigationProps) => {
   const { fitView, getNode, getViewport, setCenter } = useReactFlow<TerminalNode>()
   const initialized = useNodesInitialized()
-  // Returning to Canvas restores its camera; only new sidebar requests recenter it.
+  // Canvas sets its camera as it opens (below); only new sidebar requests recenter it.
   const lastNavigation = useRef(initialViewport ? navigation : 0)
   useEffect(() => {
     if (
@@ -117,9 +118,13 @@ export const useCanvasNavigation = ({
     createdPositions,
   ])
 
+  // Canvas opened from another view frames every visible window, however its camera was
+  // left; a terminal opened into it is revealed instead. Otherwise, as on returning to a
+  // session, it keeps the camera it was left with.
   const initializeViewport = (instance: ReactFlowInstance<TerminalNode>) => {
-    if (!container.current || (initialViewport && !revealOnMount)) return
-    const selectedNode = navigation ? instance.getNode(selected) : undefined
+    const framing = fitOnMount && !revealOnMount
+    if (!container.current || (initialViewport && !revealOnMount && !framing)) return
+    const selectedNode = navigation && !framing ? instance.getNode(selected) : undefined
     const target = selectedNode?.hidden ? undefined : selectedNode
     if (initialViewport && target && !fitOnNavigate) {
       const center = centerOf(target)

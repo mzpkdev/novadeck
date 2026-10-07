@@ -39,6 +39,15 @@ import {
 } from "./support/workspace"
 
 const names = ["Checkout implementation", "Dev server", "Checkout review", "Runtime"]
+const allTerminals = [
+  "Checkout implementation",
+  "Dev server",
+  "Tests",
+  "Checkout review",
+  "Runtime",
+  "Build",
+]
+const allInView = (): boolean => allTerminals.every((name) => insideView(boxOf(terminal(name))))
 const area = (box: Box): number => box.width * box.height
 const ratio = (box: Box): number => box.width / box.height
 
@@ -53,6 +62,15 @@ const openCanvas = async (): Promise<void> => {
 const clearMiddle = async (): Promise<void> => {
   await dragBackground({ x: 150, y: 100 }, { x: 0, y: 450 })
   await settled(() => boxesOf(names))
+}
+
+/** Zooms in on `anchor`'s header until Tests is off screen, as Canvas opens framing all. */
+const pushTestsOffScreen = async (anchor: string, steps = 4): Promise<void> => {
+  if (!insideView(boxOf(terminal("Tests")))) return
+  expect(steps).toBeGreaterThan(0)
+  await scrollOver(terminal(anchor).getByRole("heading", { name: anchor }), -300)
+  await settled(() => boxesOf(names))
+  return pushTestsOffScreen(anchor, steps - 1)
 }
 
 /** Every terminal kept its size and moved on screen by exactly `by`. */
@@ -91,6 +109,20 @@ const compact = (name: string): Locator =>
   terminal(name).getByRole("button", { name: `Make compact: ${name}` })
 
 describe("Canvas", () => {
+  context("when opened", () => {
+    it("frames every terminal, however its camera was left", async () => {
+      await openCanvas()
+      expect(allInView()).toBe(true)
+      await pushTestsOffScreen("Checkout implementation")
+
+      await chooseView("Grid")
+      await chooseView("Canvas")
+
+      await expect.element(terminal("Checkout implementation")).toBeVisible()
+      await expect.poll(allInView).toBe(true)
+    })
+  })
+
   context("when scrolling the wheel over the canvas", () => {
     it("zooms in, making terminals larger on screen", async () => {
       await openCanvas()
@@ -135,20 +167,14 @@ describe("Canvas", () => {
 
     it("fits all terminals inside the view with 0", async () => {
       await openCanvas()
-      const all = [
-        "Checkout implementation",
-        "Dev server",
-        "Tests",
-        "Checkout review",
-        "Runtime",
-        "Build",
-      ]
-      expect(all.every((name) => insideView(boxOf(terminal(name))))).toBe(false)
+      await clearMiddle()
+      await scrollCanvas(-300)
+      await expect.poll(() => allInView()).toBe(false)
       await clickBackground({ x: 150, y: 100 })
 
       await press("0")
 
-      await expect.poll(() => all.every((name) => insideView(boxOf(terminal(name))))).toBe(true)
+      await expect.poll(() => allInView()).toBe(true)
     })
   })
 
@@ -486,8 +512,8 @@ describe("Canvas", () => {
   context("when selecting an off-screen terminal", () => {
     it("pans to reveal it when chosen from its sidebar tab, keeping the zoom", async () => {
       await openCanvas()
+      await pushTestsOffScreen("Checkout implementation")
       const before = boxOf(terminal("Tests"))
-      expect(insideView(before)).toBe(false)
 
       await terminalTab("Tests").click()
 
@@ -499,6 +525,7 @@ describe("Canvas", () => {
 
     it("pans to reveal it when reached with Right", async () => {
       await openCanvas()
+      await pushTestsOffScreen("Dev server")
       await terminal("Dev server").click({ position: { x: 150, y: 150 } })
       await expectSelected("Dev server")
       expect(insideView(await settled(() => boxOf(terminal("Tests"))))).toBe(false)

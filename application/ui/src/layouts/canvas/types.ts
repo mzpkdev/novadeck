@@ -21,6 +21,8 @@ export type CanvasProps = {
   layout: CanvasLayout
   matchCreatedTerminalRatio: boolean
   revealOnMount: boolean
+  // Opened from another view: it frames every visible window as it mounts.
+  fitOnMount: boolean
   fitOnNavigate: boolean
   onLayoutChange: Dispatch<SetStateAction<CanvasLayout>>
   terminals: readonly Tile[]
