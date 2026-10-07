@@ -92,6 +92,17 @@ describe("chat commands", () => {
     })
   })
 
+  context("when words come back to a draft holding a shell command", () => {
+    it("puts them before it, so they never run as more of its lines", () => {
+      const app = open({ working: false })
+      app.commands.setChatDraft("01", "!npm test")
+      app.commands.appendChatDraft("project/initial", "01", "also update the changelog")
+      expect(app.ui.getSnapshot().chatDrafts).toEqual({
+        "project/initial": { "01": "also update the changelog\n!npm test" },
+      })
+    })
+  })
+
   context("when the agent a reply was written for ends", () => {
     it("keeps the reply's hold with its words, for the next agent there, until the terminal closes", () => {
       const app = open({ working: false })

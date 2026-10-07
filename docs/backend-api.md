@@ -690,7 +690,7 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   5 s, the call fails with `PROMPT_FAILED`: no Enter is ever pressed after a failed check, so
   what landed stays in the box as a draft. The reader fails closed: the box is read through
   the adapter of the agent admitted, and a screen it is not found on (the agent exited, a
-  dialog, a footer that disagrees with the box's marker) writes nothing. A text that shows
+  dialog, a footer saying shell mode over a prompt marker) writes nothing. A text that shows
   whole in a box taller than the screen has no first row to read and would stay as a draft,
   so it is refused first with a `CONFLICT` (nothing written, the message saying to enlarge
   the terminal or shorten the text): its lines, wrapped at word boundaries at the screen's

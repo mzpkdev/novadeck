@@ -381,8 +381,10 @@ describe("prompts", () => {
   it("holds the person's keys for the whole wait and paste, and the resizes past the Enter", async () => {
     const { host, budgets } = terminal()
     await new Prompts(host, fast).prompt("t", "Hello")
-    // The wait for an empty box, the paste's wait and a margin; then the settle.
-    expect(budgets).toEqual([{ inputMs: 60 + 150 + 2_000, sizeMs: 60 + 150 + 2_000 + 40 }])
+    // The wait for an empty box, a shell command's switch and the paste's wait, and a
+    // margin; then the settle.
+    const inputMs = 60 + 2 * 150 + 2_000
+    expect(budgets).toEqual([{ inputMs, sizeMs: inputMs + 40 }])
   })
 
   describe("a box that holds text already", () => {

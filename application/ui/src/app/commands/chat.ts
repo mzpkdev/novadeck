@@ -66,7 +66,13 @@ export const createChatCommands = (ctx: CommandContext): ChatCommands => {
     appendChatDraft: (context, terminalId, words) =>
       void ui.update((state) => {
         const draft = chatDraftOf(state.chatDrafts, context, terminalId)
-        const next = draft.trim() ? `${draft}\n${words}` : words
+        // After a shell command they would be more of its lines: they go before it, which
+        // makes the draft a message to look over before it is sent again.
+        const next = !draft.trim()
+          ? words
+          : draft.trimStart().startsWith("!")
+            ? `${words}\n${draft}`
+            : `${draft}\n${words}`
         return {
           ...state,
           chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, next),

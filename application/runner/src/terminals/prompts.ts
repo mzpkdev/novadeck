@@ -106,9 +106,10 @@ export class Prompts {
     this.ringMs = options.ringMs ?? 10_000
     this.settleMs = options.settleMs ?? 1_000
     this.emptyMs = options.emptyMs ?? 3_000
-    // The held phase is the wait for the box to read empty and then for the paste to show,
-    // with a margin; the window's resizes stay held a while longer, past the Enter.
-    const inputMs = this.emptyMs + this.pasteMs + 2_000
+    // The held phase is the wait for the box to read empty, for a shell command's `!` to
+    // switch it, and for the paste to show, with a margin; the window's resizes stay held a
+    // while longer, past the Enter.
+    const inputMs = this.emptyMs + 2 * this.pasteMs + 2_000
     this.budget = { inputMs, sizeMs: inputMs + this.settleMs }
   }
 
@@ -178,11 +179,14 @@ export class Prompts {
       if (shell) {
         // The `!` as a key: pasted whole, Antigravity sends it to the model as text.
         if (!this.host.type(terminalId, "!")) throw this.failed()
-        if (!(await this.switched(terminalId, profile, hold.holding)))
+        if (!(await this.switched(terminalId, profile, hold.holding))) {
+          // It may have switched just too late: the `!` goes back out where it shows alone.
+          await this.unbang(terminalId, profile)
           throw new DomainError(
             "PROMPT_FAILED",
             "The agent's input box did not switch to its shell mode.",
           )
+        }
         try {
           // A request may have come meanwhile: no paste into its dialog.
           this.host.admit(terminalId)

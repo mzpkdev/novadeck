@@ -556,7 +556,7 @@ also knows no harness.
 Both fail closed under one rule: a reader recognises what it reads in full, or returns
 `undefined` (or nothing). It never guesses from a screen it only half knows (a dialog, a
 picker, a shell's prompt after the agent exited, a box whose first row has scrolled off, a
-box whose marker and footer disagree), because what follows from a read is a keystroke,
+box whose footer says shell mode over a prompt marker), because what follows from a read is a keystroke,
 Enter included, that runs what the box holds or answers a dialog. A prompt or an answer
 that can't read what it needs writes nothing and is refused (`CONFLICT`), and the chat
 falls back to the terminal, where the person sees what the agent shows. The thresholds and

@@ -1194,7 +1194,8 @@ export class Terminals {
       !queued &&
       prompt !== undefined &&
       (sameText(box.text, prompt) || (collapsible(prompt) && profile.collapsed(box)))
-    const words = box.text.trim()
+    // Words given back in the box's shell mode are a shell command, `!` and all.
+    const words = box.mode === "shell" ? `!${box.text.trim()}` : box.text.trim()
     // A placeholder stands for words that clearing would lose: they are left, and said.
     if (!profile.clear || (!restored && profile.collapsed(box))) throw this.notCleared()
     if (!(await this.cleared(record, profile, box))) throw this.notCleared()
