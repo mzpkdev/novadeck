@@ -1,8 +1,9 @@
 // Shows the saved theme before the first paint: sets data-theme and data-scheme on
 // <html> from the boot record app/appearance.ts saves, resolving "system" against the
 // system's scheme, and the scheme as <html>'s color-scheme, so the browser's own ground
-// matches it before the theme's stylesheet arrives. apply.ts hands color-scheme back to
-// the theme. A file of its own, because the Content Security Policy allows no inline
+// matches it before the theme's stylesheet arrives, and the record's ground, when it
+// holds one, as its background-color, so a theme the CSS does not know still shows its
+// ground. apply.ts hands both back to the theme. A file of its own, because the Content Security Policy allows no inline
 // scripts; see docs/theming.md.
 ;(() => {
   // The record carries the theme's schemes, so this file needs no list of themes and
@@ -14,10 +15,15 @@
   let theme = "graphite"
   let schemes = ["light", "dark"]
   let choice = "system"
+  let ground = ""
   try {
     const saved = JSON.parse(localStorage.getItem("novadeck.theme-boot") ?? "null")
     if (saved?.scheme === "system" || known.has(saved?.scheme)) {
       choice = saved.scheme
+      // Only a plain #rrggbb is painted; anything else is ignored.
+      if (typeof saved.ground === "string" && /^#[0-9a-f]{6}$/i.test(saved.ground)) {
+        ground = saved.ground
+      }
       // A record without a usable theme and schemes, as older versions saved, is for the
       // default. An id the app no longer has shows until the app applies the default.
       if (
@@ -47,4 +53,5 @@
   root.setAttribute("data-theme", theme)
   root.setAttribute("data-scheme", scheme)
   root.style.colorScheme = scheme
+  if (ground) root.style.backgroundColor = ground
 })()

@@ -68,11 +68,14 @@ export const watchAppearance = (
     }
     const appearance = resolveAppearance(preference, system?.matches ?? false, themes)
     applyAppearance(root, appearance)
+    // The ground goes in the record so the next start paints it before any stylesheet,
+    // even for a theme the boot CSS does not know. It is read once the theme is applied.
     const record = JSON.stringify({
       v: bootRecordVersion,
       theme: appearance.theme,
       scheme: preference.scheme,
       schemes: themes.find((entry) => entry.id === appearance.theme)?.schemes,
+      ground: groundOf(),
     })
     if (record !== saved) {
       saved = record

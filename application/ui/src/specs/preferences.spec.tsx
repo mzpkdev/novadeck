@@ -488,6 +488,27 @@ describe("appearance preference", () => {
     })
   })
 
+  context("when the saved theme is one the app does not know", () => {
+    it("draws and lists Graphite, and keeps the saved id", async () => {
+      await systemScheme("light")
+      await openWorkspace()
+      await openPreferences()
+
+      const saved = JSON.parse(localStorage.getItem("novadeck.preferences") ?? "{}")
+      saveFromAnotherWindow("novadeck.preferences", {
+        ...saved,
+        appearance: { theme: "ember", scheme: "light" },
+      })
+
+      await expect
+        .element(preferencesDialog().getByRole("combobox", { name: "Theme" }))
+        .toHaveTextContent("Graphite")
+      expect(JSON.parse(localStorage.getItem("novadeck.preferences")!).appearance.theme).toBe(
+        "ember",
+      )
+    })
+  })
+
   context("when following the system", () => {
     it("changes with the system's scheme while the app is open", async () => {
       await systemScheme("light")

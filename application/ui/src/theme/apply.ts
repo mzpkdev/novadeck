@@ -35,16 +35,21 @@ export const defaultPreference = <Id extends string>(
   manifest: ThemeManifest<Id>,
 ): AppearancePreference<Id> => ({ theme: manifest[0].id, scheme: "system" })
 
-// A saved preference made safe: a missing or unknown theme, such as one the app has
-// retired or older versions never saved, becomes the default, and a scheme that is not
-// `system`, `light` or `dark` becomes `system`.
+// A theme id is lowercase words joined by dashes; the boot script holds the same rule.
+const wellFormedId = /^[a-z0-9-]+$/
+
+// A saved preference made safe: a missing or malformed theme becomes the default, and a
+// scheme that is not `system`, `light` or `dark` becomes `system`. A well-formed id stays
+// even when the app does not know it now, such as an imported theme whose registry loads
+// later or one a newer version saved; `resolveAppearance` shows the default for it.
 export const appearancePreferenceOf = <Id extends string>(
   value: unknown,
   manifest: ThemeManifest<Id>,
-): AppearancePreference<Id> => {
+): AppearancePreference => {
   const saved =
     typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {}
-  const theme = typeof saved.theme === "string" ? themeOf(manifest, saved.theme).id : manifest[0].id
+  const theme =
+    typeof saved.theme === "string" && wellFormedId.test(saved.theme) ? saved.theme : manifest[0].id
   return { theme, scheme: isSchemePreference(saved.scheme) ? saved.scheme : "system" }
 }
 
@@ -64,7 +69,9 @@ export const resolveAppearance = <Id extends string>(
 }
 
 // The version of the boot record this app writes. Older versions saved the same fields
-// for themes since retired, so a record of another version names no theme.
+// for themes since retired, so a record of another version names no theme. The record's
+// `ground` is optional, the shown theme's `--color-paper` as `#rrggbb`, so a record
+// without it is still of this version.
 export const bootRecordVersion = 2
 
 // Reads the theme and scheme from a saved boot record, or nothing when it is missing or
@@ -88,7 +95,7 @@ export const parseBootRecord = <Id extends string>(
   const usable =
     v === bootRecordVersion &&
     typeof theme === "string" &&
-    /^[a-z0-9-]+$/.test(theme) &&
+    wellFormedId.test(theme) &&
     Array.isArray(schemes) &&
     schemes.length > 0 &&
     schemes.every((entry) => entry === "light" || entry === "dark")
@@ -99,8 +106,10 @@ export const parseBootRecord = <Id extends string>(
 // Changing a theme or scheme already shown stills transitions while it changes, so the
 // page changes at once; every change is announced on the window.
 export const applyAppearance = (root: HTMLElement, appearance: Appearance): void => {
-  // The boot script's color-scheme only stands in until the theme's stylesheet sets it.
+  // The boot script's color-scheme and ground only stand in until the theme's stylesheet
+  // sets them.
   root.style.removeProperty("color-scheme")
+  root.style.removeProperty("background-color")
   const { theme, scheme } = root.dataset
   if (theme === appearance.theme && scheme === appearance.scheme) return
   const view = root.ownerDocument.defaultView

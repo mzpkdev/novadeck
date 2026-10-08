@@ -79,11 +79,18 @@ describe("appearancePreferenceOf", () => {
     expect(appearancePreferenceOf({ scheme: "dark" }, themes)).toEqual(graphite("dark"))
   })
 
-  it("gives a retired or unknown theme the default theme and keeps the scheme", () => {
-    expect(appearancePreferenceOf({ theme: "sandstone", scheme: "light" }, themes)).toEqual(
-      graphite("light"),
-    )
-    expect(appearancePreferenceOf({ theme: 3, scheme: "dark" }, themes)).toEqual(graphite("dark"))
+  it("keeps a well-formed id the app does not know, which shows as the default theme", () => {
+    for (const theme of ["sandstone", "ember", "a-theme-from-a-newer-version"]) {
+      const saved = appearancePreferenceOf({ theme, scheme: "light" }, themes)
+
+      expect(saved).toEqual({ theme, scheme: "light" })
+      expect(resolveAppearance(saved, false, themes)).toEqual(graphite("light"))
+    }
+  })
+
+  it("gives a malformed theme the default theme and keeps the scheme", () => {
+    for (const theme of [3, null, "", "Graphite", "graph ite", "red; background:url(x)"])
+      expect(appearancePreferenceOf({ theme, scheme: "dark" }, themes)).toEqual(graphite("dark"))
   })
 
   it("replaces an invalid scheme with the system's", () => {
@@ -199,6 +206,17 @@ describe("startingAppearance", () => {
 const fresh = (): HTMLElement => document.createElement("html")
 
 describe("applyAppearance", () => {
+  it("takes back the ground the boot script painted", () => {
+    const root = document.createElement("html")
+    root.style.backgroundColor = "#102030"
+    root.style.colorScheme = "dark"
+
+    applyAppearance(root, { theme: "graphite", scheme: "dark" })
+
+    expect(root.style.backgroundColor).toBe("")
+    expect(root.style.colorScheme).toBe("")
+  })
+
   it("marks the root with the theme and scheme and announces the change", () => {
     const root = fresh()
     const changes: unknown[] = []

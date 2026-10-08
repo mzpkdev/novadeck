@@ -95,6 +95,32 @@ afterEach(() => {
 })
 
 describe("watchAppearance", () => {
+  it("saves the shown theme's ground in the boot record", () => {
+    system(false)
+    resolvesPaper()
+    const ui = uiWith({ theme: "graphite", scheme: "light" })
+    watch(ui)
+
+    expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+      v: 2,
+      theme: "graphite",
+      scheme: "light",
+      schemes: ["light", "dark"],
+      ground: "#ffffff",
+    })
+
+    choose(ui, { theme: "graphite", scheme: "dark" })
+
+    expect(JSON.parse(localStorage.getItem(bootRecordKey)!).ground).toBe("#191c20")
+  })
+
+  it("saves no ground where the page has none to read", () => {
+    system(false)
+    watch(uiWith({ theme: "graphite", scheme: "light" }))
+
+    expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).not.toHaveProperty("ground")
+  })
+
   context("while the preference follows the system", () => {
     it("shows the system's scheme, and changes with it", () => {
       const { change } = system(true)
@@ -212,6 +238,7 @@ describe("watchAppearance", () => {
           theme: "phosphor-green",
           scheme: "system",
           schemes: ["dark"],
+          ground: "#191c20",
         })
 
         vi.advanceTimersByTime(releaseMs)
@@ -222,6 +249,7 @@ describe("watchAppearance", () => {
           theme: "graphite",
           scheme: "system",
           schemes: ["light", "dark"],
+          ground: "#191c20",
         })
         expect(reports.map((look) => look.scheme)).toEqual(["dark", "system", "system"])
       } finally {

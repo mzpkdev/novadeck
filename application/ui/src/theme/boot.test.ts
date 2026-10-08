@@ -47,6 +47,16 @@ afterEach(() => {
   document.documentElement.removeAttribute("style")
 })
 
+// A record of a theme the app does not know, with this ground.
+const recordWith = (ground: unknown) =>
+  JSON.stringify({
+    v: bootRecordVersion,
+    theme: "ember",
+    scheme: "dark",
+    schemes: ["dark"],
+    ground,
+  })
+
 const systems = [false, true]
 const schemesOf = (id: string) => themes.find((theme) => theme.id === id)!.schemes
 const schemes = ["system", "light", "dark"] as const
@@ -169,6 +179,46 @@ describe("the boot script", () => {
     applyAppearance(root, startingAppearance(window, themes))
 
     expect(root.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
+  })
+
+  context("with a ground in the record", () => {
+    it("paints it on <html> until the theme applies, then lets the theme's own take over", () => {
+      const root = document.documentElement
+      boot(recordWith("#0a1b2C"), false)
+      expect(root.style.backgroundColor).toBe("rgb(10, 27, 44)")
+
+      applyAppearance(root, startingAppearance(window, themes))
+
+      expect(root.style.backgroundColor).toBe("")
+    })
+
+    it("ignores anything but #rrggbb", () => {
+      const root = document.documentElement
+      const bad = [
+        "red; background:url(x)",
+        "red",
+        "#fff",
+        "#12345678",
+        "#12345g",
+        "#123456; color: red",
+        " #123456",
+        "#123456\n",
+        "rgb(0, 0, 0)",
+        1,
+        null,
+        ["#123456"],
+      ]
+      for (const ground of bad) {
+        expect(boot(recordWith(ground), false)).toEqual({ theme: "ember", scheme: "dark" })
+        expect(root.getAttribute("style")).toBe("color-scheme: dark;")
+      }
+    })
+
+    it("paints nothing when the record has none, as before", () => {
+      boot(recordWith(undefined), false)
+
+      expect(document.documentElement.getAttribute("style")).toBe("color-scheme: dark;")
+    })
   })
 
   context("with a record older versions saved", () => {
