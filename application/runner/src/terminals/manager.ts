@@ -554,6 +554,14 @@ const positive = (value: number | undefined, fallback: number): number => {
 }
 
 /**
+ * The handle of the lead a terminal has, if its opener has one: a terminal opened to run
+ * an agent (its command's program is one) is led by the terminal that opened it. A plain
+ * shell, or a dev server, is not: an agent the person runs there later is theirs alone.
+ */
+const leadFrom = (openedBy: string | null, command: string | null): string | null =>
+  openedBy !== null && expectedAgent(command ?? undefined, undefined) !== null ? openedBy : null
+
+/**
  * Owns PTYs for one runner lifetime. Exited, unattached records are retained up to a
  * bound, and evicted oldest first beyond it or when a capped runner needs room.
  */
@@ -804,7 +812,9 @@ export class Terminals {
       // Read again after every wait above: a rename meanwhile, as from another window,
       // stands. Nothing waits between this and saving it, and a
       // terminal that can't be numbered fails before its shell starts.
-      const kept = input.restore ? this.identity(input.id) : undefined
+      // Only one saved for this session: another's handle and opener mean nothing here,
+      // and must never give a terminal there a lead.
+      const kept = saved ? this.identity(input.id) : undefined
       // Every new terminal draws its session's next number, for its handle, `t3`, and its
       // default title, "Terminal 03", even one given its own title.
       const number = kept ? undefined : (drawn ?? this.nextNumber(input.sessionId))
@@ -836,7 +846,10 @@ export class Terminals {
           sessionId: input.sessionId,
           ...titled,
           handle,
-          ledBy: openedBy,
+          ledBy: this.runningLead(
+            input.sessionId,
+            leadFrom(openedBy, input.command ?? saved?.command ?? null),
+          ),
           started: true,
           command: input.command ?? saved?.command ?? null,
           lastProgram: saved?.lastProgram ?? null,
@@ -949,7 +962,7 @@ export class Terminals {
       sessionId: terminal.sessionId,
       ...this.titled(terminal.naming, terminal),
       handle: terminal.handle,
-      ledBy: terminal.openedBy,
+      ledBy: this.runningLead(terminal.sessionId, leadFrom(terminal.openedBy, terminal.command)),
       started: false,
       command: terminal.command,
       lastProgram: terminal.lastProgram,
@@ -1005,14 +1018,51 @@ export class Terminals {
    */
   private register(record: Record, agent: AgentName | null): void {
     const { id, sessionId, handle } = record.summary
-    // Its lead is the agent in the terminal that opened it, for as long as that runs.
+    // Its lead is the agent in the terminal that opened it to run an agent, for as long
+    // as that terminal runs.
     this.messaging.register(
       id,
       { projectId: this.projectOf(sessionId), sessionId },
       handle,
-      record.openedBy,
+      leadFrom(record.openedBy, record.summary.command),
     )
     this.messaging.expect(id, agent)
+    this.refreshLeads()
+  }
+
+  /** Stops the terminal taking messages, and tells its workers they have lost their lead. */
+  private unregister(terminalId: string): void {
+    this.messaging.unregister(terminalId)
+    this.refreshLeads()
+  }
+
+  /** The handle of the running terminal of the session that `lead` names, if one runs. */
+  private runningLead(sessionId: string, lead: string | null): string | null {
+    if (lead === null) return null
+    for (const { summary } of this.records.values())
+      if (
+        summary.sessionId === sessionId &&
+        summary.handle === lead &&
+        this.messaging.delivery(summary.id) !== undefined
+      )
+        return lead
+    return null
+  }
+
+  /**
+   * Brings every terminal's `ledBy` to its lead as running now, and tells watchers of
+   * those that changed: as a lead starts, exits or is closed, the badge follows.
+   */
+  private refreshLeads(): void {
+    for (const record of this.records.values()) {
+      const lead = this.runningLead(
+        record.summary.sessionId,
+        leadFrom(record.openedBy, record.summary.command),
+      )
+      if (lead === record.summary.ledBy) continue
+      record.summary = { ...record.summary, ledBy: lead }
+      this.announce(record)
+    }
   }
 
   /**
@@ -1780,7 +1830,7 @@ export class Terminals {
   private forget(terminalId: string): void {
     // Its items go first, so watchers hear of each before its record cascades them away.
     this.options.items?.terminalClosed(terminalId)
-    this.messaging.unregister(terminalId)
+    this.unregister(terminalId)
     this.doorbell?.forget(terminalId)
     this.dialogs.forget(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
@@ -3886,7 +3936,7 @@ export class Terminals {
       record.telemetry = null
       this.unwatch(record)
       // An exited terminal takes no messages; its agent's are gone until it runs again.
-      this.messaging.unregister(record.summary.id)
+      this.unregister(record.summary.id)
       this.doorbell?.forget(record.summary.id)
       this.dialogs.forget(record.summary.id)
       record.summary = {
@@ -3989,7 +4039,7 @@ export class Terminals {
       excess -= 1
       this.dispose(record)
       this.records.delete(record.summary.id)
-      this.messaging.unregister(record.summary.id)
+      this.unregister(record.summary.id)
       this.doorbell?.forget(record.summary.id)
       this.dialogs.forget(record.summary.id)
       // Its record is let go, but the terminal is kept, saved, until it is closed.

@@ -1,5 +1,3 @@
-import { join } from "node:path"
-
 import type { Request } from "../harnesses/activity.js"
 import { describe, expect, it } from "../test.js"
 import { waitingOf } from "./peers.js"
@@ -25,22 +23,19 @@ describe("what peers learn of a request waiting on the person", () => {
       waitingOf({
         pending: [request({ subject: "src/a.ts", toolName: "Edit" }), request({}), request({})],
       }),
-    ).toEqual({ kind: "permission", tool: "Edit", subject: "src/a.ts", more: 2 })
+    ).toEqual({ kind: "permission", tool: "Edit", subject: null, more: 2 })
   })
 
-  it("never shows a permission's command or address, which may hold a token", () => {
-    expect(subject({ subject: "curl -H 'Authorization: Bearer abc' x" })).toBeNull()
-    expect(subject({ subject: "https://example.com/?token=abc", toolName: "WebFetch" })).toBeNull()
-    expect(subject({ subject: "rm -rf build" })).toBeNull()
-    // A plain path shows, in either separator, unless it is a file that may hold secrets.
-    // (A drive letter's colon makes Windows' absolute paths count as addresses.)
-    expect(subject({ subject: "src/a.ts", toolName: "Write" })).toBe("src/a.ts")
-    expect(subject({ subject: join("work", "src", "a.ts"), toolName: "Write" })).toBe(
-      join("work", "src", "a.ts"),
-    )
-    expect(subject({ subject: "work/.env", toolName: "Write" })).toBeNull()
-    expect(subject({ subject: "home/me/.ssh/config", toolName: "Edit" })).toBeNull()
-    expect(subject({ subject: join("home", "me", ".ssh", "config"), toolName: "Edit" })).toBeNull()
+  it("never shows a permission's subject, whatever it looks like", () => {
+    for (const text of [
+      "curl -H 'Authorization: Bearer abc' x",
+      "https://example.com/?token=abc",
+      "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+      "token.txt",
+      "/etc/shadow",
+      "src/a.ts",
+    ])
+      expect(subject({ subject: text, toolName: "Write" })).toBeNull()
   })
 
   it("shows a question's or a plan's subject as it is", () => {

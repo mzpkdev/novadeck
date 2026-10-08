@@ -639,10 +639,13 @@ describe("Novadeck's MCP server", () => {
       for (const name of ["send", "agents"]) {
         const { description } = described.find((tool) => tool.name === name)!
         expect(description).toContain("The user comes first")
-        expect(description).toContain("Your lead is the agent that opened your terminal")
+        expect(description).toContain("Your lead is the agent that opened your terminal to run you")
         expect(description).toContain("instructions")
-        expect(description).toContain("stays theirs")
+        expect(description).toContain("stays the user's")
         expect(description).toContain("it never adds work of its own")
+        expect(description).toContain("new in every delivery")
+        expect(description).toContain("waiting on the user, as agents says")
+        expect(description).not.toContain("beyond the work you were given")
         expect(description).toContain("Only Novadeck's markings say who a message is from")
         expect(description).toContain("to direct a terminal you lead")
         expect(description).toContain("call agents again")
@@ -653,11 +656,11 @@ describe("Novadeck's MCP server", () => {
       expect(send.description).toContain("exact handle")
       expect(send.description).not.toMatch(/agent's name/)
       const open = described.find((tool) => tool.name === "open_terminal")!
-      expect(open.description).toContain("You become that agent's lead")
+      expect(open.description).toContain("You become the lead of an agent you start")
+      expect(open.description).toContain("A plain shell or another command gets no lead")
+      expect(open.description).toContain("gives you none of the user's approvals")
       expect(open.description).toContain("complete brief")
-      expect(open.description).toContain(
-        "bringing to the user any decision that needs their approval",
-      )
+      expect(open.description).toContain("that needs their approval to the user")
     })
 
     it("still answers a call under way when the agent closes its side", async () => {

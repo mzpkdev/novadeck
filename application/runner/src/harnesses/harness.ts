@@ -251,12 +251,12 @@ export type MessagingProfile = {
 }
 
 /**
- * Whether a lead's message reaches the harness's agent while its turn runs, at its next
- * tool call or, where a hook asks before every model call (`reinjectPerCall`), its next
- * model call, rather than only when the turn ends.
+ * Where a lead's message reaches the harness's agent while its turn runs, in the words
+ * `send` answers with: at its next tool call, or, where a hook asks before every model call
+ * (`reinjectPerCall`), its next model call; undefined where it waits for the turn's end.
  */
-export const reachesMidTurn = (profile: MessagingProfile): boolean =>
-  profile.call !== undefined || profile.reinjectPerCall
+export const midTurnCall = (profile: MessagingProfile): "tool call" | "model call" | undefined =>
+  profile.call ? "tool call" : profile.reinjectPerCall ? "model call" : undefined
 
 /**
  * Something a transcript recorded as typed into the agent's box: its text; when, rounded

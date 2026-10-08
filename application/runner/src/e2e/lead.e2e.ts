@@ -15,11 +15,11 @@ import {
 } from "./scenarios.js"
 
 // An agent's lead (docs/agent-messaging.md, "Authority"): the agent whose terminal opened
-// its terminal. Its messages are marked `role="lead"`, and while the agent's turn runs they
-// reach it at its next tool call ("The lead's messages mid-turn"), where a peer's wait for
-// the Stop. The same for every harness (see messaging.e2e.ts for the rule on parity).
+// its terminal. Its messages are marked `lead="<mark>"`, a mark new in every delivery, and
+// while the agent's turn runs they reach it at its next tool call ("The lead's messages
+// mid-turn"), where a peer's wait for the Stop. The same for every harness (see messaging.e2e.ts for the rule on parity).
 
-const leadNote = "The one marked lead is from the agent that opened this terminal"
+const leadNote = "are from your lead, the agent that opened this terminal"
 
 // The brief the lead opens its worker with, the lead's message when it sends one midway,
 // and a peer's message to the worker.
@@ -70,8 +70,11 @@ for (const setup of setups) {
         after: calls,
       })
       const tag = wrapper(first, "t1")
-      expect(tag).toMatch(/\brole="lead"/)
+      const mark = / lead="([0-9A-Za-z]{8})"/.exec(tag ?? "")?.[1]
+      if (!mark) throw new Error(`no lead mark in ${tag}`)
       expect(text(first)).toContain(leadNote)
+      // The note names the very mark of the message, in single quotes within its attribute.
+      expect(text(first)).toContain(`lead='${mark}'`)
       expect(text(first)).toContain(brief)
       await t2.until("Surveying now.")
     })
@@ -156,7 +159,7 @@ for (const setup of setups) {
         (call) => works(call) && made(call) === 1 && text(call).includes(redirect),
         { after: calls },
       )
-      expect(wrapper(midway, "t1")).toMatch(/\brole="lead"/)
+      expect(wrapper(midway, "t1")).toMatch(/ lead="[0-9A-Za-z]{8}"/)
       expect(text(midway)).toContain(leadNote)
       expect(text(midway)).not.toContain(news)
       expect(wrapper(midway, "t2")).toBeUndefined()
@@ -176,7 +179,7 @@ for (const setup of setups) {
       const stop = await run.model.waitFor((call) => works(call) && delivered(call, "t2"), {
         after: calls,
       })
-      expect(wrapper(stop, "t2")).not.toMatch(/\brole="lead"/)
+      expect(wrapper(stop, "t2")).not.toMatch(/ lead="[0-9A-Za-z]{8}"/)
       expect(text(stop)).toContain(news)
       await t3.until("Noted the news.")
       await through(t3, [holds("t2", "t3", "delivered"), "settled"], {

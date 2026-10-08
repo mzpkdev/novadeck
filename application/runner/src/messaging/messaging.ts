@@ -4,7 +4,7 @@ import { z } from "zod"
 import { DomainError } from "../errors.js"
 import type { Binding } from "../harnesses/bindings.js"
 import type { ActivityEvent, Background, HarnessEvent } from "../harnesses/events.js"
-import { reachesMidTurn, silentFor } from "../harnesses/harness.js"
+import { midTurnCall, silentFor } from "../harnesses/harness.js"
 import { agents as allAgents, harnesses } from "../harnesses/registry.js"
 import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import type { HookAnswer } from "../shell/reports.js"
@@ -39,7 +39,10 @@ import {
   retentionMs,
   threadBetween,
   undelivered,
+  unleased,
   waiting,
+  markLength,
+  newMark,
   wrap,
   type Message,
   type Thread,
@@ -154,6 +157,8 @@ export type MessagingOptions = {
   readonly restoreMs?: number
   /** Whether a terminal exists, running or kept; one running counts when omitted. */
   readonly exists?: (terminalId: string) => boolean
+  /** A delivery's lead mark, made anew for each; random when omitted. */
+  readonly mark?: () => string
 }
 
 /**
@@ -204,12 +209,21 @@ const refused = (reason: string) => ({ ok: false, reason }) as const
 // Closed, messaging keeps nothing more, so a message then would be lost, not queued.
 const stopping = "Novadeck is stopping and couldn't keep the message; send it again once it's back."
 
+/** What a turn already given a delivery prints beside a new one, as Antigravity's does. */
+const joined = (kept: string | undefined, text: string): string =>
+  kept ? `${kept}\n${text}` : text
+
 /** When a thread's latest message was sent. */
 const latest = (thread: MessageThread): number => thread.messages.at(-1)?.sentAt ?? 0
 
 /** The bytes the largest of a message's deliveries on its own would print, in any harness. */
-const deliveredBytes = (message: Message, led: boolean): number => {
-  const text = wrap([message], () => led)
+const deliveredBytes = (message: Message): number => {
+  // As a lead's, which carries the longer note and a mark: it may be one when it arrives.
+  const text = wrap(
+    [message],
+    () => true,
+    () => "x".repeat(markLength),
+  )
   return Math.max(
     ...allAgents.flatMap((agent) => {
       const { messaging } = harnesses[agent]
@@ -233,6 +247,7 @@ const deliveredBytes = (message: Message, led: boolean): number => {
 export class Messaging {
   private readonly records: MailboxRecords
   private readonly now: () => number
+  private readonly mark: () => string
   private readonly exists: (terminalId: string) => boolean
   /** Everyone following changes: the doorbell, and each `messages.watch`. */
   private readonly listeners = new Set<(change: MessagingChange) => void>()
@@ -258,6 +273,7 @@ export class Messaging {
   constructor(options: MessagingOptions = {}) {
     this.records = options.records ?? memoryMailbox()
     this.now = options.now ?? Date.now
+    this.mark = options.mark ?? newMark
     this.exists = options.exists ?? ((terminalId) => this.live.has(terminalId))
     this.leases = new Leases(options.leaseMs ?? 5_000, (lease) => this.lapse(lease))
     this.paused = this.read(() => this.records.messagingPaused(), false)
@@ -316,7 +332,7 @@ export class Messaging {
     for (const message of this.messages.values())
       if (
         (message.to.terminalId === terminalId || message.from.terminalId === terminalId) &&
-        undelivered(message)
+        unleased(message)
       )
         this.wait(message)
   }
@@ -371,7 +387,7 @@ export class Messaging {
     this.live.delete(terminalId)
     // Its workers have no lead now, so what it sent them is a peer's, and held as one.
     for (const message of this.messages.values())
-      if (message.from.terminalId === terminalId && undelivered(message)) this.wait(message)
+      if (message.from.terminalId === terminalId && unleased(message)) this.wait(message)
   }
 
   /** The terminal's delivery state, while it runs. */
@@ -537,7 +553,12 @@ export class Messaging {
       // Only the root agent's own tool call, in a turn that runs.
       const called = report.events.some(
         (event) =>
-          event.type === "attention-resolved" && event.actor === null && rootedIn(root, event),
+          event.type === "attention-resolved" &&
+          event.actor === null &&
+          // Not a failure that was an abort: the person's Esc ends the turn, or a tool's
+          // cancel is no call to answer in.
+          event.interrupted !== true &&
+          rootedIn(root, event),
       )
       const lease =
         called && time && profile.call && takesCall(live.delivery)
@@ -573,14 +594,8 @@ export class Messaging {
     if (start.cause === "call") {
       // The lead's messages that came since join what the turn was given, within one delivery.
       const added =
-        time && takesCall(live.delivery)
-          ? this.lease(live, root, "call", false, byteLength(kept ?? ""))
-          : undefined
-      if (added)
-        return {
-          leaseId: added.id,
-          stdout: profile.prompt(kept ? `${kept}\n${added.text}` : added.text),
-        }
+        time && takesCall(live.delivery) ? this.lease(live, root, "call", false, kept) : undefined
+      if (added) return { leaseId: added.id, stdout: profile.prompt(joined(kept, added.text)) }
       return again ? { leaseId: null, stdout: again } : silent
     }
     const lease = time && this.lease(live, root, "prompt", false)
@@ -617,7 +632,7 @@ export class Messaging {
     if (lease.kind !== "stop" && root && harnesses[root.agent].messaging.reinjectPerCall) {
       // A lead's message mid-turn joins what the turn's first call was given.
       const kept = lease.kind === "call" ? this.leases.recall(terminalId, lease.epoch) : undefined
-      this.leases.remember(terminalId, lease.epoch, kept ? `${kept}\n${lease.text}` : lease.text)
+      this.leases.remember(terminalId, lease.epoch, joined(kept, lease.text))
     }
   }
 
@@ -869,7 +884,7 @@ export class Messaging {
       },
       state: waiting({ hop: thread.hops }, thread, this.paused, ledThread),
     }
-    const vetted = this.vet(message, fromLead)
+    const vetted = this.vet(message)
     if (!vetted.ok) return vetted
     const { bySender, byPair, byAll, pair } = vetted
     this.sent.set(terminalId, bySender)
@@ -892,11 +907,9 @@ export class Messaging {
     const clean = cleanText(text)
     const textRefusal = refusalOfText(clean)
     if (textRefusal) return textRefusal
-    // The longest handle a terminal may have, and the longer note of a lead's message,
-    // which this is to the terminal it opens, so the size is never underestimated.
+    // The longest handle a terminal may have, so the size is never underestimated.
     const vetted = this.vet(
       this.draft(live, clean, { terminalId: "", handle: "t999999999", agent }),
-      true,
     )
     return vetted.ok ? undefined : vetted.reason
   }
@@ -936,10 +949,7 @@ export class Messaging {
    * delivered, the recipient's undelivered cap, and the rates, with the send times it
    * would spend. One check for every way a message is sent, so they never drift apart.
    */
-  private vet(
-    message: Message,
-    led: boolean,
-  ):
+  private vet(message: Message):
     | { readonly ok: false; readonly reason: string }
     | {
         readonly ok: true
@@ -949,7 +959,7 @@ export class Messaging {
         readonly byAll: readonly number[]
       } {
     // Alone in a delivery, it must fit whichever harness it reaches, as it is printed.
-    const size = deliveredBytes(message, led)
+    const size = deliveredBytes(message)
     if (size > maxDeliveryBytes)
       return refused(
         `Delivered, this message would take ${size} bytes, over the ${maxDeliveryBytes} a ` +
@@ -1184,6 +1194,7 @@ export class Messaging {
         busy: peer.delivery.state === "working" || about(peer.terminalId)?.working === true,
         where: about(peer.terminalId),
         withYou: lastBetween(this.messages.values(), live.terminalId, peer),
+        lead: this.leadOf(peer.terminalId) ?? null,
       }),
     )
   }
@@ -1208,7 +1219,7 @@ export class Messaging {
         ? route(
             recipient.delivery,
             harnesses[agent].messaging.silentOnFailure,
-            this.fromLead(message) && reachesMidTurn(harnesses[agent].messaging),
+            this.fromLead(message) ? midTurnCall(harnesses[agent].messaging) : undefined,
           )
         : "when its agent starts: rung once Novadeck sees it at its prompt, else at its first turn",
     }
@@ -1257,7 +1268,7 @@ export class Messaging {
     root: Root,
     kind: Lease["kind"],
     background: boolean,
-    reserve = 0,
+    kept?: string,
   ): Lease | undefined {
     // Once closed, nothing is saved, so no ack could record a delivery: the next runner
     // would deliver again what a hook printed now. Its messages wait for that runner.
@@ -1277,15 +1288,22 @@ export class Messaging {
         : kind === "call"
           ? (text: string) => messaging.call?.(text, "PostToolUseFailure") ?? messaging.prompt(text)
           : messaging.prompt
-    // `reserve` is what the delivery already holds, as Antigravity's kept one.
-    const messages = deliveryOf(
-      queued,
-      (taken) => byteLength(encode(wrap(taken, led))) + reserve <= maxDeliveryBytes,
-    )
+    // One mark for the delivery. `kept` is what its turn was already given, as
+    // Antigravity's, printed with it: what counts is the bytes printed, escaped as they are.
+    const mark = this.mark()
+    const prints = (taken: readonly Message[]) =>
+      byteLength(
+        encode(
+          joined(
+            kept,
+            wrap(taken, led, () => mark),
+          ),
+        ),
+      )
+    const messages = deliveryOf(queued, (taken) => prints(taken) <= maxDeliveryBytes)
     if (messages.length === 0) return undefined
-    // The first always goes, as it fits alone; beside what the delivery holds it may not.
-    if (reserve > 0 && byteLength(encode(wrap(messages, led))) + reserve > maxDeliveryBytes)
-      return undefined
+    // The first always goes, as it fits alone; beside what the turn holds it may not.
+    if (prints(messages) > maxDeliveryBytes) return undefined
     for (const message of messages) {
       this.everLeased.add(message.id)
       this.put({ ...message, state: "leased" })
@@ -1296,7 +1314,7 @@ export class Messaging {
       kind,
       epoch: live.delivery.epoch,
       background,
-      text: wrap(messages, led),
+      text: wrap(messages, led, () => mark),
     })
   }
 

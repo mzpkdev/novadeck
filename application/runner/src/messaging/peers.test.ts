@@ -110,6 +110,7 @@ const led = (handle: string, openedBy: string | null) =>
       place: (path) => path,
     },
     withYou: null,
+    lead: openedBy,
   })
 
 // Where a peer opened by t9 is, waiting on the person or not.
@@ -138,6 +139,7 @@ const listed = (waiting: Waiting | null, handle = "t2") =>
       busy: true,
       where: where(waiting),
       withYou: null,
+      lead: "t9",
     }),
     now,
     { handle: "t1", lead: "t2" },
@@ -214,6 +216,7 @@ describe("a peer as agents read it", () => {
         place: (path) => path,
       },
       withYou: null,
+      lead: "t1",
     })
     expect(renderPeer(tasked, now)).toEqual([
       "- t5: expecting Claude Code, not started yet",
@@ -234,6 +237,10 @@ describe("a peer as agents read it", () => {
     expect(renderPeer(led("t5", null), now, { handle: "t2", lead: "t1" })).toEqual([
       "- t5: Claude Code, idle",
     ])
+    // A lead whose terminal closed leads no one: nothing is said of it.
+    expect(
+      renderPeer({ ...led("t6", "t4"), lead: null }, now, { handle: "t1", lead: null }),
+    ).toEqual(renderPeer(led("t6", null), now, { handle: "t1", lead: null }))
     // Opened by another terminal's agent, the reader's peers are just led by it.
     expect(renderPeer(led("t3", "t4"), now, { handle: "t1", lead: null })[1]).toBe("  led by t4")
   })

@@ -1658,6 +1658,75 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     )
   })
 
+  it("shows a restored worker its lead only while the lead's terminal runs, and a plain shell none", async ({
+    shell,
+  }) => {
+    const [lead, worker, plain] = [randomUUID(), randomUUID(), randomUUID()]
+    const keep = (id: string, handle: string, openedBy: string | null, command: string | null) =>
+      shell.store.saveTerminal({
+        id,
+        sessionId: shell.sessionId,
+        cwd: shell.home,
+        handle,
+        naming: { person: null, agent: null, summary: null },
+        openedBy,
+        command,
+        lastProgram: null,
+        work: null,
+        agents: {},
+        promptedAt: null,
+      })
+    keep(lead, "t1", null, null)
+    // Opened by t1 to run an agent, and opened by t1 as a plain shell.
+    keep(worker, "t2", "t1", "claude")
+    keep(plain, "t3", "t1", null)
+    const manager = shell.manager()
+    const watched = shell.watch(manager)
+    expect(manager.list(shell.sessionId).map(({ ledBy }) => ledBy)).toEqual([null, null, null])
+    await create(manager, shell, { id: worker, restore: true })
+    await create(manager, shell, { id: plain, restore: true })
+    // The lead's terminal not running yet, the worker has none.
+    expect(manager.get(worker).ledBy).toBeNull()
+    await create(manager, shell, { id: lead, restore: true })
+    await watched((summary) => summary.id === worker && summary.ledBy === "t1")
+    expect(manager.get(worker).ledBy).toBe("t1")
+    expect(manager.get(plain).ledBy).toBeNull()
+    expect(manager.list(shell.sessionId).find(({ id }) => id === worker)?.ledBy).toBe("t1")
+    // Closed, the lead leaves the worker with none.
+    await manager.close({ terminalId: lead }, "owner")
+    await watched((summary) => summary.id === worker && summary.ledBy === null)
+    expect(manager.get(worker).ledBy).toBeNull()
+  })
+
+  it("takes no lead from a terminal kept in another session, though its id is restored here", async ({
+    shell,
+  }) => {
+    const other = shell.store.createSession({
+      id: randomUUID(),
+      projectId: shell.store.session(shell.sessionId).projectId,
+      name: "Other",
+    })
+    const id = randomUUID()
+    shell.store.saveTerminal({
+      id,
+      sessionId: other.id,
+      cwd: shell.home,
+      handle: "t1",
+      naming: { person: null, agent: null, summary: null },
+      openedBy: "t1",
+      command: "claude",
+      lastProgram: null,
+      work: null,
+      agents: {},
+      promptedAt: null,
+    })
+    const manager = shell.manager()
+    await create(manager, shell, { id: randomUUID() })
+    const restored = await create(manager, shell, { id, restore: true })
+    expect(restored.ledBy).toBeNull()
+    expect(shell.store.terminalIdentity(id)?.openedBy).toBeNull()
+  })
+
   it("names terminals by session, renames them, and tells watchers", async ({ shell }) => {
     const manager = shell.manager()
     const next = shell.watch(manager)
@@ -1984,6 +2053,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           naming: { person: null, agent: { title: "Agent", by: "t1" }, summary: null },
           openedBy: "t1",
         })
+        // Opened to run an agent, it is led by the terminal that opened it.
+        expect(manager.get(opened!).ledBy).toBe("t1")
         await shell.until(manager, opened!, "claude args: --fresh")
         // Five a minute, counting each request that was asked, opened or not: two more,
         // and the next waits.
@@ -2125,6 +2196,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         expect(listed!.text).toContain(
           "- t2: expecting Claude Code, not started yet\n  title: Terminal 02\n  folder: .\n  led by you",
         )
+        expect(manager.get(created[0]!).ledBy).toBe("t1")
         // Who opened it is kept with the terminal, for a runner that restores it.
         expect(shell.store.terminalIdentity(created[0]!)).toMatchObject({
           openedBy: "t1",

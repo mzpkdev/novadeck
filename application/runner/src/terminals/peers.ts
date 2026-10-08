@@ -1,9 +1,8 @@
-import { isAbsolute, normalize, relative } from "node:path"
+import { isAbsolute, relative } from "node:path"
 
 import type { TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 
 import { planTitle } from "../companions/content.js"
-import { secret } from "../companions/secrets.js"
 import { DomainError } from "../errors.js"
 import type { Activity } from "../harnesses/activity.js"
 import type { AgentsAnswer, Messaging, PeerAnswer, SendAnswer } from "../messaging/messaging.js"
@@ -39,15 +38,12 @@ export type PeersOptions = {
 }
 
 /**
- * What of a request's subject other agents may read. A permission's is often a command or
- * an address, which may hold a token, so peers learn only its tool, and the file it
- * touches where that is a plain path to no file that may hold secrets.
+ * What of a request's subject other agents may read. A permission's is often a command, an
+ * address or a path, any of which may hold a secret in a form no rule can recognise, so
+ * peers learn only its tool, never its subject.
  */
 const shareable = (kind: Waiting["kind"], subject: string | null): string | null =>
-  kind !== "permission" ||
-  (subject !== null && /^[^\s:?#=]+$/.test(subject) && !secret(normalize(subject)))
-    ? subject
-    : null
+  kind === "permission" ? null : subject
 
 /** The oldest request an agent waits on the person for, with how many wait after it. */
 export const waitingOf = (activity: Pick<Activity, "pending"> | null): Waiting | null => {

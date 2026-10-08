@@ -68,6 +68,8 @@ export type Peer = {
   readonly startedWith: string | null
   /** Which terminal's agent opened it, told where "started with" is unknown. */
   readonly openedBy: string | null
+  /** The handle of the terminal that leads it now: running, and in its session; else null. */
+  readonly lead: string | null
   /** The opener whose command "started with" is, not the user's; null when it is the user's. */
   readonly startedBy: string | null
   /** Left out when it is the prompt it started with. */
@@ -127,6 +129,8 @@ export const peerOf = (input: {
   readonly busy: boolean
   readonly where: Whereabouts | undefined
   readonly withYou: Peer["withYou"]
+  /** Its running lead's handle; none when the terminal that opened it is gone. */
+  readonly lead?: string | null
 }): Peer => {
   const { where, agent } = input
   const work = agent ? (where?.work ?? null) : null
@@ -145,6 +149,7 @@ export const peerOf = (input: {
     branch: where?.branch ?? null,
     startedWith: work?.first ?? null,
     openedBy: where?.openedBy ?? null,
+    lead: input.lead ?? null,
     // In a terminal an agent opened, a first prompt nobody submitted is its command's.
     startedBy: firstFrom(work, openedBy) === "opener" ? openedBy : null,
     latest: work?.latest !== work?.first ? (work?.latest ?? null) : null,
@@ -185,12 +190,15 @@ const titleNote = (peer: Peer): string => {
 /** Who is reading a listing: its handle, and the handle of the terminal that leads it. */
 export type Viewer = { readonly handle: string; readonly lead: string | null }
 
-/** How a peer relates to the reader, by who opened it: led by you, your lead, or led by another. */
+/**
+ * How a peer relates to the reader, by who leads it now: led by you, your lead, or led by
+ * another. A lead whose terminal closed leads no one, so nothing is said of it.
+ */
 const leadNote = (peer: Peer, viewer: Viewer): string | null => {
   if (peer.handle === viewer.lead) return "your lead: it opened this terminal and directs your work"
-  if (!peer.openedBy) return null
-  if (peer.openedBy === viewer.handle) return "led by you"
-  return `led by ${peer.openedBy}`
+  if (!peer.lead) return null
+  if (peer.lead === viewer.handle) return "led by you"
+  return `led by ${peer.lead}`
 }
 
 /** What a request waiting on the person is, shortly: its kind and subject, never more. */

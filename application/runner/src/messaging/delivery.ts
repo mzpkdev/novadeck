@@ -669,10 +669,14 @@ export const takesCall = (delivery: Delivery): boolean => running(delivery)
 /**
  * When a message sent now would reach the agent, in the words `send` answers with. A
  * harness that sends nothing when a turn fails, as Codex, may only end its turn with its
- * next prompt. The lead's message (`midTurn`, where its harness delivers it at a tool
- * call) reaches a running turn at the agent's next tool call instead.
+ * next prompt. The lead's message (`midTurn`, the call its harness delivers it at, where
+ * it does) reaches a running turn at the agent's next such call instead.
  */
-export const route = (delivery: Delivery, silentOnFailure: boolean, midTurn = false): string => {
+export const route = (
+  delivery: Delivery,
+  silentOnFailure: boolean,
+  midTurn?: "tool call" | "model call",
+): string => {
   switch (delivery.state) {
     case "fresh":
       return "when its agent's first turn starts"
@@ -682,7 +686,7 @@ export const route = (delivery: Delivery, silentOnFailure: boolean, midTurn = fa
       return "ringing it now"
     case "working":
       if (delivery.phase === "background") return "when its next turn starts"
-      if (midTurn) return "at its next tool call"
+      if (midTurn) return `at its next ${midTurn}`
       return silentOnFailure ? "at its turn's end or its next prompt" : "when its current turn ends"
     default:
       return "when the person next submits a prompt there"

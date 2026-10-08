@@ -625,12 +625,15 @@ describe("a tool call's delivery", () => {
   })
 
   it("tells the lead's message it reaches a running turn at its next tool call", () => {
-    expect(route(working, false, true)).toBe("at its next tool call")
-    expect(route(working, true, true)).toBe("at its next tool call")
+    expect(route(working, false, "tool call")).toBe("at its next tool call")
+    expect(route(working, false, "model call")).toBe("at its next model call")
+    expect(route(working, true, "tool call")).toBe("at its next tool call")
     // Nothing runs to call a tool: it waits as any message does.
-    expect(route(settled, false, true)).toBe("ringing it now")
-    expect(route(transition(working, background), false, true)).toBe("when its next turn starts")
-    expect(route(drafting, false, true)).toBe("when the person next submits a prompt there")
+    expect(route(settled, false, "tool call")).toBe("ringing it now")
+    expect(route(transition(working, background), false, "tool call")).toBe(
+      "when its next turn starts",
+    )
+    expect(route(drafting, false, "tool call")).toBe("when the person next submits a prompt there")
   })
 })
 

@@ -5,7 +5,8 @@ import type { AgentName } from "@novadeck/protocol"
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
 import { loadProbe } from "../testing/probes.js"
-import { reachesMidTurn, replyPreview, sessionStart } from "./harness.js"
+import type { HarnessEvent } from "./events.js"
+import { midTurnCall, replyPreview, sessionStart } from "./harness.js"
 import { harnesses } from "./registry.js"
 
 describe("a SessionStart source", () => {
@@ -228,9 +229,41 @@ describe("a harness's mid-turn delivery", () => {
   })
 
   it("reaches every harness's turn while it runs: at a tool call, or Antigravity's model call", () => {
-    for (const agent of ["claude", "codex", "agy"] as const)
-      expect(reachesMidTurn(harnesses[agent].messaging)).toBe(true)
+    expect(midTurnCall(harnesses.claude.messaging)).toBe("tool call")
+    expect(midTurnCall(harnesses.codex.messaging)).toBe("tool call")
+    expect(midTurnCall(harnesses.agy.messaging)).toBe("model call")
     expect(harnesses.agy.messaging.call).toBeUndefined()
+  })
+})
+
+// A Claude Code PostToolUseFailure, as its decoder reads it.
+const failure = (payload: object): HarnessEvent[] =>
+  harnesses.claude.decode({
+    terminalId: "x",
+    token: "0".repeat(48),
+    agent: "claude",
+    event: "PostToolUseFailure",
+    seq: 1,
+    instance: null,
+    env: { cursor: false },
+    payload: {
+      session_id: "00000000-0000-4000-8000-000000000001",
+      tool_name: "Bash",
+      tool_input: { command: "sleep 9" },
+      error: "aborted",
+      ...payload,
+    },
+  }) as HarnessEvent[]
+
+describe("a Claude Code tool failure", () => {
+  it("is marked interrupted when the harness says it reached it as an abort", () => {
+    expect(failure({ is_interrupt: true })[0]).toMatchObject({
+      type: "attention-resolved",
+      actor: null,
+      interrupted: true,
+    })
+    expect(failure({ is_interrupt: false })[0]).not.toHaveProperty("interrupted")
+    expect(failure({})[0]).not.toHaveProperty("interrupted")
   })
 })
 
