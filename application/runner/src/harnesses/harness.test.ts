@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import type { AgentName } from "@novadeck/protocol"
 
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
+import { loadProbe } from "../testing/probes.js"
 import { replyPreview, sessionStart } from "./harness.js"
 import { harnesses } from "./registry.js"
 
@@ -55,9 +55,7 @@ describe("the start of an agent's reply", () => {
 
 type Probe = { events: { event: string; payload: Report["payload"] }[] }
 const probe = (harness: string): Probe =>
-  JSON.parse(
-    readFileSync(join(import.meta.dirname, harness, "fixtures", "hooks.probe.json"), "utf8"),
-  ) as Probe
+  loadProbe(join(import.meta.dirname, harness), "hooks.probe.json") as Probe
 // A captured hook as the runner receives it.
 const report = (
   agent: AgentName,
@@ -181,5 +179,41 @@ describe("the harness registry", () => {
   it("gives Codex a shim everywhere, and Claude Code one outside Windows", () => {
     expect(shimmed("linux")).toEqual(["claude", "codex"])
     expect(shimmed("win32")).toEqual(["codex"])
+  })
+})
+
+// A PermissionRequest for `ls` from the root agent, with the directory its hook named.
+const permissionReport = (agent: "claude" | "codex", cwd: unknown): Report =>
+  ({
+    agent,
+    event: "PermissionRequest",
+    seq: 1,
+    instance: null,
+    env: {},
+    payload: {
+      session_id: "00000000-0000-4000-8000-000000000001",
+      tool_name: "Bash",
+      tool_input: { command: "ls" },
+      cwd,
+    },
+  }) as unknown as Report
+
+describe("a request's directory", () => {
+  it("is the absolute one its hook names, for Claude Code and Codex alike", () => {
+    for (const agent of ["claude", "codex"] as const) {
+      const asked = harnesses[agent].decode(permissionReport(agent, "/work/project"))
+      const request = asked.find((event) => event.type === "attention-requested")
+      expect(request).toMatchObject({ cwd: "/work/project" })
+    }
+  })
+
+  it("is left out where the hook names none, or a relative one", () => {
+    for (const agent of ["claude", "codex"] as const)
+      for (const cwd of [undefined, "project"]) {
+        const asked = harnesses[agent].decode(permissionReport(agent, cwd))
+        const request = asked.find((event) => event.type === "attention-requested")
+        expect(request).toBeDefined()
+        expect(request).not.toHaveProperty("cwd")
+      }
   })
 })

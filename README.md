@@ -14,8 +14,7 @@ to fit the canvas viewport. Repeat the gesture on the same terminal to return to
 previous camera position and zoom. Manual pan or zoom (including keyboard shortcuts),
 Fit all, sidebar camera navigation, leaving Canvas, or switching sessions clears that
 return point. Flying to a different terminal starts a new visit from the current camera.
-Repeated double gestures during a flight are ignored. Minimized terminals restore first;
-returning the camera does not minimize them again. The header's arrow opens Focus view.
+Repeated double gestures during a flight are ignored. The header's arrow opens Focus view.
 
 Click **New terminal** or use its keyboard shortcut to create and select a terminal
 immediately in any view, with or without Zen, ready to type in; F2 renames it. Focus
@@ -64,9 +63,21 @@ its replies as formatted text, its tool calls (one line each, opening to their i
 result), other agents' messages to it, what waits on you, and whether it is working. Its
 box types a prompt into the agent's real TUI the way you would (Enter sends, Shift+Enter
 adds a line): the runner's `agents.prompt` pastes it, checks it landed in the agent's
-box, then presses Enter. **Stop** presses Escape there. The TUI keeps running underneath
+box, then presses Enter. The words leave the box as they go, and come back to it, before
+anything typed meanwhile, if they don't arrive. What you send while the agent works waits
+in its queue, as when typed in its terminal; **Stop** presses Escape there, and gives what
+waited back to the box. The TUI keeps running underneath
 at its full size, so the Chat button, or **Answer in terminal** on a request card, shows
-it again as it was; permissions, questions and plans are answered there. The choice and
+it again as it was. What waits on you (a permission, a plan to approve, the agent's
+questions, a form an MCP server asks you to fill) shows as a card under the conversation
+and is answered right there: pick an option, give your own words where the agent's
+dialog takes them (a refusal with instructions, plan feedback, an answer of your own), or
+fill the form's fields and accept or decline it. Novadeck answers by pressing the
+dialog's keys in the agent's terminal, as you would, then checks that it took; each
+agent's dialogs are read by its own adapter (`harnesses/<agent>/dialogs.ts` in the
+runner), which checks what it reads against what the agent asked and never guesses. When
+it can't read a dialog, as after an agent update changed it, or an answer didn't take,
+the card shows the dialog's text as the terminal draws it, with **Answer in terminal**. The choice and
 the draft last until the agent ends; a reload starts in the terminal again. The
 behaviour specs' demo (`?demo=agents`) has a conversation for each of its agents.
 
@@ -105,7 +116,7 @@ minimum terminal dimensions. Double-click the enlarged terminal header to fill m
 of the viewport. Canvas grows or shrinks around the terminal's center
 without changing the camera. In Grid, **Make full width** fills the available columns;
 **Restore width** returns to the width at each breakpoint from before that click,
-preserving terminal height. Resizing restores minimized terminals.
+preserving terminal height.
 Preset choices are remembered per terminal, session, and view. New terminals start
 compact: 600×400 in Canvas and compact column width in Grid, with no placement preview.
 
@@ -132,7 +143,9 @@ at another window altogether, its terminal is marked done until you look: a smal
 line under the header beside a "Done · reply unread" chip ("Done" on a compact one). A
 command it left running, such as a dev server, doesn't hold that back. The mark clears
 once that terminal is the selected one of the session on screen while Novadeck's window
-has focus, or once its agent starts another turn. The desktop app also shows one system
+has focus, or once its agent starts another turn. A completed turn is marked, and
+announced, about 0.7 s after it ends, in case its harness then says your Escape stopped
+it. The desktop app also shows one system
 notification for each such finish, "t1 is done: <its name>", with the start of the
 agent's last reply (Claude Code's and Codex's Stop hooks name it; Antigravity's
 transcript records it); clicking it brings Novadeck to the front with that terminal
@@ -511,7 +524,7 @@ text. A page shows as a snapshot until the pane hosts a browser.
 **Undock to its own window**, in a plan's or a viewer's header or an icon's right-click,
 moves a plan or what the agent showed out of the pane into a window of its own beside
 the terminal; a plan stays editable there. It joins the sidebar and every view like a
-terminal: rename, hide, minimize, resize, reorder, Focus and close all work. While it's
+terminal: rename, hide, resize, reorder, Focus and close all work. While it's
 undocked, the terminal's taskbar leaves it out. **Dock in** the terminal it came from,
 on the window's right-click, closes the window and opens the item in that terminal's
 pane again; once that terminal has closed, Dock in shows disabled. Closing the window
@@ -554,6 +567,13 @@ last one chosen.
   failure" fails the first attempt as the runner would, so a transient one retries
   on its own and the others wait for Retry (an incompatible runner only for Quit).
   "Welcome dialog" opens the first-run dialog for connecting agents again.
+- **Chat:** arm the next send from a chat to fail as the runner turns it away: a draft
+  in the agent's box, its shell mode, too tall a message, no box on screen, or no agent
+  running (each with Open terminal), a request waiting (answer it first), or a doorbell
+  ringing or a screen not ready (try again in a moment), or no reason given, as from an
+  older runner (check the terminal). Arm the next Stop to fail as the runner's does when the
+  words queued behind the turn stay in the box (with Open terminal), or when a request
+  waits (answer it first).
 - **Connection:** show Reconnecting for 5 s, then Reconnected, or go offline until
   you toggle it back.
 - **Crash loop:** count four crashes, which shows the footer and the dialog and fails

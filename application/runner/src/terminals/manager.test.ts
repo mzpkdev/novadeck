@@ -9,9 +9,12 @@ import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 import { vi } from "vitest"
 
+import { escapeVerdictMs, started as fresh, type Activity } from "../harnesses/activity.js"
+import type { ActivityEvent } from "../harnesses/events.js"
 import { describe, expect, it as base } from "../test.js"
-import { command, ptyOptions } from "../testing/pty.js"
+import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
+import { InputQueue } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -99,6 +102,144 @@ describe("terminal creation ownership", () => {
   })
 })
 
+describe("holding the person's input", () => {
+  it("lasts as long as the caller asked, past the doorbell's 8 s cap on the resizes", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    type Hold = { holding: () => boolean; release: () => void; settle: () => void }
+    const hold = (
+      manager as unknown as {
+        holdInput: (
+          id: string,
+          budget: { inputMs: number; sizeMs: number },
+          options?: object,
+        ) => Hold
+      }
+    ).holdInput(terminal.id, { inputMs: 60_000, sizeMs: 70_000 }, { deferKeys: true })
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      // Timers armed before the clock was faked still run on real time: arm anew.
+      hold.settle()
+      const again = (
+        manager as unknown as {
+          holdInput: (
+            id: string,
+            budget: { inputMs: number; sizeMs: number },
+            options?: object,
+          ) => Hold
+        }
+      ).holdInput(terminal.id, { inputMs: 60_000, sizeMs: 70_000 }, { deferKeys: true })
+      vi.advanceTimersByTime(9_000)
+      expect(again.holding()).toBe(true)
+      vi.advanceTimersByTime(61_000)
+      expect(again.holding()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe("an answer's hold of the person's input", () => {
+  it("never replays the mouse's wheel and motion reports it held, once released", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    // The TUI asks for the mouse, as Claude Code and Codex do while a dialog shows.
+    manager.write(
+      { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
+      "creator",
+    )
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const hold = (
+      manager as unknown as {
+        holdInput: (
+          id: string,
+          cap: number,
+          options: object,
+        ) => { release: () => void; settle: () => void }
+      }
+    ).holdInput(terminal.id, 5_000, { deferKeys: true })
+    // 16 characters, which no other write of this test has: the child traces lengths.
+    manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
+    manager.write({ terminalId: terminal.id, data: "k" }, "creator")
+    hold.release()
+    hold.settle()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const trace = ptyTrace(40)
+    // The key went once released; the wheel report never did.
+    expect(trace).toContain("received 1 chars")
+    expect(trace).not.toContain("received 16 chars")
+  })
+})
+
+describe("answers and the prompts after them", () => {
+  it("keeps a chat prompt behind an answer's follow-up words, which go first, though the answered request is still pending", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as {
+      inputs: InputQueue
+      answers: { answer: () => Promise<void> }
+      prompts: {
+        host: { admit: (id: string) => unknown }
+        give: (entry: unknown, id: string, text: string) => Promise<void>
+        promptIn: (entry: unknown, id: string, text: string) => Promise<void>
+      }
+      records: Map<string, { binding: unknown; activity: unknown }>
+    }
+    const record = inside.records.get(terminal.id)!
+    // The agent waits on a request, which the answer's keys take.
+    record.binding = { agent: "claude" }
+    const waiting = { state: "idle", pending: [{}], plans: [], background: null }
+    record.activity = waiting
+    const order: string[] = []
+    // What the paste does is not under test: it admits as the real prompt does, and takes its time.
+    inside.prompts.give = async (_entry, id, text) => {
+      inside.prompts.host.admit(id)
+      order.push(`start ${text}`)
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      order.push(`end ${text}`)
+    }
+    inside.answers = {
+      answer: () =>
+        inside.inputs.run(terminal.id, async (entry) => {
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          // The dialog took the answer; the hook that ends its request is a moment behind.
+          record.activity = { ...waiting, pending: [] }
+          await inside.prompts.promptIn(entry, terminal.id, "the person's words")
+        }),
+    }
+    const answer = manager.answer({
+      terminalId: terminal.id,
+      request: "r",
+      answer: { type: "choice", dialog: "d", option: "1" },
+    })
+    // A message from the chat box, sent while the answer is under way.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const chat = manager.prompt({ terminalId: terminal.id, text: "chat message" })
+    await Promise.all([answer, chat])
+    expect(order).toEqual([
+      "start the person's words",
+      "end the person's words",
+      "start chat message",
+      "end chat message",
+    ])
+  })
+})
+
 describe("terminal prompts", () => {
   it("refuse a plain shell, which runs no agent, writing nothing to it", async ({ terminals }) => {
     const manager = terminals.manager(ptyOptions)
@@ -132,7 +273,7 @@ describe("terminal interrupts", () => {
       {
         binding: unknown
         activity: unknown
-        held: { input: string[] | null; until: number; size: null } | null
+        held: { input: string[] | null; size: null } | null
         process: { write: (data: string) => void }
       }
     >
@@ -160,6 +301,74 @@ describe("terminal interrupts", () => {
     record.process = { ...record.process, write: (data: string) => void writes.push(data) }
     return { manager, id: terminal.id, writes, record }
   }
+
+  it("hands the resizes a lapsed hold left held to the next hold, and applies them once it settles", async ({
+    terminals,
+  }) => {
+    const { manager, id, record } = await agent(terminals, "idle")
+    const inside = manager as unknown as {
+      holdInput: (
+        id: string,
+        budget: { inputMs: number; sizeMs: number },
+      ) => {
+        release: () => void
+        settle: () => void
+        holding: () => boolean
+      }
+    }
+    const budget = { inputMs: 1_000, sizeMs: 2_000 }
+    const first = inside.holdInput(id, budget)
+    // Another hold is refused while this one holds the input.
+    expect(inside.holdInput(id, budget).holding()).toBe(false)
+    ;(record.held as unknown as { size: unknown }).size = {
+      cols: 100,
+      rows: 30,
+      owner: "nobody",
+      attachment: undefined,
+    }
+    first.release()
+    const second = inside.holdInput(id, budget)
+    expect(second.holding()).toBe(true)
+    expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
+    // The first's late settle changes nothing: the second holds them now.
+    first.settle()
+    expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
+    second.settle()
+    expect(record.held).toBeNull()
+  })
+
+  it("keeps the resizes of a hold taken over waiting for the deadline of the hold before, past an early settle", async ({
+    terminals,
+  }) => {
+    const { manager, id, record } = await agent(terminals, "idle")
+    const inside = manager as unknown as {
+      holdInput: (
+        id: string,
+        budget: { inputMs: number; sizeMs: number },
+      ) => {
+        release: () => void
+        settle: () => void
+        settleAfter: (ms: number) => void
+      }
+    }
+    const budget = { inputMs: 5_000, sizeMs: 10_000 }
+    const first = inside.holdInput(id, budget)
+    ;(record.held as unknown as { size: unknown }).size = {
+      cols: 100,
+      rows: 30,
+      owner: "nobody",
+      attachment: undefined,
+    }
+    // The prompt's Enter is out: its resizes are to wait 200 ms more.
+    first.settleAfter(200)
+    // The next entry fails at once and settles: the resizes are not let go by it.
+    const second = inside.holdInput(id, budget)
+    second.settle()
+    expect(record.held?.size).toMatchObject({ cols: 100, rows: 30 })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(record.held).not.toBeNull()
+    await vi.waitFor(() => expect(record.held).toBeNull())
+  })
 
   it("sends nothing while the agent is idle, even asked twice at once", async ({ terminals }) => {
     const { manager, id, writes } = await agent(terminals, "idle")
@@ -265,13 +474,19 @@ describe("terminal interrupts", () => {
     },
   )
 
-  it("waits for the person's input to be let go before pressing Escape", async ({ terminals }) => {
-    const { manager, id, writes, record } = await agent(terminals, "working")
-    record.held = { input: [], until: Date.now() + 5000, size: null }
+  it("waits for the entries ahead of it in the terminal's input queue before pressing Escape", async ({
+    terminals,
+  }) => {
+    const { manager, id, writes } = await agent(terminals, "working")
+    const inside = manager as unknown as {
+      inputs: { run: (id: string, work: () => Promise<unknown>) => Promise<unknown> }
+    }
+    // A prompt's paste, an answer with its words or a ring, whose keys no Escape may cut into.
+    const ahead = inside.inputs.run(id, () => new Promise((resolve) => setTimeout(resolve, 400)))
     const done = manager.interrupt({ terminalId: id })
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(writes).toEqual([])
-    record.held = null
+    await ahead
     await done
     expect(writes).toEqual(["\x1b"])
   })
@@ -1333,5 +1548,54 @@ describe.skipIf(process.platform === "win32")("terminal message watches", () => 
     await expect(manager.watchMessages(id).next()).rejects.toMatchObject({
       code: "RUNTIME_CLOSING",
     })
+  })
+})
+
+describe("a turn the person's Escape ended", () => {
+  type Inside = {
+    records: Map<string, { binding: unknown; activity: Activity | null }>
+    applyFact: (record: unknown, fact: ActivityEvent) => boolean
+    escaped: (record: unknown) => void
+    messaging: { escaped: (id: string, binding: unknown) => ActivityEvent | undefined }
+  }
+
+  it("reads completed once the window passes with a Stop told since, else interrupted", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)!
+    const binding = { agent: "claude", sessionId: "s", instance: null } as const
+    record.binding = binding
+    const tell = (fact: object) => {
+      const event = { ...binding, ...fact } as ActivityEvent
+      inside.applyFact(record, event)
+      return event
+    }
+    const lastTurn = () => record.activity && record.activity.lastTurn
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      for (const stop of [true, false]) {
+        record.activity = fresh(0)
+        tell({ type: "turn-started", cause: "prompt", startedAt: 10 })
+        // Delivery tells the Escape once, as the manager asks after the person's key.
+        const escaped = { ...binding, type: "turn-escaped", startedAt: 20 } as ActivityEvent
+        inside.messaging.escaped = () => escaped
+        inside.escaped(record)
+        if (stop) tell({ type: "turn-ended", outcome: "completed", startedAt: 25, reply: "Done." })
+        vi.advanceTimersByTime(escapeVerdictMs - 1)
+        expect(lastTurn()).toMatchObject({ outcome: "interrupted" })
+        vi.advanceTimersByTime(1)
+        expect(lastTurn()).toMatchObject(
+          stop ? { outcome: "completed", reply: "Done." } : { outcome: "interrupted" },
+        )
+      }
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

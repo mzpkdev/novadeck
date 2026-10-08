@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { workspaceFromSeed } from "../../model/seed"
 import { activeSession } from "../../model/state"
 import { createWorkspaceStore } from "../../model/store"
+import { answerMs, answeredMs } from "./chat"
 import { createDemoEngine } from "./engine"
 import { demoBackend, withConversations } from "./index"
 import { demoSeed } from "./samples"
@@ -40,7 +41,27 @@ const open = () => {
     activeSession(store.getSnapshot())!.state.roster.terminals.find(
       (terminal) => terminal.id === terminalId,
     )
-  return { chat: backend.conversations!, agent }
+  // Sets a terminal's status as the runner would report it.
+  const status = (
+    terminalId: string,
+    next: { state: "idle" } | { state: "running"; agent: { working: boolean } },
+  ) =>
+    store.transact([
+      {
+        type: "terminal/status",
+        target: { projectId: "storefront", workspaceSessionId: "initial" },
+        terminalId,
+        status: next,
+      },
+    ] as never)
+  const said = (terminalId: string) =>
+    chat
+      .conversation(key(terminalId))
+      .getSnapshot()
+      .items.filter((item) => item.role === "user")
+      .map((item) => item.text)
+  const chat = backend.conversations!
+  return { chat, agent, status, said }
 }
 
 describe("demo conversations", () => {
@@ -150,8 +171,194 @@ describe("demo conversations", () => {
     const { chat } = open()
     await expect(chat.send(key("02"), "hello")).rejects.toThrow("No agent is running")
     await expect(chat.send(key("04"), "hello")).rejects.toThrow("waiting for your answer")
-    await expect(chat.send(key("03"), "hello")).rejects.toThrow("still working")
+  })
+
+  it("queues what is sent while the agent works, and takes it once the turn ends", async () => {
+    const { chat, agent } = open()
+    const conversation = chat.conversation(key("06"))
+    const before = conversation.getSnapshot().items.length
     await chat.send(key("06"), "one")
-    await expect(chat.send(key("06"), "two")).rejects.toThrow("still working")
+    await vi.advanceTimersByTimeAsync(0)
+    await chat.send(key("06"), "two")
+    await chat.send(key("06"), "!git status")
+    await chat.send(key("06"), "three")
+    const said = () =>
+      conversation
+        .getSnapshot()
+        .items.slice(before)
+        .filter((item) => item.role === "user")
+        .map((item) => item.text)
+    expect(said()).toEqual(["one"])
+    // "two" starts the next turn; the shell command and "three" wait behind it.
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(said()).toEqual(["one", "two"])
+    expect(agent("06")).toMatchObject({ agent: { working: true } })
+    // The shell command runs, and "three" starts the turn after.
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(said()).toEqual(["one", "two", "!git status", "three"])
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(conversation.getSnapshot().items.at(-1)?.text).toBe("Done: three. Nothing else changed.")
+  })
+
+  it("takes what waits, in order, once a turn ends however it ends", async () => {
+    const { chat, status, said } = open()
+    const before = said("03").length
+    await chat.send(key("03"), "first")
+    // The turn ends without the demo's turns, as the debug panel ends one.
+    status("03", { state: "running", agent: { working: false } })
+    await chat.send(key("03"), "second")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(said("03").slice(before)).toEqual(["first"])
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(said("03").slice(before)).toEqual(["first", "second"])
+  })
+
+  it("drops what waited for an agent that ended, never giving it to the next", async () => {
+    const { chat, status, said } = open()
+    await chat.send(key("03"), "stale for the old agent")
+    // The agent ends and another starts at once, with no moment between.
+    status("03", { state: "idle" })
+    status("03", { state: "running", agent: { working: false } })
+    await chat.send(key("03"), "fresh")
+    await vi.advanceTimersByTimeAsync(demoTurnMs * 3)
+    expect(said("03")).not.toContain("stale for the old agent")
+    expect(said("03")).toContain("fresh")
+  })
+
+  it("gives back what waited behind a turn when it is stopped", async () => {
+    const { chat } = open()
+    await chat.send(key("03"), "first")
+    await chat.send(key("03"), "second")
+    expect(await chat.interrupt(key("03"))).toBe("first\nsecond")
+    expect(await chat.interrupt(key("03"))).toBeNull()
+  })
+
+  it("answers a permission: the request goes, its tool result lands, the turn ends", async () => {
+    const { chat, agent } = open()
+    const conversation = chat.conversation(key("04"))
+    const answering = chat.answer(key("04"), "04:permission", {
+      type: "choice",
+      dialog: "04:d",
+      option: "1",
+    })
+    await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
+    await answering
+    expect(conversation.getSnapshot().requests).toEqual([])
+    expect(conversation.getSnapshot().items.at(-1)).toMatchObject({
+      kind: "tool-result",
+      call: "call_04d",
+    })
+    expect(agent("04")).toMatchObject({ agent: { working: true } })
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    expect(conversation.getSnapshot().items.at(-1)?.role).toBe("assistant")
+    expect(agent("04")).toMatchObject({
+      agent: { working: false, lastTurn: { outcome: "completed" } },
+    })
+  })
+
+  it("sends the words of a denial as the agent's next prompt", async () => {
+    const { chat } = open()
+    const answering = chat.answer(key("04"), "04:permission", {
+      type: "choice",
+      dialog: "04:d",
+      option: "3",
+      text: "Use the unit tests only",
+    })
+    await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
+    await answering
+    await vi.advanceTimersByTimeAsync(demoTurnMs)
+    const items = chat.conversation(key("04")).getSnapshot().items
+    expect(
+      items.some((item) => item.role === "user" && item.text === "Use the unit tests only"),
+    ).toBe(true)
+    expect(items.at(-1)?.text).toBe("Done: Use the unit tests only. Nothing else changed.")
+  })
+
+  it("answers questions with the labels the person chose", async () => {
+    const { chat } = open()
+    const answering = chat.answer(key("05"), "05:question", {
+      type: "questions",
+      dialog: "05:d",
+      answers: [
+        { question: "checks", options: ["unit", "lint"], text: "Bundle size" },
+        { question: "note", options: ["file"] },
+      ],
+    })
+    await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
+    await answering
+    const conversation = chat.conversation(key("05")).getSnapshot()
+    expect(conversation.requests).toEqual([])
+    expect(conversation.items.at(-1)?.text).toBe(
+      "User answered: Unit tests, Lint, Bundle size; notes/logging.md",
+    )
+  })
+
+  it("refuses a request it has no dialog to answer, or that is gone", async () => {
+    const { chat } = open()
+    await expect(
+      chat.answer(key("03"), "03:raw", { type: "choice", dialog: "04:d", option: "1" }),
+    ).rejects.toThrow("Couldn't answer that here")
+    await expect(
+      chat.answer(key("06"), "nothing", { type: "choice", dialog: "04:d", option: "1" }),
+    ).rejects.toThrow("already answered")
+    const late = chat
+      .answer(key("04"), "04:permission", { type: "choice", dialog: "04:d", option: "1" })
+      .then(
+        () => "answered",
+        (error: Error) => error.message,
+      )
+    await chat.interrupt(key("04"))
+    await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
+    expect(await late).toBe("That request is already answered.")
+  })
+
+  it("shows a dialog the chat can't read as it is", () => {
+    const { chat } = open()
+    expect(chat.conversation(key("03")).getSnapshot().requests[0]?.dialog).toMatchObject({
+      type: "raw",
+      reason: "unrecognized",
+    })
+  })
+
+  it("refuses an answer to a dialog that has changed", async () => {
+    const { chat } = open()
+    await expect(
+      chat.answer(key("04"), "04:permission", { type: "choice", dialog: "old", option: "1" }),
+    ).rejects.toThrow("The dialog changed")
+  })
+
+  it("answers a form with the values it was given", async () => {
+    const { chat } = open()
+    const answering = chat.answer(key("06"), "06:form", {
+      type: "form",
+      dialog: "06:d",
+      action: "accept",
+      values: { target: "api", environment: "production", replicas: 3, dryRun: false },
+    })
+    await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
+    await answering
+    const conversation = chat.conversation(key("06")).getSnapshot()
+    expect(conversation.requests).toEqual([])
+    expect(conversation.items.at(-1)).toMatchObject({ kind: "tool-result", call: "toolu_06e" })
+    expect(conversation.items.at(-1)?.text).toContain('"replicas":3')
+  })
+
+  it("refuses a message the agent would read as a command or a file pick", async () => {
+    const { chat } = open()
+    await expect(chat.send(key("06"), "/tmp is full")).rejects.toThrow("can't start with / or !")
+    await expect(chat.send(key("06"), "look at @src")).rejects.toThrow("end in an @ or $ mention")
+  })
+
+  it("refuses an answer whose words a prompt would read as a command, taking nothing", async () => {
+    const { chat } = open()
+    await expect(
+      chat.answer(key("04"), "04:permission", {
+        type: "choice",
+        dialog: "04:d",
+        option: "3",
+        text: "/etc is wrong",
+      }),
+    ).rejects.toThrow("can't start with / or !")
+    expect(chat.conversation(key("04")).getSnapshot().requests).toHaveLength(1)
   })
 })

@@ -1,13 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { describe, expect, it } from "../../test.js"
+import { loadProbe } from "../../testing/probes.js"
 import { transcripts } from "./transcripts.js"
 
-const { records } = JSON.parse(
-  readFileSync(join(import.meta.dirname, "fixtures", "rollout.probe.json"), "utf8"),
-) as { records: object[] }
+const { records } = loadProbe(import.meta.dirname, "rollout.probe.json") as { records: object[] }
 const items = (lines: readonly object[]) =>
   lines.flatMap((line) => transcripts.items(JSON.stringify(line)))
 const item = (payload: object) => ({
@@ -23,6 +22,67 @@ describe("Codex's rollout, as captured", () => {
     expect(call).toMatchObject({ role: "assistant", kind: "tool-call", tool: "exec" })
     expect(output).toMatchObject({ role: "tool", kind: "tool-result", call: call?.call })
     expect(output?.text).toBe("<text>\n<text>\n<text>")
+  })
+})
+
+const shell = loadProbe(import.meta.dirname, "shell.probe.json") as {
+  scenarios: { [name: string]: object[] }
+}
+
+describe("Codex's shell-mode commands, as captured", () => {
+  const ran = (name: string) => items(shell.scenarios[name]!)
+
+  it("read as the person's `!command` and a Bash run, whose result pairs with its call", () => {
+    const [said, call, result, ...rest] = ran("multiline")
+    expect(rest).toEqual([])
+    expect(said).toMatchObject({ role: "user", kind: "text", text: "!echo first\necho second" })
+    expect(call).toMatchObject({
+      role: "assistant",
+      kind: "tool-call",
+      tool: "Bash",
+      text: JSON.stringify({ command: "echo first\necho second" }),
+    })
+    expect(call?.call).not.toBeNull()
+    expect(result).toMatchObject({ role: "tool", kind: "tool-result", text: "first\nsecond" })
+    expect(result?.call).toBe(call?.call)
+  })
+
+  it("leave out the event that records the same command beside the message", () => {
+    expect(ran("stderr")).toHaveLength(3)
+  })
+
+  it("show the output, and the exit code when it is not zero", () => {
+    expect(ran("stderr")[2]?.text).toBe("out-line\nerr-line")
+    expect(ran("failed")[2]?.text).toBe("before\n[exit code 3]")
+    expect(ran("missing")[2]?.text).toBe(
+      "/bin/bash: line 1: no-such-command-here: command not found\n[exit code 127]",
+    )
+    expect(ran("aborted")[2]?.text).toBe("command aborted by user\n[exit code -1]")
+  })
+
+  it("say so when a command printed nothing, and pair its result without an id", () => {
+    const [, call, result] = ran("empty")
+    expect(result?.text).toBe("(no output)")
+    expect(call?.call).toBeNull()
+    expect(result?.call).toBeNull()
+  })
+
+  it("cut long output short, and say so", () => {
+    const [, , result] = items([
+      item({
+        type: "message",
+        id: "m1",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `<user_shell_command>\n<command>\nseq 1 4000\n</command>\n<result>\nExit code: 0\nDuration: 0.0192 seconds\nOutput:\n${"1234567\n".repeat(4000)}\n</result>\n</user_shell_command>`,
+          },
+        ],
+      }),
+    ])
+    expect(result).toMatchObject({ truncated: true })
+    expect(result?.text).toHaveLength(16_384)
   })
 })
 

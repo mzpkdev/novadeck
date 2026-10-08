@@ -235,7 +235,8 @@ harness inside an agent's turn in `nested.e2e.ts`, the person forking a session 
 terminal or in place in `forks.e2e.ts`, the person clearing the conversation
 or leaving the agent for another in `lifecycle.e2e.ts`, and the person's controls over
 a running agent and untrusted seeds in `controls.e2e.ts`, and the chat view's way to an agent
-(`agents.prompt` and `agents.interrupt`) in `chat.e2e.ts`, each written once and run for
+(`agents.prompt` and `agents.interrupt`) in `chat.e2e.ts`, answering the agent's requests
+from the chat (`agents.answer`) in `answers.e2e.ts`, each written once and run for
 every harness in `setups` (`agents/index.ts`):
 
 ```ts
@@ -463,6 +464,22 @@ for (const setup of setups) {
   - _Interrupt_: with the reply held, `interrupt()` ends the turn without a normal Stop
     (Unknown), the harness says it was interrupted before the held reply is let go,
     which never shows; the next prompt's turn settles.
+- **The Escape race** (`escape-race.e2e.ts`), a raw Escape pressed as a held reply is
+  let go, a few ms ahead of it where that loses the key (per harness; probed): retried
+  until the reply wins, the turn reads `completed` with that reply as `lastTurn` once the
+  harness has had its say (the runner's 1.5 s window, waited out); every attempt, won or
+  lost, reads as the screen shows it ended (interrupted where the Escape stands), and an
+  Escape that ended the turn first never reads completed before the harness's
+  interruption. The activity's transitions are unit-tested; which side wins is the
+  harness's.
+- **The answers' scenarios** (`answers.e2e.ts`), `agents.answer` as the chat's request
+  cards call it, through each harness's dialog adapter: a permission allowed, refused, and
+  refused with the person's words (sent as the next prompt where the dialog takes none);
+  a question by option, several picked, and in the person's own words; a plan approved,
+  and rejected with feedback; the person's keys elsewhere held while an answer runs; and
+  the fallback, a dialog its adapter can't read (a stub) or a harness without one, shown
+  raw with nothing pressed. A harness without a kind of question (Codex asks no
+  multi-select) skips that scenario, saying so.
 - **The person's scenarios** (`person.e2e.ts`), the person typing around messages,
   asserting docs/agent-messaging.md's "Acceptance scenarios" for them. In each, t2 sends
   t1 a message from its own prompt, which waits queued; a terminal that mustn't be rung
@@ -590,6 +607,50 @@ for (const setup of setups) {
 - Prefer asserting on what the model received and on Novadeck's state over reading the
   screen; read the screen for what only it shows, such as a reply rendered, or the
   harness's own first screen (`banner`).
+
+## Probe fixtures
+
+The probes under `src/e2e/probes/` record what a real harness showed, and the adapters'
+tests replay it from `harnesses/<agent>/fixtures/*.probe.json` and
+`terminals/fixtures/doorbell-<agent>.json`. Every screen in them has one shape, a
+`ScreenRecord` (`src/testing/probes.ts`), the one the input-box probe first used:
+
+```json
+{
+  "height": 40,
+  "columns": 120,
+  "cursor": { "row": 36, "column": 2 },
+  "rows": { "1": "  >_ OpenAI Codex (v0.159.3)", "36": "› Ask Codex to do anything" },
+  "bright": { "36": "›" }
+}
+```
+
+- `rows` is sparse: only rows that show anything, by row number, as `screenText` reads
+  them. `height` is how many rows the record holds, the screen's own or, for a probe that
+  only had the screen's text, those up to the last that shows anything.
+- `bright` holds only the rows whose dim cells blank some of their text (a placeholder
+  suggestion), as they read undimmed; every other row reads as `rows` does.
+- `columns`, `cursor` and `bracketedPaste` are optional, kept where the probe knew them.
+  Read back, they default as `testing/screens.ts` does: 80 columns, the cursor on the last
+  row that shows anything, bracketed paste on. `styles` is a probe's note on each row's
+  style runs, for a reader's eyes; no test reads it.
+- A screen sits wherever its fixture needs it (`screens.wide`, `steps[].screen`, a doorbell
+  pair's `before` and `after`), beside whatever else the probe saw (hooks, status lines,
+  what the model received). That stays as the probe wrote it.
+
+**Reading:** `loadProbe<T>(folder, name)` reads `<folder>/fixtures/<name>` and gives every
+`ScreenRecord` in it back as the `ScreenText` it recorded; `T` is the test's own account
+of the rest. Every test that reads a probe fixture goes through it, screens or not.
+**Writing:** a probe makes a record with `screenRecord(screenText(terminal))`, or
+`screenRecord(text, { columns })` where it only has the screen's text, and puts it in what
+it writes. A fixture is that output copied in, scrubbed of the sandbox's paths.
+
+Not screens, so not in this shape: the hook payloads, status lines, transcripts, rollouts
+and `exec` events (`hooks`, `statusline`, `transcript`, `rollout`, `plan`, `exec`,
+`shell`, `interactive`, `modes` probes) are the harness's own records, whose shape is the
+harness's. Those probes' fixtures are read with `loadProbe` too, but hold no screen to
+convert. The model fixtures under `src/e2e/model/fixtures` are recorded HTTP requests, not
+probe output, and keep their own loader.
 
 ## Adding a harness
 

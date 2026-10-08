@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { agentDetail as schema } from "@novadeck/protocol"
 
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
+import { loadProbe } from "../testing/probes.js"
 import { apply, started, type Activity } from "./activity.js"
 import type { Binding } from "./bindings.js"
 import { agentDetail, rootRef } from "./detail.js"
@@ -17,8 +17,9 @@ type Scenario = { events: { event: string; payload: Report["payload"] }[] }
 // A captured Claude Code scenario's activity as its first request waits on the person,
 // bound to the session it names.
 const replay = (name: string): { binding: Binding; activity: Activity } => {
-  const { scenarios } = JSON.parse(
-    readFileSync(join(import.meta.dirname, "claude", "fixtures", "interactive.probe.json"), "utf8"),
+  const { scenarios } = loadProbe(
+    join(import.meta.dirname, "claude"),
+    "interactive.probe.json",
   ) as { scenarios: { [name: string]: Scenario } }
   let binding: Binding | undefined
   let activity = started(0)
@@ -105,9 +106,25 @@ describe("an agent's detail", () => {
         tool: "AskUserQuestion",
         subject: "Which color?",
         choices: ["Red", "Blue"],
+        dialog: null,
+        answered: false,
       },
     ])
     expect(detail.coverage).toBe(harnesses.claude.coverage)
+  })
+
+  it("carries a request's dialog, by its ref, where one is told", () => {
+    const { binding, activity } = replay("question")
+    const id = "00000000-0000-4000-8000-000000000001"
+    const ref = agentDetail(id, binding, activity, null).requests[0]!.ref
+    const dialog = { type: "raw", text: "screen", reason: "unrecognized" } as const
+    const detail = agentDetail(id, binding, activity, null, new Map([[ref, dialog]]))
+    expect(schema.parse(detail)).toEqual(detail)
+    expect(detail.requests[0]?.dialog).toEqual(dialog)
+    expect(detail.requests[0]?.answered).toBe(false)
+    const answered = agentDetail(id, binding, activity, null, new Map(), new Set([ref]))
+    expect(schema.parse(answered)).toEqual(answered)
+    expect(answered.requests[0]?.answered).toBe(true)
   })
 
   it("names a plan waiting for review by its file", () => {

@@ -610,7 +610,8 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   (the root first, then each subagent with its kind; a subagent's parent is null, as no
   harness says which agent started a nested one; a subagent seen only through its requests is listed without a kind), each request waiting on the person
   (its kind, tool, the actor asking, what it asks about: a command, a path, a question
-  and its answers, or a plan's file), and how much of each feature the agent's harness
+  and its answers, or a plan's file, and its `dialog`, below), and how much of each
+  feature the agent's harness
   tells (`unsupported`, `partial`, `complete`). Actors and requests have runner-issued
   refs, never a harness's own ids; the summary's subagents use the same refs. Without an
   agent bound, only `terminalId` is set. The stream follows the terminal from agent to
@@ -642,48 +643,101 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   yielding `reset` before the items follow again, and ends without one when the actor
   is gone.
 - `agents.prompt({ terminalId, text })` gives the terminal's agent a prompt as the person
-  would paste and submit it (`text` is 1 to 16,384 characters; its line breaks stay
+  would paste and submit it (`text` is 1 to 16,384 characters; its line breaks, CRLF and a lone CR included, are taken as one line break each and stay
   line breaks in the box). It needs an agent bound, or one showing its own empty prompt
   before its first session binds (Codex before its first prompt), and no request waiting
   on the person, whose dialog would take the text: otherwise `CONFLICT`, as when the
   screen takes no bracketed paste. Text a TUI would read as more than a message is
-  refused with `PROMPT_REFUSED` before anything is written: a control character (C0
-  but line feed and tab, DEL, C1: an escape inside it would end the paste and type what
-  follows as keys), nothing but white space, a leading `/` or `!` (a slash or shell
-  command), and an `@name` or `$name` at the very end (a file or skill picker that takes
-  the Enter); `promptRefusal` in `@novadeck/protocol` is that rule, which a client may use
-  to warn first. CRLF and CR are line feeds, and the white space around the text is not
-  sent. The runner holds the person's keys and reads the agent's input box off its
-  screen, through the harness's adapter (`harnesses/*/box.ts`, which knows how that
-  harness draws it and which of its text is a faint suggestion, not the person's):
-  where the box is not on the screen, or still holds anything after waiting up to 3 s for
-  it to read empty (the TUI may be clearing the text of the prompt just sent before; the
-  person's draft, or what a failed paste left, never clears), the call is a `CONFLICT`
-  that wrote nothing, as the text would merge into it. Otherwise it writes the text as one
-  bracketed paste and presses Enter once the box holds exactly the text (whitespace aside:
-  the TUI wraps and indents it) or, for text a TUI may collapse (several lines, or over
-  200 characters), only the placeholder it shows for it, on two reads running; the words
-  already on the screen elsewhere, or a spinner redrawing it, are no matter. It resolves
-  after that Enter. When that does not happen within 5 s, the call fails with
-  `PROMPT_FAILED`: no Enter is ever pressed after a failed check, so what landed stays
-  in the box as a draft. The reader fails closed: the box is read through the adapter of
-  the agent admitted, and a screen it is not found on (the agent exited, a dialog) writes
-  nothing. A text that shows whole in a box taller than the screen has no first row to
-  read and would stay as a draft, so it is refused first with a `CONFLICT` (nothing
-  written, the message saying to enlarge the terminal or shorten the text): its lines,
-  wrapped at word boundaries at the screen's columns less the marker's two (tabs spread
-  to multiples of eight columns), plus a row of margin, take more rows than the harness
-  leaves for its box; a text the harness certainly collapses to a placeholder is not
-  refused. The rows left and the thresholds are each harness's own, probed, in
-  `docs/harness-coverage.md` and `harnesses/*/box.ts`. A box's own lines may be indented,
-  tab and trailing spaces included, and hold blank lines; text is compared without its
-  white space, and without the emoji a harness drew blank, unless the text is only emoji.
-  The runner's headless terminal counts wide characters (emoji sequences, CJK) as a TUI's
-  own do (`@xterm/addon-unicode-graphemes`), so a redraw erases the rows the TUI means.
-  The person's keys are held from before the box is looked at until the Enter is out, at
-  most the wait for an empty box, the paste's 5 s and a margin of 2 s.
-  Prompts to one terminal go one at a time, in order; one that meets a doorbell ring under
-  way waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
+  refused with `PROMPT_REFUSED` before anything is written, in every harness alike, by one
+  rule in the protocol package (`promptRefusal`, judging the text trimmed, as a client sends
+  it): a control character in the text as pasted, its ends included (C0 but line feed and
+  tab, DEL, C1: an escape would end the paste early and type what follows as keys, a Ctrl-U
+  clears the box; line breaks, CRLF and CR alike, and the tab pass); text of nothing but
+  white space (an empty message); a leading `/` (a slash command: Codex's "Unrecognized
+  command" leaves the draft, a known one runs); a leading `!` with nothing after it (a text
+  that starts with `!` is a shell command, below); an `@name` at the very end (Codex's file
+  picker stays open and its Enter picks a file; a trailing space or line break closes it,
+  but the trimmed text is judged); a lone `$` or a `$name` starting with an ASCII letter or
+  `_` at the very end, whatever follows in the name (Codex's skill picker, whose Enter turned
+  `look at $skill` into `look at $skill-creator`, and also took `$pdf2`, `$s3-upload`,
+  `$a.b` and `$ns:skill`; `$5`, `$1.50`, `$-` and `$é` are no skill), in a shell command too:
+  Codex's pickers open in its shell mode (`echo @` took a file, `echo $` a skill). An `@`
+  inside the text (`a@b.co`, `@README.md what is this`), and a leading `#`, `&` or `?`, go
+  through as text in all three (probed). `promptRefusal` is the rule a client may use to
+  warn first. CRLF and CR are line feeds, and the white space around the text is not sent.
+  The words that follow an answer as a prompt are judged by the same rule before any key of
+  the answer is pressed, with `!` still refused there: words after an answer are a message,
+  never a shell command.
+
+  The runner holds the person's keys and reads the agent's input box off its screen,
+  through the harness's adapter (`harnesses/*/box.ts`, which knows how that harness draws it,
+  which of its text is a faint suggestion, not the person's, and whether it is in its shell
+  mode): where the box is not on the screen, or still holds anything after waiting up to 3 s
+  for it to read empty and in its prompt mode (the TUI may be clearing the text of the
+  prompt just sent before, or leaving its shell mode after a command's Enter; the person's
+  draft, or what a failed paste left, never clears), the call is a `CONFLICT` that wrote
+  nothing, as the text would merge into it. A box left in its shell mode, even empty, would
+  run any text as a command: a message or command there is a `CONFLICT` writing nothing
+  ("clear it in the terminal first"). Otherwise it writes the text as one bracketed paste
+  and presses Enter once the box holds exactly the text (whitespace aside: the TUI wraps and
+  indents it) or, for text a TUI may collapse (several lines, or over 200 characters), only
+  the placeholder it shows for it, on two reads running; the words already on the screen
+  elsewhere, or a spinner redrawing it, are no matter. A message whose box went into its
+  shell mode as it landed gets no Enter (`PROMPT_FAILED`). It checks again that no request
+  waits on the person right after the box read empty, and once more once the paste landed:
+  with a request waiting then, no Enter is pressed (`PROMPT_FAILED`, the paste a draft), as
+  its dialog would take it. It resolves after that Enter. When none of that happens within
+  5 s, the call fails with `PROMPT_FAILED`: no Enter is ever pressed after a failed check, so
+  what landed stays in the box as a draft. The reader fails closed: the box is read through
+  the adapter of the agent admitted, and a screen it is not found on (the agent exited, a
+  dialog, a footer saying shell mode over a prompt marker) writes nothing. A text that shows
+  whole in a box taller than the screen has no first row to read and would stay as a draft,
+  so it is refused first with a `CONFLICT` (nothing written, the message saying to enlarge
+  the terminal or shorten the text): its lines, wrapped at word boundaries at the screen's
+  columns less the marker's two (tabs spread to multiples of eight columns), plus a row of
+  margin, take more rows than the harness leaves for its box; a text the harness certainly
+  collapses to a placeholder is not refused. The rows left and the thresholds are each
+  harness's own, probed, in `docs/harness-coverage.md` and `harnesses/*/box.ts`. A box's own
+  lines may be indented, tab and trailing spaces included, and hold blank lines; text is
+  compared without its white space, and without the emoji a harness drew blank, unless the
+  text is only emoji. The runner's headless terminal counts wide characters (emoji
+  sequences, CJK) as a TUI's own do (`@xterm/addon-unicode-graphemes`), so a redraw erases
+  the rows the TUI means. The person's keys are held from before the box is looked at until
+  the Enter is out, at most the wait for an empty box, a shell command's switch (up to 5 s), the paste's 5 s and a margin of 2 s.
+
+  A text whose trimmed form starts with `!` is a shell command (`shellCommand`, the rest
+  after the `!`, trimmed), which Claude Code, Codex and Antigravity run in their shell mode
+  (Claude Code then makes a model call with its output in context; Codex and Antigravity
+  none): the transcript holds Claude Code's `<bash-input>` items, Codex's
+  `<user_shell_command>` items, and nothing for Antigravity. The runner types the `!` as a
+  key (Antigravity sends a pasted `!cmd` whole to the model as a prompt; only the key enters
+  its shell mode), waits for the box to read in its shell mode and empty, on two reads
+  running (the box's marker turns to `!`, and the harness's footer agrees: "! for shell
+  mode", "Shell mode", "activated bash mode"), then checks again that no request waits, and
+  pastes the command as above, its line breaks as returns (multi-line commands run in all
+  three while shown in full), and presses Enter once the box, in its shell mode, holds
+  exactly the command. A command the TUI collapses to a placeholder is taken as any
+  collapsed text is only where its shell mode runs what the placeholder stands for
+  (`BoxProfile.shell.expands`: Claude Code and Codex ran 1,500-character and 16-line
+  commands so); Antigravity runs the placeholder's own text (`[Pasted text #1 +16 lines]:
+command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16 lines),
+  so there no Enter is pressed (`PROMPT_FAILED`, the command left unsent in its box). Given
+  while the agent works: Claude Code and Antigravity queue the command and run it after the
+  turn; Codex runs it at once, no model call. Where the `!` never switched the box in time
+  (`PROMPT_FAILED`), or a request came before the command's paste (`CONFLICT`), a Backspace
+  takes the `!` back out where the box reads in its shell mode and empty, which leaves the
+  mode in all three, idle or mid-turn.
+
+  Everything that puts keys in one terminal's agent box takes its turn in that terminal's
+  input queue (`terminals/input-queue.ts`), one entry at a time, in the order it came:
+  prompts, answers (an answer and the words that follow it are one entry), interrupts and
+  the messaging doorbell's rings. So a prompt given while an answer to a request goes
+  there waits for it and the words that follow it, and a ring never comes between them;
+  terminals' queues don't wait for each other. The agent and the pending request are
+  looked at in the prompt's turn, not when it is called: only the text's shape
+  (`PROMPT_REFUSED`) is refused at once, so a prompt given during an answer is not refused
+  for the request that answer is for. A prompt that meets a doorbell ring
+  whose prompt is yet to confirm it waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
   person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and
   its Enter, the person's prompt attributed from the harness's transcript, the terminal
   named from its first prompt. A prompt given while the agent works behaves as typing it
@@ -691,27 +745,114 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   messages") and run it as its own turn once the turn ends; Codex shows it as "Messages to
   be submitted after next tool call", submitting it into the running turn then, or at its
   end when no tool follows. Each shows up as a separate user item in the transcript. The
-  window's resizes are held until a second after the Enter, or the next prompt. The
+  window's resizes are held until a second after the Enter; the next entry of the queue takes
+  them over and keeps that deadline, so one that is refused at once lets none go earlier. The
   client's `agents.prompt(terminalId, text)` is that call.
+
+- A request's `dialog` in `agents.detail` is what its harness's adapter (`harnesses/<harness>/dialogs.ts`,
+  the only code that knows how a harness draws its dialogs) read from the terminal's
+  screen, so it can be answered (`agents.answer`): `choices` (a permission's or a plan's
+  options, each with an id, its label and whether it takes the person's words: typed
+  into the dialog's field, `field`, or sent as the agent's next prompt once chosen,
+  `prompt`), `questions` (each with its options, whether several may be picked and
+  whether it takes the person's words), or `raw`, the screen's text for the person to read
+  and answer in the terminal, with a `reason`: `unrecognized` (the screen has settled and
+  the adapter reads none of the requests waiting as its dialog, as after an update changed
+  the TUI), `unsupported` (the request's harness has no adapter) or `failed` (an answer
+  was pressed and the dialog didn't go as expected). It is null until the dialog shows.
+  Each request also has `answered`: true once `agents.answer` succeeded for it, until the request
+  leaves pending (its hooks or records settled it); false otherwise, also where the runner leaves it
+  open for the same dialog showing again at once. An answer to an answered request is a `CONFLICT`.
+  The runner looks at the screen again as it changes while a request waits, at most every
+  100 ms, and sends a snapshot only when a dialog changed. A request whose dialog is
+  not the one on screen (another's, as with parallel calls) stays null until it is. The
+  raw text is the screen's rows without trailing blanks, from the bottom up while they fit
+  in 4 KiB, a run of blank rows made one. A request the screen alone tells (Codex's
+  "Implement this plan?" and Antigravity's plan for review, which fire no hook) is a
+  request like any other: the adapter's `screenRequest` raises it while its screen shows,
+  and it goes once the screen has been still for 500 ms without it, or the turn moves on,
+  or it was answered.
+- A `choices` or `questions` dialog carries an `id`, a fingerprint (a hash) of what the adapter
+  read, and a `choices` dialog a `detail`: what the dialog shows of what it asks about (the
+  command, the tool's arguments, the permission, the file), as the terminal draws it. An
+  answer names the dialog it answers by that `id` (`dialog`), so the keys it takes are the
+  ones the person saw.
+- `agents.answer({ terminalId, request, answer })` answers a request through its dialog
+  as the person would with its keys. `request` is its ref from `agents.detail`; `answer`
+  names the dialog it answers by its `id` (`dialog`) and is one of:
+  - `{ type: "choice", dialog, option, text? }`: an option of `choices` by its id, with
+    words for an option that takes them;
+  - `{ type: "questions", dialog, answers: [{ question, options, text? }] }`: per question,
+    by ids, the options picked and/or the person's own words;
+  - `{ type: "chat", dialog, text? }`: a `questions` dialog whose `chat` is not null set
+    aside to talk it over, its words sent as the agent's next prompt (`prompt`) or typed
+    into the dialog's field (`field`, where they are needed);
+  - `{ type: "form", dialog, action: "accept", values }` (a value per field id, at most 16)
+    or `{ type: "form", dialog, action: "decline" }` for an MCP server's form.
+
+  It guarantees that nothing is pressed unless the dialog on screen, read once more right
+  before the first key, is the one the answer names; that what the person typed meanwhile
+  is dropped, never replayed after; that the runner never presses again for a request
+  whose answer failed (its dialog turns `raw`, `failed`); and that the answer, with any
+  words that follow it as the agent's next prompt (a `prompt` option's or a `chat`'s), takes
+  one turn in the terminal's input queue, so nothing else is typed between them (see
+  `agents.prompt`). Where the option chosen sends words as the agent's next prompt, they are
+  given once the dialog took its key. Errors:
+  - `NOT_FOUND`: the agent has no such request.
+  - `DIALOG_CHANGED`: the screen no longer reads with the answer's `dialog`; nothing is
+    pressed or locked, and the next `agents.detail` has the new read.
+  - `CONFLICT`: nothing pressed. The dialog isn't on screen, isn't recognised as the
+    request's, or reads for another request too; the dialog can't take that answer; words
+    hold control characters (other than tab and line breaks, CRLF and CR among them); the
+    request was answered or turned raw already; the harness has no adapter; the waits
+    outlast what the keys can be held for; or a doorbell ring awaiting confirmation
+    outlasts 10 s (`ringing`, its only `reason`: see the errors below). A dialog that isn't
+    on screen, or isn't recognised as the request's, turns the request's dialog `raw`,
+    `unrecognized`, if one had shown; one dialog reading for more than one request makes
+    each of them show `raw`, answerable through none. A failure before any key was pressed
+    (the screen never showed what the first move needs, the request no longer waiting) is
+    a `CONFLICT` too, and locks the request `raw`, `unrecognized` as well. After any lock
+    the runner never presses for the request again. An answer to a request that shows
+    `raw` without a lock (the screen reads as nothing now) is a `CONFLICT` that locks
+    nothing.
+  - `PROMPT_REFUSED`: words that follow as a prompt are ones `agents.prompt` refuses,
+    judged before any key.
+  - `ANSWER_FAILED`: keys were pressed and the dialog didn't go as expected, or the screen
+    never showed what the next move needs; the request's dialog turns `raw`, `failed`.
+  - `WORDS_NOT_SENT`: the dialog was answered, but the words that follow it did not reach
+    the agent (they may sit in its input box as a draft).
+
+  How the runner reads the dialog, presses its keys and confirms it went is in
+  [Harness adapters, Answer driver](harness-adapters.md#answer-driver). The client's
+  `agents.answer(terminalId, request, answer)` is that call.
+
 - `agents.interrupt({ terminalId })` presses Escape in the terminal's agent, which stops
   its turn in every harness (the turn ends without a normal Stop: its activity is
-  `unknown` until the next prompt, see `agent-messaging.md`); `CONFLICT` without an agent
-  bound, or one showing its own prompt. It presses the key only while the agent's activity
+  `unknown` until the next prompt, see `agent-messaging.md`, and the agent's `lastTurn`
+  reads `interrupted`). The harness has the last word: one that had the model's reply
+  before it took the key finishes the turn all the same, and the turn's `lastTurn` then
+  reads `completed` with that reply, as for any finished turn, once the harness has said
+  so (at once for Antigravity's Stop or a record of the finish, else about 1.5 s after the
+  key at most; see `agent-messaging.md`). `CONFLICT` (`no-agent`)
+  without an agent bound or showing its own prompt, or (`pending`) with one that waits on
+  the person's answer to a request. It presses the key only while the agent's activity
   is `working`; otherwise it resolves having sent nothing, as the turn is already over (a
   Stop clicked as the turn ends, or a second one), since Escape at an idle prompt does
-  nothing the chat wants and two of them open Claude Code's rewind picker. Interrupts of
-  one terminal go one at a time, each looking at the activity only a second after the
-  one before, so a double Stop sends one Escape. It waits for the person's input to be
-  let go, as held for a prompt's paste or the doorbell's test paste, for as long as that
-  hold's own cap allows (about 10 s for a prompt's, 3 s for a ring's), so its
-  Escape never cuts into one. It goes through the person's key bookkeeping too:
+  nothing the chat wants and two of them open Claude Code's rewind picker. It takes its
+  turn in the terminal's input queue, so its Escape never cuts into a prompt's paste, an
+  answer's keys or a ring's test paste; those of one terminal are each given a second
+  after the one before to show its turn ended before the next looks at the activity, so a
+  double Stop sends one Escape. It goes through the person's key bookkeeping too:
   the turn ends as an Escape of theirs ends it. The harness takes the key a moment later.
   Claude Code puts a prompt interrupted before any reply back in its box as a draft (Codex
   and Antigravity leave it echoed above their box, which stays empty; probed); the runner
   leaves the box as it was before the turn's prompt. Where the box read empty before the
   Escape, it looks up to 2 s at the box through the harness's adapter, and when the box
-  holds exactly the turn's prompt as its hooks told it (or the placeholder for a long
-  one), steady on two reads, it writes the adapter's clear keys, a double Escape for
+  holds exactly the turn's prompt as its hooks told it (Claude Code puts a long one back
+  as its text, never as a placeholder; probed), or, in Claude Code's, a box as tall as its
+  screen lets it be (the harness's `viewport`; none is taken for full on a screen too small
+  to know it) whose text ends with the turn's prompt, as only the tail of a prompt taller
+  than that shows, steady on two reads, it writes the adapter's clear keys, a double Escape for
   Claude Code (never pressed over an empty box, where it opens Claude Code's rewind
   picker, nor over text the person had typed or merged in, which is left). A harness
   without clear keys has nothing pressed.
@@ -806,6 +947,15 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
 Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
 `INVALID_DIRECTORY`, `INVALID_FILE`, `NOT_FOUND`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,
 `INVALID_CURSOR`, `UPLOAD_TOO_LARGE`, `RESOURCE_LIMIT` (too many calls in flight; retry later),
-`TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. The
-schemas and contract in
+`TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. A
+`CONFLICT` about typing into an agent's terminal (`agents.prompt`, `agents.answer`,
+`agents.interrupt`) carries `{ reason }` as its data (`conflictReason`) where one applies:
+`agents.prompt` and `agents.interrupt` give one for every conflict about typing into the
+terminal, and `agents.answer` only `ringing` (a doorbell ring that outlasts 10 s), its
+other conflicts carrying none. `pending` (a request waits on the person), `ringing` or
+`no-paste` clear by themselves or by answering, while `draft`, `shell`, `too-tall`,
+`no-box` (the agent's input box is not found on its screen) and `no-agent` (no agent runs
+in the terminal) are for the person to settle in the terminal. Other conflicts carry no
+data, and a client takes a reason it doesn't know as none, so it words each one itself,
+by what the person did (send, stop, answer), rather than showing the runner's message. The schemas and contract in
 `application/protocol/src/` are the authoritative API definition.

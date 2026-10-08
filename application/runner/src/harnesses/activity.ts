@@ -8,13 +8,19 @@ import { ref } from "./harness.js"
 export const subagentRef = (id: string): string => ref("subagent", id)
 
 /** A request waiting on the person, as its harness identified it. */
-type Request = {
+export type Request = {
   readonly requestId: string
   readonly actor: string | null
   readonly toolName: string
   readonly kind: "permission" | "question" | "plan"
   readonly subject: string | null
   readonly choices: readonly string[]
+  /** The tool's input as its hook gave it, for the dialog adapter to check its dialog against. */
+  readonly input?: unknown
+  /** The directory its hook said the agent ran in, where it said one. */
+  readonly cwd?: string
+  /** Whether only the screen told it (see `DialogAdapter.screenRequest`), no hook. */
+  readonly screen?: true
   /** When its hook started: asked again later, the same call is another request. */
   readonly askedAt: number
 }
@@ -78,11 +84,18 @@ export type Activity = {
   readonly idled: boolean
   readonly background: Background | null
   /**
+   * How many subagents the running turn's latest working status line counts running; zero
+   * once the turn ends, whose `background` tells what runs on then.
+   */
+  readonly running: number
+  /**
    * Whether work a turn leaves running wakes the agent once done, as Claude Code's and
    * Antigravity's does and Codex's never does: where nothing says what runs, its
    * subagents still running count.
    */
   readonly wakes: boolean
+  /** Whether its harness says more of an Escaped turn's end than its Stop (`Harness.records`). */
+  readonly records: boolean
   /** The latest turn's id, where its harness names one. */
   readonly turn: string | null
   readonly continued: boolean
@@ -105,10 +118,40 @@ export type LastTurn = {
   readonly reply: string | null
   readonly at: number
   readonly recorded: boolean
+  /** Set while the person's Escape is the only word on how the turn ended. */
+  readonly escaped?: Escape
 }
 
+type TurnEnded = Extract<ActivityEvent, { type: "turn-ended" }>
+
+/**
+ * The person's Escape, at `key`, ended the turn that started at `from`, and its harness may
+ * not have taken the key: a reply that reached it first finishes the turn, which fires a
+ * Stop (and Claude Code's and Codex's fires too when they took the key just after the
+ * reply, their records then telling the interruption). `held` is the Stop that came since,
+ * waiting for the harness to say more; `stop` is when the hook of the Stop that ended the
+ * turn started, held or settled, which a continuation of it names. `settled` says the turn
+ * was taken as completed, which a record of its interruption told within the window still
+ * corrects.
+ */
+type Escape = {
+  readonly from: number
+  readonly key: number
+  readonly held: TurnEnded | null
+  readonly stop: number | null
+  readonly settled: boolean
+}
+
+/**
+ * How long after the person's Escape the harness has to say how the turn ended: Claude
+ * Code and Codex record the interruption, or the finish, within about half a second
+ * (probed, docs/harness-coverage.md). Past it, a Stop held since is the end, and without
+ * one the Escape stands.
+ */
+export const escapeVerdictMs = 1500
+
 /** A freshly bound agent waits for its first prompt. */
-export const started = (at: number, wakes = true): Activity => ({
+export const started = (at: number, wakes = true, records = true): Activity => ({
   state: "idle",
   pending: [],
   subagents: [],
@@ -120,7 +163,9 @@ export const started = (at: number, wakes = true): Activity => ({
   turnAt: at,
   idled: false,
   background: null,
+  running: 0,
   wakes,
+  records,
   turn: null,
   continued: false,
   skips: 0,
@@ -224,6 +269,156 @@ const outliving = (
   subagents: readonly Subagent[],
 ): readonly Request[] =>
   pending.filter(({ actor }) => actor !== null && subagents.some(({ id }) => id === actor))
+
+/**
+ * The turn's end as the activity takes it, for a root turn still running or one an Escape
+ * ended before its harness said more.
+ */
+const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined => {
+  // Its records end only the turn still running, its own where they name one, and
+  // leave its fence where it was, so the hook's own Stop, should it come after all,
+  // still says what the turn left. One naming no turn may be of a Stop Novadeck
+  // continued, whose continuation runs on: it is used up instead.
+  const { recorded, turn: named } = event
+  if (
+    recorded &&
+    (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
+  )
+    return undefined
+  const turn = {
+    state: "idle",
+    turnAt: recorded ? activity.turnAt : event.startedAt,
+    idled: false,
+    continued: false,
+    listed: false,
+    running: 0,
+    lastTurn: {
+      outcome: event.outcome,
+      reply: event.reply ?? null,
+      // The hook's own Stop after its records ended the turn says more of that end.
+      at:
+        activity.state === "idle" && activity.lastTurn?.recorded && !recorded
+          ? activity.lastTurn.at
+          : event.startedAt,
+      recorded: recorded === true,
+    },
+  } as const
+  if (event.outcome !== "interrupted")
+    return {
+      ...activity,
+      ...turn,
+      pending: outliving(activity.pending, activity.subagents),
+      background: waiting(activity, activity.subagents, event.background),
+    }
+  const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
+  const subagents = activity.subagents.filter((subagent) => !stopped.includes(subagent))
+  return {
+    ...activity,
+    ...turn,
+    background: waiting(activity, subagents, event.background),
+    // The subagents it ended wait on the person no longer.
+    pending: outliving(activity.pending, subagents),
+    subagents,
+    ended: end(
+      activity.ended,
+      stopped.map(({ id }) => id),
+      event.startedAt,
+    ),
+    // A second interrupt of the same turn widens the span rather than replacing it.
+    interrupted: {
+      from:
+        activity.interrupted?.to === activity.turnAt ? activity.interrupted.from : activity.turnAt,
+      to: event.startedAt,
+    },
+  }
+}
+
+/** The activity once the harness has said how the Escaped turn ended: the marker goes. */
+const confirmed = (activity: Activity): Activity => {
+  const { escaped: _, ...lastTurn } = activity.lastTurn!
+  return { ...activity, lastTurn }
+}
+
+/**
+ * A turn's end for the Escaped turn, as `turnEnded` takes it, at a time after the last
+ * turn's end, which tells it from the one it replaces. A record of it is taken as for the
+ * turn still running, as it ended it.
+ */
+const ending = (activity: Activity, event: TurnEnded): Activity | undefined =>
+  turnEnded(event.recorded ? { ...confirmed(activity), state: "working" } : confirmed(activity), {
+    ...event,
+    startedAt: Math.max(event.startedAt, activity.lastTurn!.at + 1),
+  })
+
+/**
+ * A turn the person's Escape ended that its harness finished all the same: the end it
+ * reported, kept as a correction's due should the harness yet record the interruption.
+ */
+const finished = (activity: Activity, event: TurnEnded): Activity | undefined => {
+  const { escaped } = activity.lastTurn!
+  const next = ending(activity, { ...event, outcome: "completed" })
+  const stop = event.recorded ? escaped!.stop : event.startedAt
+  return (
+    next && {
+      ...next,
+      lastTurn: { ...next.lastTurn!, escaped: { ...escaped!, held: null, stop, settled: true } },
+    }
+  )
+}
+
+/**
+ * A turn's end told after the person's Escape ended it, for the turn the Escape ended
+ * only. A turn taken as completed is corrected by its harness's record of the interruption
+ * within the window. Otherwise the harness's interruption stands as the Escape said, and a
+ * finish counts once the harness has said nothing more: its own record of it settles it at
+ * once, as does the Stop of a harness with no other word (`Harness.records`), while a Stop
+ * hook alone waits for the interruption its harness may still record, and for the window
+ * to pass (`turn-escape-lapsed`). Undefined where it changes nothing, null where the end is
+ * for the normal rules.
+ */
+const afterEscape = (
+  activity: Activity,
+  escaped: Escape,
+  event: TurnEnded,
+): Activity | undefined | null => {
+  if (event.outcome === "failed") return null
+  const other = event.turn && activity.turn && event.turn !== activity.turn
+  if (escaped.settled) {
+    // Only the turn's own interruption, near the key, corrects what the Stop said.
+    return event.outcome === "interrupted" &&
+      !other &&
+      event.startedAt >= escaped.from &&
+      event.startedAt <= escaped.key + escapeVerdictMs
+      ? ending(activity, event)
+      : null
+  }
+  if (event.startedAt < escaped.from || other) return undefined
+  if (event.outcome === "interrupted") {
+    // Its record names the Escape's own end; a hook's end older than the key, too.
+    return event.recorded || event.startedAt < activity.turnAt ? confirmed(activity) : null
+  }
+  if (event.recorded || !activity.records) return finished(activity, escaped.held ?? event)
+  return {
+    ...activity,
+    lastTurn: {
+      ...activity.lastTurn!,
+      escaped: { ...escaped, held: event, stop: event.startedAt },
+    },
+  }
+}
+
+/**
+ * Novadeck continued the Stop that ended the Escaped turn, held or settled: the turn goes
+ * on from that Stop, as if the Escape had not come between.
+ */
+const continuedAfterEscape = (activity: Activity, escaped: Escape): Activity | undefined => {
+  const { held, stop } = escaped
+  if (stop === null) return undefined
+  const ended = held
+    ? turnEnded(confirmed(activity), held)
+    : { ...confirmed(activity), turnAt: stop }
+  return ended
+}
 
 /**
  * The activity after an event, or undefined when it changes nothing: another session's,
@@ -338,6 +533,15 @@ export const apply = (
   // once a later Stop has moved the fence past it, so no skip is left to eat a later end.
   if (event.type === "turn-ended" && event.recorded && !event.turn && activity.skips > 0)
     return { ...activity, skips: activity.skips - 1 }
+  const escaped = activity.state === "idle" ? activity.lastTurn?.escaped : undefined
+  if (escaped && event.type === "turn-ended") {
+    const told = afterEscape(activity, escaped, event)
+    if (told !== null) return told
+  }
+  if (escaped && event.type === "turn-continued" && event.startedAt === escaped.stop) {
+    const ended = continuedAfterEscape(activity, escaped)
+    return ended && apply(ended, binding, event)
+  }
   if (event.startedAt < activity.turnAt) return undefined
   switch (event.type) {
     case "turn-started":
@@ -348,6 +552,7 @@ export const apply = (
         turnAt: event.startedAt,
         idled: false,
         background: null,
+        running: 0,
         turn: event.turn ?? null,
         continued: false,
         skips: 0,
@@ -366,6 +571,7 @@ export const apply = (
         state: "idle",
         pending: outliving(activity.pending, activity.subagents),
         continued: false,
+        running: 0,
       }
     case "turn-idle": {
       // Idle after the turn's Stop says nothing new of the turn; without one, the turn
@@ -390,6 +596,7 @@ export const apply = (
         turnAt: event.startedAt,
         idled: true,
         background: waiting(activity, activity.subagents, event.background),
+        running: 0,
         listed: true,
         // An Escape or a refusal, which only an idle status line tells.
         lastTurn: { outcome: "unknown", reply: null, at: event.startedAt, recorded: false },
@@ -406,73 +613,48 @@ export const apply = (
         turnAt: event.startedAt,
         idled: false,
         background: waiting(activity, activity.subagents),
-        lastTurn: { outcome: "interrupted", reply: null, at: event.startedAt, recorded: false },
+        running: 0,
+        lastTurn: {
+          outcome: "interrupted",
+          reply: null,
+          at: event.startedAt,
+          recorded: false,
+          escaped: {
+            from: activity.turnAt,
+            key: event.startedAt,
+            held: null,
+            stop: null,
+            settled: false,
+          },
+        },
       }
-    case "turn-working":
+    case "turn-working": {
       // Working after the idle that ended its turn, and newer than it: that idle was stale,
       // and the turn goes on. After a Stop it says nothing new. The turn's fence stays at the
-      // idle, so a Stop whose hook started before this snapshot still ends it.
+      // idle, so a Stop whose hook started before this snapshot still ends it. Within a
+      // running turn it only tells how many subagents run, newer than the turn's start by
+      // the fence above; one that comes late, after a Stop, is ignored with the rest.
+      const running = event.running ?? 0
+      if (activity.state === "working")
+        return activity.running === running ? undefined : { ...activity, running }
       if (activity.state !== "idle" || !activity.idled || event.startedAt <= activity.turnAt)
         return undefined
-      return { ...activity, state: "working", idled: false }
-    case "turn-ended": {
-      // Its records end only the turn still running, its own where they name one, and
-      // leave its fence where it was, so the hook's own Stop, should it come after all,
-      // still says what the turn left. One naming no turn may be of a Stop Novadeck
-      // continued, whose continuation runs on: it is used up instead.
-      const { recorded, turn: named } = event
+      return { ...activity, state: "working", idled: false, running }
+    }
+    case "turn-ended":
+      return turnEnded(activity, event)
+    case "turn-escape-lapsed": {
+      // The window passed: the Stop held since is the end, else the Escape stands.
+      const { lastTurn } = activity
       if (
-        recorded &&
-        (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
+        activity.state !== "idle" ||
+        !lastTurn?.escaped ||
+        lastTurn.escaped.settled ||
+        lastTurn.escaped.key !== event.startedAt
       )
         return undefined
-      const turn = {
-        state: "idle",
-        turnAt: recorded ? activity.turnAt : event.startedAt,
-        idled: false,
-        continued: false,
-        listed: false,
-        lastTurn: {
-          outcome: event.outcome,
-          reply: event.reply ?? null,
-          // The hook's own Stop after its records ended the turn says more of that end.
-          at:
-            activity.state === "idle" && activity.lastTurn?.recorded && !recorded
-              ? activity.lastTurn.at
-              : event.startedAt,
-          recorded: recorded === true,
-        },
-      } as const
-      if (event.outcome !== "interrupted")
-        return {
-          ...activity,
-          ...turn,
-          pending: outliving(activity.pending, activity.subagents),
-          background: waiting(activity, activity.subagents, event.background),
-        }
-      const stopped = activity.subagents.filter(({ startedAt }) => startedAt >= activity.turnAt)
-      const subagents = activity.subagents.filter((subagent) => !stopped.includes(subagent))
-      return {
-        ...activity,
-        ...turn,
-        background: waiting(activity, subagents, event.background),
-        // The subagents it ended wait on the person no longer.
-        pending: outliving(activity.pending, subagents),
-        subagents,
-        ended: end(
-          activity.ended,
-          stopped.map(({ id }) => id),
-          event.startedAt,
-        ),
-        // A second interrupt of the same turn widens the span rather than replacing it.
-        interrupted: {
-          from:
-            activity.interrupted?.to === activity.turnAt
-              ? activity.interrupted.from
-              : activity.turnAt,
-          to: event.startedAt,
-        },
-      }
+      const { held } = lastTurn.escaped
+      return held ? finished(activity, held) : confirmed(activity)
     }
     case "attention-requested":
       return asked(activity, event)
@@ -506,13 +688,28 @@ const asked = (
     // The root asks only while its turn runs; a subagent's request, as a background one
     // asks after the root's Stop, neither starts nor resumes the root's turn. A subagent
     // asking after its turn aborted runs again.
-    ...(actor === null && { state: "working" }),
+    // A request only the screen tells, as Codex's plan prompt after its Stop, resumes nothing.
+    ...(actor === null && event.screen !== true && { state: "working" }),
     subagents: activity.subagents.map((each) =>
       each.id === actor && each.abortedAt !== undefined && startedAt >= each.abortedAt
         ? { id: each.id, type: each.type, startedAt: each.startedAt }
         : each,
     ),
-    pending: [...kept, { requestId, actor, toolName, kind, subject, choices, askedAt: startedAt }],
+    pending: [
+      ...kept,
+      {
+        requestId,
+        actor,
+        toolName,
+        kind,
+        subject,
+        choices,
+        ...(event.input !== undefined && { input: event.input }),
+        ...(event.cwd !== undefined && { cwd: event.cwd }),
+        ...(event.screen === true && { screen: true as const }),
+        askedAt: startedAt,
+      },
+    ],
   }
 }
 
@@ -522,6 +719,8 @@ const asked = (
  * exists counts as one until a status line has counted them. Other work it left running,
  * as a command, shows in `background`, but never keeps it working: a dev server may run
  * for ever. How its latest turn ended shows once none runs, a continued one included.
+ * `background` shows what the ended turn left running, and while it runs, the subagents a
+ * status line counts running.
  */
 export const summary = ({
   state,
@@ -529,6 +728,7 @@ export const summary = ({
   subagents,
   planning,
   background,
+  running,
   listed,
   lastTurn,
 }: Activity): AgentActivity => ({
@@ -537,10 +737,15 @@ export const summary = ({
     (background !== null && (background.agents > 0 || (background.more === true && !listed)))
       ? "working"
       : "idle",
+  // While its turn runs, only the subagents its status line counts running.
   background:
-    state === "working" || !background
-      ? null
-      : { agents: background.agents, tasks: background.tasks },
+    state === "working"
+      ? running > 0
+        ? { agents: running, tasks: 0 }
+        : null
+      : !background
+        ? null
+        : { agents: background.agents, tasks: background.tasks },
   planning,
   attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
   subagents: subagents.map(({ id, type }) => ({ id: subagentRef(id), type })),

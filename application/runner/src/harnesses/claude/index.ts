@@ -14,6 +14,7 @@ import {
 } from "../harness.js"
 import { box } from "./box.js"
 import { decode, transcriptPlans } from "./decode.js"
+import { dialogs } from "./dialogs.js"
 import { posixShim } from "./shim.js"
 import { transcriptEvents } from "./transcript.js"
 import { transcripts } from "./transcripts.js"
@@ -33,6 +34,8 @@ const events = [
   "SubagentStart",
   "SubagentStop",
   "PermissionRequest",
+  "Elicitation",
+  "ElicitationResult",
   "PostToolUse",
   "PostToolUseFailure",
 ]
@@ -143,6 +146,7 @@ export const claude = {
   // Its hooks, transcript and status line; see docs/harness-coverage.md.
   // A background subagent's or command's end starts a turn with a task notification.
   wakes: true,
+  records: true,
   coverage: {
     session: "partial",
     activity: "partial",
@@ -155,6 +159,7 @@ export const claude = {
     context: "partial",
   },
   decode,
+  dialogs,
   messaging,
   box,
   // The transcript records what no hook reports: an interrupted turn.

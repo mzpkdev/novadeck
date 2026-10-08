@@ -2,6 +2,8 @@ import type { AgentDetail, TranscriptChange, TranscriptItem } from "@novadeck/pr
 import { RunnerError } from "@novadeck/protocol/client"
 import { afterEach, beforeEach, vi } from "vitest"
 
+import { SettleInTerminal, WordsLost } from "../../model/conversation"
+import { promptRefusal } from "../../model/prompt-refusal"
 import { describe, expect, it } from "../../test"
 import {
   createRunnerConversations,
@@ -88,6 +90,7 @@ const setup = () => {
     }),
     prompt: vi.fn<ConversationStreams["prompt"]>(async () => {}),
     interrupt: vi.fn<ConversationStreams["interrupt"]>(async () => ({ returned: null })),
+    answer: vi.fn<ConversationStreams["answer"]>(async () => {}),
   }
   const conversations = createRunnerConversations(streams)
   const store = conversations.conversation(key)
@@ -211,6 +214,17 @@ describe("the runner's conversations", () => {
               tool: "Bash",
               subject: "ls",
               choices: ["Yes", "No"],
+              dialog: {
+                type: "choices",
+                id: "d1",
+                title: "Run it?",
+                detail: "ls -la",
+                options: [
+                  { id: "1", label: "Yes", text: null },
+                  { id: "2", label: "No", text: "prompt" },
+                ],
+              },
+              answered: false,
             },
             {
               ref: "req2req2req2req2",
@@ -219,6 +233,8 @@ describe("the runner's conversations", () => {
               tool: "Ask",
               subject: null,
               choices: [],
+              dialog: null,
+              answered: false,
             },
           ],
         }),
@@ -232,6 +248,17 @@ describe("the runner's conversations", () => {
           subject: "ls",
           choices: ["Yes", "No"],
           subagent: false,
+          dialog: {
+            type: "choices",
+            id: "d1",
+            title: "Run it?",
+            detail: "ls -la",
+            options: [
+              { id: "1", label: "Yes", text: null },
+              { id: "2", label: "No", text: "prompt" },
+            ],
+          },
+          answered: false,
         },
         {
           id: "req2req2req2req2",
@@ -240,8 +267,64 @@ describe("the runner's conversations", () => {
           subject: null,
           choices: [],
           subagent: true,
+          dialog: null,
+          answered: false,
         },
       ])
+    })
+
+    it("shows a dialog that turned raw, and keeps the store for one that read the same", async () => {
+      const { details, store } = setup()
+      const listener = vi.fn<() => void>()
+      store.subscribe(listener)
+      const asking = (dialog: AgentDetail["requests"][number]["dialog"], answered = false) =>
+        detail({
+          requests: [
+            {
+              ref: "req1req1req1req1",
+              actor: root,
+              kind: "permission",
+              tool: "Bash",
+              subject: "ls",
+              choices: ["Yes"],
+              dialog,
+              answered,
+            },
+          ],
+        })
+      const choices: AgentDetail["requests"][number]["dialog"] = {
+        type: "choices",
+        id: "d1",
+        title: null,
+        detail: null,
+        options: [{ id: "1", label: "Yes", text: null }],
+      }
+      details.push(asking(choices))
+      await settle()
+      const before = store.getSnapshot()
+      listener.mockClear()
+      details.push(
+        asking({
+          type: "choices",
+          id: "d1",
+          title: null,
+          detail: null,
+          options: [{ id: "1", label: "Yes", text: null }],
+        }),
+      )
+      await settle()
+      expect(store.getSnapshot()).toBe(before)
+      expect(listener).not.toHaveBeenCalled()
+      details.push(asking({ type: "raw", text: "Allow?", reason: "failed" }))
+      await settle()
+      expect(store.getSnapshot().requests[0]?.dialog).toEqual({
+        type: "raw",
+        text: "Allow?",
+        reason: "failed",
+      })
+      details.push(asking(choices, true))
+      await settle()
+      expect(store.getSnapshot().requests[0]?.answered).toBe(true)
     })
 
     it("keeps the items and notifies nobody for a snapshot that changes nothing", async () => {
@@ -409,10 +492,8 @@ describe("the runner's conversations", () => {
     it.each([
       ["DISCONNECTED", "The runner is offline."],
       ["CLOSED", "The runner is offline."],
-      [
-        "CONFLICT",
-        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
-      ],
+      ["CONFLICT", "The agent can't take that right now. Check its terminal."],
+      ["PROMPT_REFUSED", promptRefusal],
       ["PROMPT_FAILED", "The prompt didn't land in the agent's box. It may be there as a draft."],
       ["INTERNAL_SERVER_ERROR", "Couldn't reach the agent."],
     ] as const)("tells the person why a %s failure didn't go", async (code, message) => {
@@ -421,12 +502,31 @@ describe("the runner's conversations", () => {
       await expect(conversations.send(key, "hi")).rejects.toThrow(message)
     })
 
-    it("says the runner's own reason for a refusal, where it gives one", async () => {
+    it("words a conflict by the reason the runner gives, offering the terminal where it settles there", async () => {
       const { conversations, streams } = setup()
-      streams.prompt.mockRejectedValue(
-        new RunnerError("CONFLICT", "The agent's input box holds a draft: clear it first."),
-      )
-      await expect(conversations.send(key, "hi")).rejects.toThrow("holds a draft")
+      const failing = async (data: unknown): Promise<unknown> => {
+        streams.prompt.mockRejectedValueOnce(
+          new RunnerError("CONFLICT", "The runner's own words", { data }),
+        )
+        return conversations.send(key, "hi").catch((failure: unknown) => failure)
+      }
+      const draft = await failing({ reason: "draft" })
+      expect(draft).toBeInstanceOf(SettleInTerminal)
+      expect(draft).toHaveProperty("message", expect.stringContaining("already holds text"))
+      const ringing = await failing({ reason: "ringing" })
+      expect(ringing).not.toBeInstanceOf(SettleInTerminal)
+      expect(ringing).toHaveProperty("message", expect.stringContaining("in a moment"))
+      // A reason this client doesn't know is none: the terminal is where to look.
+      const unknown = await failing({ reason: "new-one" })
+      expect(unknown).toBeInstanceOf(SettleInTerminal)
+      expect(unknown).toHaveProperty("message", expect.not.stringContaining("own words"))
+      const none = await failing({ reason: "no-agent" })
+      expect(none).toBeInstanceOf(SettleInTerminal)
+      expect(none).toHaveProperty("message", "No agent is running in this terminal.")
+    })
+
+    it("says the runner's own reason for a refused prompt, where it gives one", async () => {
+      const { conversations, streams } = setup()
       streams.prompt.mockRejectedValue(
         new RunnerError("PROMPT_REFUSED", "A message can't hold control characters."),
       )
@@ -435,20 +535,16 @@ describe("the runner's conversations", () => {
       await expect(conversations.send(key, "hi")).rejects.toThrow("can't start with / or !")
     })
 
-    it("joins a send of the same text still under way, rather than prompting twice", async () => {
-      const { conversations, streams } = setup()
-      const finishers: (() => void)[] = []
-      streams.prompt.mockImplementationOnce(
-        () => new Promise<void>((resolve) => finishers.push(resolve)),
-      )
-      const first = conversations.send(key, "run the tests")
-      const again = conversations.send(key, "run the tests")
-      finishers[0]!()
-      await Promise.all([first, again])
-      expect(streams.prompt).toHaveBeenCalledTimes(1)
-      // Once it went, the same words are a prompt of their own.
-      await conversations.send(key, "run the tests")
-      expect(streams.prompt).toHaveBeenCalledTimes(2)
+    it("refuses a message's shape as the protocol's rule does, blank text aside", () => {
+      const { conversations } = setup()
+      expect(conversations.refused("/tmp is full")).toBe(true)
+      expect(conversations.refused("look at @src")).toBe(true)
+      expect(conversations.refused("!ls")).toBe(true)
+      expect(conversations.refused("!ls", { shell: true })).toBe(false)
+      expect(conversations.refused("!", { shell: true })).toBe(true)
+      expect(conversations.refused("tmp is full")).toBe(false)
+      // Nothing to warn of yet: the chat sends no empty message.
+      expect(conversations.refused(" \r\n")).toBe(false)
     })
 
     it("gives back the words the agent returned from its queue, or null", async () => {
@@ -462,12 +558,117 @@ describe("the runner's conversations", () => {
 
     it("tells the person why an interrupt didn't go", async () => {
       const { conversations, streams } = setup()
-      streams.interrupt.mockRejectedValue(new RunnerError("CONFLICT"))
-      await expect(conversations.interrupt(key)).rejects.toThrow(
-        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
+      streams.interrupt.mockRejectedValue(
+        new RunnerError("CONFLICT", "No agent is running in this terminal.", {
+          data: { reason: "no-box" },
+        }),
       )
+      await expect(conversations.interrupt(key)).rejects.toThrow("can't find the agent's input box")
+      streams.interrupt.mockRejectedValue(
+        new RunnerError("CONFLICT", "A request waits.", { data: { reason: "pending" } }),
+      )
+      await expect(conversations.interrupt(key)).rejects.toThrow("Answer it first, then stop it")
+      streams.interrupt.mockRejectedValue(
+        new RunnerError("CONFLICT", "Ringing.", { data: { reason: "ringing" } }),
+      )
+      await expect(conversations.interrupt(key)).rejects.toThrow("Stop it again in a moment")
       streams.interrupt.mockRejectedValue(new Error("boom"))
       await expect(conversations.interrupt(key)).rejects.toThrow("Couldn't stop the agent.")
+    })
+  })
+
+  describe("answering", () => {
+    it("gives the answer to the runner for the terminal's request", async () => {
+      const { conversations, streams } = setup()
+      await conversations.answer(key, "req1req1req1req1", {
+        type: "choice",
+        dialog: "d1",
+        option: "1",
+      })
+      expect(streams.answer).toHaveBeenCalledWith("t", "req1req1req1req1", {
+        type: "choice",
+        dialog: "d1",
+        option: "1",
+      })
+    })
+
+    it("tells a runner's WORDS_NOT_SENT as words that didn't follow the answer", async () => {
+      const { conversations, streams } = setup()
+      streams.answer.mockRejectedValue(new RunnerError("WORDS_NOT_SENT"))
+      await expect(
+        conversations.answer(key, "r", { type: "chat", dialog: "q1", text: "why" }),
+      ).rejects.toBeInstanceOf(WordsLost)
+    })
+
+    it("tells an answer that took but whose words didn't from one that didn't take", async () => {
+      const { conversations, streams } = setup()
+      streams.answer.mockRejectedValue(
+        new RunnerError(
+          "WORDS_NOT_SENT",
+          "The answer took, but the agent did not take the words that follow it.",
+        ),
+      )
+      await expect(
+        conversations.answer(key, "r", { type: "chat", dialog: "q1", text: "why" }),
+      ).rejects.toBeInstanceOf(WordsLost)
+    })
+
+    it("passes a chat about the questions on", async () => {
+      const { conversations, streams } = setup()
+      await conversations.answer(key, "req1req1req1req1", {
+        type: "chat",
+        dialog: "q1",
+        text: "why",
+      })
+      expect(streams.answer).toHaveBeenCalledWith("t", "req1req1req1req1", {
+        type: "chat",
+        dialog: "q1",
+        text: "why",
+      })
+    })
+
+    it("passes a form's values on as they are typed", async () => {
+      const { conversations, streams } = setup()
+      await conversations.answer(key, "req1req1req1req1", {
+        type: "form",
+        dialog: "f1",
+        action: "accept",
+        values: { name: "api", replicas: 3, dry: true },
+      })
+      expect(streams.answer).toHaveBeenCalledWith("t", "req1req1req1req1", {
+        type: "form",
+        dialog: "f1",
+        action: "accept",
+        values: { name: "api", replicas: 3, dry: true },
+      })
+    })
+
+    it("words an answer's conflict by its reason, where the runner gives one", async () => {
+      const { conversations, streams } = setup()
+      streams.answer.mockRejectedValue(
+        new RunnerError("CONFLICT", "A message's doorbell is ringing the agent.", {
+          data: { reason: "ringing" },
+        }),
+      )
+      await expect(
+        conversations.answer(key, "r", { type: "choice", dialog: "d1", option: "1" }),
+      ).rejects.toThrow("Try the answer again in a moment")
+    })
+
+    it.each([
+      ["DISCONNECTED", "The runner is offline."],
+      ["CONFLICT", "Couldn't answer that here. Answer it in the terminal."],
+      ["DIALOG_CHANGED", "The dialog changed — check it and answer again."],
+      ["PROMPT_REFUSED", promptRefusal],
+      ["ANSWER_FAILED", "That answer didn't take. Answer it in the terminal."],
+      ["NOT_FOUND", "That request is already answered."],
+      ["INTERNAL_SERVER_ERROR", "Couldn't answer for the agent."],
+    ] as const)("tells the person why a %s failure didn't take", async (code, message) => {
+      const { conversations, streams } = setup()
+      streams.answer.mockRejectedValue(new RunnerError(code))
+      await expect(
+        conversations.answer(key, "r", { type: "choice", dialog: "d1", option: "1" }),
+      ).rejects.toThrow(message)
     })
   })
 })

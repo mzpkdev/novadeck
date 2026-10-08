@@ -1,10 +1,25 @@
-import type { AgentDetail, TranscriptChange, TranscriptItem } from "@novadeck/protocol"
+import {
+  conflictReason,
+  normalisedText,
+  promptRefusal as protocolRefusal,
+  type AgentDetail,
+  type RequestAnswer,
+  type TranscriptChange,
+  type TranscriptItem,
+} from "@novadeck/protocol"
 import { hasCode } from "@novadeck/protocol/client"
 
 import {
   noConversation,
+  type ChatAction,
+  type ChatAnswer,
+  type ChatDialog,
   type ChatItem,
   type ChatRequest,
+  conflictFailure,
+  notCleared,
+  SettleInTerminal,
+  WordsLost,
   type Conversation,
   type Conversations,
 } from "../../model/conversation"
@@ -24,6 +39,7 @@ export type ConversationStreams = {
   ) => AsyncIterableIterator<TranscriptChange, undefined>
   readonly prompt: (terminalId: string, text: string) => Promise<void>
   readonly interrupt: (terminalId: string) => Promise<{ readonly returned: string | null }>
+  readonly answer: (terminalId: string, request: string, answer: RequestAnswer) => Promise<void>
 }
 
 export type RunnerConversations = Conversations & {
@@ -82,7 +98,14 @@ const requestsOf = (detail: AgentDetail, root: string | null): readonly ChatRequ
     subject: request.subject,
     choices: request.choices,
     subagent: request.actor !== root,
+    dialog: request.dialog,
+    answered: request.answered,
   }))
+
+// Dialogs are plain data a snapshot sends again whole, so they are the same when they read
+// the same.
+const sameDialog = (a: ChatDialog | null, b: ChatDialog | null): boolean =>
+  a === b || (a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b))
 
 const sameRequests = (a: readonly ChatRequest[], b: readonly ChatRequest[]): boolean =>
   a.length === b.length &&
@@ -93,8 +116,10 @@ const sameRequests = (a: readonly ChatRequest[], b: readonly ChatRequest[]): boo
       request.tool === b[index]!.tool &&
       request.subject === b[index]!.subject &&
       request.subagent === b[index]!.subagent &&
+      request.answered === b[index]!.answered &&
       request.choices.length === b[index]!.choices.length &&
-      request.choices.every((choice, at) => choice === b[index]!.choices[at]),
+      request.choices.every((choice, at) => choice === b[index]!.choices[at]) &&
+      sameDialog(request.dialog, b[index]!.dialog),
   )
 
 // The runner's own words for why it refused, where it gave any beyond its code.
@@ -105,26 +130,55 @@ const said = (error: unknown): string | undefined =>
     ? error.message
     : undefined
 
+// Why the runner says a CONFLICT is one, where it says and this client knows the reason.
+const reasonOf = (error: { readonly data: unknown }) =>
+  conflictReason.safeParse(error.data).data?.reason
+
 // What the person is told when the agent can't take what they sent.
-const failure = (error: unknown, what: string): Error => {
+const failure = (error: unknown, what: string, action: ChatAction): Error => {
   if (hasCode(error, "DISCONNECTED", "CLOSED")) return new Error("The runner is offline.")
   // Refused before anything was written: the text has a shape the agent reads as more than
-  // a message, or the agent can't take one now (its box holds a draft, or it waits on the
-  // person's answer). The runner says which.
+  // a message, or the agent can't take one now, for the reason the runner gives.
   if (hasCode(error, "PROMPT_REFUSED")) return new Error(said(error) ?? promptRefusal)
-  if (hasCode(error, "CONFLICT"))
-    return new Error(
-      said(error) ??
-        "The agent can't take a prompt right now. It may be waiting for your answer in the terminal.",
-    )
+  if (hasCode(error, "CONFLICT")) return conflictFailure(reasonOf(error), action)
   // Stopped, but the words queued behind the turn stay in the agent's own box.
-  if (hasCode(error, "BOX_NOT_CLEARED"))
-    return new Error(
-      "Stopped. Your queued message is still in the agent's box: clear it in the terminal.",
-    )
+  if (hasCode(error, "BOX_NOT_CLEARED")) return notCleared()
   if (hasCode(error, "PROMPT_FAILED"))
-    return new Error("The prompt didn't land in the agent's box. It may be there as a draft.")
+    return new SettleInTerminal(
+      "The prompt didn't land in the agent's box. It may be there as a draft.",
+    )
   return new Error(`Couldn't ${what} the agent.`)
+}
+
+// The protocol's answer for the chat's, whose lists are read-only.
+const requestAnswerOf = (answer: ChatAnswer): RequestAnswer => {
+  if (answer.type === "choice") return { ...answer }
+  if (answer.type === "chat") return { ...answer }
+  if (answer.type === "form") return { ...answer, values: { ...answer.values } }
+  return {
+    type: "questions",
+    dialog: answer.dialog,
+    answers: answer.answers.map((each) => ({ ...each, options: [...each.options] })),
+  }
+}
+
+// What the person is told when a request couldn't be answered.
+const refusal = (error: unknown): Error => {
+  if (hasCode(error, "DISCONNECTED", "CLOSED")) return new Error("The runner is offline.")
+  if (hasCode(error, "PROMPT_REFUSED")) return new Error(said(error) ?? promptRefusal)
+  if (hasCode(error, "DIALOG_CHANGED"))
+    return new Error("The dialog changed — check it and answer again.")
+  if (hasCode(error, "CONFLICT")) {
+    const reason = reasonOf(error)
+    return reason
+      ? conflictFailure(reason, "answer")
+      : new Error("Couldn't answer that here. Answer it in the terminal.")
+  }
+  if (hasCode(error, "WORDS_NOT_SENT")) return new WordsLost()
+  if (hasCode(error, "ANSWER_FAILED"))
+    return new Error("That answer didn't take. Answer it in the terminal.")
+  if (hasCode(error, "NOT_FOUND")) return new Error("That request is already answered.")
+  return new Error("Couldn't answer for the agent.")
 }
 
 type Reading = {
@@ -318,37 +372,30 @@ export const createRunnerConversations = (
     return entry
   }
   const stoppers = new Map<string, () => void>()
-  // The send under way to each terminal: the same text sent again while it goes, as from a
-  // chat shown again whose box still holds it, is that send, not a second prompt.
-  const sending = new Map<string, { readonly text: string; readonly sent: Promise<void> }>()
 
   return {
     // The runner's terminal ids are unique, so the id alone names the terminal.
     conversation: ({ terminalId }) => entryOf(terminalId).conversation,
-    send: ({ terminalId }, text) => {
-      const under = sending.get(terminalId)
-      if (under?.text === text) return under.sent
-      const sent = track(streams.prompt(terminalId, text)).then(
-        () => {},
-        (error: unknown) => {
-          throw failure(error, "reach")
-        },
-      )
-      const entry = { text, sent }
-      sending.set(terminalId, entry)
-      void sent.then(
-        () => sending.get(terminalId) === entry && sending.delete(terminalId),
-        () => sending.get(terminalId) === entry && sending.delete(terminalId),
-      )
-      return sent
-    },
+    send: ({ terminalId }, text) =>
+      track(streams.prompt(terminalId, text)).catch((error: unknown) => {
+        throw failure(error, "reach", "send")
+      }),
     interrupt: ({ terminalId }) =>
       track(streams.interrupt(terminalId)).then(
         ({ returned }) => returned,
         (error: unknown) => {
-          throw failure(error, "stop")
+          throw failure(error, "stop", "stop")
         },
       ),
+    answer: ({ terminalId }, request, answer) =>
+      track(streams.answer(terminalId, request, requestAnswerOf(answer))).catch(
+        (error: unknown) => {
+          throw refusal(error)
+        },
+      ),
+    // The protocol's rule, which the runner refuses by; blank text has nothing to warn of yet.
+    refused: (text, options) =>
+      normalisedText(text).trim() !== "" && protocolRefusal(text, options) !== undefined,
     stop: () => {
       for (const halt of stoppers.values()) halt()
     },

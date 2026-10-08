@@ -1,85 +1,144 @@
+import type { TerminalKey } from "../../backend/port"
+import type { Workspace } from "../../model/types"
 import {
-  chatAvailable,
-  chatModeOn,
   chatDraftOf,
+  chatReplyOf,
+  chatSendOf,
+  joinDraft,
+  replyAnswer,
+  sameReply,
   setChatDraft,
-  setChatMode,
+  setChatReply,
+  setAnsweringInTerminal,
+  setChatSend,
+  type ChatReply,
+  type ChatReplyTo,
 } from "../../terminals/chat/mode-state"
 import { currentContext, currentState } from "../selectors"
 import type { CommandContext } from "./context"
 import { shellEdits } from "./shell"
 
-// A terminal's agent shows as a conversation or as the terminal's screen. Either way
-// typing goes where the person now looks: the chat's box, or the terminal.
+// With the chat view on, a terminal's agent shows as a conversation, or as the terminal's
+// screen while the person answers it there.
 export type ChatCommands = {
-  // Flips the terminal between its screen and its agent's chat. Does nothing for a
-  // terminal no agent runs in, which has no chat.
-  readonly toggleChat: (terminalId: string) => void
-  // Shows the terminal's screen, as the person asks to answer the agent there.
+  // Shows the terminal's screen, as the person asks to answer the agent there, and types
+  // there: its chat comes back once the agent no longer waits on them.
   readonly showTerminal: (terminalId: string) => void
-  // Keeps what the person has typed in the terminal's chat and not sent.
+  // Keeps what the person has typed in the terminal's chat and not sent. An edit lets go
+  // of words held from a reply whose question went: they are the person's message now.
   readonly setChatDraft: (terminalId: string, text: string) => void
-  // Adds words to the end of the draft of the terminal in a session, on a line of their
-  // own, reading the draft as it is when it changes: whatever the person typed meanwhile
-  // stays.
+  // Adds words to the draft of the terminal in a session, on a line of their own, reading
+  // the draft as it is when it changes: whatever the person typed meanwhile stays. They go
+  // after it, or before a shell command, so they never become more of its lines.
   readonly appendChatDraft: (context: string, terminalId: string, words: string) => void
-  // Clears the draft a prompt was sent from, in the session it was sent in, if the person
-  // hasn't changed it since (words added after it, as dictated while it went, stay):
-  // whether or not the chat is still on screen.
-  readonly clearChatDraft: (context: string, terminalId: string, sent: string) => void
+  // Sends the draft's words to the terminal's agent: as the answer to the question `to`
+  // names, in its own field, or else as a prompt. They leave the draft at once, so the box
+  // is free for the next words, whether or not the chat stays on screen, and come back to
+  // it, before whatever was typed meanwhile, should they not arrive; the promise then
+  // rejects with why. A terminal sends one at a time.
+  readonly sendChat: (key: TerminalKey, text: string, to: ChatReply | null) => Promise<void>
+  // Sets the question the terminal's draft replies to in a session, or that it is held.
+  readonly setChatReply: (context: string, terminalId: string, to: ChatReplyTo | null) => void
 }
 
+// Whether the terminal is still in its session.
+const terminalOpen = (snapshot: Workspace, key: TerminalKey): boolean =>
+  snapshot.projects
+    .find((project) => project.id === key.projectId)
+    ?.history.find((session) => session.id === key.workspaceSessionId)
+    ?.state.roster.terminals.some((terminal) => terminal.id === key.terminalId) === true
+
 export const createChatCommands = (ctx: CommandContext): ChatCommands => {
-  const { workspace, ui, navigation } = ctx
+  const { workspace, ui, navigation, conversations } = ctx
   const { set } = shellEdits(ctx)
-  const show = (terminalId: string, on: boolean): void => {
-    const snapshot = workspace.getSnapshot()
-    const { roster, view } = currentState(snapshot)
-    const terminal = roster.terminals.find((each) => each.id === terminalId)
-    if (!terminal || (on && !chatAvailable(terminal))) return
-    const context = currentContext(snapshot)
-    ui.update((state) => {
-      const chat = setChatMode(state.chat, context, terminalId, on)
-      return chat === state.chat ? state : { ...state, chat }
-    })
-    // Where the person now types: the surface or the chat takes keyboard focus.
-    navigation.go({ terminal: terminalId })
-    set("keyboardFocus", { id: terminalId, view })
-  }
   return {
-    toggleChat: (terminalId) => {
-      const context = currentContext(workspace.getSnapshot())
-      show(terminalId, !chatModeOn(ui.getSnapshot().chat, context, terminalId))
+    showTerminal: (terminalId) => {
+      const snapshot = workspace.getSnapshot()
+      const { roster, view } = currentState(snapshot)
+      if (!roster.terminals.some((each) => each.id === terminalId)) return
+      const context = currentContext(snapshot)
+      ui.update((state) => {
+        const answering = setAnsweringInTerminal(state.answering, context, terminalId, true)
+        return answering === state.answering ? state : { ...state, answering }
+      })
+      // The surface takes keyboard focus, for the person's answer.
+      navigation.go({ terminal: terminalId })
+      set("keyboardFocus", { id: terminalId, view })
     },
-    showTerminal: (terminalId) => show(terminalId, false),
     setChatDraft: (terminalId, text) => {
       const context = currentContext(workspace.getSnapshot())
       ui.update((state) => {
         const chatDrafts = setChatDraft(state.chatDrafts, context, terminalId, text)
-        return chatDrafts === state.chatDrafts ? state : { ...state, chatDrafts }
+        if (chatDrafts === state.chatDrafts) return state
+        const held = chatReplyOf(state.chatReplies, context, terminalId) === "held"
+        return {
+          ...state,
+          chatDrafts,
+          ...(held && {
+            chatReplies: setChatReply(state.chatReplies, context, terminalId, null),
+          }),
+        }
       })
     },
     appendChatDraft: (context, terminalId, words) =>
       void ui.update((state) => {
         const draft = chatDraftOf(state.chatDrafts, context, terminalId)
-        const next = draft.trim() ? `${draft}\n${words}` : words
         return {
           ...state,
-          chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, next),
+          chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, joinDraft(draft, words)),
         }
       }),
-    clearChatDraft: (context, terminalId, sent) =>
+    sendChat: async (key, text, to) => {
+      const context = `${key.projectId}/${key.workspaceSessionId}`
+      const { terminalId } = key
+      if (!conversations) throw new Error("This backend can't reach the agent.")
+      if (chatSendOf(ui.getSnapshot().chatSends, context, terminalId) !== null)
+        throw new Error("Your last message is still on its way. Send again once it arrives.")
+      // The draft as typed goes back on a failure, not the words as sent, trimmed.
+      const draft = chatDraftOf(ui.getSnapshot().chatDrafts, context, terminalId) || text
+      ui.update((state) => ({
+        ...state,
+        chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, ""),
+        chatSends: setChatSend(state.chatSends, context, terminalId, { draft, to }),
+      }))
+      try {
+        await (to
+          ? conversations.answer(key, to.request, replyAnswer(to, text))
+          : conversations.send(key, text))
+      } catch (failure) {
+        // Back in the box, before what came meanwhile, for the person to send again; not
+        // for a terminal that closed meanwhile, whose draft went with it.
+        const open = terminalOpen(workspace.getSnapshot(), key)
+        ui.update((state) => ({
+          ...state,
+          ...(open && {
+            chatDrafts: setChatDraft(
+              state.chatDrafts,
+              context,
+              terminalId,
+              joinDraft(draft, chatDraftOf(state.chatDrafts, context, terminalId)),
+            ),
+          }),
+          chatSends: setChatSend(state.chatSends, context, terminalId, null),
+        }))
+        throw failure
+      }
+      ui.update((state) => {
+        const replied =
+          to !== null && sameReply(chatReplyOf(state.chatReplies, context, terminalId), to)
+        return {
+          ...state,
+          chatSends: setChatSend(state.chatSends, context, terminalId, null),
+          ...(replied && {
+            chatReplies: setChatReply(state.chatReplies, context, terminalId, null),
+          }),
+        }
+      })
+    },
+    setChatReply: (context, terminalId, to) =>
       void ui.update((state) => {
-        const draft = chatDraftOf(state.chatDrafts, context, terminalId)
-        const words = sent.trim()
-        const begun = draft.trimStart()
-        // Words added after it while it went, as dictated ones, stay without the sent prompt.
-        const rest = begun.startsWith(words) ? begun.slice(words.length) : null
-        const left =
-          draft.trim() === words ? "" : rest !== null && /^\s/.test(rest) ? rest.trim() : null
-        return left === null
-          ? state
-          : { ...state, chatDrafts: setChatDraft(state.chatDrafts, context, terminalId, left) }
+        const chatReplies = setChatReply(state.chatReplies, context, terminalId, to)
+        return chatReplies === state.chatReplies ? state : { ...state, chatReplies }
       }),
   }
 }

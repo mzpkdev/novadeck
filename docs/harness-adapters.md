@@ -235,7 +235,7 @@ which shows but keeps nothing working (see
 [Harness coverage](harness-coverage.md#working-past-a-turns-end)). A recognized agent
 (Claude Code, Codex or Antigravity in the foreground) with disabled or untrusted
 hooks is Not reporting: a muted "○" in its tab and a muted dashed line on its window,
-said in words to its tooltip and assistive technology, not process-derived running.
+said in words to assistive technology, not process-derived running.
 An agent that finished while the person looked elsewhere is done, its reply unread: a
 green "●" in its tab and a solid green line on its window, until they look at that
 terminal or it starts another turn. That mark is the client's own, from
@@ -326,6 +326,8 @@ type Harness = {
   readonly messaging: MessagingProfile
   /** How its input box reads off its screen (see "Screen readers"). */
   readonly box: BoxProfile
+  /** How its dialogs for requests waiting on the person read and take an answer. */
+  readonly dialogs?: DialogAdapter
 }
 
 type Command = { readonly argv: readonly string[]; readonly optional?: boolean }
@@ -443,6 +445,14 @@ Besides the facts shared with the agent model, decoders give
 - `turn-idle` is Antigravity's status line showing idle, however its turn ended, with
   `background` while a subagent still runs; without a Stop since the turn began, the
   turn ended abnormally (an Esc or a denial).
+- `turn-working` is Antigravity's status line showing work. Within a running turn its
+  `running` counts the subagents still running, which shows as the activity's
+  `background` while the turn runs; after a Stop it is ignored.
+- `telemetry-observed` may name the session's `model` and `effort`: Claude Code's status
+  line, Antigravity's hooks' `modelName` (a trailing reasoning level split off as the
+  effort), and Codex's `turn_context`. A named model without a level clears the last
+  one's; a record of the model alone keeps a clock of its own, apart from the tokens and
+  quotas (`telemetry.ts`).
 - `file-touched` names a file an actor wrote or edited, from its write and edit tools,
   for the folders a session works in.
 - `session-observed` has `compacted` when the harness says it compacted the session's
@@ -532,24 +542,92 @@ prompt's text (see [Agent messaging](agent-messaging.md#the-doorbell)).
 
 ## Screen readers
 
-`box` is the one place a harness's screen is read, for what a prompt needs: whether its
-input box is empty, and what it holds. A `BoxProfile` has `read(screen)`, which finds the
-box on a `ScreenText` (rows, the rows with dim cells blanked, the cursor, the columns),
-`collapsed(box)`, which tells the placeholder a long paste shows as, `collapses(text)` and
-`room(rows)`, which say before a paste whether it will collapse and whether it fits, and
-`queued(screen)`, which tells messages the person queued behind a turn, and for a harness
-that puts text back in its box (an interrupted prompt, queued messages), `clear(box)`, the
-keys that clear it. Shared code (`terminals/prompts.ts`, the terminal manager's interrupt) knows
-no marker, rule or placeholder.
+Two adapter fields read a harness's TUI off the screen, and shared code knows no marker,
+rule, footer or placeholder of any harness: `box` and `dialogs`.
 
-A reader fails closed: it recognises the box in full, or returns `undefined`. It never
-guesses from a screen it only half knows (a dialog, a picker, a shell's prompt after the
-agent exited, a box whose first row has scrolled off), because what follows from a read
-is a keystroke, Enter, that runs what the box holds. A prompt that can't read the box
-writes nothing and is refused (`CONFLICT`), and the chat falls back to the terminal,
-where the person sees what the agent shows. The thresholds and drawings each reader rests
-on are probed, with fixtures from real screens (`harnesses/*/fixtures/input-box.probe.json`,
-`e2e/probes/input-box.e2e.ts`); see [Harness coverage](harness-coverage.md).
+`box` is where the harness's input box is read, for what a prompt needs: whether it is
+empty, what it holds, and whether it is in its shell mode (`!`). A `BoxProfile` has
+`read(screen)`, which finds the box on a `ScreenText` (rows, the rows with dim cells
+blanked, the cursor, the columns) and says its `mode`, told by the marker leading its first
+row and checked against the harness's footer; `collapsed(box)`, which tells the placeholder
+a long paste shows as; `collapses(text)` and `room(rows)`, which say before a paste whether
+it will collapse and whether it fits; `shell`, whether a command shown as a placeholder runs
+as the text it stands for, and the footer reading; `queued(screen)`, which tells messages
+the person queued behind a turn; and for a harness that puts text back in its box (an
+interrupted prompt, queued messages), `clear(box)`, the keys that clear it. The terminal
+manager's prompts and interrupt use it.
+
+`dialogs` (`DialogAdapter`) reads the dialogs of requests waiting on the person, and says
+what keys answer them. Its answers go through the terminal manager's answer driver, which
+also knows no harness.
+
+Both fail closed under one rule: a reader recognises what it reads in full, or returns
+`undefined` (or nothing). It never guesses from a screen it only half knows (a dialog, a
+picker, a shell's prompt after the agent exited, a box whose first row has scrolled off, a
+box whose footer says shell mode over a prompt marker), because what follows from a read is a keystroke,
+Enter included, that runs what the box holds or answers a dialog. A prompt or an answer
+that can't read what it needs writes nothing and is refused (`CONFLICT`), and the chat
+falls back to the terminal, where the person sees what the agent shows. The thresholds and
+drawings each reader rests on are probed, with fixtures from real screens
+(`harnesses/*/fixtures/input-box.probe.json`, `shell-mode.probe.json`, `ask.probe.json`;
+`e2e/probes/`); see [Harness coverage](harness-coverage.md).
+
+### Answer driver
+
+The answer driver (`terminals/answers.ts`) answers a request through its `DialogAdapter`
+(see `agents.answer` in [Backend API](backend-api.md) for the contract), and knows no
+harness.
+
+- **Reading the dialog.** It holds the person's keys and waits for the screen to hold still
+  on two reads 100 ms apart. It reads the screen, again for up to 3 s before refusing a
+  dialog that may be half drawn, and has the adapter recognise the dialog in full as the
+  request's: its question and options, and its command or file against what the hook said.
+- **Pressing keys.** It presses the keys the adapter gives for the answer: digits as the
+  screen numbers them, and text as one bracketed paste where the screen takes it. Between
+  moves it waits on the adapter's own `until` checks of the screen. Every `type` step is
+  followed by one that checks the words showed in the adapter's field; an adapter whose
+  steps would type without one is an internal error, and nothing is pressed. Each key goes through the person's key
+  bookkeeping, as `agents.prompt`'s do.
+- **Confirming.** It waits up to 5 s, on a screen that held still on two reads, for the
+  adapter to see the dialog go as the answer should have it go, or for the request to be
+  gone (its hook said it was answered). An answer also counts as taken where the screen no
+  longer reads as the request's dialog and reads as another waiting request's (queued
+  permissions).
+- **The person's keys.** What the person typed meanwhile is dropped, not replayed after, and
+  counted as theirs only if delivered. The terminal's own replies (cursor-position and
+  device-attribute answers, focus reports) are never held. The mouse's wheel and motion
+  reports, which Claude Code and Codex turn tracking on for while a dialog shows, are
+  dropped while the answer holds the keys. The hold, and the window's resizes with it, last
+  as long as the answer's waits need (up to 10 minutes), not the doorbell's and prompts'
+  short caps.
+- **Twins.** Requests of the same agent (root, or the same subagent) that ask the very same
+  thing (kind, tool, input, and the directory their hook said, else the terminal's) and
+  read the same dialog are interchangeable. The dialog shows on each, an answer goes
+  through either, and the hook of either resolving counts as taken. The request the answer
+  went through is left waiting where the same dialog shows again at once: a harness folds
+  identical calls into one request, as Codex's queue of two identical commands does, so the
+  second is answered through it again. Requests that differ in any of those, a subagent's
+  and the root's among them, stay unanswerable while one screen reads for both. A twin's
+  vanishing counts as taken only where the screen moved on from the dialog read before the
+  keys.
+- **Limits and raw dialogs.** What an adapter reads is cut to the protocol's limits before
+  it shows (a long question or description). A `choices` `detail` past 4 KiB is never
+  approved from a cut view: it reads as nothing and shows raw, as does a dialog whose ids
+  or counts exceed the limits. A request raw for good (locked) still keeps another's
+  identical-looking dialog from being answerable; an answered one doesn't. An answer to a
+  request whose dialog shows `raw` without a lock (the screen reads as nothing now) is a
+  `CONFLICT` that locks nothing. Request dialogs only show raw, for want of one the adapter
+  reads, once the screen has been still for 1.5 s and the request pending for 2 s: a harness
+  may run its hooks (ours included) before it draws a dialog.
+- **Follow-up words.** Where the answer's words go on as the agent's next prompt, they are
+  given in the same input-queue entry once the dialog took its key and the screen settled.
+  For up to 10 s it tries again while the agent can't take a prompt for a reason that
+  clears by itself (a request still pending). It gives up at once on one that won't (a
+  draft in the box, no box, too tall, shell mode), and then the call is `WORDS_NOT_SENT`.
+- **Forms and directories.** A form's keys come from the adapter with the whole answer, and
+  a harness that raises no request for a form (Codex) shows none. Adapters get the
+  session's working directory (`cwd`) with each request, to resolve the paths a dialog
+  shows.
 
 ## Where sources merge
 

@@ -68,7 +68,7 @@ export type PromptShown = {
  * own records of that Stop, `recorded`, should its hook not have come); `turn-idle` says
  * the agent shows idle however its turn ended, which without such a Stop was an Esc or a
  * denial. `turn-working` says it shows working, which starts no turn: it only resumes one
- * a `turn-idle` older than it ended, never one a Stop did. A request asked `midTurn`
+ * a `turn-idle` older than it ended, never one a Stop did, and tells the subagents it runs. A request asked `midTurn`
  * waits on the person only while a turn runs, so a stale one after a Stop asks nothing.
  * `file-touched` names a file an actor wrote or edited. A request has no id of its own
  * in any harness, so `requestId` is derived from the tool call it asks about and the
@@ -120,7 +120,15 @@ export type ActivityEvent = {
       /** What the turn started that still runs, as its subagents. */
       readonly background: Background
     }
-  | { readonly type: "turn-working" }
+  | {
+      readonly type: "turn-working"
+      /**
+       * How many subagents the harness counts running as it says so, where it counts them
+       * while the turn runs, as Antigravity's status line does: they show in `background`
+       * until the turn ends.
+       */
+      readonly running?: number
+    }
   /**
    * Novadeck continued the root turn its Stop, started at `startedAt`, would have ended,
    * delivering messages with the hook's answer: the turn goes on until the continuation's
@@ -138,6 +146,12 @@ export type ActivityEvent = {
    * says, as Claude Code's Escape before its first reply. Started when the key came.
    */
   | { readonly type: "turn-escaped" }
+  /**
+   * The window the harness has to say how the turn the person's Escape ended, at
+   * `startedAt`, ended has passed (`escapeVerdictMs`): a Stop it reported meanwhile is the
+   * turn's end, else the Escape stands.
+   */
+  | { readonly type: "turn-escape-lapsed" }
   | { readonly type: "file-touched"; readonly actor: string | null; readonly path: string }
   | {
       readonly type: "attention-requested"
@@ -148,6 +162,18 @@ export type ActivityEvent = {
       /** What it asks about, and the answers it offers, where its call names them. */
       readonly subject: string | null
       readonly choices: readonly string[]
+      /**
+       * The tool's input as the hook gave it (questions, a command, a plan), for the
+       * harness's dialog adapter to check its dialog against; absent where none came.
+       */
+      readonly input?: unknown
+      /** The directory the agent's hook said it ran in, where it said one. */
+      readonly cwd?: string
+      /**
+       * Whether only the screen told it (see `DialogAdapter.screenRequest`): the terminal
+       * manager raises it, and it resumes no turn.
+       */
+      readonly screen?: true
       /**
        * Whether only a root turn running asks it, and only a snapshot that may lag behind
        * the turn's end tells it, as Antigravity's status line shows a confirmation: it
@@ -181,8 +207,9 @@ export type ActivityEvent = {
 )
 
 /**
- * What a session's own records said of its tokens and quotas, each part only when they
- * named it: how full its context is, and its rate-limit windows.
+ * What a session's own records said of its tokens, quotas and model, each part only when
+ * they named it: how full its context is, its rate-limit windows, the model's name and its
+ * reasoning effort.
  */
 export type TelemetryObserved = {
   readonly type: "telemetry-observed"
@@ -192,6 +219,8 @@ export type TelemetryObserved = {
   readonly startedAt: number
   readonly context?: AgentTelemetry["context"]
   readonly limits?: AgentTelemetry["limits"]
+  readonly model?: AgentTelemetry["model"]
+  readonly effort?: AgentTelemetry["effort"]
 }
 
 /**

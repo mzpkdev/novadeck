@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto"
 import { extname, isAbsolute, relative } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
 import type { HarnessEvent, PromptShown } from "../events.js"
-import { absolute, sessionId, text } from "../harness.js"
+import { absolute, shortName, sessionId, text } from "../harness.js"
 
 /**
  * Antigravity's hooks, as normalized facts. Every hook names the conversation it runs in,
@@ -20,8 +21,52 @@ import { absolute, sessionId, text } from "../harness.js"
  * turn asks for one.
  * Every hook names the conversation's transcript. A plan is an artifact it writes asking
  * for the person's review, which its PostToolUse names.
+ * PreToolUse, which Novadeck answers "ask" at once, names the call about to run. Its
+ * ask_question is a request of its own, as no status line tells that dialog, resolved by
+ * its PostToolUse. Any other call may or may not ask the person, as their policy says, so
+ * it asks nothing here; the latest of each conversation is only remembered, as the call a
+ * confirmation the status line shows is about (see `confirmation`).
  */
-export const decode = ({ event, seq, instance, payload }: Report): readonly HarnessEvent[] => {
+export const decode = (report: Report): readonly HarnessEvent[] => {
+  const events = decodeEvent(report)
+  const { seq, instance, payload } = report
+  const id = sessionId(payload.conversationId)
+  const model = report.event === "StatusLine" ? undefined : reading(payload.modelName)
+  return id && model
+    ? [
+        ...events,
+        {
+          type: "telemetry-observed",
+          agent: "agy",
+          sessionId: id,
+          instance,
+          startedAt: seq,
+          ...model,
+        },
+      ]
+    : events
+}
+
+// The reasoning levels Antigravity's model names end in.
+const levels: ReadonlySet<string> = new Set(["minimal", "low", "medium", "high", "xhigh"])
+
+/**
+ * A hook's model name, with a trailing reasoning level split off as the effort. That the
+ * suffix is a level is an inference from the names seen (`gemini-3.8-flash-high`), not
+ * something Antigravity documents; any other name is the model whole, with no effort, which
+ * clears the last model's.
+ */
+const reading = (name: unknown): { model: string; effort: string | null } | undefined => {
+  const whole = shortName(name, 128)
+  if (!whole) return undefined
+  const cut = whole.lastIndexOf("-")
+  const level = whole.slice(cut + 1)
+  return cut > 0 && levels.has(level)
+    ? { model: whole.slice(0, cut), effort: level }
+    : { model: whole, effort: null }
+}
+
+const decodeEvent = ({ event, seq, instance, payload }: Report): readonly HarnessEvent[] => {
   if (event === "StatusLine") return statusLine({ seq, instance, payload })
   const id = sessionId(payload.conversationId)
   if (!id) return []
@@ -57,11 +102,104 @@ export const decode = ({ event, seq, instance, payload }: Report): readonly Harn
           background: { agents: 0, tasks: 0, ...(payload.fullyIdle === false && { more: true }) },
         },
       ]
+    case "PreToolUse":
+      return [observed, ...calling(base, id, payload)]
     case "PostToolUse":
-      return [observed, ...written(base, payload), ...artifact(base, payload)]
+      return [
+        observed,
+        ...written(base, payload),
+        ...artifact(base, payload),
+        ...answered(base, payload),
+      ]
     default:
       return [observed]
   }
+}
+
+type Base = { agent: "agy"; sessionId: string; instance: string | null; startedAt: number }
+
+/** A tool call as a hook names it. */
+type ToolCall = { readonly name: string; readonly args: Record<string, unknown> }
+
+const toolCall = (payload: Report["payload"]): ToolCall | undefined => {
+  const { name, args } = (payload.toolCall ?? {}) as { name?: unknown; args?: unknown }
+  if (typeof name !== "string" || name === "") return undefined
+  return {
+    name,
+    args: typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {},
+  }
+}
+
+// The latest call each conversation's PreToolUse named, for as many conversations as it
+// has any use for: a confirmation always follows its own call's hook. A confirmation of a
+// call this doesn't hold, or that a later call replaced (parallel calls), gets no input,
+// and its dialog stays unrecognised.
+const latest = new Map<string, { call: ToolCall; id: string }>()
+const remembered = 32
+
+// A call's request id: its step, which its PostToolUse names too, or a hash of its input.
+const callId = (call: ToolCall, payload: Report["payload"]): string =>
+  typeof payload.stepIdx === "number"
+    ? `${call.name}:${payload.stepIdx}`
+    : `${call.name}:${createHash("sha256").update(JSON.stringify(call.args)).digest("hex").slice(0, 16)}`
+
+// What ask_question's questions are, as its call gives them.
+const questionsOf = (call: ToolCall): { question: string; options: string[] }[] =>
+  (Array.isArray(call.args.questions) ? call.args.questions : []).flatMap((each: unknown) => {
+    const { question, options } = (each ?? {}) as { question?: unknown; options?: unknown }
+    return typeof question === "string"
+      ? [
+          {
+            question,
+            options: Array.isArray(options)
+              ? options.filter((option): option is string => typeof option === "string")
+              : [],
+          },
+        ]
+      : []
+  })
+
+// A call about to run: remembered as the one a confirmation may be about, and, for
+// ask_question, a question the person is asked.
+const calling = (base: Base, conversation: string, payload: Report["payload"]): HarnessEvent[] => {
+  const call = toolCall(payload)
+  if (!call) return []
+  latest.delete(conversation)
+  latest.set(conversation, { call, id: callId(call, payload) })
+  for (const [oldest] of latest) if (latest.size > remembered) latest.delete(oldest)
+  if (call.name !== "ask_question") return []
+  const [first] = questionsOf(call)
+  if (!first) return []
+  return [
+    {
+      type: "attention-requested",
+      ...base,
+      requestId: callId(call, payload),
+      actor: null,
+      toolName: call.name,
+      kind: "question",
+      subject: first.question,
+      choices: first.options,
+      input: call,
+    },
+  ]
+}
+
+// An ask_question that was answered, or skipped: its PostToolUse.
+const answered = (base: Base, payload: Report["payload"]): HarnessEvent[] => {
+  const call = toolCall(payload)
+  if (call?.name !== "ask_question") return []
+  return [
+    {
+      type: "attention-resolved",
+      ...base,
+      requestId: callId(call, payload),
+      actor: null,
+      toolName: call.name,
+      loose: false,
+      outcome: "allowed",
+    },
+  ]
 }
 
 // A plan: Markdown the agent writes, in the conversation's own folder, as an artifact
@@ -166,7 +304,10 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
   // the turn waited on. A snapshot's hook may start after the next turn's, so none of
   // these holds for long against a wrong one.
   const working = payload.agent_state === "working" || payload.agent_state === "tool_use"
-  if (working) events.push({ type: "turn-working", ...base })
+  // It lists its subagents while the turn runs too, so a working snapshot tells how many
+  // run, by status and not position, as the list's order flips (probed 2026-10-07, 1.2.16).
+  if (working)
+    events.push({ type: "turn-working", ...base, running: subagentsRunning(payload.subagents) })
   if (payload.agent_state === "idle")
     events.push({
       type: "turn-idle",
@@ -178,9 +319,13 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
       type: "attention-requested",
       ...base,
       ...confirmation,
+      // One request per call it is about, so back-to-back confirmations are distinct.
+      ...(latest.has(id) && { requestId: `confirmation:${latest.get(id)!.id}` }),
       kind: "permission",
       subject: null,
       choices: [],
+      // The call its conversation's latest PreToolUse named: the status line names none.
+      ...(latest.has(id) && { input: latest.get(id)!.call }),
       midTurn: true,
     })
   else if (working)
@@ -188,7 +333,8 @@ const statusLine = ({ seq, instance, payload }: Pick<Report, "seq" | "instance" 
       type: "attention-resolved",
       ...base,
       ...confirmation,
-      loose: false,
+      // Whichever call's, as the status line names none: the actor's oldest.
+      loose: true,
       outcome: "allowed",
     })
   const window = (payload.context_window ?? {}) as Record<string, unknown>

@@ -1,6 +1,8 @@
 import {
   agentWorking,
+  finishGraceMs,
   finishNotice,
+  standingFinish,
   sightTurnEnd,
   type AgentFinish,
   type SeenEnd,
@@ -15,11 +17,17 @@ import { writeSidebarCollapsed, writeWindowedView } from "../shell/shell-storage
 import {
   chatKept,
   keepChatDrafts,
-  keepChatModes,
+  keepChatReplies,
+  settleChatReplies,
+  keepTerminalAnswers,
   noChatDrafts,
-  noChatModes,
+  noChatReplies,
+  noChatSends,
+  noTerminalAnswers,
   type ChatDrafts,
-  type ChatModes,
+  type ChatReplies,
+  type ChatSends,
+  type TerminalAnswers,
 } from "../terminals/chat/mode-state"
 import { nextRecent, visibleSwitcher, type RecentSwitcher } from "../terminals/recent"
 import type { RenameSession } from "../terminals/rename-state"
@@ -60,10 +68,15 @@ export type UiState = {
   readonly pageFocused: boolean
   // The terminals whose agent finished while the person looked elsewhere.
   readonly unread: Unread
-  // The terminals showing their agent's conversation instead of their screen.
-  readonly chat: ChatModes
-  // What they typed there and have not sent.
+  // The terminals showing their screen though the chat view is on, as the person went to
+  // answer their agent there.
+  readonly answering: TerminalAnswers
+  // What the person typed in a terminal's chat and has not sent.
   readonly chatDrafts: ChatDrafts
+  // The question each draft replies to, or that it is held once that question went.
+  readonly chatReplies: ChatReplies
+  // The words on their way from there to the agent, out of the draft until they arrive.
+  readonly chatSends: ChatSends
 }
 
 export type UiLocation = {
@@ -98,8 +111,10 @@ export const initialUi = ({
   crashLoop: 0,
   pageFocused: true,
   unread: noUnread,
-  chat: noChatModes,
+  answering: noTerminalAnswers,
   chatDrafts: noChatDrafts,
+  chatReplies: noChatReplies,
+  chatSends: noChatSends,
 })
 
 export const updateShell = (ui: UiStore, change: (shell: ShellState) => ShellState): void =>
@@ -249,28 +264,60 @@ const contextOf = (key: string, terminal: TerminalMetadata): string =>
   key.slice(0, key.length - terminal.id.length - 1)
 
 // A terminal shows its chat only while an agent runs in it: once the agent ends, or the
-// terminal goes, the screen comes back, and a later agent starts on it too. What was typed
-// in the chat and not sent stays until the terminal goes, for the next agent there.
+// terminal goes, the screen comes back. A terminal the person went to answer in shows its
+// chat again once its agent no longer waits on them, or a later agent starts. What was
+// typed in the chat and not sent stays until the terminal goes, for the next agent there.
 export const watchChatModes = (workspace: Store<Workspace>, ui: UiStore): (() => void) => {
-  let projects = workspace.getSnapshot().projects
+  let previous = workspace.getSnapshot()
   return workspace.subscribe(() => {
     const snapshot = workspace.getSnapshot()
-    if (snapshot.projects === projects) return
-    projects = snapshot.projects
+    if (snapshot.projects === previous.projects) return
+    const before = previous
+    previous = snapshot
     const held = ui.getSnapshot()
-    if (held.chat === noChatModes && held.chatDrafts === noChatDrafts) return
+    if (
+      held.answering === noTerminalAnswers &&
+      held.chatDrafts === noChatDrafts &&
+      held.chatReplies === noChatReplies
+    )
+      return
     const terminals = terminalsOf(snapshot)
     const keep = (context: string, id: string): boolean => {
       const terminal = terminals.get(`${context}/${id}`)
       return terminal !== undefined && chatKept(terminal)
     }
     const open = (context: string, id: string): boolean => terminals.has(`${context}/${id}`)
+    const earlier = held.answering === noTerminalAnswers ? undefined : terminalsOf(before)
+    // Answered: its agent waited on the person a moment ago, and no longer does.
+    const answered = (context: string, id: string): boolean => {
+      const was = earlier?.get(`${context}/${id}`)
+      const now = terminals.get(`${context}/${id}`)
+      return (
+        was?.state === "running" &&
+        was.agent?.attention !== undefined &&
+        now?.state === "running" &&
+        now.agent?.attention === undefined
+      )
+    }
     ui.update((state) => {
-      const chat = keepChatModes(state.chat, keep)
+      const answering = keepTerminalAnswers(
+        state.answering,
+        (context, id) => keep(context, id) && !answered(context, id),
+      )
       const chatDrafts = keepChatDrafts(state.chatDrafts, open)
-      return chat === state.chat && chatDrafts === state.chatDrafts
+      // What a draft replies to, or that it is held, stays as long as the draft: a reply
+      // whose question went with its agent comes back held, never as a message, and never
+      // replies to a later agent's question.
+      const chatReplies = settleChatReplies(
+        keepChatReplies(state.chatReplies, open),
+        chatDrafts,
+        (context, id) => open(context, id) && !keep(context, id),
+      )
+      return answering === state.answering &&
+        chatDrafts === state.chatDrafts &&
+        chatReplies === state.chatReplies
         ? state
-        : { ...state, chat, chatDrafts }
+        : { ...state, answering, chatDrafts, chatReplies }
     })
   })
 }
@@ -291,10 +338,12 @@ export const watchFinishes = (
   workspace: Store<Workspace>,
   ui: UiStore,
   notify?: FinishNotify,
+  graceMs = finishGraceMs,
 ): (() => void) => {
   let previous = workspace.getSnapshot()
   let terminals = new Map<string, TerminalMetadata>()
   const seen = new Map<string, SeenEnd>()
+  const waiting = new Set<ReturnType<typeof setTimeout>>()
   const setUnread = (change: (unread: Unread) => Unread): void =>
     void ui.update((state) => {
       const unread = change(state.unread)
@@ -328,13 +377,38 @@ export const watchFinishes = (
     if (snapshot.projects === previous.projects) return look()
     previous = snapshot
     const { finished, working } = sight()
-    const looking = viewing(snapshot, ui.getSnapshot())
     setUnread((current) => {
       let unread = keepUnread(current, (context, id) => terminals.has(`${context}/${id}`))
       for (const key of working) {
         const terminal = terminals.get(key)!
         unread = clearUnread(unread, contextOf(key, terminal), terminal.id)
       }
+      return viewUnread(unread, viewing(snapshot, ui.getSnapshot()))
+    })
+    for (const each of finished) {
+      // A completed end waits, in case its harness then says the person's Escape stopped
+      // the turn (see `finishGraceMs`); one that failed was there.
+      if (each.finish.failed || graceMs <= 0) announce([each])
+      else {
+        const at = seen.get(each.key)
+        const timer = setTimeout(() => {
+          waiting.delete(timer)
+          const current = terminals.get(each.key)
+          const finish =
+            current && at !== null && at !== undefined ? standingFinish(current, at) : undefined
+          if (current && finish) announce([{ key: each.key, terminal: current, finish }])
+        }, graceMs)
+        waiting.add(timer)
+      }
+    }
+  }
+  // Marks and notifies the finishes, unless the person looks at that terminal.
+  const announce = (
+    finished: readonly { key: string; terminal: TerminalMetadata; finish: AgentFinish }[],
+  ): void => {
+    const looking = viewing(workspace.getSnapshot(), ui.getSnapshot())
+    setUnread((current) => {
+      let unread = current
       for (const { key, terminal, finish } of finished)
         unread = markUnread(
           unread,
@@ -352,5 +426,8 @@ export const watchFinishes = (
     }
   }
   const stops = [workspace.subscribe(follow), ui.subscribe(look)]
-  return () => stops.forEach((stop) => stop())
+  return () => {
+    stops.forEach((stop) => stop())
+    waiting.forEach(clearTimeout)
+  }
 }

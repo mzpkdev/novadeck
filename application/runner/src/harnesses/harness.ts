@@ -11,6 +11,7 @@ import {
 
 import type { Report } from "../shell/reports.js"
 import type { BoxProfile } from "./box.js"
+import type { DialogAdapter } from "./dialogs.js"
 import type { HarnessEvent, PlanSource, PromptShown } from "./events.js"
 
 /** Where a harness lives on this machine, as its setup and inspection need it. */
@@ -100,12 +101,26 @@ export type Harness = {
    * docs/harness-coverage.md, "Activity").
    */
   readonly wakes: boolean
+  /**
+   * Whether it says more of how a turn ended than its Stop hook, after the person's
+   * Escape: Claude Code's transcript and Codex's `Interrupt` hook and rollout record the
+   * interruption or the finish, and their Stop fires for a turn they took the key just
+   * after the reply of, so the Stop alone is not the end. Antigravity fires its Stop only
+   * for a turn that finished, so there it is (see docs/harness-coverage.md, "Escape against
+   * a reply on its way").
+   */
+  readonly records: boolean
   /** How it takes part in agents' messaging: what its hooks print, and how it behaves. */
   readonly messaging: MessagingProfile
   /** How its input box reads off its screen, which a prompt checks before and after it pastes. */
   readonly box: BoxProfile
   /** The normalized facts in one of its hooks' reports; none for one it ignores. */
   readonly decode: (report: Report) => readonly HarnessEvent[]
+  /**
+   * How its TUI's dialogs for requests waiting on the person read on screen and take an
+   * answer, so the chat can answer them (see `dialogs.ts`); absent where none can be.
+   */
+  readonly dialogs?: DialogAdapter
   /**
    * Whether one of its hooks' reports says its prompt shows before any session it names
    * has bound, as Antigravity's status line saying idle with no conversation yet.
@@ -320,6 +335,21 @@ export const absolute = (value: unknown): string | undefined =>
     : undefined
 
 /**
+ * Each request among `events` with the directory its hook named, where it named an
+ * absolute one, so a dialog's relative paths resolve where that agent runs.
+ */
+export const withRequestCwd = (
+  events: readonly HarnessEvent[],
+  payload: { readonly cwd?: unknown },
+): readonly HarnessEvent[] => {
+  const cwd = absolute(payload.cwd)
+  if (!cwd) return events
+  return events.map((event) =>
+    event.type === "attention-requested" && event.cwd === undefined ? { ...event, cwd } : event,
+  )
+}
+
+/**
  * An id for the tool call a permission request asks about, which no harness names: the
  * actor that asks (null for the root agent), the tool and a digest of its input, so the
  * call's own result can resolve it.
@@ -401,6 +431,19 @@ export const text = (value: unknown): string | undefined =>
 const escapes = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g
 // eslint-disable-next-line no-control-regex -- As above.
 const controls = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g
+// As above, with the invisible and line-breaking marks a name shouldn't hold either.
+// eslint-disable-next-line no-control-regex -- As above.
+const control = /[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/
+
+/**
+ * A short name a harness gives, such as its model's, which is shown as it is: not blank,
+ * within `max` characters, and with no control character or reordering in it.
+ */
+export const shortName = (value: unknown, max: number): string | undefined => {
+  if (typeof value !== "string") return undefined
+  const name = value.trim()
+  return name && name.length <= max && !control.test(name) ? name : undefined
+}
 // Markdown's marks that read as noise in plain text: emphasis, code, a heading's or a
 // quote's lead, a list's bullet, and a link's brackets around its text.
 const marks = /(\*\*|`+|~~)/g

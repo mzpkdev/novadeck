@@ -1,3 +1,4 @@
+import type { Refused } from "./prompt-refusal"
 import type { Store } from "./store"
 
 // The conversation of the agent a terminal runs, as the agent's own records tell it: its
@@ -27,9 +28,107 @@ export type ChatItem = {
   readonly author: string | null
 }
 
+// What a request's dialog in the agent's TUI offers, as the backend read it, so the chat
+// can answer it (`Conversations.answer`):
+// - `choices`: options to pick one of (a permission, a plan approval). An option with
+//   `text` takes the person's words: typed into the dialog's own field (`field`), or sent
+//   as the agent's next prompt once it's chosen (`prompt`).
+// - `questions`: one or more questions, each with its options, whether several may be
+//   picked, and whether the person may answer in their own words.
+// - `form`: a form an MCP server asks the person to fill: its message and fields (text, a
+//   number, yes or no, or one of a set of choices), accepted with values or declined.
+// - `raw`: a dialog is up, but it can't be answered from the chat: the backend doesn't
+//   recognise it (as after an agent update changed it), the agent offers no way to
+//   (`unsupported`), or an answer didn't take (`failed`). `text` is what the terminal
+//   shows of it, to read; the person answers in the terminal.
+// A readable dialog has an `id`, which an answer names: the backend refuses an answer to
+// a dialog that no longer reads the same, pressing nothing. `detail` is what the dialog
+// shows of what it asks about (the command, the tool's arguments), to read before
+// answering.
+export type ChatDialogOption = {
+  readonly id: string
+  readonly label: string
+  readonly text: "field" | "prompt" | null
+}
+export type ChatQuestion = {
+  readonly id: string
+  readonly header: string | null
+  readonly question: string
+  readonly options: readonly {
+    readonly id: string
+    readonly label: string
+    readonly description: string | null
+  }[]
+  readonly multiSelect: boolean
+  readonly text: boolean
+}
+export type ChatFormField = {
+  readonly id: string
+  readonly label: string
+  readonly description: string | null
+  readonly kind: "text" | "number" | "boolean" | "choice"
+  readonly choices: readonly string[]
+  readonly required: boolean
+}
+export type ChatDialog =
+  | {
+      readonly type: "choices"
+      readonly id: string
+      readonly title: string | null
+      readonly detail: string | null
+      readonly options: readonly ChatDialogOption[]
+    }
+  | {
+      readonly type: "questions"
+      readonly id: string
+      // Whether the person may set the questions aside to talk it over first, and how
+      // their words reach the agent then: typed into the dialog, or as its next prompt.
+      readonly chat: "field" | "prompt" | null
+      readonly questions: readonly ChatQuestion[]
+    }
+  | {
+      readonly type: "form"
+      readonly id: string
+      readonly message: string
+      readonly fields: readonly ChatFormField[]
+    }
+  | {
+      readonly type: "raw"
+      readonly text: string
+      readonly reason: "unrecognized" | "unsupported" | "failed"
+    }
+
+// The person's answer to a dialog: an option by id, with their words where it takes them;
+// an answer per question, by ids, with the options picked and/or their own words; or a
+// form accepted with a value per field, by id, or declined.
+export type ChatAnswer =
+  | {
+      readonly type: "choice"
+      readonly dialog: string
+      readonly option: string
+      readonly text?: string
+    }
+  | {
+      readonly type: "questions"
+      readonly dialog: string
+      readonly answers: readonly {
+        readonly question: string
+        readonly options: readonly string[]
+        readonly text?: string
+      }[]
+    }
+  | { readonly type: "chat"; readonly dialog: string; readonly text?: string }
+  | {
+      readonly type: "form"
+      readonly dialog: string
+      readonly action: "accept" | "decline"
+      readonly values: Readonly<Record<string, string | number | boolean>>
+    }
+
 // A request of the agent's, or of a subagent it started, that waits on the person: a
 // permission, a question or a plan to approve, what it asks about, and the answers it
-// offers, where its harness tells them. The person answers it in the agent's own TUI.
+// offers, where its harness tells them. `dialog` is how its dialog in the agent's TUI
+// reads, once it's on screen; null before, or where the backend reads none.
 export type ChatRequest = {
   readonly id: string
   readonly kind: "permission" | "question" | "plan"
@@ -38,6 +137,9 @@ export type ChatRequest = {
   readonly choices: readonly string[]
   // Whether a subagent asks, rather than the root agent.
   readonly subagent: boolean
+  readonly dialog: ChatDialog | null
+  // Whether it was answered from the chat and the agent has yet to report it settled.
+  readonly answered: boolean
 }
 
 // A terminal's conversation now. `agent` and `session` name the agent's session bound to
@@ -82,4 +184,103 @@ export type Conversations = {
   // had queued behind the turn, which the agent gave back and the chat's box takes again,
   // or null. Rejects as `send` does.
   readonly interrupt: (key: ConversationKey) => Promise<string | null>
+  // Answers a request through its dialog in the agent's TUI, as the person would with its
+  // keys, resolving once it took. Rejects as `send` does; a dialog that can't be answered
+  // safely turns `raw`, for the person to answer in the terminal.
+  readonly answer: (key: ConversationKey, request: string, answer: ChatAnswer) => Promise<void>
+  // Whether `send`, or an answer's words that go on as a prompt, would be refused for the
+  // text's shape, so the chat warns before it sends. Text that is nothing but white space
+  // isn't refused here, though `send` refuses it: the chat sends no empty message, and an
+  // option's words are optional, so there is nothing to warn about yet.
+  readonly refused: Refused
+}
+
+// What `Conversations.answer` rejects with when the answer took but the words that follow
+// (sent as a prompt after an option or a chat) did not reach the agent: the request is
+// answered, and what the person wrote is theirs to send again.
+export class WordsLost extends Error {
+  constructor() {
+    super("Answered, but your words didn't reach the agent.")
+    this.name = "WordsLost"
+  }
+}
+
+// Why the agent couldn't take what was typed into its terminal for the person, as the
+// backend says: a request waits on the person (`pending`), another agent's message is
+// reaching it (`ringing`), its input box holds text already (`draft`), is in its shell mode
+// (`shell`) or isn't found on its screen (`no-box`), no agent is running there (`no-agent`),
+// the text has no room in the box on this screen (`too-tall`), or the screen takes no pasted
+// text yet (`no-paste`).
+export type ConflictReason =
+  | "pending"
+  | "ringing"
+  | "draft"
+  | "no-agent"
+  | "no-box"
+  | "too-tall"
+  | "shell"
+  | "no-paste"
+
+// What the person did that the agent couldn't take: sent a message, pressed Stop, or picked
+// an option of a request.
+export type ChatAction = "send" | "stop" | "answer"
+
+// A failure the person settles in the agent's terminal, which the chat offers to show.
+export class SettleInTerminal extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "SettleInTerminal"
+  }
+}
+
+// Stop took the turn's Escape, but the words queued behind it are still in the agent's box.
+export const notCleared = (): SettleInTerminal =>
+  new SettleInTerminal(
+    "Stopped. Your queued message is still in the agent's box: clear it in the terminal.",
+  )
+
+// What the person is told when the agent couldn't take what the chat typed for them, by
+// why and by what they did: what clears by itself says to try that again, and what the
+// person settles in the terminal says so and offers it. Without a reason the backend gave,
+// the terminal is where to look.
+export const conflictFailure = (reason: ConflictReason | undefined, action: ChatAction): Error => {
+  const again = { send: "send again", stop: "stop it again", answer: "answer again" }[action]
+  const retry = { send: "Send again", stop: "Stop it again", answer: "Try the answer again" }[
+    action
+  ]
+  switch (reason) {
+    case "pending":
+      // A request's dialog takes a message's or a Stop's keys as its answer.
+      return new Error(
+        action === "stop"
+          ? "The agent is waiting for your answer. Answer it first, then stop it."
+          : "The agent is waiting for your answer. Answer it here, then send again.",
+      )
+    case "ringing":
+      return new Error(`Another agent's message is reaching it right now. ${retry} in a moment.`)
+    case "no-paste":
+      return new Error(
+        `The agent isn't ready for ${action === "send" ? "a message" : "that"} yet. ${retry} in a moment.`,
+      )
+    case "draft":
+      return new SettleInTerminal(
+        `The agent's input box already holds text. Clear it in the terminal, then ${again}.`,
+      )
+    case "shell":
+      return new SettleInTerminal(
+        `The agent's input box is in shell mode. Leave it in the terminal, then ${again}.`,
+      )
+    case "too-tall":
+      return new SettleInTerminal(
+        "This is too long for the agent's input box on this screen. Make the terminal larger or the message shorter.",
+      )
+    case "no-agent":
+      return new SettleInTerminal("No agent is running in this terminal.")
+    case "no-box":
+      return new SettleInTerminal(
+        "Novadeck can't find the agent's input box on its screen. Check the terminal.",
+      )
+    default:
+      return new SettleInTerminal("The agent can't take that right now. Check its terminal.")
+  }
 }

@@ -34,6 +34,8 @@ export type CommandsOptions = {
   readonly resetTitle?: Backend["resetTitle"]
   // Every terminal's companion pane, when the backend has companions.
   readonly panes?: CommandContext["panes"]
+  // The agents' conversations, when the backend reads them.
+  readonly conversations?: CommandContext["conversations"]
 }
 
 // Real stores, navigator, commands and store subscriptions over a fixture workspace, with effects that
@@ -48,6 +50,7 @@ export const openCommands = ({
     appearance,
     notifyFinished: true,
     ligatures: false,
+    chatView: false,
   },
   desktop = true,
   canvas,
@@ -55,6 +58,7 @@ export const openCommands = ({
   crashLoop,
   resetTitle,
   panes,
+  conversations,
 }: CommandsOptions = {}) => {
   const [pathname = "", query = ""] = url.split("?")
   const resolved = resolveRoute(workspace, { pathname, search: `?${query}` }, preferences, 0)
@@ -98,6 +102,7 @@ export const openCommands = ({
     desktop: () => screen.desktop,
     now: () => Date.UTC(2026, 8, 26, 14, 5),
     newId: () => `session-${++ids}`,
+    stageSize: () => undefined,
   }
   const {
     bind,
@@ -144,6 +149,7 @@ export const openCommands = ({
     crashLoop,
     resetTitle,
     panes,
+    conversations,
   }
   const commands = createWorkspaceCommands(context)
   // The subscriptions the provider attaches; nothing persists to storage here.
