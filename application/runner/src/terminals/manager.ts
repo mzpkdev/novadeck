@@ -3081,7 +3081,13 @@ export class Terminals {
       const before = record.binding
       record.agents = next.sessions
       record.binding = next.binding
-      if (next.binding !== null) record.suspended = null
+      if (next.binding !== null) {
+        // After a suspended agent, a binding is that agent back from `fg`, or another the
+        // person started at the prompt, which its lead never directed.
+        if (record.suspended !== null && next.binding.instance !== record.suspended)
+          this.endLead(record)
+        record.suspended = null
+      }
       changed = true
       // A newly bound session waits for its first prompt; one still bound keeps its activity.
       const same =

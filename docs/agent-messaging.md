@@ -180,11 +180,12 @@ The rules that keep this safe:
   cleared, saved and announced, messaging stops treating the former lead as one for
   later sends, and its messages still waiting for that terminal's first session, its
   brief among them, become gone, with the sender told, so they never reach an agent
-  the person starts there later. A suspended agent (Ctrl+Z) keeps its lead; if it is
-  later found gone without a session having bound again, the next shell prompt ends
-  it. `/clear` (a new session of the same agent) and a restore or restart that resumes
-  the agent's session keep it. What was sent to a session keeps the authority it had
-  (next rule).
+  the person starts there later. A suspended agent (Ctrl+Z) keeps its lead while it is
+  the one that comes back with `fg`; if it is later found gone without a session
+  having bound again, the next shell prompt ends it, and another agent the person
+  starts beside it ends it as it binds. `/clear` (a new session of the same agent) and
+  a restore or restart that resumes the agent's session keep it. What was sent to a
+  session keeps the authority it had (next rule).
 - **Authority is fixed at send.** Each message records `fromLead` (its sender was its
   recipient's lead) and `toLead` (its recipient was its sender's lead) from the leads
   running at that moment. Delivery marks only `fromLead` messages, whatever happens to the

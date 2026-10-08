@@ -1797,6 +1797,31 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await expect.poll(() => manager.get(ids.worker).ledBy).toBeNull()
   })
 
+  it("ends a worker's lead when the person starts another agent beside its suspended one", async ({
+    shell,
+  }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const ids = { lead: randomUUID(), worker: randomUUID() }
+    keepLed(shell, ids, session)
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    await create(manager, shell, { id: ids.lead, restore: true })
+    await create(manager, shell, { id: ids.worker, restore: true, resume: "claude" })
+    await next((summary) => summary.id === ids.worker && summary.agent === "claude")
+    manager.write({ terminalId: ids.worker, data: "\x1a" }, "owner")
+    await shell.until(manager, ids.worker, "Stopped")
+    manager.write({ terminalId: ids.worker, data: "echo back\r" }, "owner")
+    await shell.until(manager, ids.worker, /\nback\r?\n/)
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
+    // Another agent, not the suspended one back from `fg`, binds there: the lead never
+    // directed it.
+    manager.write({ terminalId: ids.worker, data: "claude\r" }, "owner")
+    await expect.poll(() => manager.get(ids.worker).ledBy).toBeNull()
+    expect(shell.store.terminalIdentity(ids.worker)?.ledBy).toBeNull()
+  })
+
   it("ends a worker's lead when its agent exits before any session bound, and its brief is gone", async ({
     shell,
   }) => {
