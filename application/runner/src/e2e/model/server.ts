@@ -89,7 +89,8 @@ export type FakeModel = {
   /**
    * Has a failed `waitFor` say more than the calls: `describe` is asked when one times
    * out (and given `timeoutMs`, five seconds unless given, to answer), for what the
-   * test's other side shows, such as the terminals' screens. Replaces any given before. What it says should be short; past 6000 characters it is cut.
+   * test's other side shows, such as the terminals' screens. Replaces any given before.
+   * What it says should be short; past 6000 characters it is cut.
    */
   readonly explain: (describe: () => Promise<string>, timeoutMs?: number) => void
   /** Adds rules ahead of the ones given before. */
