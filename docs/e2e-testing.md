@@ -406,11 +406,13 @@ for (const setup of setups) {
   and failed, is recorded in `model.rejections` when the call carrying it arrives. The
   deck's waits (`until`, `reached`, `through`, `poll`, `confirm`, `submit`) and
   `model.waitFor` then fail within a tenth of a second, naming the call and the harness's
-  answer, instead of timing out downstream, and a refusal no wait failed with
-  fails the test at its end instead. A probe that provokes one on purpose says so with
+  answer, instead of timing out downstream. The test also fails at its end with the
+  refusal, even when a wait already failed with it, so a test that catches that wait's
+  error can't hide it. A probe that provokes one on purpose says so with
   `model.expectRejection(match)`, which keeps matching refusals out of `rejections`
   (in `model.expected`). A rule that answers with a tool call must skip side calls, as
-  `own` does: they offer no tools, so the harness refuses the call. The wordings seen, probed in the sandbox: Claude Code's
+  `own` does: they offer no tools, so the harness refuses the call. The wordings seen,
+  probed in the sandbox: Claude Code's
   `<tool_use_error>` for an unknown tool (`Error: No such tool available`) or arguments
   it won't take (`InputValidationError`), Codex's `unsupported call: <tool>` and `failed
 to parse function arguments`, and Antigravity's `Encountered error in tool validation`,

@@ -485,7 +485,6 @@ describe("startFakeModel's expected rejections", () => {
     expect(model.rejections).toEqual([])
     expect(model.expected).toHaveLength(1)
     expect(model.rejection()).toBeUndefined()
-    expect(model.untold()).toBeUndefined()
   })
 
   it("still counts a refusal of another call", async ({ model }) => {
@@ -496,13 +495,15 @@ describe("startFakeModel's expected rejections", () => {
     expect(model.rejections).toHaveLength(1)
   })
 
-  it("leaves untold only a refusal no wait has failed with", async ({ model }) => {
+  it("keeps reporting a refusal after a wait failed with it, for a test that swallowed that", async ({
+    model,
+  }) => {
     await turns(model, sent("REFUSED: unknown tool"))
-    expect(model.untold()).toMatch(/The harness refused/)
 
-    model.rejection()
+    await expect(model.waitFor(() => false)).rejects.toThrow(/The harness refused/)
 
-    expect(model.untold()).toBeUndefined()
+    expect(model.rejection()).toMatch(/The harness refused/)
+    expect(model.rejection()).toMatch(/The harness refused/)
   })
 
   it("tells a wait in flight of the first refusal, whichever came last", async ({ model }) => {

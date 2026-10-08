@@ -56,13 +56,8 @@ export type FakeModel = {
    * on the deck ends at once with it (`rejection`) instead of timing out downstream.
    */
   readonly rejections: readonly Rejection[]
-  /**
-   * The first rejection, worded as a failure states it; undefined when there is none. A
-   * caller that gets one fails its wait with it, so it counts as told.
-   */
+  /** The first rejection, worded as a failure states it; undefined when there is none. */
   readonly rejection: () => string | undefined
-  /** The same, but only while no wait has failed with it: what the test's end adds. */
-  readonly untold: () => string | undefined
   /**
    * Has a harness's refusal of a call that `match` takes count as the scenario's own
    * doing, as a probe provokes one to record it: it is kept in `expected`, never in
@@ -93,8 +88,8 @@ export type FakeModel = {
   ) => Promise<Call>
   /**
    * Has a failed `waitFor` say more than the calls: `describe` is asked when one times
-   * out (and given `timeoutMs`, five seconds unless given, to answer), for what the test's other side shows, such as the terminals' screens. Replaces
-   * any given before. What it says should be short; past 6000 characters it is cut.
+   * out (and given `timeoutMs`, five seconds unless given, to answer), for what the
+   * test's other side shows, such as the terminals' screens. Replaces any given before. What it says should be short; past 6000 characters it is cut.
    */
   readonly explain: (describe: () => Promise<string>, timeoutMs?: number) => void
   /** Adds rules ahead of the ones given before. */
@@ -233,8 +228,6 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
   const rejections: Rejection[] = []
   const expected: Rejection[] = []
   const expecting: ((rejection: Rejection) => boolean)[] = []
-  // Whether a wait has failed with the first rejection already.
-  let told = false
   const rejected = new Set<string>()
   const waiters = new Set<{
     readonly see: (index: number, call: Call) => void
@@ -391,12 +384,7 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     get expected() {
       return expected
     },
-    rejection: () => {
-      if (!rejections[0]) return undefined
-      told = true
-      return wording(rejections[0])
-    },
-    untold: () => (rejections[0] && !told ? wording(rejections[0]) : undefined),
+    rejection: () => (rejections[0] ? wording(rejections[0]) : undefined),
     expectRejection: (match) => {
       expecting.push(match)
     },
@@ -405,10 +393,7 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     waitFor: (match, { after = 0, timeoutMs = 60_000 } = {}) => {
       const made = calls.find((call, index) => index >= after && match(call))
       if (made) return Promise.resolve(made)
-      if (rejections[0]) {
-        told = true
-        return Promise.reject(new Error(wording(rejections[0])))
-      }
+      if (rejections[0]) return Promise.reject(new Error(wording(rejections[0])))
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           waiters.delete(waiter)
@@ -440,7 +425,6 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
           stop: () => {
             clearTimeout(timer)
             waiters.delete(waiter)
-            told = true
             reject(new Error(wording(rejections[0]!)))
           },
         }
