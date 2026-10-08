@@ -357,7 +357,7 @@ const ProjectRow = ({
         </button>
       </Tooltip>
       {pinnable && (
-        <Tooltip content={pinDisabled ? "Unpin a project first" : pinTitle}>
+        <Tooltip content={pinDisabled ? "Unpin a project to pin this one" : pinTitle}>
           {/* A disabled button takes no pointer, so its wrapper carries the tooltip. */}
           <span
             className={`absolute top-1/2 -translate-y-1/2 ${removable ? "right-[38px]" : "right-1.5"}`}

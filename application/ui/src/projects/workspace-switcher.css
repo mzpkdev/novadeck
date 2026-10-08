@@ -3,7 +3,7 @@
    tinted as the keyboard or the pointer reaches it, with the project's folder as its
    `.item-detail` in the mono face; the `.workspace-switcher-action` icon buttons, pin and
    remove, show on the row under the pointer (a pin button that can't act, at the pin
-   limit, takes --icon-button-disabled-opacity). Pinned projects come first under a
+   limit, takes --icon-button-disabled-opacity and the not-allowed pointer). Pinned projects come first under a
    `.workspace-switcher-label`, closed by a `.workspace-switcher-rule`, and a mark
    (`.workspace-switcher-pinned`) follows their names; rows drag into any order, which
    pins or unpins across the rule. Under a rule, `.workspace-switcher-new` opens a folder: a
@@ -54,9 +54,12 @@
   transition: opacity var(--motion-feedback) var(--ease-interface);
 }
 /* A pin button that can't act shows as a disabled icon button does, even on the row
-   under the pointer. */
+   under the pointer, and the pointer over it says it won't. */
 .workspace-switcher-row:hover .workspace-switcher-action:disabled {
   opacity: var(--icon-button-disabled-opacity, 0.25);
+}
+.icon-button.workspace-switcher-action:disabled {
+  cursor: not-allowed;
 }
 /* On a highlighted row's bar, the buttons beside it take the bar's text. */
 .workspace-switcher-row:has(.workspace-switcher-project:focus-visible) .workspace-switcher-action {
