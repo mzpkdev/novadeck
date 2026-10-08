@@ -280,7 +280,8 @@
    a large window curves gently and a small one more, and clicks in the fallen corners
    reach what lies behind, as they look. Its rim is a ring cut along the same curve
    (::before), doubled on the selected window as a text interface marks the active pane;
-   the glass over it darkens toward the edges and catches a reflection (::after, which
+   the glass over it darkens faintly toward the corners, a tenth at most so text there
+   holds 4.5:1, and catches a reflection (::after, which
    also carries an ended window's hatch). Both lie over everything the window holds, its
    chat (z-index 10), taskbar (60) and a plan's menus (201) included, and let clicks
    through. */
@@ -369,14 +370,49 @@
   z-index: 300;
   background-image:
     radial-gradient(ellipse 60% 38% at 28% 10%, rgb(255 255 255 / 0.085), transparent 70%),
-    radial-gradient(ellipse 120% 110% at 50% 50%, transparent 58%, rgb(0 0 0 / 0.5) 100%);
+    radial-gradient(farthest-corner at 50% 50%, transparent 60%, rgb(0 0 0 / 0.1) 100%);
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .terminal-window[data-terminal-phase="ended"]::after {
   background-image:
     var(--window-ended-image),
     radial-gradient(ellipse 60% 38% at 28% 10%, rgb(255 255 255 / 0.085), transparent 70%),
-    radial-gradient(ellipse 120% 110% at 50% 50%, transparent 58%, rgb(0 0 0 / 0.5) 100%);
+    radial-gradient(farthest-corner at 50% 50%, transparent 60%, rgb(0 0 0 / 0.1) 100%);
+}
+
+/* Outlines a window draws for itself fall outside its clip, so in the tube they are drawn
+   inside the rim: the ring while the person navigates the workspace, and the flash of a
+   window just created. Outlines paint over the rim and glass. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  [data-navigate="true"]
+  :is(
+    .terminal-focused,
+    .grid-terminal.selected .terminal-window,
+    .canvas-node.selected .terminal-window
+  ) {
+  outline-offset: -8px;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .terminal-window[data-new="true"] {
+  animation-name: phosphor-window-created;
+}
+@keyframes phosphor-window-created {
+  from {
+    outline: 2px solid var(--window-new-ring-color, var(--color-line-strong));
+    outline-offset: -8px;
+  }
+  to {
+    outline: 2px solid transparent;
+    outline-offset: -8px;
+  }
+}
+
+/* A request in the chat waits on the person on a tinted card, where the strong line is
+   too dim to edge its fields and buttons; they take the muted colour, 4.5:1 or more on
+   the card. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .chat-request {
+  --chat-request-field-border-color: var(--color-muted);
+  --button-border-color: var(--color-muted);
 }
 
 /* The output itself bulges, through the crt-barrel filter index.html carries. Chromium
