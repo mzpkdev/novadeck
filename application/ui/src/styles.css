@@ -5,11 +5,10 @@
 @import "./theme/contract.css";
 @import "allotment/dist/style.css" layer(base);
 @import "./theme/base.css" layer(base);
-/* Inter, JetBrains Mono and Phosphor's Share Tech Mono ship with the app: the CSP
-   only loads fonts from the app itself. */
+/* Inter and JetBrains Mono ship with the app: the CSP only loads fonts from the app
+   itself. A theme with its own face imports it in its file, as Phosphor does. */
 @import "./theme/fonts.css" layer(base);
 @import "@fontsource-variable/jetbrains-mono" layer(base);
-@import "@fontsource/share-tech-mono" layer(base);
 
 /* Recipes, each beside its component. Feature CSS that a lazily loaded view imports
    itself wraps its own rules in `@layer components`. */

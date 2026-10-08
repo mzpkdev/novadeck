@@ -10,7 +10,7 @@
 
    Tokens, each optional (its fallback in brackets):
    --workspace-switcher-icon-fg (muted): the trigger's folder and chevron.
-   The trigger takes the ghost button's tokens; rows are `.item.highlights`, taking the
+   The trigger takes the ghost button's tokens; rows are `.item.standalone`, taking the
    item's highlighted tokens under the pointer or the keyboard; the rule above the
    open-folder button takes --separator-bg. */
 .workspace-switcher-trigger > svg {

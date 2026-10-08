@@ -6,9 +6,9 @@
 
    Hooks: :hover; :focus-visible; data-highlighted (Ark's highlight); data-selected,
    present or "true"; data-disabled. Parts: a leading `svg`, `.item-detail`. Variant:
-   `.highlights`, an item no Ark list manages, which is highlighted under the pointer or
+   `.standalone`, an item no Ark list manages, which is highlighted under the pointer or
    the keyboard all the same. Highlighted, then, is `[data-highlighted]`,
-   `.highlights:hover` or `.highlights:focus-visible`.
+   `.standalone:hover` or `.standalone:focus-visible`.
 
    Tokens, each optional (its fallback in brackets):
    --item-radius (radius-control), --item-icon-fg (muted), --item-detail-fg (muted).
@@ -69,7 +69,7 @@
     --_border-color: var(--item-hover-border-color, transparent);
   }
 }
-.item:is([data-highlighted], :where(.highlights:focus-visible)) {
+.item:is([data-highlighted], :where(.standalone:focus-visible)) {
   --_bg: var(--item-highlighted-bg, var(--color-shell));
   --_border-color: var(--item-highlighted-border-color, var(--color-line));
   --_icon-fg: var(--item-highlighted-fg, var(--item-icon-fg, var(--color-muted)));
@@ -77,7 +77,7 @@
   color: var(--item-highlighted-fg, inherit);
 }
 @media (hover: hover) {
-  .item:where(.highlights):hover {
+  .item:where(.standalone):hover {
     --_bg: var(--item-highlighted-bg, var(--color-shell));
     --_border-color: var(--item-highlighted-border-color, var(--color-line));
     --_icon-fg: var(--item-highlighted-fg, var(--item-icon-fg, var(--color-muted)));

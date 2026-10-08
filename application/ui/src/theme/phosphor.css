@@ -7,6 +7,11 @@
    included, which draws in each tube's own colours; each tube's block holds its palette.
    Imported into `layer(themes)`; see docs/theming.md. */
 
+/* Share Tech Mono, the tubes' face, ships with the app (the CSP only loads fonts from the
+   app itself). Fonts are declared in a `layer(base)` import; inside `layer(themes)` that
+   nests as `themes.base`, and `@font-face` ignores layers all the same. */
+@import "@fontsource/share-tech-mono" layer(base);
+
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
   color-scheme: dark;
 
@@ -236,8 +241,8 @@
   --item-highlighted-fg: var(--color-on-strong);
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
-  .item:is([data-highlighted], .highlights:focus-visible),
-:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .item.highlights:hover,
+  .item:is([data-highlighted], .standalone:focus-visible),
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .item.standalone:hover,
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .segment:is(
     [data-state="checked"],

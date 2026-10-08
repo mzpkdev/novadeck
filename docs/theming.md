@@ -142,7 +142,7 @@ The shared recipes, and what they cover:
 | `surface`            | `.panel`, `.card`, `.floating` (a `.peek` rises from its trigger), `.modal` with its `.modal-header` and `.modal-footer`    | `--{panel,card,floating,modal}-{bg,border-color,shadow,radius}`, `--modal-header-border-color`, `--modal-footer-{bg,fg,border-color}`                                                                                                                                                                                                                                             |
 | `overlay`            | The scrim behind dialogs and the mobile sidebar                                                                             | `--overlay-bg`, `--overlay-blur`                                                                                                                                                                                                                                                                                                                                                  |
 | `region`             | The app's chrome: header, footer, sidebar, rail, settings ground                                                            | `--region-{header,footer,sidebar,rail}-{bg,fg,border-color,image}`, `--region-settings-bg`                                                                                                                                                                                                                                                                                        |
-| `item`               | Sidebar rows, menu and select items, search results                                                                         | `--item-{hover,highlighted,selected}-bg`, `--item-highlighted-fg` (also on `.item.highlights` under the pointer or the keyboard), `--item-selected-{border-color,shadow}`, `--item-selected-indicator-{bg,shadow}`                                                                                                                                                                |
+| `item`               | Sidebar rows, menu and select items, search results                                                                         | `--item-{hover,highlighted,selected}-bg`, `--item-highlighted-fg` (also on a `.standalone` item, one no Ark list manages, under the pointer or the keyboard), `--item-selected-{border-color,shadow}`, `--item-selected-indicator-{bg,shadow}`                                                                                                                                    |
 | `segmented`          | View switch, segment groups, toggle groups, tabs                                                                            | `--segmented-bg`, `--segmented-active-{bg,fg,shadow}`, `--tabs-indicator-{bg,shadow}`                                                                                                                                                                                                                                                                                             |
 | `field`              | Select and combobox triggers, inputs                                                                                        | `--field-{bg,fg,border-color,shadow}`, `--field-open-border-color`                                                                                                                                                                                                                                                                                                                |
 | `toggle`             | Switch and checkbox                                                                                                         | `--toggle-track-{on,off}-bg`, `--toggle-{track,track-on,thumb}-shadow`, `--toggle-box-{shadow,checked-shadow}`, `--toggle-thumb-bg`, `--toggle-mark-fg`                                                                                                                                                                                                                           |
@@ -199,8 +199,11 @@ not a theme token: every theme shares it.
 The app ships its fonts: Inter for the interface, the official build in
 `assets/fonts/` declared in `theme/fonts.css` (Google Fonts' build drops the character
 variants below), and JetBrains Mono from `@fontsource-variable/jetbrains-mono` for
-terminals and code; Phosphor brings Share Tech Mono from `@fontsource/share-tech-mono`
-for both, and a face loads only once a theme uses it. The Content Security Policy loads
+terminals and code, both imported in `styles.css` into `layer(base)`. A theme with its
+own face imports it at the top of its own file, `@import "<package>" layer(base);`, as
+`theme/phosphor.css` does for Share Tech Mono; inside `layer(themes)` it nests as
+`themes.base`, which is harmless, since `@font-face` ignores layers. A face loads only
+once a theme uses it. The Content Security Policy loads
 fonts only from the app itself, so they always ship as files: `vite.config.ts` never
 inlines a font as a `data:` URL, and `build.test.ts` checks the built stylesheets.
 
@@ -261,6 +264,17 @@ aren't stable.
 Variants are classes (`.button.primary`); states are attributes. A component never
 holds a state only in its class list or only in JS: if it can be on, checked, open or
 selected, the DOM says so in an attribute.
+
+## Contrast
+
+For every scheme a theme defines, `--color-ink` and `--color-muted` reach 4.5:1 on
+`--color-canvas`, `--color-shell`, `--color-paper` and `--color-soft`, and
+`--color-line-strong` reaches 3:1 on them. Where a theme sets them,
+`--item-highlighted-fg` on `--item-highlighted-bg`, `--segmented-active-fg` on
+`--segmented-active-bg` and `--color-on-strong` on `--color-strong` reach 4.5:1.
+`theme/contrast.test.ts` computes these from the token values and names the theme,
+scheme and pair that falls short. A pair a theme misses is listed there with its ratio
+and reason: today Graphite's `--color-line-strong`, at 1.4 to 2.0:1, a known gap.
 
 ## Rules for components
 
@@ -411,7 +425,12 @@ default, and the fallback for an unknown id. To add a theme:
 ## Choosing a theme
 
 Preferences holds `appearance: { theme, scheme }`, where `scheme` is `system`, `light`
-or `dark`; it starts as Graphite following the system. Preferences shows a Theme list
+or `dark`; it starts as Graphite following the system. The theme is a plain id
+(lowercase letters, digits and hyphens), and reading a preference never swaps it for the
+default: an id the app doesn't know right now, such as an imported theme whose registry
+loads later, a theme from a newer version in another window, or a retired one, stays in
+storage, and only drawing resolves it, to Graphite, in the page and in the picker. A
+missing or malformed id is read as the default. Preferences shows a Theme list
 from `theme/themes.ts` and a Mode choice (System, Light, Dark), disabled with a note
 for a theme with one scheme. `theme/apply.ts` resolves the preference against the
 system's scheme and the schemes the theme offers: a theme with one scheme always uses
@@ -430,8 +449,15 @@ app runs: whenever the preference changes, and whenever the system's scheme does
   plain script loaded in the head without `defer`, because the Content Security Policy
   allows same-origin scripts but not inline ones. `app/appearance.ts` saves a record
   under `novadeck.theme-boot` whenever the appearance changes:
-  `{ v, theme, scheme, schemes }`, the record's version (2), the shown theme's id, the
-  person's mode, and the schemes that theme defines, copied from its manifest entry.
+  `{ v, theme, scheme, schemes, ground }`, the record's version (2), the shown theme's
+  id, the person's mode, the schemes that theme defines, copied from its manifest
+  entry, and, when the page could resolve it, the theme's `--color-paper` as `#rrggbb`.
+  The script paints a valid ground (`/^#[0-9a-f]{6}$/i`, anything else ignored) as
+  `<html>`'s inline `background-color`, so a theme the stylesheets don't know yet still
+  shows its ground; `apply.ts` removes it with the inline `color-scheme`. The ground is
+  optional, so it needs no new version: bump `v` only when an existing field's meaning
+  changes, and, while a record without a ground can name a theme since retired, when a
+  theme is retired.
   The script holds no list of themes. It checks the record's shape (`v` 2, `theme` a
   lowercase id of letters, digits and hyphens, `scheme` a mode, `schemes` a non-empty
   list of `light` and `dark`), resolves `system` against `matchMedia`, and takes the
