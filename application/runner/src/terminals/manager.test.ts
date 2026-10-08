@@ -1628,4 +1628,39 @@ describe("saving a terminal that was closed", () => {
     expect(store.terminal(id)).toBeUndefined()
     store.close()
   })
+
+  it("still saves one only let go of, which stays saved until closed", async ({ terminals }) => {
+    const store = new WorkspaceStore()
+    const project = await store.createProject({ id: randomUUID(), name: "P", cwd })
+    const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "S" })
+    const manager = terminals.manager({
+      ...ptyOptions,
+      shellArgs: ["-c", "exit 0"],
+      maxRetained: 1,
+      records: store,
+    })
+    const { id } = await manager.create(
+      { id: randomUUID(), sessionId: session.id, cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as {
+      records: Map<string, unknown>
+      save: (record: unknown, transcript: boolean) => void
+    }
+    const record = inside.records.get(id)
+    // A second exit lets the older one go.
+    await manager.create(
+      { id: randomUUID(), sessionId: session.id, cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    await vi.waitFor(() => expect(inside.records.has(id)).toBe(false))
+    expect(store.terminal(id)).toBeDefined()
+
+    // A report suspended while it was let go saves once it resumes.
+    store.removeTerminal(id)
+    inside.save(record, false)
+
+    expect(store.terminal(id)).toBeDefined()
+    store.close()
+  })
 })

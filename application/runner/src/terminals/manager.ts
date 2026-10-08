@@ -268,6 +268,8 @@ type Record = {
   pendingReads: number
   pendingAttachments: number
   exitQueued: boolean
+  /** Closed by the person or an agent, and forgotten: nothing saves it again. */
+  closed: boolean
   exited: Promise<void>
   resolveExit: () => void
   listeners: pty.IDisposable[]
@@ -860,6 +862,7 @@ export class Terminals {
         pendingReads: 0,
         pendingAttachments: 0,
         exitQueued: false,
+        closed: false,
         exited: Promise.resolve(),
         resolveExit: () => {},
         listeners: [],
@@ -3822,8 +3825,8 @@ export class Terminals {
    */
   private save(record: Record, transcript: boolean): void {
     // A closed terminal is forgotten for good: work still suspended for it, as an agent's
-    // report, must not save it back.
-    if (this.records.get(record.summary.id) !== record) return
+    // report, must not save it back. An evicted one is kept saved, and still saves.
+    if (record.closed) return
     // A failed save leaves the screen marked changed, so a later one tries again, once
     // `saveMs` has passed.
     if (transcript) record.savedAt = performance.now()
@@ -4006,6 +4009,7 @@ export class Terminals {
   private remove(record: Record): void {
     const id = record.summary.id
     if (this.records.get(id) !== record) return
+    record.closed = true
     this.records.delete(id)
     for (const watcher of this.watchers.keys()) watcher.removed(record.summary)
     this.undetail(id)
