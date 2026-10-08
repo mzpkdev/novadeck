@@ -580,19 +580,28 @@ export const runnerBackend = (
     void removal.finally(() => removals.delete(removal))
     return track(removal)
   }
-  // What a quit waits for: the last saves and the removals under way.
+  // Shells being ended on the runner, which a quit waits for too: it stops the runner
+  // right after, and a close it hasn't heard of by then leaves the terminal saved, to
+  // come back with the next listing.
+  const closes = new Set<Promise<void>>()
+  // What a quit waits for: the last saves, and the removals and closes under way.
   const beforeQuit = async (): Promise<void> => {
-    await Promise.all([saves.settle(), Promise.allSettled(removals)])
+    await Promise.all([saves.settle(), Promise.allSettled(removals), Promise.allSettled(closes)])
   }
 
   // Ends the shell, retrying while the runner is unreachable. A terminal already gone,
   // or one another window controls, is left as it is.
   // A lost terminal is closed too, so the runner forgets what would restore it.
-  const endShell = async (entry: RunnerEntry): Promise<void> => {
-    if (!(await entry.ready) && !entry.requested && !entry.lost) return
-    await untilAnswered(() => runner.terminals.close(entry.key.terminalId), {
-      done: ["TERMINAL_NOT_FOUND", "TERMINAL_EXITED", "NOT_FOUND"],
-    }).catch(() => {})
+  const endShell = (entry: RunnerEntry): Promise<void> => {
+    const closing = (async () => {
+      if (!(await entry.ready) && !entry.requested && !entry.lost) return
+      await untilAnswered(() => runner.terminals.close(entry.key.terminalId), {
+        done: ["TERMINAL_NOT_FOUND", "TERMINAL_EXITED", "NOT_FOUND"],
+      }).catch(() => {})
+    })()
+    closes.add(closing)
+    void closing.finally(() => closes.delete(closing))
+    return closing
   }
 
   // The terminal as the workspace last committed it.
