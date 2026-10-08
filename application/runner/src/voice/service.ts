@@ -392,6 +392,8 @@ export class Voice {
       this.changed()
       return
     }
+    if (change.enabled === true && !this.installed.includes(model))
+      throw new DomainError("CONFLICT", `The ${model} model is not installed.`)
     // A check that ran out of time says to turn voice input on to try dictating anyway,
     // which is the end of that failure; another model's, or the engine's, stays.
     if (change.enabled === true && this.failure !== null && this.failureModel === model) {

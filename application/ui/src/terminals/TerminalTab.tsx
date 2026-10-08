@@ -96,8 +96,15 @@ export const TerminalTab = ({
   // and counted in words wherever it marks them.
   const subagents = shell && subagentsBadge(shell)
   const marks = shell && subagentMarks(shell)
-  // Their kinds in words, as the marks and rows under the line are only drawn.
-  const kinds = marks && subagents && shell ? `${subagents}: ${subagentsDetail(shell)}` : undefined
+  // Their kinds in words, as the marks and rows under the line are only drawn; work its
+  // harness only counts has no kinds to name, so its count says it all.
+  const counted = shell?.state === "running" && shell.agent?.background !== undefined
+  const kinds =
+    marks && subagents && shell
+      ? counted
+        ? subagents
+        : `${subagents}: ${subagentsDetail(shell)}`
+      : undefined
   const description = [note, messages, kinds].filter(Boolean).join(", ")
   const menu = windowMenu({
     terminal,

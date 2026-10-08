@@ -264,7 +264,9 @@ export const WindowShell = ({
             <button
               className={`${headerActionClasses} dictation-action nodrag nopan ${dictation.recording ? "dictation-active" : ""}`}
               aria-label={
-                dictation.ready === false ? "Set up voice input" : `Dictate into ${terminal.name}`
+                dictation.ready === false
+                  ? `Set up voice input for ${terminal.name}`
+                  : `Dictate into ${terminal.name}`
               }
               aria-pressed={dictation.ready === false ? undefined : dictation.recording}
               onClick={(event) => {

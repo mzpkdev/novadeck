@@ -862,7 +862,7 @@ describe("dictation", () => {
       await terminalTab("Checkout implementation").click()
       // Until voice input is installed, it says what it does: lead to the setup.
       const mic = terminal("Checkout implementation").getByRole("button", {
-        name: "Set up voice input",
+        name: "Set up voice input for Checkout implementation",
       })
       await mic.click()
       const dialog = preferencesDialog()

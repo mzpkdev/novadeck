@@ -319,6 +319,17 @@ describe("voice input settings", () => {
     expect(voice.state()).toMatchObject({ language: "pl", enabled: false })
   })
 
+  it("refuses turning on a chosen model that went missing while another is installed", async ({
+    resources,
+  }) => {
+    const { voice, store } = await installed(resources)
+    await voice.set({ enabled: false })
+    store.saveVoiceSettings({ model: "turbo" })
+    await expect(voice.set({ enabled: true })).rejects.toThrowError(
+      expect.objectContaining({ code: "CONFLICT" }),
+    )
+  })
+
   it("is wanted until turned off, installed or not, and stays off until turned on", async ({
     resources,
   }) => {
