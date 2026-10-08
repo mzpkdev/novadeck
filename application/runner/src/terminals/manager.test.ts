@@ -14,6 +14,7 @@ import type { ActivityEvent } from "../harnesses/events.js"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
+import { WorkspaceStore } from "../workspaces/store.js"
 import { InputQueue } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
@@ -1597,5 +1598,34 @@ describe("a turn the person's Escape ended", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe("saving a terminal that was closed", () => {
+  it("does not bring its saved record back", async ({ terminals }) => {
+    const store = new WorkspaceStore()
+    const project = await store.createProject({ id: randomUUID(), name: "P", cwd })
+    const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "S" })
+    const manager = terminals.manager({ ...ptyOptions, records: store })
+    const { id } = await manager.create(
+      { id: randomUUID(), sessionId: session.id, cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as {
+      records: Map<string, unknown>
+      save: (record: unknown, transcript: boolean) => void
+    }
+    // An agent's report suspended at an await when the person closes the terminal saves
+    // the record it held once it resumes.
+    const record = inside.records.get(id)
+    expect(store.terminal(id)).toBeDefined()
+
+    await manager.close({ terminalId: id }, "creator")
+    expect(store.terminal(id)).toBeUndefined()
+    inside.save(record, false)
+    inside.save(record, true)
+
+    expect(store.terminal(id)).toBeUndefined()
+    store.close()
   })
 })

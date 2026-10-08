@@ -3821,6 +3821,9 @@ export class Terminals {
    * saved once the runner is stopping.
    */
   private save(record: Record, transcript: boolean): void {
+    // A closed terminal is forgotten for good: work still suspended for it, as an agent's
+    // report, must not save it back.
+    if (this.records.get(record.summary.id) !== record) return
     // A failed save leaves the screen marked changed, so a later one tries again, once
     // `saveMs` has passed.
     if (transcript) record.savedAt = performance.now()
