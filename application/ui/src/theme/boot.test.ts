@@ -47,24 +47,17 @@ afterEach(() => {
 })
 
 const systems = [false, true]
+const schemesOf = (id: string) => themes.find((theme) => theme.id === id)!.schemes
 const schemes = ["system", "light", "dark"] as const
 
 describe("the boot script", () => {
-  it("lists the themes theme/themes.ts does", () => {
-    const listed = /const themes = (\{[^}]*\})/.exec(script)?.[1]
-    // The script's object literal as JSON: bare keys quoted, a trailing comma dropped.
-    const json = listed!.replace(/([{,]\s*)(\w+):/g, '$1"$2":').replace(/,(\s*\})/, "$1")
-    expect(JSON.parse(json)).toEqual(
-      Object.fromEntries(themes.map((theme) => [theme.id, theme.schemes])),
-    )
-  })
-
   it("shows what apply.ts resolves for every choice it saves", () => {
     for (const { id } of themes)
       for (const scheme of schemes)
         for (const systemDark of systems) {
           const preference = { theme: id, scheme }
-          expect(boot(JSON.stringify(preference), systemDark)).toEqual(
+          const record = { ...preference, schemes: schemesOf(id) }
+          expect(boot(JSON.stringify(record), systemDark)).toEqual(
             resolveAppearance(preference, systemDark, themes),
           )
         }
@@ -72,7 +65,7 @@ describe("the boot script", () => {
 
   it("gives <html> the scheme's color-scheme until the app shows the theme", () => {
     const root = document.documentElement
-    boot(JSON.stringify({ theme: "graphite", scheme: "system" }), true)
+    boot(JSON.stringify({ theme: "graphite", scheme: "system", schemes: ["light", "dark"] }), true)
     expect(root.style.colorScheme).toBe("dark")
 
     applyAppearance(root, startingAppearance(window, themes))
@@ -83,7 +76,9 @@ describe("the boot script", () => {
   it("shows a theme with one scheme in it, whatever the mode or the system", () => {
     for (const scheme of schemes)
       for (const systemDark of systems) {
-        expect(boot(JSON.stringify({ theme: "phosphor-green", scheme }), systemDark)).toEqual({
+        expect(
+          boot(JSON.stringify({ theme: "phosphor-green", scheme, schemes: ["dark"] }), systemDark),
+        ).toEqual({
           theme: "phosphor-green",
           scheme: "dark",
         })
@@ -101,32 +96,79 @@ describe("the boot script", () => {
     })
   })
 
+  it("shows a theme it does not know from the record's own schemes", () => {
+    // Imported themes are not in anything the script could hold.
+    for (const systemDark of systems) {
+      expect(
+        boot(
+          JSON.stringify({ theme: "sandstone", scheme: "system", schemes: ["light"] }),
+          systemDark,
+        ),
+      ).toEqual({ theme: "sandstone", scheme: "light" })
+      expect(
+        boot(
+          JSON.stringify({ theme: "ember", scheme: "light", schemes: ["dark", "light"] }),
+          systemDark,
+        ),
+      ).toEqual({ theme: "ember", scheme: "light" })
+    }
+  })
+
+  it("shows the app's default where the app has none of the theme", () => {
+    const root = document.documentElement
+    boot(JSON.stringify({ theme: "sandstone", scheme: "dark", schemes: ["dark"] }), false)
+    expect(root.dataset.theme).toBe("sandstone")
+
+    applyAppearance(root, startingAppearance(window, themes))
+
+    expect(root.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
+  })
+
   context("with a record older versions saved", () => {
-    it("shows an unknown theme as the default theme, in the saved scheme", () => {
+    it("shows a record without schemes as the default theme, in the saved scheme", () => {
       for (const scheme of schemes)
-        for (const systemDark of systems) {
-          const record = JSON.stringify({ theme: "sandstone", scheme, schemes: ["light"] })
-          expect(boot(record, systemDark)).toEqual(
-            resolveAppearance({ theme: "graphite", scheme }, systemDark, themes),
-          )
-        }
+        for (const systemDark of systems)
+          for (const old of [{ scheme }, { theme: "phosphor-green", scheme }])
+            expect(boot(JSON.stringify(old), systemDark)).toEqual(
+              resolveAppearance({ theme: "graphite", scheme }, systemDark, themes),
+            )
+    })
+  })
+
+  context("with a record of the wrong shape", () => {
+    const wrong = [
+      { theme: "Graphite" },
+      { theme: "graph ite" },
+      { theme: "" },
+      { theme: "constructor!" },
+      { theme: 1 },
+      { schemes: [] },
+      { schemes: ["dim"] },
+      { schemes: ["dark", "dim"] },
+      { schemes: "dark" },
+      { schemes: undefined },
+    ]
+
+    it("shows the default theme in the saved scheme", () => {
+      for (const scheme of schemes)
+        for (const systemDark of systems)
+          for (const bad of wrong) {
+            const record = { theme: "phosphor-green", scheme, schemes: ["dark"], ...bad }
+            expect(boot(JSON.stringify(record), systemDark)).toEqual(
+              resolveAppearance({ theme: "graphite", scheme }, systemDark, themes),
+            )
+          }
     })
 
-    it("shows it as the app does at startup", () => {
-      const root = document.documentElement
-      const record = JSON.stringify({ theme: "sandstone", scheme: "dark", schemes: ["light"] })
-      expect(boot(record, false)).toEqual({ theme: "graphite", scheme: "dark" })
-
-      applyAppearance(root, startingAppearance(window, themes))
-
-      expect(root.dataset).toMatchObject({ theme: "graphite", scheme: "dark" })
-    })
-
-    it("does not take a theme named like an object property", () => {
-      expect(boot(JSON.stringify({ theme: "constructor", scheme: "light" }), false)).toEqual({
-        theme: "graphite",
-        scheme: "light",
-      })
+    it("shows the default theme in the system's scheme when the scheme is bad", () => {
+      for (const scheme of ["dim", 1, null])
+        for (const systemDark of systems)
+          expect(
+            boot(
+              JSON.stringify({ theme: "phosphor-green", scheme, schemes: ["dark"] }),
+              systemDark,
+            ),
+          ).toEqual(resolveAppearance(defaultPreference(themes), systemDark, themes))
     })
   })
 

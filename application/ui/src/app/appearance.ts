@@ -24,7 +24,7 @@ export const releaseMs = 200
 
 // Shows the preferred appearance on the page and keeps it there: again whenever the
 // preference changes and, while it follows the system, whenever the system's scheme
-// does. Each time it saves what the boot script needs and tells the window around the
+// does. Each time it saves what the boot script needs, the theme's schemes among it and tells the window around the
 // page, where there is one. Returns the stop.
 export const watchAppearance = (
   ui: Store<UiState>,
@@ -62,7 +62,11 @@ export const watchAppearance = (
     }
     const appearance = resolveAppearance(preference, system?.matches ?? false, themes)
     applyAppearance(root, appearance)
-    const record = JSON.stringify({ theme: appearance.theme, scheme: preference.scheme })
+    const record = JSON.stringify({
+      theme: appearance.theme,
+      scheme: preference.scheme,
+      schemes: themes.find((entry) => entry.id === appearance.theme)?.schemes,
+    })
     if (record !== saved) {
       saved = record
       try {

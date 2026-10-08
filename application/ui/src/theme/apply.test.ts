@@ -15,6 +15,10 @@ import { themes } from "./themes"
 
 const graphite = (scheme: "light" | "dark") => ({ theme: "graphite", scheme })
 
+// A boot record as apply saves it, with the theme's schemes.
+const record = (theme: string, scheme: string, schemes: string[]) =>
+  JSON.stringify({ theme, scheme, schemes })
+
 describe("resolveAppearance", () => {
   it("shows the chosen scheme of a theme that has it", () => {
     expect(resolveAppearance({ theme: "graphite", scheme: "dark" }, false, themes)).toEqual(
@@ -99,22 +103,31 @@ describe("appearancePreferenceOf", () => {
 
 describe("parseBootRecord", () => {
   it("reads the theme and scheme", () => {
-    expect(
-      parseBootRecord(JSON.stringify({ theme: "phosphor-green", scheme: "system" }), themes),
-    ).toEqual({ theme: "phosphor-green", scheme: "system" })
+    expect(parseBootRecord(record("phosphor-green", "system", ["dark"]), themes)).toEqual({
+      theme: "phosphor-green",
+      scheme: "system",
+    })
   })
 
   it("gives a record without a theme the default theme", () => {
     expect(parseBootRecord(JSON.stringify({ scheme: "dark" }), themes)).toEqual(graphite("dark"))
   })
 
-  it("reads a record older versions saved, whatever schemes it holds", () => {
-    expect(
-      parseBootRecord(
-        JSON.stringify({ theme: "sandstone", scheme: "dark", schemes: ["light"] }),
-        themes,
-      ),
-    ).toEqual({ theme: "sandstone", scheme: "dark" })
+  it("reads a theme the app does not have, as the boot script does", () => {
+    expect(parseBootRecord(record("sandstone", "dark", ["light"]), themes)).toEqual({
+      theme: "sandstone",
+      scheme: "dark",
+    })
+  })
+
+  it("gives a record without usable schemes the default theme", () => {
+    for (const schemes of [undefined, [], ["dim"], "dark"])
+      expect(
+        parseBootRecord(
+          JSON.stringify({ theme: "phosphor-green", scheme: "dark", schemes }),
+          themes,
+        ),
+      ).toEqual(graphite("dark"))
   })
 
   it("ignores a missing or malformed record", () => {
@@ -143,7 +156,7 @@ describe("startingAppearance", () => {
   })
 
   it("follows a saved boot record", () => {
-    localStorage.setItem(bootRecordKey, JSON.stringify(graphite("dark")))
+    localStorage.setItem(bootRecordKey, record("graphite", "dark", ["light", "dark"]))
     try {
       expect(startingAppearance(window, themes)).toEqual(graphite("dark"))
     } finally {
@@ -152,10 +165,7 @@ describe("startingAppearance", () => {
   })
 
   it("shows a one-scheme theme in its scheme", () => {
-    localStorage.setItem(
-      bootRecordKey,
-      JSON.stringify({ theme: "phosphor-green", scheme: "light" }),
-    )
+    localStorage.setItem(bootRecordKey, record("phosphor-green", "light", ["dark"]))
     try {
       expect(startingAppearance(window, themes)).toEqual({
         theme: "phosphor-green",

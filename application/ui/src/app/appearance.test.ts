@@ -127,6 +127,7 @@ describe("watchAppearance", () => {
     expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
       theme: "graphite",
       scheme: "system",
+      schemes: ["light", "dark"],
     })
 
     choose(ui, { theme: "graphite", scheme: "dark" })
@@ -135,6 +136,7 @@ describe("watchAppearance", () => {
     expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
       theme: "graphite",
       scheme: "dark",
+      schemes: ["light", "dark"],
     })
   })
 
@@ -206,6 +208,7 @@ describe("watchAppearance", () => {
         expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
           theme: "phosphor-green",
           scheme: "system",
+          schemes: ["dark"],
         })
 
         vi.advanceTimersByTime(releaseMs)
@@ -214,6 +217,7 @@ describe("watchAppearance", () => {
         expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
           theme: "graphite",
           scheme: "system",
+          schemes: ["light", "dark"],
         })
         expect(reports.map((look) => look.scheme)).toEqual(["dark", "system", "system"])
       } finally {
@@ -308,6 +312,7 @@ describe("watchAppearance", () => {
       expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
         theme: "phosphor-green",
         scheme: "light",
+        schemes: ["dark"],
       })
     })
 

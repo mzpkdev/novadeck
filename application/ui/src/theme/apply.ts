@@ -64,8 +64,9 @@ export const resolveAppearance = <Id extends string>(
 }
 
 // Reads the theme and scheme from a saved boot record, or nothing when it is missing or
-// malformed. A record without a theme, as the previous version saved, is for the
-// default theme.
+// malformed. Like the boot script, it takes the theme only from a record that also holds
+// the theme's schemes; any other record, such as one older versions saved, is for the
+// default theme in the saved scheme.
 export const parseBootRecord = <Id extends string>(
   text: string | null,
   manifest: ThemeManifest<Id>,
@@ -78,9 +79,15 @@ export const parseBootRecord = <Id extends string>(
     return undefined
   }
   if (typeof value !== "object" || value === null) return undefined
-  const { theme, scheme } = value as Record<string, unknown>
+  const { theme, scheme, schemes } = value as Record<string, unknown>
   if (!isSchemePreference(scheme)) return undefined
-  return { theme: typeof theme === "string" ? theme : manifest[0].id, scheme }
+  const usable =
+    typeof theme === "string" &&
+    /^[a-z0-9-]+$/.test(theme) &&
+    Array.isArray(schemes) &&
+    schemes.length > 0 &&
+    schemes.every((entry) => entry === "light" || entry === "dark")
+  return { theme: usable ? theme : manifest[0].id, scheme }
 }
 
 // Shows an appearance on the page: `data-theme` and `data-scheme` on the root element.

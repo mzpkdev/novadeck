@@ -5,21 +5,29 @@
 // the theme. A file of its own, because the Content Security Policy allows no inline
 // scripts; see docs/theming.md.
 ;(() => {
-  // The themes and their schemes, as theme/themes.ts lists them (a test keeps the two
-  // alike). The first is the default.
-  const themes = {
-    graphite: ["light", "dark"],
-    "phosphor-green": ["dark"],
-    "phosphor-amber": ["dark"],
-  }
+  // The record carries the theme's schemes, so this file needs no list of themes and
+  // shows whatever theme was picked. A theme is a plain id; its schemes are light, dark
+  // or both. The default is Graphite, which has both.
+  const known = new Set(["light", "dark"])
   let theme = "graphite"
+  let schemes = ["light", "dark"]
   let choice = "system"
   try {
     const saved = JSON.parse(localStorage.getItem("novadeck.theme-boot") ?? "null")
-    if (saved?.scheme === "system" || saved?.scheme === "light" || saved?.scheme === "dark") {
+    if (saved?.scheme === "system" || known.has(saved?.scheme)) {
       choice = saved.scheme
-      // A record without a theme, or with one the app does not have, is for the default.
-      if (Object.hasOwn(themes, saved.theme)) theme = saved.theme
+      // A record without a usable theme and schemes, as older versions saved, is for the
+      // default. An id the app no longer has shows until the app applies the default.
+      if (
+        typeof saved.theme === "string" &&
+        /^[a-z0-9-]+$/.test(saved.theme) &&
+        Array.isArray(saved.schemes) &&
+        saved.schemes.length > 0 &&
+        saved.schemes.every((entry) => known.has(entry))
+      ) {
+        theme = saved.theme
+        schemes = saved.schemes
+      }
     }
   } catch {
     // Storage is unavailable or the record is corrupt: the default applies.
@@ -31,7 +39,6 @@
     // Without media queries the system counts as light.
   }
   const wanted = choice === "system" ? (dark ? "dark" : "light") : choice
-  const schemes = themes[theme]
   const scheme = schemes.includes(wanted) ? wanted : schemes[0]
   const root = document.documentElement
   root.setAttribute("data-theme", theme)
