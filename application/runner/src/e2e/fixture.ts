@@ -130,7 +130,8 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
           .filter((stray) => hosts.has(stray.split(" ")[1] ?? ""))
           .map((stray) => `a request tried the real API: ${stray}`),
         ...model.errors.map((error) => `the fake model failed on a request: ${error}`),
-        ...(model.rejection() ? [model.rejection()!] : []),
+        // Told already when a wait failed with it.
+        ...(model.untold() ? [model.untold()!] : []),
         ...changed().map((path) => `the developer's harness home changed: ${path}`),
         ...leftovers.map((one) => `a process outlived the deck in the sandbox: ${one}`),
       ]

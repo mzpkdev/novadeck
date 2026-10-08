@@ -7,7 +7,7 @@ import { brotliDecompress, gunzip, inflate, zstdDecompress } from "node:zlib"
 import { ZodError } from "zod"
 
 import type { Dialect, Request } from "./dialect.js"
-import { answer, latest, Refusal, type Call, type Rule, type ToolCall } from "./script.js"
+import { answer, Refusal, type Call, type Rule, type ToolCall } from "./script.js"
 
 /**
  * A tool call the harness refused to run, as the next model call's tool result tells it:
@@ -56,8 +56,21 @@ export type FakeModel = {
    * on the deck ends at once with it (`rejection`) instead of timing out downstream.
    */
   readonly rejections: readonly Rejection[]
-  /** The first rejection, worded as a failure states it; undefined when there is none. */
+  /**
+   * The first rejection, worded as a failure states it; undefined when there is none. A
+   * caller that gets one fails its wait with it, so it counts as told.
+   */
   readonly rejection: () => string | undefined
+  /** The same, but only while no wait has failed with it: what the test's end adds. */
+  readonly untold: () => string | undefined
+  /**
+   * Has a harness's refusal of a call that `match` takes count as the scenario's own
+   * doing, as a probe provokes one to record it: it is kept in `expected`, never in
+   * `rejections`, and fails nothing. Applies to refusals seen from now on.
+   */
+  readonly expectRejection: (match: (rejection: Rejection) => boolean) => void
+  /** The refusals `expectRejection` took. */
+  readonly expected: readonly Rejection[]
   /**
    * The last `count` model calls (five unless given), one line each: what the call
    * carried last, such as a tool's result and the call it answers, for a failed wait to
@@ -80,10 +93,10 @@ export type FakeModel = {
   ) => Promise<Call>
   /**
    * Has a failed `waitFor` say more than the calls: `describe` is asked when one times
-   * out, for what the test's other side shows, such as the terminals' screens. Replaces
-   * any given before. What it says is cut to a bounded length.
+   * out (and given `timeoutMs`, five seconds unless given, to answer), for what the test's other side shows, such as the terminals' screens. Replaces
+   * any given before. What it says should be short; past 6000 characters it is cut.
    */
-  readonly explain: (describe: () => Promise<string>) => void
+  readonly explain: (describe: () => Promise<string>, timeoutMs?: number) => void
   /** Adds rules ahead of the ones given before. */
   readonly use: (...rules: Rule[]) => void
   readonly close: () => Promise<void>
@@ -163,16 +176,6 @@ const failure = (error: unknown): string => {
   )
 }
 
-// One line per call for a timeout's message: whether it was a side call, and what the
-// person or a hook last said in it.
-const outline = (calls: readonly Call[]): string =>
-  calls
-    .map(
-      (call, index) =>
-        `  ${index + 1}. ${call.side ? "(side) " : ""}${JSON.stringify(latest(call).slice(-160))}`,
-    )
-    .join("\n") || "  (none)"
-
 const clip = (text: string, length: number): string => {
   const flat = text.replace(/\s+/g, " ").trim()
   return flat.length > length ? `${flat.slice(0, length)}…` : flat
@@ -225,8 +228,13 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
   const errors: string[] = []
   let foreign = 0
   let describe: (() => Promise<string>) | undefined
+  let describeMs = 5000
   let rules: readonly Rule[] = options.rules ?? []
   const rejections: Rejection[] = []
+  const expected: Rejection[] = []
+  const expecting: ((rejection: Rejection) => boolean)[] = []
+  // Whether a wait has failed with the first rejection already.
+  let told = false
   const rejected = new Set<string>()
   const waiters = new Set<{
     readonly see: (index: number, call: Call) => void
@@ -250,17 +258,23 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     const refused = pattern
       ? fresh(call).filter((turn) => pattern.test(turn.text) && !rejected.has(turn.id))
       : []
+    let unexpected = 0
     for (const turn of refused) {
       rejected.add(turn.id)
-      rejections.push({
+      const rejection = {
         number: calls.length,
         call: answered(call, turn.id),
         text: clip(turn.text, 300),
-      })
+      }
+      if (expecting.some((match) => match(rejection))) expected.push(rejection)
+      else {
+        rejections.push(rejection)
+        unexpected += 1
+      }
     }
     for (const waiter of waiters) {
       waiter.see(calls.length - 1, call)
-      if (refused.length > 0) waiter.stop()
+      if (unexpected > 0) waiter.stop()
     }
     return answer(rules, call)
   }
@@ -374,25 +388,46 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
     get rejections() {
       return rejections
     },
-    rejection: () => (rejections[0] ? wording(rejections[0]) : undefined),
+    get expected() {
+      return expected
+    },
+    rejection: () => {
+      if (!rejections[0]) return undefined
+      told = true
+      return wording(rejections[0])
+    },
+    untold: () => (rejections[0] && !told ? wording(rejections[0]) : undefined),
+    expectRejection: (match) => {
+      expecting.push(match)
+    },
     trail,
     mark: () => calls.length,
     waitFor: (match, { after = 0, timeoutMs = 60_000 } = {}) => {
       const made = calls.find((call, index) => index >= after && match(call))
       if (made) return Promise.resolve(made)
-      if (rejections[0]) return Promise.reject(new Error(wording(rejections[0])))
+      if (rejections[0]) {
+        told = true
+        return Promise.reject(new Error(wording(rejections[0])))
+      }
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           waiters.delete(waiter)
-          const message = `No matching model call${after > 0 ? ` from call ${after + 1} on` : ""} in ${timeoutMs} ms. Calls:\n${outline(calls)}\n${trail()}`
+          const message = `No matching model call${after > 0 ? ` from call ${after + 1} on` : ""} in ${timeoutMs} ms.\n${trail(8)}`
           if (!describe) return reject(new Error(message))
           // What the terminals showed at the end, which may say why the call never came.
           const timedOut = new Promise<string>((done) =>
-            setTimeout(() => done("(took too long to read)"), 5000).unref(),
+            setTimeout(() => done("(took too long to read)"), describeMs).unref(),
           )
-          Promise.race([describe(), timedOut])
+          // A describer that throws at once fails like one that rejects.
+          Promise.race([Promise.resolve().then(describe), timedOut])
             .catch((cause: unknown) => `(can't be read: ${failure(cause)})`)
-            .then((more) => reject(new Error(`${message}\n${more.slice(0, 3000)}`)))
+            .then((more) =>
+              reject(
+                new Error(
+                  `${message}\nThe terminals:\n${more.length > 6000 ? `${more.slice(0, 6000)}… (cut)` : more}`,
+                ),
+              ),
+            )
         }, timeoutMs)
         const waiter = {
           see: (index: number, call: Call) => {
@@ -405,14 +440,16 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
           stop: () => {
             clearTimeout(timer)
             waiters.delete(waiter)
-            reject(new Error(wording(rejections.at(-1)!)))
+            told = true
+            reject(new Error(wording(rejections[0]!)))
           },
         }
         waiters.add(waiter)
       })
     },
-    explain: (describer) => {
+    explain: (describer, timeoutMs = 5000) => {
       describe = describer
+      describeMs = timeoutMs
     },
     use: (...added) => {
       rules = [...added, ...rules]

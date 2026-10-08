@@ -430,24 +430,92 @@ describe("startFakeModel's explained timeouts", () => {
       .waitFor(() => false, { timeoutMs: 20 })
       .catch((error: Error) => error)
 
-    expect((failed as Error).message).toMatch(/^No matching model call in 20 ms\. Calls:\n/)
+    expect((failed as Error).message).toMatch(
+      /^No matching model call in 20 ms\.\nLast 1 of 1 model calls:\n/,
+    )
     expect((failed as Error).message).toContain(`1. result of send {"to":"t2"}: "t2 is queued"`)
     expect((failed as Error).message).toMatch(
       /\nt1, its agent: idle\. Its screen:\nAllow this tool\?$/,
     )
   })
 
-  it("says so when the describer fails, and cuts a long account short", async ({ model }) => {
+  it("says so when the describer fails", async ({ model }) => {
     model.explain(async () => {
       throw new Error("no deck")
     })
     const unreadable = await model
       .waitFor(() => false, { timeoutMs: 20 })
       .catch((error: Error) => error)
-    model.explain(async () => "row\n".repeat(5000))
-    const long = await model.waitFor(() => false, { timeoutMs: 20 }).catch((error: Error) => error)
 
     expect((unreadable as Error).message).toContain("(can't be read: no deck)")
-    expect((long as Error).message.length).toBeLessThan(4000)
+  })
+
+  it("fails with a describer's synchronous throw, and with its silence after the time given", async ({
+    model,
+  }) => {
+    model.explain(() => {
+      throw new Error("sync")
+    })
+    const thrown = await model
+      .waitFor(() => false, { timeoutMs: 20 })
+      .catch((error: Error) => error)
+    model.explain(() => new Promise<string>(() => {}), 50)
+    const silent = await model
+      .waitFor(() => false, { timeoutMs: 20 })
+      .catch((error: Error) => error)
+
+    expect((thrown as Error).message).toContain("(can't be read: sync)")
+    expect((silent as Error).message).toContain("(took too long to read)")
+  })
+
+  it("marks an account cut at its limit", async ({ model }) => {
+    model.explain(async () => "x".repeat(7000))
+    const long = await model.waitFor(() => false, { timeoutMs: 20 }).catch((error: Error) => error)
+
+    expect((long as Error).message).toMatch(/x… \(cut\)$/)
+  })
+})
+
+describe("startFakeModel's expected rejections", () => {
+  it("keeps a refusal the test expected apart, failing nothing", async ({ model }) => {
+    model.expectRejection((one) => one.call.name === "send")
+
+    await turns(model, sent("REFUSED: unknown tool"))
+
+    expect(model.rejections).toEqual([])
+    expect(model.expected).toHaveLength(1)
+    expect(model.rejection()).toBeUndefined()
+    expect(model.untold()).toBeUndefined()
+  })
+
+  it("still counts a refusal of another call", async ({ model }) => {
+    model.expectRejection((one) => one.call.name === "other")
+
+    await turns(model, sent("REFUSED: unknown tool"))
+
+    expect(model.rejections).toHaveLength(1)
+  })
+
+  it("leaves untold only a refusal no wait has failed with", async ({ model }) => {
+    await turns(model, sent("REFUSED: unknown tool"))
+    expect(model.untold()).toMatch(/The harness refused/)
+
+    model.rejection()
+
+    expect(model.untold()).toBeUndefined()
+  })
+
+  it("tells a wait in flight of the first refusal, whichever came last", async ({ model }) => {
+    const waiting = model.waitFor(() => false, { timeoutMs: 20_000 })
+    const failed = expect(waiting).rejects.toThrow(/"first"/)
+
+    await turns(model, [
+      { role: "assistant", text: "", calls: [{ id: "a", name: "send", input: { n: "first" } }] },
+      { role: "assistant", text: "", calls: [{ id: "b", name: "send", input: { n: "second" } }] },
+      { role: "tool", id: "a", text: "REFUSED one" },
+      { role: "tool", id: "b", text: "REFUSED two" },
+    ])
+
+    await failed
   })
 })

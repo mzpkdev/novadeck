@@ -355,11 +355,37 @@ export const withScreen = async (
   let calls = ""
   if (trail)
     try {
-      calls = `\nThe fake model's latest calls. ${trail()}`
+      calls = `\n${trail()}`
     } catch (cause) {
       calls = `\nThe fake model's latest calls: ${unread(cause)}`
     }
   return new Error(`${message}${doing}. Its screen:\n${shown}${calls}`, { cause: error })
+}
+
+/**
+ * What the terminals were doing, for a failure: each one's agent and screen, in its own
+ * share of `limit` characters (3000 unless given), so the newest isn't what a cut drops.
+ * A screen over its share keeps its last rows, behind a mark.
+ */
+export const terminalsReport = (
+  terminals: readonly {
+    readonly handle: string
+    readonly doing: string
+    readonly screen: string
+  }[],
+  limit = 3000,
+): string => {
+  const share = Math.floor(limit / Math.max(terminals.length, 1))
+  return (
+    terminals
+      .map(({ handle, doing, screen }) => {
+        const head = `${handle}, its agent: ${doing}. Its screen:\n`
+        const room = Math.max(share - head.length, 0)
+        const fit = screen.length > room ? `… (cut)\n${screen.slice(screen.length - room)}` : screen
+        return head + fit
+      })
+      .join("\n") || "(no terminals)"
+  )
 }
 
 /**
@@ -806,19 +832,20 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
     },
     report: async () => {
       const open = watched.filter((one) => one.on === runner)
-      const lines = await Promise.all(
-        open.map(async (one) => {
-          let doing: string
-          try {
-            doing = one.state()
-          } catch (cause) {
-            doing = unread(cause)
-          }
-          const shown = await one.look().then((rows) => excerpt(rows, 12), unread)
-          return `${one.handle}, its agent: ${doing}. Its screen:\n${shown}`
-        }),
+      return terminalsReport(
+        await Promise.all(
+          open.map(async (one) => {
+            let doing: string
+            try {
+              doing = one.state()
+            } catch (cause) {
+              doing = unread(cause)
+            }
+            const rows = await one.look().then((shown) => excerpt(shown, 12), unread)
+            return { handle: one.handle, doing, screen: rows }
+          }),
+        ),
       )
-      return lines.join("\n") || "(no terminals)"
     },
     close: () => stop(runner),
   }

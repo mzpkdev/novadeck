@@ -8,6 +8,7 @@ import {
   occurrences,
   poll,
   stated,
+  terminalsReport,
   withScreen,
 } from "./deck.js"
 
@@ -62,7 +63,7 @@ describe("enterAfter", () => {
     )
 
     await expect(failed).rejects.toThrow(
-      /the harness refused a tool call\. Its screen:\nWorking…\nThe fake model's latest calls\. Last 1 of 1/,
+      /Gave up waiting for t1 to show Allow this tool\? once more: the harness refused a tool call\. Its screen:\nWorking…\nLast 1 of 1 model calls:/,
     )
     expect(state.entered).toBe(0)
   })
@@ -110,7 +111,7 @@ describe("withScreen", () => {
     )
 
     expect(error.message).toBe(
-      'Timed out. Its screen:\n❯ Try again\nThe fake model\'s latest calls. Last 1 of 1 model calls:\n  1. user "Tell t2"',
+      'Timed out. Its screen:\n❯ Try again\nLast 1 of 1 model calls:\n  1. user "Tell t2"',
     )
   })
 
@@ -273,5 +274,39 @@ describe("emptyEnterRefusal", () => {
     expect(emptyEnterRefusal(1, states("ready", "working", "unknown", "working"))).toMatch(
       /is working/,
     )
+  })
+})
+
+describe("terminalsReport", () => {
+  it("gives each terminal its agent and screen", () => {
+    expect(
+      terminalsReport([
+        { handle: "t1", doing: "idle, no request waiting", screen: "❯" },
+        { handle: "t2", doing: "working, no request waiting", screen: "Allow?" },
+      ]),
+    ).toBe(
+      "t1, its agent: idle, no request waiting. Its screen:\n❯\nt2, its agent: working, no request waiting. Its screen:\nAllow?",
+    )
+  })
+
+  it("gives each terminal its own share, keeping a long screen's last rows behind a mark", () => {
+    const rows = Array.from({ length: 100 }, (_, index) => `row ${index}`).join("\n")
+    const report = terminalsReport(
+      [
+        { handle: "t1", doing: "idle", screen: rows },
+        { handle: "t2", doing: "idle", screen: "short" },
+      ],
+      400,
+    )
+
+    expect(report).toContain("t2, its agent: idle. Its screen:\nshort")
+    expect(report).toContain("… (cut)\n")
+    expect(report).toContain("row 99")
+    expect(report).not.toContain("row 0\n")
+    expect(report.length).toBeLessThan(450)
+  })
+
+  it("says when there are none", () => {
+    expect(terminalsReport([])).toBe("(no terminals)")
   })
 })

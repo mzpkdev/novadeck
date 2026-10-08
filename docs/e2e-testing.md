@@ -396,16 +396,21 @@ for (const setup of setups) {
   throws fails its own wait, with its error, and no other.
 - **A wait for a model call explains itself from the terminal side too.** The fixture
   gives the fake model `deck.report()` (`model.explain`), so `model.waitFor` failing with
-  "No matching model call" also ends with `model.trail()` and, for each terminal of the
-  runner, what its agent is doing and the last 12 rows of its screen, at most 3000
-  characters in all: a dialog still open there, an Enter that went nowhere, show at once.
+  "No matching model call" also lists `model.trail(8)` and then "The terminals:", each
+  terminal's agent state and the last 12 rows of its screen, each in its own share of 3000
+  characters (a screen over its share keeps its last rows behind "… (cut)"): a dialog
+  still open there, an Enter that went nowhere, show at once. The describer has five
+  seconds to answer, and the whole account is cut at 6000 characters.
 - **Refused calls fail the scenario at once.** A result a dialect words as its harness
   refusing the model's call itself (`Dialect.rejection`), as opposed to a tool that ran
   and failed, is recorded in `model.rejections` when the call carrying it arrives. The
   deck's waits (`until`, `reached`, `through`, `poll`, `confirm`, `submit`) and
   `model.waitFor` then fail within a tenth of a second, naming the call and the harness's
-  answer, instead of timing out downstream, and the test fails at its end should it
-  never have waited. The wordings seen, probed in the sandbox: Claude Code's
+  answer, instead of timing out downstream, and a refusal no wait failed with
+  fails the test at its end instead. A probe that provokes one on purpose says so with
+  `model.expectRejection(match)`, which keeps matching refusals out of `rejections`
+  (in `model.expected`). A rule that answers with a tool call must skip side calls, as
+  `own` does: they offer no tools, so the harness refuses the call. The wordings seen, probed in the sandbox: Claude Code's
   `<tool_use_error>` for an unknown tool (`Error: No such tool available`) or arguments
   it won't take (`InputValidationError`), Codex's `unsupported call: <tool>` and `failed
 to parse function arguments`, and Antigravity's `Encountered error in tool validation`,
