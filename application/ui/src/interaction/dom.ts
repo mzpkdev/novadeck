@@ -96,6 +96,7 @@ export const focusWorkspaceViewport = (): void =>
 const usable = (element: Element): boolean =>
   element.isConnected &&
   !element.closest("[inert]") &&
+  !element.matches(":disabled") &&
   (typeof element.checkVisibility !== "function" || element.checkVisibility())
 
 // Focus that waits a frame for a control to mount, taken only while focus is still where
