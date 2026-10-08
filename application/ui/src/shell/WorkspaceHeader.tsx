@@ -11,6 +11,7 @@ import { Link } from "react-router"
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import type { Project, ViewMode } from "../model/types"
+import type { ProjectStatus } from "../projects/project-status"
 import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
 import { DeckMark, DeckWordmark } from "../ui-toolkit/DeckLogo"
 import { SegmentGroup } from "../ui-toolkit/SegmentGroup"
@@ -36,6 +37,7 @@ export const WorkspaceHeader = ({
   enabledViews,
   projects,
   project,
+  statuses,
   onProjectSelect,
   onOpenFolder,
   onProjectRemove,
@@ -50,6 +52,8 @@ export const WorkspaceHeader = ({
   enabledViews: ViewMode[]
   projects: Project[]
   project: Project
+  // What each project's terminals show, by its id, where they show anything.
+  statuses?: Readonly<Record<string, ProjectStatus>> | undefined
   onProjectSelect: (id: string) => void
   // Absent where no folder can be opened; the switcher then shows it disabled.
   onOpenFolder?: (() => void) | undefined
@@ -96,6 +100,7 @@ export const WorkspaceHeader = ({
         <WorkspaceSwitcher
           projects={projects}
           current={project}
+          statuses={statuses}
           onSelect={onProjectSelect}
           onOpenFolder={onOpenFolder}
           onRemove={onProjectRemove}

@@ -5,11 +5,25 @@
    the row under the pointer. Under a rule, `.workspace-switcher-new` opens a folder: a
    `.button.quiet`.
 
+   Each row marks what its project's terminals show, the most pressing of them, as their
+   tabs do (`.workspace-switcher-status`): "?" or "!" while an agent waits on the person,
+   "✗" or "✓" while a finished agent's reply waits unread, a spinner while one works. On
+   the trigger, `.workspace-switcher-dot` marks what another project has waiting on the
+   person; a project only working doesn't mark it.
+
    Hooks: on the trigger, aria-expanded="true" while the popover is open; on a row,
-   aria-current="true" for the current project.
+   aria-current="true" for the current project. On the trigger and on a row,
+   data-project-status="question" | "attention" | "failed" | "done" | "running" (never
+   "running" on the trigger).
 
    Tokens, each optional (its fallback in brackets):
    --workspace-switcher-icon-fg (muted): the trigger's folder and chevron.
+   --workspace-switcher-attention-fg (warning-fg): the mark while an agent waits.
+   --workspace-switcher-done-fg (success-fg): the mark while a reply waits unread.
+   --workspace-switcher-failed-fg (danger-fg): the same, where its turn ended on an error.
+   --workspace-switcher-running-fg (ink): the spinner.
+   --workspace-switcher-dot-ring (the header's --region-header-bg, then paper): the ring
+   that sets the dot off the folder.
    The trigger takes the ghost button's tokens; rows are `.item.standalone`, taking the
    item's highlighted tokens under the pointer or the keyboard; the rule above the
    open-folder button takes --separator-bg. */
@@ -44,4 +58,60 @@
 
 .workspace-switcher-footer {
   border-top: var(--border-width) solid var(--separator-bg, var(--color-line));
+}
+
+/* What a project shows, as a tab's phase glyph: in the mono face, in its tone. */
+.workspace-switcher-status {
+  width: 1ch;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+}
+[data-project-status="question"] > .workspace-switcher-status::before {
+  content: "?";
+}
+[data-project-status="attention"] > .workspace-switcher-status::before {
+  content: "!";
+}
+[data-project-status="failed"] > .workspace-switcher-status::before {
+  content: "✗";
+}
+[data-project-status="done"] > .workspace-switcher-status::before {
+  content: "✓";
+}
+[data-project-status="running"] > .workspace-switcher-status {
+  color: var(--workspace-switcher-running-fg, var(--color-ink));
+  font-weight: 400;
+}
+[data-project-status="running"] > .workspace-switcher-status::before {
+  content: "⠋";
+  animation: terminal-spin 800ms steps(1) infinite;
+}
+
+/* The dot on the trigger: over the folder's corner, ringed in the header's ground. */
+.workspace-switcher-dot {
+  position: absolute;
+  top: 9px;
+  left: 18px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px
+    var(--workspace-switcher-dot-ring, var(--region-header-bg, var(--color-paper)));
+  background-color: currentColor;
+}
+
+[data-project-status="question"],
+[data-project-status="attention"] {
+  --_status-fg: var(--workspace-switcher-attention-fg, var(--color-warning-fg));
+}
+[data-project-status="failed"] {
+  --_status-fg: var(--workspace-switcher-failed-fg, var(--color-danger-fg));
+}
+[data-project-status="done"] {
+  --_status-fg: var(--workspace-switcher-done-fg, var(--color-success-fg));
+}
+[data-project-status] > .workspace-switcher-dot,
+[data-project-status]:not([data-project-status="running"]) > .workspace-switcher-status {
+  color: var(--_status-fg);
 }

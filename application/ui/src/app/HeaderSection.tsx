@@ -3,6 +3,7 @@ import { memo } from "react"
 import { transitionWorkspace } from "../layouts/transition"
 import { viewModes } from "../model/state"
 import type { Project } from "../model/types"
+import { projectStatuses } from "../projects/project-status"
 import { WorkspaceHeader } from "../shell/WorkspaceHeader"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { routeUrl } from "./routing"
@@ -26,6 +27,11 @@ export const HeaderSection = memo((): React.JSX.Element => {
     }),
     shallowEqual,
   )
+  const unread = useUiState((state) => state.unread)
+  const statuses = useWorkspaceState(
+    (workspace) => projectStatuses(workspace.projects, unread),
+    shallowEqual,
+  )
   const { zen, enabledViews, homeTo } = useUiState(
     (state) => ({
       zen: Boolean(state.shell.zen),
@@ -47,6 +53,7 @@ export const HeaderSection = memo((): React.JSX.Element => {
       enabledViews={enabledViews}
       projects={projects}
       project={project}
+      statuses={statuses}
       onProjectSelect={(id) => {
         const next = projects.find((item) => item.id === id)
         if (next) switchProject(next)

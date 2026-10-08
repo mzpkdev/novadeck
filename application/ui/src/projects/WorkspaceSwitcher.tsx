@@ -5,10 +5,24 @@ import type { Project } from "../model/types"
 import { ConfirmDialog } from "../ui-toolkit/ConfirmDialog"
 import { Popover } from "../ui-toolkit/Popover"
 import { Tooltip } from "../ui-toolkit/Tooltip"
+import { elsewhereStatus, type ProjectStatus } from "./project-status"
+
+const noStatuses: Readonly<Record<string, ProjectStatus>> = {}
+
+// A project's status in words, for assistive technology; on screen it's only a mark.
+const statusText: Record<ProjectStatus, string> = {
+  question: "Asks a question",
+  attention: "Needs you",
+  failed: "Failed · reply unread",
+  done: "Done · reply unread",
+  running: "Working",
+}
 
 type WorkspaceSwitcherProps = {
   projects: Project[]
   current: Project
+  // What each project's terminals show, by its id, where they show anything.
+  statuses?: Readonly<Record<string, ProjectStatus>> | undefined
   onSelect: (id: string) => void
   // Absent where no folder can be opened, which disables "Open folder…".
   onOpenFolder?: (() => void) | undefined
@@ -19,6 +33,7 @@ type WorkspaceSwitcherProps = {
 export const WorkspaceSwitcher = ({
   projects,
   current,
+  statuses = noStatuses,
   onSelect,
   onOpenFolder,
   onRemove,
@@ -29,6 +44,8 @@ export const WorkspaceSwitcher = ({
   const trigger = useRef<HTMLButtonElement>(null)
   // The last project stays: the workspace always has one.
   const removable = Boolean(onRemove) && projects.length > 1
+  // What another project has waiting on the person, marked on the button.
+  const elsewhere = elsewhereStatus(statuses, current.id)
   return (
     <div className="workspace-switcher relative min-w-0 w-fit max-w-[200px] flex-[0_1_auto] max-[700px]:max-w-[130px]">
       <Popover
@@ -40,10 +57,13 @@ export const WorkspaceSwitcher = ({
         trigger={
           <button
             ref={trigger}
-            className="button ghost workspace-switcher-trigger inline-flex min-h-9 min-w-0 w-full max-w-full items-center justify-start gap-1.5 px-[9px] text-body leading-[1.5] font-medium"
+            className="button ghost workspace-switcher-trigger relative inline-flex min-h-9 min-w-0 w-full max-w-full items-center justify-start gap-1.5 px-[9px] text-body leading-[1.5] font-medium"
             type="button"
             aria-label="Switch workspace"
+            aria-description={elsewhere && `Another project: ${statusText[elsewhere]}`}
+            data-project-status={elsewhere}
           >
+            {elsewhere && <span aria-hidden="true" className="workspace-switcher-dot" />}
             <Folder aria-hidden="true" className="shrink-0" size={14} strokeWidth={1.55} />
             <span className="min-w-0 flex-1 truncate">{current.name}</span>
             <ChevronDown aria-hidden="true" className="shrink-0" size={14} strokeWidth={1.75} />
@@ -56,6 +76,7 @@ export const WorkspaceSwitcher = ({
         >
           {projects.map((project) => {
             const selected = project.id === current.id
+            const status = statuses[project.id]
             return (
               <div key={project.id} className="workspace-switcher-row group relative">
                 <Tooltip content={project.directory} placement="right-start">
@@ -63,6 +84,8 @@ export const WorkspaceSwitcher = ({
                     className={`item standalone workspace-switcher-project flex w-full min-w-0 items-center gap-3 px-2.5 py-[9px] text-left ${removable ? "pr-10" : ""} ${selected ? "selected" : ""}`}
                     type="button"
                     aria-current={selected ? "true" : undefined}
+                    aria-description={status && statusText[status]}
+                    data-project-status={status}
                     onClick={() => {
                       onSelect(project.id)
                       setOpen(false)
@@ -81,6 +104,9 @@ export const WorkspaceSwitcher = ({
                         size={15}
                         strokeWidth={1.8}
                       />
+                    )}
+                    {status && (
+                      <span aria-hidden="true" className="workspace-switcher-status shrink-0" />
                     )}
                   </button>
                 </Tooltip>
