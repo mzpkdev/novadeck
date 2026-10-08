@@ -380,9 +380,11 @@
     radial-gradient(farthest-corner at 50% 50%, transparent 60%, rgb(0 0 0 / 0.1) 100%);
 }
 
-/* Outlines a window draws for itself fall outside its clip, so in the tube they are drawn
-   inside the rim: the ring while the person navigates the workspace, and the flash of a
-   window just created. Outlines paint over the rim and glass. */
+/* Outlines a window draws for itself fall outside its clip, and one drawn inside it
+   lies under the window's own content, its header and chat included. In the tube they
+   are drawn on the glass instead, which lies over everything the window holds and lets
+   clicks through: the ring while the person navigates the workspace, and the flash of a
+   window just created. */
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   [data-navigate="true"]
   :is(
@@ -390,11 +392,25 @@
     .grid-terminal.selected .terminal-window,
     .canvas-node.selected .terminal-window
   ) {
+  outline: none;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  [data-navigate="true"]
+  :is(
+    .terminal-focused,
+    .grid-terminal.selected .terminal-window,
+    .canvas-node.selected .terminal-window
+  )::after {
+  outline: 2px solid var(--workspace-navigate-ring-color, var(--color-strong));
   outline-offset: -8px;
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .terminal-window[data-new="true"] {
-  animation-name: phosphor-window-created;
+  animation: none;
+}
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .terminal-window[data-new="true"]::after {
+  animation: phosphor-window-created 900ms var(--ease-interface);
 }
 @keyframes phosphor-window-created {
   from {
