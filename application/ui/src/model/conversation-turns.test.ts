@@ -268,6 +268,22 @@ describe("a tool call's summary", () => {
       ).toEqual({ kind: "other", title: "query", detail: "db" })
     })
 
+    it("leaves a server only named like Novadeck's alone", () => {
+      for (const name of [
+        "mcp__plugin_acme_novadeck__send",
+        "mcp__my_novadeck__send",
+        "mcp__novadeck_extra__send",
+      ]) {
+        expect(toolSummary(name, JSON.stringify(send))).toMatchObject({ title: name })
+      }
+      expect(
+        toolSummary(
+          "call_mcp_tool",
+          JSON.stringify({ ServerName: "my_novadeck", ToolName: "send", Arguments: send }),
+        ),
+      ).toEqual({ kind: "other", title: "send", detail: "my_novadeck" })
+    })
+
     it("leaves another server's tool, and a Novadeck tool it doesn't know, as they are", () => {
       expect(toolSummary("mcp__db__send", JSON.stringify({ to: "t2" }))).toMatchObject({
         title: "mcp__db__send",

@@ -330,7 +330,15 @@ const mcpCall = (tool: string, fields: Fields | null): McpCall | undefined => {
 const isFields = (value: unknown): value is Fields =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const isNovadeck = (server: string): boolean => /(^|_)novadeck$/.test(server)
+// The names Novadeck's server goes by: Claude Code's plugin, Codex's namespace and
+// Antigravity's (lazy `ServerName` and eager prefix alike).
+const novadeckServers: ReadonlySet<string> = new Set([
+  "plugin_novadeck_novadeck",
+  "novadeck",
+  "novadeck_novadeck",
+])
+
+const isNovadeck = (server: string): boolean => novadeckServers.has(server)
 
 const mcpSummary = ({ lazy, server, tool, fields }: McpCall): ToolSummary | undefined => {
   const known = isNovadeck(server) ? novadeckTool(tool, fields) : undefined

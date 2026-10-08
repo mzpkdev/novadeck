@@ -354,6 +354,27 @@ export const agentTranscripts = (now: number): Readonly<Record<string, DemoTrans
         toolSummary: JSON.stringify("Title this terminal"),
       }),
       got("step:1b", "Titled."),
+      say("Before I dig in, I'll close the idle terminal and check what is on show."),
+      use("step:1c", "call_mcp_tool", {
+        ServerName: JSON.stringify("novadeck_novadeck"),
+        ToolName: JSON.stringify("close_terminal"),
+        Arguments: { to: "t3" },
+        toolSummary: JSON.stringify("Close the idle terminal"),
+        toolAction: JSON.stringify("Calling close_terminal"),
+      }),
+      got("step:1c", "Closed t3."),
+      use("step:1d", "mcp_novadeck_novadeck_showing", {
+        toolSummary: JSON.stringify("See what is shown"),
+      }),
+      got("step:1d", "Nothing is shown beside this terminal."),
+      use("step:1e", "call_mcp_tool", {
+        ServerName: JSON.stringify("deploy"),
+        ToolName: JSON.stringify("list_targets"),
+        Arguments: {},
+        toolSummary: JSON.stringify("List the deploy targets"),
+        toolAction: JSON.stringify("Calling list_targets"),
+      }),
+      got("step:1e", "staging\nproduction"),
       say("I'll search for where the request logger is registered."),
       use("step:2", "run_command", {
         CommandLine: JSON.stringify("grep -rn requestLogger src/runtime"),
