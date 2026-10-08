@@ -43,23 +43,33 @@ describe("An agent waiting on the person", () => {
   })
 
   context("in another project", () => {
-    it("marks the switcher, and the project's row in it", async () => {
-      // The demo's agents in api-service wait too: Claude Code on its plan, Codex for
-      // permission to run a command.
+    it("marks the switcher with the most pressing, and each project's row", async () => {
+      // The demo's other projects: api-service's agents wait on a plan and a permission,
+      // docs-site's asks a question, mobile-app's works, design-system's and infra's work
+      // and then finish, done and failed, a moment after the demo opens.
       await openWorkspace("/?demo=agents")
       const skip = page.getByRole("button", { name: "Skip for now" })
       if (await skip.query()) await skip.click()
       const trigger = workspaceSwitcher()
 
-      await expect.element(trigger).toHaveAttribute("data-project-status", "attention")
+      await expect.element(trigger).toHaveAttribute("data-project-status", "question")
       await expect
         .element(trigger)
-        .toHaveAttribute("aria-description", "Another project: Needs you")
+        .toHaveAttribute("aria-description", "Another project: Asks a question")
       await trigger.click()
       const menu = page.getByRole("dialog", { name: "Switch workspace" })
+      const row = (name: string): Locator =>
+        menu.getByRole("button", { name: new RegExp(`^${name} `) })
+      await expect.element(row("api-service")).toHaveAttribute("aria-description", "Needs you")
+      await expect.element(row("docs-site")).toHaveAttribute("aria-description", "Asks a question")
+      await expect.element(row("mobile-app")).toHaveAttribute("aria-description", "Working")
       await expect
-        .element(menu.getByRole("button", { name: /^api-service / }))
-        .toHaveAttribute("aria-description", "Needs you")
+        .element(row("design-system"), { timeout: 10_000 })
+        .toHaveAttribute("aria-description", "Done · reply unread")
+      await expect
+        .element(row("infra"), { timeout: 10_000 })
+        .toHaveAttribute("aria-description", "Failed · reply unread")
+      await expect.element(row("dotfiles")).not.toHaveAttribute("data-project-status")
     })
   })
 })
@@ -426,21 +436,22 @@ describe("Connecting agents", () => {
 
 describe("A pinned project", () => {
   it("shows as a chip in the header, and the switcher's dot leaves it out", async () => {
-    // Pinned, api-service shows beside the switcher; its agents wait on the person.
+    // Pinned, docs-site shows beside the switcher, its agent asking a question; the dot
+    // leaves it out, so it shows the next most pressing: api-service's waiting agents.
     localStorage.setItem(
       "novadeck.project-arrangement",
-      JSON.stringify({ order: ["storefront", "api-service"], pinned: ["api-service"] }),
+      JSON.stringify({ order: ["docs-site"], pinned: ["docs-site"] }),
     )
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     const chip = page
       .getByRole("group", { name: "Pinned projects" })
-      .getByRole("button", { name: "api-service" })
-    await expect.element(chip).toHaveAttribute("aria-description", "Needs you")
-    await expect.element(workspaceSwitcher()).not.toHaveAttribute("data-project-status")
+      .getByRole("button", { name: "docs-site" })
+    await expect.element(chip).toHaveAttribute("aria-description", "Asks a question")
+    await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "attention")
 
-    // Switching to it takes it from the chips; storefront, unpinned, waits in the dot.
+    // Switching to it takes it from the chips; the others still wait in the dot.
     await chip.click()
     await expect
       .element(page.getByRole("group", { name: "Pinned projects" }))
@@ -451,14 +462,14 @@ describe("A pinned project", () => {
   it("leaves the header where its chip doesn't fit, and the dot covers it again", async () => {
     localStorage.setItem(
       "novadeck.project-arrangement",
-      JSON.stringify({ order: ["storefront", "api-service"], pinned: ["api-service"] }),
+      JSON.stringify({ order: ["docs-site"], pinned: ["docs-site"] }),
     )
     await page.viewport(860, 900)
     onTestFinished(() => page.viewport(1440, 900))
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "attention")
-    await expect.element(page.getByRole("button", { name: "api-service" })).not.toBeInTheDocument()
+    await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "question")
+    await expect.element(page.getByRole("button", { name: "docs-site" })).not.toBeInTheDocument()
   })
 })

@@ -71,18 +71,21 @@ describe("projects", () => {
   })
 
   context("when pinning projects", () => {
+    // The demo's projects after its first two, as the switcher lists them.
+    const others = ["docs-site", "mobile-app", "design-system", "infra", "dotfiles"]
+
     it("moves a pinned project to a Pinned group at the top, and back on unpin", async () => {
       await openWorkspace()
       await workspaceSwitcher().click()
       await expect
         .element(switchMenu().getByText("Pinned", { exact: true }))
         .not.toBeInTheDocument()
-      expect(listedProjects()).toEqual(["storefront", "api-service"])
+      expect(listedProjects()).toEqual(["storefront", "api-service", ...others])
 
       await switchMenu().getByRole("button", { name: "Pin api-service" }).click()
 
       await expect.element(switchMenu().getByText("Pinned", { exact: true })).toBeVisible()
-      expect(listedProjects()).toEqual(["api-service", "storefront"])
+      expect(listedProjects()).toEqual(["api-service", "storefront", ...others])
 
       await switchMenu().getByRole("button", { name: "Unpin api-service" }).click()
 
@@ -99,12 +102,12 @@ describe("projects", () => {
 
       await press("{Alt>}{ArrowDown}{/Alt}")
 
-      await expect.poll(listedProjects).toEqual(["api-service", "storefront"])
+      await expect.poll(listedProjects).toEqual(["api-service", "storefront", ...others])
       await expect.element(switchMenu().getByRole("button", { name: /^storefront / })).toHaveFocus()
 
       await press("{Alt>}{ArrowUp}{/Alt}")
 
-      await expect.poll(listedProjects).toEqual(["storefront", "api-service"])
+      await expect.poll(listedProjects).toEqual(["storefront", "api-service", ...others])
       await expect.element(switchMenu().getByRole("button", { name: /^storefront / })).toHaveFocus()
     })
 
@@ -136,7 +139,7 @@ describe("projects", () => {
       await expect
         .element(switchMenu().getByRole("button", { name: "Unpin storefront" }))
         .toBeVisible()
-      await expect.poll(listedProjects).toEqual(["api-service", "storefront"])
+      await expect.poll(listedProjects).toEqual(["api-service", "storefront", ...others])
       await expect.element(row("storefront")).toHaveFocus()
 
       await press("{Alt>}{ArrowDown}{/Alt}")
@@ -144,7 +147,7 @@ describe("projects", () => {
       await expect
         .element(switchMenu().getByRole("button", { name: "Pin storefront" }))
         .toBeVisible()
-      await expect.poll(listedProjects).toEqual(["api-service", "storefront"])
+      await expect.poll(listedProjects).toEqual(["api-service", "storefront", ...others])
       await expect.element(row("storefront")).toHaveFocus()
     })
 
@@ -161,7 +164,7 @@ describe("projects", () => {
         steps: 20,
       })
 
-      await expect.poll(listedProjects).toEqual(["storefront", "api-service"])
+      await expect.poll(listedProjects).toEqual(["storefront", "api-service", ...others])
       await expect
         .element(switchMenu().getByRole("button", { name: "Unpin storefront" }))
         .toBeInTheDocument()
