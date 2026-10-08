@@ -63,10 +63,14 @@ export const resolveAppearance = <Id extends string>(
   return { theme: theme.id, scheme }
 }
 
+// The version of the boot record this app writes. Older versions saved the same fields
+// for themes since retired, so a record of another version names no theme.
+export const bootRecordVersion = 2
+
 // Reads the theme and scheme from a saved boot record, or nothing when it is missing or
-// malformed. Like the boot script, it takes the theme only from a record that also holds
-// the theme's schemes; any other record, such as one older versions saved, is for the
-// default theme in the saved scheme.
+// malformed. Like the boot script, it takes the theme only from a record of this
+// version that also holds the theme's schemes; any other record, such as one older
+// versions saved, is for the default theme in the saved scheme.
 export const parseBootRecord = <Id extends string>(
   text: string | null,
   manifest: ThemeManifest<Id>,
@@ -79,9 +83,10 @@ export const parseBootRecord = <Id extends string>(
     return undefined
   }
   if (typeof value !== "object" || value === null) return undefined
-  const { theme, scheme, schemes } = value as Record<string, unknown>
+  const { v, theme, scheme, schemes } = value as Record<string, unknown>
   if (!isSchemePreference(scheme)) return undefined
   const usable =
+    v === bootRecordVersion &&
     typeof theme === "string" &&
     /^[a-z0-9-]+$/.test(theme) &&
     Array.isArray(schemes) &&

@@ -429,20 +429,22 @@ app runs: whenever the preference changes, and whenever the system's scheme does
 - **Before the first paint**, `public/theme-boot.js` sets the same attributes. It is a
   plain script loaded in the head without `defer`, because the Content Security Policy
   allows same-origin scripts but not inline ones. `app/appearance.ts` saves a record
-  under `novadeck.theme-boot` whenever the appearance changes: `{ theme, scheme, schemes
-}`, the shown theme's id, the person's mode, and the schemes that theme defines,
-  copied from its manifest entry. The script holds no list of themes. It checks the
-  record's shape (`theme` a lowercase id of letters, digits and hyphens, `scheme` a
-  mode, `schemes` a non-empty list of `light` and `dark`), resolves `system` against
-  `matchMedia`, and takes the theme's first scheme when the wanted one isn't in
-  `schemes`. A record that is missing, corrupt or of another shape, such as one saved
-  before `schemes`, shows Graphite in the saved mode; a well-formed id the app no longer
-  has is painted as it is until the app starts and applies Graphite. Since the script
-  needs only the record, a theme the manifest gains while the app runs, such as an
-  imported one, boots like a built-in one: its attributes do, while its stylesheet loads
-  with the app. The script also sets the scheme as `<html>`'s inline `color-scheme`, so
-  the browser's own ground matches it before the stylesheets arrive; `apply.ts` removes
-  that once the theme's file sets `color-scheme`.
+  under `novadeck.theme-boot` whenever the appearance changes:
+  `{ v, theme, scheme, schemes }`, the record's version (2), the shown theme's id, the
+  person's mode, and the schemes that theme defines, copied from its manifest entry.
+  The script holds no list of themes. It checks the record's shape (`v` 2, `theme` a
+  lowercase id of letters, digits and hyphens, `scheme` a mode, `schemes` a non-empty
+  list of `light` and `dark`), resolves `system` against `matchMedia`, and takes the
+  theme's first scheme when the wanted one isn't in `schemes`. A record that is
+  missing, corrupt or of another shape shows Graphite in the saved mode; that includes
+  records older versions saved with the same fields for themes since retired, such as
+  Sandstone, which is why the record carries its version. A well-formed id the app no
+  longer has is painted as it is until the app starts and applies Graphite. Since the
+  script needs only the record, a theme the manifest gains while the app runs, such as
+  an imported one, boots like a built-in one: its attributes do, while its stylesheet
+  loads with the app. The script also sets the scheme as `<html>`'s inline
+  `color-scheme`, so the browser's own ground matches it before the stylesheets arrive;
+  `apply.ts` removes that once the theme's file sets `color-scheme`.
 - **Windows** stay in step: each listens for the `storage` event and takes up the
   preferences another window saved, theme included.
 - **The desktop host** follows the page. On every change the page reports its scheme

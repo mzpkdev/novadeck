@@ -2,7 +2,13 @@ import type { Backend, WindowAppearance } from "../backend/port"
 import type { Store } from "../model/store"
 import type { PreferencesValue } from "../model/types"
 import { preferencesStorageKey, readPreferences } from "../preferences/preferences-storage"
-import { applyAppearance, bootRecordKey, darkSchemeQuery, resolveAppearance } from "../theme/apply"
+import {
+  applyAppearance,
+  bootRecordKey,
+  bootRecordVersion,
+  darkSchemeQuery,
+  resolveAppearance,
+} from "../theme/apply"
 import { tokenColors } from "../theme/probe"
 import { themes } from "../theme/themes"
 import type { UiState } from "./ui-store"
@@ -63,6 +69,7 @@ export const watchAppearance = (
     const appearance = resolveAppearance(preference, system?.matches ?? false, themes)
     applyAppearance(root, appearance)
     const record = JSON.stringify({
+      v: bootRecordVersion,
       theme: appearance.theme,
       scheme: preference.scheme,
       schemes: themes.find((entry) => entry.id === appearance.theme)?.schemes,

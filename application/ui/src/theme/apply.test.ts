@@ -15,9 +15,9 @@ import { themes } from "./themes"
 
 const graphite = (scheme: "light" | "dark") => ({ theme: "graphite", scheme })
 
-// A boot record as apply saves it, with the theme's schemes.
+// A boot record as the app saves it, with its version and the theme's schemes.
 const record = (theme: string, scheme: string, schemes: string[]) =>
-  JSON.stringify({ theme, scheme, schemes })
+  JSON.stringify({ v: 2, theme, scheme, schemes })
 
 describe("resolveAppearance", () => {
   it("shows the chosen scheme of a theme that has it", () => {
@@ -120,11 +120,21 @@ describe("parseBootRecord", () => {
     })
   })
 
+  it("gives a record an older version saved, with a theme since retired, the default", () => {
+    // Versions before the record's version saved the same fields, Sandstone among them.
+    expect(
+      parseBootRecord(
+        JSON.stringify({ theme: "sandstone", scheme: "dark", schemes: ["light"] }),
+        themes,
+      ),
+    ).toEqual({ theme: "graphite", scheme: "dark" })
+  })
+
   it("gives a record without usable schemes the default theme", () => {
     for (const schemes of [undefined, [], ["dim"], "dark"])
       expect(
         parseBootRecord(
-          JSON.stringify({ theme: "phosphor-green", scheme: "dark", schemes }),
+          JSON.stringify({ v: 2, theme: "phosphor-green", scheme: "dark", schemes }),
           themes,
         ),
       ).toEqual(graphite("dark"))

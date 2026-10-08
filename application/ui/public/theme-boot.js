@@ -7,7 +7,9 @@
 ;(() => {
   // The record carries the theme's schemes, so this file needs no list of themes and
   // shows whatever theme was picked. A theme is a plain id; its schemes are light, dark
-  // or both. The default is Graphite, which has both.
+  // or both. The default is Graphite, which has both. The record says which version
+  // wrote it (v 2): older versions saved the same fields for themes since retired, so
+  // only a version-2 record names the theme.
   const known = new Set(["light", "dark"])
   let theme = "graphite"
   let schemes = ["light", "dark"]
@@ -19,6 +21,7 @@
       // A record without a usable theme and schemes, as older versions saved, is for the
       // default. An id the app no longer has shows until the app applies the default.
       if (
+        saved.v === 2 &&
         typeof saved.theme === "string" &&
         /^[a-z0-9-]+$/.test(saved.theme) &&
         Array.isArray(saved.schemes) &&

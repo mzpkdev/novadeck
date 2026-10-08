@@ -125,6 +125,7 @@ describe("watchAppearance", () => {
     const ui = uiWith({ theme: "graphite", scheme: "system" })
     watch(ui)
     expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+      v: 2,
       theme: "graphite",
       scheme: "system",
       schemes: ["light", "dark"],
@@ -134,6 +135,7 @@ describe("watchAppearance", () => {
 
     expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
     expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+      v: 2,
       theme: "graphite",
       scheme: "dark",
       schemes: ["light", "dark"],
@@ -206,6 +208,7 @@ describe("watchAppearance", () => {
         // Released, but still showing and saving what it showed.
         expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
         expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+          v: 2,
           theme: "phosphor-green",
           scheme: "system",
           schemes: ["dark"],
@@ -215,6 +218,7 @@ describe("watchAppearance", () => {
 
         expect(shown()).toEqual({ theme: "graphite", scheme: "dark" })
         expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+          v: 2,
           theme: "graphite",
           scheme: "system",
           schemes: ["light", "dark"],
@@ -310,6 +314,7 @@ describe("watchAppearance", () => {
 
       expect(shown()).toEqual({ theme: "phosphor-green", scheme: "dark" })
       expect(JSON.parse(localStorage.getItem(bootRecordKey)!)).toEqual({
+        v: 2,
         theme: "phosphor-green",
         scheme: "light",
         schemes: ["dark"],
