@@ -4,6 +4,7 @@ import {
   canPin,
   moveProject,
   noArrangement,
+  stepProject,
   togglePin,
   type ProjectArrangement,
 } from "./project-arrangement"
@@ -79,6 +80,43 @@ describe("Arranging projects", () => {
     it("leaves things as they are for a project it doesn't list, or a move in place", () => {
       expect(moveProject(projects, two, "zz", 0)).toBe(two)
       expect(moveProject(projects, two, "c", 2)).toBe(two)
+    })
+  })
+
+  context("when stepping", () => {
+    const two: ProjectArrangement = { order: ["a", "b", "c", "d", "e"], pinned: ["a", "b"] }
+
+    it("moves a place within its group", () => {
+      expect(listed(stepProject(projects, two, "d", 1))).toBe("ab|ced")
+      expect(listed(stepProject(projects, two, "d", -1))).toBe("ab|dce")
+      expect(listed(stepProject(projects, two, "a", 1))).toBe("ba|cde")
+      expect(listed(stepProject(projects, two, "b", -1))).toBe("ba|cde")
+    })
+
+    it("unpins the last pinned one in place going down, and pins the first of the rest going up", () => {
+      expect(listed(stepProject(projects, two, "b", 1))).toBe("a|bcde")
+      expect(listed(stepProject(projects, two, "c", -1))).toBe("abc|de")
+    })
+
+    it("pins the top row going up when nothing is pinned", () => {
+      expect(listed(stepProject(projects, noArrangement, "a", -1))).toBe("a|bcde")
+    })
+
+    it("refuses to pin past the limit", () => {
+      const full = { order: ["a", "b", "c", "d", "e"], pinned: ["a", "b", "c"] }
+      expect(stepProject(projects, full, "d", -1)).toBe(full)
+    })
+
+    it("stops at the ends of the list", () => {
+      expect(stepProject(projects, two, "e", 1)).toBe(two)
+      expect(stepProject(projects, { order: two.order, pinned: ["a"] }, "a", -1)).toEqual({
+        order: two.order,
+        pinned: ["a"],
+      })
+    })
+
+    it("leaves things as they are for a project it doesn't list", () => {
+      expect(stepProject(projects, two, "zz", 1)).toBe(two)
     })
   })
 })

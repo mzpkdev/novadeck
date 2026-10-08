@@ -91,3 +91,23 @@ export const canPin = (
   projects: readonly { readonly id: string }[],
   current: ProjectArrangement,
 ): boolean => arrangeProjects(projects, current).pinned.length < pinLimit
+
+// Steps a project one place up or down the switcher's list, as Alt and the arrows do:
+// within its group it moves a place; across the rule it pins or unpins in place rather
+// than skipping a row, so Alt+Down on the last pinned one unpins it and Alt+Up on the
+// first of the rest pins it, which a full set of pins refuses. It stops at the list's ends.
+export const stepProject = (
+  projects: readonly { readonly id: string }[],
+  current: ProjectArrangement,
+  id: string,
+  by: -1 | 1,
+): ProjectArrangement => {
+  const { pinned, rest } = arrangeProjects(projects, current)
+  const listed = [...pinned, ...rest].map((project) => project.id)
+  const index = listed.indexOf(id)
+  if (index < 0) return current
+  const crossing = by === 1 ? index === pinned.length - 1 : index === pinned.length
+  return crossing
+    ? togglePin(projects, current, id)
+    : moveProject(projects, current, id, index + by)
+}

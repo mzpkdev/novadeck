@@ -67,6 +67,23 @@ describe("A project's status", () => {
       expect(projectStatus(project("p", [planning]), noUnread)).toBe("attention")
     })
 
+    it("counts nothing from an ended terminal, though its reply went unread", () => {
+      const killed: TerminalMetadata = {
+        ...terminalFixture(1, "~/project"),
+        state: "exited",
+        exitCode: null,
+        signal: "SIGKILL",
+      }
+      expect(
+        projectStatus(project("p", [killed]), unread("p", killed.id, "failed")),
+      ).toBeUndefined()
+    })
+
+    it("counts only an agent at work as running", () => {
+      const server: TerminalMetadata = { ...running(1), process: "node" }
+      expect(projectStatus(project("p", [server]), noUnread)).toBeUndefined()
+    })
+
     it("reads unread ends only from its own sessions", () => {
       const finished = running(1, {})
       expect(
@@ -90,6 +107,10 @@ describe("The switcher's mark", () => {
     expect(statuses).toEqual({ here: "question", there: "done", busy: "running" })
     expect(elsewhereStatus(statuses, "here")).toBe("done")
     expect(elsewhereStatus(statuses, "there")).toBe("question")
+  })
+
+  it("leaves out the projects it is told to ignore", () => {
+    expect(elsewhereStatus(statuses, "here", ["there"])).toBeUndefined()
   })
 
   it("ignores projects that are only working", () => {

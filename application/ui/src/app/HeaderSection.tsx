@@ -9,15 +9,24 @@ import { unreadEnd } from "../terminals/unread-state"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { routeUrl } from "./routing"
 import { currentState, shallowEqual } from "./selectors"
-import { arrangeProjectsIn } from "./ui-store"
 
 const sameProjects = (a: readonly Project[], b: readonly Project[]): boolean =>
   a.length === b.length && a.every((project, index) => shallowEqual(project, b[index]))
 
 // The app header wired to the workspace: projects, views, search and preferences.
 export const HeaderSection = memo((): React.JSX.Element => {
-  const { backend, commands, navigation, ui } = useWorkspaceServices()
-  const { switchProject, openFolder, removeProject, changeView, enterZen, setSwitcher } = commands
+  const { backend, commands, navigation } = useWorkspaceServices()
+  const {
+    switchProject,
+    openFolder,
+    removeProject,
+    moveProject,
+    stepProject,
+    toggleProjectPin,
+    changeView,
+    enterZen,
+    setSwitcher,
+  } = commands
   const projects = useWorkspaceState(
     (workspace) => workspace.projects.map(({ id, name, directory }) => ({ id, name, directory })),
     sameProjects,
@@ -31,6 +40,7 @@ export const HeaderSection = memo((): React.JSX.Element => {
   )
   const unread = useUiState((state) => state.unread)
   const arrangement = useUiState((state) => state.projectArrangement)
+  // The selector closes over `unread`, so a new one is a new selector and recomputes.
   const statuses = useWorkspaceState(
     (workspace) =>
       projectStatuses(workspace.projects, (context, id) => unreadEnd(unread, context, id)),
@@ -59,7 +69,9 @@ export const HeaderSection = memo((): React.JSX.Element => {
       project={project}
       statuses={statuses}
       arrangement={arrangement}
-      onArrange={(change) => arrangeProjectsIn(ui, change)}
+      onProjectMove={moveProject}
+      onProjectStep={stepProject}
+      onProjectTogglePin={toggleProjectPin}
       onProjectSelect={(id) => {
         const next = projects.find((item) => item.id === id)
         if (next) switchProject(next)

@@ -1,4 +1,5 @@
 import { agentWorking } from "../model/agent-finish"
+import { doneText, terminalPhase } from "../model/terminal-ending"
 import type { WorkspaceProject } from "../model/types"
 
 // What a project's terminals show at a glance, the most pressing of them, as the switcher
@@ -18,6 +19,19 @@ const pressing = (a: ProjectStatus | undefined, b: ProjectStatus | undefined) =>
 // while the person looked elsewhere.
 export type UnreadEnds = (context: string, terminalId: string) => "done" | "failed" | undefined
 
+// Each status in words, for the switcher's rows and the chips: the terminal tabs' own for
+// the states they share.
+export const statusText: Record<ProjectStatus, string> = {
+  question: "Asks a question",
+  attention: "Needs you",
+  failed: doneText(true),
+  done: doneText(),
+  running: "Working",
+}
+
+// The status of each terminal is its tab's phase: an ended terminal shows nothing, as its
+// tab reads ended whatever its reply was, and only an agent at work counts as running, not
+// a dev server or any other program.
 export const projectStatus = (
   project: WorkspaceProject,
   unread: UnreadEnds,
@@ -26,12 +40,18 @@ export const projectStatus = (
   for (const session of project.history) {
     const context = `${project.id}/${session.id}`
     for (const terminal of session.state.roster.terminals) {
-      const attention = terminal.state === "running" ? terminal.agent?.attention : undefined
-      const each: ProjectStatus | undefined = attention
-        ? attention.kind === "question"
-          ? "question"
-          : "attention"
-        : (unread(context, terminal.id) ?? (agentWorking(terminal) ? "running" : undefined))
+      const end = unread(context, terminal.id)
+      const phase = terminalPhase(terminal, end !== undefined)
+      const each: ProjectStatus | undefined =
+        phase === "attention"
+          ? terminal.state === "running" && terminal.agent?.attention?.kind === "question"
+            ? "question"
+            : "attention"
+          : phase === "done"
+            ? end
+            : phase === "running" && agentWorking(terminal)
+              ? "running"
+              : undefined
       status = pressing(status, each)
     }
   }
@@ -55,14 +75,15 @@ export const projectStatuses = (
   return statuses
 }
 
-// The most pressing status among the projects other than `current` that ask for the
-// person: what the switcher's button marks.
+// The most pressing status among the projects other than `current` and the `ignore`d ones
+// that ask for the person: what the switcher's button marks.
 export const elsewhereStatus = (
   statuses: Readonly<Record<string, ProjectStatus>>,
   current: string,
+  ignore: readonly string[] = [],
 ): ProjectStatus | undefined => {
   let status: ProjectStatus | undefined
   for (const [id, each] of Object.entries(statuses))
-    if (id !== current && needsPerson(each)) status = pressing(status, each)
+    if (id !== current && !ignore.includes(id) && needsPerson(each)) status = pressing(status, each)
   return status
 }

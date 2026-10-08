@@ -11,11 +11,7 @@ import { Link } from "react-router"
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import type { Project, ViewMode } from "../model/types"
-import {
-  arrangeProjects,
-  noArrangement,
-  type ProjectArrangement,
-} from "../projects/project-arrangement"
+import { arrangeProjects, type ProjectArrangement } from "../projects/project-arrangement"
 import type { ProjectStatus } from "../projects/project-status"
 import { ProjectChips } from "../projects/ProjectChips"
 import { WorkspaceSwitcher } from "../projects/WorkspaceSwitcher"
@@ -25,7 +21,6 @@ import { Tooltip } from "../ui-toolkit/Tooltip"
 
 const noProjects: Project[] = []
 const noIds: readonly string[] = []
-const noStatuses: Readonly<Record<string, ProjectStatus>> = {}
 
 const iconOnlyQuery = "(max-width: 701px)"
 const subscribe = (notify: () => void): (() => void) => {
@@ -49,7 +44,9 @@ export const WorkspaceHeader = ({
   project,
   statuses,
   arrangement,
-  onArrange,
+  onProjectMove,
+  onProjectStep,
+  onProjectTogglePin,
   onProjectSelect,
   onOpenFolder,
   onProjectRemove,
@@ -65,13 +62,12 @@ export const WorkspaceHeader = ({
   projects: Project[]
   project: Project
   // What each project's terminals show, by its id, where they show anything.
-  statuses?: Readonly<Record<string, ProjectStatus>> | undefined
-  // How the person arranged the projects, and how to change it; without them the
-  // switcher lists projects as they come and offers no pinning or reordering.
-  arrangement?: ProjectArrangement | undefined
-  onArrange?:
-    | ((change: (arrangement: ProjectArrangement) => ProjectArrangement) => void)
-    | undefined
+  statuses: Readonly<Record<string, ProjectStatus>>
+  // How the person arranged the projects, and the intents to change it.
+  arrangement: ProjectArrangement
+  onProjectMove: (id: string, index: number) => void
+  onProjectStep: (id: string, by: -1 | 1) => void
+  onProjectTogglePin: (id: string) => void
   onProjectSelect: (id: string) => void
   // Absent where no folder can be opened; the switcher then shows it disabled.
   onOpenFolder?: (() => void) | undefined
@@ -86,7 +82,7 @@ export const WorkspaceHeader = ({
   // The pinned projects show as chips, where there's room, the current one among them
   // marked as such; the switcher's dot then leaves them out.
   const chips = useMemo(
-    () => (iconOnly ? noProjects : arrangeProjects(projects, arrangement ?? noArrangement).pinned),
+    () => (iconOnly ? noProjects : arrangeProjects(projects, arrangement).pinned),
     [iconOnly, projects, arrangement],
   )
   const [shownChips, setShownChips] = useState<readonly string[]>(noIds)
@@ -122,8 +118,10 @@ export const WorkspaceHeader = ({
           current={project}
           statuses={statuses}
           arrangement={arrangement}
-          onArrange={onArrange}
           onSelect={onProjectSelect}
+          onMove={onProjectMove}
+          onStep={onProjectStep}
+          onTogglePin={onProjectTogglePin}
           onOpenFolder={onOpenFolder}
           onRemove={onProjectRemove}
           dotIgnores={iconOnly ? noIds : shownChips}
@@ -131,7 +129,7 @@ export const WorkspaceHeader = ({
         <ProjectChips
           projects={chips}
           current={project.id}
-          statuses={statuses ?? noStatuses}
+          statuses={statuses}
           onSelect={onProjectSelect}
           onShown={setShownChips}
         />

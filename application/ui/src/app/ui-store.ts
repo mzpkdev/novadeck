@@ -13,12 +13,9 @@ import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue, TerminalMetadata, Workspace } from "../model/types"
 import { writePreferences } from "../preferences/preferences-storage"
 import { noArrangement, type ProjectArrangement } from "../projects/project-arrangement"
+import { writeProjectArrangement } from "../projects/project-arrangement-storage"
 import { initialShell, resetPresentation, type ShellState } from "../shell/shell-state"
-import {
-  writeProjectArrangement,
-  writeSidebarCollapsed,
-  writeWindowedView,
-} from "../shell/shell-storage"
+import { writeSidebarCollapsed, writeWindowedView } from "../shell/shell-storage"
 import {
   chatKept,
   keepChatDrafts,
@@ -126,17 +123,6 @@ export const initialUi = ({
   chatSends: noChatSends,
   projectArrangement,
 })
-
-export const arrangeProjectsIn = (
-  ui: UiStore,
-  change: (arrangement: ProjectArrangement) => ProjectArrangement,
-): void =>
-  void ui.update((state) => {
-    const projectArrangement = change(state.projectArrangement)
-    return projectArrangement === state.projectArrangement
-      ? state
-      : { ...state, projectArrangement }
-  })
 
 export const updateShell = (ui: UiStore, change: (shell: ShellState) => ShellState): void =>
   void ui.update((state) => {

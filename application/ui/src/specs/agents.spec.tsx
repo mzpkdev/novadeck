@@ -68,7 +68,7 @@ describe("An agent waiting on the person", () => {
         .toHaveAttribute("aria-description", "Done · reply unread")
       await expect
         .element(row("infra"), { timeout: 10_000 })
-        .toHaveAttribute("aria-description", "Failed · reply unread")
+        .toHaveAttribute("aria-description", "Stopped with an error · reply unread")
       await expect.element(row("dotfiles")).not.toHaveAttribute("data-project-status")
     })
   })

@@ -2,18 +2,10 @@ import { useLayoutEffect, useRef, useState } from "react"
 
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { chipsThatFit } from "./project-chip-fit"
-import { needsPerson, type ProjectStatus } from "./project-status"
-
-const statusText: Record<ProjectStatus, string> = {
-  question: "Asks a question",
-  attention: "Needs you",
-  failed: "Failed · reply unread",
-  done: "Done · reply unread",
-  running: "Working",
-}
+import { needsPerson, statusText, type ProjectStatus } from "./project-status"
 
 // The pinned projects, as quiet text chips after the switcher, in the person's order: each
-// marks what its project's terminals show, and a click switches to it. The current one
+// marks what its project's terminals ask of the person, and a click switches to it. The current one
 // stays in its place, marked as current, so switching never moves the chips. They take the
 // room the header leaves them: each shows whole or not at all, the last ones first to go,
 // and `onShown` says which show. All stay in the group so each can be measured; the ones
@@ -57,11 +49,15 @@ export const ProjectChips = ({
     return () => observer.disconnect()
   }, [projects])
 
-  const shownIds = projects.slice(0, shown).map(({ id }) => id)
-  const key = shownIds.join("\n")
+  // Tells which show, once at first and then only when they change.
+  const told = useRef<readonly string[] | null>(null)
   useLayoutEffect(() => {
-    onShown(key ? key.split("\n") : [])
-  }, [key, onShown])
+    const ids = projects.slice(0, shown).map(({ id }) => id)
+    const before = told.current
+    if (before && before.length === ids.length && before.every((id, i) => id === ids[i])) return
+    told.current = ids
+    onShown(ids)
+  }, [projects, shown, onShown])
 
   if (projects.length === 0) return null
   return (
@@ -73,7 +69,8 @@ export const ProjectChips = ({
       className="project-chips flex min-w-0 flex-[1_1_0] items-center gap-1 overflow-hidden pl-2"
     >
       {projects.map((project, index) => {
-        const status = statuses[project.id]
+        // A project only working shows nothing: the header stays still while agents work.
+        const status = needsPerson(statuses[project.id]) ? statuses[project.id] : undefined
         const isCurrent = project.id === current
         return (
           <Tooltip key={project.id} content={project.directory}>
@@ -85,12 +82,12 @@ export const ProjectChips = ({
               aria-current={isCurrent ? "true" : undefined}
               aria-description={status && statusText[status]}
               data-project-status={status}
-              data-needs-person={needsPerson(status) ? "true" : undefined}
+              data-needs-person={status ? "true" : undefined}
               onClick={() => {
                 if (!isCurrent) onSelect(project.id)
               }}
             >
-              {status && <span aria-hidden="true" className="project-chip-status" />}
+              {status && <span aria-hidden="true" className="project-status-mark" />}
               <span className="min-w-0 truncate">{project.name}</span>
             </button>
           </Tooltip>

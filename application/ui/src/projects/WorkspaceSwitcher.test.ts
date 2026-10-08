@@ -1,10 +1,9 @@
-import { createElement, useState } from "react"
-import { act } from "react"
+import { act, createElement, useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { Project } from "../model/types"
 import { render, type Rendered } from "../test/render"
-import { noArrangement } from "./project-arrangement"
+import { moveProject, noArrangement, togglePin } from "./project-arrangement"
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
 
 // dnd-kit watches sizes as soon as it loads, which jsdom can't.
@@ -29,9 +28,13 @@ const Harness = (): React.JSX.Element => {
   return createElement(WorkspaceSwitcher, {
     projects,
     current: projects[0]!,
+    statuses: {},
     arrangement,
-    onArrange: (change) => setArrangement(change),
+    dotIgnores: [],
     onSelect: () => {},
+    onMove: (id, index) => setArrangement((before) => moveProject(projects, before, id, index)),
+    onStep: () => {},
+    onTogglePin: (id) => setArrangement((before) => togglePin(projects, before, id)),
   })
 }
 

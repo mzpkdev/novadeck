@@ -6,11 +6,8 @@ import type { CanvasHandle } from "../layouts/canvas/types"
 import { workspaceFromSeed } from "../model/seed"
 import { createWorkspaceStore } from "../model/store"
 import { readPreferences } from "../preferences/preferences-storage"
-import {
-  readProjectArrangement,
-  readSidebarCollapsed,
-  readWindowedView,
-} from "../shell/shell-storage"
+import { readProjectArrangement } from "../projects/project-arrangement-storage"
+import { readSidebarCollapsed, readWindowedView } from "../shell/shell-storage"
 import { createPanes } from "../terminals/companion/state"
 import { createDragSession, DragSessionContext } from "../terminals/drag-session"
 import { followSavedPreferences, watchAppearance } from "./appearance"

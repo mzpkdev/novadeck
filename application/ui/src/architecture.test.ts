@@ -38,6 +38,8 @@ const rules: Record<string, readonly string[]> = {
     "interaction/keymap.ts",
     "shell/shell-state.ts",
     "terminals/rename-state.ts",
+    // The switcher's arrangement, which commands change by its pure functions.
+    "projects/project-arrangement.ts",
     "terminals/recent.ts",
     "terminals/chat/mode-state.ts",
     // The companion panes' store, which commands use by its type.
@@ -97,7 +99,12 @@ const vendors: Record<string, readonly string[]> = {
   allotment: ["shell/"],
   // Terminals' tabs, windows and taskbars, the footer's subscriptions and the project
   // switcher's projects, which reorder as the taskbar's icons do.
-  "@dnd-kit": ["terminals/", "shell/SubscriptionUsage.tsx", "projects/WorkspaceSwitcher.tsx"],
+  "@dnd-kit": [
+    "terminals/",
+    "shell/SubscriptionUsage.tsx",
+    "projects/ProjectList.tsx",
+    "projects/ProjectRow.tsx",
+  ],
   "react-router": ["app/", "shell/"],
   "react-dom": ["layouts/transition.ts", "main.tsx", "test/"],
   // The runner client, its test runner, and the terminal emulator serve one adapter.

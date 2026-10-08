@@ -170,6 +170,22 @@ describe("projects", () => {
         .toBeInTheDocument()
       await expect.element(switchMenu()).toBeVisible()
     })
+
+    it("keeps the focus in the menu, on the dragged project, after a drag", async () => {
+      await openWorkspace()
+      await workspaceSwitcher().click()
+      await switchMenu().getByRole("button", { name: "Pin api-service" }).click()
+      const row = (name: string): Locator =>
+        switchMenu().getByRole("button", { name: new RegExp(`^${name} `) })
+      const { height } = row("api-service").element().getBoundingClientRect()
+
+      await userEvent.dragAndDrop(row("storefront"), row("api-service"), {
+        targetPosition: { x: 40, y: height / 4 },
+        steps: 20,
+      })
+
+      await expect.element(row("storefront")).toHaveFocus()
+    })
   })
 
   context("when switching to another project", () => {
