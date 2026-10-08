@@ -6,6 +6,7 @@ import {
   escaper,
   excerpt,
   occurrences,
+  poll,
   stated,
   withScreen,
 } from "./deck.js"
@@ -46,6 +47,26 @@ describe("enterAfter", () => {
     expect(state.entered).toBe(1)
   })
 
+  it("fails at once with the fault, quoting the screen and the model's calls", async () => {
+    const { state, keys } = fake("Working…")
+
+    const failed = enterAfter(
+      {
+        ...keys,
+        fault: () => "the harness refused a tool call",
+        trail: () => "Last 1 of 1 model calls:",
+      },
+      "Allow this tool?",
+      async () => {},
+      20_000,
+    )
+
+    await expect(failed).rejects.toThrow(
+      /the harness refused a tool call\. Its screen:\nWorking…\nThe fake model's latest calls\. Last 1 of 1/,
+    )
+    expect(state.entered).toBe(0)
+  })
+
   it("never lets text left from an earlier dialog through", async () => {
     const { state, keys } = fake("Allow this tool?\n> Yes")
 
@@ -80,12 +101,65 @@ describe("withScreen", () => {
     )
   })
 
+  it("ends with the fake model's latest calls, when asked", async () => {
+    const error = await withScreen(
+      new Error("Timed out"),
+      async () => "❯ Try again",
+      undefined,
+      () => 'Last 1 of 1 model calls:\n  1. user "Tell t2"',
+    )
+
+    expect(error.message).toBe(
+      'Timed out. Its screen:\n❯ Try again\nThe fake model\'s latest calls. Last 1 of 1 model calls:\n  1. user "Tell t2"',
+    )
+  })
+
+  it("says why when the trail can't be read", async () => {
+    const error = await withScreen(
+      new Error("Timed out"),
+      async () => "❯",
+      undefined,
+      () => {
+        throw new Error("gone")
+      },
+    )
+
+    expect(error.message).toContain("The fake model's latest calls: (can't be read: gone)")
+  })
+
   it("says why when the screen can't be read", async () => {
     const error = await withScreen(new Error("Timed out"), async () => {
       throw new Error("TERMINAL_NOT_FOUND")
     })
 
     expect(error.message).toBe("Timed out. Its screen:\n(can't be read: TERMINAL_NOT_FOUND)")
+  })
+})
+
+describe("poll", () => {
+  it("fails at once with the fault's reason, long before its timeout", async () => {
+    const started = Date.now()
+
+    await expect(
+      poll(
+        () => undefined,
+        "t2 to show it",
+        20_000,
+        () => "the harness refused a tool call",
+      ),
+    ).rejects.toThrow("Gave up waiting for t2 to show it: the harness refused a tool call")
+    expect(Date.now() - started).toBeLessThan(2000)
+  })
+
+  it("gives a value that has come, whatever the fault says", async () => {
+    await expect(
+      poll(
+        () => "here",
+        "it",
+        1000,
+        () => "refused",
+      ),
+    ).resolves.toBe("here")
   })
 })
 
