@@ -274,7 +274,7 @@ For every scheme a theme defines, `--color-ink` and `--color-muted` reach 4.5:1 
 `--segmented-active-bg` and `--color-on-strong` on `--color-strong` reach 4.5:1.
 `theme/contrast.test.ts` computes these from the token values and names the theme,
 scheme and pair that falls short. A pair a theme misses is listed there with its ratio
-and reason: today Graphite's `--color-line-strong`, at 1.4 to 2.0:1, a known gap.
+and reason; none is listed today.
 
 ## Rules for components
 

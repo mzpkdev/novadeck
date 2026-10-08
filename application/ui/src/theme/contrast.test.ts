@@ -152,12 +152,7 @@ const contrast = (a: Rgb, b: Rgb): number => {
 
 // Pairs a theme misses on purpose, by "<theme> <scheme> <foreground>" (on every ground the
 // pair is measured on), with the measured ratios and why.
-const exceptions: Record<string, string> = {
-  "graphite light --color-line-strong":
-    "1.40 to 1.67:1 is under the 3:1 non-text target, a known gap in Graphite's palette that this test records rather than hides; raising it is Graphite's own change.",
-  "graphite dark --color-line-strong":
-    "1.61 to 2.04:1 is under the 3:1 non-text target, a known gap in Graphite's palette that this test records rather than hides; raising it is Graphite's own change.",
-}
+const exceptions: Record<string, string> = {}
 const exceptionOf = (key: string): string | undefined =>
   exceptions[key.split(" ").slice(0, 3).join(" ")]
 
