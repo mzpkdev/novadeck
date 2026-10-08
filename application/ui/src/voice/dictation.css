@@ -22,7 +22,7 @@
    `.dictation-strip`, with the same hooks plus data-tone="done" and data-edge="top" |
    "bottom". Parts: `.dictation-dot` (recording), `.dictation-wave` (its `i` bars, each
    from `--dictation-bar`, 0 to 1), `.dictation-text`, `.dictation-shimmer`,
-   `.dictation-action` (the Addons button), and the overlay's icon, hint and elapsed time,
+   `.dictation-setup` (the Addons button), and the overlay's icon, hint and elapsed time,
    whose `data-ending` marks a clip's last seconds.
    --dictation-strip-bg (the window header's bg), --dictation-strip-border-color (line):
    the strip. --dictation-error-bg (danger-fg at 9% over the strip): a failure's strip. */
@@ -163,7 +163,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .dictation-action {
+  .dictation-setup {
     flex: none;
     pointer-events: auto;
     color: var(--color-strong);
@@ -171,7 +171,7 @@
     text-underline-offset: 2px;
     cursor: pointer;
   }
-  .dictation-action:focus-visible {
+  .dictation-setup:focus-visible {
     outline: 2px solid var(--color-strong);
     outline-offset: 2px;
   }

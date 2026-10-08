@@ -179,7 +179,7 @@ export const DictationStrip = ({
           {notice.setup && (
             <button
               type="button"
-              className="dictation-action"
+              className="dictation-setup"
               // A click opens Addons without taking focus from where the person types.
               onMouseDown={(event) => event.preventDefault()}
               onClick={onSetup}
