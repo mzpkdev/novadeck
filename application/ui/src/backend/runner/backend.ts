@@ -584,9 +584,16 @@ export const runnerBackend = (
   // right after, and a close it hasn't heard of by then leaves the terminal saved, to
   // come back with the next listing.
   const closes = new Set<Promise<void>>()
-  // What a quit waits for: the last saves, and the removals and closes under way.
+  // What a quit waits for: the last saves, and the removals and closes under way,
+  // including those the person starts while it waits.
   const beforeQuit = async (): Promise<void> => {
-    await Promise.all([saves.settle(), Promise.allSettled(removals), Promise.allSettled(closes)])
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- Settled work may start more.
+      await saves.settle()
+      if (removals.size === 0 && closes.size === 0) return
+      // eslint-disable-next-line no-await-in-loop -- Settled work may start more.
+      await Promise.allSettled([...removals, ...closes])
+    }
   }
 
   // Ends the shell, retrying while the runner is unreachable. A terminal already gone,
@@ -1208,8 +1215,8 @@ export const runnerBackend = (
     for (const entry of entries.values()) if (!entry.closed) followWhenReady(entry)
     voice.follow()
     window.addEventListener("pagehide", flush)
-    // The host waits for these saves, and removals, before a close or quit can end the
-    // shells, so they name what still runs.
+    // The host waits for these saves, removals and closes before a close or quit can end
+    // the shells, so they name what still runs.
     const stopQuit = options.beforeQuit?.(beforeQuit)
     return () => {
       live = false

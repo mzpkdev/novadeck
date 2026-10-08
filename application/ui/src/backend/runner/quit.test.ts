@@ -46,8 +46,10 @@ const launch = async (database: string) => {
     commit,
     terminals: () => activeSession(workspace)!.state.roster.terminals.map(({ id }) => id),
     listed: () => runner.listing.flatMap(({ sessions }) => sessions.flatMap((s) => s.terminals)),
-    quit: async () => {
-      await finish?.()
+    quit: async (during?: () => void) => {
+      const finished = finish?.()
+      during?.()
+      await finished
       stop()
       await runner.close()
     },
@@ -69,6 +71,26 @@ describe("closing a terminal right before the app quits", () => {
 
     const second = await launch(database)
     expect(second.listed().map(({ id }) => id)).toEqual([kept.id])
+    await second.quit()
+  })
+
+  it("leaves one closed while the quit waits closed too", async () => {
+    const database = join(directory, "during.sqlite")
+    const first = await launch(database)
+    const added = [0, 1, 2].map(() =>
+      first.backend.newTerminal({ target: first.target, directory }),
+    )
+    for (const terminal of added)
+      first.commit([{ type: "terminal/add", target: first.target, terminal }])
+    await pause(500)
+
+    first.commit([{ type: "terminal/close", target: first.target, terminalId: added[0]!.id }])
+    await first.quit(() =>
+      first.commit([{ type: "terminal/close", target: first.target, terminalId: added[1]!.id }]),
+    )
+
+    const second = await launch(database)
+    expect(second.listed().map(({ id }) => id)).toEqual([added[2]!.id])
     await second.quit()
   })
 
