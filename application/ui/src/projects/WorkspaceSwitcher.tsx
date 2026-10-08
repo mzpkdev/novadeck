@@ -50,10 +50,7 @@ export const WorkspaceSwitcher = ({
   // The last project stays: the workspace always has one.
   const removable = Boolean(onRemove) && projects.length > 1
   // What another project has waiting on the person, marked on the button.
-  const elsewhere = elsewhereStatus(
-    Object.fromEntries(Object.entries(statuses).filter(([id]) => !dotIgnores.includes(id))),
-    current.id,
-  )
+  const elsewhere = elsewhereStatus(statuses, current.id, dotIgnores)
   return (
     <div className="workspace-switcher relative min-w-0 w-fit max-w-[200px] flex-[0_1_auto] max-[700px]:max-w-[130px]">
       <Popover

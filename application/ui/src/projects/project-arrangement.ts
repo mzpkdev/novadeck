@@ -86,12 +86,6 @@ export const togglePin = (
   )
 }
 
-// Whether another project can be pinned.
-export const canPin = (
-  projects: readonly { readonly id: string }[],
-  current: ProjectArrangement,
-): boolean => arrangeProjects(projects, current).pinned.length < pinLimit
-
 // Steps a project one place up or down the switcher's list, as Alt and the arrows do:
 // within its group it moves a place; across the rule it pins or unpins in place rather
 // than skipping a row, so Alt+Down on the last pinned one unpins it and Alt+Up on the

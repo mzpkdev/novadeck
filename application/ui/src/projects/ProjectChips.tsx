@@ -82,7 +82,6 @@ export const ProjectChips = ({
               aria-current={isCurrent ? "true" : undefined}
               aria-description={status && statusText[status]}
               data-project-status={status}
-              data-needs-person={status ? "true" : undefined}
               onClick={() => {
                 if (!isCurrent) onSelect(project.id)
               }}

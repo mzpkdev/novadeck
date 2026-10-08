@@ -105,8 +105,8 @@ describe("The switcher's mark", () => {
 
   it("is the most pressing status among the other projects", () => {
     expect(statuses).toEqual({ here: "question", there: "done", busy: "running" })
-    expect(elsewhereStatus(statuses, "here")).toBe("done")
-    expect(elsewhereStatus(statuses, "there")).toBe("question")
+    expect(elsewhereStatus(statuses, "here", [])).toBe("done")
+    expect(elsewhereStatus(statuses, "there", [])).toBe("question")
   })
 
   it("leaves out the projects it is told to ignore", () => {
@@ -114,6 +114,6 @@ describe("The switcher's mark", () => {
   })
 
   it("ignores projects that are only working", () => {
-    expect(elsewhereStatus({ busy: "running" }, "here")).toBeUndefined()
+    expect(elsewhereStatus({ busy: "running" }, "here", [])).toBeUndefined()
   })
 })

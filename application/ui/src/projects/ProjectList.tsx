@@ -11,7 +11,7 @@ import { isSortable } from "@dnd-kit/react/sortable"
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import type { Project } from "../model/types"
-import { arrangeProjects, canPin, type ProjectArrangement } from "./project-arrangement"
+import { arrangeProjects, pinLimit, type ProjectArrangement } from "./project-arrangement"
 import type { ProjectStatus } from "./project-status"
 import { ProjectRow } from "./ProjectRow"
 
@@ -63,7 +63,7 @@ export const ProjectList = ({
   // The projects as listed: the pinned ones, then the rest.
   const { pinned, rest } = arrangeProjects(projects, arrangement)
   const listed = [...pinned, ...rest]
-  const pinAvailable = canPin(projects, arrangement)
+  const pinAvailable = pinned.length < pinLimit
   // The element that holds the rows, which a drag stays within.
   const [list, setList] = useState<HTMLDivElement | null>(null)
   const modifiers = useMemo(() => [RestrictToElement.configure({ element: list })], [list])

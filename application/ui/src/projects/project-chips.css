@@ -10,14 +10,15 @@
 
    Hooks: on a chip, aria-current="true" for the current project;
    data-project-status="question" | "attention" | "failed" | "done" (never "running"),
-   and data-needs-person="true" with it, which fills the chip so it draws the eye; on the
+   which fills the chip so it draws the eye; on the
    group, data-empty="true" while no chip fits, which takes the rule away.
 
    Tokens, each optional (its fallback in brackets):
    --project-chip-fg (muted), --project-chip-hover-fg (ink): the name at rest, and under
    the pointer or focus.
-   --project-chip-hover-bg (soft): the fill under the pointer, and while a chip needs the
-   person.
+   --project-chip-hover-bg (soft): the fill under the pointer.
+   --project-chip-attention-bg (--project-chip-hover-bg): the fill while a chip's project
+   needs the person.
    --project-chip-radius (radius-control)
    --project-chip-current-bg (paper), --project-chip-current-border-color (line),
    --project-chip-current-fg (ink): the current project's chip.
@@ -37,8 +38,8 @@
   background-color: var(--_bg);
   color: var(--_fg);
 }
-.project-chip[data-needs-person="true"] {
-  --_bg: var(--project-chip-hover-bg, var(--color-soft));
+.project-chip[data-project-status] {
+  --_bg: var(--project-chip-attention-bg, var(--project-chip-hover-bg, var(--color-soft)));
 }
 .project-chip[aria-current="true"] {
   --_bg: var(--project-chip-current-bg, var(--color-paper));

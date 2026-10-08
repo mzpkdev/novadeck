@@ -1,7 +1,6 @@
 import { context, describe, expect, it } from "../test"
 import {
   arrangeProjects,
-  canPin,
   moveProject,
   noArrangement,
   stepProject,
@@ -44,9 +43,7 @@ describe("Arranging projects", () => {
 
     it("pins no more than three", () => {
       const full = { order: ["a", "b", "c", "d", "e"], pinned: ["a", "b", "c"] }
-      expect(canPin(projects, full)).toBe(false)
       expect(togglePin(projects, full, "d")).toBe(full)
-      expect(canPin(projects, noArrangement)).toBe(true)
     })
   })
 

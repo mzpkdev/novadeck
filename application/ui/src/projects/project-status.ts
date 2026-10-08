@@ -80,7 +80,7 @@ export const projectStatuses = (
 export const elsewhereStatus = (
   statuses: Readonly<Record<string, ProjectStatus>>,
   current: string,
-  ignore: readonly string[] = [],
+  ignore: readonly string[],
 ): ProjectStatus | undefined => {
   let status: ProjectStatus | undefined
   for (const [id, each] of Object.entries(statuses))
