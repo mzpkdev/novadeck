@@ -51,7 +51,7 @@ export const WorkspaceSwitcher = ({
         }
       >
         <div
-          className="workspace-switcher-projects flex max-h-[min(280px,calc(100vh-150px))] flex-col gap-1 overflow-y-auto p-[5px]"
+          className="workspace-switcher-projects flex max-h-[min(560px,calc(100vh-150px))] flex-col gap-1 overflow-y-auto p-[5px]"
           aria-label="Workspaces"
         >
           {projects.map((project) => {
