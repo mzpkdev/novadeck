@@ -191,7 +191,10 @@ export const Preferences = ({
                   className={`preference-row ${settingRowClasses} [&_[data-part=trigger]]:w-36`}
                   label="Theme"
                   items={themeItems}
-                  value={theme.id}
+                  // A saved theme the app doesn't have shows as the one drawn, Graphite,
+                  // without being chosen, so picking Graphite saves it.
+                  value={theme.id === appearance.theme ? theme.id : ""}
+                  placeholder={theme.name}
                   onValueChange={(id) => {
                     const chosen = themes.find((entry) => entry.id === id)
                     if (chosen)

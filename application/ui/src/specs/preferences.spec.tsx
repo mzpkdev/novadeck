@@ -507,6 +507,27 @@ describe("appearance preference", () => {
         "ember",
       )
     })
+
+    it("saves Graphite when the person picks it", async () => {
+      await systemScheme("light")
+      await openWorkspace()
+      await openPreferences()
+      const saved = JSON.parse(localStorage.getItem("novadeck.preferences") ?? "{}")
+      saveFromAnotherWindow("novadeck.preferences", {
+        ...saved,
+        appearance: { theme: "ember", scheme: "light" },
+      })
+      await expect
+        .element(preferencesDialog().getByRole("combobox", { name: "Theme" }))
+        .toHaveTextContent("Graphite")
+
+      await preferencesDialog().getByRole("combobox", { name: "Theme" }).click()
+      await preferencesDialog().getByRole("option", { name: "Graphite" }).click()
+
+      await expect
+        .poll(() => JSON.parse(localStorage.getItem("novadeck.preferences")!).appearance.theme)
+        .toBe("graphite")
+    })
   })
 
   context("when following the system", () => {

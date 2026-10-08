@@ -449,12 +449,15 @@ app runs: whenever the preference changes, and whenever the system's scheme does
   plain script loaded in the head without `defer`, because the Content Security Policy
   allows same-origin scripts but not inline ones. `app/appearance.ts` saves a record
   under `novadeck.theme-boot` whenever the appearance changes:
-  `{ v, theme, scheme, schemes, ground }`, the record's version (2), the shown theme's
-  id, the person's mode, the schemes that theme defines, copied from its manifest
-  entry, and, when the page could resolve it, the theme's `--color-paper` as `#rrggbb`.
-  The script paints a valid ground (`/^#[0-9a-f]{6}$/i`, anything else ignored) as
-  `<html>`'s inline `background-color`, so a theme the stylesheets don't know yet still
-  shows its ground; `apply.ts` removes it with the inline `color-scheme`. The ground is
+  `{ v, theme, scheme, schemes, ground, groundScheme }`: the record's version (2), the
+  shown theme's id, the person's mode, the schemes that theme defines, copied from its
+  manifest entry, and, when the page could resolve it, the ground it paints first as
+  `#rrggbb` (`<html>`'s own where the theme gives it an opaque one, as Phosphor's black,
+  else `--color-paper`) with the scheme it was shown in. The script paints a valid
+  ground (`/^#[0-9a-f]{6}$/i`, anything else ignored) as `<html>`'s inline
+  `background-color` only when this start resolves to that same scheme, so a theme the
+  stylesheets don't know yet still shows its ground and a start in another scheme never
+  shows the old one; `apply.ts` removes it with the inline `color-scheme`. The ground is
   optional, so it needs no new version: bump `v` only when an existing field's meaning
   changes, and, while a record without a ground can name a theme since retired, when a
   theme is retired.

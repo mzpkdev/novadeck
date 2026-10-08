@@ -107,6 +107,7 @@ describe("watchAppearance", () => {
       scheme: "light",
       schemes: ["light", "dark"],
       ground: "#ffffff",
+      groundScheme: "light",
     })
 
     choose(ui, { theme: "graphite", scheme: "dark" })
@@ -239,6 +240,7 @@ describe("watchAppearance", () => {
           scheme: "system",
           schemes: ["dark"],
           ground: "#191c20",
+          groundScheme: "dark",
         })
 
         vi.advanceTimersByTime(releaseMs)
@@ -250,6 +252,7 @@ describe("watchAppearance", () => {
           scheme: "system",
           schemes: ["light", "dark"],
           ground: "#191c20",
+          groundScheme: "dark",
         })
         expect(reports.map((look) => look.scheme)).toEqual(["dark", "system", "system"])
       } finally {

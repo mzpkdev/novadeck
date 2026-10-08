@@ -47,14 +47,15 @@ afterEach(() => {
   document.documentElement.removeAttribute("style")
 })
 
-// A record of a theme the app does not know, with this ground.
-const recordWith = (ground: unknown) =>
+// A record of a theme the app does not know, with this ground, shown in this scheme.
+const recordWith = (ground: unknown, groundScheme: string = "dark") =>
   JSON.stringify({
     v: bootRecordVersion,
     theme: "ember",
     scheme: "dark",
     schemes: ["dark"],
     ground,
+    groundScheme,
   })
 
 const systems = [false, true]
@@ -189,6 +190,24 @@ describe("the boot script", () => {
 
       applyAppearance(root, startingAppearance(window, themes))
 
+      expect(root.style.backgroundColor).toBe("")
+    })
+
+    it("paints it only in the scheme it was shown in", () => {
+      const root = document.documentElement
+      // Saved while following the system in light; this start resolves to dark.
+      boot(
+        JSON.stringify({
+          v: bootRecordVersion,
+          theme: "graphite",
+          scheme: "system",
+          schemes: ["light", "dark"],
+          ground: "#f5f3ee",
+          groundScheme: "light",
+        }),
+        true,
+      )
+      expect(root.dataset.scheme).toBe("dark")
       expect(root.style.backgroundColor).toBe("")
     })
 

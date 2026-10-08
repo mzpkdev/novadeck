@@ -15,7 +15,8 @@
 // resolves in that same set, and Graphite's grounds, `oklch(from var(--color-paper)
 // calc(l - n) c h)`, are computed. A failure names the theme, scheme, pair and ratio.
 // `exceptions` lists the pairs a theme misses on purpose, each with its measured ratio and
-// reason; an exception that is no longer needed fails the test until it goes.
+// reason. A pair under one may pass on its own, so a token can improve ground by ground;
+// once every pair under an exception passes, the test fails until the exception goes.
 
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -211,18 +212,20 @@ describe("contrast targets", () => {
   })
 
   it.each(measured)("$key reaches $minimum:1", ({ key, ratio, minimum }) => {
-    const reason = exceptionOf(key)
-    if (reason !== undefined) {
-      expect(
-        ratio,
-        `${key} now reaches ${minimum}:1 (${ratio.toFixed(2)}); drop its exception: ${reason}`,
-      ).toBeLessThan(minimum)
-    } else {
+    if (exceptionOf(key) === undefined) {
       expect(
         ratio,
         `${key} is ${ratio.toFixed(2)}:1, under ${minimum}:1; raise it in ${key.split(" ")[0]}'s theme file`,
       ).toBeGreaterThanOrEqual(minimum)
     }
+  })
+
+  it.each(Object.entries(exceptions))("still needs the exception for %s", (id, reason) => {
+    const under = measured.filter(({ key }) => key.startsWith(`${id} `))
+    expect(
+      under.some(({ ratio, minimum }) => ratio < minimum),
+      `every pair under ${id} now passes; drop its exception: ${reason}`,
+    ).toBe(true)
   })
 
   it("lists only exceptions for pairs that exist", () => {

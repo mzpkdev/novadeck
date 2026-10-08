@@ -9,7 +9,7 @@ import {
   darkSchemeQuery,
   resolveAppearance,
 } from "../theme/apply"
-import { tokenColors } from "../theme/probe"
+import { hexColor, tokenColors } from "../theme/probe"
 import { themes } from "../theme/themes"
 import type { UiState } from "./ui-store"
 
@@ -48,6 +48,12 @@ export const watchAppearance = (
   // The ground the page paints first: the body's, before the workspace draws on it.
   const groundOf = (): string | undefined =>
     tokenColors(view.document.body, ["--color-paper"])["--color-paper"]?.slice(0, 7)
+  // What the page paints before anything else: <html>'s ground when the theme gives it an
+  // opaque one, as Phosphor's black tube, else the body's paper.
+  const firstGroundOf = (): string | undefined => {
+    const own = hexColor(view.document, view.getComputedStyle(root).backgroundColor)
+    return own && (own.length === 7 || own.endsWith("ff")) ? own.slice(0, 7) : groundOf()
+  }
   const apply = (): void => {
     clearTimeout(releasing)
     releasing = undefined
@@ -69,13 +75,16 @@ export const watchAppearance = (
     const appearance = resolveAppearance(preference, system?.matches ?? false, themes)
     applyAppearance(root, appearance)
     // The ground goes in the record so the next start paints it before any stylesheet,
-    // even for a theme the boot CSS does not know. It is read once the theme is applied.
+    // even for a theme the boot CSS does not know: what the page paints first, <html>'s
+    // own ground where the theme sets one, else the paper. It holds for the scheme shown
+    // now, which the record names, so a start in another scheme skips it.
+    const ground = firstGroundOf()
     const record = JSON.stringify({
       v: bootRecordVersion,
       theme: appearance.theme,
       scheme: preference.scheme,
       schemes: themes.find((entry) => entry.id === appearance.theme)?.schemes,
-      ground: groundOf(),
+      ...(ground ? { ground, groundScheme: appearance.scheme } : {}),
     })
     if (record !== saved) {
       saved = record

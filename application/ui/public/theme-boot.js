@@ -16,13 +16,16 @@
   let schemes = ["light", "dark"]
   let choice = "system"
   let ground = ""
+  let groundScheme
   try {
     const saved = JSON.parse(localStorage.getItem("novadeck.theme-boot") ?? "null")
     if (saved?.scheme === "system" || known.has(saved?.scheme)) {
       choice = saved.scheme
-      // Only a plain #rrggbb is painted; anything else is ignored.
+      // Only a plain #rrggbb is painted, and only in the scheme it was shown in;
+      // anything else is ignored.
       if (typeof saved.ground === "string" && /^#[0-9a-f]{6}$/i.test(saved.ground)) {
         ground = saved.ground
+        groundScheme = saved.groundScheme
       }
       // A record without a usable theme and schemes, as older versions saved, is for the
       // default. An id the app no longer has shows until the app applies the default.
@@ -53,5 +56,5 @@
   root.setAttribute("data-theme", theme)
   root.setAttribute("data-scheme", scheme)
   root.style.colorScheme = scheme
-  if (ground) root.style.backgroundColor = ground
+  if (ground && groundScheme === scheme) root.style.backgroundColor = ground
 })()
