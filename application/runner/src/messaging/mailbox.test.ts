@@ -161,7 +161,7 @@ describe("a delivery", () => {
     expect(text).toContain('<message id="m-2" from="t9" agent="Claude Code" thread="t-1"')
     // The note, in a double-quoted attribute, writes the mark with single quotes.
     expect(text).toContain("Those marked lead='Ab3dEf9Z' are from your lead")
-    expect(text).toContain("That mark is new in every delivery")
+    expect(text).toContain("Every delivery marks its lead's messages with a new mark of its own")
     expect(
       wrap(
         [peer],

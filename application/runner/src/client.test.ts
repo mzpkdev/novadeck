@@ -521,6 +521,7 @@ describe("runner client project removal", () => {
       handle: `t${earlier.nextTerminalNumber(sessions.removed)}`,
       naming: { person: null, agent: null, summary: null },
       openedBy: null,
+      lead: null,
       command: null,
       lastProgram: null,
       work: null,

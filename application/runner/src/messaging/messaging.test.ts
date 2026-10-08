@@ -3239,6 +3239,36 @@ describe("an Antigravity delivery joined mid-turn", () => {
     return { messaging, call, given }
   }
 
+  it("keeps each lead block's note and mark consistent, each delivery with a mark of its own", () => {
+    const { messaging, send, ask } = create()
+    const root = binding("agy", "c-root", "7")
+    messaging.register("G", here, "t3", "t1")
+    messaging.expect("G", "agy")
+    const call = (number: number) =>
+      ask("G", root, "PreInvocation", [
+        observed(root),
+        started(root, number === 0 ? "prompt" : "call"),
+      ])
+    sent(send("A", "t3", "First brief."))
+    const given = call(0)
+    messaging.acknowledge("G", given.leaseId!)
+    sent(send("A", "t3", "Second brief."))
+    const joined = text(call(1).stdout)
+    const blocks = joined.split("</novadeck-messages>\n").filter((block) => block !== "")
+    expect(blocks).toHaveLength(2)
+    const marks = blocks.map((block) => {
+      const noted = /Those marked lead='([0-9A-Za-z]{8})'/.exec(block)?.[1]
+      const attribute = /<message [^>]* lead="([0-9A-Za-z]{8})"/.exec(block)?.[1]
+      expect(noted).toBeDefined()
+      expect(attribute).toBe(noted)
+      expect(block).toContain("Every delivery marks its lead's messages with a new mark")
+      return noted
+    })
+    expect(marks[0]).not.toBe(marks[1])
+    expect(blocks[0]).toContain("First brief.")
+    expect(blocks[1]).toContain("Second brief.")
+  })
+
   it("is sized by the bytes it prints, quotes and line breaks escaped as JSON", () => {
     // Quotes print as two bytes each in the first delivery that is kept, which a raw count of
     // the kept text would miss.

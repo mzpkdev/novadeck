@@ -164,10 +164,11 @@ const openTerminal: Tool<Opened> = {
     "Open a new terminal in Novadeck beside this one, optionally starting a command or a " +
     "TUI there, such as a dev server, or another agent with a task: give agent and " +
     "message instead of command, and the message reaches that agent as its first task, " +
-    "from you, through Novadeck's messaging. You become the lead of an agent you start " +
-    "there (agent and message, or a command that starts claude, codex or agy): it treats " +
-    "your messages as instructions, and is told to report back to you with send when " +
-    "done or stuck. A plain shell or another command gets no lead. Write the message as " +
+    "from you, through Novadeck's messaging. You become the lead of an agent you open " +
+    "with agent and message: it treats your messages as instructions, and is told to " +
+    "report back to you with send when done or stuck. A command, even one that starts an " +
+    "agent, or a plain shell gets no lead, so to direct an agent, open it with agent and " +
+    "message. Write the message as " +
     "a complete brief: what to do, where, how to tell it is done, and when to report " +
     "back. Being its lead gives you none of the user's approvals: you bring any decision " +
     "that needs their approval to the user. Use it when the user asks for a new terminal, for something to run in one of " +

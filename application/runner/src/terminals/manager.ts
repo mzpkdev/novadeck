@@ -365,6 +365,12 @@ type Record = {
   /** The handle of the terminal whose agent opened this one; null otherwise. */
   openedBy: string | null
   /**
+   * The handle of its lead: the terminal whose agent opened it with a brief to run an
+   * agent there; null otherwise, however it was opened. Whether that lead runs now is
+   * `ledBy` on its summary.
+   */
+  lead: string | null
+  /**
    * The command the agent that opened it started there, whose prompt is never the
    * person's; kept for this runner's lifetime, for its first root session.
    */
@@ -552,14 +558,6 @@ const positive = (value: number | undefined, fallback: number): number => {
     throw new RangeError("Terminal limits must be positive integers.")
   return result
 }
-
-/**
- * The handle of the lead a terminal has, if its opener has one: a terminal opened to run
- * an agent (its command's program is one) is led by the terminal that opened it. A plain
- * shell, or a dev server, is not: an agent the person runs there later is theirs alone.
- */
-const leadFrom = (openedBy: string | null, command: string | null): string | null =>
-  openedBy !== null && expectedAgent(command ?? undefined, undefined) !== null ? openedBy : null
 
 /**
  * Owns PTYs for one runner lifetime. Exited, unattached records are retained up to a
@@ -825,6 +823,7 @@ export class Terminals {
       if (input.title !== undefined) naming = renamedTo(naming, input.title)
       if (opener?.title !== undefined) naming = openedWith(naming, opener.title, opener.by)
       const openedBy = kept?.openedBy ?? opener?.by ?? null
+      const lead = kept ? kept.lead : opener?.leads === true ? opener.by : null
       const work = saved?.work ?? null
       const titled = this.titled(naming, { work, handle, openedBy })
       const resume =
@@ -846,10 +845,7 @@ export class Terminals {
           sessionId: input.sessionId,
           ...titled,
           handle,
-          ledBy: this.runningLead(
-            input.sessionId,
-            leadFrom(openedBy, input.command ?? saved?.command ?? null),
-          ),
+          ledBy: this.runningLead(input.sessionId, lead),
           started: true,
           command: input.command ?? saved?.command ?? null,
           lastProgram: saved?.lastProgram ?? null,
@@ -902,6 +898,7 @@ export class Terminals {
         held: null,
         resizedAt: 0,
         openedBy,
+        lead,
         openerCommand: opener?.command ?? null,
         // Only a session the opener's command started, running an agent, is the opener's.
         awaitsOpened:
@@ -962,7 +959,7 @@ export class Terminals {
       sessionId: terminal.sessionId,
       ...this.titled(terminal.naming, terminal),
       handle: terminal.handle,
-      ledBy: this.runningLead(terminal.sessionId, leadFrom(terminal.openedBy, terminal.command)),
+      ledBy: this.runningLead(terminal.sessionId, terminal.lead),
       started: false,
       command: terminal.command,
       lastProgram: terminal.lastProgram,
@@ -1024,7 +1021,7 @@ export class Terminals {
       id,
       { projectId: this.projectOf(sessionId), sessionId },
       handle,
-      leadFrom(record.openedBy, record.summary.command),
+      record.lead,
     )
     this.messaging.expect(id, agent)
     this.refreshLeads()
@@ -1055,10 +1052,7 @@ export class Terminals {
    */
   private refreshLeads(): void {
     for (const record of this.records.values()) {
-      const lead = this.runningLead(
-        record.summary.sessionId,
-        leadFrom(record.openedBy, record.summary.command),
-      )
+      const lead = this.runningLead(record.summary.sessionId, record.lead)
       if (lead === record.summary.ledBy) continue
       record.summary = { ...record.summary, ledBy: lead }
       this.announce(record)
@@ -2213,6 +2207,8 @@ export class Terminals {
         by: record.summary.handle,
         ...(request.title !== undefined && { title: request.title }),
         ...(command !== undefined && { command }),
+        // Only an agent opened with a brief is led by the one that opened it.
+        ...(request.agent !== undefined && { leads: true }),
       },
     )
     let task: SendAnswer | undefined
@@ -3886,6 +3882,7 @@ export class Terminals {
         handle: record.summary.handle,
         naming: record.naming,
         openedBy: record.openedBy,
+        lead: record.lead,
         work: record.work,
         command: record.summary.command,
         lastProgram: record.summary.lastProgram,

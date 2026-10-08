@@ -344,6 +344,7 @@ const numbered = (id: string, handle: string) => ({
   handle,
   naming: { person: null, agent: null, summary: null },
   openedBy: null,
+  lead: null,
   command: null,
   lastProgram: null,
   work: null,
@@ -369,6 +370,7 @@ describe("saved terminals", () => {
         summary: "Builds the API.",
       },
       openedBy: "t2",
+      lead: "t2",
       command: "claude",
       lastProgram: "claude",
       work: {
@@ -395,6 +397,7 @@ describe("saved terminals", () => {
       // What names it, each layer and who gave it, survives a reload, as who opened it does.
       naming: terminal.naming,
       openedBy: "t2",
+      lead: "t2",
     })
     if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600)
     reopened.clearTranscripts()
@@ -415,6 +418,7 @@ describe("saved terminals", () => {
       handle: "t1",
       naming: { person: null, agent: null, summary: null },
       openedBy: null,
+      lead: null,
       command: null,
       lastProgram: null,
       work: null,
@@ -440,6 +444,7 @@ describe("saved terminals", () => {
         handle: `t${index + 1}`,
         naming: { person: null, agent: null, summary: null },
         openedBy: null,
+        lead: null,
         command: null,
         lastProgram: null,
         work: null,
@@ -483,6 +488,7 @@ describe("saved terminals", () => {
       handle: "t1",
       naming: { person: null, agent: null, summary: null },
       openedBy: null,
+      lead: null,
       command: null,
       lastProgram: null,
       work: null,
@@ -563,6 +569,7 @@ describe("the mailbox", () => {
       handle: "t1",
       naming: { person: null, agent: null, summary: null },
       openedBy: null,
+      lead: null,
       command: null,
       lastProgram: null,
       work: null,
@@ -606,6 +613,7 @@ const keptTerminal = (workspace: WorkspaceStore, sessionId: string, handle: stri
     handle,
     naming: { person: null, agent: null, summary: null },
     openedBy: null,
+    lead: null,
     command: null,
     lastProgram: null,
     work: null,

@@ -152,6 +152,7 @@ const it = base.extend<{ shell: Fixture }>({
         handle: store.terminal(id)?.handle ?? "t1",
         naming: store.terminal(id)?.naming ?? { person: null, agent: null, summary: null },
         openedBy: null,
+        lead: null,
         command: null,
         lastProgram: null,
         work: null,
@@ -1662,7 +1663,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     shell,
   }) => {
     const [lead, worker, plain] = [randomUUID(), randomUUID(), randomUUID()]
-    const keep = (id: string, handle: string, openedBy: string | null, command: string | null) =>
+    const keep = (
+      id: string,
+      handle: string,
+      openedBy: string | null,
+      leader: string | null,
+      command: string | null = null,
+    ) =>
       shell.store.saveTerminal({
         id,
         sessionId: shell.sessionId,
@@ -1670,6 +1677,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         handle,
         naming: { person: null, agent: null, summary: null },
         openedBy,
+        lead: leader,
         command,
         lastProgram: null,
         work: null,
@@ -1677,9 +1685,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         promptedAt: null,
       })
     keep(lead, "t1", null, null)
-    // Opened by t1 to run an agent, and opened by t1 as a plain shell.
-    keep(worker, "t2", "t1", "claude")
-    keep(plain, "t3", "t1", null)
+    // Opened by t1 with a brief for an agent, and opened by t1 for a command that starts
+    // one: only the first is led.
+    keep(worker, "t2", "t1", "t1")
+    keep(plain, "t3", "t1", null, "claude")
     const manager = shell.manager()
     const watched = shell.watch(manager)
     expect(manager.list(shell.sessionId).map(({ ledBy }) => ledBy)).toEqual([null, null, null])
@@ -1714,6 +1723,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       handle: "t1",
       naming: { person: null, agent: null, summary: null },
       openedBy: "t1",
+      lead: "t1",
       command: "claude",
       lastProgram: null,
       work: null,
@@ -2052,9 +2062,11 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           handle: "t2",
           naming: { person: null, agent: { title: "Agent", by: "t1" }, summary: null },
           openedBy: "t1",
+          lead: null,
         })
-        // Opened to run an agent, it is led by the terminal that opened it.
-        expect(manager.get(opened!).ledBy).toBe("t1")
+        // Opened for a command, even one that starts an agent, it has no lead.
+        expect(manager.get(opened!).ledBy).toBeNull()
+        expect(shell.store.terminalIdentity(opened!)).toMatchObject({ lead: null })
         await shell.until(manager, opened!, "claude args: --fresh")
         // Five a minute, counting each request that was asked, opened or not: two more,
         // and the next waits.
@@ -2200,6 +2212,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         // Who opened it is kept with the terminal, for a runner that restores it.
         expect(shell.store.terminalIdentity(created[0]!)).toMatchObject({
           openedBy: "t1",
+          lead: "t1",
         })
         // The task waits for the first session of that agent there.
         expect(manager.messages(created[0]!).threads[0]?.messages[0]).toMatchObject({

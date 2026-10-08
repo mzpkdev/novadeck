@@ -57,6 +57,7 @@ const it = base.extend<{ fixture: Fixture }>({
         handle,
         naming: { person: null, agent: null, summary: null },
         openedBy: null,
+        lead: null,
         command: null,
         lastProgram: null,
         work: null,

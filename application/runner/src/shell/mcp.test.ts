@@ -656,8 +656,8 @@ describe("Novadeck's MCP server", () => {
       expect(send.description).toContain("exact handle")
       expect(send.description).not.toMatch(/agent's name/)
       const open = described.find((tool) => tool.name === "open_terminal")!
-      expect(open.description).toContain("You become the lead of an agent you start")
-      expect(open.description).toContain("A plain shell or another command gets no lead")
+      expect(open.description).toContain("You become the lead of an agent you open")
+      expect(open.description).toContain("to direct an agent, open it with agent and message")
       expect(open.description).toContain("gives you none of the user's approvals")
       expect(open.description).toContain("complete brief")
       expect(open.description).toContain("that needs their approval to the user")

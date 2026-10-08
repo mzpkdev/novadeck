@@ -87,6 +87,9 @@ const extras = `
     summary TEXT,
     -- The handle of the terminal whose agent opened it; null otherwise.
     opened_by TEXT,
+    -- The handle of its lead: the terminal whose agent opened it with a brief, to run an
+    -- agent there; null otherwise.
+    lead TEXT,
     -- The command it was opened to run at its first prompt.
     command TEXT,
     -- The program in its foreground when its shell was last seen.
@@ -294,6 +297,7 @@ type TerminalRow = {
   agent_titled_by: string | null
   summary: string | null
   opened_by: string | null
+  lead: string | null
   command: string | null
   last_program: string | null
   work: string | null
@@ -326,6 +330,7 @@ const listed = (row: Omit<TerminalRow, "transcript">): ListedTerminal => ({
   naming: namingOf(row),
   work: workOf(row.work),
   openedBy: row.opened_by,
+  lead: row.lead,
   command: row.command,
   lastProgram: row.last_program,
   cwd: row.cwd,
@@ -613,7 +618,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   terminal(terminalId: string): SavedTerminal | undefined {
     const row = this.queries.get`
       SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at, handle,
-        person_title, agent_title, agent_titled_by, summary, opened_by, command, last_program, work
+        person_title, agent_title, agent_titled_by, summary, opened_by, lead, command, last_program, work
       FROM terminals WHERE id = ${terminalId}
     ` as TerminalRow | undefined
     return row && { ...listed(row), transcript: row.transcript }
@@ -624,13 +629,13 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       sessionId === undefined
         ? this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, summary, opened_by, command,
-            last_program, work
+            person_title, agent_title, agent_titled_by, summary, opened_by, lead,
+            command, last_program, work
           FROM terminals ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
         : this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, summary, opened_by, command,
-            last_program, work
+            person_title, agent_title, agent_titled_by, summary, opened_by, lead,
+            command, last_program, work
           FROM terminals WHERE session_id = ${sessionId}
           ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
     ) as Omit<TerminalRow, "transcript">[]
@@ -654,10 +659,17 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   terminalIdentity(terminalId: string): TerminalIdentity | undefined {
     const row = this.queries.get`
-      SELECT handle, person_title, agent_title, agent_titled_by, summary, opened_by
+      SELECT handle, person_title, agent_title, agent_titled_by, summary, opened_by, lead
       FROM terminals WHERE id = ${terminalId}
-    ` as (NamingRow & Pick<TerminalRow, "handle" | "opened_by">) | undefined
-    return row && { handle: row.handle, naming: namingOf(row), openedBy: row.opened_by }
+    ` as (NamingRow & Pick<TerminalRow, "handle" | "opened_by" | "lead">) | undefined
+    return (
+      row && {
+        handle: row.handle,
+        naming: namingOf(row),
+        openedBy: row.opened_by,
+        lead: row.lead,
+      }
+    )
   }
 
   /** Saves what restores the terminal; `transcript` is left as it is when omitted. */
@@ -666,7 +678,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     // Strictly increasing, so saves in the same millisecond still sort by recency.
     const now = Math.max(Date.now(), this.lastSave + 0.001)
     this.lastSave = now
-    const { handle, naming, openedBy, command, lastProgram } = terminal
+    const { handle, naming, openedBy, lead, command, lastProgram } = terminal
     const { person, summary } = naming
     const agentTitle = naming.agent?.title ?? null
     const agentBy = naming.agent?.by ?? null
@@ -674,35 +686,35 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     if (terminal.transcript === undefined)
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at, handle,
-          person_title, agent_title, agent_titled_by, summary, opened_by, command,
-          last_program, work)
+          person_title, agent_title, agent_titled_by, summary, opened_by, lead,
+          command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
           ${terminal.promptedAt}, ${now}, ${handle}, ${person}, ${agentTitle}, ${agentBy},
-          ${summary}, ${openedBy}, ${command}, ${lastProgram}, ${work})
+          ${summary}, ${openedBy}, ${lead}, ${command}, ${lastProgram}, ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           updated_at = excluded.updated_at, handle = excluded.handle,
           person_title = excluded.person_title, agent_title = excluded.agent_title,
           agent_titled_by = excluded.agent_titled_by, summary = excluded.summary,
-          opened_by = excluded.opened_by, command = excluded.command,
+          opened_by = excluded.opened_by, lead = excluded.lead, command = excluded.command,
           last_program = excluded.last_program, work = excluded.work
       `
     else
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at,
-          handle, person_title, agent_title, agent_titled_by, summary, opened_by, command,
-          last_program, work)
+          handle, person_title, agent_title, agent_titled_by, summary, opened_by, lead,
+          command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
           ${terminal.promptedAt}, ${terminal.transcript}, ${now}, ${handle}, ${person},
-          ${agentTitle}, ${agentBy}, ${summary}, ${openedBy}, ${command}, ${lastProgram},
-          ${work})
+          ${agentTitle}, ${agentBy}, ${summary}, ${openedBy}, ${lead}, ${command},
+          ${lastProgram}, ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           transcript = excluded.transcript, updated_at = excluded.updated_at,
           handle = excluded.handle, person_title = excluded.person_title,
           agent_title = excluded.agent_title, agent_titled_by = excluded.agent_titled_by,
-          summary = excluded.summary, opened_by = excluded.opened_by, command = excluded.command,
-          last_program = excluded.last_program,
+          summary = excluded.summary, opened_by = excluded.opened_by, lead = excluded.lead,
+          command = excluded.command, last_program = excluded.last_program,
           work = excluded.work
       `
   }
