@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path"
+import { isAbsolute, normalize, relative } from "node:path"
 
 import type { TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 
@@ -44,7 +44,8 @@ export type PeersOptions = {
  * touches where that is a plain path to no file that may hold secrets.
  */
 const shareable = (kind: Waiting["kind"], subject: string | null): string | null =>
-  kind !== "permission" || (subject !== null && /^[^\s:?#=]+$/.test(subject) && !secret(subject))
+  kind !== "permission" ||
+  (subject !== null && /^[^\s:?#=]+$/.test(subject) && !secret(normalize(subject)))
     ? subject
     : null
 
