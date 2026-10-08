@@ -20,7 +20,7 @@ const message = (fields: Partial<Message> = {}): Message => ({
   state: "queued",
   deliveredAt: null,
   notified: false,
-  led: false,
+  fromLead: false,
   toLead: false,
   ...fields,
 })

@@ -386,6 +386,12 @@ type Record = {
    */
   submitted: boolean
   /**
+   * Whether the shell was given a command to run at its first prompt (an agent opened or
+   * resumed there) that has not been seen to end: the next prompt is then the first after
+   * it ran, unless typing cancelled it.
+   */
+  startupRuns: boolean
+  /**
    * Whether the person pressed Enter at the agent's own prompt shown before any session
    * bound: its first prompt's hooks bind it, so until then nothing says it is idle.
    */
@@ -884,6 +890,7 @@ export class Terminals {
         changed: false,
         savedAt: 0,
         submitted: started.resumes,
+        startupRuns: started.resumes,
         readyEntered: false,
         naming,
         nudges: noNudges,
@@ -1184,8 +1191,10 @@ export class Terminals {
     // Typing before the shell resumes its agent cancels the resume, so the shell gets
     // what was typed. A cancelled resume leaves its session free for another terminal.
     const claim = record.resumeClaim
-    if (this.cancelResume(record) && claim && this.claims.get(claim) === record.summary.id)
-      this.claims.delete(claim)
+    if (this.cancelResume(record)) {
+      record.startupRuns = false
+      if (claim && this.claims.get(claim) === record.summary.id) this.claims.delete(claim)
+    }
     if (/[\r\n]/.test(data)) record.submitted = true
     if (keys.some(({ kind }) => kind === "enter") && this.readyOf(record)) this.readyEnter(record)
     this.messaging.keys(
@@ -1696,10 +1705,14 @@ export class Terminals {
           exitQueued: false,
           closing: undefined,
           submitted: started.resumes,
+          startupRuns: started.resumes,
           readyEntered: false,
         })
         // The earlier shell's screen shows above the new one's.
         if (earlier) this.show(record, earlier, null)
+        // Restarted to resume the worker's agent session, it stays led; restarted as a plain
+        // shell, there is no agent left to lead.
+        if (!started.resumes) this.endLead(record)
         this.register(record, input.resume ?? null)
         this.listen(record)
         this.announce(record)
@@ -2898,9 +2911,18 @@ export class Terminals {
     record.promptedAt = Date.now()
     record.submitted = false
     record.readyEntered = false
-    this.cancelResume(record)
+    // Whether the startup command (an agent opened or resumed there) ran, so this prompt
+    // is the first after it ended.
+    const ran = record.startupRuns && !this.cancelResume(record)
+    record.startupRuns = false
     record.changed = true
     const moved = cwd !== record.summary.cwd
+    const { binding } = record
+    // The agent it was started to run left without ever binding a session (a failed
+    // login, Ctrl-C at startup, a declined trust): the lead it had ends with it. One bound
+    // ends the lead only once its process is gone; suspended with Ctrl+Z it still runs,
+    // and comes back with `fg`. A process Novadeck can't name can't be told suspended.
+    if (binding === null ? ran : !binding.instance || !alive(binding.instance)) this.endLead(record)
     this.endBinding(record)
     // An agent whose prompt showed, with no session bound, left with it.
     this.messaging.unshown(record.summary.id)
@@ -3511,6 +3533,8 @@ export class Terminals {
     const { binding } = record
     if (!binding?.instance || alive(binding.instance)) return false
     record.left = binding
+    // The agent's process is gone: the lead it had ends with it.
+    this.endLead(record)
     return this.endBinding(record)
   }
 
@@ -3543,9 +3567,6 @@ export class Terminals {
    */
   private endBinding(record: Record, only?: string): boolean {
     if (only !== undefined && record.binding?.sessionId !== only) return false
-    // The agent itself left (not a new session replacing one, as /clear does, which names
-    // `only`): the lead it had ends with it.
-    if (only === undefined && record.binding !== null) this.endLead(record)
     record.binding = null
     record.activity = null
     record.telemetry = null

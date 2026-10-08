@@ -361,6 +361,29 @@ const fakeClaude = (home: string, plugins: string, session: string): string => {
   return bin
 }
 
+// A lead's terminal t1 and a worker t2 it leads, kept as an earlier runner left them; the
+// worker's saved agent session when one is given.
+const keepLed = (shell: Fixture, ids: { lead: string; worker: string }, session?: string) => {
+  for (const [id, handle, ledBy] of [
+    [ids.lead, "t1", null],
+    [ids.worker, "t2", "t1"],
+  ] as const)
+    shell.store.saveTerminal({
+      id,
+      sessionId: shell.sessionId,
+      cwd: shell.home,
+      handle,
+      naming: { person: null, agent: null, summary: null },
+      openedBy: ledBy,
+      ledBy,
+      command: null,
+      lastProgram: null,
+      work: null,
+      agents: id === ids.worker && session ? { claude: { sessionId: session, seq: 1 } } : {},
+      promptedAt: null,
+    })
+}
+
 describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell integration", () => {
   it("loads the user's own .bashrc and reports each prompt's directory", async ({ shell }) => {
     const directory = join(shell.home, "my dir ż")
@@ -1744,6 +1767,97 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await expect.poll(() => manager.get(worker).ledBy).toBeNull()
     expect(shell.store.terminalIdentity(worker)?.ledBy).toBeNull()
     expect(shell.store.terminalIdentity(lead)?.ledBy).toBeNull()
+  })
+
+  it("keeps a worker's lead while its agent is only suspended, as Ctrl+Z leaves it", async ({
+    shell,
+  }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const ids = { lead: randomUUID(), worker: randomUUID() }
+    keepLed(shell, ids, session)
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    await create(manager, shell, { id: ids.lead, restore: true })
+    await create(manager, shell, { id: ids.worker, restore: true, resume: "claude" })
+    await next((summary) => summary.id === ids.worker && summary.agent === "claude")
+    // Ctrl+Z: the shell's prompt returns while the agent still exists.
+    manager.write({ terminalId: ids.worker, data: "\x1a" }, "owner")
+    await shell.until(manager, ids.worker, "Stopped")
+    manager.write({ terminalId: ids.worker, data: "echo back\r" }, "owner")
+    await shell.until(manager, ids.worker, /\nback\r?\n/)
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
+    expect(shell.store.terminalIdentity(ids.worker)?.ledBy).toBe("t1")
+  })
+
+  it("ends a worker's lead when its agent exits before any session bound, and its brief is gone", async ({
+    shell,
+  }) => {
+    fakeAgent(shell.home, "claude")
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const ids = { lead: randomUUID(), worker: randomUUID() }
+    keepLed(shell, ids)
+    const manager = shell.manager()
+    await create(manager, shell, { id: ids.lead, restore: true })
+    await create(manager, shell, { id: ids.worker, restore: true, command: "claude" })
+    await shell.until(manager, ids.worker, "claude args:")
+    const brief = (
+      manager as unknown as {
+        messaging: { send: (from: string, request: object) => { ok: boolean } }
+      }
+    ).messaging.send(ids.lead, { to: "t2", text: "Do the work." })
+    expect(brief.ok).toBe(true)
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
+    // Enter ends the stand-in agent, which never bound a session.
+    manager.write({ terminalId: ids.worker, data: "\r" }, "owner")
+    await expect.poll(() => manager.get(ids.worker).ledBy).toBeNull()
+    expect(manager.messages(ids.worker).threads[0]?.messages[0]).toMatchObject({
+      text: "Do the work.",
+      state: "gone",
+    })
+  })
+
+  it("keeps a worker's lead through a restart that resumes its agent, and ends it when none does", async ({
+    shell,
+  }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const ids = { lead: randomUUID(), worker: randomUUID() }
+    keepLed(shell, ids, session)
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    await create(manager, shell, { id: ids.lead, restore: true })
+    await create(manager, shell, { id: ids.worker, restore: true })
+    const ended = async () => {
+      manager.write({ terminalId: ids.worker, data: "exit\r" }, "owner")
+      await next((summary) => summary.id === ids.worker && summary.exit !== null)
+    }
+    await ended()
+    await manager.restart(
+      { terminalId: ids.worker, cols: 100, rows: 20, resume: "claude" },
+      "owner",
+    )
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
+    await shell.until(manager, ids.worker, "claude is running")
+    manager.write({ terminalId: ids.worker, data: "\r" }, "owner")
+    await expect.poll(() => manager.get(ids.worker).ledBy).toBeNull()
+  })
+
+  it("ends a worker's lead when it restarts as a plain shell", async ({ shell }) => {
+    const ids = { lead: randomUUID(), worker: randomUUID() }
+    keepLed(shell, ids)
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    await create(manager, shell, { id: ids.lead, restore: true })
+    await create(manager, shell, { id: ids.worker, restore: true })
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
+    manager.write({ terminalId: ids.worker, data: "exit\r" }, "owner")
+    await next((summary) => summary.id === ids.worker && summary.exit !== null)
+    await manager.restart({ terminalId: ids.worker, cols: 100, rows: 20 }, "owner")
+    expect(manager.get(ids.worker).ledBy).toBeNull()
+    expect(shell.store.terminalIdentity(ids.worker)?.ledBy).toBeNull()
   })
 
   it("keeps a worker's lead when its agent clears its conversation", async ({ shell }) => {

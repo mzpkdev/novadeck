@@ -1,5 +1,3 @@
-import type { MessagingProfile } from "../harnesses/harness.js"
-
 /**
  * How a terminal's agent can take a message now, one state machine per terminal (see
  * docs/agent-messaging.md, "States"). Every terminal with an agent is in one state at
@@ -669,8 +667,11 @@ export type MidTurnCall = "tool call" | "model call"
  * call, or, where a hook asks before every model call (`reinjectPerCall`), its next model
  * call; undefined where it waits for the turn's end.
  */
-export const midTurnCall = (profile: MessagingProfile): MidTurnCall | undefined =>
-  profile.call ? "tool call" : profile.reinjectPerCall ? "model call" : undefined
+export const midTurnCall = (
+  hasToolHook: boolean,
+  reinjectPerCall: boolean,
+): MidTurnCall | undefined =>
+  hasToolHook ? "tool call" : reinjectPerCall ? "model call" : undefined
 
 /**
  * When a message sent now would reach the agent, in the words `send` answers with. A

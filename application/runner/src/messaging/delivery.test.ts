@@ -616,11 +616,16 @@ describe("when a message would reach an agent", () => {
   })
 })
 
+// Where a lead's message reaches a harness's running turn, from its profile.
+const midTurnOf = ({ messaging }: (typeof harnesses)["claude"]) =>
+  midTurnCall(messaging.call !== undefined, messaging.reinjectPerCall)
+
 describe("when a lead's message would reach a running turn", () => {
   it("names the call each harness delivers it at", () => {
-    expect(midTurnCall(harnesses.claude.messaging)).toBe("tool call")
-    expect(midTurnCall(harnesses.codex.messaging)).toBe("tool call")
-    expect(midTurnCall(harnesses.agy.messaging)).toBe("model call")
+    expect(midTurnOf(harnesses.claude)).toBe("tool call")
+    expect(midTurnOf(harnesses.codex)).toBe("tool call")
+    expect(midTurnOf(harnesses.agy)).toBe("model call")
+    expect(midTurnCall(false, false)).toBeUndefined()
   })
 
   it("tells the lead's message it reaches a running turn at its next tool call", () => {

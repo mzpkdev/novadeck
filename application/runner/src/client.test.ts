@@ -509,7 +509,7 @@ describe("runner client project removal", () => {
         state: "delivered",
         deliveredAt: Date.now(),
         notified: false,
-        led: false,
+        fromLead: false,
         toLead: false,
       })
     }

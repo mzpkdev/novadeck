@@ -139,7 +139,7 @@ const extras = `
     -- Whether its sender was told it is gone.
     notified INTEGER NOT NULL,
     -- Whether its sender was its recipient's lead when it was sent.
-    led INTEGER NOT NULL,
+    from_lead INTEGER NOT NULL,
     -- Whether its recipient was its sender's lead when it was sent.
     to_lead INTEGER NOT NULL
   ) STRICT;
@@ -370,7 +370,7 @@ type MessageRow = {
   state: string
   delivered_at: number | null
   notified: number
-  led: number
+  from_lead: number
   to_lead: number
 }
 
@@ -406,7 +406,7 @@ const messageOf = (row: MessageRow): Message => ({
   state: row.state as Message["state"],
   deliveredAt: row.delivered_at,
   notified: row.notified === 1,
-  led: row.led === 1,
+  fromLead: row.from_lead === 1,
   toLead: row.to_lead === 1,
 })
 
@@ -759,12 +759,12 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     void this.queries.run`
       INSERT INTO messages (id, project_id, thread_id, hop, from_terminal, from_handle, from_agent,
         from_session, to_terminal, to_handle, to_agent, to_session, text, sent_at, state,
-        delivered_at, notified, led, to_lead)
+        delivered_at, notified, from_lead, to_lead)
       VALUES (${message.id}, ${message.projectId}, ${message.thread}, ${message.hop},
         ${from.terminalId}, ${from.handle}, ${from.agent}, ${from.sessionId}, ${to.terminalId},
         ${to.handle}, ${to.agent}, ${to.sessionId}, ${message.text}, ${message.sentAt},
         ${message.state}, ${message.deliveredAt}, ${message.notified ? 1 : 0},
-        ${message.led ? 1 : 0}, ${message.toLead ? 1 : 0})
+        ${message.fromLead ? 1 : 0}, ${message.toLead ? 1 : 0})
       ON CONFLICT (id) DO UPDATE SET to_session = excluded.to_session, state = excluded.state,
         delivered_at = excluded.delivered_at, notified = excluded.notified
     `

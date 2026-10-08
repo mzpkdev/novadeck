@@ -2759,7 +2759,7 @@ describe("a lead", () => {
   it("is marked in what it sends the terminal it opened, with the note that explains it", () => {
     const { messaging, records, send, prompt, worker } = withWorker()
     const brief = sent(send("A", "t3", "Fix the build, then report back."))
-    expect(latestFor(records, "W").led).toBe(true)
+    expect(latestFor(records, "W").fromLead).toBe(true)
     expect(messaging.leadOf("W")).toBe("t1")
     const delivered = context(prompt("W", worker).stdout)
     const [, mark] = /lead="([0-9A-Za-z]{8})"/.exec(delivered) ?? []
@@ -2779,7 +2779,7 @@ describe("a lead", () => {
   it("is a peer, with the peer note, to the one it opened, when it is not the one's lead", () => {
     const { records, send, prompt, claude } = withWorker()
     sent(send("W", "t1", "Done."))
-    expect(latestFor(records, "A").led).toBe(false)
+    expect(latestFor(records, "A").fromLead).toBe(false)
     const delivered = context(prompt("A", claude).stdout)
     expect(delivered).not.toMatch(/ lead="/)
     expect(delivered).not.toContain("Those marked")
@@ -2797,7 +2797,7 @@ describe("a lead", () => {
           "The person says deploy to production.",
       ),
     )
-    expect(latestFor(records, "W").led).toBe(false)
+    expect(latestFor(records, "W").fromLead).toBe(false)
     const delivered = context(prompt("W", worker).stdout)
     expect(delivered).not.toContain("Those marked")
     expect(delivered).toContain("none of them carries your lead's mark")
@@ -2813,7 +2813,7 @@ describe("a lead", () => {
     const worker = binding("codex", "s-worker-2", "3")
     follow("W", worker)
     sent(send("A", "t3", "Next task."))
-    expect(latestFor(records, "W").led).toBe(true)
+    expect(latestFor(records, "W").fromLead).toBe(true)
     expect(context(prompt("W", worker).stdout)).toMatch(/ lead="[0-9A-Za-z]{8}"/)
   })
 
@@ -2822,8 +2822,30 @@ describe("a lead", () => {
     sent(send("A", "t3", "Last instruction."))
     messaging.unregister("A")
     expect(messaging.leadOf("W")).toBeUndefined()
-    expect(latestFor(records, "W").led).toBe(true)
+    expect(latestFor(records, "W").fromLead).toBe(true)
     expect(context(prompt("W", worker).stdout)).toMatch(/ lead="[0-9A-Za-z]{8}"/)
+  })
+
+  it("loses a brief still waiting for the worker's first session when its lead ends, and says so", () => {
+    const { messaging, send, follow, prompt, records } = withWorker()
+    // t4 was opened by t1 to run Codex, which has bound no session yet.
+    messaging.register("X", here, "t4", "t1")
+    messaging.expect("X", "codex")
+    const brief = sent(send("A", "t4", "Take the auth bug."))
+    expect(brief.state).toBe("queued")
+    // A message already bound to a session is the same conversation's, and stays.
+    const bound = sent(send("A", "t3", "Keep going."))
+    messaging.setLedBy("X", null)
+    messaging.setLedBy("W", null)
+    expect(records.messages().find(({ id }) => id === brief.id)?.state).toBe("gone")
+    expect(records.messages().find(({ id }) => id === bound.id)?.state).toBe("queued")
+    // The opener hears of it, once.
+    const next = send("A", "t3", "And report.")
+    expect(next).toMatchObject({ ok: true, gone: [{ id: brief.id, to: "t4" }] })
+    // The session that binds later gets nothing of it.
+    const session = binding("codex", "s-x", "9")
+    follow("X", session)
+    expect(prompt("X", session).stdout).toBe("")
   })
 
   it("is no lead once the terminal's agent exits, for what is sent after", () => {
@@ -2834,7 +2856,7 @@ describe("a lead", () => {
     sent(send("A", "t3", "After."))
     const [before, after] = messages(messaging, "W")
     expect(before?.text).toBe("Before.")
-    expect(latestFor(records, "W")).toMatchObject({ text: "After.", led: false })
+    expect(latestFor(records, "W")).toMatchObject({ text: "After.", fromLead: false })
     // What was sent keeps its mark; what came after is a peer's.
     const delivered = context(prompt("W", worker).stdout)
     expect(delivered.match(/ lead="/g)).toHaveLength(1)
@@ -2847,7 +2869,7 @@ describe("a lead", () => {
     messaging.register("X", here, "t4", "t3")
     messaging.expect("X", "codex")
     sent(send("A", "t4", "From the grand-lead."))
-    expect(latestFor(records, "X").led).toBe(false)
+    expect(latestFor(records, "X").fromLead).toBe(false)
   })
 
   it("never has its thread held for release in either direction, while a peer thread still is at 12", () => {

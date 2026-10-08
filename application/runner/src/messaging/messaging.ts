@@ -220,7 +220,7 @@ type Asked = {
 }
 
 /** Whether a message is its recipient's lead's, as fixed when it was sent. */
-const isLed = (message: Message): boolean => message.led
+const isLed = (message: Message): boolean => message.fromLead
 
 /** What a turn already given a delivery prints beside a new one, as Antigravity's does. */
 const joined = (kept: string | undefined, text: string): string =>
@@ -342,7 +342,20 @@ export class Messaging {
    */
   setLedBy(terminalId: string, ledBy: string | null): void {
     const live = this.live.get(terminalId)
-    if (live) live.ledBy = ledBy
+    if (!live) return
+    live.ledBy = ledBy
+    if (ledBy !== null) return
+    // The brief its lead sent before any session of its agent bound would be taken by a
+    // session that is not the one it was for: it is gone, and its sender is told. What
+    // already belongs to a session stays, with the authority it had.
+    for (const message of this.messages.values())
+      if (
+        message.to.terminalId === terminalId &&
+        message.to.sessionId === null &&
+        message.fromLead &&
+        (message.state === "queued" || message.state === "held")
+      )
+        this.gone(message)
   }
 
   /**
@@ -583,16 +596,17 @@ export class Messaging {
       : undefined
     const again = kept === undefined ? undefined : profile.prompt(kept)
     if (start.cause === "call") {
+      const print = (text: string) => profile.prompt(joined(kept, text))
       const added =
         time && running(live.delivery)
           ? this.lease(live, root, {
               kind: "midturn",
-              print: (text) => profile.prompt(joined(kept, text)),
-              only: (message) => message.led,
+              print,
+              only: isLed,
               keeps: (text) => joined(kept, text),
             })
           : undefined
-      if (added) return { leaseId: added.id, stdout: profile.prompt(joined(kept, added.text)) }
+      if (added) return { leaseId: added.id, stdout: print(added.text) }
       return again ? { leaseId: null, stdout: again } : silent
     }
     const lease =
@@ -633,7 +647,7 @@ export class Messaging {
     )
     if (!call || !called || !time || !running(live.delivery)) return silent
     const print = (text: string) => call(text, event)
-    const lease = this.lease(live, root, { kind: "midturn", print, only: (message) => message.led })
+    const lease = this.lease(live, root, { kind: "midturn", print, only: isLed })
     return lease ? { leaseId: lease.id, stdout: print(lease.text) } : silent
   }
 
@@ -881,7 +895,7 @@ export class Messaging {
         }
     // Its authority is fixed now: from the recipient's running lead, it is marked so when
     // delivered, and never awaits release, whatever happens to the lead after.
-    const led = this.leads(recipient, live)
+    const fromLead = this.leads(recipient, live)
     const toLead = this.leads(live, recipient)
     const message: Message = {
       ...this.draft(live, text, {
@@ -898,9 +912,9 @@ export class Messaging {
         agent,
         sessionId: root?.sessionId ?? null,
       },
-      led,
+      fromLead,
       toLead,
-      state: waiting({ hop: thread.hops, led, toLead }, thread, this.paused),
+      state: waiting({ hop: thread.hops, fromLead, toLead }, thread, this.paused),
     }
     const vetted = this.vet(message)
     if (!vetted.ok) return vetted
@@ -955,7 +969,7 @@ export class Messaging {
       state: "queued",
       deliveredAt: null,
       notified: false,
-      led: false,
+      fromLead: false,
       toLead: false,
     }
   }
@@ -1221,13 +1235,16 @@ export class Messaging {
     }
     if (message.state !== "queued") return base
     const agent = recipient.root?.agent ?? recipient.shown?.agent
+    const profile = agent ? harnesses[agent].messaging : undefined
     return {
       ...base,
-      route: agent
+      route: profile
         ? route(
             recipient.delivery,
-            harnesses[agent].messaging.silentOnFailure,
-            message.led ? midTurnCall(harnesses[agent].messaging) : undefined,
+            profile.silentOnFailure,
+            isLed(message)
+              ? midTurnCall(profile.call !== undefined, profile.reinjectPerCall)
+              : undefined,
           )
         : "when its agent starts: rung once Novadeck sees it at its prompt, else at its first turn",
     }

@@ -529,7 +529,7 @@ const message = (id: string, state: Message["state"]): Message => ({
   state,
   deliveredAt: null,
   notified: false,
-  led: false,
+  fromLead: false,
   toLead: false,
 })
 
@@ -542,7 +542,7 @@ describe("the mailbox", () => {
     const original = store(path)
     original.saveMessage(message("m-1", "queued"))
     // One from its recipient's lead, which keeps that.
-    original.saveMessage({ ...message("m-2", "held"), led: true, toLead: true })
+    original.saveMessage({ ...message("m-2", "held"), fromLead: true, toLead: true })
     // One for a terminal's first session, which no agent there has bound yet.
     const waiting = message("m-3", "queued")
     original.saveMessage({ ...waiting, to: { ...waiting.to, sessionId: null } })
@@ -586,7 +586,7 @@ describe("the mailbox", () => {
         deliveredAt: 9,
         notified: true,
       },
-      { ...message("m-2", "held"), led: true, toLead: true },
+      { ...message("m-2", "held"), fromLead: true, toLead: true },
       { ...waiting, to: { ...waiting.to, sessionId: null } },
     ])
     expect(reopened.threads()).toEqual([{ ...thread, allowed: 14 }])
