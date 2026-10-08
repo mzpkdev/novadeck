@@ -4,9 +4,9 @@ Novadeck's look is a theme. Components give the interface its shape; a theme dec
 how that shape is drawn: colours, borders, depth, corners, type, and the texture of the
 workspace. The app ships three themes: Graphite, the default, with a light and a dark
 scheme, and Phosphor Green and Phosphor Amber, a monochrome CRT in two tubes, in dark
-only. The person picks a theme, and a mode
-where the theme offers more than one. The token tiers and the component hooks below
-are general, so a theme can change them without touching a component.
+only. The person picks a theme, and a mode where the theme offers more than one. The
+token tiers and the component hooks below are general, so a theme can change them
+without touching a component.
 
 This guide is the contract between the two sides. Change it when the contract changes.
 
@@ -142,7 +142,7 @@ The shared recipes, and what they cover:
 | `surface`            | `.panel`, `.card`, `.floating` (a `.peek` rises from its trigger), `.modal` with its `.modal-header` and `.modal-footer`    | `--{panel,card,floating,modal}-{bg,border-color,shadow,radius}`, `--modal-header-border-color`, `--modal-footer-{bg,fg,border-color}`                                                                                                                                                                                                                                             |
 | `overlay`            | The scrim behind dialogs and the mobile sidebar                                                                             | `--overlay-bg`, `--overlay-blur`                                                                                                                                                                                                                                                                                                                                                  |
 | `region`             | The app's chrome: header, footer, sidebar, rail, settings ground                                                            | `--region-{header,footer,sidebar,rail}-{bg,fg,border-color,image}`, `--region-settings-bg`                                                                                                                                                                                                                                                                                        |
-| `item`               | Sidebar rows, menu and select items, search results                                                                         | `--item-{hover,highlighted,selected}-bg`, `--item-highlighted-fg`, `--item-selected-{border-color,shadow}`, `--item-selected-indicator-{bg,shadow}`                                                                                                                                                                                                                               |
+| `item`               | Sidebar rows, menu and select items, search results                                                                         | `--item-{hover,highlighted,selected}-bg`, `--item-highlighted-fg` (also on `.item.highlights` under the pointer), `--item-selected-{border-color,shadow}`, `--item-selected-indicator-{bg,shadow}`                                                                                                                                                                                |
 | `segmented`          | View switch, segment groups, toggle groups, tabs                                                                            | `--segmented-bg`, `--segmented-active-{bg,fg,shadow}`, `--tabs-indicator-{bg,shadow}`                                                                                                                                                                                                                                                                                             |
 | `field`              | Select and combobox triggers, inputs                                                                                        | `--field-{bg,fg,border-color,shadow}`, `--field-open-border-color`                                                                                                                                                                                                                                                                                                                |
 | `toggle`             | Switch and checkbox                                                                                                         | `--toggle-track-{on,off}-bg`, `--toggle-{track,track-on,thumb}-shadow`, `--toggle-box-{shadow,checked-shadow}`, `--toggle-thumb-bg`, `--toggle-mark-fg`                                                                                                                                                                                                                           |
@@ -429,19 +429,20 @@ app runs: whenever the preference changes, and whenever the system's scheme does
 - **Before the first paint**, `public/theme-boot.js` sets the same attributes. It is a
   plain script loaded in the head without `defer`, because the Content Security Policy
   allows same-origin scripts but not inline ones. `app/appearance.ts` saves a record
-  under `novadeck.theme-boot` whenever the appearance changes: `{ theme, scheme, schemes }`,
-  the shown theme's id, the person's mode, and the schemes that theme defines, copied
-  from its manifest entry. The script holds no list of themes. It checks the record's
-  shape (`theme` a lowercase id of letters, digits and hyphens, `scheme` a mode,
-  `schemes` a non-empty list of `light` and `dark`), resolves `system` against
+  under `novadeck.theme-boot` whenever the appearance changes: `{ theme, scheme, schemes
+}`, the shown theme's id, the person's mode, and the schemes that theme defines,
+  copied from its manifest entry. The script holds no list of themes. It checks the
+  record's shape (`theme` a lowercase id of letters, digits and hyphens, `scheme` a
+  mode, `schemes` a non-empty list of `light` and `dark`), resolves `system` against
   `matchMedia`, and takes the theme's first scheme when the wanted one isn't in
   `schemes`. A record that is missing, corrupt or of another shape, such as one saved
   before `schemes`, shows Graphite in the saved mode; a well-formed id the app no longer
   has is painted as it is until the app starts and applies Graphite. Since the script
   needs only the record, a theme the manifest gains while the app runs, such as an
-  imported one, boots like a built-in one. The script also sets the scheme as `<html>`'s
-  inline `color-scheme`, so the browser's own ground matches it before the stylesheets
-  arrive; `apply.ts` removes that once the theme's file sets `color-scheme`.
+  imported one, boots like a built-in one: its attributes do, while its stylesheet loads
+  with the app. The script also sets the scheme as `<html>`'s inline `color-scheme`, so
+  the browser's own ground matches it before the stylesheets arrive; `apply.ts` removes
+  that once the theme's file sets `color-scheme`.
 - **Windows** stay in step: each listens for the `storage` event and takes up the
   preferences another window saved, theme included.
 - **The desktop host** follows the page. On every change the page reports its scheme

@@ -1,5 +1,5 @@
 // Shows the saved theme before the first paint: sets data-theme and data-scheme on
-// <html> from the boot record theme/apply.ts saves, resolving "system" against the
+// <html> from the boot record app/appearance.ts saves, resolving "system" against the
 // system's scheme, and the scheme as <html>'s color-scheme, so the browser's own ground
 // matches it before the theme's stylesheet arrives. apply.ts hands color-scheme back to
 // the theme. A file of its own, because the Content Security Policy allows no inline

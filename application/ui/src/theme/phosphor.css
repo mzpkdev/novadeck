@@ -235,7 +235,9 @@
   --item-highlighted-border-color: var(--color-strong);
   --item-highlighted-fg: var(--color-on-strong);
 }
-:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .item[data-highlighted],
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .item:is([data-highlighted], .highlights:focus-visible),
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) .item.highlights:hover,
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
   .segment:is(
     [data-state="checked"],
@@ -244,6 +246,12 @@
     :has(> input:checked)
   ) {
   text-shadow: none;
+}
+/* The switcher's remove button sits on its row's bar, beside the row rather than in it. */
+:root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"])
+  .workspace-switcher-project:is(:hover, :focus-visible)
+  ~ .workspace-switcher-remove {
+  --icon-button-fg: var(--color-on-strong);
 }
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
   --segmented-active-bg: var(--color-strong);

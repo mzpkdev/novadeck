@@ -62,6 +62,8 @@
   color: var(--window-fg, var(--color-ink));
   box-shadow: var(--_shadow);
   position: relative;
+  /* Its own stacking, so its layers lie over what it holds and never over a neighbour. */
+  isolation: isolate;
   transition:
     border-color var(--motion-state) var(--ease-interface),
     box-shadow var(--motion-state) var(--ease-interface);

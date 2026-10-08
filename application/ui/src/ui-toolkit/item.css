@@ -5,14 +5,16 @@
    shows the focus ring inside its edge. Its icon is secondary and its detail text muted.
 
    Hooks: :hover; :focus-visible; data-highlighted (Ark's highlight); data-selected,
-   present or "true"; data-disabled. Parts: a leading `svg`, `.item-detail`.
+   present or "true"; data-disabled. Parts: a leading `svg`, `.item-detail`. Variant:
+   `.highlights`, an item no Ark list manages, which is highlighted under the pointer or
+   the keyboard all the same.
 
    Tokens, each optional (its fallback in brackets):
    --item-radius (radius-control), --item-icon-fg (muted), --item-detail-fg (muted).
    --item-hover-bg (soft), --item-hover-border-color (transparent): under the pointer.
    --item-highlighted-bg (shell), --item-highlighted-border-color (line),
-   --item-highlighted-fg (the item's own text): highlighted; its icon and detail follow
-   it while highlighted, unless --item-icon-fg or --item-detail-fg is set.
+   --item-highlighted-fg (the item's own text): highlighted; its icon and detail take it
+   too while highlighted, over --item-icon-fg and --item-detail-fg.
    --item-selected-bg (paper), --item-selected-border-color (line),
    --item-selected-shadow (shadow-control), --item-selected-indicator-bg (strong):
    selected, and its bar. --item-selected-indicator-shadow (none): a glow around the bar.
@@ -66,12 +68,21 @@
     --_border-color: var(--item-hover-border-color, transparent);
   }
 }
-.item[data-highlighted] {
+.item:is([data-highlighted], .highlights:focus-visible) {
   --_bg: var(--item-highlighted-bg, var(--color-shell));
   --_border-color: var(--item-highlighted-border-color, var(--color-line));
-  --_icon-fg: var(--item-icon-fg, var(--item-highlighted-fg, var(--color-muted)));
-  --_detail-fg: var(--item-detail-fg, var(--item-highlighted-fg, var(--color-muted)));
+  --_icon-fg: var(--item-highlighted-fg, var(--item-icon-fg, var(--color-muted)));
+  --_detail-fg: var(--item-highlighted-fg, var(--item-detail-fg, var(--color-muted)));
   color: var(--item-highlighted-fg, inherit);
+}
+@media (hover: hover) {
+  .item.highlights:hover {
+    --_bg: var(--item-highlighted-bg, var(--color-shell));
+    --_border-color: var(--item-highlighted-border-color, var(--color-line));
+    --_icon-fg: var(--item-highlighted-fg, var(--item-icon-fg, var(--color-muted)));
+    --_detail-fg: var(--item-highlighted-fg, var(--item-detail-fg, var(--color-muted)));
+    color: var(--item-highlighted-fg, inherit);
+  }
 }
 .item[data-selected]:not([data-selected="false"]) {
   --_bg: var(--item-selected-bg, var(--color-paper));
