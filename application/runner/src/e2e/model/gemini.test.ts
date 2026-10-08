@@ -172,6 +172,73 @@ describe("gemini", () => {
     })
   })
 
+  it("calls an eagerly loaded tool as itself, with the summary Antigravity asks of it", async () => {
+    // Now and then Antigravity loads Novadeck's tools eagerly, as tools of its own, and
+    // offers no call_mcp_tool. It refuses a call to one without `toolSummary`, or with
+    // `toolAction`.
+    const eager = {
+      ...conversation,
+      contents: [
+        { role: "user", parts: [{ text: "Ask t2" }] },
+        {
+          role: "model",
+          parts: [
+            {
+              functionCall: {
+                id: "call_1",
+                name: "mcp_novadeck_novadeck_send",
+                args: { to: "t2", text: "hello", toolSummary: "send call" },
+              },
+            },
+          ],
+        },
+      ],
+      systemInstruction: {
+        role: "user",
+        parts: [{ text: system.replace("Lazy:\nshow\nsend", "Eager:\nshow\nsend") }],
+      },
+      tools: [
+        {
+          functionDeclarations: [
+            { name: "run_command" },
+            { name: "mcp_novadeck_novadeck_show" },
+            { name: "mcp_novadeck_novadeck_send" },
+          ],
+        },
+      ],
+    }
+    const call = parse("m", eager)
+    expect(call.tools).toEqual([
+      "run_command",
+      "mcp_novadeck_novadeck_show",
+      "mcp_novadeck_novadeck_send",
+    ])
+    expect(tool(call, "send")).toBe("mcp_novadeck_novadeck_send")
+    expect(call.turns[1]).toMatchObject({
+      calls: [{ name: "mcp_novadeck_novadeck_send", input: { to: "t2", text: "hello" } }],
+    })
+
+    const { response } = await handle(post(stream, eager), {
+      calls: [
+        { name: "mcp_novadeck_novadeck_send", input: { to: "t1", text: "teal" } },
+        { name: "run_command", input: { CommandLine: "sleep 1" } },
+      ],
+    })
+    const [event] = events(response.body) as {
+      candidates: { content: { parts: Record<string, unknown>[] } }[]
+    }[]
+    const parts = event?.candidates[0]?.content.parts
+    expect(parts?.[0]?.functionCall).toMatchObject({
+      name: "mcp_novadeck_novadeck_send",
+      args: { to: "t1", text: "teal", toolSummary: "send call" },
+    })
+    expect(parts?.[0]?.functionCall).not.toHaveProperty("args.toolAction")
+    expect(parts?.[1]?.functionCall).toMatchObject({
+      name: "run_command",
+      args: { CommandLine: "sleep 1" },
+    })
+  })
+
   it("answers a call that isn't streamed as one response", async () => {
     const { response } = await handle(
       post("/v1beta/models/gemini-3.1-pro-preview:generateContent", conversation),
@@ -192,6 +259,20 @@ describe("gemini", () => {
     )
     expect(response.status).toBe(404)
     expect(calls).toEqual([])
+  })
+
+  it("words Antigravity's tool validation errors as refusals, never a tool's execution errors", () => {
+    const stamp = "Created At: 2026-10-08T14:42:08+02:00\nCompleted At: 2026-10-08T14:42:08+02:00\n"
+    const refused = [
+      `${stamp}Encountered error in tool validation: unknown tool: "no_such_tool" — check spelling`,
+      `${stamp}Encountered error in tool validation: invalid arguments: - missing property 'toolSummary'`,
+    ]
+    const tools = [
+      `${stamp}Encountered error in tool execution: t2 has no agent Novadeck can deliver to.`,
+    ]
+
+    expect(refused.map((text) => gemini.rejection?.test(text))).toEqual([true, true])
+    expect(tools.map((text) => gemini.rejection?.test(text))).toEqual([false])
   })
 
   it("matches the Gemini API's paths alone", () => {

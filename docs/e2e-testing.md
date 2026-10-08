@@ -298,10 +298,12 @@ for (const setup of setups) {
   - `background`: `start(call)` is a reply starting work that outlives the turn (a
     background subagent or task) whose end wakes the agent again; `owns(call)` tells
     that work's model calls from the agent's own, so a rule can hold them at a `gate()`.
-  - `trust.folder`: `{ shows, select, trusts }`, its folder-trust question as
+  - `trust.folder`: `{ shows, select, trusts, probe? }`, its folder-trust question as
     `folderTrusted: false` shows it: text it shows whatever is selected, the keys that
     select the trusting option (`""` when the question shows it selected), and that
-    option as shown selected, for `confirm`.
+    option as shown selected, for `confirm`. `probe` (`{ away, moved }`) is for a TUI
+    that draws the question before it reads keys: another option is selected until the
+    screen shows it moved, and `select`, which can't then be `""`, puts it back.
   - `trust.hooks`: `{ shows, skip }`, its hooks-review screen and the keys that leave it
     without trusting Novadeck's hooks, as `hooksTrusted: false` shows it.
   - `rewind`: `{ shows, swallows }`, what Esc-Esc (two Escapes about 300 ms apart, sent
@@ -387,9 +389,38 @@ for (const setup of setups) {
   failures, and those of `until`, `confirm` and `t.poll(read, what)`, end with what its
   agent is doing (`working, 1 request waiting (permission)`) and the terminal's screen
   as it is then, its non-blank rows and at most the last 30 (`withScreen` in `deck.ts`),
-  so a wait that times out also shows what the terminal was doing instead. A scenario
+  so a wait that times out also shows what the terminal was doing instead, and then
+  the fake model's last five calls, one line each (`model.trail()`): what each carried
+  last, such as a tool's result beside the call it answers, cut short. A scenario
   waits on something of a terminal through `t.poll`, never the bare `poll`. A test that
   throws fails its own wait, with its error, and no other.
+- **A wait for a model call explains itself from the terminal side too.** The fixture
+  gives the fake model `deck.report()` (`model.explain`), so `model.waitFor` failing with
+  "No matching model call" also lists `model.trail(8)` and then "The terminals:", each
+  terminal's agent state and the last 12 rows of its screen, each in its own share of 3000
+  characters (a screen over its share keeps its last rows behind "… (cut)"): a dialog
+  still open there, an Enter that went nowhere, show at once. The describer has five
+  seconds to answer, and the whole account is cut at 6000 characters.
+- **Refused calls fail the scenario at once.** A result a dialect words as its harness
+  refusing the model's call itself (`Dialect.rejection`), as opposed to a tool that ran
+  and failed, is recorded in `model.rejections` when the call carrying it arrives. The
+  deck's waits (`until`, `reached`, `through`, `poll`, `confirm`, `submit`) and
+  `model.waitFor` then fail within a tenth of a second, naming the call and the harness's
+  answer, instead of timing out downstream. The test also fails at its end with the
+  refusal, even when a wait already failed with it, so a test that catches that wait's
+  error can't hide it. A probe that provokes one on purpose says so with
+  `model.expectRejection(match)`, which keeps matching refusals out of `rejections`
+  (in `model.expected`). A rule that answers with a tool call must skip side calls, as
+  `own` does: they offer no tools, so the harness refuses the call. The wordings seen,
+  probed in the sandbox: Claude Code's
+  `<tool_use_error>` for an unknown tool (`Error: No such tool available`) or arguments
+  it won't take (`InputValidationError`), Codex's `unsupported call: <tool>` and `failed
+to parse function arguments`, and Antigravity's `Encountered error in tool validation`,
+  for both. Not refusals, so the scenarios that provoke them keep working: a tool's own
+  errors (Novadeck's "has no agent Novadeck can deliver to", Antigravity's `Encountered
+error in tool execution`, Claude Code's other `<tool_use_error>`s such as a missing
+  file) and the person denying a tool, whose result never reaches the model. A new
+  harness's `rejection` comes from probing it, never from a guess.
 - **Holding a turn** pins down how something travels. The round trip holds t2's answer
   at a `gate()` until t1's turn has ended Settled, and asserts t1 is then rung, rather
   than reached by its Stop continuation.
@@ -779,6 +810,12 @@ probe output, and keep their own loader.
   `prefix_rule(pattern = ["codex", "exec"], decision = "allow")`) lets `codex exec` run
   unasked, for `shell`; so allowed, the nested Codex reached the fake model and wrote its
   rollout in its home.
+- **Its startup screens.** Seeded `folderTrusted: false`, the project is made a Git
+  repository: Codex 0.160.1 and later ask "Trust this folder?" only in one, where
+  0.159.3 asked of any folder. Codex draws that question and "Hooks need review" before
+  it reads keys, and drops a key pressed then, so the folder question's selection is
+  moved away and back (Down, Up) before Enter, and the review's Esc is pressed again
+  while it still shows.
 - **Hook trust.** Codex runs a plugin's hooks only once trusted, and Novadeck counts
   its prompt only then. Once the plugin is connected, `connected` starts the pinned
   `codex app-server` and makes the calls its "Hooks need review" screen makes:
@@ -806,7 +843,8 @@ probe output, and keep their own loader.
     there whatever its trust. The nested Codex's hooks run with the agent's thread in
     `CODEX_THREAD_ID`, so its decoder takes nothing of them.
   - _`/side`_: typed and submitted, it shows a side conversation, its footer saying "Side
-    from main thread · ctrl+/ to switch · ctrl+c to close"; ctrl+c goes back to the root.
+    from main thread · ctrl+/ to switch · ctrl+c to close" (0.161.0 spells the keys `^/`
+    and `^c`); ctrl+c goes back to the root.
     Its thread is ephemeral: its first prompt fires a `SessionStart` saying `fork`, and
     every hook of it gives `transcript_path` as null.
   - _Fork_: `codex fork` shows its "Fork a previous session" picker, latest first, each
@@ -845,8 +883,16 @@ probe output, and keep their own loader.
   call with no tools, so `side`. MCP tools are lazy: it offers one `call_mcp_tool` and
   lists Novadeck's tools in its system prompt, so the dialect offers them by the names
   Antigravity gives tools it loads (`mcp_novadeck_novadeck_send`), and encodes a call to
-  one as `call_mcp_tool`. A `PreInvocation` hook's message arrives as a user content just
-  after the prompt.
+  one as `call_mcp_tool`. Now and then it loads them eagerly instead (seen 2026-10-08
+  twice in about 150 runs of a test opening terminals in a folder it didn't trust yet;
+  what makes it do so is unknown): its system prompt lists them under `Eager:`, it
+  declares each as a tool of its own and offers no `call_mcp_tool`. A call to one then
+  needs a `toolSummary` beside its arguments and no `toolAction`, which Antigravity
+  refuses as invalid arguments otherwise; the dialect reads either listing and gives
+  each call what it needs. A server's `tools` entry with `{ "eager": true }` for each of
+  its tools in its `mcp_config.json` loaded them eagerly in every run that had it, which
+  reproduces it. A `PreInvocation` hook's message arrives as a user content just after
+  the prompt.
 - **Refused tunnels.** Its feature flags (`antigravity-unleash.goog`) and telemetry
   (`play.googleapis.com`) go through the proxy, which refuses them; they are its setup's
   `refused`.
