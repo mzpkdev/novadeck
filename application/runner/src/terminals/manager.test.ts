@@ -1602,65 +1602,71 @@ describe("a turn the person's Escape ended", () => {
 })
 
 describe("saving a terminal that was closed", () => {
-  it("does not bring its saved record back", async ({ terminals }) => {
+  type Inside = {
+    records: Map<string, unknown>
+    save: (record: unknown, transcript: boolean) => void
+  }
+  const stored = async () => {
     const store = new WorkspaceStore()
     const project = await store.createProject({ id: randomUUID(), name: "P", cwd })
     const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "S" })
-    const manager = terminals.manager({ ...ptyOptions, records: store })
-    const { id } = await manager.create(
-      { id: randomUUID(), sessionId: session.id, cwd, cols: 80, rows: 24 },
-      "creator",
-    )
-    const inside = manager as unknown as {
-      records: Map<string, unknown>
-      save: (record: unknown, transcript: boolean) => void
+    return { store, sessionId: session.id }
+  }
+
+  it("does not bring its saved record back", async ({ terminals }) => {
+    const { store, sessionId } = await stored()
+    try {
+      const manager = terminals.manager({ ...ptyOptions, records: store })
+      const { id } = await manager.create(
+        { id: randomUUID(), sessionId, cwd, cols: 80, rows: 24 },
+        "creator",
+      )
+      const inside = manager as unknown as Inside
+      // An agent's report suspended at an await when the person closes the terminal saves
+      // the record it held once it resumes.
+      const record = inside.records.get(id)
+      expect(store.terminal(id)).toBeDefined()
+
+      await manager.close({ terminalId: id }, "creator")
+      expect(store.terminal(id)).toBeUndefined()
+      inside.save(record, false)
+      inside.save(record, true)
+
+      expect(store.terminal(id)).toBeUndefined()
+    } finally {
+      store.close()
     }
-    // An agent's report suspended at an await when the person closes the terminal saves
-    // the record it held once it resumes.
-    const record = inside.records.get(id)
-    expect(store.terminal(id)).toBeDefined()
-
-    await manager.close({ terminalId: id }, "creator")
-    expect(store.terminal(id)).toBeUndefined()
-    inside.save(record, false)
-    inside.save(record, true)
-
-    expect(store.terminal(id)).toBeUndefined()
-    store.close()
   })
 
   it("still saves one only let go of, which stays saved until closed", async ({ terminals }) => {
-    const store = new WorkspaceStore()
-    const project = await store.createProject({ id: randomUUID(), name: "P", cwd })
-    const session = store.createSession({ id: randomUUID(), projectId: project.id, name: "S" })
-    const manager = terminals.manager({
-      ...ptyOptions,
-      shellArgs: ["-c", "exit 0"],
-      maxRetained: 1,
-      records: store,
-    })
-    const { id } = await manager.create(
-      { id: randomUUID(), sessionId: session.id, cwd, cols: 80, rows: 24 },
-      "creator",
-    )
-    const inside = manager as unknown as {
-      records: Map<string, unknown>
-      save: (record: unknown, transcript: boolean) => void
+    const { store, sessionId } = await stored()
+    try {
+      const manager = terminals.manager({ ...ptyOptions, maxRetained: 1, records: store })
+      const watch = terminals.watch(manager, "watcher")
+      await watch.until((change) => change.type === "synced")
+      const inside = manager as unknown as Inside
+      const ids = [randomUUID(), randomUUID()] as const
+      const records: unknown[] = []
+      for (const id of ids) {
+        // eslint-disable-next-line no-await-in-loop -- The older one must exit first.
+        await manager.create({ id, sessionId, cwd, cols: 80, rows: 24 }, "creator")
+        records.push(inside.records.get(id))
+        manager.write({ terminalId: id, data: "exit 0\n" }, "creator")
+        // eslint-disable-next-line no-await-in-loop -- Each exit completes before the next.
+        await watch.until((change) => changed(id)(change) && change.terminal.exit !== null)
+      }
+      // The second exit lets the first go, kept saved.
+      await vi.waitFor(() => expect(inside.records.has(ids[0])).toBe(false))
+      expect(inside.records.has(ids[1])).toBe(true)
+      expect(store.terminal(ids[0])).toBeDefined()
+
+      // A report suspended while it was let go saves once it resumes.
+      store.removeTerminal(ids[0])
+      inside.save(records[0], false)
+
+      expect(store.terminal(ids[0])).toBeDefined()
+    } finally {
+      store.close()
     }
-    const record = inside.records.get(id)
-    // A second exit lets the older one go.
-    await manager.create(
-      { id: randomUUID(), sessionId: session.id, cwd, cols: 80, rows: 24 },
-      "creator",
-    )
-    await vi.waitFor(() => expect(inside.records.has(id)).toBe(false))
-    expect(store.terminal(id)).toBeDefined()
-
-    // A report suspended while it was let go saves once it resumes.
-    store.removeTerminal(id)
-    inside.save(record, false)
-
-    expect(store.terminal(id)).toBeDefined()
-    store.close()
   })
 })

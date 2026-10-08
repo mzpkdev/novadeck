@@ -9,7 +9,6 @@ import { activeProject, activeSession, workspaceReducer } from "../../model/stat
 import type { WorkspaceAction } from "../../model/state"
 import { describe, expect, it } from "../../test"
 import { runnerBackend } from "./backend"
-import { pause } from "./pause"
 import { startTestRunner } from "./testing"
 
 vi.setConfig({ testTimeout: 20_000 })
@@ -22,7 +21,7 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }))
 const launch = async (database: string) => {
   const runner = await startTestRunner({ database })
   let finish: (() => Promise<void>) | undefined
-  const { backend } = runnerBackend(runner.client, runner.listing, {
+  const { backend, idle } = runnerBackend(runner.client, runner.listing, {
     saveDelay: 10,
     beforeQuit: (save) => {
       finish = save
@@ -43,6 +42,8 @@ const launch = async (database: string) => {
   return {
     target,
     backend,
+    // Resolves once the runner has every terminal asked for and the saves are done.
+    idle,
     commit,
     terminals: () => activeSession(workspace)!.state.roster.terminals.map(({ id }) => id),
     listed: () => runner.listing.flatMap(({ sessions }) => sessions.flatMap((s) => s.terminals)),
@@ -64,7 +65,7 @@ describe("closing a terminal right before the app quits", () => {
     const closed = first.backend.newTerminal({ target: first.target, directory })
     first.commit([{ type: "terminal/add", target: first.target, terminal: kept }])
     first.commit([{ type: "terminal/add", target: first.target, terminal: closed }])
-    await pause(500)
+    await first.idle()
 
     first.commit([{ type: "terminal/close", target: first.target, terminalId: closed.id }])
     await first.quit()
@@ -82,7 +83,7 @@ describe("closing a terminal right before the app quits", () => {
     )
     for (const terminal of added)
       first.commit([{ type: "terminal/add", target: first.target, terminal }])
-    await pause(500)
+    await first.idle()
 
     first.commit([{ type: "terminal/close", target: first.target, terminalId: added[0]!.id }])
     await first.quit(() =>
@@ -105,7 +106,7 @@ describe("closing a terminal right before the app quits", () => {
           terminal: first.backend.newTerminal({ target: first.target, directory }),
         },
       ])
-    await pause(500)
+    await first.idle()
     await first.quit()
 
     const second = await launch(database)

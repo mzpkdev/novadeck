@@ -3821,7 +3821,7 @@ export class Terminals {
 
   /**
    * Saves what restores the terminal, and with `transcript` its screen too. Nothing is
-   * saved once the runner is stopping.
+   * saved once the runner is stopping, or for a terminal that was closed.
    */
   private save(record: Record, transcript: boolean): void {
     // A closed terminal is forgotten for good: work still suspended for it, as an agent's
