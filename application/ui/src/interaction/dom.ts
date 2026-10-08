@@ -92,10 +92,17 @@ export const focusTerminalTab = (id: string): void =>
     ?.focus({ preventScroll: true })
 export const focusWorkspaceViewport = (): void =>
   document.querySelector<HTMLElement>("[data-workspace-viewport]")?.focus({ preventScroll: true })
+// Focus that waits a frame for a control to mount, taken only while focus is still where
+// the control it replaces left it: on the page itself, or on that control as it unmounts.
+// A key pressed in between wins.
+const focusStranded = (selector: string, leftFrom: string): void => {
+  const active = document.activeElement
+  if (active && active !== document.body && !active.matches(leftFrom)) return
+  document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true })
+}
 export const focusZenCreate = (): void =>
-  document.querySelector<HTMLElement>("[data-workspace-zen-create]")?.focus({ preventScroll: true })
-export const focusZenEnter = (): void =>
-  document.querySelector<HTMLElement>("[data-workspace-zen-enter]")?.focus({ preventScroll: true })
+  focusStranded("[data-workspace-zen-create]", "[data-workspace-zen-enter]")
+export const focusZenEnter = (): void => focusStranded("[data-workspace-zen-enter]", ".zen-exit")
 
 export const focusTerminalInput = (id: string): boolean => {
   const input = terminalElement(id)?.querySelector<HTMLElement>("[data-terminal-input]")
