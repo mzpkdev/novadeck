@@ -351,6 +351,9 @@ const fakeClaude = (home: string, plugins: string, session: string): string => {
     path,
     [
       "#!/bin/sh",
+      // As Claude Code names itself to its hooks: a script's process goes by its shell's
+      // name on macOS, so it can't be found by name there.
+      "export CLAUDE_PID=$$",
       `command=$("${process.execPath}" -e 'console.log(require(process.argv[1]).hooks.SessionStart[0].hooks[0].command)' '${hooks}')`,
       `printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"${session}","cwd":"%s"}' "$PWD" | sh -c "$command"`,
       'echo "claude is running"',
