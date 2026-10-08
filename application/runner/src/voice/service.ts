@@ -214,6 +214,7 @@ export class Voice {
       installed: this.installed,
       // Models that went missing cannot be used, whatever the person once chose.
       enabled: settings.enabled && this.installed.includes(settings.model),
+      wanted: this.settings.voiceEnabledChoice() !== false,
       model: settings.model,
       language: settings.language,
       sizes: {
@@ -344,9 +345,10 @@ export class Voice {
     this.uninstalling = true
     try {
       await this.cancel()
-      // Off first: a removal that fails halfway must not leave voice input on.
-      // Off for want of an install, not by choice: the next install turns it on again.
-      this.settings.saveVoiceSettings({ enabled: null })
+      // Off first: a removal that fails halfway must not leave voice input on. Off by
+      // choice, as removing it says the person doesn't want it: the app stops offering it,
+      // and only an install turns it on again.
+      this.settings.saveVoiceSettings({ enabled: false })
       this.changed()
       // The engine's program is in use until it has exited, which Windows will not delete.
       await this.engine.stop()
@@ -381,8 +383,12 @@ export class Voice {
     const model = change.model ?? this.settings.voiceSettings().model
     if (change.model !== undefined && !this.installed.includes(change.model))
       throw new DomainError("CONFLICT", `The ${change.model} model is not installed.`)
-    if (change.enabled === true && !this.installed.includes(model))
-      throw new DomainError("CONFLICT", "Install voice input before turning it on.")
+    // Turned on before an install, it is wanted, and the install that follows turns it on.
+    if (change.enabled === true && !this.installed.includes(model)) {
+      this.settings.saveVoiceSettings({ ...change, enabled: null })
+      this.changed()
+      return
+    }
     // A check that ran out of time says to turn voice input on to try dictating anyway,
     // which is the end of that failure; another model's, or the engine's, stays.
     if (change.enabled === true && this.failure !== null && this.failureModel === model) {
@@ -519,8 +525,9 @@ export class Voice {
     signal: AbortSignal,
     engineOnly = false,
   ): Promise<void> {
-    // What was chosen as the install began, before it or a refresh changes that.
-    const before = { settings: this.settings.voiceSettings() }
+    // What was chosen as the install began, before it or a refresh changes that, and
+    // whether anything was installed then.
+    const before = { settings: this.settings.voiceSettings(), fresh: this.installed.length === 0 }
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -551,10 +558,11 @@ export class Voice {
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
       const check = await this.measure(model, manifest, signal)
       // The model checked out, so it is the one used, and voice input is on, as the person
-      // installed it to use it, unless they had turned it off themselves.
+      // installed it to use it: a first install always, and another model unless they had
+      // turned it off themselves.
       this.settings.saveVoiceSettings({
         model,
-        enabled: this.settings.voiceEnabledChoice() !== false,
+        enabled: before.fresh || this.settings.voiceEnabledChoice() !== false,
       })
       await this.load()
       this.settings.saveVoiceCheck(check)

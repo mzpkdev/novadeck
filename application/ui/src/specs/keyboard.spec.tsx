@@ -847,6 +847,32 @@ describe("dictation", () => {
     })
   })
 
+  context("before voice input is installed", () => {
+    it("offers an agent's microphone, which opens Addons, until turned off there", async () => {
+      // The agents demo, whose Checkout implementation runs Claude Code.
+      await openWorkspace("/?demo=agents")
+      const skip = page.getByRole("button", { name: "Skip for now" })
+      if (await skip.query()) await skip.click()
+      await terminalTab("Checkout implementation").click()
+      const mic = terminal("Checkout implementation").getByRole("button", {
+        name: "Dictate into Checkout implementation",
+      })
+      await mic.click()
+      const dialog = preferencesDialog()
+      await expect
+        .element(dialog.getByRole("tab", { name: "Addons" }))
+        .toHaveAttribute("aria-selected", "true")
+      expect(microphone.live()).toBe(0)
+
+      const enabled = dialog.getByRole("switch", { name: "Enabled" })
+      await expect.element(enabled).toHaveAttribute("aria-checked", "true")
+      await enabled.click()
+      await expect.element(enabled).toHaveAttribute("aria-checked", "false")
+      await press("{Escape}")
+      await expect.element(mic).not.toBeInTheDocument()
+    })
+  })
+
   context("when voice input is installed", () => {
     it("records while the shortcut is held and pastes the transcript into the terminal without sending it", async () => {
       await openWorkspace()

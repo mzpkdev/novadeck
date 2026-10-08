@@ -19,6 +19,7 @@ const installed: VoiceState = {
   available: true,
   installed: ["turbo"],
   enabled: true,
+  wanted: true,
   model: "turbo",
   language: "auto",
   sizes: { engine: 1, turbo: 2, small: 1 },

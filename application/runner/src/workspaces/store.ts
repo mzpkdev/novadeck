@@ -33,7 +33,7 @@ import type { Work } from "../terminals/work.js"
 export type VoiceSettingsChange = {
   readonly [K in Exclude<keyof VoiceSettings, "enabled">]?: VoiceSettings[K] | undefined
 } & {
-  /** `null` forgets the choice, as when voice input is removed. */
+  /** `null` forgets the choice, as when it is turned on before an install. */
   readonly enabled?: boolean | null | undefined
 }
 

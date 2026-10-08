@@ -28,10 +28,13 @@ export type TerminalLayoutControls = {
 
 const headerActionClasses = "icon-button dim"
 
-// The mic button an agent's header offers while voice input is ready: click to start
-// recording into the terminal, and again to send.
+// The mic button an agent's header offers while the person wants voice input: once it is
+// ready, click to start recording into the terminal, and again to send; before, the click
+// leads to its install.
 export type DictationControls = {
   readonly recording: boolean
+  // Absent means ready, as voice input mostly is wherever the mic shows.
+  readonly ready?: boolean
   readonly onToggle: () => void
 }
 
@@ -263,9 +266,11 @@ export const WindowShell = ({
         {dictation && (
           <Tooltip
             content={
-              dictation.recording
-                ? "Stop and send"
-                : `Dictate · hold ${shortcutBindings().voice.display.join(" ")}`
+              dictation.ready === false
+                ? "Dictate · set up in Addons"
+                : dictation.recording
+                  ? "Stop and send"
+                  : `Dictate · hold ${shortcutBindings().voice.display.join(" ")}`
             }
           >
             <button

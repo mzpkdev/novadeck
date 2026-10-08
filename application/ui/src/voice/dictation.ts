@@ -27,9 +27,11 @@ const readiness = (state: VoiceState): Readiness =>
     ? { ready: true }
     : {
         ready: false,
-        hint: state.available
-          ? "Voice input isn't set up. Turn it on in Preferences → Addons."
-          : "Voice input isn't available on this machine. See Preferences → Addons.",
+        hint: !state.available
+          ? "Voice input isn't available on this machine. See Preferences → Addons."
+          : state.installed.length
+            ? "Voice input is off. Turn it on in Preferences → Addons."
+            : "Voice input isn't installed yet. Install it in Preferences → Addons.",
       }
 
 // What dictation tells the person once a clip is over, or before one starts:

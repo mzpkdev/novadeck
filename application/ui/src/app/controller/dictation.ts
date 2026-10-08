@@ -5,6 +5,7 @@ import { tilesOf } from "../../model/roster"
 import { activeProject } from "../../model/state"
 import type { TerminalMetadata } from "../../model/types"
 import { chatDraftOf, chatShown, setChatDraft } from "../../terminals/chat/mode-state"
+import type { DictationControls } from "../../terminals/WindowShell"
 import { isAgentTerminal } from "../../voice/agent-terminal"
 import { startCapture } from "../../voice/capture"
 import {
@@ -92,12 +93,13 @@ export const useDictationController = ({
 const never = (): (() => void) => () => {}
 
 // What a terminal's header needs for its mic button, or undefined where the button
-// doesn't show: not an agent, or voice input off or without its model.
+// doesn't show: not an agent, no voice input on this machine, or the person turned it
+// off. Until voice input is ready the button opens Addons, where it is installed.
 export const useMicButton = (
   terminal: TerminalMetadata,
   key: TerminalKey,
-): { readonly recording: boolean; readonly onToggle: () => void } | undefined => {
-  const { backend } = useWorkspaceServices()
+): DictationControls | undefined => {
+  const { backend, navigation } = useWorkspaceServices()
   const controller = useContext(DictationContext)
   const state = useSyncExternalStore(
     backend.voice?.state.subscribe ?? never,
@@ -107,7 +109,14 @@ export const useMicButton = (
     controller?.view.subscribe ?? never,
     () => controller?.view.getSnapshot() ?? null,
   )
-  if (!controller || !state || !voiceReady(state) || !isAgentTerminal(terminal)) return undefined
+  if (!controller || !state || !state.available || !state.wanted || !isAgentTerminal(terminal))
+    return undefined
+  if (!voiceReady(state))
+    return {
+      recording: false,
+      ready: false,
+      onToggle: () => navigation.go({ dialog: "preferences", section: "addons" }),
+    }
   return {
     recording: view?.phase === "recording" && view.target?.terminalId === key.terminalId,
     onToggle: () => controller.dictation.toggle(key),

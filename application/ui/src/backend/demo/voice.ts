@@ -12,6 +12,7 @@ export const demoVoiceState: VoiceState = {
   available: true,
   installed: [],
   enabled: false,
+  wanted: true,
   model: "turbo",
   language: "auto",
   sizes: { engine: 28 * megabyte, turbo: 574 * megabyte, small: 190 * megabyte },
@@ -38,8 +39,9 @@ const ticks = 8
 export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice => {
   const state = createStore<VoiceState>(demoVoiceState)
   let timers: ReturnType<typeof setTimeout>[] = []
-  // As the runner: an install turns voice input on unless the person turned it off.
-  let turnedOff = false
+  // As the runner, the person's choice, undefined until they make one: a first install
+  // turns voice input on, another unless they turned it off.
+  let choice: boolean | undefined
   const stop = (): void => {
     timers.forEach(clearTimeout)
     timers = []
@@ -62,13 +64,15 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
   }
   const finish = (model: VoiceModel): void => {
     const gpu = model === "turbo"
+    if (state.getSnapshot().installed.length === 0) choice = true
     state.update((current) => ({
       ...current,
       installing: null,
       installed: current.installed.includes(model)
         ? current.installed
         : [...current.installed, model],
-      enabled: !turnedOff,
+      enabled: choice !== false,
+      wanted: choice !== false,
       model,
       check: { model, milliseconds: gpu ? 2300 : 3800, gpu, recommended: model },
     }))
@@ -101,16 +105,22 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
     },
     uninstall: () => {
       stop()
-      turnedOff = false
-      state.update(() => demoVoiceState)
+      // Removing it says the person doesn't want it.
+      choice = false
+      state.update(() => ({ ...demoVoiceState, wanted: false }))
     },
     set: (settings) =>
       state.update((current) => {
         const next = { ...current, ...settings }
-        if ((next.enabled || settings.model) && !next.installed.includes(next.model))
+        if (settings.model && !next.installed.includes(next.model))
           return { ...current, failure: "That model isn't installed." }
-        if (settings.enabled !== undefined) turnedOff = !settings.enabled
-        return { ...next, failure: null }
+        // Turned on before an install, it is wanted, and the install will turn it on.
+        if (settings.enabled === true && !next.installed.includes(next.model)) {
+          choice = undefined
+          return { ...next, enabled: false, wanted: true, failure: null }
+        }
+        if (settings.enabled !== undefined) choice = settings.enabled
+        return { ...next, wanted: choice !== false, failure: null }
       }),
     record: () => ({
       append: () => {},

@@ -642,6 +642,9 @@ export const voiceState = z.strictObject({
   installed: z.array(voiceModel),
   // Whether the person turned voice input on; it needs `model` installed.
   enabled: z.boolean(),
+  // Whether the person wants voice input, installed or not: until they turn it off, the
+  // app offers it, as a microphone that leads to its install.
+  wanted: z.boolean(),
   model: voiceModel,
   language: voiceLanguage,
   // Download sizes in bytes: the engine for this platform, and each model.
