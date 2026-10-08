@@ -32,14 +32,26 @@ const readiness = (state: VoiceState): Readiness =>
           : "Voice input isn't available on this machine. See Preferences → Addons.",
       }
 
+// What dictation tells the person once a clip is over, or before one starts:
+// - `done`: the words went in; `hint`: nothing went wrong, but nothing went in either;
+//   `error`: something failed.
+// - `target`: the terminal it is about, where there is one.
+// - `setup`: voice input isn't ready, which Preferences → Addons sets up.
+export type DictationNotice = {
+  readonly text: string
+  readonly tone: "done" | "hint" | "error"
+  readonly target: TerminalKey | null
+  readonly setup?: true
+}
+
 export type DictationView = {
   readonly phase: Dictating["kind"]
   // The terminal being dictated into, while there is a clip.
   readonly target: TerminalKey | null
   readonly mode: "hold" | "toggle" | null
   readonly startedAt: number
-  // A hint or a failure, which fades after a few seconds.
-  readonly notice: { readonly text: string; readonly tone: "hint" | "error" } | null
+  // What the last clip came to, or why none started, which fades after a few seconds.
+  readonly notice: DictationNotice | null
 }
 
 const quiet: DictationView = {
@@ -69,6 +81,19 @@ export type DictationController = {
   readonly view: Store<DictationView>
   // The microphone's loudness, apart from the view because it changes many times a second.
   readonly level: Store<number>
+  // The terminals whose windows show dictation themselves, by `dictationKey`: what concerns
+  // one of them shows there, and everything else in the app-wide status line.
+  readonly docks: MutableStore<ReadonlySet<string>>
+}
+
+// A terminal's key among a controller's `docks`.
+export const dictationKey = ({ projectId, workspaceSessionId, terminalId }: TerminalKey): string =>
+  `${projectId}/${workspaceSessionId}/${terminalId}`
+
+// How a count of words reads.
+const wordCount = (text: string): string => {
+  const count = text.split(/\s+/).filter(Boolean).length
+  return `${count} ${count === 1 ? "word" : "words"}`
 }
 
 // Runs the state machine against the microphone and the backend's voice: starting a clip
@@ -78,6 +103,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   const { voice, typeInto, startCapture, promptFor, now, after } = deps
   const view: MutableStore<DictationView> = createStore(quiet)
   const level: MutableStore<number> = createStore(0)
+  const docks: MutableStore<ReadonlySet<string>> = createStore<ReadonlySet<string>>(new Set())
   let state: Dictating = idle
   let clip: VoiceClip | null = null
   let capture: Capture | null = null
@@ -92,9 +118,17 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   // arrives for a clip the person cancelled is thrown away.
   let transcription = 0
 
-  const notify = (text: string, tone: "hint" | "error"): void => {
+  const notify = (
+    text: string,
+    tone: DictationNotice["tone"],
+    target: TerminalKey | null,
+    setup = false,
+  ): void => {
     cancelNotice?.()
-    view.update((current) => ({ ...current, notice: { text, tone } }))
+    view.update((current) => ({
+      ...current,
+      notice: { text, tone, target, ...(setup && { setup: true as const }) },
+    }))
     cancelNotice = after(noticeMilliseconds, () => {
       cancelNotice = null
       view.update((current) => ({ ...current, notice: null }))
@@ -127,7 +161,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     recording = null
   }
 
-  const start = (): void => {
+  const start = (target: TerminalKey): void => {
     clearNotice()
     const id = ++generation
     const current = voice.record()
@@ -161,7 +195,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
           state = idle
           publish()
         }
-        notify(message, "error")
+        notify(message, "error", target)
       },
     )
   }
@@ -213,21 +247,25 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       .then(({ text }) => {
         if (!wanted()) return
         const said = text.trim()
-        if (!said) return notify("Didn't catch anything.", "hint")
-        if (typeInto(target, said)) return
+        if (!said) return notify("Didn't catch anything.", "hint", target)
+        if (typeInto(target, said)) return notify(`Typed ${wordCount(said)}`, "done", target)
         // The terminal went while the engine worked. The words stay on the clipboard where
         // that is allowed, and in the message where it is not, so they aren't lost.
         const lost = "The terminal closed before the text arrived"
         const clipboard = navigator.clipboard?.writeText(said)
-        if (!clipboard) return notify(`${lost}: ${said}`, "error")
+        if (!clipboard) return notify(`${lost}: ${said}`, "error", target)
         clipboard.then(
-          () => notify(`${lost}. The text is on your clipboard.`, "error"),
-          () => notify(`${lost}: ${said}`, "error"),
+          () => notify(`${lost}. The text is on your clipboard.`, "error", target),
+          () => notify(`${lost}: ${said}`, "error", target),
         )
       })
       .catch((failure: unknown) => {
         if (wanted())
-          notify(failure instanceof Error ? failure.message : "Couldn't transcribe that.", "error")
+          notify(
+            failure instanceof Error ? failure.message : "Couldn't transcribe that.",
+            "error",
+            target,
+          )
       })
       .finally(() => {
         if (wanted()) dispatch({ type: "settled" })
@@ -237,7 +275,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   const run = (effect: DictationEffect): void => {
     switch (effect.kind) {
       case "start":
-        return start()
+        return start(effect.target)
       case "stop":
         return finish(effect.target)
       case "discard":
@@ -249,7 +287,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
         abortDrain = null
         return
       case "hint":
-        return notify(effect.text, "hint")
+        return notify(effect.text, "hint", effect.target ?? null, effect.setup)
     }
   }
 
@@ -264,6 +302,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   return {
     view,
     level,
+    docks,
     dictation: {
       recording: () => state.kind === "recording",
       active: () => state.kind !== "idle",

@@ -1,5 +1,6 @@
-import { useCallback, useMemo, type ReactNode } from "react"
+import { useCallback, useContext, useMemo, type ReactNode } from "react"
 
+import { shortcutBindings } from "../interaction/shortcuts"
 import { agentStats } from "../model/agent-usage"
 import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
@@ -18,8 +19,9 @@ import {
   type WindowShellProps,
 } from "../terminals/WindowShell"
 import { WindowStats } from "../terminals/WindowStats"
+import { DictationStrip } from "../voice/DictationStrip"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
-import { useMicButton } from "./controller/dictation"
+import { DictationContext, useMicButton } from "./controller/dictation"
 import { useDockTarget } from "./dock-target"
 import {
   currentContext,
@@ -143,8 +145,9 @@ export const WorkspaceTerminal = ({
   readonly controls: TerminalLayoutControls
 }): React.JSX.Element => {
   const { onReveal } = controls
-  const { backend, commands, panes } = useWorkspaceServices()
+  const { backend, commands, panes, navigation } = useWorkspaceServices()
   const { setKeyboardFocus } = commands
+  const dictation = useContext(DictationContext)
   const terminalId = terminal.id
   // Each terminal selects only what concerns it, so a rename keystroke or a keyboard
   // focus change re-renders just the terminals involved.
@@ -177,10 +180,10 @@ export const WorkspaceTerminal = ({
   const { bar, items, fresh } = useTerminalBar(terminalId)
   const { icon: Icon, Body } = terminalProfile(terminal)
   const processWindow = presentedProgram(terminal)
-  const dictation = useMicButton(terminal, terminalKey)
+  const mic = useMicButton(terminal, terminalKey)
   const frame: Omit<WindowShellProps, "children"> = {
     ...useWindowFrame(terminal, controls),
-    ...(dictation ? { dictation } : {}),
+    ...(mic ? { dictation: mic } : {}),
     icon: <Icon size={14} strokeWidth={1.5} />,
     ...(processWindow ? { processWindow } : {}),
   }
@@ -251,12 +254,22 @@ export const WorkspaceTerminal = ({
     )
   const stats = agentStats(terminal)
   // The terminal's content, with what its agent runs on floating over its top right while
-  // the terminal shows, not its chat. The host is there whatever runs, so the content
-  // never remounts as an agent starts.
+  // the terminal shows, not its chat, and voice input's strip along an edge while it
+  // dictates into the terminal. The host is there whatever runs, so the content never
+  // remounts as an agent starts.
   const hosted = (content: ReactNode): ReactNode => (
     <div className="terminal-host relative flex min-h-0 min-w-0 flex-1 flex-col">
       {Body ? <Body>{content}</Body> : content}
       {stats && !showChat && <WindowStats stats={stats} />}
+      {dictation && (
+        <DictationStrip
+          controller={dictation}
+          terminalKey={terminalKey}
+          edge={showChat ? "top" : "bottom"}
+          stopKeys={shortcutBindings().voice.display}
+          onSetup={() => navigation.go({ dialog: "preferences", section: "addons" })}
+        />
+      )}
     </div>
   )
   // One shell element whatever runs, so only the body around the content changes.

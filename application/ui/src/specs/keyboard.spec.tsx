@@ -839,6 +839,11 @@ describe("dictation", () => {
 
       await expect.element(saying("Preferences → Addons")).toBeVisible()
       expect(microphone.live()).toBe(0)
+      // The terminal's strip opens Addons, where voice input is set up.
+      await saying("Preferences → Addons").getByRole("button", { name: "Open Addons" }).click()
+      await expect
+        .element(preferencesDialog().getByRole("tab", { name: "Addons" }))
+        .toHaveAttribute("aria-selected", "true")
     })
   })
 
@@ -873,7 +878,7 @@ describe("dictation", () => {
       await commandInput("Checkout implementation").click()
 
       await press(`${dictateKeys}${releaseKeys}`)
-      await expect.element(saying("Press again to stop")).toBeVisible()
+      await expect.element(saying("Esc discard")).toBeVisible()
       await expect.element(saying("0:02")).toBeVisible()
       expect(microphone.live()).toBe(1)
 

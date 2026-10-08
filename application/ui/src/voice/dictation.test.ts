@@ -157,6 +157,8 @@ describe("dictation", () => {
       await flush()
       expect(app.typed).toEqual([{ key: target, text: "run the tests" }])
       expect(view.getSnapshot()).toMatchObject({ phase: "idle", target: null })
+      // It says the words went in, in the terminal they went to.
+      expect(view.getSnapshot().notice).toEqual({ text: "Typed 3 words", tone: "done", target })
     })
 
     it("streams audio into the clip as it arrives", async () => {
@@ -176,7 +178,7 @@ describe("dictation", () => {
       app.clips[0]!.resolve({ text: "  ", language: "en" })
       await flush()
       expect(app.typed).toEqual([])
-      expect(app.controller.view.getSnapshot().notice).toMatchObject({ tone: "hint" })
+      expect(app.controller.view.getSnapshot().notice).toMatchObject({ tone: "hint", target })
     })
 
     it("transcribes when the window loses focus", async () => {
@@ -396,6 +398,7 @@ describe("dictation", () => {
         expect(app.controller.view.getSnapshot().notice).toEqual({
           text: "The terminal closed before the text arrived. The text is on your clipboard.",
           tone: "error",
+          target,
         })
       } finally {
         vi.unstubAllGlobals()
@@ -410,6 +413,7 @@ describe("dictation", () => {
         expect(app.controller.view.getSnapshot().notice).toEqual({
           text: "The terminal closed before the text arrived: run the tests",
           tone: "error",
+          target,
         })
       } finally {
         vi.unstubAllGlobals()
