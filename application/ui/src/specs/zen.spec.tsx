@@ -261,11 +261,22 @@ describe("Zen mode", () => {
 
       await pressShortcut("zen")
       await expectInZen()
+      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
       await expect.element(commandInput("Checkout implementation")).toHaveValue("")
 
       await pressShortcut("zen")
       await expectOutOfZen()
       await expect.element(commandInput("Checkout implementation")).toHaveValue("")
+    })
+
+    it("moves focus the header hides to New terminal", async () => {
+      await openWorkspace()
+      page.getByRole("button", { name: "Workspace preferences" }).element().focus()
+
+      await pressShortcut("zen")
+      await expectInZen()
+
+      await expect.element(dock().getByRole("button", { name: "New terminal" })).toHaveFocus()
     })
 
     it("does nothing while a dialog is open", async () => {

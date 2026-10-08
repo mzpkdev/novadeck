@@ -50,6 +50,20 @@ describe("focusing Zen's controls after they mount", () => {
     expect(document.activeElement).toBe(document.querySelector("[data-target]"))
   })
 
+  it("takes it from a control that became inert", () => {
+    mount(
+      '<button data-workspace-zen-create data-target type="button">New</button><div inert><button data-other type="button">Prefs</button></div>',
+    )
+    const hidden = document.querySelector<HTMLElement>("[data-other]")!
+    Object.defineProperty(document, "activeElement", { configurable: true, get: () => hidden })
+    try {
+      focusZenCreate()
+    } finally {
+      delete (document as { activeElement?: unknown }).activeElement
+    }
+    expect(document.activeElement).toBe(document.querySelector("[data-target]"))
+  })
+
   it("leaves focus where a key moved it before the frame", () => {
     mount(
       '<button data-workspace-zen-create type="button">New</button><button data-target type="button">Other</button>',
