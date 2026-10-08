@@ -378,6 +378,7 @@ describe("Zen dock", () => {
     it("folds when keyboard focus leaves it", async () => {
       await openWorkspace()
       await activateWithKeyboard(enterZen())
+      await expect.element(dock().getByRole("button", { name: "New terminal" })).toHaveFocus()
       await press("{Tab}")
       await expect.element(showControls()).toHaveFocus()
       await press("{Enter}")
