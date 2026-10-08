@@ -29,9 +29,13 @@ const readiness = (state: VoiceState): Readiness =>
         ready: false,
         hint: !state.available
           ? "Voice input isn't available on this machine. See Preferences → Addons."
-          : state.installed.length
-            ? "Voice input is off. Turn it on in Preferences → Addons."
-            : "Voice input isn't installed yet. Install it in Preferences → Addons.",
+          : state.installing
+            ? "Voice input is still installing. See Preferences → Addons."
+            : !state.installed.length
+              ? "Voice input isn't installed yet. Install it in Preferences → Addons."
+              : !state.wanted
+                ? "Voice input is off. Turn it on in Preferences → Addons."
+                : "Voice input isn't ready yet. See Preferences → Addons.",
       }
 
 // What dictation tells the person once a clip is over, or before one starts:
@@ -83,9 +87,10 @@ export type DictationController = {
   readonly view: Store<DictationView>
   // The microphone's loudness, apart from the view because it changes many times a second.
   readonly level: Store<number>
-  // The terminals whose windows show dictation themselves, by `dictationKey`: what concerns
-  // one of them shows there, and everything else in the app-wide status line.
-  readonly docks: MutableStore<ReadonlySet<string>>
+  // The terminals whose windows show dictation themselves, by `dictationKey`, each with how
+  // many of its windows do: what concerns one of them shows there, and everything else in
+  // the app-wide status line.
+  readonly docks: MutableStore<ReadonlyMap<string, number>>
 }
 
 // A terminal's key among a controller's `docks`.
@@ -105,7 +110,9 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   const { voice, typeInto, startCapture, promptFor, now, after } = deps
   const view: MutableStore<DictationView> = createStore(quiet)
   const level: MutableStore<number> = createStore(0)
-  const docks: MutableStore<ReadonlySet<string>> = createStore<ReadonlySet<string>>(new Set())
+  const docks: MutableStore<ReadonlyMap<string, number>> = createStore<ReadonlyMap<string, number>>(
+    new Map(),
+  )
   let state: Dictating = idle
   let clip: VoiceClip | null = null
   let capture: Capture | null = null

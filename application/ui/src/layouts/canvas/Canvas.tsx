@@ -91,7 +91,9 @@ const TerminalCanvas = ({
     return { width, height }
   }, [store])
   const measured = useStore((state) => state.width > 0 && state.height > 0)
-  const fitZoom = useStore((state) => Math.ceil(Math.min(state.width / 320, state.height / 200)))
+  const fitZoom = useStore(
+    (state) => Math.floor(Math.min(state.width / 320, state.height / 200) * 2) / 2,
+  )
   const maxZoom = Math.max(1.5, layout.viewport?.zoom ?? 1, fitZoom)
   const container = useRef<HTMLDivElement>(null)
   // A new window's size: in the viewport's ratio, as a dropped window's ghost previews it.

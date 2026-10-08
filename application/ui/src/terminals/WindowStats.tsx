@@ -33,10 +33,13 @@ export const WindowStats = ({ stats }: { stats: AgentStats }): React.JSX.Element
     .join(", ")
   return (
     <span
-      className="terminal-stats flex shrink-0 items-center"
+      // Its own, not the terminal's or the canvas's: a press here neither selects text in
+      // the terminal nor drags or pans the canvas.
+      className="terminal-stats flex shrink-0 items-center nodrag nopan"
       data-ring={context ? "" : undefined}
       role="img"
       aria-label={said}
+      // Focusable where there is more to show, which a touch screen reveals by a tap.
       tabIndex={context ? 0 : undefined}
     >
       {(runsOn || used) && (

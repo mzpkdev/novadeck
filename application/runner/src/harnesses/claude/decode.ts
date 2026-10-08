@@ -273,8 +273,9 @@ const statusLine = (
         },
       }),
       ...(payload.rate_limits !== undefined && { limits: known }),
-      ...(model !== undefined && { model }),
-      ...(effort !== undefined && { effort }),
+      // A model with no effort parameter has no level, so a named model clears the last.
+      ...(model !== undefined && { model, effort: effort ?? null }),
+      ...(model === undefined && effort !== undefined && { effort }),
     },
   ]
 }

@@ -49,7 +49,24 @@ describe("the account's subscription usage", () => {
       ],
       0,
     )
-    expect(claude!.windows).toEqual([{ name: "5h", minutes: 300, used: 0.2, resetsAt: 6 * hour }])
+    expect(claude!.windows).toEqual([
+      { key: "5h#0", name: "5h", minutes: 300, used: 0.2, resetsAt: 6 * hour },
+    ])
+  })
+
+  it("keeps two windows of the same length in one reading apart, as two quotas", () => {
+    // Antigravity's weekly quotas: one untouched, one nearly used up.
+    const [agy] = accountUsage(
+      [
+        agent("1", "agy", [
+          { minutes: 10_080, used: 0, resetsAt: 9 * hour },
+          { minutes: 10_080, used: 0.95, resetsAt: 6 * hour },
+        ]),
+      ],
+      0,
+    )
+    expect(agy!.windows.map(({ used }) => used)).toEqual([0, 0.95])
+    expect(agy!.busiest.used).toBe(0.95)
   })
 
   it("leaves out a window once it has reset, and terminals that don't run an agent", () => {

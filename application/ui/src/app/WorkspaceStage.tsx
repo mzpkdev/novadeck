@@ -69,7 +69,13 @@ export const WorkspaceStage = memo(
     // session's view, so it sees the view change.
     const [opened, setOpened] = useState({ context, view, fromOtherView: false })
     if (opened.context !== context || opened.view !== view)
-      setOpened({ context, view, fromOtherView: opened.view !== view })
+      // Another session's view says nothing of this one's: only a view change within a
+      // session counts.
+      setOpened({
+        context,
+        view,
+        fromOtherView: opened.context === context && opened.view !== view,
+      })
     // The terminal Focus shows: the selection, a kept preview, or the first terminal.
     const displayed = activeTerminal(terminals, selected, context, focusPreview)?.id
     const {

@@ -784,6 +784,28 @@ describe("the switch of voice input", () => {
     expect(voice.state().enabled).toBe(false)
   })
 
+  it("keeps an off chosen during a first install, and lets a first install undo an earlier off", async ({
+    resources,
+  }) => {
+    const first = await setup(resources, { catalog: await modelCatalog(resources) })
+    await first.voice.set({ enabled: false })
+    await first.voice.install("small")
+    // The install says it is wanted, whatever came before.
+    expect(first.voice.state().wanted).toBe(true)
+    await first.voice.settled()
+    expect(first.voice.state()).toMatchObject({ enabled: true, wanted: true })
+
+    const second = await setup(resources, { catalog: await modelCatalog(resources) })
+    await second.voice.install("small")
+    await second.voice.set({ enabled: false })
+    await second.voice.settled()
+    expect(second.voice.state()).toMatchObject({
+      installed: ["small"],
+      enabled: false,
+      wanted: false,
+    })
+  })
+
   it("stays off by choice through another install, and off after an uninstall until the next", async ({
     resources,
   }) => {

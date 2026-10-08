@@ -42,10 +42,9 @@ describe("Claude Code's status line, as captured", () => {
     ])
   })
 
-  it("gives the model's display name, and the effort level only where the payload has one", () => {
-    expect(decode(report)).toMatchObject([{ model: payload.model.display_name }])
-    const [bare] = decode(report)
-    expect(bare && "effort" in bare).toBe(false)
+  it("gives the model's display name, and its effort level, none where the payload has none", () => {
+    // None clears the last model's, as after a switch to a model without levels.
+    expect(decode(report)).toMatchObject([{ model: payload.model.display_name, effort: null }])
     const effort = { ...payload, effort: { level: "xhigh" } }
     expect(decode({ ...report, payload: effort })).toMatchObject([
       { model: payload.model.display_name, effort: "xhigh" },

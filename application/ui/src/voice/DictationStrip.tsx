@@ -94,7 +94,8 @@ const Recording = ({
           </>
         )}
       </span>
-      <span className="dictation-elapsed" data-ending={ending || undefined}>
+      {/* Read once by its ending, not every second as it ticks. */}
+      <span className="dictation-elapsed" data-ending={ending || undefined} aria-hidden>
         {clock(seconds)}
       </span>
     </>
@@ -125,14 +126,17 @@ export const DictationStrip = ({
   const key = dictationKey(terminalKey)
   // While it is on screen, this window shows what concerns its terminal.
   useEffect(() => {
-    docks.update((each) => new Set(each).add(key))
-    return () => {
+    const count = (by: number): void => {
       docks.update((each) => {
-        const next = new Set(each)
-        next.delete(key)
+        const next = new Map(each)
+        const left = (next.get(key) ?? 0) + by
+        if (left > 0) next.set(key, left)
+        else next.delete(key)
         return next
       })
     }
+    count(1)
+    return () => count(-1)
   }, [docks, key])
   const { phase, target, mode, startedAt, notice } = useSyncExternalStore(
     view.subscribe,

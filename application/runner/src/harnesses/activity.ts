@@ -571,6 +571,7 @@ export const apply = (
         state: "idle",
         pending: outliving(activity.pending, activity.subagents),
         continued: false,
+        running: 0,
       }
     case "turn-idle": {
       // Idle after the turn's Stop says nothing new of the turn; without one, the turn

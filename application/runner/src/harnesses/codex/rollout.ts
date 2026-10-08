@@ -69,9 +69,11 @@ export const rolloutEvents = (
   const base = { agent: "codex", sessionId, instance, startedAt } as const
   if (type === "turn_context") {
     const { model, effort } = fields
+    // A turn that names its model names its effort too, none clearing the last model's.
+    const level = typeof effort === "string" && effort && effort.length <= 32 ? effort : null
     const named = {
-      ...(typeof model === "string" && model && model.length <= 128 && { model }),
-      ...(typeof effort === "string" && effort && effort.length <= 32 && { effort }),
+      ...(typeof model === "string" && model && model.length <= 128 && { model, effort: level }),
+      ...(level !== null && { effort: level }),
     }
     return Object.keys(named).length > 0 ? [{ type: "telemetry-observed", ...base, ...named }] : []
   }
@@ -169,7 +171,7 @@ export const followRollout: NonNullable<Harness["watch"]> = (run, signal, emit) 
       for (const event of rolloutEvents(line, run))
         if (backlog)
           backlog.set(
-            event.type === "telemetry-observed" && event.context === undefined && !event.limits
+            event.type === "telemetry-observed" && (event.model !== undefined || event.effort)
               ? "model"
               : event.type,
             event,
@@ -182,13 +184,14 @@ export const followRollout: NonNullable<Harness["watch"]> = (run, signal, emit) 
         if (!backlog) return
         // The mode holds until the next turn says otherwise, so it holds now, when the
         // binding that would otherwise predate it began; the rest keep their age.
+        // Oldest first, as telemetry older than the last it took is turned away.
         const now = Date.now()
-        for (const event of backlog.values())
-          emit(
-            event.type === "mode-observed"
-              ? { ...event, startedAt: Math.max(event.startedAt, now) }
-              : event,
-          )
+        const held = [...backlog.values()].map((event) =>
+          event.type === "mode-observed"
+            ? { ...event, startedAt: Math.max(event.startedAt, now) }
+            : event,
+        )
+        for (const event of held.toSorted((a, b) => a.startedAt - b.startedAt)) emit(event)
         backlog = undefined
       },
     },

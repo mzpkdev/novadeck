@@ -54,7 +54,7 @@ const UsageDetail = ({ account }: { account: AgentAccount }): React.JSX.Element 
         {account.name}
       </h2>
       {account.windows.map((window) => (
-        <WindowRow key={window.name} window={window} now={now} />
+        <WindowRow key={window.key} window={window} now={now} />
       ))}
     </div>
   )

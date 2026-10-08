@@ -17,7 +17,11 @@ const Elapsed = ({ since }: { readonly since: number }): React.JSX.Element => {
     const timer = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(timer)
   }, [])
-  return <span className="dictation-elapsed">{clock(now - since)}</span>
+  return (
+    <span className="dictation-elapsed" aria-hidden>
+      {clock(now - since)}
+    </span>
+  )
 }
 
 const Meter = ({ level }: { readonly level: Store<number> }): React.JSX.Element => {
@@ -45,7 +49,7 @@ export const DictationOverlay = ({
 }: {
   readonly view: Store<DictationView>
   readonly level: Store<number>
-  readonly docks: Store<ReadonlySet<string>>
+  readonly docks: Store<ReadonlyMap<string, number>>
 }): React.JSX.Element => {
   const { phase, target, mode, startedAt, notice } = useSyncExternalStore(
     view.subscribe,
@@ -53,7 +57,8 @@ export const DictationOverlay = ({
   )
   const docked = useSyncExternalStore(docks.subscribe, docks.getSnapshot)
   const about = phase !== "idle" ? target : notice?.target
-  const shown = (phase !== "idle" || notice !== null) && !(about && docked.has(dictationKey(about)))
+  const shown =
+    (phase !== "idle" || notice !== null) && !(about && (docked.get(dictationKey(about)) ?? 0) > 0)
   return (
     <div
       className="dictation-overlay"

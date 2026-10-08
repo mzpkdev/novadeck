@@ -3,7 +3,7 @@ import { Check, Eye, EyeOff, Pencil, X, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
-import { subagentMarks, subagentsBadge } from "../model/agent-subagents"
+import { subagentMarks, subagentsBadge, subagentsDetail } from "../model/agent-subagents"
 import { mailBadgeLabel, type MailBadge } from "../model/messages"
 import { isWindow } from "../model/roster"
 import {
@@ -96,7 +96,9 @@ export const TerminalTab = ({
   // and counted in words wherever it marks them.
   const subagents = shell && subagentsBadge(shell)
   const marks = shell && subagentMarks(shell)
-  const description = [note, messages, marks && subagents].filter(Boolean).join(", ")
+  // Their kinds in words, as the marks and rows under the line are only drawn.
+  const kinds = marks && subagents && shell ? `${subagents}: ${subagentsDetail(shell)}` : undefined
+  const description = [note, messages, kinds].filter(Boolean).join(", ")
   const menu = windowMenu({
     terminal,
     onRename: onBeginRename,

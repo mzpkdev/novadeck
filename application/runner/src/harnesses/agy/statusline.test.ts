@@ -172,10 +172,12 @@ describe("Antigravity's status line, as captured", () => {
       model: "gemini-3.8-flash",
       effort: "high",
     })
-    const plain = observed("gemini-3.8-flash")
-    expect(plain).toMatchObject({ model: "gemini-3.8-flash" })
-    expect(plain && "effort" in plain).toBe(false)
-    expect(observed("gemini-3.8-flash-turbo")).toMatchObject({ model: "gemini-3.8-flash-turbo" })
+    // A name without a level clears the last model's.
+    expect(observed("gemini-3.8-flash")).toMatchObject({ model: "gemini-3.8-flash", effort: null })
+    expect(observed("gemini-3.8-flash-turbo")).toMatchObject({
+      model: "gemini-3.8-flash-turbo",
+      effort: null,
+    })
     expect(decode({ ...hook("x"), payload: { conversationId: "c1" } })).not.toContainEqual(
       expect.objectContaining({ type: "telemetry-observed" }),
     )

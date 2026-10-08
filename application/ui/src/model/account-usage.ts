@@ -11,6 +11,8 @@ const agentNames: Readonly<Record<string, string>> = {
 // One of a subscription's limit windows: its length as people say it ("5h", "7d"), how
 // much of it is used, as a fraction, and when it resets, where its agent says.
 export type UsageWindow = {
+  // Which of its agent's windows it is, as two of the same length share a name.
+  readonly key: string
   readonly name: string
   readonly minutes: number | null
   readonly used: number
@@ -46,7 +48,8 @@ const rank = (program: string, order: readonly string[]): number => {
 // of two readings of a window the one resetting later is the newer, and of two resetting
 // together the one used more. A window whose reset has passed says nothing until its
 // agent reports again. Terminals that report no limits, as an API-key account's don't,
-// leave their agent out.
+// leave their agent out. Two windows of the same length in one reading are two quotas, as
+// Antigravity's weekly ones are, so they stay apart, matched across terminals by order.
 export const accountUsage = (
   terminals: readonly TerminalMetadata[],
   now = Date.now(),
@@ -55,15 +58,20 @@ export const accountUsage = (
   const byAgent = new Map<string, Map<string, UsageWindow>>()
   for (const terminal of terminals) {
     if (terminal.state !== "running" || !agentNames[terminal.process]) continue
+    const seen = new Map<string, number>()
     for (const limit of terminal.agent?.usage?.limits ?? []) {
-      if (limit.resetsAt !== null && limit.resetsAt <= now) continue
       const name = windowName(limit.minutes)
+      const nth = seen.get(name) ?? 0
+      seen.set(name, nth + 1)
+      if (limit.resetsAt !== null && limit.resetsAt <= now) continue
+      const key = `${name}#${nth}`
       const windows = byAgent.get(terminal.process) ?? new Map<string, UsageWindow>()
       byAgent.set(terminal.process, windows)
-      const known = windows.get(name)
+      const known = windows.get(key)
       const later = (limit.resetsAt ?? 0) - (known?.resetsAt ?? 0)
       if (!known || later > 0 || (later === 0 && limit.used > known.used))
-        windows.set(name, {
+        windows.set(key, {
+          key,
           name,
           minutes: limit.minutes,
           used: limit.used,

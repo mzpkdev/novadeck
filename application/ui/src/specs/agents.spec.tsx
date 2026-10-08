@@ -32,7 +32,9 @@ describe("An agent waiting on the person", () => {
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
     const tab = page.getByRole("button", { name: "Select Checkout review" })
-    await expect.poll(() => tabDescription("Checkout review")).toBe("Needs permission, 2 subagents")
+    await expect
+      .poll(() => tabDescription("Checkout review"))
+      .toBe("Needs permission, 2 subagents: 2 explorer")
     await tab.click()
     await expect
       .element(page.getByRole("region", { name: "Checkout review terminal" }))

@@ -290,6 +290,9 @@ export class Voice {
     this.updateFailedAt = undefined
     this.failure = null
     this.settings.saveVoiceCheck(null)
+    // Installing it at all says the person wants it, whatever they chose before: an off
+    // from then on, during the install too, still holds.
+    if (this.installed.length === 0) this.settings.saveVoiceSettings({ enabled: null })
     this.installing = { model, step: "engine", received: 0, total: this.manifest.size }
     this.changed()
     this.running = { controller, done: this.run(model, this.manifest, controller.signal) }
@@ -383,8 +386,8 @@ export class Voice {
     const model = change.model ?? this.settings.voiceSettings().model
     if (change.model !== undefined && !this.installed.includes(change.model))
       throw new DomainError("CONFLICT", `The ${change.model} model is not installed.`)
-    // Turned on before an install, it is wanted, and the install that follows turns it on.
-    if (change.enabled === true && !this.installed.includes(model)) {
+    // Turned on before any install, it is wanted, and the install that follows turns it on.
+    if (change.enabled === true && this.installed.length === 0) {
       this.settings.saveVoiceSettings({ ...change, enabled: null })
       this.changed()
       return
@@ -527,7 +530,7 @@ export class Voice {
   ): Promise<void> {
     // What was chosen as the install began, before it or a refresh changes that, and
     // whether anything was installed then.
-    const before = { settings: this.settings.voiceSettings(), fresh: this.installed.length === 0 }
+    const before = { settings: this.settings.voiceSettings() }
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -558,11 +561,11 @@ export class Voice {
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
       const check = await this.measure(model, manifest, signal)
       // The model checked out, so it is the one used, and voice input is on, as the person
-      // installed it to use it: a first install always, and another model unless they had
-      // turned it off themselves.
+      // installed it to use it, unless they turned it off themselves, before another model's
+      // install or during this one.
       this.settings.saveVoiceSettings({
         model,
-        enabled: before.fresh || this.settings.voiceEnabledChoice() !== false,
+        enabled: this.settings.voiceEnabledChoice() !== false,
       })
       await this.load()
       this.settings.saveVoiceCheck(check)

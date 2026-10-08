@@ -23,7 +23,7 @@ const Mark = ({ index }: { index: number }) => (
 
 // The subagents on the tab's line, after its program: a mark for each, past a rule, the
 // rest counted. They fold away while the rows under the line show them (tabs.css). The
-// tab's tooltip and description say them in words.
+// tab's description says them in words.
 export const SubagentLine = ({ marks }: { marks: SubagentMarks }): React.JSX.Element => {
   const { length } = marks.kinds
   return (

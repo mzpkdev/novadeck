@@ -263,8 +263,10 @@ export const WindowShell = ({
           >
             <button
               className={`${headerActionClasses} dictation-action nodrag nopan ${dictation.recording ? "dictation-active" : ""}`}
-              aria-label={`Dictate into ${terminal.name}`}
-              aria-pressed={dictation.recording}
+              aria-label={
+                dictation.ready === false ? "Set up voice input" : `Dictate into ${terminal.name}`
+              }
+              aria-pressed={dictation.ready === false ? undefined : dictation.recording}
               onClick={(event) => {
                 event.stopPropagation()
                 dictation.onToggle()

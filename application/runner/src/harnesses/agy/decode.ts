@@ -53,16 +53,17 @@ const levels: ReadonlySet<string> = new Set(["minimal", "low", "medium", "high",
 /**
  * A hook's model name, with a trailing reasoning level split off as the effort. That the
  * suffix is a level is an inference from the names seen (`gemini-3.8-flash-high`), not
- * something Antigravity documents; any other name is the model whole, with no effort.
+ * something Antigravity documents; any other name is the model whole, with no effort, which
+ * clears the last model's.
  */
-const reading = (name: unknown): { model: string; effort?: string } | undefined => {
+const reading = (name: unknown): { model: string; effort: string | null } | undefined => {
   const whole = text(name)
   if (!whole || whole.length > 128) return undefined
   const cut = whole.lastIndexOf("-")
   const level = whole.slice(cut + 1)
   return cut > 0 && levels.has(level)
     ? { model: whole.slice(0, cut), effort: level }
-    : { model: whole }
+    : { model: whole, effort: null }
 }
 
 const decodeEvent = ({ event, seq, instance, payload }: Report): readonly HarnessEvent[] => {
