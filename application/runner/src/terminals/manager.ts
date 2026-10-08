@@ -392,6 +392,13 @@ type Record = {
    */
   startupRuns: boolean
   /**
+   * The process of a bound agent whose shell prompt came back while it still lived
+   * (suspended, as by Ctrl+Z), kept while its lead waits to see whether it returns: a
+   * later prompt with no session bound and that process gone ends the lead. Cleared when
+   * a session binds again, or the lead ends.
+   */
+  suspended: string | null
+  /**
    * Whether the person pressed Enter at the agent's own prompt shown before any session
    * bound: its first prompt's hooks bind it, so until then nothing says it is idle.
    */
@@ -880,6 +887,7 @@ export class Terminals {
         origin,
         agents: saved?.agents ?? {},
         binding: null,
+        suspended: null,
         activity: null,
         telemetry: null,
         watching: null,
@@ -906,7 +914,11 @@ export class Terminals {
         seenEntry: undefined,
       }
       this.records.set(record.summary.id, record)
+      // Restored as a shell that resumes nothing, there is no agent left to lead.
+      const unled = record.summary.ledBy !== null && !started.resumes
+      if (unled) record.summary = { ...record.summary, ledBy: null }
       this.register(record, expectedAgent(input.command, input.resume))
+      if (unled) this.messaging.endLead(record.summary.id)
       // The resumed agent shows its own history; a shell that resumes none, the transcript.
       const shown = saved?.transcript && !started.resumes && this.transcripts
       if (shown) this.show(record, saved.transcript!, new Date(saved.savedAt))
@@ -1193,6 +1205,8 @@ export class Terminals {
     const claim = record.resumeClaim
     if (this.cancelResume(record)) {
       record.startupRuns = false
+      // The person took the terminal over before its agent ever ran: nothing to lead.
+      this.endLead(record)
       if (claim && this.claims.get(claim) === record.summary.id) this.claims.delete(claim)
     }
     if (/[\r\n]/.test(data)) record.submitted = true
@@ -1690,6 +1704,7 @@ export class Terminals {
           } satisfies TerminalSummary,
           foreground: undefined,
           binding: null,
+          suspended: null,
           root: null,
           held: null,
           seenEntry: undefined,
@@ -2922,7 +2937,12 @@ export class Terminals {
     // login, Ctrl-C at startup, a declined trust): the lead it had ends with it. One bound
     // ends the lead only once its process is gone; suspended with Ctrl+Z it still runs,
     // and comes back with `fg`. A process Novadeck can't name can't be told suspended.
-    if (binding === null ? ran : !binding.instance || !alive(binding.instance)) this.endLead(record)
+    if (binding === null) {
+      // Or the agent a Ctrl+Z left suspended, found gone with no session bound since.
+      if (ran || (record.suspended !== null && !alive(record.suspended))) this.endLead(record)
+    } else if (binding.instance && alive(binding.instance)) {
+      record.suspended = binding.instance
+    } else this.endLead(record)
     this.endBinding(record)
     // An agent whose prompt showed, with no session bound, left with it.
     this.messaging.unshown(record.summary.id)
@@ -3061,6 +3081,7 @@ export class Terminals {
       const before = record.binding
       record.agents = next.sessions
       record.binding = next.binding
+      if (next.binding !== null) record.suspended = null
       changed = true
       // A newly bound session waits for its first prompt; one still bound keeps its activity.
       const same =
@@ -3556,7 +3577,8 @@ export class Terminals {
   private endLead(record: Record): void {
     if (record.summary.ledBy === null) return
     record.summary = { ...record.summary, ledBy: null }
-    this.messaging.setLedBy(record.summary.id, null)
+    record.suspended = null
+    this.messaging.endLead(record.summary.id)
     this.save(record, false)
     this.announce(record)
   }

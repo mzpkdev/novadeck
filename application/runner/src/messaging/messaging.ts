@@ -68,7 +68,7 @@ type Live = Scope & {
    * The handle of the terminal whose agent leads this one: it opened this terminal with a
    * brief, and directs its work. It belongs to the terminal, not to a session, so it
    * outlasts a `/clear` or a restart of either agent, and ends when this terminal's agent
-   * exits (`setLedBy`). It means anything only while a running terminal in the same
+   * exits (`endLead`). It means anything only while a running terminal in the same
    * project and session has that handle (handles are never reused there): its running lead.
    */
   ledBy: string | null
@@ -220,7 +220,7 @@ type Asked = {
 }
 
 /** Whether a message is its recipient's lead's, as fixed when it was sent. */
-const isLed = (message: Message): boolean => message.fromLead
+const isFromLead = (message: Message): boolean => message.fromLead
 
 /** What a turn already given a delivery prints beside a new one, as Antigravity's does. */
 const joined = (kept: string | undefined, text: string): string =>
@@ -337,17 +337,15 @@ export class Messaging {
   }
 
   /**
-   * The terminal's lead changes, or ends (null), as its agent exits: only the messages sent
-   * after are marked by it. What was sent keeps the authority it had when sent.
+   * The terminal's lead ends, as its agent exits: messages sent after are a peer's. Its
+   * lead's brief still waiting for the terminal's first session (queued or held, bound to
+   * none) is gone, and its sender told, as no session it was for will bind; what already
+   * belongs to a session stays, with the authority it had when sent.
    */
-  setLedBy(terminalId: string, ledBy: string | null): void {
+  endLead(terminalId: string): void {
     const live = this.live.get(terminalId)
     if (!live) return
-    live.ledBy = ledBy
-    if (ledBy !== null) return
-    // The brief its lead sent before any session of its agent bound would be taken by a
-    // session that is not the one it was for: it is gone, and its sender is told. What
-    // already belongs to a session stays, with the authority it had.
+    live.ledBy = null
     for (const message of this.messages.values())
       if (
         message.to.terminalId === terminalId &&
@@ -602,7 +600,7 @@ export class Messaging {
           ? this.lease(live, root, {
               kind: "midturn",
               print,
-              only: isLed,
+              only: isFromLead,
               keeps: (text) => joined(kept, text),
             })
           : undefined
@@ -647,7 +645,7 @@ export class Messaging {
     )
     if (!call || !called || !time || !running(live.delivery)) return silent
     const print = (text: string) => call(text, event)
-    const lease = this.lease(live, root, { kind: "midturn", print, only: isLed })
+    const lease = this.lease(live, root, { kind: "midturn", print, only: isFromLead })
     return lease ? { leaseId: lease.id, stdout: print(lease.text) } : silent
   }
 
@@ -1242,7 +1240,7 @@ export class Messaging {
         ? route(
             recipient.delivery,
             profile.silentOnFailure,
-            isLed(message)
+            isFromLead(message)
               ? midTurnCall(profile.call !== undefined, profile.reinjectPerCall)
               : undefined,
           )
@@ -1307,7 +1305,7 @@ export class Messaging {
     // One mark for the delivery, which marks its lead's messages. What counts is the bytes
     // printed, escaped as the harness reads them.
     const mark = newMark()
-    const prints = (taken: readonly Message[]) => byteLength(print(wrap(taken, isLed, mark)))
+    const prints = (taken: readonly Message[]) => byteLength(print(wrap(taken, isFromLead, mark)))
     const messages = deliveryOf(queued, (taken) => prints(taken) <= maxDeliveryBytes)
     // The first always goes, as it fits alone; beside what the turn holds it may not.
     if (messages.length === 0 || prints(messages) > maxDeliveryBytes) return undefined
@@ -1315,7 +1313,7 @@ export class Messaging {
       this.everLeased.add(message.id)
       this.put({ ...message, state: "leased" })
     }
-    const text = wrap(messages, isLed, mark)
+    const text = wrap(messages, isFromLead, mark)
     return this.leases.grant({
       terminalId: live.terminalId,
       messages: messages.map((message) => message.id),

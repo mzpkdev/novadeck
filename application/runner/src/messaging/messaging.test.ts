@@ -2835,8 +2835,8 @@ describe("a lead", () => {
     expect(brief.state).toBe("queued")
     // A message already bound to a session is the same conversation's, and stays.
     const bound = sent(send("A", "t3", "Keep going."))
-    messaging.setLedBy("X", null)
-    messaging.setLedBy("W", null)
+    messaging.endLead("X")
+    messaging.endLead("W")
     expect(records.messages().find(({ id }) => id === brief.id)?.state).toBe("gone")
     expect(records.messages().find(({ id }) => id === bound.id)?.state).toBe("queued")
     // The opener hears of it, once.
@@ -2851,7 +2851,7 @@ describe("a lead", () => {
   it("is no lead once the terminal's agent exits, for what is sent after", () => {
     const { messaging, records, send, worker, prompt } = withWorker()
     sent(send("A", "t3", "Before."))
-    messaging.setLedBy("W", null)
+    messaging.endLead("W")
     expect(messaging.leadOf("W")).toBeUndefined()
     sent(send("A", "t3", "After."))
     const [before, after] = messages(messaging, "W")

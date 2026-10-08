@@ -269,17 +269,17 @@ export const clock = (at: number): string => {
 /**
  * Messages delivered together, wrapped and attributed to their senders, so a peer's
  * words never read as the user's: each with its id, its sender's handle and harness,
- * its thread and when it was sent. A message from the recipient's lead (`isLead`) is
+ * its thread and when it was sent. A message from the recipient's lead (`isFromLead`) is
  * marked `lead="<mark>"`, a `mark` made anew for each delivery, which its note names: a
  * text written beforehand can't show it, so only these markings give authority, never a
  * message's text, which is escaped.
  */
 export const wrap = (
   messages: readonly Message[],
-  isLead: (message: Message) => boolean,
+  isFromLead: (message: Message) => boolean,
   mark: string,
 ): string => {
-  const leads = messages.map(isLead)
+  const leads = messages.map(isFromLead)
   return [
     `<novadeck-messages note="${leads.includes(true) ? leadNote(mark) : peerNote}">`,
     ...messages.map(({ id, from, thread, sentAt, text }, index) => {

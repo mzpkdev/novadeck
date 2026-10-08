@@ -1682,7 +1682,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     )
   })
 
-  it("shows a restored worker its stored lead, and a terminal opened for a command none", async ({
+  it("shows kept terminals their stored lead, and ends it for a restore that resumes nothing", async ({
     shell,
   }) => {
     const [lead, worker, plain] = [randomUUID(), randomUUID(), randomUUID()]
@@ -1715,15 +1715,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const manager = shell.manager()
     // What summaries carry is the stored lead, whether or not its terminal runs.
     expect(manager.list(shell.sessionId).map(({ ledBy }) => ledBy)).toEqual([null, "t1", null])
+    // Restored as a shell that resumes nothing, the worker has no agent left to lead.
     await create(manager, shell, { id: worker, restore: true })
     await create(manager, shell, { id: plain, restore: true })
     await create(manager, shell, { id: lead, restore: true })
-    expect(manager.get(worker).ledBy).toBe("t1")
+    expect(manager.get(worker).ledBy).toBeNull()
+    expect(shell.store.terminalIdentity(worker)?.ledBy).toBeNull()
     expect(manager.get(plain).ledBy).toBeNull()
-    // The lead's terminal closing changes nothing stored: clients tell it is gone.
-    await manager.close({ terminalId: lead }, "owner")
-    expect(manager.get(worker).ledBy).toBe("t1")
-    expect(shell.store.terminalIdentity(worker)?.ledBy).toBe("t1")
   })
 
   it("keeps a worker's lead through a restore, and ends it when its agent exits", async ({
@@ -1789,6 +1787,14 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await shell.until(manager, ids.worker, /\nback\r?\n/)
     expect(manager.get(ids.worker).ledBy).toBe("t1")
     expect(shell.store.terminalIdentity(ids.worker)?.ledBy).toBe("t1")
+    // Killed while suspended, it never comes back: the next prompt finds it gone.
+    manager.write(
+      { terminalId: ids.worker, data: "kill -9 $(jobs -p); sleep 0.3; echo killed\r" },
+      "owner",
+    )
+    await shell.until(manager, ids.worker, /\nkilled\r?\n/)
+    manager.write({ terminalId: ids.worker, data: "echo later\r" }, "owner")
+    await expect.poll(() => manager.get(ids.worker).ledBy).toBeNull()
   })
 
   it("ends a worker's lead when its agent exits before any session bound, and its brief is gone", async ({
@@ -1829,12 +1835,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const manager = shell.manager()
     const next = shell.watch(manager)
     await create(manager, shell, { id: ids.lead, restore: true })
-    await create(manager, shell, { id: ids.worker, restore: true })
-    const ended = async () => {
-      manager.write({ terminalId: ids.worker, data: "exit\r" }, "owner")
-      await next((summary) => summary.id === ids.worker && summary.exit !== null)
-    }
-    await ended()
+    // Its startup command ends the shell, as a killed agent's terminal ends.
+    await create(manager, shell, { id: ids.worker, restore: true, command: "exec true" })
+    await next((summary) => summary.id === ids.worker && summary.exit !== null)
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
     await manager.restart(
       { terminalId: ids.worker, cols: 100, rows: 20, resume: "claude" },
       "owner",
@@ -1851,13 +1855,35 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     const manager = shell.manager()
     const next = shell.watch(manager)
     await create(manager, shell, { id: ids.lead, restore: true })
-    await create(manager, shell, { id: ids.worker, restore: true })
-    expect(manager.get(ids.worker).ledBy).toBe("t1")
-    manager.write({ terminalId: ids.worker, data: "exit\r" }, "owner")
+    await create(manager, shell, { id: ids.worker, restore: true, command: "exec true" })
     await next((summary) => summary.id === ids.worker && summary.exit !== null)
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
     await manager.restart({ terminalId: ids.worker, cols: 100, rows: 20 }, "owner")
     expect(manager.get(ids.worker).ledBy).toBeNull()
     expect(shell.store.terminalIdentity(ids.worker)?.ledBy).toBeNull()
+  })
+
+  it("ends a worker's lead when typing cancels its startup, and its brief is gone", async ({
+    shell,
+  }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\nsleep 1\n')
+    const ids = { lead: randomUUID(), worker: randomUUID() }
+    keepLed(shell, ids, session)
+    const manager = shell.manager()
+    await create(manager, shell, { id: ids.lead, restore: true })
+    await create(manager, shell, { id: ids.worker, restore: true, resume: "claude" })
+    expect(manager.get(ids.worker).ledBy).toBe("t1")
+    const brief = (
+      manager as unknown as {
+        messaging: { send: (from: string, request: object) => { ok: boolean } }
+      }
+    ).messaging.send(ids.lead, { to: "t2", text: "Do the work." })
+    expect(brief.ok).toBe(true)
+    manager.write({ terminalId: ids.worker, data: "echo mine\r" }, "owner")
+    await expect.poll(() => manager.get(ids.worker).ledBy).toBeNull()
+    expect(manager.messages(ids.worker).threads[0]?.messages[0]).toMatchObject({ state: "gone" })
   })
 
   it("keeps a worker's lead when its agent clears its conversation", async ({ shell }) => {
@@ -1888,8 +1914,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
     })
     await create(manager, shell, { id: lead, restore: true })
-    await create(manager, shell, { id: worker, restore: true })
-    manager.write({ terminalId: worker, data: "report\r" }, "owner")
+    // Its startup command is the stand-in agent, which clears its conversation.
+    await create(manager, shell, { id: worker, restore: true, command: "report" })
     await shell.until(manager, worker, "reports sent")
     await expect.poll(() => manager.reportedSession(worker, "claude")).toBe("cleared")
     expect(manager.get(worker).ledBy).toBe("t1")
