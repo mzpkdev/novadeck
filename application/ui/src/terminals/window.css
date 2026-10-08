@@ -7,7 +7,7 @@
    `.terminal-compact` (Grid, Canvas); a selected window is `.terminal-focused`, or sits
    in a `.grid-terminal.selected` or `.canvas-node.selected`. Parts: `.terminal-header`,
    `.terminal-heading` (whose ::before is the selection bar and ::after the phase line),
-   `.terminal-title`, `.terminal-metadata`, `.terminal-host` (the terminal's content, and
+   `.terminal-title`, `.terminal-host` (the terminal's content, and
    `.terminal-stats` over it: what the agent runs on, its `.terminal-stats-runs` and its
    context's `.terminal-stats-ring`), `.terminal-actions`,
    `.terminal-rename-input`.
@@ -20,8 +20,8 @@
    --window-header-bg (the window's bg), --window-header-border-color (line): the header
    and its hairline. --window-header-icon-fg (muted): the icons in it.
    --window-selected-header-bg (the header's bg): the selected window's header.
-   --window-metadata-fg (muted), --window-metadata-font (mono): planning, subagents and
-   usage beside the name.
+   --window-metadata-fg (muted), --window-metadata-font (mono): what the agent runs on,
+   over its terminal.
    --window-indicator-bg (the sidebar item's --item-selected-indicator-bg, then strong):
    the selection bar at the header's leading edge. --window-indicator-shadow (the sidebar
    item's --item-selected-indicator-shadow, then none): a glow around it.
@@ -76,10 +76,6 @@
 }
 :where(.terminal-actions) {
   @apply gap-1;
-}
-.terminal-metadata {
-  color: var(--window-metadata-fg, var(--color-muted));
-  font-family: var(--window-metadata-font, var(--font-mono));
 }
 /* What the agent runs on, floating over its terminal's top right (WindowStats.tsx), over
    the agent's old scrollback, away from the window's buttons and from its prompt below:

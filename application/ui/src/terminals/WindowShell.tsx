@@ -122,7 +122,6 @@ export const WindowShell = ({
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
   const shell = isWindow(terminal) ? undefined : terminal
-  const planning = shell?.state === "running" && shell.agent?.planning === true
   const phase = shell ? terminalPhase(shell, unread !== undefined) : "idle"
   const failed = unread === "failed"
   // What the agent waits on the person for, that Novadeck can't hear from it, or that it
@@ -251,17 +250,6 @@ export const WindowShell = ({
           )}
         </>
       </div>
-      {planning && !compact && (
-        // Whether the agent plans, in full on hover. Only a focused window has room beside
-        // its name; a compact one leaves it to its tab's tooltip. Its subagents are its
-        // tab's, as its own terminal shows them; what it runs on and how full its context
-        // is float over its terminal (WindowStats.tsx).
-        <span className="terminal-metadata ml-auto flex min-w-0 items-center gap-2 overflow-hidden text-caption">
-          <Tooltip content="Planning, not changing anything yet">
-            <span className="terminal-planning shrink-0">planning</span>
-          </Tooltip>
-        </span>
-      )}
       <span className="terminal-actions flex shrink-0 items-center">
         {dictation && (
           <Tooltip

@@ -41,7 +41,7 @@ describe("An agent waiting on the person", () => {
 })
 
 describe("An agent that plans", () => {
-  it("says so beside a focused window's name, and that its plan waits for review", async () => {
+  it("says that its plan waits for review, on its tab and window", async () => {
     // The demo's Claude Code planned, and waits for the person to review the plan.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
@@ -51,7 +51,8 @@ describe("An agent that plans", () => {
     await tab.click()
     const window = page.getByRole("region", { name: "Checkout implementation terminal" })
     await expect.element(window).toHaveAttribute("aria-description", "Plan ready for review")
-    await expect.element(window.getByText("planning", { exact: true })).toBeVisible()
+    // Whether it plans is its own terminal's to show, not its window's header.
+    await expect.element(window.getByText("planning", { exact: true })).not.toBeInTheDocument()
   })
 })
 
