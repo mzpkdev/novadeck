@@ -33,7 +33,7 @@ const headerActionClasses = "icon-button dim"
 // leads to its install.
 export type DictationControls = {
   readonly recording: boolean
-  // Absent means ready, as voice input mostly is wherever the mic shows.
+  // False until voice input is installed and on; absent means ready.
   readonly ready?: boolean
   readonly onToggle: () => void
 }

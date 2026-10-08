@@ -831,7 +831,8 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   /**
    * Whether the person chose voice input on or off: `undefined` until they, or an install,
-   * did, so that an install turns it on and a person's own off survives installs.
+   * did. A first install forgets an earlier off and turns it on; an off chosen during it,
+   * or before a later model's install, survives.
    */
   voiceEnabledChoice(): boolean | undefined {
     const row = this.queries.get`SELECT value FROM settings WHERE key = 'voice.enabled'` as

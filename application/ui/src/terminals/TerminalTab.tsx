@@ -99,11 +99,12 @@ export const TerminalTab = ({
   // Their kinds in words, as the marks and rows under the line are only drawn; work its
   // harness only counts has no kinds to name, so its count says it all.
   const counted = shell?.state === "running" && shell.agent?.background !== undefined
+  // Work with no subagents in it, as commands left running, has no mark but still counts.
   const kinds =
-    marks && subagents && shell
-      ? counted
-        ? subagents
-        : `${subagents}: ${subagentsDetail(shell)}`
+    subagents && shell
+      ? marks && !counted
+        ? `${subagents}: ${subagentsDetail(shell)}`
+        : subagents
       : undefined
   const description = [note, messages, kinds].filter(Boolean).join(", ")
   const menu = windowMenu({

@@ -4,7 +4,14 @@ import type { AgentTelemetry } from "@novadeck/protocol"
 
 import type { HarnessEvent } from "../events.js"
 import { followLines } from "../follow.js"
-import { bounded, replied, type Harness, type Run, type WrittenPlan } from "../harness.js"
+import {
+  bounded,
+  shortName,
+  replied,
+  type Harness,
+  type Run,
+  type WrittenPlan,
+} from "../harness.js"
 import { transcripts } from "./transcripts.js"
 
 type Limit = AgentTelemetry["limits"][number]
@@ -70,9 +77,10 @@ export const rolloutEvents = (
   if (type === "turn_context") {
     const { model, effort } = fields
     // A turn that names its model names its effort too, none clearing the last model's.
-    const level = typeof effort === "string" && effort && effort.length <= 32 ? effort : null
+    const level = shortName(effort, 32) ?? null
+    const name = shortName(model, 128)
     const named = {
-      ...(typeof model === "string" && model && model.length <= 128 && { model, effort: level }),
+      ...(name && { model: name, effort: level }),
       ...(level !== null && { effort: level }),
     }
     return Object.keys(named).length > 0 ? [{ type: "telemetry-observed", ...base, ...named }] : []

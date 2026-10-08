@@ -87,8 +87,15 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
     const steps: ("engine" | "model" | "check")[] = state.getSnapshot().installed.length
       ? ["model", "check"]
       : ["engine", "model", "check"]
-    // As the runner: a new install forgets the last check until its own passes.
-    state.update((current) => ({ ...current, failure: null, check: null }))
+    // As the runner: a new install forgets the last check until its own passes, and a
+    // first one says voice input is wanted, whatever was chosen before.
+    if (state.getSnapshot().installed.length === 0) choice = undefined
+    state.update((current) => ({
+      ...current,
+      failure: null,
+      check: null,
+      wanted: choice !== false,
+    }))
     steps.forEach((step, index) => {
       for (let part = 0; part <= ticks; part += 1)
         later(() => progress(model, step, part), (index + part / ticks) * timing.step)

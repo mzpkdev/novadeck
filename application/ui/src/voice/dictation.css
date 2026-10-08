@@ -89,6 +89,7 @@
     background-color: var(--_bg);
     color: var(--dictation-fg, var(--color-ink));
     font-size: var(--text-caption);
+    overflow: hidden;
     white-space: nowrap;
     pointer-events: none;
     translate: 0 0;
@@ -152,6 +153,8 @@
   }
   .dictation-strip .dictation-hint {
     display: inline-flex;
+    min-width: 0;
+    overflow: hidden;
     align-items: center;
     gap: calc(var(--spacing) * 1);
   }

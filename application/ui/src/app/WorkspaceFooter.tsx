@@ -49,7 +49,9 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const nextReset = nextAccountReset(accounts)
   useEffect(() => {
     if (nextReset === undefined) return undefined
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, nextReset - Date.now()) + 50)
+    // Within what a timer can wait, about 24.8 days; a later reset is waited for again.
+    const wait = Math.min(Math.max(0, nextReset - Date.now()) + 50, 2 ** 31 - 1)
+    const timer = setTimeout(() => setNow(Date.now()), wait)
     return () => clearTimeout(timer)
   }, [nextReset])
   const move = (from: number, to: number): void => {

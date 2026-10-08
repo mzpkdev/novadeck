@@ -36,6 +36,17 @@ describe("observing telemetry", () => {
     expect(next?.context).toEqual({ occupied: 5_000, capacity: 200_000 })
   })
 
+  it("takes an older snapshot of the context after a newer record of the model alone", () => {
+    // Antigravity's hooks name the model; its status line snapshot may arrive after.
+    const named = observeTelemetry(null, binding, seen({ startedAt: 200, model: "gemini" }))!
+    const snapshot = observeTelemetry(named, binding, seen({ startedAt: 150, context }))
+    expect(snapshot).toMatchObject({ model: "gemini", context })
+    // An older record of the model alone still gives way to the newer one.
+    expect(observeTelemetry(snapshot!, binding, seen({ startedAt: 180, model: "old" }))).toBe(
+      undefined,
+    )
+  })
+
   it("keeps the known model and effort when a record names neither, and takes a new one", () => {
     const first = observeTelemetry(null, binding, seen({ model: "gpt-6", effort: "high" }))!
     const next = observeTelemetry(first, binding, seen({ startedAt: 11, context }))!

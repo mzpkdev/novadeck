@@ -15,6 +15,7 @@ import {
   text,
   withMode,
   type WrittenPlan,
+  shortName,
 } from "../harness.js"
 import { at as writtenAt, record } from "../items.js"
 
@@ -222,10 +223,6 @@ const count = (value: unknown): number | undefined =>
 // Claude Code's rate-limit windows, by their names in its status line.
 const windows = { five_hour: 300, seven_day: 10_080 } as const
 
-// A name within the bounds the protocol allows, or undefined.
-const named = (value: unknown, max: number): string | undefined =>
-  typeof value === "string" && value.length > 0 && value.length <= max ? value : undefined
-
 /**
  * The status line Claude Code runs in Novadeck's shells hands over what no other source
  * says: the context window's size beside what it holds, the account's five-hour and
@@ -248,8 +245,11 @@ const statusLine = (
     .filter((each): each is number => each !== undefined)
   const capacity = count(window.context_window_size)
   const limits = (payload.rate_limits ?? {}) as Record<string, unknown>
-  const model = named((payload.model as { display_name?: unknown } | undefined)?.display_name, 128)
-  const effort = named((payload.effort as { level?: unknown } | undefined)?.level, 32)
+  const model = shortName(
+    (payload.model as { display_name?: unknown } | undefined)?.display_name,
+    128,
+  )
+  const effort = shortName((payload.effort as { level?: unknown } | undefined)?.level, 32)
   const known = Object.entries(windows).flatMap(([name, minutes]) => {
     const { used_percentage: used, resets_at: resets } = (limits[name] ?? {}) as Record<
       string,

@@ -3,7 +3,7 @@ import { extname, isAbsolute, relative } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
 import type { HarnessEvent, PromptShown } from "../events.js"
-import { absolute, sessionId, text } from "../harness.js"
+import { absolute, shortName, sessionId, text } from "../harness.js"
 
 /**
  * Antigravity's hooks, as normalized facts. Every hook names the conversation it runs in,
@@ -57,8 +57,8 @@ const levels: ReadonlySet<string> = new Set(["minimal", "low", "medium", "high",
  * clears the last model's.
  */
 const reading = (name: unknown): { model: string; effort: string | null } | undefined => {
-  const whole = text(name)
-  if (!whole || whole.length > 128) return undefined
+  const whole = shortName(name, 128)
+  if (!whole) return undefined
   const cut = whole.lastIndexOf("-")
   const level = whole.slice(cut + 1)
   return cut > 0 && levels.has(level)

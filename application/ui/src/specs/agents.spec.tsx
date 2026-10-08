@@ -151,7 +151,8 @@ describe("An agent that finishes", () => {
       await terminalTab("Tests").click()
       await expect
         .poll(() => tabDescription("Build"), { timeout: 5000 })
-        .toBe("Done · reply unread")
+        // The command its turn left running still counts.
+        .toBe("Done · reply unread, 1 task")
       const row = terminalTab("Build").element().closest(".terminal-tab")!
       expect(row.getAttribute("data-terminal-phase")).toBe("done")
       // Beside its program, how long ago it finished.
@@ -160,7 +161,7 @@ describe("An agent that finishes", () => {
       const window = terminal("Build")
       await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
       await expect.element(window.getByText("Done · reply unread")).not.toBeInTheDocument()
-      expect(tabDescription("Build")).toBeNull()
+      expect(tabDescription("Build")).toBe("1 task")
     })
 
     it("shows it on a window in view, and clears once the person selects it", async () => {
@@ -195,13 +196,14 @@ describe("An agent that finishes", () => {
       await expect.element(window, { timeout: 5000 }).toHaveAttribute("data-terminal-phase", "idle")
       // Past the grace a completed end waits before it is marked (`finishGraceMs`).
       await expectStaysAbsent(window.getByText("Done · reply unread"), { ms: 1500 })
-      expect(tabDescription("Build")).toBeNull()
+      // Only the command its turn left running.
+      expect(tabDescription("Build")).toBe("1 task")
     })
   })
 })
 
 describe("An agent's model and context", () => {
-  it("show as a ring by its window's buttons, in words as the ring is hovered", async () => {
+  it("show as a ring over its terminal's top right, in words as the ring is hovered", async () => {
     // The demo's Codex reports its model, effort and context, and a five-hour window.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
@@ -229,7 +231,7 @@ describe("An agent's model and context", () => {
 })
 
 describe("The account's subscriptions", () => {
-  it("show as a pill each in the footer, busiest window first, each opening its own", async () => {
+  it("show as a pill each in the footer, each naming its busiest window and opening its own", async () => {
     // The demo's Claude Code and Codex report their five-hour and weekly windows.
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })

@@ -7,9 +7,9 @@ const subagentsOf = (terminal: TerminalMetadata) => agentOf(terminal)?.subagents
 
 const counted = (count: number, one: string): string => `${count} ${one}${count === 1 ? "" : "s"}`
 
-// What the agent's turn left running, or while it runs, its harness counts, for its tab's tooltip: "3 agents · 1 task",
-// or "background work" where its harness doesn't count it. Else how many subagents it
-// runs: "2 subagents". Undefined without either.
+// What the agent's turn left running, or while it runs what its harness counts, for its
+// tab's description: "3 agents · 1 task", or "background work" where its harness doesn't
+// count it. Else how many subagents it runs: "2 subagents". Undefined without either.
 export const subagentsBadge = (terminal: TerminalMetadata): string | undefined => {
   const background = agentOf(terminal)?.background
   if (background) {

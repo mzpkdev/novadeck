@@ -126,6 +126,8 @@ const clock = (at: number): string =>
 // "in 2h 14m · 16:30"; the weekday and time further off, "Thu 09:00".
 export const resetText = (at: number, now = Date.now()): string => {
   const minutes = Math.max(0, Math.ceil((at - now) / 60_000))
+  // Six days on, a weekday alone could be today's, so it counts the days instead.
+  if (minutes >= 6 * 24 * 60) return `in ${Math.floor(minutes / (24 * 60))}d · ${clock(at)}`
   if (minutes >= 24 * 60)
     return `${new Date(at).toLocaleDateString(undefined, { weekday: "short" })} ${clock(at)}`
   const hours = Math.floor(minutes / 60)

@@ -58,7 +58,11 @@ export const setAnsweringInTerminal = (
   context: string,
   id: string,
   on: boolean,
-): TerminalAnswers => withValue(answers, context, id, on ? true : undefined)
+): TerminalAnswers => {
+  const next = withValue(answers, context, id, on ? true : undefined)
+  // None left is none at all, which spares the watcher its work.
+  return Object.keys(next).length > 0 ? next : noTerminalAnswers
+}
 
 // Keeps only the terminals that `keep` says are still answered in.
 export const keepTerminalAnswers = (

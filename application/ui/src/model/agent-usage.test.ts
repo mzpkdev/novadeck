@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test"
-import { agentStats, nextReset, usageDetail } from "./agent-usage"
+import { agentStats } from "./agent-usage"
 import type { AgentUsage, TerminalMetadata } from "./types"
 
 const terminal = (usage?: AgentUsage): TerminalMetadata => ({
@@ -35,10 +35,6 @@ describe("an agent's usage", () => {
     })
   })
 
-  it("says a window that has reset since the agent last said has", () => {
-    expect(usageDetail(terminal(codex), 20_000)).toContain("5h limit: reset since")
-  })
-
   it("counts tokens where the capacity is unknown, as Claude Code's transcript leaves it", () => {
     const only: AgentUsage = {
       context: { occupied: 1_234_567, capacity: null },
@@ -54,26 +50,11 @@ describe("an agent's usage", () => {
     })
   })
 
-  it("details every window with when it resets", () => {
-    expect(usageDetail(terminal(codex), 0, () => "14:05")).toBe(
-      [
-        "Context: 30k of 200k tokens",
-        "5h limit: 40% used, resets 14:05",
-        "7d limit: 10% used",
-      ].join("\n"),
-    )
-  })
-
-  it("names when the soonest window still to reset does", () => {
-    expect(nextReset(terminal(codex), 0)).toBe(10_000)
-    expect(nextReset(terminal(codex), 20_000)).toBeUndefined()
-  })
-
   it("shows nothing without usage", () => {
     expect(agentStats(terminal())).toBeUndefined()
     expect(
       agentStats(terminal({ context: null, limits: codex.limits, model: null, effort: null })),
     ).toBeUndefined()
-    expect(usageDetail({ ...terminal(codex), state: "idle" })).toBeUndefined()
+    expect(agentStats({ ...terminal(codex), state: "idle" })).toBeUndefined()
   })
 })

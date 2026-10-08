@@ -186,7 +186,11 @@ export const DictationStrip = ({
               className="dictation-setup"
               // A click opens Addons without taking focus from where the person types.
               onMouseDown={(event) => event.preventDefault()}
-              onClick={onSetup}
+              // Its own click, not its window's, which Canvas would also select.
+              onClick={(event) => {
+                event.stopPropagation()
+                onSetup()
+              }}
             >
               Open Addons
             </button>

@@ -10,6 +10,7 @@ import { isAgentTerminal } from "../../voice/agent-terminal"
 import { startCapture } from "../../voice/capture"
 import {
   createDictation,
+  dictationKey,
   dictationPrompt,
   voiceReady,
   type DictationController,
@@ -118,7 +119,10 @@ export const useMicButton = (
       onToggle: () => navigation.go({ dialog: "preferences", section: "addons" }),
     }
   return {
-    recording: view?.phase === "recording" && view.target?.terminalId === key.terminalId,
+    recording:
+      view?.phase === "recording" &&
+      view.target !== null &&
+      dictationKey(view.target) === dictationKey(key),
     onToggle: () => controller.dictation.toggle(key),
   }
 }
