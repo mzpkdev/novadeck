@@ -1,8 +1,19 @@
 import type { AgentStatus, TerminalMetadata, WorkspaceProject } from "../model/types"
-import { noUnread, type Unread } from "../terminals/unread-state"
 import { context, describe, expect, it } from "../test"
 import { terminalFixture, workspaceFixture } from "../test/fixtures"
-import { elsewhereStatus, projectStatus, projectStatuses } from "./project-status"
+import {
+  elsewhereStatus,
+  projectStatus as statusOf,
+  projectStatuses as statusesOf,
+} from "./project-status"
+
+// Unread ends by session context, then terminal id, as the app keeps them.
+type Unread = Readonly<Record<string, Readonly<Record<string, "done" | "failed">>>>
+const noUnread: Unread = {}
+const projectStatus = (project: WorkspaceProject, unread: Unread) =>
+  statusOf(project, (session, id) => unread[session]?.[id])
+const projectStatuses = (projects: WorkspaceProject[], unread: Unread) =>
+  statusesOf(projects, (session, id) => unread[session]?.[id])
 
 const agent = (status: Partial<AgentStatus> = {}): AgentStatus => ({ working: false, ...status })
 

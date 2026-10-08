@@ -39,6 +39,7 @@
 @import "./shell/empty-state.css" layer(components);
 @import "./sidebar/sidebar.css" layer(components);
 @import "./projects/workspace-switcher.css" layer(components);
+@import "./projects/project-chips.css" layer(components);
 @import "./terminals/window.css" layer(components);
 @import "./terminals/chat/chat.css" layer(components);
 @import "./terminals/tabs.css" layer(components);

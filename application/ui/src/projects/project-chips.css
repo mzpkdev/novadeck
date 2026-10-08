@@ -1,0 +1,91 @@
+/* The pinned projects after the switcher in the header: `.project-chips` is the group,
+   set off from the switcher by a rule on its left, and each `.project-chip` a quiet text
+   button for one project: muted text at rest, ink under the pointer, with a soft fill
+   as a ghost button has. A project's mark (`.project-chip-status`) goes before its name,
+   the glyph the switcher's rows show: "?" or "!" while an agent waits on the person,
+   "✗" or "✓" while a finished agent's reply waits unread, a spinner while one works.
+
+   Hooks: on a chip, data-project-status="question" | "attention" | "failed" | "done" |
+   "running", and data-needs-person="true" while its status asks for the person, which
+   fills the chip so it draws the eye; on the group, data-empty="true" while no chip
+   fits, which takes the rule away.
+
+   Tokens, each optional (its fallback in brackets):
+   --project-chip-fg (muted), --project-chip-hover-fg (ink): the name at rest, and under
+   the pointer or focus.
+   --project-chip-hover-bg (soft): the fill under the pointer, and while a chip needs the
+   person.
+   --project-chip-radius (radius-control)
+   --project-chip-attention-fg (warning-fg): the mark while an agent waits.
+   --project-chip-done-fg (success-fg): the mark while a reply waits unread.
+   --project-chip-failed-fg (danger-fg): the same, where its turn ended on an error.
+   --project-chip-running-fg (ink): the spinner.
+   The rule on the left takes --separator-bg (line). */
+.project-chips {
+  border-left: var(--border-width) solid var(--separator-bg, var(--color-line));
+  /* The rule spans the chips' height, not the header's. */
+  min-height: 1.25rem;
+}
+.project-chips[data-empty="true"] {
+  border-left-color: transparent;
+}
+.project-chip {
+  --_fg: var(--project-chip-fg, var(--color-muted));
+  --_bg: transparent;
+  border-radius: var(--project-chip-radius, var(--radius-control));
+  background-color: var(--_bg);
+  color: var(--_fg);
+}
+.project-chip[data-needs-person="true"] {
+  --_bg: var(--project-chip-hover-bg, var(--color-soft));
+}
+.project-chip:focus-visible {
+  --_fg: var(--project-chip-hover-fg, var(--color-ink));
+}
+@media (hover: hover) {
+  .project-chip:hover {
+    --_bg: var(--project-chip-hover-bg, var(--color-soft));
+    --_fg: var(--project-chip-hover-fg, var(--color-ink));
+  }
+}
+
+.project-chip-status {
+  flex: none;
+  width: 1ch;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+}
+[data-project-status="question"] > .project-chip-status::before {
+  content: "?";
+}
+[data-project-status="attention"] > .project-chip-status::before {
+  content: "!";
+}
+[data-project-status="failed"] > .project-chip-status::before {
+  content: "✗";
+}
+[data-project-status="done"] > .project-chip-status::before {
+  content: "✓";
+}
+[data-project-status="running"] > .project-chip-status {
+  color: var(--project-chip-running-fg, var(--color-ink));
+  font-weight: 400;
+}
+[data-project-status="running"] > .project-chip-status::before {
+  content: "⠋";
+  animation: terminal-spin 800ms steps(1) infinite;
+}
+.project-chip[data-project-status="question"],
+.project-chip[data-project-status="attention"] {
+  --_status-fg: var(--project-chip-attention-fg, var(--color-warning-fg));
+}
+.project-chip[data-project-status="failed"] {
+  --_status-fg: var(--project-chip-failed-fg, var(--color-danger-fg));
+}
+.project-chip[data-project-status="done"] {
+  --_status-fg: var(--project-chip-done-fg, var(--color-success-fg));
+}
+.project-chip[data-needs-person="true"] > .project-chip-status {
+  color: var(--_status-fg);
+}

@@ -1,4 +1,4 @@
-import { describe as context, describe, expect, it } from "vitest"
+import { describe as context, describe, expect, it, onTestFinished } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { escapeFrom, expectFocusWithin, preferencesDialog } from "./support/keyboard"
@@ -421,5 +421,44 @@ describe("Connecting agents", () => {
     await openWorkspace()
     await expectStaysAbsent(welcome())
     expect(welcome().query()).toBeNull()
+  })
+})
+
+describe("A pinned project", () => {
+  it("shows as a chip in the header, and the switcher's dot leaves it out", async () => {
+    // Pinned, api-service shows beside the switcher; its agents wait on the person.
+    localStorage.setItem(
+      "novadeck.project-arrangement",
+      JSON.stringify({ order: ["storefront", "api-service"], pinned: ["api-service"] }),
+    )
+    await openWorkspace("/?demo=agents")
+    const skip = page.getByRole("button", { name: "Skip for now" })
+    if (await skip.query()) await skip.click()
+    const chip = page
+      .getByRole("group", { name: "Pinned projects" })
+      .getByRole("button", { name: "api-service" })
+    await expect.element(chip).toHaveAttribute("aria-description", "Needs you")
+    await expect.element(workspaceSwitcher()).not.toHaveAttribute("data-project-status")
+
+    // Switching to it takes it from the chips; storefront, unpinned, waits in the dot.
+    await chip.click()
+    await expect
+      .element(page.getByRole("group", { name: "Pinned projects" }))
+      .not.toBeInTheDocument()
+    await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status")
+  })
+
+  it("leaves the header where its chip doesn't fit, and the dot covers it again", async () => {
+    localStorage.setItem(
+      "novadeck.project-arrangement",
+      JSON.stringify({ order: ["storefront", "api-service"], pinned: ["api-service"] }),
+    )
+    await page.viewport(860, 900)
+    onTestFinished(() => page.viewport(1440, 900))
+    await openWorkspace("/?demo=agents")
+    const skip = page.getByRole("button", { name: "Skip for now" })
+    if (await skip.query()) await skip.click()
+    await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "attention")
+    await expect.element(page.getByRole("button", { name: "api-service" })).not.toBeInTheDocument()
   })
 })

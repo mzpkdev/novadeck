@@ -1,6 +1,5 @@
 import { agentWorking } from "../model/agent-finish"
 import type { WorkspaceProject } from "../model/types"
-import { unreadEnd, type Unread } from "../terminals/unread-state"
 
 // What a project's terminals show at a glance, the most pressing of them, as the switcher
 // marks it: an agent asking the person a question, or waiting on them for a permission or
@@ -14,9 +13,14 @@ const rank: readonly ProjectStatus[] = ["question", "attention", "failed", "done
 const pressing = (a: ProjectStatus | undefined, b: ProjectStatus | undefined) =>
   a === undefined || (b !== undefined && rank.indexOf(b) < rank.indexOf(a)) ? b : a
 
+// How a terminal's unread turn ended, by its session context (`${projectId}/${sessionId}`)
+// and id, or undefined when none waits: where the app keeps the agents that finished
+// while the person looked elsewhere.
+export type UnreadEnds = (context: string, terminalId: string) => "done" | "failed" | undefined
+
 export const projectStatus = (
   project: WorkspaceProject,
-  unread: Unread,
+  unread: UnreadEnds,
 ): ProjectStatus | undefined => {
   let status: ProjectStatus | undefined
   for (const session of project.history) {
@@ -27,8 +31,7 @@ export const projectStatus = (
         ? attention.kind === "question"
           ? "question"
           : "attention"
-        : (unreadEnd(unread, context, terminal.id) ??
-          (agentWorking(terminal) ? "running" : undefined))
+        : (unread(context, terminal.id) ?? (agentWorking(terminal) ? "running" : undefined))
       status = pressing(status, each)
     }
   }
@@ -42,7 +45,7 @@ export const needsPerson = (status: ProjectStatus | undefined): boolean =>
 // The status of every project, by its id, that shows one.
 export const projectStatuses = (
   projects: readonly WorkspaceProject[],
-  unread: Unread,
+  unread: UnreadEnds,
 ): Readonly<Record<string, ProjectStatus>> => {
   const statuses: Record<string, ProjectStatus> = {}
   for (const project of projects) {

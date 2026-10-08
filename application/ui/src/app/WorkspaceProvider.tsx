@@ -6,7 +6,11 @@ import type { CanvasHandle } from "../layouts/canvas/types"
 import { workspaceFromSeed } from "../model/seed"
 import { createWorkspaceStore } from "../model/store"
 import { readPreferences } from "../preferences/preferences-storage"
-import { readSidebarCollapsed, readWindowedView } from "../shell/shell-storage"
+import {
+  readProjectArrangement,
+  readSidebarCollapsed,
+  readWindowedView,
+} from "../shell/shell-storage"
 import { createPanes } from "../terminals/companion/state"
 import { createDragSession, DragSessionContext } from "../terminals/drag-session"
 import { followSavedPreferences, watchAppearance } from "./appearance"
@@ -58,6 +62,7 @@ const createServices = (
       location: { route, dialogDepth: dialogDepthOf(location.state), navigationType },
       preferences,
       sidebarCollapsed: readSidebarCollapsed(),
+      projectArrangement: readProjectArrangement(),
     }),
   )
   const { bind, settle, ...navigation } = createNavigator({ workspace, ui, now })

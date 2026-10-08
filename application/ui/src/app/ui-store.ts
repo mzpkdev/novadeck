@@ -12,8 +12,13 @@ import { activeProject } from "../model/state"
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue, TerminalMetadata, Workspace } from "../model/types"
 import { writePreferences } from "../preferences/preferences-storage"
+import { noArrangement, type ProjectArrangement } from "../projects/project-arrangement"
 import { initialShell, resetPresentation, type ShellState } from "../shell/shell-state"
-import { writeSidebarCollapsed, writeWindowedView } from "../shell/shell-storage"
+import {
+  writeProjectArrangement,
+  writeSidebarCollapsed,
+  writeWindowedView,
+} from "../shell/shell-storage"
 import {
   chatKept,
   keepChatDrafts,
@@ -77,6 +82,8 @@ export type UiState = {
   readonly chatReplies: ChatReplies
   // The words on their way from there to the agent, out of the draft until they arrive.
   readonly chatSends: ChatSends
+  // How the person arranged the switcher's projects: their order and the pinned ones.
+  readonly projectArrangement: ProjectArrangement
 }
 
 export type UiLocation = {
@@ -95,10 +102,12 @@ export const initialUi = ({
   location,
   preferences,
   sidebarCollapsed = false,
+  projectArrangement = noArrangement,
 }: {
   location: UiLocation
   preferences: PreferencesValue
   sidebarCollapsed?: boolean
+  projectArrangement?: ProjectArrangement
 }): UiState => ({
   location,
   preferences,
@@ -115,7 +124,19 @@ export const initialUi = ({
   chatDrafts: noChatDrafts,
   chatReplies: noChatReplies,
   chatSends: noChatSends,
+  projectArrangement,
 })
+
+export const arrangeProjectsIn = (
+  ui: UiStore,
+  change: (arrangement: ProjectArrangement) => ProjectArrangement,
+): void =>
+  void ui.update((state) => {
+    const projectArrangement = change(state.projectArrangement)
+    return projectArrangement === state.projectArrangement
+      ? state
+      : { ...state, projectArrangement }
+  })
 
 export const updateShell = (ui: UiStore, change: (shell: ShellState) => ShellState): void =>
   void ui.update((state) => {
@@ -144,6 +165,7 @@ export const persistUi = (ui: Store<UiState>, workspace: Store<Workspace>): (() 
   const stops = [
     persist(ui, (state) => state.preferences, writePreferences),
     persist(ui, (state) => state.shell.sidebarCollapsed, writeSidebarCollapsed),
+    persist(ui, (state) => state.projectArrangement, writeProjectArrangement),
     persist(workspace, (snapshot) => currentState(snapshot).windowedView, writeWindowedView),
   ]
   return () => stops.forEach((stop) => stop())
