@@ -12,18 +12,22 @@ const statusText: Record<ProjectStatus, string> = {
   running: "Working",
 }
 
-// The pinned projects other than the current one, as quiet text chips after the switcher:
-// each marks what its project's terminals show, and a click switches to it. They take the
+// The pinned projects, as quiet text chips after the switcher, in the person's order: each
+// marks what its project's terminals show, and a click switches to it. The current one
+// stays in its place, marked as current, so switching never moves the chips. They take the
 // room the header leaves them: each shows whole or not at all, the last ones first to go,
 // and `onShown` says which show. All stay in the group so each can be measured; the ones
 // that don't fit are hidden and inert. With none showing, the rule goes too.
 export const ProjectChips = ({
   projects,
+  current,
   statuses,
   onSelect,
   onShown,
 }: {
   projects: readonly { readonly id: string; readonly name: string; readonly directory: string }[]
+  // The project the workspace shows.
+  current: string
   // What each project's terminals show, by its id, where they show anything.
   statuses: Readonly<Record<string, ProjectStatus>>
   onSelect: (id: string) => void
@@ -70,6 +74,7 @@ export const ProjectChips = ({
     >
       {projects.map((project, index) => {
         const status = statuses[project.id]
+        const isCurrent = project.id === current
         return (
           <Tooltip key={project.id} content={project.directory}>
             <button
@@ -77,10 +82,13 @@ export const ProjectChips = ({
               inert={index >= shown}
               style={index >= shown ? { visibility: "hidden" } : undefined}
               className="project-chip flex h-7 min-w-0 max-w-35 shrink-0 items-center gap-1.5 px-2.5 text-control"
+              aria-current={isCurrent ? "true" : undefined}
               aria-description={status && statusText[status]}
               data-project-status={status}
               data-needs-person={needsPerson(status) ? "true" : undefined}
-              onClick={() => onSelect(project.id)}
+              onClick={() => {
+                if (!isCurrent) onSelect(project.id)
+              }}
             >
               {status && <span aria-hidden="true" className="project-chip-status" />}
               <span className="min-w-0 truncate">{project.name}</span>

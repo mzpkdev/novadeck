@@ -83,16 +83,11 @@ export const WorkspaceHeader = ({
   onZen: () => void
 }): React.JSX.Element => {
   const iconOnly = useSyncExternalStore(subscribe, isIconOnly)
-  // The pinned projects but the current one show as chips, where there's room; the
-  // switcher's dot then leaves them out.
+  // The pinned projects show as chips, where there's room, the current one among them
+  // marked as such; the switcher's dot then leaves them out.
   const chips = useMemo(
-    () =>
-      iconOnly
-        ? noProjects
-        : arrangeProjects(projects, arrangement ?? noArrangement).pinned.filter(
-            ({ id }) => id !== project.id,
-          ),
-    [iconOnly, projects, arrangement, project.id],
+    () => (iconOnly ? noProjects : arrangeProjects(projects, arrangement ?? noArrangement).pinned),
+    [iconOnly, projects, arrangement],
   )
   const [shownChips, setShownChips] = useState<readonly string[]>(noIds)
   const searchShortcut = shortcutBindings().find.display.join(" ")
@@ -135,6 +130,7 @@ export const WorkspaceHeader = ({
         />
         <ProjectChips
           projects={chips}
+          current={project.id}
           statuses={statuses ?? noStatuses}
           onSelect={onProjectSelect}
           onShown={setShownChips}

@@ -5,7 +5,10 @@
    the glyph the switcher's rows show: "?" or "!" while an agent waits on the person,
    "✗" or "✓" while a finished agent's reply waits unread, a spinner while one works.
 
-   Hooks: on a chip, data-project-status="question" | "attention" | "failed" | "done" |
+   The current project's chip stands raised, as a selected item does: the paper, an
+   outline and ink text.
+
+   Hooks: on a chip, aria-current="true" for the current project; data-project-status="question" | "attention" | "failed" | "done" |
    "running", and data-needs-person="true" while its status asks for the person, which
    fills the chip so it draws the eye; on the group, data-empty="true" while no chip
    fits, which takes the rule away.
@@ -16,6 +19,8 @@
    --project-chip-hover-bg (soft): the fill under the pointer, and while a chip needs the
    person.
    --project-chip-radius (radius-control)
+   --project-chip-current-bg (paper), --project-chip-current-border-color (line),
+   --project-chip-current-fg (ink): the current project's chip.
    --project-chip-attention-fg (warning-fg): the mark while an agent waits.
    --project-chip-done-fg (success-fg): the mark while a reply waits unread.
    --project-chip-failed-fg (danger-fg): the same, where its turn ended on an error.
@@ -39,11 +44,18 @@
 .project-chip[data-needs-person="true"] {
   --_bg: var(--project-chip-hover-bg, var(--color-soft));
 }
+.project-chip[aria-current="true"] {
+  --_bg: var(--project-chip-current-bg, var(--color-paper));
+  --_fg: var(--project-chip-current-fg, var(--color-ink));
+  box-shadow: inset 0 0 0 var(--border-width)
+    var(--project-chip-current-border-color, var(--color-line));
+  cursor: default;
+}
 .project-chip:focus-visible {
   --_fg: var(--project-chip-hover-fg, var(--color-ink));
 }
 @media (hover: hover) {
-  .project-chip:hover {
+  .project-chip:not([aria-current="true"]):hover {
     --_bg: var(--project-chip-hover-bg, var(--color-soft));
     --_fg: var(--project-chip-hover-fg, var(--color-ink));
   }

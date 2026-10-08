@@ -451,11 +451,11 @@ describe("A pinned project", () => {
     await expect.element(chip).toHaveAttribute("aria-description", "Asks a question")
     await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "attention")
 
-    // Switching to it takes it from the chips; the others still wait in the dot.
+    // Switching to it keeps its chip in place, marked current; the others still wait
+    // in the dot.
     await chip.click()
-    await expect
-      .element(page.getByRole("group", { name: "Pinned projects" }))
-      .not.toBeInTheDocument()
+    await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    await expect.element(chip).toHaveAttribute("aria-current", "true")
     await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status")
   })
 
