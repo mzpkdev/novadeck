@@ -152,7 +152,7 @@ const it = base.extend<{ shell: Fixture }>({
         handle: store.terminal(id)?.handle ?? "t1",
         naming: store.terminal(id)?.naming ?? { person: null, agent: null, summary: null },
         openedBy: null,
-        lead: null,
+        ledBy: null,
         command: null,
         lastProgram: null,
         work: null,
@@ -1659,7 +1659,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     )
   })
 
-  it("shows a restored worker its lead only while the lead's terminal runs, and a plain shell none", async ({
+  it("shows a restored worker its stored lead, and a terminal opened for a command none", async ({
     shell,
   }) => {
     const [lead, worker, plain] = [randomUUID(), randomUUID(), randomUUID()]
@@ -1677,7 +1677,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
         handle,
         naming: { person: null, agent: null, summary: null },
         openedBy,
-        lead: leader,
+        ledBy: leader,
         command,
         lastProgram: null,
         work: null,
@@ -1690,21 +1690,96 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     keep(worker, "t2", "t1", "t1")
     keep(plain, "t3", "t1", null, "claude")
     const manager = shell.manager()
-    const watched = shell.watch(manager)
-    expect(manager.list(shell.sessionId).map(({ ledBy }) => ledBy)).toEqual([null, null, null])
+    // What summaries carry is the stored lead, whether or not its terminal runs.
+    expect(manager.list(shell.sessionId).map(({ ledBy }) => ledBy)).toEqual([null, "t1", null])
     await create(manager, shell, { id: worker, restore: true })
     await create(manager, shell, { id: plain, restore: true })
-    // The lead's terminal not running yet, the worker has none.
-    expect(manager.get(worker).ledBy).toBeNull()
     await create(manager, shell, { id: lead, restore: true })
-    await watched((summary) => summary.id === worker && summary.ledBy === "t1")
     expect(manager.get(worker).ledBy).toBe("t1")
     expect(manager.get(plain).ledBy).toBeNull()
-    expect(manager.list(shell.sessionId).find(({ id }) => id === worker)?.ledBy).toBe("t1")
-    // Closed, the lead leaves the worker with none.
+    // The lead's terminal closing changes nothing stored: clients tell it is gone.
     await manager.close({ terminalId: lead }, "owner")
-    await watched((summary) => summary.id === worker && summary.ledBy === null)
-    expect(manager.get(worker).ledBy).toBeNull()
+    expect(manager.get(worker).ledBy).toBe("t1")
+    expect(shell.store.terminalIdentity(worker)?.ledBy).toBe("t1")
+  })
+
+  it("keeps a worker's lead through a restore, and ends it when its agent exits", async ({
+    shell,
+  }) => {
+    const session = randomUUID()
+    fakeClaude(shell.home, shell.plugins, session)
+    reporter(shell.home, [
+      { agent: "claude", sessionId: "brand-new", seq: 1, source: "startup" },
+      // /clear in the agent in the foreground: a new session of the same agent.
+      { agent: "claude", sessionId: "cleared", seq: 2, source: "clear" },
+    ])
+    writeFileSync(join(shell.home, ".bashrc"), 'export PATH="$HOME/bin:$PATH"\n')
+    const [lead, worker] = [randomUUID(), randomUUID()]
+    const keep = (id: string, handle: string, ledBy: string | null) =>
+      shell.store.saveTerminal({
+        id,
+        sessionId: shell.sessionId,
+        cwd: shell.home,
+        handle,
+        naming: { person: null, agent: null, summary: null },
+        openedBy: ledBy,
+        ledBy,
+        command: null,
+        lastProgram: null,
+        work: null,
+        agents: id === worker ? { claude: { sessionId: session, seq: 1 } } : {},
+        promptedAt: null,
+      })
+    keep(lead, "t1", null)
+    keep(worker, "t2", "t1")
+    const manager = shell.manager()
+    const next = shell.watch(manager)
+    await create(manager, shell, { id: lead, restore: true })
+    // Restored by a new runner, its agent resumed there: the lead stays, kept as saved.
+    await create(manager, shell, { id: worker, restore: true, resume: "claude" })
+    await next((summary) => summary.id === worker && summary.agent === "claude")
+    expect(manager.get(worker).ledBy).toBe("t1")
+    // Enter ends the stand-in agent, and the lead ends with it.
+    manager.write({ terminalId: worker, data: "\r" }, "owner")
+    await expect.poll(() => manager.get(worker).ledBy).toBeNull()
+    expect(shell.store.terminalIdentity(worker)?.ledBy).toBeNull()
+    expect(shell.store.terminalIdentity(lead)?.ledBy).toBeNull()
+  })
+
+  it("keeps a worker's lead when its agent clears its conversation", async ({ shell }) => {
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "outer", seq: 1, source: "startup" },
+      { agent: "claude", sessionId: "cleared", seq: 2, source: "clear" },
+    ])
+    const [lead, worker] = [randomUUID(), randomUUID()]
+    for (const [id, handle, ledBy] of [
+      [lead, "t1", null],
+      [worker, "t2", "t1"],
+    ] as const)
+      shell.store.saveTerminal({
+        id,
+        sessionId: shell.sessionId,
+        cwd: shell.home,
+        handle,
+        naming: { person: null, agent: null, summary: null },
+        openedBy: ledBy,
+        ledBy,
+        command: null,
+        lastProgram: null,
+        work: null,
+        agents: {},
+        promptedAt: null,
+      })
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    await create(manager, shell, { id: lead, restore: true })
+    await create(manager, shell, { id: worker, restore: true })
+    manager.write({ terminalId: worker, data: "report\r" }, "owner")
+    await shell.until(manager, worker, "reports sent")
+    await expect.poll(() => manager.reportedSession(worker, "claude")).toBe("cleared")
+    expect(manager.get(worker).ledBy).toBe("t1")
+    expect(shell.store.terminalIdentity(worker)?.ledBy).toBe("t1")
   })
 
   it("takes no lead from a terminal kept in another session, though its id is restored here", async ({
@@ -1723,7 +1798,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       handle: "t1",
       naming: { person: null, agent: null, summary: null },
       openedBy: "t1",
-      lead: "t1",
+      ledBy: "t1",
       command: "claude",
       lastProgram: null,
       work: null,
@@ -2062,11 +2137,11 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           handle: "t2",
           naming: { person: null, agent: { title: "Agent", by: "t1" }, summary: null },
           openedBy: "t1",
-          lead: null,
+          ledBy: null,
         })
         // Opened for a command, even one that starts an agent, it has no lead.
         expect(manager.get(opened!).ledBy).toBeNull()
-        expect(shell.store.terminalIdentity(opened!)).toMatchObject({ lead: null })
+        expect(shell.store.terminalIdentity(opened!)).toMatchObject({ ledBy: null })
         await shell.until(manager, opened!, "claude args: --fresh")
         // Five a minute, counting each request that was asked, opened or not: two more,
         // and the next waits.
@@ -2212,7 +2287,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         // Who opened it is kept with the terminal, for a runner that restores it.
         expect(shell.store.terminalIdentity(created[0]!)).toMatchObject({
           openedBy: "t1",
-          lead: "t1",
+          ledBy: "t1",
         })
         // The task waits for the first session of that agent there.
         expect(manager.messages(created[0]!).threads[0]?.messages[0]).toMatchObject({
@@ -4127,7 +4202,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       tui.type("my first thought")
       await expect.poll(tui.delivery).toBe("drafting")
       expect(await tui.send("Review a.ts")).toMatchObject({
-        text: reaches("when the person next submits a prompt there"),
+        text: reaches("when the user next submits a prompt there"),
       })
       await quiet()
       expect(pastes(tui.raw())).toEqual([])

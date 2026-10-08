@@ -198,9 +198,9 @@ export type Harness = {
 export type MessagingProfile = {
   /**
    * The hook events that ask, and when each fires: as a turn ends, as a prompt starts it, or
-   * as a tool call of the turn finishes (`call`, which delivers only the lead's messages).
+   * as a tool call of the turn finishes (`tool`, which delivers only the lead's messages).
    */
-  readonly asks: { readonly [event: string]: "stop" | "prompt" | "call" }
+  readonly asks: { readonly [event: string]: "stop" | "prompt" | "tool" }
   /**
    * What a hook prints with nothing to deliver, as it does without Novadeck: by event, and
    * for any other (`*`). The relay prints the same when Novadeck can't answer.
@@ -212,9 +212,9 @@ export type MessagingProfile = {
   readonly prompt: (delivery: string) => string
   /**
    * A tool call's answer, for the hook `event` that asked, that adds a delivery to what the
-   * model reads next, beside the tool's result, while its turn runs. Absent where the
-   * harness has no such hook (Antigravity's PreInvocation asks before every model call
-   * already).
+   * model reads next, beside the tool's result, while its turn runs. Present exactly where
+   * `asks` has a `tool` event; Antigravity's PreInvocation asks before every model call
+   * already.
    */
   readonly call?: (delivery: string, event: string) => string
   /**
@@ -249,14 +249,6 @@ export type MessagingProfile = {
    */
   readonly typedEntry?: (line: string) => UserEntry | undefined
 }
-
-/**
- * Where a lead's message reaches the harness's agent while its turn runs, in the words
- * `send` answers with: at its next tool call, or, where a hook asks before every model call
- * (`reinjectPerCall`), its next model call; undefined where it waits for the turn's end.
- */
-export const midTurnCall = (profile: MessagingProfile): "tool call" | "model call" | undefined =>
-  profile.call ? "tool call" : profile.reinjectPerCall ? "model call" : undefined
 
 /**
  * Something a transcript recorded as typed into the agent's box: its text; when, rounded

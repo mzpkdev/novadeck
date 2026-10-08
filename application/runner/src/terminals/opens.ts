@@ -122,7 +122,7 @@ export type Opener = {
   readonly title?: string
   readonly command?: string
   /** Whether it opened the terminal with a brief for an agent there, so it leads it. */
-  readonly leads?: boolean
+  readonly withBrief: boolean
 }
 
 /**

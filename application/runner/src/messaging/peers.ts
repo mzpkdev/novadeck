@@ -22,7 +22,7 @@ export type Whereabouts = {
   /** Whether its agent works, as its terminal shows: its turn, or what that left running. */
   readonly working: boolean
   /** What its agent waits on the person for, if anything; null otherwise. */
-  readonly waiting?: Waiting | null
+  readonly waiting: Waiting | null
   readonly place: (path: string) => string
 }
 
@@ -66,8 +66,6 @@ export type Peer = {
   readonly folder: string | null
   readonly branch: string | null
   readonly startedWith: string | null
-  /** Which terminal's agent opened it, told where "started with" is unknown. */
-  readonly openedBy: string | null
   /** The handle of the terminal that leads it now: running, and in its session; else null. */
   readonly lead: string | null
   /** The opener whose command "started with" is, not the user's; null when it is the user's. */
@@ -75,16 +73,9 @@ export type Peer = {
   /** Left out when it is the prompt it started with. */
   readonly latest: string | null
   readonly plan: string | null
-  readonly worksIn: readonly {
-    readonly folder: string
-    readonly edits: number
-  }[]
+  readonly worksIn: readonly { readonly folder: string; readonly edits: number }[]
   /** Who sent the latest message between it and the caller (`you`, or its handle), and when. */
-  readonly withYou: {
-    readonly from: string
-    readonly text: string
-    readonly at: number
-  } | null
+  readonly withYou: { readonly from: string; readonly text: string; readonly at: number } | null
   readonly state: "busy" | "idle" | null
   /** What its agent waits on the person for; its work is blocked until they answer. */
   readonly waiting: Waiting | null
@@ -129,8 +120,8 @@ export const peerOf = (input: {
   readonly busy: boolean
   readonly where: Whereabouts | undefined
   readonly withYou: Peer["withYou"]
-  /** Its running lead's handle; none when the terminal that opened it is gone. */
-  readonly lead?: string | null
+  /** Its running lead's handle; null when it has none, or the terminal that leads it is gone. */
+  readonly lead: string | null
 }): Peer => {
   const { where, agent } = input
   const work = agent ? (where?.work ?? null) : null
@@ -148,8 +139,7 @@ export const peerOf = (input: {
     folder: where?.folder ?? null,
     branch: where?.branch ?? null,
     startedWith: work?.first ?? null,
-    openedBy: where?.openedBy ?? null,
-    lead: input.lead ?? null,
+    lead: input.lead,
     // In a terminal an agent opened, a first prompt nobody submitted is its command's.
     startedBy: firstFrom(work, openedBy) === "opener" ? openedBy : null,
     latest: work?.latest !== work?.first ? (work?.latest ?? null) : null,
@@ -194,7 +184,7 @@ export type Viewer = { readonly handle: string; readonly lead: string | null }
  * How a peer relates to the reader, by who leads it now: led by you, your lead, or led by
  * another. A lead whose terminal closed leads no one, so nothing is said of it.
  */
-const leadNote = (peer: Peer, viewer: Viewer): string | null => {
+const relationLine = (peer: Peer, viewer: Viewer): string | null => {
   if (peer.handle === viewer.lead) return "your lead: it opened this terminal and directs your work"
   if (!peer.lead) return null
   if (peer.lead === viewer.handle) return "led by you"
@@ -210,15 +200,11 @@ const waitingNote = ({ kind, tool, subject, more }: Waiting): string => {
       : kind === "question"
         ? `a question${shown ? `: ${shown}` : ""}`
         : `approval of its plan${shown ? `: ${shown}` : ""}`
-  return `waiting on the person: ${what}${more > 0 ? ` (and ${more} more)` : ""}`
+  return `waiting on the user: ${what}${more > 0 ? ` (and ${more} more)` : ""}`
 }
 
 /** One peer as agents read it: a short block, each fact left out when unknown. */
-export const renderPeer = (
-  peer: Peer,
-  now: number,
-  viewer: Viewer = { handle: "", lead: null },
-): readonly string[] =>
+export const renderPeer = (peer: Peer, now: number, viewer: Viewer): readonly string[] =>
   [
     `- ${peer.handle}: ${
       peer.agent
@@ -232,7 +218,7 @@ export const renderPeer = (
     peer.title && `  title: ${peer.title}${titleNote(peer)}`,
     peer.summary && `  described by its agent: ${peer.summary.split("\n").join(" / ")}`,
     peer.folder && `  folder: ${peer.folder}${peer.branch ? `, branch ${peer.branch}` : ""}`,
-    leadNote(peer, viewer) && `  ${leadNote(peer, viewer)}`,
+    relationLine(peer, viewer) && `  ${relationLine(peer, viewer)}`,
     peer.startedWith &&
       `  started with${peer.startedBy ? ` (${peer.startedBy}'s command)` : ""}: ${peer.startedWith}`,
     peer.latest && `  latest: ${peer.latest}`,
@@ -244,7 +230,7 @@ export const renderPeer = (
   ].filter((line): line is string => Boolean(line))
 
 /** The other terminals in the project and session, as agents read them. */
-export const renderPeers = (peers: readonly Peer[], now: number, viewer?: Viewer): string =>
+export const renderPeers = (peers: readonly Peer[], now: number, viewer: Viewer): string =>
   peers.length === 0
     ? "There are no other terminals in this project and session."
     : [
@@ -275,8 +261,8 @@ export const unboundNote =
 /** What `agents` answers, as agents read it. */
 export const renderAgents = (input: {
   readonly handle: string
-  /** The handle of the terminal whose agent opened the caller's; null when none did. */
-  readonly lead?: string | null
+  /** The handle of the caller's running lead; null when it has none. */
+  readonly lead: string | null
   readonly peers: readonly Peer[]
   readonly messages: readonly {
     readonly message: Message
@@ -287,10 +273,7 @@ export const renderAgents = (input: {
 }): string =>
   [
     `You are ${input.handle} in Novadeck.`,
-    renderPeers(input.peers, input.now, {
-      handle: input.handle,
-      lead: input.lead ?? null,
-    }),
+    renderPeers(input.peers, input.now, { handle: input.handle, lead: input.lead }),
     ...(input.messages.length > 0
       ? [
           "Your messages not yet delivered:",
@@ -312,7 +295,7 @@ export const unknownHandle = (
   self: string,
   peers: readonly Peer[],
   now: number,
-  lead: string | null = null,
+  lead: string | null,
 ): string =>
   [
     to === self

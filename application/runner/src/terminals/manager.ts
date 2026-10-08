@@ -365,12 +365,6 @@ type Record = {
   /** The handle of the terminal whose agent opened this one; null otherwise. */
   openedBy: string | null
   /**
-   * The handle of its lead: the terminal whose agent opened it with a brief to run an
-   * agent there; null otherwise, however it was opened. Whether that lead runs now is
-   * `ledBy` on its summary.
-   */
-  lead: string | null
-  /**
    * The command the agent that opened it started there, whose prompt is never the
    * person's; kept for this runner's lifetime, for its first root session.
    */
@@ -808,10 +802,10 @@ export class Terminals {
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
       // Read again after every wait above: a rename meanwhile, as from another window,
-      // stands. Nothing waits between this and saving it, and a
-      // terminal that can't be numbered fails before its shell starts.
-      // Only one saved for this session: another's handle and opener mean nothing here,
-      // and must never give a terminal there a lead.
+      // stands. Nothing waits between this and saving it, and a terminal that can't be
+      // numbered fails before its shell starts. Only one saved for this session counts:
+      // another's handle and opener mean nothing here, and must never give a terminal
+      // there a lead.
       const kept = saved ? this.identity(input.id) : undefined
       // Every new terminal draws its session's next number, for its handle, `t3`, and its
       // default title, "Terminal 03", even one given its own title.
@@ -823,7 +817,7 @@ export class Terminals {
       if (input.title !== undefined) naming = renamedTo(naming, input.title)
       if (opener?.title !== undefined) naming = openedWith(naming, opener.title, opener.by)
       const openedBy = kept?.openedBy ?? opener?.by ?? null
-      const lead = kept ? kept.lead : opener?.leads === true ? opener.by : null
+      const ledBy = kept ? kept.ledBy : opener?.withBrief ? opener.by : null
       const work = saved?.work ?? null
       const titled = this.titled(naming, { work, handle, openedBy })
       const resume =
@@ -845,7 +839,7 @@ export class Terminals {
           sessionId: input.sessionId,
           ...titled,
           handle,
-          ledBy: this.runningLead(input.sessionId, lead),
+          ledBy,
           started: true,
           command: input.command ?? saved?.command ?? null,
           lastProgram: saved?.lastProgram ?? null,
@@ -898,7 +892,6 @@ export class Terminals {
         held: null,
         resizedAt: 0,
         openedBy,
-        lead,
         openerCommand: opener?.command ?? null,
         // Only a session the opener's command started, running an agent, is the opener's.
         awaitsOpened:
@@ -959,7 +952,7 @@ export class Terminals {
       sessionId: terminal.sessionId,
       ...this.titled(terminal.naming, terminal),
       handle: terminal.handle,
-      ledBy: this.runningLead(terminal.sessionId, terminal.lead),
+      ledBy: terminal.ledBy,
       started: false,
       command: terminal.command,
       lastProgram: terminal.lastProgram,
@@ -1015,48 +1008,15 @@ export class Terminals {
    */
   private register(record: Record, agent: AgentName | null): void {
     const { id, sessionId, handle } = record.summary
-    // Its lead is the agent in the terminal that opened it to run an agent, for as long
-    // as that terminal runs.
+    // Its lead is the agent in the terminal that opened it with a brief, until the agent
+    // it leads exits.
     this.messaging.register(
       id,
       { projectId: this.projectOf(sessionId), sessionId },
       handle,
-      record.lead,
+      record.summary.ledBy,
     )
     this.messaging.expect(id, agent)
-    this.refreshLeads()
-  }
-
-  /** Stops the terminal taking messages, and tells its workers they have lost their lead. */
-  private unregister(terminalId: string): void {
-    this.messaging.unregister(terminalId)
-    this.refreshLeads()
-  }
-
-  /** The handle of the running terminal of the session that `lead` names, if one runs. */
-  private runningLead(sessionId: string, lead: string | null): string | null {
-    if (lead === null) return null
-    for (const { summary } of this.records.values())
-      if (
-        summary.sessionId === sessionId &&
-        summary.handle === lead &&
-        this.messaging.delivery(summary.id) !== undefined
-      )
-        return lead
-    return null
-  }
-
-  /**
-   * Brings every terminal's `ledBy` to its lead as running now, and tells watchers of
-   * those that changed: as a lead starts, exits or is closed, the badge follows.
-   */
-  private refreshLeads(): void {
-    for (const record of this.records.values()) {
-      const lead = this.runningLead(record.summary.sessionId, record.lead)
-      if (lead === record.summary.ledBy) continue
-      record.summary = { ...record.summary, ledBy: lead }
-      this.announce(record)
-    }
   }
 
   /**
@@ -1824,7 +1784,7 @@ export class Terminals {
   private forget(terminalId: string): void {
     // Its items go first, so watchers hear of each before its record cascades them away.
     this.options.items?.terminalClosed(terminalId)
-    this.unregister(terminalId)
+    this.messaging.unregister(terminalId)
     this.doorbell?.forget(terminalId)
     this.dialogs.forget(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
@@ -2208,7 +2168,7 @@ export class Terminals {
         ...(request.title !== undefined && { title: request.title }),
         ...(command !== undefined && { command }),
         // Only an agent opened with a brief is led by the one that opened it.
-        ...(request.agent !== undefined && { leads: true }),
+        withBrief: request.agent !== undefined,
       },
     )
     let task: SendAnswer | undefined
@@ -3566,11 +3526,26 @@ export class Terminals {
   }
 
   /**
+   * Ends the terminal's lead, as the agent it led exited: kept, shown to watchers, and
+   * told to messaging, so what the former lead sends reads as a peer's from then on.
+   */
+  private endLead(record: Record): void {
+    if (record.summary.ledBy === null) return
+    record.summary = { ...record.summary, ledBy: null }
+    this.messaging.setLedBy(record.summary.id, null)
+    this.save(record, false)
+    this.announce(record)
+  }
+
+  /**
    * Ends the terminal's binding, with its activity and the sources that follow it; with
    * `only`, only while that session is still the one bound. Whether it ended one.
    */
   private endBinding(record: Record, only?: string): boolean {
     if (only !== undefined && record.binding?.sessionId !== only) return false
+    // The agent itself left (not a new session replacing one, as /clear does, which names
+    // `only`): the lead it had ends with it.
+    if (only === undefined && record.binding !== null) this.endLead(record)
     record.binding = null
     record.activity = null
     record.telemetry = null
@@ -3882,7 +3857,7 @@ export class Terminals {
         handle: record.summary.handle,
         naming: record.naming,
         openedBy: record.openedBy,
-        lead: record.lead,
+        ledBy: record.summary.ledBy,
         work: record.work,
         command: record.summary.command,
         lastProgram: record.summary.lastProgram,
@@ -3933,7 +3908,7 @@ export class Terminals {
       record.telemetry = null
       this.unwatch(record)
       // An exited terminal takes no messages; its agent's are gone until it runs again.
-      this.unregister(record.summary.id)
+      this.messaging.unregister(record.summary.id)
       this.doorbell?.forget(record.summary.id)
       this.dialogs.forget(record.summary.id)
       record.summary = {
@@ -4036,7 +4011,7 @@ export class Terminals {
       excess -= 1
       this.dispose(record)
       this.records.delete(record.summary.id)
-      this.unregister(record.summary.id)
+      this.messaging.unregister(record.summary.id)
       this.doorbell?.forget(record.summary.id)
       this.dialogs.forget(record.summary.id)
       // Its record is let go, but the terminal is kept, saved, until it is closed.

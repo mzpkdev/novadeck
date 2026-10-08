@@ -53,13 +53,13 @@ describe("each harness's hook answers", () => {
     expect(harnesses.claude.messaging.asks).toEqual({
       Stop: "stop",
       UserPromptSubmit: "prompt",
-      PostToolUse: "call",
-      PostToolUseFailure: "call",
+      PostToolUse: "tool",
+      PostToolUseFailure: "tool",
     })
     expect(harnesses.codex.messaging.asks).toEqual({
       Stop: "stop",
       UserPromptSubmit: "prompt",
-      PostToolUse: "call",
+      PostToolUse: "tool",
     })
   })
 

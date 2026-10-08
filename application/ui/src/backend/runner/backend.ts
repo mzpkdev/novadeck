@@ -623,7 +623,7 @@ export const runnerBackend = (
       unconfirmed === undefined && current.name !== summary.title ? summary.title : undefined
     const directory = current.directory !== summary.cwd ? summary.cwd : undefined
     const handle = current.handle !== summary.handle ? summary.handle : undefined
-    const ledBy = current.ledBy !== (summary.ledBy ?? undefined) ? summary.ledBy : undefined
+    const ledBy = (current.ledBy ?? null) !== summary.ledBy ? summary.ledBy : undefined
     // While the person's name is on its way, it is theirs, whatever the runner said before.
     const titleSource =
       unconfirmed === undefined && !sameTitleSource(current.titleSource, summary.titleSource)

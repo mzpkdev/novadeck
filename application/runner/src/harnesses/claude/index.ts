@@ -53,8 +53,8 @@ const messaging: MessagingProfile = {
   asks: {
     Stop: "stop",
     UserPromptSubmit: "prompt",
-    PostToolUse: "call",
-    PostToolUseFailure: "call",
+    PostToolUse: "tool",
+    PostToolUseFailure: "tool",
   },
   silent: { "*": "" },
   stop: (delivery) => `${JSON.stringify({ decision: "block", reason: delivery })}\n`,

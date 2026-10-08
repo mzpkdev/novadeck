@@ -670,7 +670,7 @@ describe("reading a relay's hook", () => {
       // A tool call's hook asks the runner but keeps the relay's short wait.
       expect(relayConfig.asks[agent]).toEqual(
         Object.entries(harnesses[agent].messaging.asks)
-          .filter(([, kind]) => kind !== "call")
+          .filter(([, kind]) => kind !== "tool")
           .map(([event]) => event),
       )
     }

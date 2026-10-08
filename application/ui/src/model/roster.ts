@@ -77,13 +77,13 @@ export const addTerminal = (
   terminals: [...roster.terminals, terminal],
 })
 
-type TerminalFacts = Pick<TerminalMetadata, "name" | "directory" | "handle" | "titleSource"> & {
-  // Null once it has no lead.
-  ledBy: string | null
-}
+type TerminalFacts = Pick<
+  TerminalMetadata,
+  "name" | "directory" | "handle" | "titleSource" | "ledBy"
+>
 
 // What the backend says of a terminal now: its name or directory, its handle, and who
-// its name is from, and its lead.
+// its name is from, and its lead (null once it has none).
 export const updateTerminal = (
   roster: TerminalRoster,
   terminalId: string,
@@ -92,23 +92,20 @@ export const updateTerminal = (
   const current = roster.terminals.find((terminal) => terminal.id === terminalId)
   if (!current) return roster
   const { name, directory, handle, titleSource, ledBy } = change
-  const facts: Partial<TerminalMetadata> = {
+  const facts: Partial<TerminalFacts> = {
     ...(name !== undefined && name !== current.name && { name }),
     ...(directory !== undefined && directory !== current.directory && { directory }),
     ...(handle !== undefined && handle !== current.handle && { handle }),
     ...(titleSource !== undefined &&
       !sameTitleSource(titleSource, current.titleSource) && { titleSource }),
+    ...(ledBy !== undefined && ledBy !== (current.ledBy ?? null) && { ledBy }),
   }
-  const leadChanged = ledBy !== undefined && (ledBy ?? undefined) !== current.ledBy
-  if (!Object.keys(facts).length && !leadChanged) return roster
+  if (!Object.keys(facts).length) return roster
   return {
     ...roster,
-    terminals: roster.terminals.map((terminal) => {
-      if (terminal !== current) return terminal
-      const { ledBy: _, ...rest } = { ...terminal, ...facts }
-      const lead = leadChanged ? ledBy : terminal.ledBy
-      return (lead ? { ...rest, ledBy: lead } : rest) as TerminalMetadata
-    }),
+    terminals: roster.terminals.map((terminal) =>
+      terminal === current ? { ...terminal, ...facts } : terminal,
+    ),
   }
 }
 

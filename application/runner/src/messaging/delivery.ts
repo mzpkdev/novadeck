@@ -1,3 +1,5 @@
+import type { MessagingProfile } from "../harnesses/harness.js"
+
 /**
  * How a terminal's agent can take a message now, one state machine per terminal (see
  * docs/agent-messaging.md, "States"). Every terminal with an agent is in one state at
@@ -659,12 +661,16 @@ const keyed = (delivery: Delivery, submits: boolean, at: number | null): Deliver
 export const continues = (delivery: Delivery): boolean =>
   stoppable(delivery) && !delivery.box.queuing && delivery.continued < maxContinuations
 
+/** The call of a running turn that a lead's message reaches its agent at, in `send`'s words. */
+export type MidTurnCall = "tool call" | "model call"
+
 /**
- * Whether a tool call's hook may deliver the lead's messages now: a root turn runs, or
- * continues after a Stop Novadeck continued. Anywhere else the call is a late hook of a
- * turn that ended, and its messages wait for the next turn event.
+ * Where a lead's message reaches the harness's agent while its turn runs: at its next tool
+ * call, or, where a hook asks before every model call (`reinjectPerCall`), its next model
+ * call; undefined where it waits for the turn's end.
  */
-export const takesCall = (delivery: Delivery): boolean => running(delivery)
+export const midTurnCall = (profile: MessagingProfile): MidTurnCall | undefined =>
+  profile.call ? "tool call" : profile.reinjectPerCall ? "model call" : undefined
 
 /**
  * When a message sent now would reach the agent, in the words `send` answers with. A
@@ -675,7 +681,7 @@ export const takesCall = (delivery: Delivery): boolean => running(delivery)
 export const route = (
   delivery: Delivery,
   silentOnFailure: boolean,
-  midTurn?: "tool call" | "model call",
+  midTurn: MidTurnCall | undefined,
 ): string => {
   switch (delivery.state) {
     case "fresh":
@@ -689,6 +695,6 @@ export const route = (
       if (midTurn) return `at its next ${midTurn}`
       return silentOnFailure ? "at its turn's end or its next prompt" : "when its current turn ends"
     default:
-      return "when the person next submits a prompt there"
+      return "when the user next submits a prompt there"
   }
 }
