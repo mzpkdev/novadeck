@@ -176,10 +176,10 @@ export const codex: AgentSetup = {
   },
   // Its folder-trust question, "Trust this folder?", has trusting it selected, and its
   // "Hooks need review" screen says "esc skip", which goes on without trusting them. It
-  // draws the question before it reads keys, and drops the Enter pressed then (4 of 15
-  // pressed at the instant it drew, 0 of 20 ten ms later; probed 2026-10-08, 0.159.3),
-  // so the selection is moved away and back first (Down, Up). A review's Esc is pressed
-  // again while it shows.
+  // draws the question before it reads keys, and drops the Enter pressed then (a third
+  // to a half of those pressed at the instant it drew, none of those 10 ms or more later;
+  // probed 2026-10-08, 0.159.3 and 0.161.0), so the selection is moved away and back
+  // first (Down, Up). A review's Esc is pressed again while it shows.
   trust: {
     folder: {
       shows: /› 1\. Trust and continue/,

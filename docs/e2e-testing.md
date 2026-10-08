@@ -298,10 +298,12 @@ for (const setup of setups) {
   - `background`: `start(call)` is a reply starting work that outlives the turn (a
     background subagent or task) whose end wakes the agent again; `owns(call)` tells
     that work's model calls from the agent's own, so a rule can hold them at a `gate()`.
-  - `trust.folder`: `{ shows, select, trusts }`, its folder-trust question as
+  - `trust.folder`: `{ shows, select, trusts, probe? }`, its folder-trust question as
     `folderTrusted: false` shows it: text it shows whatever is selected, the keys that
     select the trusting option (`""` when the question shows it selected), and that
-    option as shown selected, for `confirm`.
+    option as shown selected, for `confirm`. `probe` (`{ away, moved }`) is for a TUI
+    that draws the question before it reads keys: another option is selected until the
+    screen shows it moved, and `select`, which can't then be `""`, puts it back.
   - `trust.hooks`: `{ shows, skip }`, its hooks-review screen and the keys that leave it
     without trusting Novadeck's hooks, as `hooksTrusted: false` shows it.
   - `rewind`: `{ shows, swallows }`, what Esc-Esc (two Escapes about 300 ms apart, sent

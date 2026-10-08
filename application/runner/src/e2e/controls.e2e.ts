@@ -98,10 +98,12 @@ const leave = async (
     // eslint-disable-next-line no-await-in-loop -- Each look waits on the key before.
     await terminal.escape(skip)
     // eslint-disable-next-line no-await-in-loop -- As above.
-    const shown = await terminal.screen()
-    if (!shows.test(shown)) return
+    if (!shows.test(await terminal.screen())) return
     // eslint-disable-next-line no-await-in-loop -- As above.
     await sleep(steady)
+    // A late redraw may have left it since: another key would land on the prompt.
+    // eslint-disable-next-line no-await-in-loop -- As above.
+    if (!shows.test(await terminal.screen())) return
   }
   throw new Error(`${terminal.handle} still shows ${String(shows)} after ${skip} pressed 10 times`)
 }
