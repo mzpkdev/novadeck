@@ -32,6 +32,15 @@
 .workspace-switcher-remove {
   transition: opacity var(--motion-feedback) var(--ease-interface);
 }
+/* On a highlighted row's bar, the remove button beside it takes the bar's text. */
+.workspace-switcher-project:focus-visible ~ .workspace-switcher-remove {
+  --_fg: var(--item-highlighted-fg, var(--icon-button-fg, var(--color-muted)));
+}
+@media (hover: hover) {
+  .workspace-switcher-project:hover ~ .workspace-switcher-remove {
+    --_fg: var(--item-highlighted-fg, var(--icon-button-fg, var(--color-muted)));
+  }
+}
 
 .workspace-switcher-footer {
   border-top: var(--border-width) solid var(--separator-bg, var(--color-line));

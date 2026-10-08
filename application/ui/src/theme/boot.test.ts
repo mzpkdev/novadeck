@@ -7,6 +7,7 @@ import { context, describe, expect, it } from "../test"
 import {
   applyAppearance,
   bootRecordKey,
+  bootRecordVersion,
   defaultPreference,
   resolveAppearance,
   startingAppearance,
@@ -56,7 +57,7 @@ describe("the boot script", () => {
       for (const scheme of schemes)
         for (const systemDark of systems) {
           const preference = { theme: id, scheme }
-          const record = { v: 2, ...preference, schemes: schemesOf(id) }
+          const record = { v: bootRecordVersion, ...preference, schemes: schemesOf(id) }
           expect(boot(JSON.stringify(record), systemDark)).toEqual(
             resolveAppearance(preference, systemDark, themes),
           )
@@ -66,7 +67,12 @@ describe("the boot script", () => {
   it("gives <html> the scheme's color-scheme until the app shows the theme", () => {
     const root = document.documentElement
     boot(
-      JSON.stringify({ v: 2, theme: "graphite", scheme: "system", schemes: ["light", "dark"] }),
+      JSON.stringify({
+        v: bootRecordVersion,
+        theme: "graphite",
+        scheme: "system",
+        schemes: ["light", "dark"],
+      }),
       true,
     )
     expect(root.style.colorScheme).toBe("dark")
@@ -81,7 +87,12 @@ describe("the boot script", () => {
       for (const systemDark of systems) {
         expect(
           boot(
-            JSON.stringify({ v: 2, theme: "phosphor-green", scheme, schemes: ["dark"] }),
+            JSON.stringify({
+              v: bootRecordVersion,
+              theme: "phosphor-green",
+              scheme,
+              schemes: ["dark"],
+            }),
             systemDark,
           ),
         ).toEqual({
@@ -119,13 +130,23 @@ describe("the boot script", () => {
     for (const systemDark of systems) {
       expect(
         boot(
-          JSON.stringify({ v: 2, theme: "sandstone", scheme: "system", schemes: ["light"] }),
+          JSON.stringify({
+            v: bootRecordVersion,
+            theme: "sandstone",
+            scheme: "system",
+            schemes: ["light"],
+          }),
           systemDark,
         ),
       ).toEqual({ theme: "sandstone", scheme: "light" })
       expect(
         boot(
-          JSON.stringify({ v: 2, theme: "ember", scheme: "light", schemes: ["dark", "light"] }),
+          JSON.stringify({
+            v: bootRecordVersion,
+            theme: "ember",
+            scheme: "light",
+            schemes: ["dark", "light"],
+          }),
           systemDark,
         ),
       ).toEqual({ theme: "ember", scheme: "light" })
@@ -134,7 +155,15 @@ describe("the boot script", () => {
 
   it("shows the app's default where the app has none of the theme", () => {
     const root = document.documentElement
-    boot(JSON.stringify({ v: 2, theme: "sandstone", scheme: "dark", schemes: ["dark"] }), false)
+    boot(
+      JSON.stringify({
+        v: bootRecordVersion,
+        theme: "sandstone",
+        scheme: "dark",
+        schemes: ["dark"],
+      }),
+      false,
+    )
     expect(root.dataset.theme).toBe("sandstone")
 
     applyAppearance(root, startingAppearance(window, themes))
@@ -171,7 +200,13 @@ describe("the boot script", () => {
       for (const scheme of schemes)
         for (const systemDark of systems)
           for (const bad of wrong) {
-            const record = { v: 2, theme: "phosphor-green", scheme, schemes: ["dark"], ...bad }
+            const record = {
+              v: bootRecordVersion,
+              theme: "phosphor-green",
+              scheme,
+              schemes: ["dark"],
+              ...bad,
+            }
             expect(boot(JSON.stringify(record), systemDark)).toEqual(
               resolveAppearance({ theme: "graphite", scheme }, systemDark, themes),
             )
@@ -183,7 +218,12 @@ describe("the boot script", () => {
         for (const systemDark of systems)
           expect(
             boot(
-              JSON.stringify({ v: 2, theme: "phosphor-green", scheme, schemes: ["dark"] }),
+              JSON.stringify({
+                v: bootRecordVersion,
+                theme: "phosphor-green",
+                scheme,
+                schemes: ["dark"],
+              }),
               systemDark,
             ),
           ).toEqual(resolveAppearance(defaultPreference(themes), systemDark, themes))
@@ -197,7 +237,12 @@ describe("the boot script", () => {
       "null",
       "[]",
       JSON.stringify({ scheme: "dim" }),
-      JSON.stringify({ v: 2, theme: "graphite", scheme: 1, schemes: ["light", "dark"] }),
+      JSON.stringify({
+        v: bootRecordVersion,
+        theme: "graphite",
+        scheme: 1,
+        schemes: ["light", "dark"],
+      }),
       JSON.stringify({ theme: "graphite" }),
     ]
 
