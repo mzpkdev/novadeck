@@ -10,10 +10,11 @@
 :root:is([data-theme="phosphor-green"], [data-theme="phosphor-amber"]) {
   color-scheme: dark;
 
-  /* Terminal: the tube's own colours; its ANSI shades are each tube's. */
+  /* Terminal: the tube's own colours, a block cursor in the text's; its ANSI shades are
+     each tube's. */
   --terminal-bg: var(--color-paper);
   --terminal-fg: var(--color-ink);
-  --terminal-cursor: var(--color-strong);
+  --terminal-cursor: var(--color-ink);
   --terminal-selection: var(--color-selection);
   /* Depth: no shadows on a tube; surfaces glow instead, faintly, at their edges. */
   --shadow-control: 0 0 0 1px color-mix(in srgb, var(--color-strong) 10%, transparent);
