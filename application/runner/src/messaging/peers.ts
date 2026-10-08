@@ -21,7 +21,20 @@ export type Whereabouts = {
   readonly openedBy: string | null
   /** Whether its agent works, as its terminal shows: its turn, or what that left running. */
   readonly working: boolean
+  /** What its agent waits on the person for, if anything; null otherwise. */
+  readonly waiting?: Waiting | null
   readonly place: (path: string) => string
+}
+
+/**
+ * A request waiting on the person, as listing it shows: its kind, the tool it is about, a
+ * short subject (a command, a file, a question), and how many more wait behind it.
+ */
+export type Waiting = {
+  readonly kind: "permission" | "question" | "plan"
+  readonly tool: string
+  readonly subject: string | null
+  readonly more: number
 }
 
 /** Whereabouts by terminal; undefined for one the manager can't tell of. */
@@ -33,7 +46,7 @@ export type About = (terminalId: string) => Whereabouts | undefined
  * agent bound there; its title, and who it is from; the summary its agent described its
  * work with; its folder and git branch; the person's first and latest prompts there; its
  * plan's title; the folders it writes in most; the latest message between it and the
- * caller; whether its agent is busy, and when it was last active.
+ * caller; whether its agent is busy or waits on the person, and when it was last active.
  */
 export type Peer = {
   readonly terminalId: string
@@ -60,10 +73,19 @@ export type Peer = {
   /** Left out when it is the prompt it started with. */
   readonly latest: string | null
   readonly plan: string | null
-  readonly worksIn: readonly { readonly folder: string; readonly edits: number }[]
+  readonly worksIn: readonly {
+    readonly folder: string
+    readonly edits: number
+  }[]
   /** Who sent the latest message between it and the caller (`you`, or its handle), and when. */
-  readonly withYou: { readonly from: string; readonly text: string; readonly at: number } | null
+  readonly withYou: {
+    readonly from: string
+    readonly text: string
+    readonly at: number
+  } | null
   readonly state: "busy" | "idle" | null
+  /** What its agent waits on the person for; its work is blocked until they answer. */
+  readonly waiting: Waiting | null
   readonly activeAt: number | null
 }
 
@@ -136,6 +158,7 @@ export const peerOf = (input: {
       : [],
     withYou: input.withYou,
     state: agent ? (input.busy ? "busy" : "idle") : null,
+    waiting: agent ? (where?.waiting ?? null) : null,
     activeAt: work?.activeAt ?? null,
   }
 }
@@ -159,12 +182,39 @@ const titleNote = (peer: Peer): string => {
   return source?.kind === "fallback" ? " (from the user's first prompt there)" : ""
 }
 
+/** Who is reading a listing: its handle, and the handle of the terminal that leads it. */
+export type Viewer = { readonly handle: string; readonly lead: string | null }
+
+/** How a peer relates to the reader, by who opened it: led by you, your lead, or led by another. */
+const leadNote = (peer: Peer, viewer: Viewer): string | null => {
+  if (peer.handle === viewer.lead) return "your lead: it opened this terminal and directs your work"
+  if (!peer.openedBy) return null
+  if (peer.openedBy === viewer.handle) return "led by you"
+  return `led by ${peer.openedBy}`
+}
+
+/** What a request waiting on the person is, shortly: its kind and subject, never more. */
+const waitingNote = ({ kind, tool, subject, more }: Waiting): string => {
+  const shown = subject && shorten(subject, 80)
+  const what =
+    kind === "permission"
+      ? `permission to use ${tool}${shown ? `: ${shown}` : ""}`
+      : kind === "question"
+        ? `a question${shown ? `: ${shown}` : ""}`
+        : `approval of its plan${shown ? `: ${shown}` : ""}`
+  return `waiting on the person: ${what}${more > 0 ? ` (and ${more} more)` : ""}`
+}
+
 /** One peer as agents read it: a short block, each fact left out when unknown. */
-export const renderPeer = (peer: Peer, now: number): readonly string[] =>
+export const renderPeer = (
+  peer: Peer,
+  now: number,
+  viewer: Viewer = { handle: "", lead: null },
+): readonly string[] =>
   [
     `- ${peer.handle}: ${
       peer.agent
-        ? `${agentLabel(peer.agent)}, ${peer.state}${peer.activeAt === null ? "" : `, last active ${ago(peer.activeAt, now)}`}`
+        ? `${agentLabel(peer.agent)}, ${peer.waiting ? waitingNote(peer.waiting) : peer.state}${peer.activeAt === null ? "" : `, last active ${ago(peer.activeAt, now)}`}`
         : peer.untrusted
           ? `no agent Novadeck can deliver to: ${untrustedNote(peer.untrusted)}`
           : peer.expecting
@@ -174,9 +224,9 @@ export const renderPeer = (peer: Peer, now: number): readonly string[] =>
     peer.title && `  title: ${peer.title}${titleNote(peer)}`,
     peer.summary && `  described by its agent: ${peer.summary.split("\n").join(" / ")}`,
     peer.folder && `  folder: ${peer.folder}${peer.branch ? `, branch ${peer.branch}` : ""}`,
-    peer.startedWith
-      ? `  started with${peer.startedBy ? ` (${peer.startedBy}'s command)` : ""}: ${peer.startedWith}`
-      : peer.openedBy && `  opened by ${peer.openedBy}`,
+    leadNote(peer, viewer) && `  ${leadNote(peer, viewer)}`,
+    peer.startedWith &&
+      `  started with${peer.startedBy ? ` (${peer.startedBy}'s command)` : ""}: ${peer.startedWith}`,
     peer.latest && `  latest: ${peer.latest}`,
     peer.plan && `  plan: ${peer.plan}`,
     peer.worksIn.length > 0 &&
@@ -186,12 +236,12 @@ export const renderPeer = (peer: Peer, now: number): readonly string[] =>
   ].filter((line): line is string => Boolean(line))
 
 /** The other terminals in the project and session, as agents read them. */
-export const renderPeers = (peers: readonly Peer[], now: number): string =>
+export const renderPeers = (peers: readonly Peer[], now: number, viewer?: Viewer): string =>
   peers.length === 0
     ? "There are no other terminals in this project and session."
     : [
         "Other terminals in this project and session:",
-        ...peers.flatMap((peer) => renderPeer(peer, now)),
+        ...peers.flatMap((peer) => renderPeer(peer, now, viewer)),
       ].join("\n")
 
 /** What `agents` says of the caller's own message not yet delivered, or gone. */
@@ -217,6 +267,8 @@ export const unboundNote =
 /** What `agents` answers, as agents read it. */
 export const renderAgents = (input: {
   readonly handle: string
+  /** The handle of the terminal whose agent opened the caller's; null when none did. */
+  readonly lead?: string | null
   readonly peers: readonly Peer[]
   readonly messages: readonly {
     readonly message: Message
@@ -227,7 +279,10 @@ export const renderAgents = (input: {
 }): string =>
   [
     `You are ${input.handle} in Novadeck.`,
-    renderPeers(input.peers, input.now),
+    renderPeers(input.peers, input.now, {
+      handle: input.handle,
+      lead: input.lead ?? null,
+    }),
     ...(input.messages.length > 0
       ? [
           "Your messages not yet delivered:",
@@ -249,6 +304,7 @@ export const unknownHandle = (
   self: string,
   peers: readonly Peer[],
   now: number,
+  lead: string | null = null,
 ): string =>
   [
     to === self
@@ -256,5 +312,5 @@ export const unknownHandle = (
       : `"${to.slice(0, 64)}" is no terminal's handle here. Send to one of these by its exact ` +
         "handle, picking by its title, folder and work; if more than one could be meant, ask " +
         "the user rather than guess.",
-    renderPeers(peers, now),
+    renderPeers(peers, now, { handle: self, lead }),
   ].join("\n")

@@ -6,6 +6,7 @@ import {
   ringableSince,
   route,
   submitWindowMs,
+  takesCall,
   transition,
   unbound,
   type Delivery,
@@ -609,6 +610,27 @@ describe("when a message would reach an agent", () => {
     expect(route(settled, false)).toBe("ringing it now")
     for (const state of [drafting, unknown])
       expect(route(state, false)).toBe("when the person next submits a prompt there")
+  })
+})
+
+describe("a tool call's delivery", () => {
+  it("takes the lead's messages while a root turn runs or continues", () => {
+    expect(takesCall(working)).toBe(true)
+    expect(takesCall(run(working, continued))).toBe(true)
+  })
+
+  it("takes none outside a running turn, as a late hook of one that ended", () => {
+    for (const state of [bound, settled, drafting, unknown, run(working, background)])
+      expect(takesCall(state)).toBe(false)
+  })
+
+  it("tells the lead's message it reaches a running turn at its next tool call", () => {
+    expect(route(working, false, true)).toBe("at its next tool call")
+    expect(route(working, true, true)).toBe("at its next tool call")
+    // Nothing runs to call a tool: it waits as any message does.
+    expect(route(settled, false, true)).toBe("ringing it now")
+    expect(route(transition(working, background), false, true)).toBe("when its next turn starts")
+    expect(route(drafting, false, true)).toBe("when the person next submits a prompt there")
   })
 })
 

@@ -3,10 +3,11 @@ import { isAbsolute, relative } from "node:path"
 import type { TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 
 import { planTitle } from "../companions/content.js"
+import { secret } from "../companions/secrets.js"
 import { DomainError } from "../errors.js"
 import type { Activity } from "../harnesses/activity.js"
 import type { AgentsAnswer, Messaging, PeerAnswer, SendAnswer } from "../messaging/messaging.js"
-import type { Whereabouts } from "../messaging/peers.js"
+import type { Waiting, Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
 import { gitBranch } from "./branch.js"
 import type { Naming } from "./naming.js"
@@ -35,6 +36,29 @@ export type PeersOptions = {
   readonly projectFolder: (sessionId: string) => string | undefined
   /** Whether the runner is stopping. */
   readonly stopping: () => boolean
+}
+
+/**
+ * What of a request's subject other agents may read. A permission's is often a command or
+ * an address, which may hold a token, so peers learn only its tool, and the file it
+ * touches where that is a plain path to no file that may hold secrets.
+ */
+const shareable = (kind: Waiting["kind"], subject: string | null): string | null =>
+  kind !== "permission" || (subject !== null && /^[^\s:?#=]+$/.test(subject) && !secret(subject))
+    ? subject
+    : null
+
+/** The oldest request an agent waits on the person for, with how many wait after it. */
+export const waitingOf = (activity: Pick<Activity, "pending"> | null): Waiting | null => {
+  const [oldest, ...rest] = activity?.pending ?? []
+  return oldest
+    ? {
+        kind: oldest.kind,
+        tool: oldest.toolName,
+        subject: shareable(oldest.kind, oldest.subject),
+        more: rest.length,
+      }
+    : null
 }
 
 /** How long a folder's git branch is trusted once read, in milliseconds. */
@@ -152,6 +176,7 @@ export class TerminalPeers {
           work: terminal.work,
           openedBy: terminal.openedBy,
           working: terminal.summary.activity?.state === "working",
+          waiting: waitingOf(terminal.activity),
           place: (path) => {
             const shown = place(path)
             return shown.length > 80 ? `…${shown.slice(-79)}` : shown

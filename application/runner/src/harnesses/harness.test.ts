@@ -5,7 +5,7 @@ import type { AgentName } from "@novadeck/protocol"
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
 import { loadProbe } from "../testing/probes.js"
-import { replyPreview, sessionStart } from "./harness.js"
+import { reachesMidTurn, replyPreview, sessionStart } from "./harness.js"
 import { harnesses } from "./registry.js"
 
 describe("a SessionStart source", () => {
@@ -99,7 +99,12 @@ describe("decoding captured hooks", () => {
     const [start] = probe("claude").events
     const at = (source: string) =>
       harnesses.claude
-        .decode(report("claude", { ...start!, payload: { ...start!.payload, source } }))
+        .decode(
+          report("claude", {
+            ...start!,
+            payload: { ...start!.payload, source },
+          }),
+        )
         .some((event) => event.type === "session-observed" && event.atPrompt === true)
     expect(["startup", "clear", "resume", "fork", "compact"].filter(at)).toEqual([
       "startup",
@@ -115,7 +120,10 @@ describe("decoding captured hooks", () => {
   it("ignores Claude Code inside Cursor, and a subagent's own session start", () => {
     expect(decoded("claude", { env: { cursor: true } })).toEqual([])
     const [start] = probe("claude").events
-    const subagent = { ...start!, payload: { ...start!.payload, agent_id: "a1" } }
+    const subagent = {
+      ...start!,
+      payload: { ...start!.payload, agent_id: "a1" },
+    }
     expect(harnesses.claude.decode(report("claude", subagent))).toEqual([])
   })
 
@@ -179,6 +187,50 @@ describe("the harness registry", () => {
   it("gives Codex a shim everywhere, and Claude Code one outside Windows", () => {
     expect(shimmed("linux")).toEqual(["claude", "codex"])
     expect(shimmed("win32")).toEqual(["codex"])
+  })
+})
+
+const parse = (line: string | undefined) => JSON.parse(line ?? "null") as unknown
+
+describe("a harness's mid-turn delivery", () => {
+  it("adds a tool call's delivery as the hook's own additional context", () => {
+    expect(parse(harnesses.claude.messaging.call?.("m", "PostToolUse"))).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: "m",
+      },
+    })
+    // A failed tool's hook is its own event, and names it so.
+    expect(parse(harnesses.claude.messaging.call?.("m", "PostToolUseFailure"))).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUseFailure",
+        additionalContext: "m",
+      },
+    })
+    expect(parse(harnesses.codex.messaging.call?.("m", "PostToolUse"))).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: "m",
+      },
+    })
+  })
+
+  it("asks at the tool-call hooks it adds context in, never at a PreToolUse", () => {
+    expect(harnesses.claude.messaging.asks).toMatchObject({
+      PostToolUse: "call",
+      PostToolUseFailure: "call",
+    })
+    expect(harnesses.codex.messaging.asks).toMatchObject({
+      PostToolUse: "call",
+    })
+    for (const agent of ["claude", "codex", "agy"] as const)
+      expect(harnesses[agent].messaging.asks.PreToolUse).toBeUndefined()
+  })
+
+  it("reaches every harness's turn while it runs: at a tool call, or Antigravity's model call", () => {
+    for (const agent of ["claude", "codex", "agy"] as const)
+      expect(reachesMidTurn(harnesses[agent].messaging)).toBe(true)
+    expect(harnesses.agy.messaging.call).toBeUndefined()
   })
 })
 

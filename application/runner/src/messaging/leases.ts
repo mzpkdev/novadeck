@@ -5,7 +5,7 @@ export type Lease = {
   readonly id: string
   readonly terminalId: string
   readonly messages: readonly string[]
-  readonly kind: "stop" | "prompt"
+  readonly kind: "stop" | "prompt" | "call"
   /** The delivery's epoch it was leased in. */
   readonly epoch: number
   readonly background: boolean

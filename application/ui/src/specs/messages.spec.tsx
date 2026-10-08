@@ -236,3 +236,12 @@ describe("Who named a terminal", () => {
     expect(await namedBy("Review")).toBe("Named by you")
   })
 })
+
+describe("A terminal an agent opened", () => {
+  it("says which terminal leads it, by handle and name", async () => {
+    await openMessagesDemo()
+    await terminalTab("Checkout review").click()
+    await expect.element(page.getByText("led by t1 · Checkout implementation")).toBeVisible()
+    expect(page.getByText(/^led by t3/).elements()).toHaveLength(0)
+  })
+})

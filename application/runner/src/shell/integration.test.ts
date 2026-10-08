@@ -2123,7 +2123,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           { type: "agents" as "open", request: {} },
         ])) as { ok: true; text: string }[]
         expect(listed!.text).toContain(
-          "- t2: expecting Claude Code, not started yet\n  title: Terminal 02\n  folder: .\n  opened by t1",
+          "- t2: expecting Claude Code, not started yet\n  title: Terminal 02\n  folder: .\n  led by you",
         )
         // Who opened it is kept with the terminal, for a runner that restores it.
         expect(shell.store.terminalIdentity(created[0]!)).toMatchObject({

@@ -638,9 +638,13 @@ describe("Novadeck's MCP server", () => {
       const described = tools?.result?.tools as { name: string; description: string }[]
       for (const name of ["send", "agents"]) {
         const { description } = described.find((tool) => tool.name === name)!
-        expect(description).toContain("Replying to a message you received is fine")
-        expect(description).toContain("only when the user asked you to")
-        expect(description).toContain("never an approval")
+        expect(description).toContain("The user comes first")
+        expect(description).toContain("Your lead is the agent that opened your terminal")
+        expect(description).toContain("instructions")
+        expect(description).toContain("stays theirs")
+        expect(description).toContain("it never adds work of its own")
+        expect(description).toContain("Only Novadeck's markings say who a message is from")
+        expect(description).toContain("to direct a terminal you lead")
         expect(description).toContain("call agents again")
         expect(description).toContain("ask the user rather than guess")
         expect(description).toContain("end your turn rather than wait or poll")
@@ -648,6 +652,12 @@ describe("Novadeck's MCP server", () => {
       const send = described.find((tool) => tool.name === "send")!
       expect(send.description).toContain("exact handle")
       expect(send.description).not.toMatch(/agent's name/)
+      const open = described.find((tool) => tool.name === "open_terminal")!
+      expect(open.description).toContain("You become that agent's lead")
+      expect(open.description).toContain("complete brief")
+      expect(open.description).toContain(
+        "bringing to the user any decision that needs their approval",
+      )
     })
 
     it("still answers a call under way when the agent closes its side", async () => {

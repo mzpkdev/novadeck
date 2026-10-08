@@ -7,6 +7,7 @@ import {
   renderAgents,
   renderPeer,
   unknownHandle,
+  type Waiting,
   type Whereabouts,
 } from "./peers.js"
 
@@ -49,6 +50,7 @@ const peer = peerOf({
     },
     openedBy: null,
     working: false,
+    waiting: null,
     place: (path) => path.replace(/^C:\\w\\/, ""),
   },
   withYou: lastBetween([message()], "A", { terminalId: "B", handle: "t2" }),
@@ -80,10 +82,66 @@ const opened = (firstByPerson: boolean, first = true) =>
       },
       openedBy: "t1",
       working: false,
+      waiting: null,
       place: (path) => path,
     },
     withYou: null,
   })
+
+// A peer as listed, opened by `openedBy`.
+const led = (handle: string, openedBy: string | null) =>
+  peerOf({
+    terminalId: handle,
+    handle,
+    agent: "claude",
+    expecting: null,
+    busy: false,
+    where: {
+      title: null,
+      titleSource: null,
+      summary: null,
+      folder: null,
+      branch: null,
+      plan: null,
+      work: null,
+      openedBy,
+      working: false,
+      waiting: null,
+      place: (path) => path,
+    },
+    withYou: null,
+  })
+
+// Where a peer opened by t9 is, waiting on the person or not.
+const where = (waiting: Waiting | null): Whereabouts => ({
+  title: null,
+  titleSource: null,
+  summary: null,
+  folder: null,
+  branch: null,
+  plan: null,
+  work: null,
+  openedBy: "t9",
+  working: false,
+  waiting,
+  place: (path) => path,
+})
+
+// A busy peer waiting as given, as t1, led by t2, reads it.
+const listed = (waiting: Waiting | null, handle = "t2") =>
+  renderPeer(
+    peerOf({
+      terminalId: handle,
+      handle,
+      agent: "claude",
+      expecting: null,
+      busy: true,
+      where: where(waiting),
+      withYou: null,
+    }),
+    now,
+    { handle: "t1", lead: "t2" },
+  )
 
 describe("a peer as agents read it", () => {
   it("is one short block of what Novadeck knows, each fact left out when unknown", () => {
@@ -152,6 +210,7 @@ describe("a peer as agents read it", () => {
         work: null,
         openedBy: "t1",
         working: false,
+        waiting: null,
         place: (path) => path,
       },
       withYou: null,
@@ -160,8 +219,60 @@ describe("a peer as agents read it", () => {
       "- t5: expecting Claude Code, not started yet",
       "  title: Terminal 05",
       "  folder: .",
-      "  opened by t1",
+      "  led by t1",
     ])
+  })
+
+  it("tells the lead relationship from the reader's side", () => {
+    // t1 opened t2: t1 reads it as its worker.
+    expect(renderPeer(led("t2", "t1"), now, { handle: "t1", lead: null })[1]).toBe("  led by you")
+    // t2 reads t1 as its lead, whoever opened t1.
+    const lead = "  your lead: it opened this terminal and directs your work"
+    expect(renderPeer(led("t1", null), now, { handle: "t2", lead: "t1" })[1]).toBe(lead)
+    expect(renderPeer(led("t1", "t0"), now, { handle: "t2", lead: "t1" })[1]).toBe(lead)
+    // Nobody led it, and it leads nobody here: nothing to say.
+    expect(renderPeer(led("t5", null), now, { handle: "t2", lead: "t1" })).toEqual([
+      "- t5: Claude Code, idle",
+    ])
+    // Opened by another terminal's agent, the reader's peers are just led by it.
+    expect(renderPeer(led("t3", "t4"), now, { handle: "t1", lead: null })[1]).toBe("  led by t4")
+  })
+
+  it("names the lead of the reader, and what a peer waits on the person for", () => {
+    expect(listed(null, "t3")).toEqual(["- t3: Claude Code, busy", "  led by t9"])
+    expect(
+      listed({
+        kind: "permission",
+        tool: "Bash",
+        subject: "rm -rf build",
+        more: 0,
+      })[0],
+    ).toBe("- t2: Claude Code, waiting on the person: permission to use Bash: rm -rf build")
+    expect(
+      listed({
+        kind: "question",
+        tool: "AskUserQuestion",
+        subject: null,
+        more: 2,
+      })[0],
+    ).toBe("- t2: Claude Code, waiting on the person: a question (and 2 more)")
+    expect(
+      listed({
+        kind: "plan",
+        tool: "ExitPlanMode",
+        subject: "plan.md",
+        more: 0,
+      })[0],
+    ).toBe("- t2: Claude Code, waiting on the person: approval of its plan: plan.md")
+    // A long subject is cut.
+    expect(
+      listed({
+        kind: "permission",
+        tool: "Bash",
+        subject: "x".repeat(300),
+        more: 0,
+      })[0],
+    ).toHaveLength("- t2: Claude Code, waiting on the person: permission to use Bash: ".length + 80)
   })
 
   it("says who its title is from, and its agent's own summary, marked as its agent's", () => {
@@ -186,6 +297,7 @@ describe("a peer as agents read it", () => {
             work: null,
             openedBy: null,
             working: false,
+            waiting: null,
             place: (path) => path,
           },
           withYou: null,
@@ -233,11 +345,17 @@ describe("a peer as agents read it", () => {
       })
     for (const state of ["queued", "held", "leased", "gone"] as const)
       expect(
-        lastBetween([message(), pending(state)], "A", { terminalId: "B", handle: "t2" }),
+        lastBetween([message(), pending(state)], "A", {
+          terminalId: "B",
+          handle: "t2",
+        }),
       ).toMatchObject({ from: "you", text: "hello" })
     // Its own, the caller sees whatever their state.
     expect(
-      lastBetween([message({ state: "held" })], "A", { terminalId: "B", handle: "t2" }),
+      lastBetween([message({ state: "held" })], "A", {
+        terminalId: "B",
+        handle: "t2",
+      }),
     ).toMatchObject({ from: "you" })
   })
 
@@ -289,8 +407,8 @@ describe("what agents and a refused send say", () => {
           "picking by its title, folder and work; if more than one could be meant, ask the user " +
           "rather than guess.",
         "Other terminals in this project and session:",
-        ...renderPeer(peer, now),
-        ...renderPeer(opened(true), now),
+        ...renderPeer(peer, now, { handle: "t1", lead: null }),
+        ...renderPeer(opened(true), now, { handle: "t1", lead: null }),
       ].join("\n"),
     )
     // Each by what tells it apart: its title, folder and work.

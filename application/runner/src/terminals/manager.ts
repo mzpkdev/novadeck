@@ -836,6 +836,7 @@ export class Terminals {
           sessionId: input.sessionId,
           ...titled,
           handle,
+          ledBy: openedBy,
           started: true,
           command: input.command ?? saved?.command ?? null,
           lastProgram: saved?.lastProgram ?? null,
@@ -948,6 +949,7 @@ export class Terminals {
       sessionId: terminal.sessionId,
       ...this.titled(terminal.naming, terminal),
       handle: terminal.handle,
+      ledBy: terminal.openedBy,
       started: false,
       command: terminal.command,
       lastProgram: terminal.lastProgram,
@@ -1003,7 +1005,13 @@ export class Terminals {
    */
   private register(record: Record, agent: AgentName | null): void {
     const { id, sessionId, handle } = record.summary
-    this.messaging.register(id, { projectId: this.projectOf(sessionId), sessionId }, handle)
+    // Its lead is the agent in the terminal that opened it, for as long as that runs.
+    this.messaging.register(
+      id,
+      { projectId: this.projectOf(sessionId), sessionId },
+      handle,
+      record.openedBy,
+    )
     this.messaging.expect(id, agent)
   }
 
@@ -2161,7 +2169,8 @@ export class Terminals {
     if (asked.type === "answered" && "terminalId" in asked.answer) {
       this.openers.set(asked.answer.terminalId, charged)
       const opened = this.records.get(asked.answer.terminalId)
-      // The task goes to the first session of the agent it starts there, from the opener.
+      // The task goes to the first session of the agent it starts there, from the opener,
+      // which leads that terminal: it is the lead's first message.
       if (opened && request.message !== undefined) {
         // Its first typed entry is this line, where a transcript tells its prompts.
         if (started.prompted && started.nonce) opened.startedWith = started.nonce

@@ -183,6 +183,14 @@ export const WorkspaceTerminal = ({
   const mic = useMicButton(terminal, terminalKey)
   const frame: Omit<WindowShellProps, "children"> = {
     ...useWindowFrame(terminal, controls),
+    ...(terminal.ledBy
+      ? {
+          lead: {
+            handle: terminal.ledBy,
+            ...(names[terminal.ledBy] ? { name: names[terminal.ledBy]! } : {}),
+          },
+        }
+      : {}),
     ...(mic ? { dictation: mic } : {}),
     icon: <Icon size={14} strokeWidth={1.5} />,
     ...(processWindow ? { processWindow } : {}),

@@ -660,11 +660,19 @@ export const continues = (delivery: Delivery): boolean =>
   stoppable(delivery) && !delivery.box.queuing && delivery.continued < maxContinuations
 
 /**
+ * Whether a tool call's hook may deliver the lead's messages now: a root turn runs, or
+ * continues after a Stop Novadeck continued. Anywhere else the call is a late hook of a
+ * turn that ended, and its messages wait for the next turn event.
+ */
+export const takesCall = (delivery: Delivery): boolean => running(delivery)
+
+/**
  * When a message sent now would reach the agent, in the words `send` answers with. A
  * harness that sends nothing when a turn fails, as Codex, may only end its turn with its
- * next prompt.
+ * next prompt. The lead's message (`midTurn`, where its harness delivers it at a tool
+ * call) reaches a running turn at the agent's next tool call instead.
  */
-export const route = (delivery: Delivery, silentOnFailure: boolean): string => {
+export const route = (delivery: Delivery, silentOnFailure: boolean, midTurn = false): string => {
   switch (delivery.state) {
     case "fresh":
       return "when its agent's first turn starts"
@@ -674,6 +682,7 @@ export const route = (delivery: Delivery, silentOnFailure: boolean): string => {
       return "ringing it now"
     case "working":
       if (delivery.phase === "background") return "when its next turn starts"
+      if (midTurn) return "at its next tool call"
       return silentOnFailure ? "at its turn's end or its next prompt" : "when its current turn ends"
     default:
       return "when the person next submits a prompt there"
