@@ -175,7 +175,7 @@ describe("gemini", () => {
   it("calls an eagerly loaded tool as itself, with the summary Antigravity asks of it", async () => {
     // Now and then Antigravity loads Novadeck's tools eagerly, as tools of its own, and
     // offers no call_mcp_tool. It refuses a call to one without `toolSummary`, or with
-    // `toolAction`, and never passes the summary to the tool.
+    // `toolAction`.
     const eager = {
       ...conversation,
       contents: [

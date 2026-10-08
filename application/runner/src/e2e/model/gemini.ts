@@ -73,8 +73,9 @@ type McpTool = { readonly server: string; readonly tool: string; readonly eager:
  * The MCP tools Antigravity loads, by the names it gives them loaded eagerly, each with
  * its server and tool and whether it loaded it eagerly: its system prompt lists them
  * under `<mcp_servers>`, a `# <server>` heading over its `Eager:` and `Lazy:` tools.
- * 1.2.14 loads Novadeck's lazily, but now and then eagerly (seen 2026-10-08 in about one
- * in fifty runs of a terminal opened in a folder it didn't trust yet).
+ * 1.2.14 loads Novadeck's lazily, but now and then eagerly (seen 2026-10-08 twice in
+ * about 150 runs of the one test stress-run, which opens its terminals in a folder it
+ * didn't trust yet; what makes it load them eagerly is unknown).
  */
 const mcpTools = (system: string): ReadonlyMap<string, McpTool> => {
   const listed = /<mcp_servers>([\s\S]*?)<\/mcp_servers>/.exec(system)?.[1] ?? ""
