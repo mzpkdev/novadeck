@@ -102,7 +102,8 @@ export class Prompts {
     // switch it, and for the paste to show, with a margin; the window's resizes stay held a
     // while longer, past the Enter.
     const inputMs = this.emptyMs + 2 * this.pasteMs + 2_000
-    this.budget = { inputMs, sizeMs: inputMs + this.settleMs }
+    // The resizes stay held through the wait for a session to bind, too.
+    this.budget = { inputMs, sizeMs: inputMs + this.bindMs + this.settleMs }
   }
 
   /**
@@ -152,8 +153,9 @@ export class Prompts {
   ): Promise<void> {
     await this.ringDone(terminalId)
     const profile = this.host.admit(terminalId)
-    // The first prompt of an agent shown before its session binds starts that session.
-    const starts = !this.host.bound(terminalId)
+    // The first prompt of an agent shown before its session binds starts that session, as a
+    // shell command does only where its harness starts one for it.
+    const starts = !this.host.bound(terminalId) && (!shell || profile.shell.starts)
     // The person's keys are held from before the box is looked at, so none comes between.
     const hold = entry.hold(this.budget)
     if (!hold.holding()) throw new DomainError("TERMINAL_NOT_FOUND")
@@ -249,7 +251,9 @@ export class Prompts {
     }
     // The next prompt waits until the session it started is there: an agent given one while
     // it still starts its conversation may start another with it, and the first is lost
-    // (Antigravity 1.2.14, 160 ms apart, one in about fifty).
+    // (Antigravity 1.2.14, 160 ms apart: about 1 in 60 CI runs, a few percent under heavy
+    // local load). A session that binds late holds up whatever is queued behind this
+    // prompt, a prompt, a Stop or a doorbell ring, for up to `bindMs`.
     if (starts) await this.bindDone(terminalId)
     // A resize as the turn starts may crash a TUI, as the doorbell's ring found of Codex.
     // The next entry there takes this hold over, with the resizes it holds.
