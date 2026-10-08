@@ -181,6 +181,8 @@ describe("Antigravity's status line, as captured", () => {
     // A blank name, or one that could reorder what is shown beside it, is none.
     expect(observed("   ")).toBeUndefined()
     expect(observed("gemini\u202eevil")).toBeUndefined()
+    expect(observed("\u200b")).toBeUndefined()
+    expect(observed("a\u2028b")).toBeUndefined()
     expect(decode({ ...hook("x"), payload: { conversationId: "c1" } })).not.toContainEqual(
       expect.objectContaining({ type: "telemetry-observed" }),
     )

@@ -29,7 +29,8 @@ export const observeTelemetry = (
   const modelAt = telemetry?.modelAt ?? Number.NEGATIVE_INFINITY
   const freshUsage = !modelOnly && event.startedAt >= usageAt
   const freshModel = naming && event.startedAt >= modelAt
-  if (!freshUsage && (!modelOnly || !freshModel)) return undefined
+  // A record older than the tokens and quotas shown may still name a newer model.
+  if (!freshUsage && !freshModel) return undefined
   return {
     context: !freshUsage
       ? (telemetry?.context ?? null)

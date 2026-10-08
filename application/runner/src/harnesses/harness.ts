@@ -431,7 +431,9 @@ export const text = (value: unknown): string | undefined =>
 const escapes = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g
 // eslint-disable-next-line no-control-regex -- As above.
 const controls = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g
-const control = new RegExp(controls.source)
+// As above, with the invisible and line-breaking marks a name shouldn't hold either.
+// eslint-disable-next-line no-control-regex -- As above.
+const control = /[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/
 
 /**
  * A short name a harness gives, such as its model's, which is shown as it is: not blank,

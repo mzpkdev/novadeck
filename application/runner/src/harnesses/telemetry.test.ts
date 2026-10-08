@@ -41,6 +41,12 @@ describe("observing telemetry", () => {
     const named = observeTelemetry(null, binding, seen({ startedAt: 200, model: "gemini" }))!
     const snapshot = observeTelemetry(named, binding, seen({ startedAt: 150, context }))
     expect(snapshot).toMatchObject({ model: "gemini", context })
+    // A usage record older than the tokens shown still brings a newer model, as Claude
+    // Code's status line can after a /model while its transcript's usage was read.
+    const later = observeTelemetry(snapshot!, binding, seen({ startedAt: 300, context }))!
+    expect(
+      observeTelemetry(later, binding, seen({ startedAt: 250, context, model: "next" })),
+    ).toMatchObject({ model: "next", at: 300 })
     // An older record of the model alone still gives way to the newer one.
     expect(observeTelemetry(snapshot!, binding, seen({ startedAt: 180, model: "old" }))).toBe(
       undefined,

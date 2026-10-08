@@ -64,7 +64,6 @@ export const createDemoVoice = (timing: DemoVoiceTiming = defaultTiming): Voice 
   }
   const finish = (model: VoiceModel): void => {
     const gpu = model === "turbo"
-    if (state.getSnapshot().installed.length === 0) choice = true
     state.update((current) => ({
       ...current,
       installing: null,

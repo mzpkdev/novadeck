@@ -60,6 +60,18 @@ describe("the demo's voice input", () => {
     })
   })
 
+  it("keeps an off chosen during a first install, as the runner", async () => {
+    const voice = createDemoVoice({ step: 10, transcribe: 10 })
+    voice.install("turbo")
+    voice.set({ enabled: false })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(voice.state.getSnapshot()).toMatchObject({
+      installed: ["turbo"],
+      enabled: false,
+      wanted: false,
+    })
+  })
+
   it("is wanted until turned off, and turned on before an install is wanted again", () => {
     const voice = createDemoVoice()
     expect(voice.state.getSnapshot()).toMatchObject({ enabled: false, wanted: true })
