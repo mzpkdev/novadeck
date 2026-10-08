@@ -72,6 +72,8 @@ const terminal = (
     /** Whether its shell mode runs a command shown as a placeholder as the command. */
     expands?: boolean
     /** The nonce of a ring under way, which `ringEnds` ms from the first look ends. */
+    /** How long after the first look the session binds, in milliseconds; bound from the start if absent. */
+    bindsMs?: number
     ringing?: string
     ringEnds?: number
     /** How long a hold lasts before it lapses by itself, in milliseconds. */
@@ -89,6 +91,7 @@ const terminal = (
   const written: string[] = []
   const started = Date.now()
   let looks = 0
+  const bindStart = Date.now()
   let held = false
   let sizes = false
   let holds = 0
@@ -121,6 +124,8 @@ const terminal = (
       if (options.refusesLater && admits > (options.laterFrom ?? 2)) throw options.refusesLater
       return profile
     },
+    bound: () =>
+      options.bindsMs === undefined || (looks > 0 && Date.now() - bindStart >= options.bindsMs),
     ringing: () =>
       options.ringing !== undefined && Date.now() - started < (options.ringEnds ?? 0)
         ? options.ringing
@@ -578,6 +583,22 @@ describe("prompts", () => {
     const prompts = new Prompts(host, host.queue, fast)
     await Promise.all([prompts.prompt("t", "First"), prompts.prompt("t", "Second")])
     expect(written).toEqual(["\x1b[200~First\x1b[201~", "\r", "\x1b[200~Second\x1b[201~", "\r"])
+  })
+
+  it("hold the next prompt until the session of a first one binds", async () => {
+    const { host, written } = terminal({ bindsMs: 80 })
+    const prompts = new Prompts(host, host.queue, fast)
+    const started = Date.now()
+    await Promise.all([prompts.prompt("t", "First"), prompts.prompt("t", "Second")])
+    // The second goes in only after the first's session is there.
+    expect(written).toEqual(["\x1b[200~First\x1b[201~", "\r", "\x1b[200~Second\x1b[201~", "\r"])
+    expect(Date.now() - started).toBeGreaterThanOrEqual(80)
+  })
+
+  it("go on without a session that never binds", async () => {
+    const { host, written } = terminal({ bindsMs: 60_000 })
+    await new Prompts(host, host.queue, { ...fast, bindMs: 40 }).prompt("t", "First")
+    expect(enters(written)).toBe(1)
   })
 
   it("go on with the next prompt after one that failed", async () => {
