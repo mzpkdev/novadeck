@@ -75,8 +75,11 @@ describe.skipIf(!supported)("Codex", () => {
     )
     const t1 = await start(run, codex)
     const t2 = await start(run, codex)
-    // The case this covers: the logo shows as t2 is rung.
-    await t2.until(logo)
+    // The case this covers: the logo shows as t2 is rung. On Windows Codex draws it on some
+    // machines and not others (on GitHub's Windows Server 2025 runners, never; seen
+    // 2026-10-09, 0.159.3): there t2 is rung at its first screen either way.
+    if (process.platform === "win32") await t2.until(logo, 10_000).catch(() => undefined)
+    else await t2.until(logo)
     const calls = run.model.mark()
     const mark = t2.mark()
 
