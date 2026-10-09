@@ -3,9 +3,13 @@ import type { ComponentProps } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import type { Tile, WorkspaceSession } from "../model/types"
+import type { Notification } from "../notifications/notifications"
+import { NotificationsPanel } from "../notifications/NotificationsPanel"
 import { SessionsPanel } from "../sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../sidebar/SidebarPanel"
 import { TerminalTabs } from "../terminals/TerminalTabs"
+import type { Viewing } from "../terminals/unread-state"
+import type { SidebarPanel as PanelId } from "./shell-state"
 
 type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals"> & {
   projectId: string
@@ -13,13 +17,25 @@ type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals"> & {
   workspaceSessions: WorkspaceSession[]
   terminalCount: number
   ordered: readonly Tile[]
-  sidebarPanel: "terminals" | "sessions"
+  sidebarPanel: PanelId
+  // What asks for the person across the workspace, and the terminal they look at.
+  notifications: readonly Notification[]
+  viewing: Viewing
   sidebarVisible: boolean
   onSessionSelect: (id: string) => void
+  onReveal: (terminalId: string, context: string) => void
+  onDismissNotification: (context: string, terminalId: string) => void
+  onDismissAllNotifications: () => void
   onFresh: () => void
   onHide: () => void
   onCreate: () => void
 }
+const asideLabels: Readonly<Record<PanelId, string>> = {
+  terminals: "Terminal sessions",
+  sessions: "Workspace sessions",
+  notifications: "Notifications",
+}
+
 export const WorkspaceSidebar = ({
   projectId,
   workspaceSessionId,
@@ -27,8 +43,13 @@ export const WorkspaceSidebar = ({
   terminalCount,
   ordered,
   sidebarPanel,
+  notifications,
+  viewing,
   sidebarVisible,
   onSessionSelect,
+  onReveal,
+  onDismissNotification,
+  onDismissAllNotifications,
   onFresh,
   onHide,
   onCreate,
@@ -38,7 +59,7 @@ export const WorkspaceSidebar = ({
   <aside
     id="terminal-sidebar"
     className="sidebar relative flex shrink-0 flex-col overflow-hidden"
-    aria-label={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
+    aria-label={asideLabels[sidebarPanel]}
     aria-hidden={!sidebarVisible}
     inert={!sidebarVisible}
   >
@@ -86,6 +107,21 @@ export const WorkspaceSidebar = ({
         terminals={ordered}
         renderTab={renderTab}
         onReorder={onReorder}
+      />
+    </SidebarPanel>
+    <SidebarPanel
+      id="notifications-panel"
+      title="Notifications"
+      count={notifications.length}
+      active={sidebarPanel === "notifications"}
+      onClose={onHide}
+    >
+      <NotificationsPanel
+        items={notifications}
+        viewing={viewing}
+        onReveal={onReveal}
+        onDismiss={onDismissNotification}
+        onDismissAll={onDismissAllNotifications}
       />
     </SidebarPanel>
   </aside>

@@ -508,6 +508,12 @@ describe("workspace commands", () => {
       expect(app.state().selected).toBe("09")
     })
 
+    it("finds it in the session named, where another holds the same ID", () => {
+      const app = openCommands({ workspace: twoSessions() })
+      app.commands.reveal("01", "project/other")
+      expect(app.ui.getSnapshot().location.route.sessionId).toBe("other")
+    })
+
     it("does nothing for a terminal that is gone", () => {
       const app = openCommands()
       const urls = app.urls.length
