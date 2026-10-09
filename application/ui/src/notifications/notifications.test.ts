@@ -1,13 +1,8 @@
 import type { AgentStatus, TerminalMetadata, WorkspaceProject } from "../model/types"
+import { noUnread, type Unread } from "../terminals/unread-state"
 import { context, describe, expect, it } from "../test"
 import { terminalFixture, workspaceFixture } from "../test/fixtures"
-import { dismissable, notifications as notificationsOf } from "./notifications"
-
-// Unread ends by session context, then terminal id, as the app keeps them.
-type Unread = Readonly<Record<string, Readonly<Record<string, "done" | "failed">>>>
-const noUnread: Unread = {}
-const notifications = (projects: WorkspaceProject[], unread: Unread) =>
-  notificationsOf(projects, (session, id) => unread[session]?.[id])
+import { dismissable, notifications } from "./notifications"
 
 const running = (number: number, status?: Partial<AgentStatus>): TerminalMetadata => ({
   ...terminalFixture(number, "~/project"),

@@ -247,75 +247,81 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
   },
 })
 
-// Which Fill the pending finishes belong to: Clear moves on to the next, and they lapse.
-let fills = 0
+// The notification center's Fill and Clear. Each set of them counts its own Fills, so
+// demo panels side by side don't call off one another's pending finishes.
+const createNotificationActions = (): readonly [DemoAction, DemoAction] => {
+  // Which Fill the pending finishes belong to: Clear moves on to the next, and they lapse.
+  let fills = 0
 
-// Every kind of notification across the workspace's projects and sessions, in terminals
-// the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer,
-// without selecting them or leaving the panel the person is on.
-const fillNotifications: DemoAction = {
-  label: "Fill the notification center",
-  hint: `${crowd} terminals across every project ask: questions, permissions, plans, and done and failed finishes (after 3 s); the rail badge reads 9+`,
-  run: ({ selected, workspace, addInBackground, dispatch, note }) => {
-    const viewed = selected()
-    if (!viewed) return note("Select a terminal first.")
-    if (!dispatch) return
-    const existing = otherTerminals(workspace(), viewed).slice(0, crowd)
-    const added = Array.from({ length: Math.max(0, crowd - existing.length) }, () =>
-      addInBackground(viewed),
-    )
-    const slots = [...existing, ...added]
-    const kinds = dealKinds(slots.length)
-    const fill = ++fills
-    dispatch(
-      slots.flatMap((key, index) =>
-        beginNotification(kinds[index]!, key, terminalOf(workspace(), key)),
-      ),
-    )
-    // Each finish lands as the agent ends its turn, while the person looks elsewhere. A
-    // terminal that ended meanwhile has no agent to end it;
-    // Clear before then calls them off.
-    later(turnMs, () => {
-      if (fill !== fills) return
-      const now = Date.now()
+  // Every kind of notification across the workspace's projects and sessions, in terminals
+  // the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer,
+  // without selecting them or leaving the panel the person is on.
+  const fillNotifications: DemoAction = {
+    label: "Fill the notification center",
+    hint: `${crowd} terminals across every project ask: questions, permissions, plans, and done and failed finishes (after 3 s); the rail badge reads 9+`,
+    run: ({ selected, workspace, addInBackground, dispatch, note }) => {
+      const viewed = selected()
+      if (!viewed) return note("Select a terminal first.")
+      if (!dispatch) return
+      const existing = otherTerminals(workspace(), viewed).slice(0, crowd)
+      const added = Array.from({ length: Math.max(0, crowd - existing.length) }, () =>
+        addInBackground(viewed),
+      )
+      const slots = [...existing, ...added]
+      const kinds = dealKinds(slots.length)
+      const fill = ++fills
       dispatch(
         slots.flatMap((key, index) =>
-          runsAgent(workspace(), key) ? endNotification(kinds[index]!, key, now) : [],
+          beginNotification(kinds[index]!, key, terminalOf(workspace(), key)),
         ),
       )
-    })
-  },
-}
+      // Each finish lands as the agent ends its turn, while the person looks elsewhere. A
+      // terminal that ended meanwhile has no agent to end it;
+      // Clear before then calls them off.
+      later(turnMs, () => {
+        if (fill !== fills) return
+        const now = Date.now()
+        dispatch(
+          slots.flatMap((key, index) =>
+            runsAgent(workspace(), key) ? endNotification(kinds[index]!, key, now) : [],
+          ),
+        )
+      })
+    },
+  }
 
-// Answers every request and reads every finish, as the agents' next turn would: first they
-// work, which clears the unread marks, then they rest. A terminal back at its shell's prompt
-// may hold a finish unread too, so an agent works there for a moment and leaves again.
-const clearNotifications: DemoAction = {
-  label: "Clear notifications",
-  hint: "Every request is answered and every finish read: the center is empty",
-  run: ({ workspace, dispatch }) => {
-    if (!dispatch) return
-    fills++
-    const agents = noisyTerminals(workspace())
-    const prompts = promptTerminals(workspace()).map((key) => ({
-      key,
-      shell: terminalOf(workspace(), key)?.process ?? "zsh",
-    }))
-    dispatch([
-      ...agents.flatMap((key) => agentSays(key, working)),
-      ...prompts.flatMap(({ key }) => agentIn(key, terminalOf(workspace(), key), working)),
-    ])
-    later(calmMs, () =>
+  // Answers every request and reads every finish, as the agents' next turn would: first they
+  // work, which clears the unread marks, then they rest. A terminal back at its shell's prompt
+  // may hold a finish unread too, so an agent works there for a moment and leaves again.
+  const clearNotifications: DemoAction = {
+    label: "Clear notifications",
+    hint: "Every request is answered and every finish read: the center is empty",
+    run: ({ workspace, dispatch }) => {
+      if (!dispatch) return
+      fills++
+      const agents = noisyTerminals(workspace())
+      const prompts = promptTerminals(workspace()).map((key) => ({
+        key,
+        shell: terminalOf(workspace(), key)?.process ?? "zsh",
+      }))
       dispatch([
-        ...agents
-          .filter((key) => runsAgent(workspace(), key))
-          .flatMap((key) => agentSays(key, resting)),
-        ...prompts
-          .filter(({ key }) => runsAgent(workspace(), key))
-          .flatMap(({ key, shell }) => backToPrompt(key, shell)),
-      ]),
-    )
-  },
+        ...agents.flatMap((key) => agentSays(key, working)),
+        ...prompts.flatMap(({ key }) => agentIn(key, terminalOf(workspace(), key), working)),
+      ])
+      later(calmMs, () =>
+        dispatch([
+          ...agents
+            .filter((key) => runsAgent(workspace(), key))
+            .flatMap((key) => agentSays(key, resting)),
+          ...prompts
+            .filter(({ key }) => runsAgent(workspace(), key))
+            .flatMap(({ key, shell }) => backToPrompt(key, shell)),
+        ]),
+      )
+    },
+  }
+
+  return [fillNotifications, clearNotifications]
 }
 
 export const createDemoStates = (): DemoStates => {
@@ -323,6 +329,7 @@ export const createDemoStates = (): DemoStates => {
   const { notices, Notices } = createDemoNotices()
   const { pickDirectory, failNext: failPick } = createDemoFolders()
   const chat = createDebugChat()
+  const notificationActions = createNotificationActions()
   const screens = createStore<ReadonlyMap<string, DemoScreen>>(new Map())
   // Sets what a terminal's screen is doing for a while, then shows its output again.
   const showScreen = (key: TerminalKey, screen: DemoScreen, ms: number): void => {
@@ -341,7 +348,7 @@ export const createDemoStates = (): DemoStates => {
     { title: "All at once", actions: [everyState] },
     {
       title: "Notification center",
-      actions: [fillNotifications, clearNotifications],
+      actions: notificationActions,
     },
     {
       title: "Selected terminal",

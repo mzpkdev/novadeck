@@ -1,6 +1,5 @@
 import { notifications, type Notification } from "../notifications/notifications"
 import { notificationBadge, type BellBadge } from "../shell/notification-badge"
-import { unreadEnd } from "../terminals/unread-state"
 import { useUiState, useWorkspaceState } from "./controller/context"
 import { shallowEqual } from "./selectors"
 
@@ -13,8 +12,7 @@ export const useNotifications = (): readonly Notification[] => {
   const unread = useUiState((state) => state.unread)
   // The selector closes over `unread`, so a new one is a new selector and recomputes.
   return useWorkspaceState(
-    (workspace) =>
-      notifications(workspace.projects, (context, id) => unreadEnd(unread, context, id)),
+    (workspace) => notifications(workspace.projects, unread),
     sameNotifications,
   )
 }
@@ -24,10 +22,7 @@ export const useNotifications = (): readonly Notification[] => {
 export const useNotificationBadge = (): BellBadge | undefined => {
   const unread = useUiState((state) => state.unread)
   return useWorkspaceState(
-    (workspace) =>
-      notificationBadge(
-        notifications(workspace.projects, (context, id) => unreadEnd(unread, context, id)),
-      ),
+    (workspace) => notificationBadge(notifications(workspace.projects, unread)),
     shallowEqual,
   )
 }

@@ -333,6 +333,15 @@ describe("demo states", () => {
       expect(asks()).toEqual([])
     })
 
+    it("keeps the pending finishes of one panel when another clears", () => {
+      const { run, asks } = panel("04")
+      const other = panel("04")
+      run("Fill the notification center")
+      other.run("Clear notifications")
+      vi.advanceTimersByTime(3000)
+      expect(asks()).toHaveLength(12)
+    })
+
     it("has an agent work at a prompt that may hold an unread finish, then leave", () => {
       const { run, worked, actionContext } = panel("04")
       run("Fill the notification center")

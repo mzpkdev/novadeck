@@ -1,4 +1,5 @@
 import { isAgentProgram } from "../../../model/process"
+import { terminalAsks, type TerminalAsk } from "../../../model/terminal-ending"
 import type { AgentStatus, AgentTurnEnd, TerminalMetadata, Workspace } from "../../../model/types"
 import type { BackendAction, TerminalKey } from "../../port"
 
@@ -217,13 +218,9 @@ export const otherTerminals = (
   return keys
 }
 
-// What a terminal can ask of the person, as the notification center lists it.
-export type AskKind = "question" | "permission" | "plan" | "failed" | "done"
-const askKinds: readonly AskKind[] = ["question", "permission", "plan", "failed", "done"]
-
 // The kinds of notification dealt out to `count` terminals in turn, most pressing first.
-export const dealKinds = (count: number): AskKind[] =>
-  Array.from({ length: count }, (_, index) => askKinds[index % askKinds.length]!)
+export const dealKinds = (count: number): TerminalAsk[] =>
+  Array.from({ length: count }, (_, index) => terminalAsks[index % terminalAsks.length]!)
 
 const requests = {
   question: "question",
@@ -234,7 +231,7 @@ const requests = {
 // The start of a notification: a request waits at once; a finish begins as the agent
 // works, and `endNotification` ends its turn.
 export const beginNotification = (
-  kind: AskKind,
+  kind: TerminalAsk,
   key: TerminalKey,
   terminal: TerminalMetadata | undefined,
 ): BackendAction[] =>
@@ -242,7 +239,11 @@ export const beginNotification = (
 
 // The end of a finish's turn, which the app marks unread when the person looks elsewhere;
 // nothing for a request.
-export const endNotification = (kind: AskKind, key: TerminalKey, now: number): BackendAction[] =>
+export const endNotification = (
+  kind: TerminalAsk,
+  key: TerminalKey,
+  now: number,
+): BackendAction[] =>
   kind === "done" || kind === "failed"
     ? agentSays(key, turnEnded(kind === "done" ? "completed" : "failed", now))
     : []
