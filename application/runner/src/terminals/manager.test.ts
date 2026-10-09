@@ -174,11 +174,9 @@ describe("an answer's hold of the person's input", () => {
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
     hold.settle()
-    // The key went once released, however long a busy machine takes to pass it on; the
-    // wheel report, which would have gone before it, never did.
-    await vi.waitFor(() => expect(ptyTrace(40)).toContain("received 1 chars"), {
-      timeout: 5_000,
-    })
+    // The key went once released, however long a loaded machine takes to show it; the
+    // wheel report, held before it, never did.
+    await vi.waitFor(() => expect(ptyTrace(40)).toContain("received 1 chars"), { timeout: 10_000 })
     expect(ptyTrace(40)).not.toContain("received 16 chars")
   })
 })

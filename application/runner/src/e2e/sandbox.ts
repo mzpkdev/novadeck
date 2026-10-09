@@ -52,13 +52,15 @@ const onPath = (program: string): string | undefined =>
 
 /**
  * Git for Windows' bash, which Claude Code on Windows runs its Bash tool in and won't
- * start without, found beside the git on the tests' PATH (`<Git>\cmd\git.exe` with
- * `<Git>\bin\bash.exe`).
+ * start without: `<Git>\bin\bash.exe`, found above the git on the tests' PATH, whether
+ * that is `<Git>\cmd\git.exe`, as an install puts on PATH, `<Git>\bin\git.exe`, or
+ * `<Git>\mingw64\bin\git.exe`, first on PATH under Git's own bash, as CI's steps run.
  */
 export const gitBash = (): string | undefined => {
-  const git = onPath("git.exe")
-  const bash = git && join(dirname(git), "bin", "bash.exe")
-  return bash && existsSync(bash) ? bash : undefined
+  const folder = onPath("git.exe")
+  if (!folder) return undefined
+  const above = [folder, dirname(folder), dirname(dirname(folder))]
+  return above.map((root) => join(root, "bin", "bash.exe")).find((path) => existsSync(path))
 }
 
 // Windows' own variables, which its programs need to start and to find the system: the
