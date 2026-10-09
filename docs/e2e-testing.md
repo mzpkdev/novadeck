@@ -19,7 +19,10 @@ small lister it compiles once. Windows runs need what CI's runners have: PowerSh
 for Windows, and symlinks (an administrator, or Developer Mode). Nothing an environment
 moves keeps a harness from the macOS login Keychain, so on a Mac outside CI, where your
 own sign-ins may be, the suite refuses to run unless you set
-`NOVADECK_E2E_MACOS_KEYCHAIN=accept`. GitHub's macOS runners have nothing signed in. The leftover-process check asks `ps` and `lsof` there. Anywhere else
+`NOVADECK_E2E_MACOS_KEYCHAIN=accept`. GitHub's macOS runners have nothing signed in, but
+their image turns on Reduce motion, which Codex follows by drawing no logo on its first
+screen, so the E2E workflow turns it off there first; a Mac with it on fails that
+scenario, saying so. The leftover-process check asks `ps` and `lsof` there. Anywhere else
 the fixture fails each test, saying why (`unsupported` in `support.ts`); a scenario file
 can skip instead with `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
 
