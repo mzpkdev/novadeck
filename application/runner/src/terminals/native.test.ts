@@ -99,6 +99,10 @@ const descriptors = () => {
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 1_000))
 
+// Windows 10's console host ends a line it wraps at the terminal's width with CRLF, so
+// output that crosses column 80 arrives in two pieces there.
+const unwrapped = (output: string) => output.replaceAll("\r\n", "")
+
 describe("installed native PTY dependency", () => {
   it("starts a child and delivers its final output without hiding native startup errors", async ({
     resources,
@@ -125,7 +129,7 @@ describe("installed native PTY dependency", () => {
       terminal.child.write(command({ type: "exit", code: 7, data: final }))
       // eslint-disable-next-line no-await-in-loop -- Verify complete shutdown before the next native startup.
       expect((await terminal.exit()).exitCode).toBe(7)
-      expect(terminal.output()).toContain(final)
+      expect(unwrapped(terminal.output())).toContain(final)
     }
   }, 60_000)
 

@@ -48,19 +48,30 @@ const file = (
   fields: { lines?: { from: number; to: number }; held?: boolean } = {},
 ) => ({ kind: "file", path, lines: fields.lines ?? null, held: fields.held ?? false }) as const
 
+// Whether this account may link a file: Windows lets only an administrator, or Developer
+// Mode, make one.
+const fileLinks = (() => {
+  const directory = mkdtempSync(join(tmpdir(), "novadeck-links-"))
+  try {
+    writeFileSync(join(directory, "a"), "")
+    symlinkSync(join(directory, "a"), join(directory, "b"))
+    return true
+  } catch {
+    return false
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})()
+
 describe("what a show points at", () => {
-  it("is any file, by a path from the terminal's directory, symlinks resolved", async ({
-    directory,
-  }) => {
+  it("is any file, by a path from the terminal's directory", async ({ directory }) => {
     mkdirSync(join(directory, "src"))
     writeFileSync(join(directory, "src", "a.ts"), "const a = 1\n")
-    symlinkSync(join(directory, "src", "a.ts"), join(directory, "link.ts"))
     writeFileSync(join(directory, "a.bin"), Buffer.from([0x41, 0x00, 0x42]))
     writeFileSync(join(directory, "dot.PNG"), png)
     writeFileSync(join(directory, ".env"), "TOKEN=x\n")
     const pointed = { ok: true, path: join(directory, "src", "a.ts"), kind: "file", held: false }
     await expect(pointAt("a.ts", join(directory, "src"))).resolves.toMatchObject(pointed)
-    await expect(pointAt("link.ts", directory)).resolves.toMatchObject(pointed)
     // A binary file too: it says so as it loads.
     await expect(pointAt("a.bin", directory)).resolves.toMatchObject({ ok: true, kind: "file" })
     await expect(pointAt("dot.PNG", directory)).resolves.toMatchObject({
@@ -68,6 +79,18 @@ describe("what a show points at", () => {
       size: png.length,
     })
     await expect(pointAt(".env", directory)).resolves.toMatchObject({ ok: true, held: true })
+  })
+
+  it.runIf(fileLinks)("is the file a symlink names, resolved", async ({ directory }) => {
+    mkdirSync(join(directory, "src"))
+    writeFileSync(join(directory, "src", "a.ts"), "const a = 1\n")
+    symlinkSync(join(directory, "src", "a.ts"), join(directory, "link.ts"))
+    await expect(pointAt("link.ts", directory)).resolves.toMatchObject({
+      ok: true,
+      path: join(directory, "src", "a.ts"),
+      kind: "file",
+      held: false,
+    })
   })
 
   it("is never a missing path, a folder, or a pipe", async ({ directory }) => {
@@ -257,7 +280,8 @@ describe("a text file as it loads", () => {
     })
     // Held by where it is now, even if it wasn't when shown.
     mkdirSync(join(directory, ".ssh"))
-    symlinkSync(join(directory, ".ssh"), join(directory, "keys"))
+    // A junction on Windows, which links a folder without an administrator.
+    symlinkSync(join(directory, ".ssh"), join(directory, "keys"), "junction")
     writeFileSync(join(directory, ".ssh", "notes.txt"), "KEY\n")
     await expect(
       loadFile(file(join(directory, "keys", "notes.txt")), false),
