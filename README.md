@@ -678,6 +678,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `terminals/chat/`                                  | The agent's chat: its blocks, markdown reader, tool rows, requests and the composer.    |
 | `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                             |
 | `layouts/` (top level)                             | Helpers shared by views: view transitions, background gestures, visibility.             |
+| `notifications/`                                   | The notification center: what asks for the person across the workspace, and its panel.  |
 | `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell state transitions.                   |
 | `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                                     |
 | `interaction/`                                     | Shortcut records, the keymap, and shared DOM focus/overlay contracts.                   |
@@ -695,13 +696,14 @@ all; every layer that composes the page may use it, adapters included, and
 `backend/` builds on `model/` and uses React only for the port's types; adapters
 may add `ui-toolkit/`. `interaction/` builds on `model/` and imports no packages;
 features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use
-`terminals/`; `shell/` may use `layouts/` and `projects/`. `app/` composes every
-feature layer and `backend/`, and within it only `app/backend.ts` imports a
+`terminals/`; `notifications/` builds on the base layers, `sidebar/` and
+`terminals/unread-state.ts`; `shell/` may use `layouts/`, `projects/` and
+`notifications/`. `app/` composes every feature layer, `notifications/` and `backend/`, and within it only `app/backend.ts` imports a
 backend adapter. `app/commands/` has no direct React or package imports, though
 routing still loads React Router at runtime: it builds on `model/`,
 `interaction/keymap.ts`, `backend/port.ts`, the UI store, routing, selectors,
 the Canvas handle type in `layouts/canvas/types.ts`, and the pure state modules
-of `shell/` and `terminals/`, the companion panes' store and the chat's modes among them. Vendor
+of `shell/` and `terminals/` (unread finishes among them), the companion panes' store and the chat's modes among them. Vendor
 libraries stay in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout
 in `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
