@@ -238,7 +238,115 @@ const windows: Table = {
   },
 }
 
-const table = process.platform === "win32" ? windows : linux
+/**
+ * Parses `ps -o pid=,stat=,lstart=,comm=` in the C locale: each process's pid, state,
+ * start (`Thu Oct  9 11:03:47 2026`, local time, to the second) and its command's path,
+ * which may hold spaces, named by its last part as Linux's `comm` is.
+ */
+export const parseDarwinProcesses = (
+  output: string,
+): readonly (Process & { readonly zombie: boolean })[] =>
+  output.split("\n").flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\S+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.+)$/.exec(
+      line,
+    )
+    if (!match) return []
+    const start = new Date(match[3]!.replace(/\s+/g, " ")).getTime()
+    if (Number.isNaN(start)) return []
+    return [
+      {
+        pid: Number(match[1]),
+        comm: match[4]!.trim().split("/").at(-1)!,
+        start,
+        // Z is a zombie, which `darwinList` passes over; T is stopped.
+        stopped: match[2]!.includes("T"),
+        zombie: match[2]!.includes("Z"),
+      },
+    ]
+  })
+
+const run = async (program: string, args: readonly string[]): Promise<string> => {
+  try {
+    const { stdout } = await promisify(execFile)(program, [...args], {
+      env: { ...process.env, LC_ALL: "C" },
+      timeout: 10_000,
+      maxBuffer: 16 * 1024 * 1024,
+    })
+    return stdout
+  } catch (error) {
+    // lsof and ps exit 1 when a pid they were given is gone, still printing the rest.
+    return (error as { stdout?: string }).stdout ?? ""
+  }
+}
+
+/**
+ * The working folders of the processes, by pid, from one `lsof -Fn` of their `cwd`s: its
+ * `p<pid>` lines each followed by the folder's `n<path>`.
+ */
+export const parseDarwinFolders = (output: string): ReadonlyMap<number, string> => {
+  const folders = new Map<number, string>()
+  let pid: number | undefined
+  for (const line of output.split("\n")) {
+    if (line.startsWith("p")) pid = Number(line.slice(1))
+    else if (line.startsWith("n") && pid !== undefined) folders.set(pid, line.slice(1))
+  }
+  return folders
+}
+
+/**
+ * macOS, which has no /proc: `ps` for the processes, their states and starts, which it
+ * gives to the second, so one started in the second the sandbox was made counts; `lsof`
+ * for the working folders of those that started since; and for the rest `ps -E`, which
+ * shows the environment after the command of the user's own processes, searched only for
+ * `HOME=<sandbox home>` and neither kept nor printed. macOS shows none of its own
+ * programs' (bash, sleep), so one of those is found only by its working folder; the
+ * harnesses are never one.
+ */
+const darwinList = async (sandbox: Scope): Promise<readonly Process[]> => {
+  const since = Math.floor(sandbox.started / 1000) * 1000
+  const recent = parseDarwinProcesses(
+    await run("ps", ["-axww", "-o", "pid=,stat=,lstart=,comm="]),
+  ).filter((one) => one.pid !== process.pid && !one.zombie && one.start >= since)
+  if (recent.length === 0) return []
+  const pids = recent.map(({ pid }) => String(pid)).join(",")
+  const folders = parseDarwinFolders(
+    await run("/usr/sbin/lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids]),
+  )
+  const inside = (folder: string | undefined) =>
+    folder !== undefined && (folder === sandbox.root || folder.startsWith(`${sandbox.root}/`))
+  const outside = recent.filter((one) => !inside(folders.get(one.pid)))
+  const own = new Set<number>()
+  if (outside.length > 0) {
+    const environments = await run("ps", [
+      "-Eww",
+      "-o",
+      "pid=,command=",
+      "-p",
+      outside.map(({ pid }) => String(pid)).join(","),
+    ])
+    for (const line of environments.split("\n")) {
+      const match = /^\s*(\d+)\s(.*)$/.exec(line)
+      if (match && match[2]!.split(" ").includes(`HOME=${sandbox.home}`)) own.add(Number(match[1]))
+    }
+  }
+  return recent
+    .filter((one) => inside(folders.get(one.pid)) || own.has(one.pid))
+    .map(({ pid, comm, start, stopped }) => ({ pid, comm, start, stopped }))
+}
+
+const darwin: Table = {
+  list: darwinList,
+  // A pid alone, between listings, as on Windows; `current` checks its start.
+  alive: windows.alive,
+  current: async (sandbox, found) => {
+    const now = await darwinList(sandbox)
+    return now.filter((it) => found.some((one) => one.pid === it.pid && one.start === it.start))
+  },
+  end: linux.end,
+}
+
+const table =
+  process.platform === "win32" ? windows : process.platform === "darwin" ? darwin : linux
 
 // Waits until none of them is still running or the time is up.
 const ended = async (sandbox: Scope, found: readonly Process[], ms: number): Promise<void> => {
@@ -262,7 +370,8 @@ const named = (one: Process): string => `${one.comm} (${one.pid}${one.stopped ? 
  * found. As ending one may leave a child behind, it looks again, up to five times, until
  * it finds none it hasn't seen. Returns those that had to be ended, by their commands'
  * names and pids, each marked `stopped` should it have been, as a leak the test reports.
- * On Linux it reads /proc; on Windows it asks the system through PowerShell.
+ * On Linux it reads /proc; on Windows it asks the system through PowerShell; on macOS
+ * it asks `ps` and `lsof`.
  */
 export const reap = async (sandbox: Scope): Promise<string[]> => {
   const seen = new Set<string>()

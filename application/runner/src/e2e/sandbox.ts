@@ -36,7 +36,8 @@ export type Sandbox = {
   /**
    * When the sandbox was made: every process of the sandbox started at or after it. On
    * Linux in clock ticks since boot, as `/proc/<pid>/stat` gives a process's start; on
-   * Windows in milliseconds since the epoch, as a process's creation time converts to.
+   * Windows and macOS in milliseconds since the epoch, as a process's creation time and
+   * `ps`'s start convert to.
    */
   readonly started: number
 }
@@ -154,7 +155,7 @@ export type SandboxOptions = {
  * installs of the very harnesses under test.
  */
 export const createSandbox = (options: SandboxOptions): Sandbox => {
-  const started = windows ? Date.now() : sinceBoot()
+  const started = process.platform === "linux" ? sinceBoot() : Date.now()
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-e2e-")))
   const folder = (...parts: string[]) => {
     const path = join(root, ...parts)
