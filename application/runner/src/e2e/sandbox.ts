@@ -1,8 +1,6 @@
 import { execFileSync } from "node:child_process"
 import {
-  copyFileSync,
   existsSync,
-  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -129,18 +127,6 @@ const windowsEnvironment = (
   }
 }
 
-// Node, on PATH through a folder of the sandbox's own: a symlink, or on Windows, where
-// only an administrator may make one, a hard link, or a copy across drives.
-const linkNode = (folder: string): void => {
-  const to = join(folder, basename(process.execPath))
-  if (!windows) return symlinkSync(process.execPath, to)
-  try {
-    linkSync(process.execPath, to)
-  } catch {
-    copyFileSync(process.execPath, to)
-  }
-}
-
 export type SandboxOptions = {
   /** The fake model's proxy address. */
   readonly proxy: string
@@ -165,7 +151,7 @@ export const createSandbox = (options: SandboxOptions): Sandbox => {
   const project = folder("project")
   const runtime = folder("run")
   const node = folder("node")
-  linkNode(node)
+  symlinkSync(process.execPath, join(node, basename(process.execPath)))
   const system = windows ? windowsEnvironment(home, folder) : undefined
   const proxy = options.proxy
   const loopback = "127.0.0.1,localhost"
