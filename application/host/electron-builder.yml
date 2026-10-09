@@ -31,6 +31,14 @@ extraResources:
   # application/whisper.
   - from: ../whisper/dist/engine.json
     to: voice/engine.json
+# Where installed apps look for updates. Builder writes this into the app as
+# resources/app-update.yml, and beside the packages the latest*.yml files and blockmaps
+# that name them, even with --publish never. Every release is still a prerelease.
+publish:
+  provider: github
+  owner: mzpkdev
+  repo: novadeck
+  releaseType: prerelease
 artifactName: novadeck-${version}-${os}-${arch}.${ext}
 # The installers name the install folder and the Linux package after the package's name,
 # which for the workspace's @novadeck/host would be "@novadeckhost". Electron names the

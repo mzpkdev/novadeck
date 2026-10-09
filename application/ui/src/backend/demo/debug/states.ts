@@ -40,6 +40,7 @@ import type {
   DemoScreen,
   DemoStates,
 } from "./types"
+import { createDemoUpdates } from "./updates"
 
 // How long an agent works before its turn ends, so the person can look elsewhere.
 const turnMs = 3000
@@ -233,6 +234,7 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
 export const createDemoStates = (): DemoStates => {
   const { agents, openWelcome, failNext: failAgents } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
+  const { updates, offer } = createDemoUpdates()
   const { pickDirectory, failNext: failPick } = createDemoFolders()
   const chat = createDebugChat()
   const screens = createStore<ReadonlyMap<string, DemoScreen>>(new Map())
@@ -415,6 +417,21 @@ export const createDemoStates = (): DemoStates => {
       ],
     },
     {
+      title: "Update",
+      actions: [
+        {
+          label: "Update ready",
+          hint: "Footer: Update ready · Restart, quiet beside the status; Restart reloads the demo",
+          run: () => offer("0.0.80"),
+        },
+        {
+          label: "Newer update ready",
+          hint: "Footer: the Restart button now names the newer version",
+          run: () => offer("0.0.81"),
+        },
+      ],
+    },
+    {
       title: "Agents",
       actions: [
         {
@@ -447,6 +464,7 @@ export const createDemoStates = (): DemoStates => {
     agents,
     openWelcome,
     notices,
+    updates,
     pickDirectory,
     chat: chat.wrap,
     screens,

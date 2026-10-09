@@ -46,7 +46,24 @@ export type DesktopBridge = {
    * from hosts that came before it.
    */
   onNoticeClick?(listener: (id: string) => void): () => void
+  /**
+   * Calls `listener` with the version of the update the host has downloaded, which it
+   * installs when the app next quits: at once when one is already waiting, and again for
+   * each newer one. The version matches `updateVersionPattern`. Returns a function that
+   * stops listening. Absent from hosts that came before it or that do not update
+   * themselves.
+   */
+  onUpdateReady?(listener: (version: string) => void): () => void
+  /**
+   * Restarts the app into the downloaded update: the host lets every page finish its
+   * saves first, as quitting does. Does nothing while no update is waiting. Absent where
+   * `onUpdateReady` is.
+   */
+  installUpdate?(): void
 }
+
+/** What an update's version may be, as the host reports it: a release's semantic version. */
+export const updateVersionPattern = /^\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,64})?$/
 
 /** A desktop notification about one terminal; see `DesktopBridge.showNotice`. */
 export type DesktopNotice = {

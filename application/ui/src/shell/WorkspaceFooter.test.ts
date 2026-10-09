@@ -108,4 +108,48 @@ describe("workspace footer", () => {
       expect(said()).toBe("")
     })
   })
+
+  context("while an update waits", () => {
+    const withUpdate = (status: FooterStatus, onInstall = () => {}) => {
+      const page = render(
+        createElement(WorkspaceFooter, {
+          hidden: false,
+          count: 2,
+          running: 1,
+          status,
+          update: "0.0.80",
+          onInstall,
+        }),
+      )
+      mounted.push(page)
+      return page
+    }
+
+    it("offers a restart that names the version and installs when pressed", () => {
+      const onInstall = vi.fn<() => void>()
+      const page = withUpdate("ok", onInstall)
+      expect(page.container.textContent).toContain("Update ready")
+      const button = page.container.querySelector("button")!
+      expect(button.getAttribute("aria-label")).toBe("Restart to update to 0.0.80")
+      act(() => button.click())
+      expect(onInstall).toHaveBeenCalledOnce()
+    })
+
+    it("leaves the bar's tone and the link's status to the connection", () => {
+      const page = withUpdate("unavailable")
+      const bar = page.container.querySelector("footer")!
+      expect(bar.dataset["tone"]).toBe("danger")
+      expect(bar.textContent).toContain("Offline")
+      expect(bar.textContent).toContain("Update ready")
+    })
+
+    it("shows nothing without a version or a way to install", () => {
+      const page = render(
+        createElement(WorkspaceFooter, { hidden: false, count: 2, running: 1, status: "ok" }),
+      )
+      mounted.push(page)
+      expect(page.container.querySelector("button")).toBeNull()
+      expect(page.container.textContent).not.toContain("Update ready")
+    })
+  })
 })
