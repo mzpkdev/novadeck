@@ -75,8 +75,14 @@ describe.skipIf(!supported)("Codex", () => {
     )
     const t1 = await start(run, codex)
     const t2 = await start(run, codex)
-    // The case this covers: the logo shows as t2 is rung.
-    await t2.until(logo)
+    // The case this covers: the logo shows as t2 is rung. Codex draws none while a
+    // warning's banner shows; should one, its warnings (F2) say why.
+    await t2.until(logo).catch(async (error: unknown) => {
+      if (!/\d+ warnings?/.test(await t2.screen())) throw error
+      t2.press("\x1bOQ")
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      throw new Error(`Codex drew no logo, warning:\n${await t2.screen()}`, { cause: error })
+    })
     const calls = run.model.mark()
     const mark = t2.mark()
 
