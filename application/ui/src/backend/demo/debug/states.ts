@@ -247,6 +247,9 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
   },
 })
 
+// Which Fill the pending finishes belong to: Clear moves on to the next, and they lapse.
+let fills = 0
+
 // Every kind of notification across the workspace's projects and sessions, in terminals
 // the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer,
 // without selecting them or leaving the panel the person is on.
@@ -263,14 +266,17 @@ const fillNotifications: DemoAction = {
     )
     const slots = [...existing, ...added]
     const kinds = dealKinds(slots.length)
+    const fill = ++fills
     dispatch(
       slots.flatMap((key, index) =>
         beginNotification(kinds[index]!, key, terminalOf(workspace(), key)),
       ),
     )
     // Each finish lands as the agent ends its turn, while the person looks elsewhere. A
-    // terminal that ended meanwhile has no agent to end it.
+    // terminal that ended meanwhile has no agent to end it;
+    // Clear before then calls them off.
     later(turnMs, () => {
+      if (fill !== fills) return
       const now = Date.now()
       dispatch(
         slots.flatMap((key, index) =>
@@ -289,6 +295,7 @@ const clearNotifications: DemoAction = {
   hint: "Every request is answered and every finish read: the center is empty",
   run: ({ workspace, dispatch }) => {
     if (!dispatch) return
+    fills++
     const agents = noisyTerminals(workspace())
     const prompts = promptTerminals(workspace()).map((key) => ({
       key,

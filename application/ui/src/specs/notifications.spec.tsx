@@ -1,4 +1,4 @@
-import { describe as context, describe, expect, it } from "vitest"
+import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page } from "vitest/browser"
 
 import { currentRoute, pressNewSession, workspaceSwitcher } from "./support/sessions"
@@ -118,6 +118,47 @@ describe("The notification center", () => {
 
     it("leaves focus on the first request once all are marked read", async () => {
       await openNotifications()
+      await expect.element(notification("design-system"), { timeout: 10_000 }).toBeVisible()
+      await expect.element(notification("infra"), { timeout: 10_000 }).toBeVisible()
+
+      await markAllRead().click()
+
+      await expect.element(markAllRead()).not.toBeInTheDocument()
+      await expect
+        .element(
+          notifications()
+            .first()
+            .getByRole("button", { name: /^Go to / }),
+        )
+        .toHaveFocus()
+    })
+  })
+
+  context("when an agent left a reply", () => {
+    it("describes it to a screen reader, beside the status and where", async () => {
+      await openNotifications()
+      const done = notification("design-system")
+      await expect.element(done, { timeout: 10_000 }).toBeVisible()
+
+      const reply = done.element().querySelector(".notification-reply")?.textContent
+      expect(reply).toBeTruthy()
+      await expect
+        .element(done.getByRole("button", { name: /^Go to / }))
+        .toHaveAttribute("aria-description", expect.stringContaining(`. ${reply}`))
+    })
+  })
+
+  context("on a phone, where the sidebar is a drawer", () => {
+    afterEach(async () => {
+      await page.viewport(1440, 900)
+    })
+
+    it("leaves focus on the first request once all are marked read", async () => {
+      await page.viewport(390, 800)
+      await openWorkspace("/?demo=agents")
+      const skip = page.getByRole("button", { name: "Skip for now" })
+      if (await skip.query()) await skip.click()
+      await sidebarPanel("Notifications").click()
       await expect.element(notification("design-system"), { timeout: 10_000 }).toBeVisible()
       await expect.element(notification("infra"), { timeout: 10_000 }).toBeVisible()
 

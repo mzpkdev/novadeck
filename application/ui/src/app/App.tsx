@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react"
 import { HashRouter } from "react-router"
 
 import type { CreateBackend } from "../backend/port"
@@ -77,11 +78,20 @@ const WorkspaceEffects = (): null => {
   return null
 }
 
+// The rail and the Zen dock read the bell's badge themselves, so an unread change that leaves
+// the badge as it was re-renders neither them nor the app around them.
+const RailWithBadge = (
+  props: Omit<ComponentProps<typeof SidebarRail>, "badge">,
+): React.JSX.Element => <SidebarRail {...props} badge={useNotificationBadge()} />
+
+const ZenDockWithBadge = (
+  props: Omit<ComponentProps<typeof ZenDock>, "badge">,
+): React.JSX.Element => <ZenDock {...props} badge={useNotificationBadge()} />
+
 export const WorkspaceApp = (): React.JSX.Element => {
   const services = useWorkspaceServices()
   const { commands, canvas } = services
   const { hideSidebar, toggleSidebar, exitZen, changeView, add } = commands
-  const badge = useNotificationBadge()
   const desktop = useDesktop()
   const shell = useUiState((state) => {
     const { zen, sidebar, sidebarCollapsed } = state.shell
@@ -100,12 +110,11 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const voice = useDictationController(services)
   useKeyboard(voice?.dictation)
   const sidebarRail = (mobile = false): React.JSX.Element => (
-    <SidebarRail
+    <RailWithBadge
       mobile={mobile}
       sidebarVisible={shell.sidebarVisible}
       sidebarPanel={sidebarPanel}
       zen={zen}
-      badge={badge}
       toggleSidebar={toggleSidebar}
       hideSidebar={hideSidebar}
     />
@@ -141,10 +150,9 @@ export const WorkspaceApp = (): React.JSX.Element => {
             <WorkspaceStage canvas={canvas} />
           </WorkspacePanels>
           {zen && (
-            <ZenDock
+            <ZenDockWithBadge
               view={view}
               enabledViews={enabledViews}
-              badge={badge}
               onCreate={() => add()}
               onViewChange={(next) => {
                 if (next !== view) changeView(next)

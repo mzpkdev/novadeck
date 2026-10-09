@@ -43,14 +43,17 @@ const words: Readonly<Record<NotificationKind, string>> = {
 
 const rowKey = ({ context, terminalId }: Notification): string => `${context}/${terminalId}`
 
+const panelElement = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>(".notifications-panel")
+
 // After a row goes, a keyboard user is left where the row was: on the next row, the
 // previous one for the last, else on the panel itself. A pointer or a terminal that took
 // focus since is left alone. Waits a frame for the list to render without the row.
 const settleFocus = (next: Notification | undefined): void =>
   void requestAnimationFrame(() => {
+    const panel = panelElement()
     const active = document.activeElement
-    if (active && active !== document.body) return
-    const panel = document.querySelector<HTMLElement>(".notifications-panel")
+    if (active && active !== document.body && active !== panel) return
     const row = next
       ? [...(panel?.querySelectorAll<HTMLElement>("[data-notification-key]") ?? [])].find(
           (element) => element.dataset.notificationKey === rowKey(next),
@@ -58,6 +61,11 @@ const settleFocus = (next: Notification | undefined): void =>
       : undefined
     ;(row?.querySelector<HTMLElement>(".sidebar-item-select") ?? panel)?.focus()
   })
+
+// Before a row's own button goes, focus is held on the panel until `settleFocus` picks the
+// row: the phone's drawer traps focus and, when the focused button vanishes, sends it to its
+// close button, where `settleFocus` would then find it taken.
+const holdFocus = (): void => panelElement()?.focus()
 
 // Beside the panel's close button: reads the finishes the panel lists, and no others.
 export const MarkAllReadButton = ({
@@ -76,6 +84,7 @@ export const MarkAllReadButton = ({
         type="button"
         aria-label="Mark all read"
         onClick={() => {
+          holdFocus()
           onDismissAll(finishes)
           settleFocus(items.find(({ kind }) => !dismissable(kind)))
         }}
@@ -110,6 +119,7 @@ export const NotificationsPanel = ({
             if (dismissable(item.kind)) settleFocus(items[index + 1] ?? items[index - 1])
           }
           const dismiss = (): void => {
+            holdFocus()
             onDismiss(item.context, item.terminalId)
             settleFocus(items[index + 1] ?? items[index - 1])
           }
@@ -128,7 +138,7 @@ export const NotificationsPanel = ({
               icon={<Icon size={14} strokeWidth={1.5} />}
               selected={viewing?.context === item.context && viewing.id === item.terminalId}
               selectLabel={`Go to ${item.terminalName}`}
-              description={`${item.status}. ${where}`}
+              description={[`${item.status}. ${where}`, item.reply].filter(Boolean).join(". ")}
               tooltip={[item.terminalName, item.status, where, item.reply]
                 .filter(Boolean)
                 .join("\n")}
