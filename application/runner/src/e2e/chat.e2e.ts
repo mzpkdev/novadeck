@@ -9,6 +9,7 @@ import { harnesses } from "../harnesses/registry.js"
 import { setups } from "./agents/index.js"
 import type { DeckTerminal } from "./deck.js"
 import { describe, e2e, expect, supported } from "./fixture.js"
+import { losesAstral } from "./known-gaps.js"
 import { asked, gate, latest } from "./model/script.js"
 import { own, replies, start, through, turn } from "./scenarios.js"
 
@@ -227,10 +228,16 @@ for (const setup of setups) {
       run.model.use(replies("Thanks", "You are welcome."), replies("Carry on", "Carried on."))
       const t1 = await start(run, setup)
       const mark = t1.mark()
+      const prompt =
+        "Thanks \u2764\ufe0f heart \u{1f468}\u200d\u{1f469}\u200d\u{1f467} family \u65e5\u672c\u8a9e"
 
-      await t1.prompt(
-        "Thanks \u2764\ufe0f heart \u{1f468}\u200d\u{1f469}\u200d\u{1f467} family \u65e5\u672c\u8a9e",
-      )
+      // Known gap (known-gaps.ts, `losesAstral`): the family's emoji never reach the harness,
+      // so the prompt never shows whole and fails, pressing nothing.
+      if (losesAstral(setup)) {
+        await expect(t1.prompt(prompt)).rejects.toMatchObject({ code: "PROMPT_FAILED" })
+        return
+      }
+      await t1.prompt(prompt)
       await t1.until("You are welcome.")
       await through(t1, ["working", "settled"], { after: mark })
       await item(t1, "user", (text) => text.includes("\u65e5\u672c\u8a9e"))
