@@ -18,14 +18,24 @@ const stamp = (path: string): string | undefined => {
 const stamps = (paths: readonly string[]): ReadonlyMap<string, string | undefined> =>
   new Map(paths.map((path) => [path, stamp(path)]))
 
-// Whether the file holds the text; an absent or unreadable file holds nothing.
-const holds = (path: string, text: string): boolean => {
+// Whether the file holds any of the texts; an absent or unreadable file holds nothing.
+const holds = (path: string, texts: readonly string[]): boolean => {
   try {
-    return readFileSync(path, "utf8").includes(text)
+    const content = readFileSync(path, "utf8")
+    return texts.some((text) => content.includes(text))
   } catch {
     return false
   }
 }
+
+/**
+ * The ways a configuration file may write a path: as it is, as JSON or TOML escape it
+ * (`C:\\Users\\…`, as Windows paths are written there), and with forward slashes, as some
+ * programs write a Windows path. On Linux all three are the path itself.
+ */
+export const spellings = (path: string): readonly string[] => [
+  ...new Set([path, JSON.stringify(path).slice(1, -1), path.replaceAll("\\", "/")]),
+]
 
 // Whether a folder has an entry whose name holds the text.
 const names = (path: string, text: string): boolean => {
@@ -60,7 +70,7 @@ export const tripwire = (
     const changed = [...stamps(stamped)]
       .filter(([path, after]) => before.get(path) !== after)
       .map(([path]) => path)
-    const mentioned = watched("searched").filter((path) => holds(path, sandbox.root))
+    const mentioned = watched("searched").filter((path) => holds(path, spellings(sandbox.root)))
     const entries = watched("listed").filter((path) => names(path, own))
     return [...changed, ...mentioned, ...entries]
   }
