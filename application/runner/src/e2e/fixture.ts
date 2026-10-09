@@ -17,12 +17,14 @@ import { tripwire } from "./tripwire.js"
 export { describe, expect } from "../test.js"
 
 /**
- * Whether the suite can run here: Linux only. Elsewhere the sandbox's dead D-Bus address
- * doesn't keep a harness from the developer's keyring, as the macOS Keychain needs no
- * bus, and the leftover-process check reads /proc. A scenario file can skip on it
- * (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
+ * Whether the suite can run here: Linux and Windows. On macOS the sandbox's dead D-Bus
+ * address doesn't keep a harness from the developer's keyring, as the Keychain needs no
+ * bus. On Windows the sandbox moves the user's folders too (see `createSandbox`), each
+ * harness keeps its credentials in a file there, and the leftover-process check asks the
+ * system rather than /proc. A scenario file can skip on it (`describe.skipIf(!supported)`);
+ * a test that runs anyway fails, saying why.
  */
-export const supported = process.platform === "linux"
+export const supported = process.platform === "linux" || process.platform === "win32"
 
 /**
  * The harnesses this run tests, from `NOVADECK_E2E_AGENTS`: their names, comma-separated
@@ -63,7 +65,7 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
     e2e: async ({ resources }, use) => {
       if (!supported)
         throw new Error(
-          `The end-to-end suite runs on Linux only, not ${process.platform}: elsewhere nothing keeps a harness from the developer's keyring`,
+          `The end-to-end suite runs on Linux and Windows, not ${process.platform}: there nothing keeps a harness from the developer's keyring`,
         )
       const model = await startFakeModel({ dialects: setups.map((setup) => setup.dialect) })
       resources.defer(() => model.close())
