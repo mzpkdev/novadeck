@@ -4,7 +4,7 @@ import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
 import { cancelTerminalTransition } from "../layouts/transition"
 import { useDesktop } from "../shell/desktop"
-import { sidebarVisible } from "../shell/shell-state"
+import { sidebarVisible, type SidebarPanel } from "../shell/shell-state"
 import { SidebarRail } from "../shell/SidebarRail"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { ZenDock } from "../shell/ZenDock"
@@ -19,6 +19,7 @@ import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
 import { HeaderSection } from "./HeaderSection"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
+import { useNotifications } from "./useNotifications"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -42,6 +43,12 @@ export const App = ({ createBackend }: AppProps): React.JSX.Element => (
     )}
   />
 )
+
+const mobileLabels: Record<SidebarPanel, string> = {
+  terminals: "Terminal sessions",
+  sessions: "Workspace sessions",
+  notifications: "Notifications",
+}
 
 // The backend's debug panel, where this launch offers one.
 const DebugSection = (): React.JSX.Element | null => {
@@ -74,6 +81,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const services = useWorkspaceServices()
   const { commands, canvas } = services
   const { hideSidebar, toggleSidebar, exitZen, changeView, add } = commands
+  const notifications = useNotifications()
   const desktop = useDesktop()
   const shell = useUiState((state) => {
     const { zen, sidebar, sidebarCollapsed } = state.shell
@@ -97,6 +105,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       sidebarVisible={shell.sidebarVisible}
       sidebarPanel={sidebarPanel}
       zen={zen}
+      notifications={notifications}
       toggleSidebar={toggleSidebar}
       hideSidebar={hideSidebar}
     />
@@ -125,7 +134,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
               if (!open) hideSidebar()
             }}
             mobileRail={sidebarRail(true)}
-            mobileLabel={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
+            mobileLabel={mobileLabels[sidebarPanel]}
             mobileFinalFocusEl={() => sidebarToggle(sidebarPanel)}
             sidebar={<SidebarSection />}
           >
@@ -135,10 +144,12 @@ export const WorkspaceApp = (): React.JSX.Element => {
             <ZenDock
               view={view}
               enabledViews={enabledViews}
+              notifications={notifications}
               onCreate={() => add()}
               onViewChange={(next) => {
                 if (next !== view) changeView(next)
               }}
+              onNotifications={() => toggleSidebar("notifications")}
               onExit={exitZen}
             />
           )}

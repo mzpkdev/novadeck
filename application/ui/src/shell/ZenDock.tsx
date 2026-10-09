@@ -1,9 +1,20 @@
-import { ChevronLeft, LayoutGrid, PanelLeft, Plus, SquareDashedMousePointer, X } from "lucide-react"
+import {
+  Bell,
+  ChevronLeft,
+  LayoutGrid,
+  PanelLeft,
+  Plus,
+  SquareDashedMousePointer,
+  X,
+} from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import type { ViewMode } from "../model/types"
+import type { Notification } from "../notifications/notifications"
 import { Tooltip } from "../ui-toolkit/Tooltip"
+import { notificationBadge } from "./notification-badge"
+import { NotificationBadge } from "./NotificationBadge"
 
 const views = [
   { id: "focus", label: "Focus", icon: PanelLeft },
@@ -14,14 +25,18 @@ const views = [
 export const ZenDock = ({
   view,
   enabledViews,
+  notifications,
   onCreate,
   onViewChange,
+  onNotifications,
   onExit,
 }: {
   view: ViewMode
   enabledViews: ViewMode[]
+  notifications: readonly Notification[]
   onCreate: () => void
   onViewChange: (view: ViewMode) => void
+  onNotifications: () => void
   onExit: () => void
 }): React.JSX.Element => {
   const [open, setOpen] = useState(false)
@@ -30,6 +45,7 @@ export const ZenDock = ({
   const dock = useRef<HTMLDivElement>(null)
   const create = useRef<HTMLButtonElement>(null)
   const controls = useId()
+  const badge = notificationBadge(notifications)
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent): void => {
@@ -68,6 +84,19 @@ export const ZenDock = ({
           <Plus size={16} />
         </button>
       </Tooltip>
+      {badge && (
+        <Tooltip content="Notifications">
+          <button
+            className="icon-button zen-notifications relative"
+            aria-label={badge.label}
+            data-project-status={badge.status}
+            onClick={onNotifications}
+          >
+            <Bell size={16} />
+            <NotificationBadge text={badge.text} />
+          </button>
+        </Tooltip>
+      )}
       <button
         className="icon-button zen-reveal w-5 p-0"
         aria-label={open ? "Hide Zen controls" : "Show Zen controls"}

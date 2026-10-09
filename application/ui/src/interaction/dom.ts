@@ -82,10 +82,9 @@ export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
 export const terminalTabInteractionActive = (): boolean =>
   Boolean(document.querySelector(".terminal-tab.editing, .terminal-tab.dragging"))
 
-export const sidebarToggle = (panel: "terminals" | "sessions"): HTMLElement | null =>
+export const sidebarToggle = (panel: string): HTMLElement | null =>
   document.getElementById(`${panel}-toggle`)
-export const focusSidebarToggle = (panel: "terminals" | "sessions"): void =>
-  sidebarToggle(panel)?.focus()
+export const focusSidebarToggle = (panel: string): void => sidebarToggle(panel)?.focus()
 export const focusTerminalTab = (id: string): void =>
   document
     .querySelector<HTMLElement>(`[data-terminal-tab-id="${CSS.escape(id)}"] .sidebar-item-select`)
