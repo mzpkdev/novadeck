@@ -83,6 +83,7 @@ import {
   type Report,
   type Reports,
 } from "../shell/reports.js"
+import { refreshPath } from "../shell/windows-path.js"
 import type { HintFacts } from "../voice/hint.js"
 import { Answers, type AnswerHost, type AnswerOptions } from "./answers.js"
 import {
@@ -175,6 +176,12 @@ export type TerminalOptions = {
   env?: NodeJS.ProcessEnv
   /** The environment shells start from: the runner's own when omitted. */
   baseEnv?: NodeJS.ProcessEnv
+  /**
+   * Whether each new shell's PATH is read anew, as Windows keeps it, so a program
+   * installed since the app started is on it (see `refreshPath`). On unless `baseEnv`
+   * sets the environment exactly.
+   */
+  freshPath?: boolean
   /** Running and retained terminals together; unlimited when omitted. */
   maxTerminals?: number
   /** Exited, unattached records kept for viewing or restart; the oldest go first. */
@@ -685,6 +692,7 @@ export class Terminals {
           : (process.env.SHELL ?? "/bin/sh")),
       shellArgs: options.shellArgs,
       env: { ...(options.baseEnv ?? process.env), ...options.env, TERM: "xterm-256color" },
+      freshPath: options.freshPath ?? options.baseEnv === undefined,
       maxTerminals:
         options.maxTerminals === undefined
           ? Number.POSITIVE_INFINITY
@@ -813,12 +821,15 @@ export class Terminals {
       // terminals asked for together are numbered, and listed, in the order they were.
       const drawn = input.restore ? undefined : this.nextNumber(input.sessionId)
       const saved = input.restore ? this.saved(input.id, input.sessionId) : undefined
+      // Read beside the waits below, which it outlasts on Windows; see `shellEnvironment`.
+      const environment = this.shellEnvironment()
       const origin = await this.directory(input.cwd)
       // A saved directory that is gone falls back to the one asked for.
       const cwd = saved ? await this.directory(saved.cwd).catch(() => origin) : origin
       const shell = await this.executable(cwd)
       const integration = await this.shellIntegration()
       const connected = await this.connected(input.resume)
+      const env = await environment
       if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
       // A concurrent creation may have taken the id meanwhile.
       this.available(input.id)
@@ -849,7 +860,7 @@ export class Terminals {
         input.command !== undefined
           ? { command: input.command, required: true }
           : resume && { command: resume.argv.join(" ") }
-      const started = this.spawn(shell, cwd, input, integration, startup || undefined)
+      const started = this.spawn(shell, cwd, input, integration, env, startup || undefined)
       if (resume && started.resumes) {
         this.claims.set(resume.key, input.id)
         started.resumeClaim = resume.key
@@ -1658,6 +1669,7 @@ export class Terminals {
     record.restarting = true
     const pending = this.pending(ownerId)
     try {
+      const environment = this.shellEnvironment()
       // The last directory, or where the terminal started once that is gone.
       const cwd = await this.directory(record.summary.cwd).catch(() =>
         this.directory(record.origin),
@@ -1665,6 +1677,7 @@ export class Terminals {
       const shell = await this.executable(cwd)
       const integration = await this.shellIntegration()
       const connected = await this.connected(input.resume)
+      const env = await environment
       // The swap waits for the old shell's queued work, which still uses the old screen.
       return await this.enqueue(record, () => {
         if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
@@ -1687,6 +1700,7 @@ export class Terminals {
           cwd,
           input,
           integration,
+          env,
           resume ? { command: resume.argv.join(" ") } : undefined,
         )
         if (resume && started.resumes) {
@@ -2745,6 +2759,16 @@ export class Terminals {
     }
   }
 
+  /**
+   * The environment a new shell starts from: the runner's, with PATH read anew where
+   * `freshPath` asks for it, as a Windows app keeps the PATH it was started with.
+   */
+  private shellEnvironment(): Promise<NodeJS.ProcessEnv> {
+    return this.options.freshPath
+      ? refreshPath(this.options.env)
+      : Promise.resolve(this.options.env)
+  }
+
   private async executable(cwd: string): Promise<string> {
     const shell = this.options.shell
     const paths =
@@ -2841,6 +2865,7 @@ export class Terminals {
     cwd: string,
     input: Size & { id?: string; terminalId?: string },
     integration: (Integration & { shims: readonly AgentName[] }) | undefined,
+    base: NodeJS.ProcessEnv,
     startup?: { readonly command: string; readonly required?: boolean },
   ): Started {
     const { cols, rows } = input
@@ -2848,7 +2873,7 @@ export class Terminals {
     const token = randomBytes(24).toString("hex")
     const launch = (withStartup: boolean): ShellLaunch =>
       integration
-        ? shellLaunch(shell, integration.paths, this.options.env, {
+        ? shellLaunch(shell, integration.paths, base, {
             shims: integration.shims,
             ...(withStartup &&
               startup &&
@@ -2859,7 +2884,7 @@ export class Terminals {
                 },
               }),
           })
-        : { args: [], env: this.options.env, integrated: false, resumes: false }
+        : { args: [], env: base, integrated: false, resumes: false }
     let launched = launch(true)
     // The shell reads the command from a file only it and the runner can read.
     if (launched.resumeFile)

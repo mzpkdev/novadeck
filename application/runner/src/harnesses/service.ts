@@ -7,6 +7,7 @@ import type { AgentIntegration, AgentName } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
 import type { ShellPaths } from "../shell/scripts.js"
+import { refreshPath } from "../shell/windows-path.js"
 import type { Harness, Install } from "./harness.js"
 import { agents, harnesses } from "./registry.js"
 
@@ -38,15 +39,9 @@ const cmdLine = (argv: readonly string[]): string =>
 const loginVariables = new Set(["PATH", "CLAUDE_CONFIG_DIR", "CODEX_HOME"])
 const marker = "__NOVADECK_ENV__"
 
-/**
- * The environment the person has in a terminal: their login shell's startup files put
- * agents on PATH, and may move their homes, even when the app was started from a
- * desktop menu. Only `echo` and `env` run in that shell, so any shell will do. Windows
- * programs get the person's environment already.
- */
-const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
+// What the login shell's startup files set; see `loginEnvironment`.
+const loginShellEnvironment = (env: NodeJS.ProcessEnv) =>
   new Promise<NodeJS.ProcessEnv>((resolve) => {
-    if (platform === "win32") return resolve(env)
     let output = ""
     let done = false
     // Startup files may print before the marker's own line; a shell may also echo it in
@@ -82,6 +77,15 @@ const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
     child.on("error", finish)
     child.on("exit", () => setTimeout(finish, 100))
   })
+
+/**
+ * The environment the person has in a terminal: their login shell's startup files put
+ * agents on PATH, and may move their homes, even when the app was started from a
+ * desktop menu. Only `echo` and `env` run in that shell, so any shell will do. Windows
+ * keeps PATH in the registry instead, read anew there; see `refreshPath`.
+ */
+const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
+  platform === "win32" ? refreshPath(env, { platform }) : loginShellEnvironment(env)
 
 // The program to run: the one on PATH, or where the harness's installer puts it otherwise.
 const locate = async (program: string, harness: Harness, install: Install): Promise<string> => {
