@@ -180,7 +180,9 @@ jobs:
       # Releases from main are signed once the signing credentials are in the repository's
       # secrets and variables; pull requests, and releases before then, are left unsigned.
       # The voice engine is signed with the app, so its build and cache follow the same
-      # choice. See docs/release-signing.md.
+      # choice. Only what later steps need goes to GITHUB_ENV: the Azure secrets go to the
+      # two steps that sign, and the macOS key and keychain are removed after packaging.
+      # See docs/release-signing.md.
       - name: Set Up Signing
         id: signing
         shell: bash
@@ -189,7 +191,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -202,16 +204,37 @@ jobs:
         run: |
           set -euo pipefail
           signed=false
+          engine=unsigned
 
-          if [[ "$EVENT_NAME" != pull_request && "$TARGET" == mac && -n "$MACOS_CERTIFICATE" ]]; then
-            # A signed app that is not notarized still meets Gatekeeper's refusal.
-            if [[ -z "$APPLE_API_KEY_CONTENT" || -z "$APPLE_API_KEY_ID" || -z "$APPLE_API_ISSUER" ]]; then
-              echo "::error::MACOS_CERTIFICATE is set, but notarization needs APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER too."
+          # Succeeds when every named value is set and fails the release when only some
+          # are, rather than shipping that platform unsigned.
+          configured() {
+            local what="$1" present=0 missing=""
+            shift
+            for name in "$@"; do
+              if [[ -n "${!name}" ]]; then present=$((present + 1)); else missing="$missing $name"; fi
+            done
+            if [[ "$present" -gt 0 && -n "$missing" ]]; then
+              echo "::error::$what is only partly set up; it also needs:$missing"
               exit 1
             fi
+            [[ "$present" -gt 0 ]]
+          }
 
+          # GITHUB_ENV takes a line per variable, so a value with a line break is refused.
+          export_env() {
+            if [[ "$2" == *$'\n'* ]]; then
+              echo "::error::$1 holds a line break."
+              exit 1
+            fi
+            echo "$1=$2" >> "$GITHUB_ENV"
+          }
+
+          if [[ "$EVENT_NAME" != pull_request && "$TARGET" == mac ]] &&
+            configured "macOS signing" MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; then
             # A keychain of its own, first in the search list, where electron-builder and the
-            # voice engine's build find the Developer ID identity.
+            # voice engine's build find the Developer ID identity. Only codesign may use the
+            # key, and the key cannot be exported from it.
             keychain="$RUNNER_TEMP/signing.keychain-db"
             password="$(openssl rand -hex 24)"
             certificate="$RUNNER_TEMP/certificate.p12"
@@ -219,7 +242,7 @@ jobs:
             security create-keychain -p "$password" "$keychain"
             security set-keychain-settings -lut 21600 "$keychain"
             security unlock-keychain -p "$password" "$keychain"
-            security import "$certificate" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+            security import "$certificate" -P "$MACOS_CERTIFICATE_PASSWORD" -x -T /usr/bin/codesign -t cert -f pkcs12 -k "$keychain"
             rm "$certificate"
             security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" > /dev/null
             # The runner's keychain paths hold no spaces; they stay searched after this one.
@@ -235,36 +258,31 @@ jobs:
             # @electron/notarize reads the App Store Connect key from a file.
             key="$RUNNER_TEMP/notarization/AuthKey_${APPLE_API_KEY_ID}.p8"
             mkdir -p "$(dirname "$key")"
-            printf '%s\n' "$APPLE_API_KEY_CONTENT" > "$key"
-            {
-              echo "NOVADECK_MAC_IDENTITY=$identity"
-              echo "APPLE_API_KEY=$key"
-              echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
-              echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
-            } >> "$GITHUB_ENV"
+            printf '%s\n' "$APPLE_API_KEY" > "$key"
+            export_env NOVADECK_MAC_IDENTITY "$identity"
+            export_env NOVADECK_SIGNING_KEYCHAIN "$keychain"
+            export_env APPLE_API_KEY "$key"
+            export_env APPLE_API_KEY_ID "$APPLE_API_KEY_ID"
+            export_env APPLE_API_ISSUER "$APPLE_API_ISSUER"
             signed=true
+            engine="developer-id-$identity"
           fi
 
-          if [[ "$EVENT_NAME" != pull_request && "$TARGET" == win && -n "$AZURE_SIGNING_PROFILE" ]]; then
-            for name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PUBLISHER; do
-              if [[ -z "${!name}" ]]; then
-                echo "::error::AZURE_SIGNING_PROFILE is set, but Windows signing needs $name too."
-                exit 1
-              fi
-            done
-            {
-              echo "AZURE_TENANT_ID=$AZURE_TENANT_ID"
-              echo "AZURE_CLIENT_ID=$AZURE_CLIENT_ID"
-              echo "AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET"
-              echo "AZURE_SIGNING_ENDPOINT=$AZURE_SIGNING_ENDPOINT"
-              echo "AZURE_SIGNING_ACCOUNT=$AZURE_SIGNING_ACCOUNT"
-              echo "AZURE_SIGNING_PROFILE=$AZURE_SIGNING_PROFILE"
-              echo "AZURE_SIGNING_PUBLISHER=$AZURE_SIGNING_PUBLISHER"
-            } >> "$GITHUB_ENV"
+          if [[ "$EVENT_NAME" != pull_request && "$TARGET" == win ]] &&
+            configured "Windows signing" AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE AZURE_SIGNING_PUBLISHER; then
+            export_env AZURE_SIGNING_ENDPOINT "$AZURE_SIGNING_ENDPOINT"
+            export_env AZURE_SIGNING_ACCOUNT "$AZURE_SIGNING_ACCOUNT"
+            export_env AZURE_SIGNING_PROFILE "$AZURE_SIGNING_PROFILE"
+            export_env AZURE_SIGNING_PUBLISHER "$AZURE_SIGNING_PUBLISHER"
             signed=true
+            engine="azure-$AZURE_SIGNING_ACCOUNT-$AZURE_SIGNING_PROFILE"
           fi
 
-          echo "signed=$signed" >> "$GITHUB_OUTPUT"
+          {
+            echo "signed=$signed"
+            # Names the identity, so a rotated certificate builds the engine afresh.
+            echo "engine=$engine"
+          } >> "$GITHUB_OUTPUT"
           echo "Signing: $signed"
 
       # Voice input's engine, whisper.cpp built for this platform (see application/whisper),
@@ -289,10 +307,14 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: application/whisper/dist
-          key: whisper-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.signed == 'true' && 'signed' || 'unsigned' }}-${{ hashFiles('application/whisper/scripts/**', 'application/whisper/patches/**', 'application/whisper/package.json') }}
+          key: whisper-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.engine }}-${{ hashFiles('application/whisper/scripts/**', 'application/whisper/patches/**', 'application/whisper/package.json') }}
 
       - name: Build Voice Engine
         if: steps.engine.outputs.cache-hit != 'true'
+        env:
+          AZURE_TENANT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: pnpm --filter @novadeck/whisper build:engine
 
       # Unpacks the engine with the tar the runner uses on this platform and runs it, so a
@@ -319,6 +341,9 @@ jobs:
         shell: bash
         env:
           NOVADECK_RELAY_UNIVERSAL: "1"
+          AZURE_TENANT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: |
           if [[ "${{ matrix.target }}" != win || -z "${AZURE_SIGNING_PROFILE:-}" ]]; then
             pnpm run package:${{ matrix.target }}
@@ -330,6 +355,13 @@ jobs:
             "-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT" \
             "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT" \
             "-c.win.azureSignOptions.certificateProfileName=$AZURE_SIGNING_PROFILE"
+
+      # The rest of the job runs the packaged app and the engine, which need no key.
+      - name: Remove Signing Credentials (macOS)
+        if: always() && matrix.target == 'mac' && steps.signing.outputs.signed == 'true'
+        run: |
+          rm -f "$APPLE_API_KEY"
+          security delete-keychain "$NOVADECK_SIGNING_KEYCHAIN" || true
 
       # Fails the release, rather than shipping a package Gatekeeper or SmartScreen would
       # treat as unsigned, when signing was set up but did not take.

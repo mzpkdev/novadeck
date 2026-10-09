@@ -287,6 +287,9 @@ const signMac = async (staging: string): Promise<void> => {
   }
 }
 
+// The signing module, pinned: it runs with the Azure credentials in its environment.
+const trustedSigning = "0.5.8"
+
 // A PowerShell string literal.
 const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`
 
@@ -300,9 +303,8 @@ const signWindows = (staging: string): void => {
   if (!endpoint || !account || !profile) return
   const script = [
     "$ErrorActionPreference = 'Stop'",
-    "if (-not (Get-Module -ListAvailable -Name TrustedSigning)) {",
-    "  Install-Module -Name TrustedSigning -MinimumVersion 0.5.0 -Force -Repository PSGallery -Scope CurrentUser",
-    "}",
+    `Install-Module -Name TrustedSigning -RequiredVersion ${trustedSigning} -Force -Repository PSGallery -Scope CurrentUser`,
+    `Import-Module -Name TrustedSigning -RequiredVersion ${trustedSigning}`,
     [
       "Invoke-TrustedSigning",
       `-Endpoint ${quote(endpoint)}`,

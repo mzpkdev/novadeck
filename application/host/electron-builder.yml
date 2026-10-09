@@ -41,6 +41,17 @@ mac:
   extendInfo:
     CFBundleName: novadeck
     NSMicrophoneUsageDescription: Novadeck uses the microphone for voice input, transcribed on this computer.
+    # What macOS shows when a program run in a terminal asks; see the entitlements.
+    NSCameraUsageDescription: A program running in Novadeck wants to use the camera.
+    NSAppleEventsUsageDescription: A program running in Novadeck wants to control another app.
+    NSContactsUsageDescription: A program running in Novadeck wants to read your contacts.
+    NSCalendarsUsageDescription: A program running in Novadeck wants to use your calendars.
+    NSCalendarsFullAccessUsageDescription: A program running in Novadeck wants to use your calendars.
+    NSRemindersUsageDescription: A program running in Novadeck wants to use your reminders.
+    NSRemindersFullAccessUsageDescription: A program running in Novadeck wants to use your reminders.
+    NSLocationUsageDescription: A program running in Novadeck wants to use your location.
+    NSLocationWhenInUseUsageDescription: A program running in Novadeck wants to use your location.
+    NSPhotoLibraryUsageDescription: A program running in Novadeck wants to use your photos.
   # Only this platform's PTY binaries: signing would otherwise reach the Linux and Windows
   # prebuilds, which codesign cannot sign as code.
   files:

@@ -5,9 +5,22 @@
     <!-- V8 compiles JavaScript at run time, which the hardened runtime forbids without it. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <!-- Voice input: the hardened runtime denies the microphone without it, before macOS
-         asks with NSMicrophoneUsageDescription. -->
+    <!-- The hardened runtime denies these resources without asking, to the app and to every
+         program run in its terminals, which macOS counts as the app's. Each one asks with
+         its usage description in electron-builder.yml. The microphone is voice input's too. -->
     <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.personal-information.addressbook</key>
+    <true/>
+    <key>com.apple.security.personal-information.calendars</key>
+    <true/>
+    <key>com.apple.security.personal-information.location</key>
+    <true/>
+    <key>com.apple.security.personal-information.photos-library</key>
     <true/>
   </dict>
 </plist>

@@ -10,10 +10,10 @@ built unsigned, as before. Pull requests are never signed.
 | Windows  | The portable executable, the app inside it, its DLLs and native modules, the relay and the voice engine | Azure Artifact Signing                             |
 | All      | Every release asset                                                                                     | GitHub build provenance attestations               |
 
-The release workflow turns each platform on by itself. If a platform's credentials are
-only partly set, the release fails and names the missing ones; it never ships a package
-half signed. After packaging, it checks the signatures: `codesign`, `spctl` and `stapler`
-on macOS, and `Get-AuthenticodeSignature` on Windows.
+The release workflow turns each platform on by itself. If only some of a platform's
+secrets and variables are set, the release fails and names the missing ones, rather than
+shipping that platform unsigned. After packaging, it checks the signatures: `codesign`,
+`spctl` and `stapler` on macOS, and `Get-AuthenticodeSignature` on Windows.
 
 ## macOS
 
@@ -38,9 +38,12 @@ the Gatekeeper prompt show the owner's name.
 | `APPLE_API_ISSUER`           | The issuer ID                                            |
 
 The app's entitlements are in `application/host/resources/entitlements.mac.plist`. The
-hardened runtime turns off what the app does not ask for, so a new capability (camera,
-location, Apple Events) needs its entitlement there as well as its usage description in
-`mac.extendInfo`. Voice input already has its microphone entitlement.
+hardened runtime denies, without asking, any protected resource the app has no
+entitlement for, and macOS counts the programs run in Novadeck's terminals as the app.
+So the app holds the entitlements a terminal needs (microphone, camera, Apple Events,
+contacts, calendars, location and photos), each with its usage description in
+`mac.extendInfo`, which is what macOS shows when a program asks. A new kind of resource
+needs both.
 
 ## Windows
 
@@ -91,10 +94,11 @@ gh attestation verify novadeck-<version>-linux-x86_64.AppImage --repo mzpkdev/no
 ## The voice engine
 
 The engine is built and signed in the same job as the app, with the same identity. Its
-CI cache is keyed on whether it was signed, so the first signed release builds it
-afresh. A signature's timestamp makes every signed build different bytes, so a rebuilt
-engine has a new SHA-256 and installed apps download it again; that happens only when
-the cache misses, when the engine's scripts or patches change.
+CI cache is keyed on that identity, so the first signed release, and the first after a
+certificate changes, builds it afresh; pull requests, never signed, keep an unsigned
+engine of their own. A signature's timestamp makes every signed build different bytes,
+so a rebuilt engine has a new SHA-256 and installed apps download it again; that happens
+only when the cache misses.
 
 The engine isn't notarized: the runner downloads it with its own HTTP client, so macOS
 doesn't quarantine it and Gatekeeper doesn't assess it. Its Developer ID signature is
