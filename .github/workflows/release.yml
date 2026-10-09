@@ -564,6 +564,31 @@ jobs:
         working-directory: release-assets
         run: sha256sum -- * > SHA256SUMS
 
+      # A detached signature over the checksums, the way Linux users and packagers check a
+      # download, once the release key is in the secrets. See docs/release-signing.md.
+      - name: Sign Checksums
+        working-directory: release-assets
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GPG_PRIVATE_KEY" ]]; then
+            if [[ -n "$GPG_PASSPHRASE" ]]; then
+              echo "::error::GPG_PASSPHRASE is set, but signing the checksums needs GPG_PRIVATE_KEY too."
+              exit 1
+            fi
+            echo "No release key; the checksums are published unsigned."
+            exit 0
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          trap 'rm -rf "$GNUPGHOME"' EXIT
+          gpg --batch --import <<<"$GPG_PRIVATE_KEY"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS <<<"$GPG_PASSPHRASE"
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+
       - name: Attest Packages
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

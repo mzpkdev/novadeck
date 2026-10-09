@@ -9,9 +9,11 @@ built unsigned, as before. Pull requests are never signed.
 | macOS    | The app bundle and every binary in it, the relay included, plus the voice engine's server and libraries | Developer ID, hardened runtime, notarized, stapled |
 | Windows  | The portable executable, the app inside it, its DLLs and native modules, the relay and the voice engine | Azure Artifact Signing                             |
 | All      | Every release asset                                                                                     | GitHub build provenance attestations               |
+| All      | `SHA256SUMS`, the checksums of every asset                                                              | A detached GPG signature, `SHA256SUMS.asc`         |
 
 The release workflow turns each platform on by itself: macOS when any of its secrets is
-set, Windows when any of its `AZURE_SIGNING_*` variables is. From then on the release
+set, Windows when any of its `AZURE_SIGNING_*` variables is, and the checksums' signature
+when `GPG_PRIVATE_KEY` is. From then on the release
 fails and names whatever that platform still lacks, rather than shipping it unsigned. After packaging, it checks the signatures: `codesign`,
 `spctl` and `stapler` on macOS, and `Get-AuthenticodeSignature` on Windows.
 
@@ -82,16 +84,49 @@ more: reputation builds for the publisher and each file as people download them.
 signing gives straight away is a named publisher rather than "Unknown publisher", and
 fewer antivirus false positives.
 
-## Provenance on every platform
+## Checking a download on any platform
+
+Linux checks no signature when an AppImage starts, so a Linux download is checked by
+hand, and these work for the macOS and Windows packages too.
 
 Each release attests every asset it publishes. The attestation records which workflow
 run, commit and repository built a file, and is logged in Sigstore's public
-transparency log. Linux checks no signature when an AppImage starts, so this and
-`SHA256SUMS` are how a Linux download is checked:
+transparency log:
 
 ```sh
 gh attestation verify novadeck-<version>-linux-x86_64.AppImage --repo mzpkdev/novadeck
 ```
+
+Each release also signs `SHA256SUMS` with the Novadeck release key, as
+`SHA256SUMS.asc`, which needs only `gpg` and `sha256sum` to check:
+
+```sh
+gpg --import novadeck-release-key.asc
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+### Setting up the release key
+
+1. Create a signing key with a passphrase, on your own computer:
+   `gpg --quick-generate-key "Novadeck releases <releases@novadeck.dev>" ed25519 sign 2y`.
+   Use an address you read; the key expires in two years, and `gpg --quick-set-expire`
+   extends it.
+2. Add its private key and passphrase as repository secrets:
+
+| Secret            | Value                                            |
+| ----------------- | ------------------------------------------------ |
+| `GPG_PRIVATE_KEY` | `gpg --armor --export-secret-keys <fingerprint>` |
+| `GPG_PASSPHRASE`  | The key's passphrase                             |
+
+3. Publish the public key where people find it, as `novadeck-release-key.asc` from
+   `gpg --armor --export <fingerprint>`: on novadeck.dev, on
+   [keys.openpgp.org](https://keys.openpgp.org), and with its fingerprint in the release
+   notes or README. A signature only means something when the key comes from somewhere
+   other than the release it signs.
+
+Keep a backup of the private key off GitHub: a secret can be replaced but not read
+back, and a new key means telling everyone who trusted the old one.
 
 ## The voice engine
 
