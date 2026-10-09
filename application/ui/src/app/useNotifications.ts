@@ -19,8 +19,8 @@ export const useNotifications = (): readonly Notification[] => {
   )
 }
 
-// The bell's badge alone: only the component that reads it re-renders, and only when the
-// badge's count or tone changes, not for every unread change behind it.
+// The bell's badge alone, for the small components that draw it: they re-render as the
+// unread marks change, and otherwise only when the badge's count or tone does.
 export const useNotificationBadge = (): BellBadge | undefined => {
   const unread = useUiState((state) => state.unread)
   return useWorkspaceState(
