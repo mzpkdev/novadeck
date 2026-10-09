@@ -598,8 +598,9 @@ last one chosen.
   the selected terminal's session's terminals; Try again clears the count and
   restarts them.
 - **Update:** have an update downloaded, then a newer one, for the footer's "Update
-  ready" and Restart, which names the version; Restart shows Restarting… for a moment, then reloads
-  the demo, as the app restarts. `?demo=update` opens a variant that already has one waiting, for specs.
+  ready" and Restart, which names the version. Restart shows Restarting…, which stays
+  until Finish restart reloads the demo, as the app comes back on the new version.
+  `?demo=update` opens a variant that already has one waiting, for specs.
 - **Sessions:** mark the selected terminal running, then start a fresh session, to see
   the sessions panel count it.
 - **Another project:** make the agent in the first terminal of another project wait

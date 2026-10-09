@@ -234,7 +234,7 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
 export const createDemoStates = (): DemoStates => {
   const { agents, openWelcome, failNext: failAgents } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
-  const { updates, offer } = createDemoUpdates()
+  const { updates, offer, finish } = createDemoUpdates()
   const { pickDirectory, failNext: failPick } = createDemoFolders()
   const chat = createDebugChat()
   const screens = createStore<ReadonlyMap<string, DemoScreen>>(new Map())
@@ -421,13 +421,18 @@ export const createDemoStates = (): DemoStates => {
       actions: [
         {
           label: "Update ready",
-          hint: "Footer: Update ready · Restart, quiet beside the status; Restart shows Restarting… for a moment, then reloads the demo",
+          hint: "Footer: Update ready · Restart, quiet beside the status; Restart shows Restarting…, which stays until Finish restart",
           run: () => offer("0.0.80"),
         },
         {
           label: "Newer update ready",
-          hint: "Footer: the Restart button now names the newer version",
+          hint: "Footer: the Restart button names the newer version, and a Restarting… footer offers it again",
           run: () => offer("0.0.81"),
+        },
+        {
+          label: "Finish restart",
+          hint: "Reloads the demo, as the app comes back on the new version, without the update",
+          run: finish,
         },
       ],
     },
