@@ -899,6 +899,10 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    bound, holds a process of that agent's name, as the agent may have left unseen (a
    nested shell tells no prompt). A shell or REPL prompt takes the test paste alone, so
    only this check keeps a ring off it; Windows has none (see [Per harness](#per-harness)).
+   On Windows the agent's own input box must show instead, empty and taking a prompt, as
+   its harness's box reader reads it, the one prompts use: a TUI there that reads the
+   console's keys, as Codex does, gets a bracketed paste as keys, which a menu or dialog
+   would take (a ring dismissed Codex's rate-limit popup).
    A gate that fails presses nothing and is tried again on the next change to the screen
    or the terminal's messages.
 5. **Test paste.** Once its turn comes in the terminal's input queue (the prompts,

@@ -31,6 +31,11 @@ export type DoorbellHost = {
   readonly resizedAt: (terminalId: string) => number
   /** Writes to the terminal's shell; false once it is gone. */
   readonly write: (terminalId: string, data: string) => boolean
+  /**
+   * On Windows, whether the agent's input box shows on the screen, empty and taking a
+   * prompt (see `GateFacts.inputBox`); undefined where a bracketed paste can't press keys.
+   */
+  readonly inputBox?: (terminalId: string, screen: ScreenText) => boolean | undefined
 }
 
 export type DoorbellOptions = {
@@ -186,12 +191,14 @@ export class Doorbell {
       return undefined
     }
     const foreground = await this.host.foreground(terminalId)
+    const inputBox = this.host.inputBox?.(terminalId, screen)
     const verdict = gate(
       {
         ringable: this.host.ringable(terminalId),
         calmMs: calm,
         bracketedPaste: screen.bracketedPaste,
         foreground,
+        ...(inputBox !== undefined && { inputBox }),
       },
       this.calmMs,
     )

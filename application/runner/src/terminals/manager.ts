@@ -46,7 +46,7 @@ import {
   type Activity,
 } from "../harnesses/activity.js"
 import { observe, type Binding } from "../harnesses/bindings.js"
-import type { BoxProfile } from "../harnesses/box.js"
+import { isEmpty, type BoxProfile } from "../harnesses/box.js"
 import { actorOf, agentDetail, requestRef } from "../harnesses/detail.js"
 import type { RequestFacts } from "../harnesses/dialogs.js"
 import { resumeAvailability } from "../harnesses/eligibility.js"
@@ -1592,6 +1592,15 @@ export class Terminals {
       ready: (terminalId) => this.messaging.ready(terminalId),
       ringFailed: (terminalId, nonce) => this.messaging.ringFailed(terminalId, nonce),
       screen: (terminalId) => this.screenOf(terminalId),
+      // On Windows a TUI that reads the console's keys gets a bracketed paste as keys: the
+      // agent's box must show, empty and taking a prompt, as a prompt's must.
+      ...(process.platform === "win32" && {
+        inputBox: (terminalId: string, screen: ScreenText) => {
+          const record = live(terminalId)
+          const box = record && this.boxOf(record)?.read(screen)
+          return box !== undefined && box.mode === "prompt" && isEmpty(box)
+        },
+      }),
       foreground: async (terminalId) => {
         const record = live(terminalId)
         if (!record) return undefined
