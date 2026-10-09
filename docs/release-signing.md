@@ -106,12 +106,14 @@ gpg --verify SHA256SUMS.asc SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
+`gpg --verify` accepts a good signature from any key in your keyring, so check that the
+`Primary key fingerprint` it prints is the one Novadeck publishes.
+
 ### Setting up the release key
 
 1. Create a signing key with a passphrase, on your own computer:
    `gpg --quick-generate-key "Novadeck releases <releases@novadeck.dev>" ed25519 sign 2y`.
-   Use an address you read; the key expires in two years, and `gpg --quick-set-expire`
-   extends it.
+   Use an address you read. The key expires in two years.
 2. Add its private key and passphrase as repository secrets:
 
 | Secret            | Value                                            |
@@ -124,6 +126,11 @@ sha256sum --check --ignore-missing SHA256SUMS
    [keys.openpgp.org](https://keys.openpgp.org), and with its fingerprint in the release
    notes or README. A signature only means something when the key comes from somewhere
    other than the release it signs.
+
+Before the key expires, extend it with `gpg --quick-set-expire <fingerprint> 2y`, then
+put a fresh export in `GPG_PRIVATE_KEY` and publish the public key again: the expiry
+travels with the exported key, so the old secret goes on failing the release and the old
+public key goes on warning that it has expired.
 
 Keep a backup of the private key off GitHub: a secret can be replaced but not read
 back, and a new key means telling everyone who trusted the old one.

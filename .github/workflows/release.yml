@@ -585,8 +585,17 @@ jobs:
           mkdir -m 700 "$GNUPGHOME"
           trap 'rm -rf "$GNUPGHOME"' EXIT
           gpg --batch --import <<<"$GPG_PRIVATE_KEY"
-          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
-            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS <<<"$GPG_PASSPHRASE"
+          # One key, so which one signs is never gpg's choice.
+          keys="$(gpg --batch --with-colons --list-secret-keys | grep -c '^sec:' || true)"
+          if [[ "$keys" != 1 ]]; then
+            echo "::error::GPG_PRIVATE_KEY holds $keys secret keys; export only the release key, by its fingerprint."
+            exit 1
+          fi
+          if ! gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS <<<"$GPG_PASSPHRASE"; then
+            echo "::error::Signing the checksums failed. If the release key has expired, extend it and put a fresh export in GPG_PRIVATE_KEY; see docs/release-signing.md."
+            exit 1
+          fi
           gpg --batch --verify SHA256SUMS.asc SHA256SUMS
 
       - name: Attest Packages
