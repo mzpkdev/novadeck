@@ -32,6 +32,9 @@ const sampleAgents: readonly AgentConnection[] = [
   { agent: "agy", available: false, connected: false, busy: false },
 ]
 
+// A session by its full address: every sample project's session shares one ID.
+const addressOf = (projectId: string, sessionId: string) => `${projectId}/${sessionId}`
+
 // A self-contained backend with sample projects and simulated terminals. It keeps no
 // transcripts and connects no agents, but its settings switch like the runner's.
 // `welcome` opens the first-run welcome dialog; `introOf` gives terminals their own
@@ -52,7 +55,9 @@ export const demoBackend = (
   const seed = demoSeed(Date.now())
   const numbers = new Map(
     seed.projects.flatMap((project) =>
-      project.sessions.map((session) => [session.id, session.terminals.length] as const),
+      project.sessions.map(
+        (session) => [addressOf(project.id, session.id), session.terminals.length] as const,
+      ),
     ),
   )
   let latest: Workspace | undefined
@@ -62,9 +67,15 @@ export const demoBackend = (
       const session = latest?.projects
         .find((project) => project.id === target.projectId)
         ?.history.find((each) => each.id === target.workspaceSessionId)
-      const count = session?.state.roster.terminals.length ?? 0
-      const number = Math.max(numbers.get(target.workspaceSessionId) ?? count, count) + 1
-      numbers.set(target.workspaceSessionId, number)
+      const highest = Math.max(
+        0,
+        ...(session?.state.roster.terminals ?? []).map((terminal) =>
+          Number(terminalSlot(terminal.id)),
+        ),
+      )
+      const address = addressOf(target.projectId, target.workspaceSessionId)
+      const number = Math.max(numbers.get(address) ?? highest, highest) + 1
+      numbers.set(address, number)
       const terminal = createMockTerminal(target, number, directory)
       return title ? { ...terminal, name: title } : terminal
     },
@@ -74,8 +85,8 @@ export const demoBackend = (
       const gone = latest?.projects.filter(
         (project) => !workspace.projects.some((each) => each.id === project.id),
       )
-      for (const session of gone?.flatMap((project) => project.history) ?? [])
-        numbers.delete(session.id)
+      for (const project of gone ?? [])
+        for (const session of project.history) numbers.delete(addressOf(project.id, session.id))
       latest = workspace
       engine.reconcile(workspace, actions)
     },

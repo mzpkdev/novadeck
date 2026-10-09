@@ -311,7 +311,7 @@ export const createMockTerminal = (
   const id = demoTerminalId(target, number)
   return {
     id,
-    name: `Terminal ${terminalSlot(id)}`,
+    name: `Terminal ${String(number).padStart(2, "0")}`,
     directory,
     command: "zsh",
     process: "zsh",
