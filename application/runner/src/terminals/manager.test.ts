@@ -15,7 +15,7 @@ import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { InputQueue } from "./input-queue.js"
+import { type HoldBudget, InputQueue } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -159,25 +159,26 @@ describe("an answer's hold of the person's input", () => {
       { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
       "creator",
     )
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const hold = (
-      manager as unknown as {
-        holdInput: (
-          id: string,
-          cap: number,
-          options: object,
-        ) => { release: () => void; settle: () => void }
-      }
-    ).holdInput(terminal.id, 5_000, { deferKeys: true })
-    // 16 characters, which no other write of this test has: the child traces lengths.
-    manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
+    const inside = manager as unknown as {
+      records: Map<string, { screen: { modes: { mouseTrackingMode: string } } }>
+      holdInput: (id: string, budget: HoldBudget) => { release: () => void; settle: () => void }
+    }
+    // Once the runner has read the request, so the wheel report is one, not typed text.
+    await vi.waitFor(() =>
+      expect(inside.records.get(terminal.id)!.screen.modes.mouseTrackingMode).toBe("any"),
+    )
+    // An answer's hold, whose keys count only once delivered.
+    const hold = inside.holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
+    // A length no other write of this test has: the child traces lengths.
+    const wheel = "\x1b[<64;123;456M"
+    manager.write({ terminalId: terminal.id, data: wheel }, "creator")
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
     hold.settle()
     // The key went once released, however long a loaded machine takes to show it; the
     // wheel report, held before it, never did.
     await vi.waitFor(() => expect(ptyTrace(40)).toContain("received 1 chars"), { timeout: 10_000 })
-    expect(ptyTrace(40)).not.toContain("received 16 chars")
+    expect(ptyTrace(40)).not.toContain(`received ${wheel.length} chars`)
   })
 })
 
