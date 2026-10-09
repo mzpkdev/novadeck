@@ -7,6 +7,7 @@ import { beforeAll, type TestFunction } from "vitest"
 import { it as base } from "../test.js"
 import type { AgentSetup, Seed } from "./agents/agent.js"
 import { setups as every } from "./agents/index.js"
+import { harnessLogins } from "./credentials.js"
 import { createDeck, type Deck } from "./deck.js"
 import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
@@ -65,6 +66,13 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
   const test = base.extend<{ e2e: E2E }>({
     e2e: async ({ resources }, use) => {
       if (refusal !== undefined) throw new Error(refusal)
+      // A login in Windows' Credential Manager would be the developer's own, which no
+      // sandbox hides: nothing starts while one is there.
+      const logins = harnessLogins(setups)
+      if (logins.length > 0)
+        throw new Error(
+          `Windows' Credential Manager holds a login of a harness under test (${logins.join(", ")}), which the sandbox can't hide from it: sign that harness out, or leave it out with NOVADECK_E2E_AGENTS`,
+        )
       const model = await startFakeModel({ dialects: setups.map((setup) => setup.dialect) })
       resources.defer(() => model.close())
       // Installed before the file's tests: these are the same installs, already done.
@@ -133,6 +141,9 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         // Reported here too when a wait failed with it: a test may have swallowed that.
         ...(model.rejection() ? [model.rejection()!] : []),
         ...changed().map((path) => `the developer's harness home changed: ${path}`),
+        ...harnessLogins(setups).map(
+          (target) => `a login appeared in Windows' Credential Manager: ${target}`,
+        ),
         ...leftovers.map((one) => `a process outlived the deck in the sandbox: ${one}`),
       ]
       await model.close()
