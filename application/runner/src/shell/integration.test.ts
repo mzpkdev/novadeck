@@ -3642,66 +3642,53 @@ describe.skipIf(process.platform === "win32" || !existsSync(zsh))("zsh shell int
 })
 
 describe.runIf(process.platform === "win32")("Windows shell integration", () => {
-  // PowerShell 7 installs apart from Windows, as on CI's runners; Windows 10 has only 5.1.
-  const pwsh = (process.env.PATH ?? process.env.Path ?? "")
-    .split(";")
-    .some((folder) => folder !== "" && existsSync(join(folder, "pwsh.exe")))
   const shells = [
     {
       name: "cmd",
       shell: process.env.COMSPEC ?? "cmd.exe",
-      installed: true,
       cd: (path: string) => `cd /d "${path}"`,
       prompt: /[A-Za-z]:\\[^\r\n]*>/,
     },
     {
       name: "PowerShell 7",
       shell: "pwsh.exe",
-      installed: pwsh,
       cd: (path: string) => `Set-Location '${path}'`,
       prompt: /PS .*>/,
     },
   ]
 
-  for (const { name, shell: program, installed, cd, prompt } of shells) {
-    it.runIf(installed)(
-      `${name} reports each prompt's directory through ConPTY`,
-      async ({ shell }) => {
-        const directory = join(shell.home, "my dir")
-        mkdirSync(directory)
-        const manager = shell.manager({ shell: program })
-        const next = shell.watch(manager)
-        const terminal = await create(manager, shell)
-        // Typed once the prompt shows, as a person would.
-        await shell.until(manager, terminal.id, prompt)
-        await new Promise((resolve) => setTimeout(resolve, 1_000))
-        manager.write({ terminalId: terminal.id, data: `${cd(directory)}\r` }, "owner")
-        await next((summary) => summary.cwd.toLowerCase() === directory.toLowerCase())
-      },
-    )
+  for (const { name, shell: program, cd, prompt } of shells) {
+    it(`${name} reports each prompt's directory through ConPTY`, async ({ shell }) => {
+      const directory = join(shell.home, "my dir")
+      mkdirSync(directory)
+      const manager = shell.manager({ shell: program })
+      const next = shell.watch(manager)
+      const terminal = await create(manager, shell)
+      // Typed once the prompt shows, as a person would.
+      await shell.until(manager, terminal.id, prompt)
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+      manager.write({ terminalId: terminal.id, data: `${cd(directory)}\r` }, "owner")
+      await next((summary) => summary.cwd.toLowerCase() === directory.toLowerCase())
+    })
   }
 
   // Windows PowerShell 5.1 shows nothing through the bundled ConPTY on CI, resuming or not.
-  for (const { name, shell: program, installed } of shells)
-    it.runIf(installed)(
-      `${name} resumes the saved agent session as it starts`,
-      async ({ shell }) => {
-        const pathKey =
-          Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH"
-        const bin = join(shell.home, "bin")
-        mkdirSync(bin)
-        writeFileSync(join(bin, "claude.cmd"), "@echo claude args: %*\r\n")
-        const id = randomUUID()
-        shell.saveSession(id, "claude", "abc-1")
-        const manager = shell.manager({
-          shell: program,
-          // Windows spells it Path; a second spelling would leave which one wins open.
-          env: { HOME: shell.home, [pathKey]: `${bin};${process.env[pathKey]}` },
-        })
-        await create(manager, shell, { id, restore: true, resume: "claude" })
-        await shell.until(manager, id, "claude args: --resume abc-1")
-      },
-    )
+  for (const { name, shell: program } of shells)
+    it(`${name} resumes the saved agent session as it starts`, async ({ shell }) => {
+      const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH"
+      const bin = join(shell.home, "bin")
+      mkdirSync(bin)
+      writeFileSync(join(bin, "claude.cmd"), "@echo claude args: %*\r\n")
+      const id = randomUUID()
+      shell.saveSession(id, "claude", "abc-1")
+      const manager = shell.manager({
+        shell: program,
+        // Windows spells it Path; a second spelling would leave which one wins open.
+        env: { HOME: shell.home, [pathKey]: `${bin};${process.env[pathKey]}` },
+      })
+      await create(manager, shell, { id, restore: true, resume: "claude" })
+      await shell.until(manager, id, "claude args: --resume abc-1")
+    })
 })
 
 /**
