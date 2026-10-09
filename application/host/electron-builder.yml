@@ -52,6 +52,13 @@ mac:
     NSLocationUsageDescription: A program running in Novadeck wants to use your location.
     NSLocationWhenInUseUsageDescription: A program running in Novadeck wants to use your location.
     NSPhotoLibraryUsageDescription: A program running in Novadeck wants to use your photos.
+    NSBluetoothAlwaysUsageDescription: A program running in Novadeck wants to use Bluetooth.
+    NSLocalNetworkUsageDescription: A program running in Novadeck wants to reach devices on your local network.
+    NSDesktopFolderUsageDescription: A program running in Novadeck wants to use files on your Desktop.
+    NSDocumentsFolderUsageDescription: A program running in Novadeck wants to use files in your Documents folder.
+    NSDownloadsFolderUsageDescription: A program running in Novadeck wants to use files in your Downloads folder.
+    NSRemovableVolumesUsageDescription: A program running in Novadeck wants to use files on a removable volume.
+    NSNetworkVolumesUsageDescription: A program running in Novadeck wants to use files on a network volume.
   # Only this platform's PTY binaries: signing would otherwise reach the Linux and Windows
   # prebuilds, which codesign cannot sign as code.
   files:

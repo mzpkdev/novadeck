@@ -60,17 +60,18 @@ Polish sole proprietorship validates as an organization, with its CEIDG name.
    Public Trust certificate profile from it.
 3. Create an app registration with a client secret, and give its service principal the
    **Artifact Signing Certificate Profile Signer** role on the account.
-4. Add these repository secrets and variables:
+4. Add these repository secrets and variables. The four variables turn Windows signing
+   on; the release then needs the three secrets too:
 
-| Name                      | Kind     | Value                                                       |
-| ------------------------- | -------- | ----------------------------------------------------------- |
-| `AZURE_TENANT_ID`         | Secret   | The directory (tenant) ID                                   |
-| `AZURE_CLIENT_ID`         | Secret   | The app registration's application (client) ID              |
-| `AZURE_CLIENT_SECRET`     | Secret   | Its client secret                                           |
-| `AZURE_SIGNING_ENDPOINT`  | Variable | The account's regional endpoint                             |
-| `AZURE_SIGNING_ACCOUNT`   | Variable | The Artifact Signing account's name                         |
-| `AZURE_SIGNING_PROFILE`   | Variable | The certificate profile's name; setting it turns signing on |
-| `AZURE_SIGNING_PUBLISHER` | Variable | The certificate's subject, such as `CN=…, O=…, C=PL`        |
+| Name                      | Kind     | Value                                                |
+| ------------------------- | -------- | ---------------------------------------------------- |
+| `AZURE_TENANT_ID`         | Secret   | The directory (tenant) ID                            |
+| `AZURE_CLIENT_ID`         | Secret   | The app registration's application (client) ID       |
+| `AZURE_CLIENT_SECRET`     | Secret   | Its client secret                                    |
+| `AZURE_SIGNING_ENDPOINT`  | Variable | The account's regional endpoint                      |
+| `AZURE_SIGNING_ACCOUNT`   | Variable | The Artifact Signing account's name                  |
+| `AZURE_SIGNING_PROFILE`   | Variable | The certificate profile's name                       |
+| `AZURE_SIGNING_PUBLISHER` | Variable | The certificate's subject, such as `CN=…, O=…, C=PL` |
 
 A client secret expires; renew it in the app registration before then and update
 `AZURE_CLIENT_SECRET`.

@@ -288,6 +288,7 @@ const signMac = async (staging: string): Promise<void> => {
 }
 
 // The signing module, pinned: it runs with the Azure credentials in its environment.
+// electron-builder installs its own, the newest, to sign the app.
 const trustedSigning = "0.5.8"
 
 // A PowerShell string literal.
