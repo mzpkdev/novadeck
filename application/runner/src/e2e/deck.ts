@@ -557,7 +557,11 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       // startup files, even the system's own in /etc/profile, could put another PATH
       // before the pinned harnesses.
       agents: { env: options.env, home: options.env.HOME!, login: false },
-      terminals: { shell: "/bin/bash", baseEnv: options.env },
+      // bash, or on Windows cmd, whose integration reports its prompts as bash's does.
+      terminals: {
+        shell: process.platform === "win32" ? (options.env.ComSpec ?? "cmd.exe") : "/bin/bash",
+        baseEnv: options.env,
+      },
     })
     // The runner carries on without its shell files; a test can't, as no agent would report.
     if ((await shellFiles) === undefined) {

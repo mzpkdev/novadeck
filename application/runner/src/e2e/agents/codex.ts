@@ -235,11 +235,17 @@ type Message = { readonly id?: unknown; readonly result?: unknown; readonly erro
  * as the app-server can't answer, as it failed to start or exited.
  */
 const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) => {
-  const child = spawn("codex", ["app-server"], {
-    env,
-    cwd: env.HOME,
-    stdio: ["pipe", "pipe", "ignore"],
-  })
+  // On Windows through cmd, as npm installs it as codex.cmd, which only cmd runs.
+  const child =
+    process.platform === "win32"
+      ? spawn(env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", '"codex app-server"'], {
+          env,
+          cwd: env.HOME,
+          stdio: ["pipe", "pipe", "ignore"],
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+        })
+      : spawn("codex", ["app-server"], { env, cwd: env.HOME, stdio: ["pipe", "pipe", "ignore"] })
   const pending = new Map<number, (message: Message | Error) => void>()
   // Why the app-server can't answer any more, once it can't.
   let gone: Error | undefined
@@ -297,7 +303,12 @@ const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) =>
       send({ jsonrpc: "2.0", method: "initialized" })
     },
     request,
-    close: () => child.kill(),
+    // On Windows with the codex cmd started, which ending cmd alone leaves running.
+    close: () => {
+      if (process.platform === "win32" && child.pid !== undefined)
+        execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true })
+      else child.kill()
+    },
   }
 }
 
