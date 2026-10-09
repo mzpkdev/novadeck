@@ -8,9 +8,14 @@ import {
   type WorkspaceAction,
 } from "../model/state"
 import type { WorkspaceTransaction } from "../model/store"
-import type { PreferencesValue, ViewMode, Workspace } from "../model/types"
+import {
+  sidebarPanels,
+  type PreferencesValue,
+  type SidebarPanel,
+  type ViewMode,
+  type Workspace,
+} from "../model/types"
 import { preferencesTabs, type PreferencesTab } from "../preferences/settings"
-import type { SidebarPanel } from "../shell/shell-state"
 
 export type WorkspaceRoute = {
   projectId: string
@@ -54,7 +59,7 @@ const sectionOf = (name: string | null): PreferencesTab =>
 
 // The sidebar panel a URL names, Terminals for anything else.
 const panelOf = (name: string | null): SidebarPanel =>
-  name === "sessions" || name === "notifications" ? name : "terminals"
+  sidebarPanels.find((panel) => panel === name) ?? "terminals"
 
 export const routeUrl = (route: WorkspaceRoute): string => {
   const search = new URLSearchParams()

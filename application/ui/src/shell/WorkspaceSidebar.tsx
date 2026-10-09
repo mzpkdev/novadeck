@@ -2,14 +2,14 @@ import { Plus } from "lucide-react"
 import type { ComponentProps } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
-import type { Tile, WorkspaceSession } from "../model/types"
+import type { SidebarPanel as PanelId, Tile, WorkspaceSession } from "../model/types"
 import type { Notification } from "../notifications/notifications"
 import { MarkAllReadButton, NotificationsPanel } from "../notifications/NotificationsPanel"
 import { SessionsPanel } from "../sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../sidebar/SidebarPanel"
 import { TerminalTabs } from "../terminals/TerminalTabs"
 import type { Viewing } from "../terminals/unread-state"
-import type { SidebarPanel as PanelId } from "./shell-state"
+import { panelLabels } from "./panels"
 
 type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals"> & {
   projectId: string
@@ -23,19 +23,13 @@ type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals"> & {
   viewing: Viewing
   sidebarVisible: boolean
   onSessionSelect: (id: string) => void
-  onReveal: (terminalId: string, context: string) => void
-  onDismissNotification: (context: string, terminalId: string) => void
+  onReveal: (notification: Notification) => void
+  onDismissNotification: (notification: Notification) => void
   onDismissAllNotifications: (shown: readonly Notification[]) => void
   onFresh: () => void
   onHide: () => void
   onCreate: () => void
 }
-const asideLabels: Readonly<Record<PanelId, string>> = {
-  terminals: "Terminal sessions",
-  sessions: "Workspace sessions",
-  notifications: "Notifications",
-}
-
 export const WorkspaceSidebar = ({
   projectId,
   workspaceSessionId,
@@ -59,7 +53,7 @@ export const WorkspaceSidebar = ({
   <aside
     id="terminal-sidebar"
     className="sidebar relative flex shrink-0 flex-col overflow-hidden"
-    aria-label={asideLabels[sidebarPanel]}
+    aria-label={panelLabels[sidebarPanel]}
     aria-hidden={!sidebarVisible}
     inert={!sidebarVisible}
   >

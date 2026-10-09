@@ -78,7 +78,7 @@ export const SidebarSection = memo((): React.JSX.Element => {
       viewing={selected}
       sidebarVisible={visible}
       onSessionSelect={switchSession}
-      onReveal={reveal}
+      onReveal={({ terminalId, context }) => reveal(terminalId, context)}
       onDismissNotification={dismissNotification}
       onDismissAllNotifications={dismissAllNotifications}
       onFresh={startFresh}

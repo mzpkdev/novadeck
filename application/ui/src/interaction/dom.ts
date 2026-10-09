@@ -1,3 +1,5 @@
+import type { SidebarPanel } from "../model/types"
+
 // DOM contracts for keyboard policy and focus restoration. Library-specific
 // overlay markup stays here so interaction owners do not depend on it. `data-own-keys`
 // marks a region that takes its own keys, as the demo's debug panel does: the
@@ -82,8 +84,6 @@ export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
 export const terminalTabInteractionActive = (): boolean =>
   Boolean(document.querySelector(".terminal-tab.editing, .terminal-tab.dragging"))
 
-// The sidebar's panels, each with a toggle on the rail.
-export type SidebarPanel = "terminals" | "sessions" | "notifications"
 export const sidebarToggle = (panel: SidebarPanel): HTMLElement | null =>
   document.getElementById(`${panel}-toggle`)
 export const focusSidebarToggle = (panel: SidebarPanel): void => sidebarToggle(panel)?.focus()

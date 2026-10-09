@@ -28,8 +28,8 @@ type NotificationsPanelProps = {
   items: readonly Notification[]
   // The terminal the person is looking at, which is no news to them.
   viewing: Viewing
-  onReveal: (terminalId: string, context: string) => void
-  onDismiss: (context: string, terminalId: string) => void
+  onReveal: (notification: Notification) => void
+  onDismiss: (notification: Notification) => void
 }
 
 // The kind in a word, to lead the row's detail line; its status in full is the tooltip's.
@@ -115,12 +115,12 @@ export const NotificationsPanel = ({
           const Icon = icons[item.kind]
           const where = `${item.projectName} · ${item.sessionName}`
           const reveal = (): void => {
-            onReveal(item.terminalId, item.context)
+            onReveal(item)
             if (dismissable(item.kind)) settleFocus(items[index + 1] ?? items[index - 1])
           }
           const dismiss = (): void => {
             holdFocus()
-            onDismiss(item.context, item.terminalId)
+            onDismiss(item)
             settleFocus(items[index + 1] ?? items[index - 1])
           }
           return (

@@ -1,20 +1,21 @@
 import { clearUnread } from "../../terminals/unread-state"
 import type { CommandContext } from "./context"
 
+// Which finish: the terminal and the session context that holds it.
+type Finish = { readonly context: string; readonly terminalId: string }
+
 export type NotificationCommands = {
   // Reads a finish in the notification center: the terminal's unread turn end, in the
   // session context that holds it, is cleared. A request waits until its agent is answered.
-  readonly dismissNotification: (context: string, terminalId: string) => void
+  readonly dismissNotification: (finish: Finish) => void
   // Reads the finishes the panel lists, and no mark it doesn't show.
-  readonly dismissAllNotifications: (
-    shown: readonly { readonly context: string; readonly terminalId: string }[],
-  ) => void
+  readonly dismissAllNotifications: (shown: readonly Finish[]) => void
 }
 
 export const createNotificationCommands = ({
   ui,
 }: Pick<CommandContext, "ui">): NotificationCommands => ({
-  dismissNotification: (context, terminalId) =>
+  dismissNotification: ({ context, terminalId }) =>
     void ui.update((state) => {
       const unread = clearUnread(state.unread, context, terminalId)
       return unread === state.unread ? state : { ...state, unread }

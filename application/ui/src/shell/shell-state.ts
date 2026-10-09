@@ -1,5 +1,4 @@
-import type { SidebarPanel } from "../interaction/dom"
-import type { ViewMode } from "../model/types"
+import type { SidebarPanel, ViewMode } from "../model/types"
 
 export type { SidebarPanel }
 export type KeyboardFocus = { readonly id: string; readonly view: ViewMode }

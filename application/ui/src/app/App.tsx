@@ -5,7 +5,8 @@ import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
 import { cancelTerminalTransition } from "../layouts/transition"
 import { useDesktop } from "../shell/desktop"
-import { sidebarVisible, type SidebarPanel } from "../shell/shell-state"
+import { panelLabels } from "../shell/panels"
+import { sidebarVisible } from "../shell/shell-state"
 import { SidebarRail } from "../shell/SidebarRail"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
 import { ZenDock } from "../shell/ZenDock"
@@ -44,12 +45,6 @@ export const App = ({ createBackend }: AppProps): React.JSX.Element => (
     )}
   />
 )
-
-const mobileLabels: Record<SidebarPanel, string> = {
-  terminals: "Terminal sessions",
-  sessions: "Workspace sessions",
-  notifications: "Notifications",
-}
 
 // The backend's debug panel, where this launch offers one.
 const DebugSection = (): React.JSX.Element | null => {
@@ -143,7 +138,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
               if (!open) hideSidebar()
             }}
             mobileRail={sidebarRail(true)}
-            mobileLabel={mobileLabels[sidebarPanel]}
+            mobileLabel={panelLabels[sidebarPanel]}
             mobileFinalFocusEl={() => sidebarToggle(sidebarPanel)}
             sidebar={<SidebarSection />}
           >

@@ -18,7 +18,7 @@ describe("Notification commands", () => {
   context("when the person dismisses a finish", () => {
     it("reads that terminal only", () => {
       const app = unreadApp()
-      app.commands.dismissNotification("project/initial", "02")
+      app.commands.dismissNotification({ context: "project/initial", terminalId: "02" })
       expect(app.ui.getSnapshot().unread).toEqual({
         "project/initial": { "01": "done" },
         "project/other": { "09": "done" },
@@ -27,7 +27,7 @@ describe("Notification commands", () => {
 
     it("leaves the state as it was for one already read", () => {
       const app = unreadApp()
-      app.commands.dismissNotification("project/initial", "07")
+      app.commands.dismissNotification({ context: "project/initial", terminalId: "07" })
       expect(app.ui.getSnapshot().unread).toBe(unread)
     })
   })

@@ -1,10 +1,10 @@
 import { Bell, History, Terminal as TerminalIcon } from "lucide-react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
+import { sidebarPanels, type SidebarPanel } from "../model/types"
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
 import type { BellBadge } from "./notification-badge"
 import { NotificationBadge } from "./NotificationBadge"
-import type { SidebarPanel } from "./shell-state"
 
 export const SidebarRail = ({
   mobile = false,
@@ -31,9 +31,8 @@ export const SidebarRail = ({
       orientation="vertical"
       value={sidebarVisible ? [sidebarPanel] : []}
       onValueChange={(value) => {
-        const next = value[0]
-        if (next === "terminals" || next === "sessions" || next === "notifications")
-          toggleSidebar(next)
+        const next = sidebarPanels.find((panel) => panel === value[0])
+        if (next) toggleSidebar(next)
         else hideSidebar()
       }}
     >
