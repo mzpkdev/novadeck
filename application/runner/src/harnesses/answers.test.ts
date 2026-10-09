@@ -195,7 +195,7 @@ const handlers = (value: unknown): { command: string; timeout?: number }[] => {
 }
 
 describe("each harness's hook registrations", () => {
-  it("set a timeout well above the hook's own limit, as a slower hook is dropped silently", () => {
+  it("set a timeout above the hook's own limit, as a slower hook is dropped silently", () => {
     expect(hookSeconds).toBeGreaterThan(5)
     const registered = [
       ...handlers(file("claude", join("novadeck", "hooks", "hooks.json")).hooks),
@@ -203,7 +203,11 @@ describe("each harness's hook registrations", () => {
       ...handlers(file("agy", "hooks.json").novadeck),
     ]
     expect(registered.length).toBeGreaterThan(15)
-    for (const handler of registered) expect(handler.timeout).toBe(hookSeconds)
+    for (const handler of registered)
+      if (handler.command.includes("codex Interrupt"))
+        // Codex's most for an Interrupt hook, which reports within 2 seconds.
+        expect(handler.timeout).toBe(3)
+      else expect(handler.timeout).toBe(hookSeconds)
   })
 
   it("register every event that asks", () => {
