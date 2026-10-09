@@ -13,22 +13,21 @@ import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
 import { reap } from "./reap.js"
 import { createSandbox, type Sandbox } from "./sandbox.js"
+import { unsupported } from "./support.js"
 import { startTrace, tracesAll, tracing } from "./trace.js"
 import { tripwire } from "./tripwire.js"
 
 export { describe, expect } from "../test.js"
 
+// Why the suite can't run here (see `unsupported`), or undefined where it can.
+const refusal = unsupported(process.platform, process.env)
+
 /**
- * Whether the suite can run here: Linux and Windows. On macOS the sandbox's dead D-Bus
- * address doesn't keep a harness from the developer's keyring, as the Keychain needs no
- * bus. On Windows the sandbox moves the user's folders too (see `createSandbox`), where
- * Claude Code and Codex keep their credentials in files; Antigravity keeps its login in
- * the Credential Manager, which no sandbox hides, so a test refuses to start while that
- * login is there (see `harnessLogins`). The leftover-process check asks the system
- * rather than /proc. A scenario file can skip on it (`describe.skipIf(!supported)`);
- * a test that runs anyway fails, saying why.
+ * Whether the suite can run here: Linux and Windows, and macOS in CI or when the developer
+ * opts in (see `unsupported`). A scenario file can skip on it
+ * (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
  */
-export const supported = process.platform === "linux" || process.platform === "win32"
+export const supported = refusal === undefined
 
 /**
  * The harnesses this run tests, from `NOVADECK_E2E_AGENTS`: their names, comma-separated
@@ -67,10 +66,7 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
   })
   const test = base.extend<{ e2e: E2E }>({
     e2e: async ({ resources, task, onTestFailed }, use) => {
-      if (!supported)
-        throw new Error(
-          `The end-to-end suite runs on Linux and Windows, not ${process.platform}: there nothing keeps a harness from the developer's keyring`,
-        )
+      if (refusal !== undefined) throw new Error(refusal)
       // A login in Windows' Credential Manager would be the developer's own, which no
       // sandbox hides: nothing starts while one is there.
       const logins = harnessLogins(setups)
