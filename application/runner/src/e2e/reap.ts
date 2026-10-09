@@ -159,11 +159,12 @@ Add-Type -LiteralPath ${quoted(assembly)}
 $root = ${quoted(sandbox.root)}
 $sandboxHome = ${quoted(sandbox.home)}
 $since = [DateTimeOffset]::FromUnixTimeMilliseconds(${sandbox.started}).UtcDateTime
-$found = @(Get-CimInstance Win32_Process | ForEach-Object {
-  if ($_.ProcessId -eq $PID -or $_.ProcessId -eq ${process.pid} -or $null -eq $_.CreationDate) { return }
-  $created = $_.CreationDate.ToUniversalTime()
+$found = @([Diagnostics.Process]::GetProcesses() | ForEach-Object {
+  if ($_.Id -eq $PID -or $_.Id -eq ${process.pid}) { return }
+  # Another user's, or the system's, has no start this user may read.
+  try { $created = $_.StartTime.ToUniversalTime() } catch { return }
   if ($created -lt $since) { return }
-  $read = [NovadeckPeb]::Of([int]$_.ProcessId)
+  $read = [NovadeckPeb]::Of($_.Id)
   if ($null -eq $read) { return }
   $cwd = $read[0].TrimEnd('\\')
   $inside = $cwd -ieq $root -or $cwd.StartsWith("$root\\", [StringComparison]::OrdinalIgnoreCase)
@@ -171,7 +172,7 @@ $found = @(Get-CimInstance Win32_Process | ForEach-Object {
     $own = $read[1].Split([char]0) | Where-Object { $_ -ieq "HOME=$sandboxHome" -or $_ -ieq "USERPROFILE=$sandboxHome" }
     if (-not $own) { return }
   }
-  [pscustomobject]@{ pid = [int]$_.ProcessId; comm = $_.Name; start = ([DateTimeOffset]$created).ToUnixTimeMilliseconds() }
+  [pscustomobject]@{ pid = $_.Id; comm = "$($_.ProcessName).exe"; start = ([DateTimeOffset]$created).ToUnixTimeMilliseconds() }
 })
 ConvertTo-Json -Compress -InputObject $found
 `
@@ -188,8 +189,9 @@ const listed = (output: string): readonly Process[] => {
   return rows.map(({ pid, comm, start }) => ({ pid, comm, start, stopped: false }))
 }
 
-// Windows, through Windows PowerShell, which every Windows has: CIM for the processes and
-// their starts, and their parameters for their working folders and environments.
+// Windows, through Windows PowerShell, which every Windows has: .NET's list of processes
+// for their starts, never WMI, whose first queries on a fresh machine take many seconds,
+// and the parameters of those started since the sandbox for their folders and environments.
 const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
   const root = process.env.SystemRoot ?? "C:\\Windows"
   const powershell = join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")

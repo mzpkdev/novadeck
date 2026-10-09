@@ -326,4 +326,10 @@ export type AgentSetup = {
    * reach: one that does fails the test, as the fake model was bypassed.
    */
   readonly hosts?: readonly string[]
+  /**
+   * On Windows, the Credential Manager targets the harness keeps its login under, where it
+   * keeps it there: no environment moves that store into the sandbox, so a test of it
+   * refuses to start while one is there, and fails should one appear.
+   */
+  readonly credentials?: readonly RegExp[]
 }

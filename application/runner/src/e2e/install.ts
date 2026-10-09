@@ -118,12 +118,24 @@ const installEnvironment = (cache: string): NodeJS.ProcessEnv => {
   }
 }
 
-const run = (args: readonly string[], cache: string) =>
-  promisify(execFile)(npm(), [...args], {
-    env: installEnvironment(cache),
-    shell: process.platform === "win32",
-    maxBuffer: 16 * 1024 * 1024,
+// A word for cmd's command line: quoted where it holds a space or a character cmd reads.
+const cmdWord = (word: string): string => (/^[\w@.:\\/=-]+$/.test(word) ? word : `"${word}"`)
+
+/**
+ * Runs npm with its arguments. On Windows npm is npm.cmd, which only cmd runs: the command
+ * line goes to cmd whole, each word quoted where it needs it, as npm's own folder may be
+ * `C:\Program Files\nodejs`, which cmd would split at its space.
+ */
+const run = (args: readonly string[], cache: string) => {
+  const settings = { env: installEnvironment(cache), maxBuffer: 16 * 1024 * 1024 }
+  if (process.platform !== "win32") return promisify(execFile)(npm(), [...args], settings)
+  const line = [npm(), ...args].map(cmdWord).join(" ")
+  return promisify(execFile)(settings.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `"${line}"`], {
+    ...settings,
+    windowsHide: true,
+    windowsVerbatimArguments: true,
   })
+}
 
 /**
  * How long a newest release looked up stands: long enough for a run that installs with
