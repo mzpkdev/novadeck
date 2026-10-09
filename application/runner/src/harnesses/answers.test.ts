@@ -172,8 +172,7 @@ describe("a doorbell prompt", () => {
     await expect(
       harnesses.agy.messaging.initialPrompt(bell, { install, cwd: `${trusted}/./` }),
     ).resolves.toEqual(["agy", "-i", bell])
-    // A junction on Windows, which links a folder without an administrator.
-    symlinkSync(trusted, join(home, "linked"), "junction")
+    symlinkSync(trusted, join(home, "linked"))
     await expect(
       harnesses.agy.messaging.initialPrompt(bell, { install, cwd: join(home, "linked") }),
     ).resolves.toBeUndefined()
