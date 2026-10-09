@@ -1,3 +1,4 @@
+import type { SidebarPanel } from "../../model/types"
 import {
   bumpNavigation,
   enterZen,
@@ -8,7 +9,6 @@ import {
   type FocusPreview,
   type KeyboardFocus,
   type ShellState,
-  type SidebarPanel,
 } from "../../shell/shell-state"
 import { currentContext } from "../selectors"
 import { updateShell } from "../ui-store"
