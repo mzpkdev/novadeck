@@ -15,7 +15,7 @@ import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { InputQueue } from "./input-queue.js"
+import { InputQueue, type HoldBudget } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -163,15 +163,12 @@ describe("an answer's hold of the person's input", () => {
       "creator",
     )
     await new Promise((resolve) => setTimeout(resolve, 300))
+    // An answer's hold, as the queue gives it: its keys deferred until delivered.
     const hold = (
       manager as unknown as {
-        holdInput: (
-          id: string,
-          cap: number,
-          options: object,
-        ) => { release: () => void; settle: () => void }
+        holdInput: (id: string, budget: HoldBudget) => { release: () => void; settle: () => void }
       }
-    ).holdInput(terminal.id, 5_000, { deferKeys: true })
+    ).holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
     // What the children traced from here on, however much a busy machine traced before.
     const mark = traced().length
     const since = (): string => traced().slice(mark).join("\n")
