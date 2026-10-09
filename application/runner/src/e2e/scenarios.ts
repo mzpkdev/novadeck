@@ -98,14 +98,15 @@ export const unrung = 8000
  * Opens a terminal whose command runs `first`, then `then` once it exits, and waits until
  * the first is Ready at its prompt: the person leaving the first starts the second, with
  * no key pressed at the shell's prompt. Novadeck expects the first there, by its command's
- * first word, which `;` set apart keeps whole.
+ * first word, which `;` set apart keeps whole: `&` in cmd, the terminals' shell on
+ * Windows, which takes `;` as a word of the command.
  */
 export const handing = async (
   { deck }: E2E,
   first: AgentSetup,
   then: AgentSetup,
 ): Promise<DeckTerminal> => {
-  const command = `${first.agent} ; ${then.agent}`
+  const command = `${first.agent} ${process.platform === "win32" ? "&" : ";"} ${then.agent}`
   if (expectedAgent(command, undefined) !== first.agent)
     throw new Error(`Novadeck doesn't expect ${first.agent} first in \`${command}\``)
   const terminal = await deck.open(command)

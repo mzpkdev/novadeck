@@ -496,13 +496,15 @@ for (const setup of setups) {
       // The person's own `!`, typed in the terminal and left there.
       t1.press("!")
       await shelled(true)
-      await expect(t1.prompt("touch left.txt")).rejects.toMatchObject({ code: "CONFLICT" })
-      await expect(t1.prompt("!touch left.txt")).rejects.toMatchObject({ code: "CONFLICT" })
+      // A command that makes the file in every harness's shell: bash, PowerShell or cmd.
+      const make = "echo left > left.txt"
+      await expect(t1.prompt(make)).rejects.toMatchObject({ code: "CONFLICT" })
+      await expect(t1.prompt(`!${make}`)).rejects.toMatchObject({ code: "CONFLICT" })
       await sleep(1000)
       expect(existsSync(left)).toBe(false)
       t1.press("\x7f")
       await shelled(false)
-      await t1.prompt("!touch left.txt")
+      await t1.prompt(`!${make}`)
       await t1.poll(() => existsSync(left) || undefined, "left.txt to be made", 15_000)
     })
 
