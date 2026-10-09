@@ -16,7 +16,7 @@ import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { screen as screenWith } from "../testing/screens.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { InputQueue, type HoldBudget } from "./input-queue.js"
+import { type HoldBudget, InputQueue } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -182,15 +182,16 @@ describe("an answer's hold of the person's input", () => {
     // What the children traced from here on, however much a busy machine traced before.
     const mark = traced().length
     const since = (): string => traced().slice(mark).join("\n")
-    // 16 characters, which no other write of this test has: the child traces lengths.
-    manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
+    // A length no other write of this test has: the child traces lengths.
+    const wheel = "\x1b[<64;123;456M"
+    manager.write({ terminalId: terminal.id, data: wheel }, "creator")
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
     hold.settle()
-    // The key went once released; the wheel report never did.
+    // The key went once released; the wheel report, held before it, never did.
     await vi.waitFor(() => expect(since()).toContain("received 1 chars"), { timeout: 5_000 })
     await new Promise((resolve) => setTimeout(resolve, 400))
-    expect(since()).not.toContain("received 16 chars")
+    expect(since()).not.toContain(`received ${wheel.length} chars`)
   })
 })
 
