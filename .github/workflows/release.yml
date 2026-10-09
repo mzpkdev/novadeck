@@ -398,7 +398,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$bundle"
           spctl --assess --type execute --verbose=2 "$bundle"
           xcrun stapler validate "$bundle"
-          hdiutil detach "$image" > /dev/null
+          hdiutil detach -force "$image" > /dev/null
 
           tar -xzf application/whisper/dist/novadeck-whisper-*.tar.gz -C "$verify/engine"
           for file in "$verify"/engine/whisper-server "$verify"/engine/*.dylib; do
@@ -427,8 +427,8 @@ jobs:
           Write-Host "$($files.Count) files are validly signed."
 
       # Each package runs for ten seconds as people get it: the AppImage as it is, the deb
-      # installed, which also resolves its dependencies, and the app from the macOS ZIP and
-      # disk image and from the Windows installer and portable executable.
+      # installed, and the app from the macOS ZIP and disk image and from the Windows
+      # installer and portable executable.
       - name: Smoke Test Linux Packages
         if: matrix.target == 'linux'
         shell: bash
@@ -572,13 +572,16 @@ jobs:
           if ($null -eq $uninstaller) {
             throw "The installer put no uninstaller in $folder."
           }
-          Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait | Out-Null
+          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "The uninstaller failed with status $($uninstall.ExitCode)."
+          }
           # The uninstaller runs from a copy of itself, so it may still be removing files.
-          for ($second = 0; $second -lt 30 -and (Test-Path $app); $second++) {
+          for ($second = 0; $second -lt 30 -and (Test-Path $folder); $second++) {
             Start-Sleep -Seconds 1
           }
-          if (Test-Path $app) {
-            throw "Uninstalling left $app behind."
+          if (Test-Path $folder) {
+            throw "Uninstalling left $folder behind."
           }
 
       - name: Smoke Test Packaged Runner
