@@ -80,9 +80,7 @@ export type WorkspaceCommands = ShellCommands &
     readonly openRequested: (request: TerminalRequest) => void
     // Brings a terminal into view wherever it is, as a click on a notification about it
     // asks: its project and session to the front, the terminal selected.
-    // Terminal IDs are only the runner's to keep apart, so a list that knows the session
-    // holding it names it as `${projectId}/${sessionId}`.
-    readonly reveal: (terminalId: string, context?: string) => void
+    readonly reveal: (terminalId: string) => void
     // Closes the terminal, or asks first while a program runs in it.
     readonly close: (terminalId: string) => void
     // Answers the pending close confirmation.
@@ -97,19 +95,14 @@ export type WorkspaceCommands = ShellCommands &
 // The terminal created last stays highlighted this long.
 const createdHighlight = 900
 
-// The project and session holding the terminal, wherever it is; where sessions repeat an
-// ID, the one at this context, `${projectId}/${sessionId}`.
+// The project and session holding the terminal, wherever it is.
 const holding = (
   workspace: Workspace,
   terminalId: string,
-  context?: string,
 ): { project: WorkspaceProject; session: WorkspaceSession } | undefined => {
   for (const project of workspace.projects)
     for (const session of project.history)
-      if (
-        (context === undefined || context === `${project.id}/${session.id}`) &&
-        session.state.roster.terminals.some((terminal) => terminal.id === terminalId)
-      )
+      if (session.state.roster.terminals.some((terminal) => terminal.id === terminalId))
         return { project, session }
   return undefined
 }
@@ -426,9 +419,9 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
         markCreated({ context: `${project.id}/${session.id}`, id: terminal.id })
       request.answer({ terminalId: terminal.id })
     },
-    reveal: (terminalId, context) => {
+    reveal: (terminalId) => {
       const snapshot = workspace.getSnapshot()
-      const found = holding(snapshot, terminalId, context)
+      const found = holding(snapshot, terminalId)
       if (!found) return
       const { project, session } = found
       const target = { projectId: project.id, workspaceSessionId: session.id }

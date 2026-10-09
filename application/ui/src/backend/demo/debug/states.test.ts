@@ -6,7 +6,7 @@ import { createWorkspaceStore } from "../../../model/store"
 import { terminalPhase } from "../../../model/terminal-ending"
 import { context, describe, expect, it } from "../../../test"
 import type { BackendAction, TerminalKey } from "../../port"
-import { createMockTerminal, demoSeed } from "../samples"
+import { createMockTerminal, demoSeed, demoTerminalId, terminalSlot } from "../samples"
 import { createDemoStates } from "./states"
 import { backToPrompt, exitedWithCode, terminalOf } from "./terminals"
 import type { DemoActionContext } from "./types"
@@ -17,11 +17,15 @@ afterEach(() => vi.useRealTimers())
 const initial = workspaceFromSeed(demoSeed(0), { view: "focus", windowedView: "grid", now: 0 })
 const project = initial.projects[0]!
 const session = project.history[0]!
-const key = (terminalId: string): TerminalKey => ({
+// A terminal of the first session by its number, as `"04"`.
+const id = (slot: string): string =>
+  demoTerminalId({ projectId: project.id, workspaceSessionId: session.id }, Number(slot))
+const inSession = (terminalId: string): TerminalKey => ({
   projectId: project.id,
   workspaceSessionId: session.id,
   terminalId,
 })
+const key = (slot: string): TerminalKey => inSession(id(slot))
 
 // A panel over a real workspace, with the terminal on screen as given. It records what the
 // panel does that the app would take for a person's move: adding a terminal the way "+"
@@ -40,7 +44,7 @@ const panel = (selected: string | undefined, { keeping }: { keeping?: number } =
               })),
             ),
           )
-          .filter(({ terminalId }) => terminalId !== selected)
+          .filter(({ terminalId }) => terminalId !== (selected && id(selected)))
           .slice(keeping)
           .reduce(
             (left, { target, terminalId }) =>
@@ -49,7 +53,7 @@ const panel = (selected: string | undefined, { keeping }: { keeping?: number } =
           )
   const workspace = createWorkspaceStore(kept)
   const target = { projectId: project.id, workspaceSessionId: session.id }
-  if (selected) workspace.dispatch({ type: "terminal/select", target, terminalId: selected })
+  if (selected) workspace.dispatch({ type: "terminal/select", target, terminalId: id(selected) })
   const notes: string[] = []
   const added: TerminalKey[] = []
   const plus: TerminalKey[] = []
@@ -61,7 +65,7 @@ const panel = (selected: string | undefined, { keeping }: { keeping?: number } =
     workspace.dispatch({
       type: "terminal/add",
       target,
-      terminal: createMockTerminal(number, "~"),
+      terminal: createMockTerminal(target, number, "~"),
       select,
     })
     return created
@@ -69,7 +73,7 @@ const panel = (selected: string | undefined, { keeping }: { keeping?: number } =
   const onScreen = (): string | undefined =>
     workspace.getSnapshot().projects[0]!.history[0]!.state.selected
   const actionContext: DemoActionContext = {
-    selected: () => (selected && onScreen() ? key(onScreen()!) : undefined),
+    selected: () => (selected && onScreen() ? inSession(onScreen()!) : undefined),
     addTerminal: () => {
       const created = create(true)
       plus.push(created)
@@ -91,10 +95,10 @@ const panel = (selected: string | undefined, { keeping }: { keeping?: number } =
   const states = createDemoStates()
   const find = (label: string) =>
     states.groups.flatMap((group) => group.actions).find((action) => action.label === label)!
-  const terminal = (id: string) =>
+  const terminal = (slot: string) =>
     workspace
       .getSnapshot()
-      .projects[0]!.history[0]!.state.roster.terminals.find((each) => each.id === id)
+      .projects[0]!.history[0]!.state.roster.terminals.find((each) => each.id === id(slot))
   // What each terminal other than the one on screen asks of the person: its request, or an
   // agent that finished (which the app marks unread, as the person looks elsewhere).
   const asks = () =>
@@ -130,7 +134,7 @@ describe("demo states", () => {
   it("puts each of its new terminals in its own state, the finished ones first", async () => {
     const { run, added, terminal } = panel("04")
     await run("Every state at once")
-    const shown = added.map((each) => terminal(each.terminalId)!)
+    const shown = added.map((each) => terminal(terminalSlot(each.terminalId))!)
     expect(shown.map((each) => each.name)).toContain("Needs permission")
     expect(shown.at(-1)).toMatchObject({
       name: "Needs permission",
@@ -238,7 +242,9 @@ describe("demo states", () => {
     it("ends the turn of another terminal, not the selected one", () => {
       const { run, terminal } = panel("04")
       run("Agent finishes elsewhere")
-      const other = ["01", "02", "03", "05", "06"].find((id) => terminal(id)?.process === "claude")!
+      const other = ["01", "02", "03", "05", "06"].find(
+        (slot) => terminal(slot)?.process === "claude",
+      )!
       expect(other).toBeDefined()
       vi.advanceTimersByTime(3000)
       expect(terminal(other)).toMatchObject({ agent: { lastTurn: { outcome: "completed" } } })
@@ -263,9 +269,9 @@ describe("demo states", () => {
         new Set(["question", "permission", "plan", "failed", "completed"]),
       )
       expect(new Set(all.map((each) => each.projectId)).size).toBeGreaterThan(1)
-      expect(all.some((each) => each.projectId === project.id && each.terminalId === "04")).toBe(
-        false,
-      )
+      expect(
+        all.some((each) => each.projectId === project.id && each.terminalId === id("04")),
+      ).toBe(false)
     })
 
     it("adds what it needs without selecting it, so every finish lands elsewhere", () => {
@@ -275,7 +281,7 @@ describe("demo states", () => {
       expect(added.length).toBeGreaterThan(0)
       // Not through the app's "+", which selects the terminal and shows the Terminals panel.
       expect(plus).toEqual([])
-      expect(onScreen()).toBe("04")
+      expect(onScreen()).toBe(id("04"))
       expect(asks()).toHaveLength(12)
       for (const each of added)
         expect(asks().some((entry) => entry.terminalId === each.terminalId)).toBe(true)
@@ -299,7 +305,7 @@ describe("demo states", () => {
             entry.state === "running" &&
             entry.agent?.working &&
             !entry.agent.attention &&
-            at.terminalId !== "04",
+            at.terminalId !== id("04"),
         )!
       actionContext.dispatch!(exitedWithCode(found.key, 1))
       vi.advanceTimersByTime(3000)
@@ -365,10 +371,10 @@ describe("demo states", () => {
       const { run, added, terminal } = panel("04")
       run("Quick failure")
       expect(added).toHaveLength(1)
-      const id = added[0]!.terminalId
-      expect(terminal(id)?.state).toBe("starting")
+      const slot = terminalSlot(added[0]!.terminalId)
+      expect(terminal(slot)?.state).toBe("starting")
       vi.advanceTimersByTime(400)
-      expect(terminal(id)).toMatchObject({
+      expect(terminal(slot)).toMatchObject({
         state: "failed",
         message: "Exited right after starting",
       })

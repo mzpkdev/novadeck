@@ -6,7 +6,7 @@ import { terminalPhase } from "../../../model/terminal-ending"
 import type { TerminalMetadata, Workspace } from "../../../model/types"
 import { describe, expect, it } from "../../../test"
 import type { BackendAction, TerminalKey } from "../../port"
-import { demoSeed } from "../samples"
+import { demoSeed, demoTerminalId } from "../samples"
 import {
   agentIn,
   asking,
@@ -34,10 +34,14 @@ import {
 const initial = workspaceFromSeed(demoSeed(0), { view: "focus", windowedView: "grid", now: 0 })
 const project = initial.projects[0]!
 const session = project.history[0]!
-const key = (terminalId: string): TerminalKey => ({
+// A terminal of the first session by its number, as `"04"`.
+const key = (slot: string): TerminalKey => ({
   projectId: project.id,
   workspaceSessionId: session.id,
-  terminalId,
+  terminalId: demoTerminalId(
+    { projectId: project.id, workspaceSessionId: session.id },
+    Number(slot),
+  ),
 })
 const apply = (actions: readonly BackendAction[], from: Workspace = initial): Workspace =>
   actions.reduce(workspaceReducer, from)
@@ -46,15 +50,15 @@ const shell = (workspace: Workspace): TerminalMetadata => terminalOf(workspace, 
 describe("terminal states", () => {
   it("finds a terminal in the workspace", () => {
     expect(terminalOf(initial, key("04"))?.name).toBe("Checkout review")
-    expect(terminalOf(initial, key("nope"))).toBeUndefined()
+    expect(terminalOf(initial, { ...key("01"), terminalId: "nope" })).toBeUndefined()
   })
 
   it("lists the other live terminals of the session", () => {
     const ended = apply(exitedWithCode(key("02"), 1))
     const ids = othersOf(ended, key("01")).map((terminal) => terminal.id)
-    expect(ids).not.toContain("01")
-    expect(ids).not.toContain("02")
-    expect(ids).toContain("03")
+    expect(ids).not.toContain(key("01").terminalId)
+    expect(ids).not.toContain(key("02").terminalId)
+    expect(ids).toContain(key("03").terminalId)
   })
 
   describe("a shell ending", () => {

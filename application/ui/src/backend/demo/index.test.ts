@@ -5,6 +5,7 @@ import { itemFixture } from "../../test/fixtures"
 import type { BackendAction } from "../port"
 import { createDemoEngine } from "./engine"
 import { demoBackend, withMessages } from "./index"
+import { createDemo, demoVariants } from "./variants"
 
 describe("demo backend", () => {
   context("standing in for the runner", () => {
@@ -35,6 +36,31 @@ describe("demo backend", () => {
       ])
       expect(backend.newTerminal({ target, directory: "~", title: "Agent" }).name).toBe("Agent")
     })
+  })
+
+  context("in every demo", () => {
+    it.each(demoVariants)(
+      "keeps each terminal's ID unique across the workspace in %s, as the runner's are",
+      (variant) => {
+        const backend = createDemo(variant)
+        backend.commit(
+          workspaceFromSeed(backend.seed, { view: "grid", windowedView: "grid", now: 1 }),
+          [],
+        )
+        const ids = backend.seed.projects.flatMap((project) =>
+          project.sessions.flatMap((session) => session.terminals.map((terminal) => terminal.id)),
+        )
+        for (const project of backend.seed.projects)
+          for (const session of project.sessions) {
+            const target = { projectId: project.id, workspaceSessionId: session.id }
+            for (const _ of [1, 2]) ids.push(backend.newTerminal({ target, directory: "~" }).id)
+          }
+        expect(ids.length).toBeGreaterThan(backend.seed.projects.length)
+        expect(new Set(ids).size).toBe(ids.length)
+        // Within what a desktop notice accepts for an ID.
+        for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_-]{1,64}$/)
+      },
+    )
   })
 
   context("when a window's name is handed back", () => {
