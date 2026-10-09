@@ -1,6 +1,14 @@
 import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
-import { readdirSync, readFileSync, readlinkSync } from "node:fs"
+import { createHash, randomBytes } from "node:crypto"
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -89,14 +97,19 @@ const linux: Table = {
   },
 }
 
-// Reads another process's working folder and environment from its parameters, as Linux's
-// /proc gives them, for a 64-bit Windows: the offsets are those of a 64-bit PEB and its
-// RTL_USER_PROCESS_PARAMETERS. A process it may not read (another user's) gives null.
-const peb = `
+// Lists the processes of a sandbox on Windows, as Linux's /proc gives them: those that
+// started at or after the sandbox, other than this one and the lister, whose working
+// folder is inside the sandbox or whose HOME or USERPROFILE is its home, read from their
+// parameters (the offsets are a 64-bit PEB's and its RTL_USER_PROCESS_PARAMETERS'), as
+// JSON: their pids, names and starts in milliseconds since the epoch. A process it may not
+// read, another user's or the system's, never counts, as a sandbox's is always this user's.
+// Its arguments: the sandbox's start, root and home, and the caller's pid.
+const lister = `
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-public static class NovadeckPeb {
+public static class NovadeckReap {
   [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
   [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr handle, IntPtr address, byte[] buffer, IntPtr size, out IntPtr read);
@@ -110,7 +123,7 @@ public static class NovadeckPeb {
     var bytes = Read(handle, address, 8);
     return bytes == null ? IntPtr.Zero : (IntPtr)BitConverter.ToInt64(bytes, 0);
   }
-  public static string[] Of(int pid) {
+  static string[] Of(int pid) {
     IntPtr handle = OpenProcess(0x0410, false, pid);
     if (handle == IntPtr.Zero) return null;
     try {
@@ -135,80 +148,97 @@ public static class NovadeckPeb {
       CloseHandle(handle);
     }
   }
+  static string Quoted(string text) {
+    return "\\"" + text.Replace("\\\\", "\\\\\\\\").Replace("\\"", "\\\\\\"") + "\\"";
+  }
+  public static int Main(string[] args) {
+    var since = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(args[0])).UtcDateTime;
+    string root = args[1], home = args[2];
+    int caller = int.Parse(args[3]), self = Process.GetCurrentProcess().Id;
+    var found = new StringBuilder("[");
+    foreach (var process in Process.GetProcesses()) {
+      try {
+        if (process.Id == self || process.Id == caller) continue;
+        DateTime created;
+        try { created = process.StartTime.ToUniversalTime(); } catch { continue; }
+        if (created < since) continue;
+        var read = Of(process.Id);
+        if (read == null) continue;
+        string cwd = read[0].TrimEnd('\\\\');
+        bool inside = string.Equals(cwd, root, StringComparison.OrdinalIgnoreCase) ||
+          cwd.StartsWith(root + "\\\\", StringComparison.OrdinalIgnoreCase);
+        if (!inside) {
+          bool own = false;
+          foreach (var variable in read[1].Split('\\0'))
+            if (string.Equals(variable, "HOME=" + home, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(variable, "USERPROFILE=" + home, StringComparison.OrdinalIgnoreCase)) {
+              own = true;
+              break;
+            }
+          if (!own) continue;
+        }
+        long start = new DateTimeOffset(DateTime.SpecifyKind(created, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
+        if (found.Length > 1) found.Append(",");
+        found.Append("{\\"pid\\":").Append(process.Id)
+          .Append(",\\"comm\\":").Append(Quoted(process.ProcessName + ".exe"))
+          .Append(",\\"start\\":").Append(start).Append("}");
+      } catch {
+        // Gone meanwhile.
+      }
+    }
+    Console.Out.Write(found.Append("]").ToString());
+    return 0;
+  }
 }
 `
 
-// The reader, compiled once into a folder of the system's temporary one, by its source.
-const assembly = join(
+// The lister, compiled once by its source into the system's temporary folder, with the C#
+// compiler every Windows has in its .NET Framework: one quick process a listing, where
+// starting PowerShell for each took most of a minute's test on a CI runner.
+const listerProgram = join(
   tmpdir(),
-  `novadeck-e2e-peb-${createHash("sha256").update(peb).digest("hex").slice(0, 16)}.dll`,
+  `novadeck-e2e-reap-${createHash("sha256").update(lister).digest("hex").slice(0, 16)}.exe`,
 )
 
-const quoted = (text: string): string => `'${text.replaceAll("'", "''")}'`
+let compiled: Promise<string> | undefined
+const compiledLister = (): Promise<string> =>
+  (compiled ??= (async () => {
+    if (existsSync(listerProgram)) return listerProgram
+    const root = process.env.SystemRoot ?? "C:\\Windows"
+    const csc = join(root, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe")
+    const staging = `${listerProgram}.${randomBytes(6).toString("hex")}`
+    writeFileSync(`${staging}.cs`, lister)
+    try {
+      await promisify(execFile)(
+        csc,
+        ["/nologo", "/target:exe", "/optimize", `/out:${staging}.exe`, `${staging}.cs`],
+        { windowsHide: true, timeout: 120_000 },
+      )
+      // Another run may have put its own there meanwhile, the same program.
+      try {
+        renameSync(`${staging}.exe`, listerProgram)
+      } catch {
+        if (!existsSync(listerProgram)) throw new Error(`${listerProgram} could not be made`)
+      }
+    } finally {
+      rmSync(`${staging}.cs`, { force: true })
+      rmSync(`${staging}.exe`, { force: true })
+    }
+    return listerProgram
+  })())
 
-// Lists, as JSON, the processes that started at or after the sandbox, other than this
-// one and itself, whose working folder is inside the sandbox or whose HOME or USERPROFILE
-// is its home: their pids, names and starts in milliseconds since the epoch. Only those
-// whose parameters it may read count, as a sandbox's process always is this user's.
-const listing = (sandbox: Scope): string => `
-$ErrorActionPreference = 'Stop'
-if (-not (Test-Path -LiteralPath ${quoted(assembly)})) {
-  Add-Type -TypeDefinition ${quoted(peb)} -OutputAssembly ${quoted(assembly)}
-}
-Add-Type -LiteralPath ${quoted(assembly)}
-$root = ${quoted(sandbox.root)}
-$sandboxHome = ${quoted(sandbox.home)}
-$since = [DateTimeOffset]::FromUnixTimeMilliseconds(${sandbox.started}).UtcDateTime
-$found = @([Diagnostics.Process]::GetProcesses() | ForEach-Object {
-  if ($_.Id -eq $PID -or $_.Id -eq ${process.pid}) { return }
-  # Another user's, or the system's, has no start this user may read.
-  try { $created = $_.StartTime.ToUniversalTime() } catch { return }
-  if ($created -lt $since) { return }
-  $read = [NovadeckPeb]::Of($_.Id)
-  if ($null -eq $read) { return }
-  $cwd = $read[0].TrimEnd('\\')
-  $inside = $cwd -ieq $root -or $cwd.StartsWith("$root\\", [StringComparison]::OrdinalIgnoreCase)
-  if (-not $inside) {
-    $own = $read[1].Split([char]0) | Where-Object { $_ -ieq "HOME=$sandboxHome" -or $_ -ieq "USERPROFILE=$sandboxHome" }
-    if (-not $own) { return }
-  }
-  [pscustomobject]@{ pid = $_.Id; comm = "$($_.ProcessName).exe"; start = ([DateTimeOffset]$created).ToUnixTimeMilliseconds() }
-})
-ConvertTo-Json -Compress -InputObject $found
-`
-
-const listed = (output: string): readonly Process[] => {
-  const text = output.trim()
-  if (text === "") return []
-  const parsed = JSON.parse(text) as unknown
-  const rows = (Array.isArray(parsed) ? parsed : [parsed]) as {
+const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
+  const { stdout } = await promisify(execFile)(
+    await compiledLister(),
+    [String(sandbox.started), sandbox.root, sandbox.home, String(process.pid)],
+    { windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
+  )
+  const rows = JSON.parse(stdout) as {
     readonly pid: number
     readonly comm: string
     readonly start: number
   }[]
   return rows.map(({ pid, comm, start }) => ({ pid, comm, start, stopped: false }))
-}
-
-// Windows, through Windows PowerShell, which every Windows has: .NET's list of processes
-// for their starts, never WMI, whose first queries on a fresh machine take many seconds,
-// and the parameters of those started since the sandbox for their folders and environments.
-const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
-  const root = process.env.SystemRoot ?? "C:\\Windows"
-  const powershell = join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-  const { stdout } = await promisify(execFile)(
-    powershell,
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-EncodedCommand",
-      Buffer.from(listing(sandbox), "utf16le").toString("base64"),
-    ],
-    { windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
-  )
-  return listed(stdout)
 }
 
 const windows: Table = {
@@ -372,8 +402,8 @@ const named = (one: Process): string => `${one.comm} (${one.pid}${one.stopped ? 
  * found. As ending one may leave a child behind, it looks again, up to five times, until
  * it finds none it hasn't seen. Returns those that had to be ended, by their commands'
  * names and pids, each marked `stopped` should it have been, as a leak the test reports.
- * On Linux it reads /proc; on Windows it asks the system through PowerShell; on macOS
- * it asks `ps` and `lsof`.
+ * On Linux it reads /proc; on Windows it asks the system through a lister of its own;
+ * on macOS it asks `ps` and `lsof`.
  */
 export const reap = async (sandbox: Scope): Promise<string[]> => {
   const seen = new Set<string>()

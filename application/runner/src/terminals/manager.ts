@@ -153,6 +153,11 @@ import { judgedFirst, workAfter, type Work } from "./work.js"
 
 const { Terminal } = headless
 const OUTPUT_CHARS = 4096
+// How much read output may wait to be drawn before the program is paused, in characters.
+// Pausing for every chunk until it is drawn waits on a timer each time, about 15 ms on
+// Windows: a TUI that redraws for every key of a paste, as Codex does there, where the
+// paste reaches it as keys, then showed 100 characters in 6 s rather than 0.3 s.
+const OUTPUT_WAITING_CHARS = 256 * 1024
 
 /** How long after the person's last key an untrusted agent's hooks are asked about again. */
 export const trustRecheckMs = 1000
@@ -274,6 +279,10 @@ type Record = {
   controller: string | undefined
   chain: Promise<void>
   pendingReads: number
+  /** The output read but not yet on its screen, in characters; see `output`. */
+  pendingOutput: number
+  /** Output read since the last draw began, and the program each came from. */
+  unread: { readonly child: pty.IPty; readonly data: string }[]
   pendingAttachments: number
   exitQueued: boolean
   /** Closed by the person or an agent, and forgotten: nothing saves it again. */
@@ -893,6 +902,8 @@ export class Terminals {
         controller: pending.released ? undefined : ownerId,
         chain: Promise.resolve(),
         pendingReads: 0,
+        pendingOutput: 0,
+        unread: [],
         pendingAttachments: 0,
         exitQueued: false,
         closed: false,
@@ -2777,28 +2788,54 @@ export class Terminals {
     return result
   }
 
+  /**
+   * Draws output on the terminal's screen in order, after what was queued before it: what
+   * arrives while a draw waits joins one batch, drawn by the next. Each draw waits for the
+   * screen's callback, a timer, about 15 ms on Windows: a TUI that redraws for every key of
+   * a paste, as Codex does there, took over a second to show 100 characters drawn one
+   * chunk at a time, though it had drawn them in 0.2 s. The program is paused only while a
+   * lot of its output waits (`OUTPUT_WAITING_CHARS`), and goes on once all of it is drawn,
+   * so a program can't outrun its screen.
+   */
   private output(record: Record, child: pty.IPty, data: string): void {
-    child.pause()
+    record.pendingOutput += data.length
+    if (record.pendingOutput > OUTPUT_WAITING_CHARS) child.pause()
+    record.unread.push({ child, data })
+    // A draw already queued takes this with it.
+    if (record.unread.length > 1) return
     record.pendingReads += 1
+    let drawn = 0
     void this.enqueue(record, async () => {
+      const batch = record.unread.splice(0)
+      drawn = batch.reduce((total, one) => total + one.data.length, 0)
       // Output a previous run left queued belongs to a screen that is gone.
-      if (record.process !== child) return
-      await new Promise<void>((resolve) => record.screen.write(data, resolve))
+      const text = batch
+        .filter((one) => one.child === record.process)
+        .map((one) => one.data)
+        .join("")
+      if (text === "") return
+      await new Promise<void>((resolve) => record.screen.write(text, resolve))
       this.doorbell?.changed(record.summary.id)
       this.dialogs.changed(record.summary.id)
       // Once on the screen: a save while it was drawing may have taken the screen before.
       record.changed = true
-      for (let start = 0; start < data.length;) {
-        let end = Math.min(start + OUTPUT_CHARS, data.length)
-        const last = data.charCodeAt(end - 1)
-        if (end < data.length && last >= 0xd800 && last <= 0xdbff) end -= 1
-        const chunk = data.slice(start, end)
+      for (let start = 0; start < text.length;) {
+        let end = Math.min(start + OUTPUT_CHARS, text.length)
+        const last = text.charCodeAt(end - 1)
+        if (end < text.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+        const chunk = text.slice(start, end)
         this.emit(record, { type: "output", data: chunk })
         start = end
       }
     }).finally(() => {
       record.pendingReads -= 1
-      if (record.pendingReads === 0 && !record.exitQueued && record.process === child)
+      record.pendingOutput -= drawn
+      if (
+        record.pendingReads === 0 &&
+        record.unread.length === 0 &&
+        !record.exitQueued &&
+        record.process === child
+      )
         child.resume()
     })
   }
@@ -4034,6 +4071,12 @@ export class Terminals {
     try {
       const group = await this.hangUp(record.process)
       const child = record.process
+      // Windows hangs up no group: closing the console ends only what is attached to it,
+      // never what a program there started apart from it, as an agent's hooks, which then
+      // run on (a PowerShell 7 hook whose Codex was closed as it started stayed there). The
+      // terminal's whole tree is ended first, while it still leads back to its shell.
+      if (process.platform === "win32" && child.pid > 0 && drawnTerminals.has(child))
+        await endTree(child.pid).catch(() => {})
       try {
         child.kill()
       } catch {
