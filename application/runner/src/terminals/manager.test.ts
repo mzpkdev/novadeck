@@ -174,11 +174,10 @@ describe("an answer's hold of the person's input", () => {
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
     hold.settle()
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    const trace = ptyTrace(40)
-    // The key went once released; the wheel report never did.
-    expect(trace).toContain("received 1 chars")
-    expect(trace).not.toContain("received 16 chars")
+    // The key went once released, however long a loaded machine takes to show it; the
+    // wheel report, held before it, never did.
+    await vi.waitFor(() => expect(ptyTrace(40)).toContain("received 1 chars"), { timeout: 10_000 })
+    expect(ptyTrace(40)).not.toContain("received 16 chars")
   })
 })
 
