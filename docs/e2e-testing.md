@@ -10,16 +10,21 @@ give the same result every time.
 ## Running
 
 The suite runs on Linux and Windows, and on macOS in CI. On Linux its keyring cut is a
-dead D-Bus address; on Windows the sandbox moves the user's folders, where each harness
-keeps its credentials. Nothing an environment moves keeps a harness from the macOS login
-Keychain, so on a Mac outside CI, where your own sign-ins may be, the suite refuses to
-run unless you set `NOVADECK_E2E_MACOS_KEYCHAIN=accept`. GitHub's macOS runners have
-nothing signed in, but their image turns on Reduce motion, which Codex follows by drawing
-no logo on its first screen, so the E2E workflow turns it off there first; a Mac with it on
-fails that scenario, saying so. Leftover processes are found through `/proc` on Linux, PowerShell on
-Windows, and `ps` and `lsof` on macOS. Anywhere else the fixture fails each test, saying
-why (`unsupported` in `support.ts`); a scenario file can skip instead with
-`describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
+dead D-Bus address, and its leftover-process check reads `/proc`. On Windows the sandbox
+moves the user's folders too (USERPROFILE, APPDATA, LOCALAPPDATA, TEMP), Claude Code and
+Codex keep their logins in files there, and a test of Antigravity refuses to start while
+the Credential Manager holds its login (`credentials.ts`), as no environment moves that
+store; the leftover-process check reads each process's folder and environment through a
+small lister it compiles once. Windows runs need what CI's runners have: PowerShell 7, Git
+for Windows, and symlinks (an administrator, or Developer Mode). Nothing an environment
+moves keeps a harness from the macOS login Keychain, so on a Mac outside CI, where your
+own sign-ins may be, the suite refuses to run unless you set
+`NOVADECK_E2E_MACOS_KEYCHAIN=accept`. GitHub's macOS runners have nothing signed in, but
+their image turns on Reduce motion, which Codex follows by drawing no logo on its first
+screen, so the E2E workflow turns it off there first; a Mac with it on fails that
+scenario, saying so. The leftover-process check asks `ps` and `lsof` there. Anywhere else
+the fixture fails each test, saying why (`unsupported` in `support.ts`); a scenario file
+can skip instead with `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
 
 ```sh
 npm run test:e2e                  # from the repository root; builds the protocol and relay first
@@ -914,11 +919,18 @@ probe output, and keep their own loader.
 
 ## Known gaps
 
-None stands today. A known gap is a difference between harnesses the suite works around
-until Novadeck closes it, and is raised with the person first (see AGENTS.md, "Harness
-Parity"): never a reason to leave a harness out.
+A known gap is a difference between harnesses the suite works around until Novadeck
+closes it, and is raised with the person first (see AGENTS.md, "Harness Parity"): never a
+reason to leave a harness out. One stands today:
 
-`known-gaps.ts` names each one as a `Gap`, with the harnesses it affects, documented
+- **Codex on Windows loses characters outside the Basic Multilingual Plane**
+  (`losesAstral`). An emoji such as 👨 never reaches it through the ConPTY that node-pty
+  bundles, though Windows' own ConPTY delivers it: a prompt holding one never shows whole
+  in its box, and fails without Enter. Pinned by chat.e2e.ts, "gives its agent emoji
+  sequences and CJK, then the next prompt".
+
+`known-gaps.ts` names each one as a `Gap`, with the harnesses it affects (and the
+platforms, where only some have it), documented
 with its cause, the test that pins it and what to assert once it is fixed. The scenarios
 never ask which harness they run: they ask a function built on `has`, named for the
 behaviour that differs, which picks the detour. Each gap is also pinned by a test that
