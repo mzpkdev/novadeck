@@ -10,8 +10,8 @@
    `.dragging` class while it is dragged; `:focus-within` tints a row as hovering does.
 
    The Notifications panel's rows are `.notification` rows, data-notification="question" |
-   "permission" | "plan" | "failed" | "done", with the `.notification-where` of project and
-   session after the status, the `.notification-reply` under it and an empty panel's
+   "permission" | "plan" | "failed" | "done", with the `.notification-where` of the kind's
+   word, project and session on its detail line, the `.notification-reply` under it and an empty panel's
    `.notifications-empty`.
 
    Tokens, each optional (its fallback in brackets):
@@ -86,6 +86,10 @@
 }
 .notification[data-notification="failed"] {
   --item-icon-fg: var(--notification-failed-fg, var(--tab-failed-fg, var(--color-danger-fg)));
+}
+/* The panel itself takes focus when the row that had it goes and none is left to take it. */
+.notifications-panel:focus {
+  outline: none;
 }
 .notification-where,
 .notification-reply,

@@ -33,10 +33,19 @@ describe("Notification commands", () => {
   })
 
   context("when the person marks all read", () => {
-    it("clears every finish in every session", () => {
+    it("clears the finishes shown, in every session, and no mark hidden from the panel", () => {
       const app = unreadApp()
-      app.commands.dismissAllNotifications()
-      expect(app.ui.getSnapshot().unread).toEqual({})
+      app.commands.dismissAllNotifications([
+        { context: "project/initial", terminalId: "01" },
+        { context: "project/other", terminalId: "09" },
+      ])
+      expect(app.ui.getSnapshot().unread).toEqual({ "project/initial": { "02": "failed" } })
+    })
+
+    it("leaves the state as it was when none shown is marked", () => {
+      const app = unreadApp()
+      app.commands.dismissAllNotifications([{ context: "project/initial", terminalId: "07" }])
+      expect(app.ui.getSnapshot().unread).toBe(unread)
     })
   })
 })

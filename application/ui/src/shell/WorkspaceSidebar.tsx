@@ -4,7 +4,7 @@ import type { ComponentProps } from "react"
 import { shortcutBindings } from "../interaction/shortcuts"
 import type { Tile, WorkspaceSession } from "../model/types"
 import type { Notification } from "../notifications/notifications"
-import { NotificationsPanel } from "../notifications/NotificationsPanel"
+import { MarkAllReadButton, NotificationsPanel } from "../notifications/NotificationsPanel"
 import { SessionsPanel } from "../sidebar/SessionsPanel"
 import { SidebarPanel, sidebarCreateClasses } from "../sidebar/SidebarPanel"
 import { TerminalTabs } from "../terminals/TerminalTabs"
@@ -25,7 +25,7 @@ type Props = Omit<ComponentProps<typeof TerminalTabs>, "terminals"> & {
   onSessionSelect: (id: string) => void
   onReveal: (terminalId: string, context: string) => void
   onDismissNotification: (context: string, terminalId: string) => void
-  onDismissAllNotifications: () => void
+  onDismissAllNotifications: (shown: readonly Notification[]) => void
   onFresh: () => void
   onHide: () => void
   onCreate: () => void
@@ -115,13 +115,13 @@ export const WorkspaceSidebar = ({
       count={notifications.length}
       active={sidebarPanel === "notifications"}
       onClose={onHide}
+      actions={<MarkAllReadButton items={notifications} onDismissAll={onDismissAllNotifications} />}
     >
       <NotificationsPanel
         items={notifications}
         viewing={viewing}
         onReveal={onReveal}
         onDismiss={onDismissNotification}
-        onDismissAll={onDismissAllNotifications}
       />
     </SidebarPanel>
   </aside>
