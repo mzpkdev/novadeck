@@ -314,11 +314,24 @@ for (const setup of setups) {
         const calls = run.model.mark()
         await t2.submit("Tell t1 the news")
 
-        // The ring's test paste meets the popup and fails: nothing is pressed, Unknown.
-        await through(t1, [holds("t2", "t1", "queued"), "ringing", "unknown"], { after: mark })
-        await sleep(quiet)
+        if (process.platform === "win32") {
+          // On Windows a paste may reach the harness as keys, so the doorbell's gate rings
+          // only where the agent's box shows: none starts, and nothing is pasted at all.
+          await through(t1, [holds("t2", "t1", "queued")], { after: mark })
+          await sleep(quiet)
+          expect(
+            t1
+              .history()
+              .slice(mark)
+              .map((one) => one.delivery),
+          ).not.toContain("ringing")
+        } else {
+          // The ring's test paste meets the popup and fails: nothing is pressed, Unknown.
+          await through(t1, [holds("t2", "t1", "queued"), "ringing", "unknown"], { after: mark })
+          await sleep(quiet)
+          expect(t1.history().at(-1)?.delivery).toBe("unknown")
+        }
         expect(await t1.screen()).toMatch(shows)
-        expect(t1.history().at(-1)?.delivery).toBe("unknown")
         expect(messages(t1).map((one) => one.state)).toEqual(["queued"])
         expect(run.model.calls.slice(calls).filter((call) => ring.test(latest(call)))).toEqual([])
 
