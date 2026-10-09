@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -25,6 +26,24 @@ import {
 // What only Codex needs beyond the shared scenarios (messaging.e2e.ts).
 
 const it = e2e(codex)
+
+/**
+ * Whether macOS asks for less motion (Reduce motion), which Codex follows; never
+ * elsewhere, nor where the setting can't be read.
+ */
+const reducedMotion = (): boolean => {
+  if (process.platform !== "darwin") return false
+  try {
+    return (
+      execFileSync("defaults", ["read", "com.apple.universalaccess", "reduceMotion"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() === "1"
+    )
+  } catch {
+    return false
+  }
+}
 
 /** Ten rows in a row holding braille, as Codex draws its logo. */
 const logo = /(?:^.*[⠀-⣿].*\n){10}/m
@@ -78,6 +97,11 @@ describe.skipIf(!supported)("Codex", () => {
     // The case this covers: the logo shows as t2 is rung. Codex draws none while a
     // warning's banner shows; should one, its warnings (F2) say why.
     await t2.until(logo).catch(async (error: unknown) => {
+      if (reducedMotion())
+        throw new Error(
+          "Codex draws no logo where macOS asks for less motion: turn Reduce motion off (System Settings › Accessibility › Display)",
+          { cause: error },
+        )
       if (!/\d+ warnings?/.test(await t2.screen())) throw error
       t2.press("\x1bOQ")
       await new Promise((resolve) => setTimeout(resolve, 1000))

@@ -14,7 +14,9 @@ dead D-Bus address; on Windows the sandbox moves the user's folders, where each 
 keeps its credentials. Nothing an environment moves keeps a harness from the macOS login
 Keychain, so on a Mac outside CI, where your own sign-ins may be, the suite refuses to
 run unless you set `NOVADECK_E2E_MACOS_KEYCHAIN=accept`. GitHub's macOS runners have
-nothing signed in. Leftover processes are found through `/proc` on Linux, PowerShell on
+nothing signed in, but their image turns on Reduce motion, which Codex follows by drawing
+no logo on its first screen, so the E2E workflow turns it off there first; a Mac with it on
+fails that scenario, saying so. Leftover processes are found through `/proc` on Linux, PowerShell on
 Windows, and `ps` and `lsof` on macOS. Anywhere else the fixture fails each test, saying
 why (`unsupported` in `support.ts`); a scenario file can skip instead with
 `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
