@@ -63,6 +63,18 @@ const panel = (selected: string | undefined) => {
   }
 }
 
+// What each terminal asks of the person, by project: its request, or how its turn ended.
+const asks = (workspace: Workspace) =>
+  workspace.projects.flatMap((each) =>
+    each.history.flatMap((owner) =>
+      owner.state.roster.terminals.flatMap((terminal) => {
+        const agent = terminal.state === "running" ? terminal.agent : undefined
+        const kind = agent?.attention?.kind ?? agent?.lastTurn?.outcome
+        return kind ? [{ projectId: each.id, terminalId: terminal.id, kind }] : []
+      }),
+    ),
+  )
+
 describe("demo states", () => {
   it("puts each of its new terminals in its own state, the finished ones first", async () => {
     const { run, added, terminal } = panel("04")
@@ -87,6 +99,7 @@ describe("demo states", () => {
     const { states } = panel("04")
     expect(states.groups.map((group) => group.title)).toEqual([
       "All at once",
+      "Notification center",
       "Selected terminal",
       "Agent",
       "Another project",
@@ -179,6 +192,38 @@ describe("demo states", () => {
       vi.advanceTimersByTime(3000)
       expect(terminal(other)).toMatchObject({ agent: { lastTurn: { outcome: "completed" } } })
       expect(terminal("04")?.process).toBe("zsh")
+    })
+  })
+
+  context("with the notification center", () => {
+    it("asks for the terminal on screen first", () => {
+      const { run, notes } = panel(undefined)
+      run("Fill the notification center")
+      expect(notes).toEqual(["Select a terminal first."])
+    })
+
+    it("fills it with every kind, across projects, past the badge's cap", () => {
+      const { run, actionContext } = panel("04")
+      run("Fill the notification center")
+      vi.advanceTimersByTime(3000)
+      const all = asks(actionContext.workspace()!)
+      expect(all.length).toBeGreaterThanOrEqual(10)
+      expect(new Set(all.map((each) => each.kind))).toEqual(
+        new Set(["question", "permission", "plan", "failed", "completed"]),
+      )
+      expect(new Set(all.map((each) => each.projectId)).size).toBeGreaterThan(1)
+      expect(all.some((each) => each.projectId === project.id && each.terminalId === "04")).toBe(
+        false,
+      )
+    })
+
+    it("empties it again", () => {
+      const { run, actionContext } = panel("04")
+      run("Fill the notification center")
+      vi.advanceTimersByTime(3000)
+      run("Clear notifications")
+      vi.advanceTimersByTime(100)
+      expect(asks(actionContext.workspace()!)).toEqual([])
     })
   })
 

@@ -12,13 +12,19 @@ import {
   agentSays,
   asking,
   backToPrompt,
+  beginNotification,
   cleanExit,
+  dealKinds,
+  endNotification,
   exitedWithCode,
   failedToStart,
   killedBy,
+  noisyTerminals,
   othersOf,
+  otherTerminals,
   planning,
   rename,
+  resting,
   runAgent,
   runProgram,
   starting,
@@ -46,6 +52,10 @@ const turnMs = 3000
 // How long a new terminal takes to fail when it fails "right away".
 const quickFailMs = 400
 const burst = 30
+// How many terminals the notification center fills: enough to pass the badge's 9+ and to scroll.
+const crowd = 12
+// How long clearing waits between the agents working and resting, for the app to see both.
+const calmMs = 100
 // How long a screen takes to arrive, and a failed paste's notice stays, as the runner's.
 const attachMs = 2500
 const noticeMs = 4000
@@ -230,6 +240,45 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
   },
 })
 
+// Every kind of notification across the workspace's projects and sessions, in terminals
+// the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer.
+const fillNotifications: DemoAction = {
+  label: "Fill the notification center",
+  hint: `${crowd} terminals across every project ask: questions, permissions, plans, and done and failed finishes (after 3 s); the rail badge reads 9+`,
+  run: ({ selected, workspace, addTerminal, dispatch, note }) => {
+    const viewed = selected()
+    if (!viewed) return note("Select a terminal first.")
+    if (!dispatch) return
+    const existing = otherTerminals(workspace(), viewed).slice(0, crowd)
+    const added = Array.from({ length: Math.max(0, crowd - existing.length) }, () => addTerminal())
+    const slots = [...existing, ...added]
+    const kinds = dealKinds(slots.length)
+    dispatch(
+      slots.flatMap((key, index) =>
+        beginNotification(kinds[index]!, key, terminalOf(workspace(), key)),
+      ),
+    )
+    // Each finish lands as the agent ends its turn, while the person looks elsewhere.
+    later(turnMs, () => {
+      const now = Date.now()
+      dispatch(slots.flatMap((key, index) => endNotification(kinds[index]!, key, now)))
+    })
+  },
+}
+
+// Answers every request and reads every finish, as the agents' next turn would: first they
+// work, which clears the unread marks, then they rest.
+const clearNotifications: DemoAction = {
+  label: "Clear notifications",
+  hint: "Every request is answered and every finish read: the center is empty",
+  run: ({ workspace, dispatch }) => {
+    if (!dispatch) return
+    const keys = noisyTerminals(workspace())
+    dispatch(keys.flatMap((key) => agentSays(key, working)))
+    later(calmMs, () => dispatch(keys.flatMap((key) => agentSays(key, resting))))
+  },
+}
+
 export const createDemoStates = (): DemoStates => {
   const { agents, openWelcome, failNext: failAgents } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
@@ -251,6 +300,10 @@ export const createDemoStates = (): DemoStates => {
   }
   const groups: readonly DemoActionGroup[] = [
     { title: "All at once", actions: [everyState] },
+    {
+      title: "Notification center",
+      actions: [fillNotifications, clearNotifications],
+    },
     {
       title: "Selected terminal",
       actions: [

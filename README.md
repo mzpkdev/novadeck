@@ -197,6 +197,12 @@ again; below 702px there are none. The order and the pins are kept in this brows
 app (`novadeck.project-arrangement` in local storage), not shared with other clients
 of the runner.
 
+The Notifications panel (the bell on the sidebar rail) lists everything across every
+project and session that waits on you: questions, permissions and plans to review, and
+agents that finished while you looked elsewhere. Click a row to reveal its terminal;
+dismiss a finish to mark it read. A count badge on the bell, and on Zen's dock, tells how
+many wait.
+
 The project switcher removes a project from its row's trash icon, after
 you confirm; its terminals close, and the folder on disk stays. The last project stays.
 The runner forgets the project with its sessions, what its agents showed and the
@@ -579,6 +585,12 @@ last one chosen.
 - **All at once:** add one terminal per state, named after it, so the tabs and the
   windows in Grid and Canvas show attention, done, error, ended and the rest side by
   side. You stay on one that needs permission; the done marks land on the others.
+- **Notification center:** "Fill the notification center" has up to 12 terminals across
+  the projects ask for you (questions, permissions, plans), and after 3 s finish done or
+  failed, so the Notifications panel lists every kind and the rail badge reads 9+. It
+  adds terminals to the current session if the workspace has too few, and leaves the
+  selected terminal alone, since a finish only counts while you look elsewhere. "Clear
+  notifications" answers every request and reads every finish, for the empty panel.
 - **Demo:** boot into another variant.
 - **Startup:** boot again from the splash. "Splash hold" keeps it until you press
   Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot
