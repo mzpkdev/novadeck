@@ -421,7 +421,7 @@ export const createDemoStates = (): DemoStates => {
       actions: [
         {
           label: "Update ready",
-          hint: "Footer: Update ready · Restart, quiet beside the status; Restart reloads the demo",
+          hint: "Footer: Update ready · Restart, quiet beside the status; Restart shows Restarting… for a moment, then reloads the demo",
           run: () => offer("0.0.80"),
         },
         {

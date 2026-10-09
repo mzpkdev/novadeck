@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
 import {
   app,
+  autoUpdater as nativeUpdater,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -37,7 +38,9 @@ import {
   bundleOf,
   checkForUpdates,
   developerIdSigned,
+  installFallbackMs,
   installUpdate,
+  quitWithoutInstalling,
   registerUpdateIpc,
   trackUpdate,
   updateMode,
@@ -179,6 +182,7 @@ const startUpdates = async (): Promise<void> => {
     packaged: app.isPackaged,
     version: app.getVersion(),
     platform: process.platform,
+    execPath: process.execPath,
     env: process.env,
   })
   if (mode === "no" || (mode === "signed" && !(await bundleSigned()))) return
@@ -186,10 +190,19 @@ const startUpdates = async (): Promise<void> => {
   const { default: electronUpdater } = await import("electron-updater")
   updater = electronUpdater.autoUpdater
   checkForUpdates(updater, {
+    // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
+    native: process.platform === "darwin" ? nativeUpdater : undefined,
     downloaded: updates.downloaded,
     log: (message, error) => console.warn(message, error),
   })
 }
+
+// The quit of the system ending the session: no update installs on the way out, as the
+// system may kill the installer halfway.
+const quitOnSessionEnd = quitWithoutInstalling(
+  () => updater,
+  () => app.quit(),
+)
 
 const createWindow = (origin: string): BrowserWindow => {
   const apiUrl = new URL("/api/", origin).href
@@ -224,7 +237,7 @@ const createWindow = (origin: string): BrowserWindow => {
   // Windows ends a session through its windows: save while the shells still run.
   saveOnSessionEnd(window, {
     save: () => void saveWindows([window]).then(() => runner?.persist()),
-    quit: () => app.quit(),
+    quit: quitOnSessionEnd,
   })
 
   window.webContents.on("will-navigate", (event) => event.preventDefault())
@@ -300,6 +313,7 @@ const launch = async (): Promise<void> => {
         shutdown: shutDown,
         install: () => updater?.quitAndInstall(true, true),
         quit: () => app.quit(),
+        fallbackMs: installFallbackMs(process.platform),
       }),
   })
   ipcMain.handle(directoryPickerChannel, async (event) => {
@@ -327,7 +341,7 @@ app.setAppUserModelId(appId)
 
 app.whenReady().then(() => {
   // A system shutdown quits, which saves every page and terminal before the shells end.
-  quitOnShutdown(powerMonitor, () => app.quit())
+  quitOnShutdown(powerMonitor, quitOnSessionEnd)
   limitPermissions(
     session.defaultSession,
     isAppPage,

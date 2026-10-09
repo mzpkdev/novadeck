@@ -11,7 +11,9 @@ import {
   checkIntervalMs,
   developerIdSigned,
   firstCheckMs,
+  installFallbackMs,
   installUpdate,
+  quitWithoutInstalling,
   registerUpdateIpc,
   trackUpdate,
   updateMode,
@@ -24,6 +26,7 @@ const build = (overrides: Partial<UpdateBuild> = {}): UpdateBuild => ({
   packaged: true,
   version: "0.4.2",
   platform: "linux",
+  execPath: "/usr/bin/novadeck",
   env: {},
   ...overrides,
 })
@@ -40,12 +43,33 @@ describe("which builds update themselves", () => {
   })
 
   context("on Linux", () => {
+    const appImage = {
+      env: { APPIMAGE: "/home/me/novadeck.AppImage", APPDIR: "/tmp/.mount_novadeAbC" },
+      execPath: "/tmp/.mount_novadeAbC/novadeck",
+    }
+
     it("does as an AppImage", () => {
-      expect(updateMode(build({ env: { APPIMAGE: "/home/me/novadeck.AppImage" } }))).toBe("yes")
+      expect(updateMode(build(appImage))).toBe("yes")
     })
 
     it("does not as an installed deb or rpm", () => {
       expect(updateMode(build())).toBe("no")
+    })
+
+    it("does not as a deb launched from a shell inside an AppImage, which inherits its variables", () => {
+      expect(updateMode(build({ ...appImage, execPath: "/opt/novadeck/novadeck" }))).toBe("no")
+      // A folder that merely shares the mount's name as a prefix is not inside it.
+      expect(updateMode(build({ ...appImage, execPath: "/tmp/.mount_novadeAbCd/novadeck" }))).toBe(
+        "no",
+      )
+      expect(updateMode(build({ ...appImage, execPath: "/tmp/.mount_novadeAbC" }))).toBe("no")
+    })
+
+    it("does not without both variables", () => {
+      expect(updateMode(build({ ...appImage, env: { APPIMAGE: "/x.AppImage" } }))).toBe("no")
+      expect(updateMode(build({ ...appImage, env: { APPDIR: "/tmp/.mount_novadeAbC" } }))).toBe(
+        "no",
+      )
     })
   })
 
@@ -182,9 +206,23 @@ describe("taking the page's requests about updates", () => {
   })
 })
 
-const installing = ({ downloaded = true, installs = true, shutdownMs = 0 } = {}) => {
+// An updater whose quitAndInstall behaves as electron-updater's does when installing
+// fails: it logs and returns, without quitting or throwing. `ends` is how it behaves
+// when installing works: the app quits (as BaseUpdater does after a setImmediate).
+const installing = ({
+  downloaded = true,
+  ends = true,
+  throws = false,
+  shutdownMs = 0,
+  fallbackMs = 10_000,
+} = {}) => {
   const steps: string[] = []
   let stopping = false
+  const quitAndInstall = (): void => {
+    steps.push("install")
+    if (throws) throw new Error("no updater")
+    if (ends) steps.push("quit by updater")
+  }
   const run = (): void =>
     installUpdate({
       downloaded: () => downloaded,
@@ -198,43 +236,87 @@ const installing = ({ downloaded = true, installs = true, shutdownMs = 0 } = {})
         await new Promise((resolve) => setTimeout(resolve, shutdownMs))
         steps.push("shut down")
       },
-      install: () => {
-        steps.push("install")
-        if (!installs) throw new Error("no updater")
-      },
+      install: quitAndInstall,
       quit: () => void steps.push("quit"),
+      fallbackMs,
     })
   return { run, steps }
 }
 
 describe("restarting into the update", () => {
+  beforeEach(() => void vi.useFakeTimers())
+  afterEach(() => void vi.useRealTimers())
+
   it("saves and shuts down the way quitting does, then installs", async () => {
     const { run, steps } = installing()
     run()
-    await vi.waitFor(() => expect(steps).toContain("install"))
-    expect(steps).toEqual(["stop", "shutdown", "shut down", "install"])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit by updater"])
   })
 
   it("ignores a second request while the first is still shutting down", async () => {
     const { run, steps } = installing({ shutdownMs: 20 })
     run()
     run()
-    await vi.waitFor(() => expect(steps).toContain("install"))
+    await vi.advanceTimersByTimeAsync(20)
     expect(steps.filter((step) => step === "shutdown")).toHaveLength(1)
+    expect(steps).toContain("install")
   })
 
   it("does nothing while no update is downloaded", async () => {
     const { run, steps } = installing({ downloaded: false })
     run()
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await vi.advanceTimersByTimeAsync(60_000)
     expect(steps).toEqual([])
   })
 
-  it("quits when installing fails after the shutdown", async () => {
-    const { run, steps } = installing({ installs: false })
+  it("quits at once when installing throws", async () => {
+    const { run, steps } = installing({ throws: true })
     run()
-    await vi.waitFor(() => expect(steps).toContain("quit"))
+    await vi.advanceTimersByTimeAsync(0)
     expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit"])
+  })
+
+  it("quits after the wait when the updater returns without ending the app", async () => {
+    const { run, steps } = installing({ ends: false, fallbackMs: 10_000 })
+    run()
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(steps).toEqual(["stop", "shutdown", "shut down", "install"])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit"])
+  })
+
+  it("waits longer on macOS, where Squirrel stages the update first", () => {
+    expect(installFallbackMs("darwin")).toBeGreaterThan(installFallbackMs("linux"))
+    expect(installFallbackMs("win32")).toBe(installFallbackMs("linux"))
+  })
+})
+
+describe("quitting as the system ends the session", () => {
+  it("leaves an update uninstalled, then quits", () => {
+    const steps: string[] = []
+    const updater = {
+      get autoInstallOnAppQuit() {
+        return true
+      },
+      set autoInstallOnAppQuit(value: boolean) {
+        steps.push(`install on quit ${value}`)
+      },
+    }
+    quitWithoutInstalling(
+      () => updater,
+      () => void steps.push("quit"),
+    )()
+    expect(steps).toEqual(["install on quit false", "quit"])
+  })
+
+  it("quits all the same in a build that does not update", () => {
+    const steps: string[] = []
+    quitWithoutInstalling(
+      () => undefined,
+      () => void steps.push("quit"),
+    )()
+    expect(steps).toEqual(["quit"])
   })
 })
 
@@ -258,11 +340,12 @@ describe("checking for updates", () => {
   beforeEach(() => void vi.useFakeTimers())
   afterEach(() => void vi.useRealTimers())
 
-  const checking = () => {
+  const checking = (native?: EventEmitter) => {
     const updater = new FakeUpdater()
     const downloaded: string[] = []
     const logged: string[] = []
     const cancel = checkForUpdates(updater as unknown as Updater, {
+      native,
       downloaded: (version) => void downloaded.push(version),
       log: (message) => void logged.push(message),
     })
@@ -302,6 +385,25 @@ describe("checking for updates", () => {
     const { updater, downloaded } = checking()
     updater.emit("update-downloaded", { version: "1.2.3" })
     expect(downloaded).toEqual(["1.2.3"])
+  })
+
+  it("on macOS reports the update only once Squirrel has staged it", () => {
+    const native = new EventEmitter()
+    const { updater, downloaded } = checking(native)
+    updater.emit("update-downloaded", { version: "1.2.3" })
+    expect(downloaded).toEqual([])
+    native.emit("update-downloaded")
+    expect(downloaded).toEqual(["1.2.3"])
+    native.emit("update-downloaded")
+    expect(downloaded).toEqual(["1.2.3"])
+  })
+
+  it("stops checking once an update has downloaded, so a newer one cannot replace it", async () => {
+    const { updater } = checking()
+    await vi.advanceTimersByTimeAsync(firstCheckMs)
+    updater.emit("update-downloaded", { version: "1.2.3" })
+    await vi.advanceTimersByTimeAsync(checkIntervalMs * 3)
+    expect(updater.checks).toBe(1)
   })
 
   it("stops checking once cancelled", async () => {

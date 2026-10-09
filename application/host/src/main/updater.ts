@@ -1,4 +1,5 @@
 import { dirname } from "node:path"
+import { isAbsolute, relative } from "node:path/posix"
 
 import { updateVersionPattern } from "@novadeck/protocol/bridge"
 import type { IpcMainEvent } from "electron"
@@ -15,7 +16,15 @@ export type UpdateBuild = {
   readonly packaged: boolean
   readonly version: string
   readonly platform: NodeJS.Platform
+  /** The running executable, `process.execPath`. */
+  readonly execPath: string
   readonly env: Readonly<Record<string, string | undefined>>
+}
+
+// Whether `file` lies inside the folder `directory`, both absolute POSIX paths.
+const isInside = (directory: string, file: string): boolean => {
+  const path = relative(directory, file)
+  return path !== "" && path !== ".." && !path.startsWith("../") && !isAbsolute(path)
 }
 
 /**
@@ -23,19 +32,24 @@ export type UpdateBuild = {
  * bundle is Developer ID signed, as Squirrel.Mac refuses to install into any other.
  * Local and pull request builds carry version 0.0.0 and never update; neither does a
  * development run, nor does a launch with `NOVADECK_UPDATES=off`, as the smoke tests give,
- * so none of them reaches the network. Of the Linux builds only the AppImage can replace itself, the deb and
- * rpm belong to the package manager; of the Windows builds the installed one can, the
- * portable executable has nowhere to install to.
+ * so none of them reaches the network. Of the Linux builds only the AppImage can replace
+ * itself, the deb and rpm belong to the package manager. A shell started inside an
+ * AppImage inherits `APPIMAGE`, so a deb launched from there would pass for one; the
+ * running executable must lie inside `APPDIR`, the folder an AppImage mounts itself on.
+ * Of the Windows builds the installed one can, the portable executable has nowhere to
+ * install to.
  */
 export const updateMode = ({
   packaged,
   version,
   platform,
+  execPath,
   env,
 }: UpdateBuild): "yes" | "no" | "signed" => {
   if (!packaged || version === "0.0.0" || env.NOVADECK_UPDATES === "off") return "no"
   if (platform === "darwin") return "signed"
-  if (platform === "linux") return env.APPIMAGE ? "yes" : "no"
+  if (platform === "linux")
+    return env.APPIMAGE && env.APPDIR && isInside(env.APPDIR, execPath) ? "yes" : "no"
   if (platform === "win32") return env.PORTABLE_EXECUTABLE_DIR ? "no" : "yes"
   return "no"
 }
@@ -111,10 +125,20 @@ export const registerUpdateIpc = <Window>(
 }
 
 /**
+ * How long a restart waits for the updater to end the app before quitting it. Installing
+ * can fail without a word: electron-updater's `quitAndInstall` logs a failed Linux or
+ * Windows install and returns, and its macOS one waits for Squirrel.Mac, which may never
+ * have the update. Squirrel stages from a local copy, so macOS gets longer.
+ */
+export const installFallbackMs = (platform: NodeJS.Platform): number =>
+  platform === "darwin" ? 30_000 : 10_000
+
+/**
  * Restarts into the downloaded update after the same shutdown quitting runs. Does
  * nothing while no update is downloaded or a shutdown already started, which makes a
- * second request harmless. Should installing fail after the shutdown, the app quits, and
- * the update installs on the way out as it would have.
+ * second request harmless. The shells are gone by then, so the app must not go on
+ * running: should installing throw, or still not have ended the app after `fallbackMs`,
+ * it quits. That quit installs on the way out if the updater still can, as any quit does.
  */
 export const installUpdate = ({
   downloaded,
@@ -123,6 +147,7 @@ export const installUpdate = ({
   shutdown,
   install,
   quit,
+  fallbackMs,
 }: {
   readonly downloaded: () => boolean
   readonly stopping: () => boolean
@@ -130,11 +155,27 @@ export const installUpdate = ({
   readonly shutdown: () => Promise<void>
   readonly install: () => void
   readonly quit: () => void
+  readonly fallbackMs: number
 }): void => {
   if (!downloaded() || stopping()) return
   stop()
-  void shutdown().then(install).catch(quit)
+  void shutdown()
+    .then(install)
+    .then(() => void setTimeout(quit, fallbackMs))
+    .catch(quit)
 }
+
+/**
+ * A quit that leaves an update waiting uninstalled: for the system ending the session,
+ * which may kill a silent installer or an AppImage swap halfway. Ordinary quits install.
+ */
+export const quitWithoutInstalling =
+  (updater: () => Pick<Updater, "autoInstallOnAppQuit"> | undefined, quit: () => void) =>
+  (): void => {
+    const current = updater()
+    if (current) current.autoInstallOnAppQuit = false
+    quit()
+  }
 
 /** What checking for updates uses of electron-updater's `autoUpdater`. */
 export type Updater = {
@@ -151,20 +192,34 @@ export type Updater = {
   checkForUpdates(): Promise<unknown>
 }
 
+/** The part of Electron's native `autoUpdater` that learning of a staged update uses. */
+export type NativeUpdater = {
+  once(event: "update-downloaded", listener: () => void): unknown
+}
+
 /**
  * Checks for updates shortly after launch and every few hours, downloading what it finds
- * and installing it when the app next quits; `downloaded` hears of each download. Every
+ * and installing it when the app next quits; `downloaded` hears of the download. Every
  * release is still a prerelease, which the updater skips unless told otherwise. A check
- * that fails, offline or rate limited, is logged and the next one tries again. Keeps
- * checking while an update is waiting, so a newer release replaces it. Returns a function
- * that cancels the schedule.
+ * that fails, offline or rate limited, is logged and the next one tries again.
+ *
+ * The schedule ends with the first download: a newer release found later empties the
+ * folder the downloaded file waits in while the updater still names that file, and quitting
+ * then would install nothing, or delete the running AppImage. The next launch checks again.
+ *
+ * On macOS, pass Electron's `native` updater: electron-updater reports a download before
+ * Squirrel.Mac has staged it, and restarting before then waits on Squirrel indefinitely.
+ * `downloaded` hears of the update, under electron-updater's version, once Squirrel has it.
+ * Returns a function that cancels the schedule.
  */
 export const checkForUpdates = (
   updater: Updater,
   {
+    native,
     downloaded,
     log,
   }: {
+    readonly native?: NativeUpdater | undefined
     readonly downloaded: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
@@ -175,7 +230,13 @@ export const checkForUpdates = (
   // Quiet: failures are reported through `log`, and routine progress is not worth a line.
   updater.logger = { info: () => {}, warn: () => {}, error: () => {} }
   updater.on("error", (error) => log("The update check failed.", error))
-  updater.on("update-downloaded", (info) => downloaded(info.version))
+  updater.on("update-downloaded", (info) => {
+    cancel()
+    // electron-updater reports the download just before it hands the file to Squirrel,
+    // so listening now is in time for the native event that follows.
+    if (native) native.once("update-downloaded", () => downloaded(info.version))
+    else downloaded(info.version)
+  })
 
   const check = (): void => {
     // The updater reports a failed check through its error event, which logs it.
@@ -183,8 +244,9 @@ export const checkForUpdates = (
   }
   const first = setTimeout(check, firstCheckMs)
   const every = setInterval(check, checkIntervalMs)
-  return () => {
+  const cancel = (): void => {
     clearTimeout(first)
     clearInterval(every)
   }
+  return cancel
 }

@@ -55,6 +55,10 @@ export const WorkspaceFooter = ({
     const timer = setTimeout(() => setRecovered(false), recoveredForMs)
     return () => clearTimeout(timer)
   }, [recovered])
+  // The version the person pressed Restart for: a newer one is a new offer, not pending.
+  const [pressed, setPressed] = useState<string>()
+  const installing = update !== undefined && pressed === update
+  const offered = update !== undefined && onInstall !== undefined
   const current =
     status !== "ok"
       ? shown[status]
@@ -81,23 +85,45 @@ export const WorkspaceFooter = ({
       </span>
       <span className="flex items-center gap-4">
         {usage}
+        {/* Always mounted, so filling it announces the arrival; out of the layout, and kept
+            for assistive technology where the visible words are dropped to fit. */}
+        <span role="status" aria-live="polite" className="sr-only">
+          {offered ? (installing ? "Restarting to update" : "Update ready") : ""}
+        </span>
         {update && onInstall && (
           <span className="footer-update flex items-center gap-1.5">
-            <span role="status" className="max-[701px]:hidden">
-              Update ready
-            </span>
-            <span aria-hidden="true" className="max-[701px]:hidden">
-              ·
-            </span>
+            {!installing && (
+              <>
+                <span aria-hidden="true" className="max-[701px]:hidden">
+                  Update ready
+                </span>
+                <span aria-hidden="true" className="max-[701px]:hidden">
+                  ·
+                </span>
+              </>
+            )}
             <button
               type="button"
               className="footer-action cursor-pointer font-bold"
-              aria-label={`Restart to update to ${update}`}
-              onClick={onInstall}
+              aria-label={
+                installing ? `Restarting to update to ${update}` : `Restart to update to ${update}`
+              }
+              disabled={installing}
+              onClick={() => {
+                if (installing) return
+                setPressed(update)
+                onInstall()
+              }}
             >
               {/* Narrow, the button alone says what it does. */}
-              <span className="max-[701px]:hidden">Restart</span>
-              <span className="hidden max-[701px]:inline">Update</span>
+              {installing ? (
+                "Restarting…"
+              ) : (
+                <>
+                  <span className="max-[701px]:hidden">Restart</span>
+                  <span className="hidden max-[701px]:inline">Update</span>
+                </>
+              )}
             </button>
           </span>
         )}

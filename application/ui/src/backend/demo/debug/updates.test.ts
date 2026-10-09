@@ -1,5 +1,9 @@
+import { afterEach, vi } from "vitest"
+
 import { describe, expect, it } from "../../../test"
-import { createDemoUpdates } from "./updates"
+import { createDemoUpdates, restartingForMs } from "./updates"
+
+afterEach(() => vi.useRealTimers())
 
 describe("demo updates", () => {
   it("tells a listener of an update offered, then of a newer one", () => {
@@ -21,13 +25,18 @@ describe("demo updates", () => {
     expect(heard).toEqual(["0.0.80"])
   })
 
-  it("restarts only while an update waits", () => {
+  it("restarts only while an update waits, after a moment the footer can show", () => {
+    vi.useFakeTimers()
     let restarts = 0
     const { updates, offer } = createDemoUpdates(() => void (restarts += 1))
     updates.install()
+    vi.advanceTimersByTime(restartingForMs)
     expect(restarts).toBe(0)
     offer("0.0.80")
     updates.install()
+    vi.advanceTimersByTime(restartingForMs - 1)
+    expect(restarts).toBe(0)
+    vi.advanceTimersByTime(1)
     expect(restarts).toBe(1)
   })
 })

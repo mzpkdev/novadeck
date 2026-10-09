@@ -48,16 +48,15 @@ export type DesktopBridge = {
   onNoticeClick?(listener: (id: string) => void): () => void
   /**
    * Calls `listener` with the version of the update the host has downloaded, which it
-   * installs when the app next quits: at once when one is already waiting, and again for
-   * each newer one. The version matches `updateVersionPattern`. Returns a function that
-   * stops listening. Absent from hosts that came before it or that do not update
-   * themselves.
+   * installs when the app next quits: at once when one is already waiting. The version matches `updateVersionPattern`. Returns a function that
+   * stops listening. Absent from hosts that came before it; a build that does not
+   * update itself never calls it.
    */
   onUpdateReady?(listener: (version: string) => void): () => void
   /**
    * Restarts the app into the downloaded update: the host lets every page finish its
-   * saves first, as quitting does. Does nothing while no update is waiting. Absent where
-   * `onUpdateReady` is.
+   * saves first, as quitting does. Does nothing while no update is waiting. Comes with
+   * `onUpdateReady`.
    */
   installUpdate?(): void
 }
