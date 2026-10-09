@@ -40,7 +40,16 @@ enabled = false
 
 [otel]
 metrics_exporter = "none"
-
+${
+  process.platform === "win32"
+    ? `
+# On Windows its sandbox for commands, which it otherwise asks about once a folder is
+# trusted: the one that needs no administrator, as a CI runner's user isn't one.
+[windows]
+sandbox = "unelevated"
+`
+    : ""
+}
 [model_providers.novadeck-e2e]
 name = "Novadeck e2e"
 base_url = ${JSON.stringify(`${url}/v1`)}
