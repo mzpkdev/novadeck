@@ -272,12 +272,14 @@ jobs:
           # common names that a repository may hold for something else.
           if [[ "$EVENT_NAME" != pull_request && "$TARGET" == win ]] &&
             configured "Windows signing" AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE AZURE_SIGNING_PUBLISHER; then
+            missing=""
             for name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
-              if [[ -z "${!name:-}" ]]; then
-                echo "::error::Windows signing is only partly set up; it also needs: $name"
-                exit 1
-              fi
+              if [[ -z "${!name:-}" ]]; then missing="$missing $name"; fi
             done
+            if [[ -n "$missing" ]]; then
+              echo "::error::Windows signing is only partly set up; it also needs:$missing"
+              exit 1
+            fi
             export_env AZURE_SIGNING_ENDPOINT "$AZURE_SIGNING_ENDPOINT"
             export_env AZURE_SIGNING_ACCOUNT "$AZURE_SIGNING_ACCOUNT"
             export_env AZURE_SIGNING_PROFILE "$AZURE_SIGNING_PROFILE"

@@ -10,9 +10,9 @@ built unsigned, as before. Pull requests are never signed.
 | Windows  | The portable executable, the app inside it, its DLLs and native modules, the relay and the voice engine | Azure Artifact Signing                             |
 | All      | Every release asset                                                                                     | GitHub build provenance attestations               |
 
-The release workflow turns each platform on by itself. If only some of a platform's
-secrets and variables are set, the release fails and names the missing ones, rather than
-shipping that platform unsigned. After packaging, it checks the signatures: `codesign`,
+The release workflow turns each platform on by itself: macOS when any of its secrets is
+set, Windows when any of its `AZURE_SIGNING_*` variables is. From then on the release
+fails and names whatever that platform still lacks, rather than shipping it unsigned. After packaging, it checks the signatures: `codesign`,
 `spctl` and `stapler` on macOS, and `Get-AuthenticodeSignature` on Windows.
 
 ## macOS
@@ -41,9 +41,10 @@ The app's entitlements are in `application/host/resources/entitlements.mac.plist
 hardened runtime denies, without asking, any protected resource the app has no
 entitlement for, and macOS counts the programs run in Novadeck's terminals as the app.
 So the app holds the entitlements a terminal needs (microphone, camera, Apple Events,
-contacts, calendars, location and photos), each with its usage description in
-`mac.extendInfo`, which is what macOS shows when a program asks. A new kind of resource
-needs both.
+contacts, calendars, location and photos). Every resource macOS asks about has its usage
+description in `mac.extendInfo`, which is the text of the prompt. Some resources, such as
+Bluetooth, the Desktop and Documents folders and the local network, have a description
+but no hardened-runtime entitlement, so they need nothing in the plist.
 
 ## Windows
 
