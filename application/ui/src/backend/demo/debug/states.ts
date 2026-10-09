@@ -23,6 +23,7 @@ import {
   othersOf,
   otherTerminals,
   planning,
+  promptTerminals,
   rename,
   resting,
   runAgent,
@@ -90,6 +91,13 @@ const agentAction = (
     dispatch(agentIn(key, terminalOf(workspace(), key), status(Date.now()))),
   )
 
+// Whether the terminal still runs an agent, which an agent's later word needs; not after it
+// ended or went back to its shell.
+const runsAgent = (workspace: Workspace | undefined, key: TerminalKey): boolean => {
+  const terminal = terminalOf(workspace, key)
+  return terminal?.state === "running" && isAgentProgram(terminal.process)
+}
+
 // Ends the agent's turn a moment later, unless its terminal no longer runs it, as after
 // a restart back to the shell.
 const endLater = (
@@ -103,8 +111,7 @@ const endLater = (
   },
 ): void =>
   later(turnMs, () => {
-    const terminal = terminalOf(workspace(), key)
-    if (terminal?.state !== "running" || !isAgentProgram(terminal.process)) return
+    if (!runsAgent(workspace(), key)) return
     dispatch(agentSays(key, turnEnded(outcome, Date.now())))
   })
 
@@ -241,16 +248,19 @@ const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
 })
 
 // Every kind of notification across the workspace's projects and sessions, in terminals
-// the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer.
+// the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer,
+// without selecting them or leaving the panel the person is on.
 const fillNotifications: DemoAction = {
   label: "Fill the notification center",
   hint: `${crowd} terminals across every project ask: questions, permissions, plans, and done and failed finishes (after 3 s); the rail badge reads 9+`,
-  run: ({ selected, workspace, addTerminal, dispatch, note }) => {
+  run: ({ selected, workspace, addInBackground, dispatch, note }) => {
     const viewed = selected()
     if (!viewed) return note("Select a terminal first.")
     if (!dispatch) return
     const existing = otherTerminals(workspace(), viewed).slice(0, crowd)
-    const added = Array.from({ length: Math.max(0, crowd - existing.length) }, () => addTerminal())
+    const added = Array.from({ length: Math.max(0, crowd - existing.length) }, () =>
+      addInBackground(viewed),
+    )
     const slots = [...existing, ...added]
     const kinds = dealKinds(slots.length)
     dispatch(
@@ -258,24 +268,46 @@ const fillNotifications: DemoAction = {
         beginNotification(kinds[index]!, key, terminalOf(workspace(), key)),
       ),
     )
-    // Each finish lands as the agent ends its turn, while the person looks elsewhere.
+    // Each finish lands as the agent ends its turn, while the person looks elsewhere. A
+    // terminal that ended meanwhile has no agent to end it.
     later(turnMs, () => {
       const now = Date.now()
-      dispatch(slots.flatMap((key, index) => endNotification(kinds[index]!, key, now)))
+      dispatch(
+        slots.flatMap((key, index) =>
+          runsAgent(workspace(), key) ? endNotification(kinds[index]!, key, now) : [],
+        ),
+      )
     })
   },
 }
 
 // Answers every request and reads every finish, as the agents' next turn would: first they
-// work, which clears the unread marks, then they rest.
+// work, which clears the unread marks, then they rest. A terminal back at its shell's prompt
+// may hold a finish unread too, so an agent works there for a moment and leaves again.
 const clearNotifications: DemoAction = {
   label: "Clear notifications",
   hint: "Every request is answered and every finish read: the center is empty",
   run: ({ workspace, dispatch }) => {
     if (!dispatch) return
-    const keys = noisyTerminals(workspace())
-    dispatch(keys.flatMap((key) => agentSays(key, working)))
-    later(calmMs, () => dispatch(keys.flatMap((key) => agentSays(key, resting))))
+    const agents = noisyTerminals(workspace())
+    const prompts = promptTerminals(workspace()).map((key) => ({
+      key,
+      shell: terminalOf(workspace(), key)?.process ?? "zsh",
+    }))
+    dispatch([
+      ...agents.flatMap((key) => agentSays(key, working)),
+      ...prompts.flatMap(({ key }) => agentIn(key, terminalOf(workspace(), key), working)),
+    ])
+    later(calmMs, () =>
+      dispatch([
+        ...agents
+          .filter((key) => runsAgent(workspace(), key))
+          .flatMap((key) => agentSays(key, resting)),
+        ...prompts
+          .filter(({ key }) => runsAgent(workspace(), key))
+          .flatMap(({ key, shell }) => backToPrompt(key, shell)),
+      ]),
+    )
   },
 }
 

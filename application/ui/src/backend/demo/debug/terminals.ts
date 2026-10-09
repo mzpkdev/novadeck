@@ -247,20 +247,31 @@ export const endNotification = (kind: AskKind, key: TerminalKey, now: number): B
     ? agentSays(key, turnEnded(kind === "done" ? "completed" : "failed", now))
     : []
 
-// The terminals that ask for the person or hold a finished turn.
-export const noisyTerminals = (workspace: Workspace | undefined): TerminalKey[] =>
+// The keys of the terminals the predicate picks, in every session of every project.
+const terminalsWhere = (
+  workspace: Workspace | undefined,
+  pick: (terminal: TerminalMetadata) => boolean,
+): TerminalKey[] =>
   workspace?.projects.flatMap((project) =>
     project.history.flatMap((session) =>
-      session.state.roster.terminals
-        .filter(
-          (terminal) =>
-            terminal.state === "running" &&
-            (terminal.agent?.attention !== undefined || terminal.agent?.lastTurn !== undefined),
-        )
-        .map((terminal) => ({
-          projectId: project.id,
-          workspaceSessionId: session.id,
-          terminalId: terminal.id,
-        })),
+      session.state.roster.terminals.filter(pick).map((terminal) => ({
+        projectId: project.id,
+        workspaceSessionId: session.id,
+        terminalId: terminal.id,
+      })),
     ),
   ) ?? []
+
+// The terminals that ask for the person or hold a finished turn.
+export const noisyTerminals = (workspace: Workspace | undefined): TerminalKey[] =>
+  terminalsWhere(
+    workspace,
+    (terminal) =>
+      terminal.state === "running" &&
+      (terminal.agent?.attention !== undefined || terminal.agent?.lastTurn !== undefined),
+  )
+
+// The terminals back at their shell's prompt. One may still hold an unread finish from
+// the agent it ran, which only a new turn of an agent there clears.
+export const promptTerminals = (workspace: Workspace | undefined): TerminalKey[] =>
+  terminalsWhere(workspace, (terminal) => terminal.state === "idle")

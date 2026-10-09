@@ -588,9 +588,11 @@ last one chosen.
 - **Notification center:** "Fill the notification center" has up to 12 terminals across
   the projects ask for you (questions, permissions, plans), and after 3 s finish done or
   failed, so the Notifications panel lists every kind and the rail badge reads 9+. It
-  adds terminals to the current session if the workspace has too few, and leaves the
-  selected terminal alone, since a finish only counts while you look elsewhere. "Clear
-  notifications" answers every request and reads every finish, for the empty panel.
+  adds terminals to the current session if the workspace has too few, without selecting
+  them or leaving the Notifications panel, and leaves the selected terminal alone, since
+  a finish only counts while you look elsewhere. "Clear notifications" answers every
+  request and reads every finish, a terminal back at its prompt included, for the empty
+  panel.
 - **Demo:** boot into another variant.
 - **Startup:** boot again from the splash. "Splash hold" keeps it until you press
   Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot

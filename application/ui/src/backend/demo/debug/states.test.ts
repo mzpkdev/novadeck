@@ -2,12 +2,13 @@ import { afterEach, beforeEach, vi } from "vitest"
 
 import { workspaceFromSeed } from "../../../model/seed"
 import { workspaceReducer } from "../../../model/state"
+import { createWorkspaceStore } from "../../../model/store"
 import { terminalPhase } from "../../../model/terminal-ending"
-import type { Workspace } from "../../../model/types"
 import { context, describe, expect, it } from "../../../test"
 import type { BackendAction, TerminalKey } from "../../port"
 import { createMockTerminal, demoSeed } from "../samples"
 import { createDemoStates } from "./states"
+import { backToPrompt, exitedWithCode, terminalOf } from "./terminals"
 import type { DemoActionContext } from "./types"
 
 beforeEach(() => vi.useFakeTimers())
@@ -22,58 +23,108 @@ const key = (terminalId: string): TerminalKey => ({
   terminalId,
 })
 
-// A panel over a real reducer, with the selected terminal as given.
-const panel = (selected: string | undefined) => {
-  let workspace: Workspace = initial
+// A panel over a real workspace, with the terminal on screen as given. It records what the
+// panel does that the app would take for a person's move: adding a terminal the way "+"
+// does (which selects it and shows the Terminals panel), and an agent starting to work.
+const panel = (selected: string | undefined, { keeping }: { keeping?: number } = {}) => {
+  // `keeping` shrinks the workspace to that many terminals besides the selected one.
+  const kept =
+    keeping === undefined
+      ? initial
+      : initial.projects
+          .flatMap((each) =>
+            each.history.flatMap((owner) =>
+              owner.state.roster.terminals.map((entry) => ({
+                target: { projectId: each.id, workspaceSessionId: owner.id },
+                terminalId: entry.id,
+              })),
+            ),
+          )
+          .filter(({ terminalId }) => terminalId !== selected)
+          .slice(keeping)
+          .reduce(
+            (left, { target, terminalId }) =>
+              workspaceReducer(left, { type: "terminal/close", target, terminalId }),
+            initial,
+          )
+  const workspace = createWorkspaceStore(kept)
+  const target = { projectId: project.id, workspaceSessionId: session.id }
+  if (selected) workspace.dispatch({ type: "terminal/select", target, terminalId: selected })
   const notes: string[] = []
   const added: TerminalKey[] = []
+  const plus: TerminalKey[] = []
+  const worked = new Set<string>()
+  const create = (select: boolean): TerminalKey => {
+    const number = 90 + added.length
+    const created = key(String(number))
+    added.push(created)
+    workspace.dispatch({
+      type: "terminal/add",
+      target,
+      terminal: createMockTerminal(number, "~"),
+      select,
+    })
+    return created
+  }
+  const onScreen = (): string | undefined =>
+    workspace.getSnapshot().projects[0]!.history[0]!.state.selected
   const actionContext: DemoActionContext = {
-    selected: () => (selected ? key(selected) : undefined),
+    selected: () => (selected && onScreen() ? key(onScreen()!) : undefined),
     addTerminal: () => {
-      const number = 90 + added.length
-      const created = key(String(number))
-      added.push(created)
-      workspace = workspaceReducer(workspace, {
-        type: "terminal/add",
-        target: { projectId: project.id, workspaceSessionId: session.id },
-        terminal: createMockTerminal(number, "~"),
-      })
+      const created = create(true)
+      plus.push(created)
       return created
     },
+    addInBackground: () => create(false),
     startFresh: () => {},
     dispatch: (actions: readonly BackendAction[]) => {
-      workspace = actions.reduce(workspaceReducer, workspace)
+      for (const action of actions)
+        if (action.type === "terminal/status" && action.status.state === "running") {
+          const agent = action.status.agent
+          if (agent?.working) worked.add(`${action.target.projectId}/${action.terminalId}`)
+        }
+      void workspace.transact(actions)
     },
-    workspace: () => workspace,
+    workspace: () => workspace.getSnapshot(),
     note: (text) => void notes.push(text),
   }
   const states = createDemoStates()
   const find = (label: string) =>
     states.groups.flatMap((group) => group.actions).find((action) => action.label === label)!
   const terminal = (id: string) =>
-    workspace.projects[0]!.history[0]!.state.roster.terminals.find((each) => each.id === id)
+    workspace
+      .getSnapshot()
+      .projects[0]!.history[0]!.state.roster.terminals.find((each) => each.id === id)
+  // What each terminal other than the one on screen asks of the person: its request, or an
+  // agent that finished (which the app marks unread, as the person looks elsewhere).
+  const asks = () =>
+    workspace.getSnapshot().projects.flatMap((each) =>
+      each.history.flatMap((owner) =>
+        owner.state.roster.terminals.flatMap((entry) => {
+          const agent = entry.state === "running" ? entry.agent : undefined
+          const kind = agent?.attention?.kind ?? agent?.lastTurn?.outcome
+          const looked =
+            each.id === project.id && owner.id === session.id && entry.id === onScreen()
+          return kind && !looked
+            ? [{ projectId: each.id, sessionId: owner.id, terminalId: entry.id, kind }]
+            : []
+        }),
+      ),
+    )
   return {
     states,
     actionContext,
     notes,
     added,
+    plus,
+    worked,
     find,
     terminal,
+    asks,
+    onScreen,
     run: (label: string) => find(label).run(actionContext),
   }
 }
-
-// What each terminal asks of the person, by project: its request, or how its turn ended.
-const asks = (workspace: Workspace) =>
-  workspace.projects.flatMap((each) =>
-    each.history.flatMap((owner) =>
-      owner.state.roster.terminals.flatMap((terminal) => {
-        const agent = terminal.state === "running" ? terminal.agent : undefined
-        const kind = agent?.attention?.kind ?? agent?.lastTurn?.outcome
-        return kind ? [{ projectId: each.id, terminalId: terminal.id, kind }] : []
-      }),
-    ),
-  )
 
 describe("demo states", () => {
   it("puts each of its new terminals in its own state, the finished ones first", async () => {
@@ -203,11 +254,11 @@ describe("demo states", () => {
     })
 
     it("fills it with every kind, across projects, past the badge's cap", () => {
-      const { run, actionContext } = panel("04")
+      const { run, asks } = panel("04")
       run("Fill the notification center")
       vi.advanceTimersByTime(3000)
-      const all = asks(actionContext.workspace()!)
-      expect(all.length).toBeGreaterThanOrEqual(10)
+      const all = asks()
+      expect(all).toHaveLength(12)
       expect(new Set(all.map((each) => each.kind))).toEqual(
         new Set(["question", "permission", "plan", "failed", "completed"]),
       )
@@ -217,13 +268,77 @@ describe("demo states", () => {
       )
     })
 
-    it("empties it again", () => {
-      const { run, actionContext } = panel("04")
+    it("adds what it needs without selecting it, so every finish lands elsewhere", () => {
+      const { run, onScreen, plus, added, asks } = panel("04", { keeping: 3 })
       run("Fill the notification center")
       vi.advanceTimersByTime(3000)
+      expect(added.length).toBeGreaterThan(0)
+      // Not through the app's "+", which selects the terminal and shows the Terminals panel.
+      expect(plus).toEqual([])
+      expect(onScreen()).toBe("04")
+      expect(asks()).toHaveLength(12)
+      for (const each of added)
+        expect(asks().some((entry) => entry.terminalId === each.terminalId)).toBe(true)
+    })
+
+    it("does not bring back a terminal that ended before its finish", () => {
+      const { run, actionContext, asks } = panel("04")
+      run("Fill the notification center")
+      const found = actionContext
+        .workspace()!
+        .projects.flatMap((each) =>
+          each.history.flatMap((owner) =>
+            owner.state.roster.terminals.map((entry) => ({
+              key: { projectId: each.id, workspaceSessionId: owner.id, terminalId: entry.id },
+              entry,
+            })),
+          ),
+        )
+        .find(
+          ({ key: at, entry }) =>
+            entry.state === "running" &&
+            entry.agent?.working &&
+            !entry.agent.attention &&
+            at.terminalId !== "04",
+        )!
+      actionContext.dispatch!(exitedWithCode(found.key, 1))
+      vi.advanceTimersByTime(3000)
+      expect(terminalOf(actionContext.workspace(), found.key)?.state).toBe("exited")
+      expect(
+        asks().some(
+          (each) =>
+            each.projectId === found.key.projectId &&
+            each.sessionId === found.key.workspaceSessionId &&
+            each.terminalId === found.key.terminalId,
+        ),
+      ).toBe(false)
+    })
+
+    it("empties it again", () => {
+      const { run, asks } = panel("04")
+      run("Fill the notification center")
+      vi.advanceTimersByTime(3000)
+      expect(asks()).not.toEqual([])
       run("Clear notifications")
       vi.advanceTimersByTime(100)
-      expect(asks(actionContext.workspace()!)).toEqual([])
+      expect(asks()).toEqual([])
+    })
+
+    it("has an agent work at a prompt that may hold an unread finish, then leave", () => {
+      const { run, worked, actionContext } = panel("04")
+      run("Fill the notification center")
+      vi.advanceTimersByTime(3000)
+      const at = key("02")
+      actionContext.dispatch!(backToPrompt(at))
+      worked.clear()
+      run("Clear notifications")
+      vi.advanceTimersByTime(100)
+      expect(worked.has(`${at.projectId}/${at.terminalId}`)).toBe(true)
+      expect(terminalOf(actionContext.workspace(), at)).toMatchObject({
+        state: "idle",
+        process: "zsh",
+      })
+      expect(terminalOf(actionContext.workspace(), at)).not.toHaveProperty("agent")
     })
   })
 
