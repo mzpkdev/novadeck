@@ -107,12 +107,15 @@ jobs:
             target: linux
             files: |
               application/host/release/*.AppImage
+              application/host/release/*.deb
+              application/host/release/*.rpm
               application/host/release/novadeck-whisper-linux-x64.tar.gz
           - name: macOS
             os: macos-latest
             target: mac
             files: |
               application/host/release/*.zip
+              application/host/release/*.dmg
               application/host/release/novadeck-whisper-darwin-universal.tar.gz
           - name: Windows
             os: windows-latest
@@ -177,14 +180,133 @@ jobs:
       - name: Set Package Version
         run: npm --prefix application/host pkg set "version=${{ needs.prepare.outputs.version || '0.0.0' }}"
 
+      # Releases from main are signed once the signing credentials are in the repository's
+      # secrets and variables; pull requests, and releases before then, are left unsigned.
+      # The voice engine is signed with the app, so its build and cache follow the same
+      # choice. Only what later steps need goes to GITHUB_ENV: the Azure secrets go to the
+      # two steps that sign, and the macOS key and keychain are removed after packaging.
+      # See docs/release-signing.md.
+      - name: Set Up Signing
+        id: signing
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET: ${{ matrix.target }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          AZURE_SIGNING_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
+        run: |
+          set -euo pipefail
+          signed=false
+          engine=unsigned
+
+          # Succeeds when every named value is set and fails the release when only some
+          # are, rather than shipping that platform unsigned.
+          configured() {
+            local what="$1" present=0 missing=""
+            shift
+            for name in "$@"; do
+              if [[ -n "${!name:-}" ]]; then present=$((present + 1)); else missing="$missing $name"; fi
+            done
+            if [[ "$present" -gt 0 && -n "$missing" ]]; then
+              echo "::error::$what is only partly set up; it also needs:$missing"
+              exit 1
+            fi
+            [[ "$present" -gt 0 ]]
+          }
+
+          # GITHUB_ENV takes a line per variable, so a value with a line break is refused.
+          export_env() {
+            if [[ "$2" == *$'\n'* ]]; then
+              echo "::error::$1 holds a line break."
+              exit 1
+            fi
+            echo "$1=$2" >> "$GITHUB_ENV"
+          }
+
+          if [[ "$EVENT_NAME" != pull_request && "$TARGET" == mac ]] &&
+            configured "macOS signing" MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; then
+            # A keychain of its own, first in the search list, where electron-builder and the
+            # voice engine's build find the Developer ID identity. Only codesign may use the
+            # key, and the key cannot be exported from it.
+            keychain="$RUNNER_TEMP/signing.keychain-db"
+            password="$(openssl rand -hex 24)"
+            certificate="$RUNNER_TEMP/certificate.p12"
+            echo -n "$MACOS_CERTIFICATE" | base64 --decode -o "$certificate"
+            security create-keychain -p "$password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$password" "$keychain"
+            security import "$certificate" -P "$MACOS_CERTIFICATE_PASSWORD" -x -T /usr/bin/codesign -t cert -f pkcs12 -k "$keychain"
+            rm "$certificate"
+            security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" > /dev/null
+            # The runner's keychain paths hold no spaces; they stay searched after this one.
+            # shellcheck disable=SC2046
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+            identity="$(security find-identity -v -p codesigning "$keychain" | awk '/"Developer ID Application: / { print $2; exit }')"
+            if [[ -z "$identity" ]]; then
+              echo "::error::MACOS_CERTIFICATE holds no Developer ID Application identity."
+              exit 1
+            fi
+
+            # @electron/notarize reads the App Store Connect key from a file.
+            key="$RUNNER_TEMP/notarization/AuthKey_${APPLE_API_KEY_ID}.p8"
+            mkdir -p "$(dirname "$key")"
+            printf '%s\n' "$APPLE_API_KEY" > "$key"
+            export_env NOVADECK_MAC_IDENTITY "$identity"
+            export_env NOVADECK_SIGNING_KEYCHAIN "$keychain"
+            export_env APPLE_API_KEY "$key"
+            export_env APPLE_API_KEY_ID "$APPLE_API_KEY_ID"
+            export_env APPLE_API_ISSUER "$APPLE_API_ISSUER"
+            signed=true
+            engine="developer-id-$identity"
+          fi
+
+          # Keyed on the signing variables alone: AZURE_TENANT_ID and AZURE_CLIENT_ID are
+          # common names that a repository may hold for something else.
+          if [[ "$EVENT_NAME" != pull_request && "$TARGET" == win ]] &&
+            configured "Windows signing" AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE AZURE_SIGNING_PUBLISHER; then
+            missing=""
+            for name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+              if [[ -z "${!name:-}" ]]; then missing="$missing $name"; fi
+            done
+            if [[ -n "$missing" ]]; then
+              echo "::error::Windows signing is only partly set up; it also needs:$missing"
+              exit 1
+            fi
+            export_env AZURE_SIGNING_ENDPOINT "$AZURE_SIGNING_ENDPOINT"
+            export_env AZURE_SIGNING_ACCOUNT "$AZURE_SIGNING_ACCOUNT"
+            export_env AZURE_SIGNING_PROFILE "$AZURE_SIGNING_PROFILE"
+            export_env AZURE_SIGNING_PUBLISHER "$AZURE_SIGNING_PUBLISHER"
+            signed=true
+            engine="azure-$AZURE_SIGNING_ACCOUNT-$AZURE_SIGNING_PROFILE"
+          fi
+
+          {
+            echo "signed=$signed"
+            # Names the identity, so a rotated certificate builds the engine afresh.
+            echo "engine=$engine"
+          } >> "$GITHUB_OUTPUT"
+          echo "Signing: $signed"
+
       # Voice input's engine, whisper.cpp built for this platform (see application/whisper),
       # is compiled here, not by the Quality workflow's builds: it takes minutes, and its
       # archive is a release asset the app downloads, while the app ships only its manifest.
-      - name: Install Vulkan Build Dependencies (Linux)
+      # The voice engine's Vulkan backend, and rpmbuild for the rpm package.
+      - name: Install Build Dependencies (Linux)
         if: matrix.target == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libvulkan-dev glslc spirv-headers
+          sudo apt-get install -y --no-install-recommends libvulkan-dev glslc spirv-headers rpm
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.target == 'win'
@@ -199,10 +321,14 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: application/whisper/dist
-          key: whisper-engine-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('application/whisper/scripts/**', 'application/whisper/patches/**', 'application/whisper/package.json') }}
+          key: whisper-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.engine }}-${{ hashFiles('application/whisper/scripts/**', 'application/whisper/patches/**', 'application/whisper/package.json') }}
 
       - name: Build Voice Engine
         if: steps.engine.outputs.cache-hit != 'true'
+        env:
+          AZURE_TENANT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: pnpm --filter @novadeck/whisper build:engine
 
       # Unpacks the engine with the tar the runner uses on this platform and runs it, so a
@@ -222,100 +348,240 @@ jobs:
           fi
 
       # The relay is built with the Rust its rust-toolchain.toml names; on macOS as one
-      # binary for both architectures.
+      # binary for both architectures. macOS signs with the keychain's identity on its own;
+      # Windows signs when given the Azure account, which goes to electron-builder through
+      # `pnpm exec`, as cmd.exe would mangle the quoted publisher in `pnpm run`.
       - name: Package Application
+        shell: bash
         env:
           NOVADECK_RELAY_UNIVERSAL: "1"
-        run: pnpm run package:${{ matrix.target }}
-
-      - name: Smoke Test Linux Package
-        if: matrix.target == 'linux'
+          AZURE_TENANT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.target == 'win' && steps.signing.outputs.signed == 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: |
-          artifact="$(realpath "$(find application/host/release -maxdepth 1 -name '*.AppImage' -print -quit)")"
-          test -n "$artifact"
-          chmod +x "$artifact"
-
-          unset APPDIR APPIMAGE
-          set +e
-          timeout --kill-after=5s 10s xvfb-run -a "$artifact" --appimage-extract-and-run
-          status=$?
-          set -e
-
-          if [[ "$status" -ne 124 ]]; then
-            echo "::error::The AppImage exited before the smoke-test interval (status $status)."
-            exit 1
+          if [[ "${{ matrix.target }}" != win || -z "${AZURE_SIGNING_PROFILE:-}" ]]; then
+            pnpm run package:${{ matrix.target }}
+            exit 0
           fi
+          pnpm --workspace-root exec turbo run build --filter=@novadeck/host
+          pnpm --dir application/host exec electron-builder --win --x64 --publish never \
+            "-c.win.azureSignOptions.publisherName=$AZURE_SIGNING_PUBLISHER" \
+            "-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT" \
+            "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT" \
+            "-c.win.azureSignOptions.certificateProfileName=$AZURE_SIGNING_PROFILE"
 
-      - name: Smoke Test macOS Package
-        if: matrix.target == 'mac'
-        timeout-minutes: 2
+      # The rest of the job runs the packaged app and the engine, which need no key.
+      - name: Remove Signing Credentials (macOS)
+        if: always() && matrix.target == 'mac' && steps.signing.outputs.signed == 'true'
         run: |
-          artifact="$(find application/host/release -maxdepth 1 -name '*.zip' -print -quit)"
-          test -n "$artifact"
-          smoke_directory="$RUNNER_TEMP/novadeck-smoke"
-          mkdir -p "$smoke_directory"
-          echo "Extracting macOS package"
-          ditto -x -k "$artifact" "$smoke_directory"
-          shopt -s nullglob
-          bundles=("$smoke_directory"/*.app)
-          if [[ "${#bundles[@]}" -ne 1 || ! -d "${bundles[0]}" ]]; then
-            echo "::error::Expected exactly one top-level macOS app bundle."
-            exit 1
-          fi
-          bundle="${bundles[0]}"
-          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")"
-          executable="$bundle/Contents/MacOS/$executable_name"
-          if [[ -z "$executable_name" || ! -x "$executable" || -d "$executable" ]]; then
-            echo "::error::The macOS bundle executable is missing or not executable."
-            exit 1
-          fi
+          rm -f "$APPLE_API_KEY"
+          security delete-keychain "$NOVADECK_SIGNING_KEYCHAIN" || true
 
-          echo "Launching $executable"
-          "$executable" &
-          pid=$!
-          sleep 10
+      # Fails the release, rather than shipping a package Gatekeeper or SmartScreen would
+      # treat as unsigned, when signing was set up but did not take.
+      - name: Verify Signatures (macOS)
+        if: matrix.target == 'mac' && steps.signing.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          verify="$RUNNER_TEMP/novadeck-verify"
+          mkdir -p "$verify/engine"
+          ditto -x -k "$(find application/host/release -maxdepth 1 -name '*.zip' -print -quit)" "$verify"
+          bundle="$(find "$verify" -maxdepth 1 -name '*.app' -print -quit)"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          spctl --assess --type execute --verbose=2 "$bundle"
+          xcrun stapler validate "$bundle"
 
-          if ! kill -0 "$pid" 2>/dev/null; then
-            wait "$pid" || true
-            echo "::error::The macOS application exited before the smoke-test interval."
-            exit 1
-          fi
+          # The disk image holds its own copy of the bundle, which people drag out of it.
+          image="$RUNNER_TEMP/novadeck-verify-image"
+          hdiutil attach -nobrowse -readonly -mountpoint "$image" "$(find application/host/release -maxdepth 1 -name '*.dmg' -print -quit)" > /dev/null
+          bundle="$(find "$image" -maxdepth 1 -name '*.app' -print -quit)"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          spctl --assess --type execute --verbose=2 "$bundle"
+          xcrun stapler validate "$bundle"
+          hdiutil detach -force "$image" > /dev/null
 
-          echo "The macOS application stayed running for ten seconds; stopping it."
-          kill "$pid" 2>/dev/null || true
-          for _ in 1 2 3 4 5; do
-            if ! kill -0 "$pid" 2>/dev/null; then
-              break
+          tar -xzf application/whisper/dist/novadeck-whisper-*.tar.gz -C "$verify/engine"
+          for file in "$verify"/engine/whisper-server "$verify"/engine/*.dylib; do
+            if [[ -f "$file" && ! -L "$file" ]]; then
+              codesign --verify --strict --verbose=2 "$file"
+              codesign --display --verbose=2 "$file" 2>&1 | grep '^Authority=Developer ID Application: ' > /dev/null
             fi
-            sleep 1
           done
-          if kill -0 "$pid" 2>/dev/null; then
-            echo "Forcing smoke-test process cleanup after five seconds."
-            kill -KILL "$pid" 2>/dev/null || true
-          fi
-          wait "$pid" || true
 
-      - name: Smoke Test Windows Package
+      - name: Verify Signatures (Windows)
+        if: matrix.target == 'win' && steps.signing.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          $engine = Join-Path $env:RUNNER_TEMP "novadeck-verify-engine"
+          New-Item -ItemType Directory -Force -Path $engine | Out-Null
+          $archive = Get-ChildItem application/whisper/dist -Filter "novadeck-whisper-*.tar.gz" | Select-Object -First 1
+          & "$env:SystemRoot\System32\tar.exe" -xzf $archive.FullName -C $engine
+          $files = @(Get-ChildItem application/host/release -Filter *.exe) +
+            @(Get-ChildItem application/host/release/win-unpacked -Recurse -Include *.exe, *.dll, *.node) +
+            @(Get-ChildItem $engine -Include *.exe, *.dll -Recurse)
+          $unsigned = $files | Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne "Valid" }
+          if ($unsigned) {
+            $unsigned | ForEach-Object { Write-Host "::error::Not validly signed: $($_.FullName)" }
+            throw "$(@($unsigned).Count) files are not validly signed."
+          }
+          Write-Host "$($files.Count) files are validly signed."
+
+      # Each package runs for ten seconds as people get it: the AppImage as it is, the deb
+      # installed, and the app from the macOS ZIP and disk image and from the Windows
+      # installer and portable executable.
+      - name: Smoke Test Linux Packages
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          release=application/host/release
+          launch() {
+            local what="$1" status
+            shift
+            set +e
+            timeout --kill-after=5s 10s xvfb-run -a "$@"
+            status=$?
+            set -e
+            if [[ "$status" -ne 124 ]]; then
+              echo "::error::The $what exited before the smoke-test interval (status $status)."
+              exit 1
+            fi
+          }
+
+          artifact="$(realpath "$(find "$release" -maxdepth 1 -name '*.AppImage' -print -quit)")"
+          chmod +x "$artifact"
+          unset APPDIR APPIMAGE
+          launch AppImage "$artifact" --appimage-extract-and-run
+
+          sudo apt-get install -y "$(realpath "$(find "$release" -maxdepth 1 -name '*.deb' -print -quit)")"
+          launch "installed deb package" novadeck
+          sudo apt-get remove -y novadeck
+
+          # This runner can't install the rpm, so it checks what the rpm would install.
+          rpm="$(find "$release" -maxdepth 1 -name '*.rpm' -print -quit)"
+          rpm -qip "$rpm"
+          if ! rpm -qlp "$rpm" | grep -x /opt/novadeck/novadeck > /dev/null; then
+            echo "::error::The rpm package doesn't install /opt/novadeck/novadeck."
+            exit 1
+          fi
+
+      - name: Smoke Test macOS Packages
+        if: matrix.target == 'mac'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          release=application/host/release
+          launch() {
+            local what="$1" bundles bundle executable_name executable pid
+            shopt -s nullglob
+            bundles=("$2"/*.app)
+            if [[ "${#bundles[@]}" -ne 1 || ! -d "${bundles[0]}" ]]; then
+              echo "::error::Expected exactly one top-level app bundle in the $what."
+              exit 1
+            fi
+            bundle="${bundles[0]}"
+            executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")"
+            executable="$bundle/Contents/MacOS/$executable_name"
+            if [[ -z "$executable_name" || ! -x "$executable" || -d "$executable" ]]; then
+              echo "::error::The executable of the app in the $what is missing or not executable."
+              exit 1
+            fi
+
+            echo "Launching $executable"
+            "$executable" &
+            pid=$!
+            sleep 10
+
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid" || true
+              echo "::error::The app in the $what exited before the smoke-test interval."
+              exit 1
+            fi
+
+            echo "The app in the $what stayed running for ten seconds; stopping it."
+            kill "$pid" 2>/dev/null || true
+            for _ in 1 2 3 4 5; do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+              echo "Forcing smoke-test process cleanup after five seconds."
+              kill -KILL "$pid" 2>/dev/null || true
+            fi
+            wait "$pid" || true
+          }
+
+          archive="$RUNNER_TEMP/novadeck-smoke"
+          mkdir -p "$archive"
+          echo "Extracting macOS package"
+          ditto -x -k "$(find "$release" -maxdepth 1 -name '*.zip' -print -quit)" "$archive"
+          launch ZIP "$archive"
+
+          image="$RUNNER_TEMP/novadeck-smoke-image"
+          hdiutil attach -nobrowse -readonly -mountpoint "$image" "$(find "$release" -maxdepth 1 -name '*.dmg' -print -quit)" > /dev/null
+          if [[ ! -L "$image/Applications" ]]; then
+            echo "::error::The disk image has no Applications shortcut to drag the app to."
+            exit 1
+          fi
+          launch "disk image" "$image"
+          hdiutil detach -force "$image" > /dev/null
+
+      - name: Smoke Test Windows Packages
         if: matrix.target == 'win'
         shell: pwsh
         run: |
-          $artifact = Get-ChildItem application/host/release -Filter *.exe | Select-Object -First 1
-          if ($null -eq $artifact) {
+          function Test-Launch([string] $Path, [string] $What) {
+            $process = Start-Process -FilePath $Path -PassThru
+            Start-Sleep -Seconds 10
+            $process.Refresh()
+
+            if ($process.HasExited) {
+              throw "The $What exited before the smoke-test interval with status $($process.ExitCode)."
+            }
+
+            Write-Host "The $What stayed running for ten seconds; stopping its process tree."
+            $process.Kill($true)
+            if (-not $process.WaitForExit(5000)) {
+              throw "The $What did not stop after smoke-test cleanup."
+            }
+          }
+
+          $portable = Get-ChildItem application/host/release -Filter *-portable.exe | Select-Object -First 1
+          if ($null -eq $portable) {
             throw "The portable executable was not found."
           }
+          Test-Launch $portable.FullName "portable executable"
 
-          $process = Start-Process -FilePath $artifact.FullName -PassThru
-          Start-Sleep -Seconds 10
-          $process.Refresh()
-
-          if ($process.HasExited) {
-            throw "The portable executable exited before the smoke-test interval with status $($process.ExitCode)."
+          $setup = Get-ChildItem application/host/release -Filter *-setup.exe | Select-Object -First 1
+          if ($null -eq $setup) {
+            throw "The installer was not found."
           }
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "The installer failed with status $($install.ExitCode)."
+          }
+          $folder = Join-Path $env:LOCALAPPDATA "Programs\novadeck"
+          $app = Join-Path $folder "novadeck.exe"
+          if (-not (Test-Path $app)) {
+            throw "The installer put no novadeck.exe in $folder."
+          }
+          Test-Launch $app "installed application"
 
-          Write-Host "The Windows application stayed running for ten seconds; stopping its process tree."
-          $process.Kill($true)
-          if (-not $process.WaitForExit(5000)) {
-            throw "The Windows application did not stop after smoke-test cleanup."
+          $uninstaller = Get-ChildItem $folder -Filter "Uninstall *.exe" | Select-Object -First 1
+          if ($null -eq $uninstaller) {
+            throw "The installer put no uninstaller in $folder."
+          }
+          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "The uninstaller failed with status $($uninstall.ExitCode)."
+          }
+          # The uninstaller runs from a copy of itself, so it may still be removing files.
+          for ($second = 0; $second -lt 30 -and (Test-Path $folder); $second++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path $folder) {
+            throw "Uninstalling left $folder behind."
           }
 
       - name: Smoke Test Packaged Runner
@@ -351,6 +617,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      # Build provenance for every package, which `gh attestation verify` checks.
+      attestations: write
+      id-token: write
     steps:
       - name: Check Out Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -375,6 +644,45 @@ jobs:
       - name: Generate Checksums
         working-directory: release-assets
         run: sha256sum -- * > SHA256SUMS
+
+      # A detached signature over the checksums, the way Linux users and packagers check a
+      # download, once the release key is in the secrets. See docs/release-signing.md.
+      - name: Sign Checksums
+        working-directory: release-assets
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GPG_PRIVATE_KEY" ]]; then
+            if [[ -n "$GPG_PASSPHRASE" ]]; then
+              echo "::error::GPG_PASSPHRASE is set, but signing the checksums needs GPG_PRIVATE_KEY too."
+              exit 1
+            fi
+            echo "No release key; the checksums are published unsigned."
+            exit 0
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          trap 'rm -rf "$GNUPGHOME"' EXIT
+          gpg --batch --import <<<"$GPG_PRIVATE_KEY"
+          # One key, so which one signs is never gpg's choice.
+          keys="$(gpg --batch --with-colons --list-secret-keys | grep -c '^sec:' || true)"
+          if [[ "$keys" != 1 ]]; then
+            echo "::error::GPG_PRIVATE_KEY holds $keys secret keys; export only the release key, by its fingerprint."
+            exit 1
+          fi
+          if ! gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS <<<"$GPG_PASSPHRASE"; then
+            echo "::error::Signing the checksums failed. If the release key has expired, extend it and put a fresh export in GPG_PRIVATE_KEY; see docs/release-signing.md."
+            exit 1
+          fi
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+
+      - name: Attest Packages
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/*
 
       - name: Configure Git
         run: |

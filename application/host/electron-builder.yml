@@ -32,6 +32,11 @@ extraResources:
   - from: ../whisper/dist/engine.json
     to: voice/engine.json
 artifactName: novadeck-${version}-${os}-${arch}.${ext}
+# The installers name the install folder and the Linux package after the package's name,
+# which for the workspace's @novadeck/host would be "@novadeckhost". Electron names the
+# app by productName first, so this changes nothing at run time.
+extraMetadata:
+  name: novadeck
 mac:
   # node-pty ships prebuilds for both architectures, and the relay is built universal; the
   # universal merge sees them unchanged in the x64 and arm64 copies, and each runs the
@@ -41,23 +46,117 @@ mac:
   extendInfo:
     CFBundleName: novadeck
     NSMicrophoneUsageDescription: Novadeck uses the microphone for voice input, transcribed on this computer.
-  identity: null
+    # What macOS shows when a program run in a terminal asks; see the entitlements.
+    NSCameraUsageDescription: A program running in Novadeck wants to use the camera.
+    NSAppleEventsUsageDescription: A program running in Novadeck wants to control another app.
+    NSContactsUsageDescription: A program running in Novadeck wants to read your contacts.
+    NSCalendarsUsageDescription: A program running in Novadeck wants to use your calendars.
+    NSCalendarsFullAccessUsageDescription: A program running in Novadeck wants to use your calendars.
+    NSRemindersUsageDescription: A program running in Novadeck wants to use your reminders.
+    NSRemindersFullAccessUsageDescription: A program running in Novadeck wants to use your reminders.
+    NSLocationUsageDescription: A program running in Novadeck wants to use your location.
+    NSLocationWhenInUseUsageDescription: A program running in Novadeck wants to use your location.
+    NSPhotoLibraryUsageDescription: A program running in Novadeck wants to use your photos.
+    NSBluetoothAlwaysUsageDescription: A program running in Novadeck wants to use Bluetooth.
+    NSLocalNetworkUsageDescription: A program running in Novadeck wants to reach devices on your local network.
+    NSDesktopFolderUsageDescription: A program running in Novadeck wants to use files on your Desktop.
+    NSDocumentsFolderUsageDescription: A program running in Novadeck wants to use files in your Documents folder.
+    NSDownloadsFolderUsageDescription: A program running in Novadeck wants to use files in your Downloads folder.
+    NSRemovableVolumesUsageDescription: A program running in Novadeck wants to use files on a removable volume.
+    NSNetworkVolumesUsageDescription: A program running in Novadeck wants to use files on a network volume.
+  # Only this platform's PTY binaries: signing would otherwise reach the Linux and Windows
+  # prebuilds, which codesign cannot sign as code.
+  files:
+    - "!node_modules/node-pty/prebuilds/{linux,win32}-*{,/**}"
+    - "!node_modules/node-pty/third_party{,/**}"
+  # Signed with the Developer ID certificate in the keychain and notarized with the App
+  # Store Connect key in APPLE_API_KEY*, when the release workflow has them; without a
+  # certificate the app is left unsigned. See docs/release-signing.md.
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  notarize: true
   category: public.app-category.utilities
+  # The ZIP for whoever unpacks it by hand, and the disk image people drag to Applications.
+  # The app inside both is the one signed, notarized and stapled.
   target:
     - target: zip
       arch:
         - universal
+    - target: dmg
+      arch:
+        - universal
 win:
+  # Signed through Azure Artifact Signing when the release workflow passes
+  # azureSignOptions; see docs/release-signing.md. Executables are signed by default; the
+  # libraries and native modules too, so antivirus heuristics see a known publisher.
+  signExts:
+    - .dll
+    - .node
+  # Only the x64 PTY binaries: signtool fails on the macOS and Linux prebuilds, and the x64
+  # app never loads the arm64 ones, even emulated on an arm64 computer.
+  files:
+    - "!node_modules/node-pty/prebuilds/{darwin,linux}-*{,/**}"
+    - "!node_modules/node-pty/prebuilds/win32-arm64{,/**}"
+    - "!node_modules/node-pty/third_party{,/**}"
+  # The installer and the portable executable are both .exe files, so each names itself.
   target:
+    - target: nsis
+      arch:
+        - x64
     - target: portable
       arch:
         - x64
+nsis:
+  # One click, for the current user, into %LOCALAPPDATA%\Programs\novadeck, with no
+  # administrator prompt; uninstalling keeps the projects and sessions in app data.
+  artifactName: novadeck-${version}-win-${arch}-setup.${ext}
+portable:
+  artifactName: novadeck-${version}-win-${arch}-portable.${ext}
 linux:
   icon: resources/icons
   category: Utility
   maintainer: mzpkdev
+  # The package managers' one-line summary; the description below it is package.json's.
+  synopsis: A terminal workspace for organizing projects, sessions, and parallel work
   syncDesktopName: true
+  # The AppImage runs anywhere; the deb and rpm install to /opt/novadeck with a menu entry
+  # and `novadeck` on the PATH. The rpm needs rpmbuild (the `rpm` package on Debian and
+  # Ubuntu).
   target:
     - target: AppImage
       arch:
         - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+# electron-builder's dependencies, plus the sound and GBM libraries Electron links against,
+# which nothing else on the list brings to a minimal or server install.
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libasound2t64 | libasound2
+    - libgbm1
+rpm:
+  depends:
+    - gtk3
+    - libnotify
+    - nss
+    - libXScrnSaver
+    - (libXtst or libXtst6)
+    - xdg-utils
+    - at-spi2-core
+    - (libuuid or libuuid1)
+    - (alsa-lib or libasound2)
+    - (mesa-libgbm or libgbm1)

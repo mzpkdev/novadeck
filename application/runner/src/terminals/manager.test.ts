@@ -145,6 +145,9 @@ describe("holding the person's input", () => {
   })
 })
 
+// Every line the fixture children traced in this test process.
+const traced = (): string[] => ptyTrace(Number.MAX_SAFE_INTEGER).split("\n")
+
 describe("an answer's hold of the person's input", () => {
   it("never replays the mouse's wheel and motion reports it held, once released", async ({
     terminals,
@@ -167,18 +170,21 @@ describe("an answer's hold of the person's input", () => {
     await vi.waitFor(() =>
       expect(inside.records.get(terminal.id)!.screen.modes.mouseTrackingMode).toBe("any"),
     )
-    // An answer's hold, whose keys count only once delivered.
+    // An answer's hold, as the queue gives it: its keys deferred until delivered.
     const hold = inside.holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
+    // What the children traced from here on, however much a busy machine traced before.
+    const mark = traced().length
+    const since = (): string => traced().slice(mark).join("\n")
     // A length no other write of this test has: the child traces lengths.
     const wheel = "\x1b[<64;123;456M"
     manager.write({ terminalId: terminal.id, data: wheel }, "creator")
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
     hold.settle()
-    // The key went once released, however long a loaded machine takes to show it; the
-    // wheel report, held before it, never did.
-    await vi.waitFor(() => expect(ptyTrace(40)).toContain("received 1 chars"), { timeout: 10_000 })
-    expect(ptyTrace(40)).not.toContain(`received ${wheel.length} chars`)
+    // The key went once released; the wheel report, held before it, never did.
+    await vi.waitFor(() => expect(since()).toContain("received 1 chars"), { timeout: 5_000 })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(since()).not.toContain(`received ${wheel.length} chars`)
   })
 })
 

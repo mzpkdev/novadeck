@@ -240,14 +240,29 @@ for (const setup of setups) {
         await t2.submit("Tell t1 the news")
 
         if (swallows) {
-          // It swallows the paste: the ring fails, nothing is pressed, Unknown. It stays
-          // open as it was, no line in it, and the message waits.
-          await through(t1, [holds("t2", "t1", "queued"), "ringing", "unknown"], { after: mark })
-          await sleep(quiet)
+          if (process.platform === "win32") {
+            // On Windows the doorbell's gate rings only where the agent's box shows, which
+            // what Esc-Esc opened hides: no ring starts, and nothing is pasted at all.
+            await through(t1, [holds("t2", "t1", "queued")], { after: mark })
+            await sleep(quiet)
+            expect(
+              t1
+                .history()
+                .slice(mark)
+                .map((one) => one.delivery),
+            ).not.toContain("ringing")
+          } else {
+            // It swallows the paste: the ring fails, nothing is pressed, Unknown.
+            await through(t1, [holds("t2", "t1", "queued"), "ringing", "unknown"], {
+              after: mark,
+            })
+            await sleep(quiet)
+            expect(t1.history().at(-1)?.delivery).toBe("unknown")
+          }
+          // It stays open as it was, no line in it, and the message waits.
           const shown = await t1.screen()
           expect(shown).toMatch(shows)
           expect(shown).not.toMatch(ring)
-          expect(t1.history().at(-1)?.delivery).toBe("unknown")
           expect(messages(t1).map((one) => one.state)).toEqual(["queued"])
           expect(run.model.calls.slice(calls).filter((call) => ring.test(latest(call)))).toEqual([])
 
@@ -269,9 +284,25 @@ for (const setup of setups) {
           return
         }
 
+        let rings = mark
+        if (process.platform === "win32") {
+          // On Windows a paste there would reach it as keys, its rewind among them: the
+          // doorbell's gate, which needs the agent's box taking a prompt, rings only once the
+          // person has left it.
+          await through(t1, [holds("t2", "t1", "queued")], { after: mark })
+          await sleep(quiet)
+          expect(
+            t1
+              .history()
+              .slice(mark)
+              .map((one) => one.delivery),
+          ).not.toContain("ringing")
+          rings = t1.mark()
+          await t1.escape()
+        }
         // The paste leaves it and lands in the prompt: the ring goes on as at an empty
         // prompt, its own line the prompt, and nothing was rewound.
-        await through(t1, ["ringing", "working", holds("t2", "t1", "delivered")], { after: mark })
+        await through(t1, ["ringing", "working", holds("t2", "t1", "delivered")], { after: rings })
         const rung = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
         expect(latest(rung)).toMatch(ring)
         expect(rung.turns.some((one) => one.role === "user" && one.text.includes("Say hi"))).toBe(
