@@ -11,9 +11,8 @@ import { useEffect, useId, useRef, useState } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import type { ViewMode } from "../model/types"
-import type { Notification } from "../notifications/notifications"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { notificationBadge } from "./notification-badge"
+import type { BellBadge } from "./notification-badge"
 import { NotificationBadge } from "./NotificationBadge"
 
 const views = [
@@ -25,7 +24,7 @@ const views = [
 export const ZenDock = ({
   view,
   enabledViews,
-  notifications,
+  badge,
   onCreate,
   onViewChange,
   onNotifications,
@@ -33,7 +32,7 @@ export const ZenDock = ({
 }: {
   view: ViewMode
   enabledViews: ViewMode[]
-  notifications: readonly Notification[]
+  badge: BellBadge | undefined
   onCreate: () => void
   onViewChange: (view: ViewMode) => void
   onNotifications: () => void
@@ -45,7 +44,6 @@ export const ZenDock = ({
   const dock = useRef<HTMLDivElement>(null)
   const create = useRef<HTMLButtonElement>(null)
   const controls = useId()
-  const badge = notificationBadge(notifications)
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent): void => {

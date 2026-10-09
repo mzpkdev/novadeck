@@ -25,7 +25,13 @@ const rules: Record<string, readonly string[]> = {
   "terminals/": [...base, "terminals/", "sidebar/"],
   "layouts/": [...base, "layouts/", "sidebar/", "terminals/"],
   // What asks for the person across the workspace: terminals' requests and unread finishes.
-  "notifications/": [...base, "notifications/", "sidebar/", "terminals/", "projects/"],
+  "notifications/": [
+    ...base,
+    "notifications/",
+    "sidebar/",
+    "terminals/unread-state.ts",
+    "projects/project-status.ts",
+  ],
   "shell/": [
     ...base,
     "shell/",

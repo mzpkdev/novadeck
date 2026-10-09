@@ -19,7 +19,7 @@ import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
 import { HeaderSection } from "./HeaderSection"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
-import { useNotifications } from "./useNotifications"
+import { useNotificationBadge } from "./useNotifications"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -81,7 +81,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const services = useWorkspaceServices()
   const { commands, canvas } = services
   const { hideSidebar, toggleSidebar, exitZen, changeView, add } = commands
-  const notifications = useNotifications()
+  const badge = useNotificationBadge()
   const desktop = useDesktop()
   const shell = useUiState((state) => {
     const { zen, sidebar, sidebarCollapsed } = state.shell
@@ -105,7 +105,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       sidebarVisible={shell.sidebarVisible}
       sidebarPanel={sidebarPanel}
       zen={zen}
-      notifications={notifications}
+      badge={badge}
       toggleSidebar={toggleSidebar}
       hideSidebar={hideSidebar}
     />
@@ -144,7 +144,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
             <ZenDock
               view={view}
               enabledViews={enabledViews}
-              notifications={notifications}
+              badge={badge}
               onCreate={() => add()}
               onViewChange={(next) => {
                 if (next !== view) changeView(next)

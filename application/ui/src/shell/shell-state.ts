@@ -1,6 +1,7 @@
+import type { SidebarPanel } from "../interaction/dom"
 import type { ViewMode } from "../model/types"
 
-export type SidebarPanel = "terminals" | "sessions" | "notifications"
+export type { SidebarPanel }
 export type KeyboardFocus = { readonly id: string; readonly view: ViewMode }
 export type CanvasKeyboardFocus = {
   readonly context: string

@@ -22,6 +22,8 @@ export type CommandEffects = {
   readonly transitionTerminal: (id: string, update: () => void) => void
   readonly cancelTransition: () => void
   readonly focusSidebarToggle: (panel: SidebarPanel) => void
+  // Focuses the panel's toggle after Zen's dock, where the person pressed, is gone.
+  readonly focusSidebarToggleStranded: (panel: SidebarPanel) => void
   readonly focusZenCreate: () => void
   readonly focusZenEnter: () => void
   readonly focusWorkspaceViewport: () => void

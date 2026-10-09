@@ -1,9 +1,8 @@
 import { Bell, History, Terminal as TerminalIcon } from "lucide-react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
-import type { Notification } from "../notifications/notifications"
 import { ToggleGroup, ToggleGroupItem } from "../ui-toolkit/ToggleGroup"
-import { notificationBadge } from "./notification-badge"
+import type { BellBadge } from "./notification-badge"
 import { NotificationBadge } from "./NotificationBadge"
 import type { SidebarPanel } from "./shell-state"
 
@@ -12,7 +11,7 @@ export const SidebarRail = ({
   sidebarVisible,
   sidebarPanel,
   zen,
-  notifications,
+  badge,
   toggleSidebar,
   hideSidebar,
 }: {
@@ -20,11 +19,10 @@ export const SidebarRail = ({
   sidebarVisible: boolean
   sidebarPanel: SidebarPanel
   zen: boolean
-  notifications: readonly Notification[]
+  badge: BellBadge | undefined
   toggleSidebar: (panel: SidebarPanel) => void
   hideSidebar: () => void
 }): React.JSX.Element => {
-  const badge = notificationBadge(notifications)
   return (
     <ToggleGroup
       className="sidebar-tools z-30 w-11 shrink-0 flex-col items-center gap-1 px-1.5 py-3"

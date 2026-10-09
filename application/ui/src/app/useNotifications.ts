@@ -1,4 +1,5 @@
 import { notifications, type Notification } from "../notifications/notifications"
+import { notificationBadge, type BellBadge } from "../shell/notification-badge"
 import { unreadEnd } from "../terminals/unread-state"
 import { useUiState, useWorkspaceState } from "./controller/context"
 import { shallowEqual } from "./selectors"
@@ -15,5 +16,17 @@ export const useNotifications = (): readonly Notification[] => {
     (workspace) =>
       notifications(workspace.projects, (context, id) => unreadEnd(unread, context, id)),
     sameNotifications,
+  )
+}
+
+// The bell's badge alone: the workspace re-renders for it only when its count or tone changes.
+export const useNotificationBadge = (): BellBadge | undefined => {
+  const unread = useUiState((state) => state.unread)
+  return useWorkspaceState(
+    (workspace) =>
+      notificationBadge(
+        notifications(workspace.projects, (context, id) => unreadEnd(unread, context, id)),
+      ),
+    shallowEqual,
   )
 }

@@ -3,7 +3,7 @@ import type { ProjectStatus } from "../projects/project-status"
 
 // What the rail's and the Zen dock's bell shows while something asks for the person: a
 // count, toned as the switcher's status marks are by the most pressing kind.
-export type NotificationBadge = {
+export type BellBadge = {
   // The count as the badge prints it, capped at "9+".
   readonly text: string
   // The accessible name of the bell, e.g. "Notifications, 3 waiting".
@@ -22,7 +22,7 @@ const statusOf: Record<Notification["kind"], ProjectStatus> = {
 
 // Undefined while nothing asks, so the bell carries no badge. The list comes most
 // pressing first, but this does not rely on it.
-export const notificationBadge = (list: readonly Notification[]): NotificationBadge | undefined => {
+export const notificationBadge = (list: readonly Notification[]): BellBadge | undefined => {
   if (list.length === 0) return undefined
   const kind = notificationKinds.find((item) => list.some((entry) => entry.kind === item))!
   return {
