@@ -83,9 +83,11 @@ win:
   signExts:
     - .dll
     - .node
-  # Only this platform's PTY binaries: signtool fails on the macOS and Linux prebuilds.
+  # Only the x64 PTY binaries: signtool fails on the macOS and Linux prebuilds, and the x64
+  # app never loads the arm64 ones, even emulated on an arm64 computer.
   files:
     - "!node_modules/node-pty/prebuilds/{darwin,linux}-*{,/**}"
+    - "!node_modules/node-pty/prebuilds/win32-arm64{,/**}"
     - "!node_modules/node-pty/third_party{,/**}"
   target:
     - target: portable
