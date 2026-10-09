@@ -168,6 +168,8 @@ export const installUpdate = ({
 /**
  * A quit that leaves an update waiting uninstalled: for the system ending the session,
  * which may kill a silent installer or an AppImage swap halfway. Ordinary quits install.
+ * On macOS Squirrel.Mac installs a staged update on any exit, which this cannot stop; it
+ * swaps the bundle whole, so an interrupted install leaves the old app.
  */
 export const quitWithoutInstalling =
   (updater: () => Pick<Updater, "autoInstallOnAppQuit"> | undefined, quit: () => void) =>
@@ -232,6 +234,8 @@ export const checkForUpdates = (
   updater.on("error", (error) => log("The update check failed.", error))
   updater.on("update-downloaded", (info) => {
     cancel()
+    // A check still in flight finds no more to download.
+    updater.autoDownload = false
     // electron-updater reports the download just before it hands the file to Squirrel,
     // so listening now is in time for the native event that follows.
     if (native) native.once("update-downloaded", () => downloaded(info.version))

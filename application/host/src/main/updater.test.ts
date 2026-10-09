@@ -406,6 +406,12 @@ describe("checking for updates", () => {
     expect(updater.checks).toBe(1)
   })
 
+  it("downloads nothing more for a check still in flight when an update has downloaded", () => {
+    const { updater } = checking()
+    updater.emit("update-downloaded", { version: "1.2.3" })
+    expect(updater.autoDownload).toBe(false)
+  })
+
   it("stops checking once cancelled", async () => {
     const { updater, cancel } = checking()
     cancel()

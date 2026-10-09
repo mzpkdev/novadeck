@@ -40,8 +40,10 @@ release workflow's package checks set it, so they never reach the network.
   updater then returns without ending the app, as it does when an install fails, for
   instance in a read-only folder, the app quits after 10 seconds (30 on macOS) rather than
   go on running without its shells.
-- A quit caused by the system shutting down or the session ending installs nothing, as the
-  system may kill the installer halfway. Other quits install a waiting update.
+- On Windows and Linux, a quit caused by the system shutting down or the session ending
+  installs nothing, as the system may kill the installer halfway. Other quits install a
+  waiting update. On macOS Squirrel.Mac installs a staged update on any exit; it swaps the
+  bundle whole, so an interrupted install leaves the old app.
 - The Linux build counts as the AppImage only when `APPIMAGE` is set and the running
   executable lies inside `APPDIR`: shells inside the app inherit `APPIMAGE`, so a deb
   started from one would otherwise pass for it.

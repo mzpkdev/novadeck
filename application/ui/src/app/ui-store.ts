@@ -236,8 +236,8 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
   return crashes.subscribe(check)
 }
 
-// The update the backend has ready, kept for the footer; each report replaces the last,
-// since the host reports newer ones as it downloads them.
+// The update the backend has ready, kept for the footer; a later report replaces the
+// last, as the demo's newer update does.
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
   updates?.onReady((version) =>
     ui.update((state) =>

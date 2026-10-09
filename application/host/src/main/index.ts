@@ -178,12 +178,15 @@ const bundleSigned = (): Promise<boolean> =>
 
 // Starts checking for updates in a build that updates itself; see ./updater.ts.
 const startUpdates = async (): Promise<void> => {
+  const appDir = process.env.APPDIR
   const mode = updateMode({
     packaged: app.isPackaged,
     version: app.getVersion(),
     platform: process.platform,
     execPath: process.execPath,
-    env: process.env,
+    // The AppImage mounts under TMPDIR, which may reach it through a symlink; the
+    // executable's path is the real one.
+    env: { ...process.env, APPDIR: appDir && (await realpath(appDir).catch(() => appDir)) },
   })
   if (mode === "no" || (mode === "signed" && !(await bundleSigned()))) return
   // electron-updater is CommonJS, so ESM takes its exports from the default.
