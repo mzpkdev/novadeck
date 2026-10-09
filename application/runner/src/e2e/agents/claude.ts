@@ -223,14 +223,18 @@ export const claude: AgentSetup = {
         ...(seed.popup && {
           oauthAccount: { organizationRole: "admin", workspaceRole: "workspace_admin" },
         }),
-        projects: {
-          [sandbox.project]: {
-            hasTrustDialogAccepted: seed.folderTrusted ?? true,
-            hasCompletedProjectOnboarding: true,
-            projectOnboardingSeenCount: 1,
-            allowedTools: [],
-          },
-        },
+        // Keyed by the project's path, which on Windows it writes with forward slashes.
+        projects: Object.fromEntries(
+          [...new Set([sandbox.project, sandbox.project.replaceAll("\\", "/")])].map((path) => [
+            path,
+            {
+              hasTrustDialogAccepted: seed.folderTrusted ?? true,
+              hasCompletedProjectOnboarding: true,
+              projectOnboardingSeenCount: 1,
+              allowedTools: [],
+            },
+          ]),
+        ),
       }),
     )
     await writeFile(
