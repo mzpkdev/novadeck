@@ -2804,21 +2804,21 @@ export class Terminals {
       const batch = record.unread.splice(0)
       drawn = batch.reduce((total, one) => total + one.data.length, 0)
       // Output a previous run left queued belongs to a screen that is gone.
-      const data = batch
+      const text = batch
         .filter((one) => one.child === record.process)
         .map((one) => one.data)
         .join("")
-      if (data === "") return
-      await new Promise<void>((resolve) => record.screen.write(data, resolve))
+      if (text === "") return
+      await new Promise<void>((resolve) => record.screen.write(text, resolve))
       this.doorbell?.changed(record.summary.id)
       this.dialogs.changed(record.summary.id)
       // Once on the screen: a save while it was drawing may have taken the screen before.
       record.changed = true
-      for (let start = 0; start < data.length;) {
-        let end = Math.min(start + OUTPUT_CHARS, data.length)
-        const last = data.charCodeAt(end - 1)
-        if (end < data.length && last >= 0xd800 && last <= 0xdbff) end -= 1
-        const chunk = data.slice(start, end)
+      for (let start = 0; start < text.length;) {
+        let end = Math.min(start + OUTPUT_CHARS, text.length)
+        const last = text.charCodeAt(end - 1)
+        if (end < text.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+        const chunk = text.slice(start, end)
         this.emit(record, { type: "output", data: chunk })
         start = end
       }
