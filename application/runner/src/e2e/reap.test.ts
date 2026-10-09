@@ -80,11 +80,14 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     const sandbox = { root, home: join(root, "home"), started: Date.now() }
     const start = (cwd: string, env: NodeJS.ProcessEnv) => {
       // Node rather than a system program such as sleep: macOS shows no environment of its
-      // own programs, and the harnesses are never one.
+      // own programs, and the harnesses are never one. Each in a group of its own, as a
+      // harness in its terminal is: one stopped in the tests' own group would stop with it
+      // whatever job control does to that group.
       const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
         cwd,
         env,
         stdio: "ignore",
+        detached: true,
       })
       resources.defer(() => {
         child.kill("SIGKILL")
