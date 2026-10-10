@@ -13,6 +13,7 @@ import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
 import { reap } from "./reap.js"
 import { createSandbox, type Sandbox } from "./sandbox.js"
+import { startTrace } from "./trace.js"
 import { tripwire } from "./tripwire.js"
 
 export { describe, expect } from "../test.js"
@@ -63,7 +64,7 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
     if (supported && runs) await Promise.all(setups.map((setup) => installHarness(setup.agent)))
   })
   const test = base.extend<{ e2e: E2E }>({
-    e2e: async ({ resources }, use) => {
+    e2e: async ({ resources, task, onTestFailed }, use) => {
       if (!supported)
         throw new Error(
           `The end-to-end suite runs on Linux and Windows, not ${process.platform}: there nothing keeps a harness from the developer's keyring`,
@@ -77,6 +78,10 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         )
       const model = await startFakeModel({ dialects: setups.map((setup) => setup.dialect) })
       resources.defer(() => model.close())
+      // What the runner heard and did, written where CI keeps it should the test fail.
+      const trace = startTrace(task.fullName, model)
+      resources.defer(() => trace.stop())
+      onTestFailed(() => trace.write())
       // Installed before the file's tests: these are the same installs, already done.
       const installs = await Promise.all(setups.map((setup) => installHarness(setup.agent)))
       const sandbox = createSandbox({ proxy: model.proxy, bins: installs.map((one) => one.bin) })
