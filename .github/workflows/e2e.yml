@@ -58,8 +58,6 @@ jobs:
       NOVADECK_E2E_CACHE: ${{ github.workspace }}/.e2e-cache
       # Where a failed test writes what the runner heard and did (src/e2e/trace.ts).
       NOVADECK_E2E_TRACES: ${{ github.workspace }}/e2e-traces
-      # TEMPORARY: every test's trace, to measure the runner's stalls on CI.
-      NOVADECK_E2E_TRACE_ALL: "1"
       NOVADECK_E2E_AGENTS: ${{ matrix.setup.agents }}
       NOVADECK_E2E_HARNESS: ${{ (github.event_name == 'schedule' || inputs.harness == 'latest') && 'latest' || 'pinned' }}
     steps:
@@ -141,7 +139,7 @@ jobs:
       # A failed test leaves its trace: each hook's report and when its hook started, the
       # person's keys, each delivery change and each answer, with the model's calls.
       - name: Upload E2E Traces
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-traces-${{ matrix.setup.name }}-${{ runner.os }}
