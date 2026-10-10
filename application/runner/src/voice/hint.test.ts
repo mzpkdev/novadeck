@@ -1,121 +1,98 @@
 import { describe, expect, it } from "../test.js"
-import { dictationHint, hintChars, hintTerms, type HintFacts } from "./hint.js"
+import { dictationHint, hintChars, hintFiles, hintModules, type HintFacts } from "./hint.js"
 
-const none: HintFacts = {
-  project: null,
-  cwd: "",
-  branch: null,
-  folders: [],
-  files: [],
-  plan: null,
-  prompts: [],
-  reply: null,
-}
+const none: HintFacts = { project: null, cwd: "", branch: null, folders: [], files: [] }
 
 const facts = (some: Partial<HintFacts>): HintFacts => ({ ...none, ...some })
 
 describe("the dictation hint", () => {
-  it("names the project, its branch and folder, then what the work is about", () => {
+  it("names the project, its branch and folder, then the modules and files there", () => {
     expect(
       dictationHint(
         {
           project: "Novadeck",
           cwd: "/home/me/novadeck/application/runner",
           branch: "task/whisper-hints",
-          folders: ["/home/me/novadeck/application/runner/src/voice"],
+          folders: ["application/runner/src/voice", "application/protocol/src"],
           files: ["service.ts", "hint.ts"],
-          plan: "Add richer dictation hints",
-          prompts: ["make the hint use busiestFolders and Work.first"],
-          reply: "I changed dictationPrompt in the UI.",
         },
         "en",
       ),
     ).toBe(
       "Working on Novadeck, on the whisper-hints branch, in the runner folder, with voice, " +
-        "service.ts, hint.ts, busiestFolders, Work.first, dictationPrompt and UI. " +
-        "Add richer dictation hints.",
+        "protocol, service.ts and hint.ts.",
     )
   })
 
-  it("puts names likelier said first: folders, files, prompts, then the agent's reply", () => {
-    const hint = dictationHint(
-      facts({
-        folders: ["/w/payments"],
-        files: ["ledger.ts"],
-        prompts: ["fix refundFlow"],
-        reply: "Updated retryQueue",
-      }),
+  it("takes a monorepo's packages and modules from the folders written in, not its layout", () => {
+    expect(
+      dictationHint(
+        facts({
+          folders: [
+            "packages/billing/src/invoices",
+            "apps/web/src/components/checkout",
+            "packages\\billing\\lib",
+            ".",
+          ],
+        }),
+        "en",
+      ),
+    ).toBe("With billing, invoices, web, components and checkout.")
+    const deep = dictationHint(
+      facts({ folders: ["core/api/auth/oauth/google/tokens/cache"] }),
       "en",
     )
-    expect(hint).toBe("With payments, ledger.ts, refundFlow and retryQueue.")
+    expect(deep).toBe("With core, api, auth, oauth, google and tokens.")
+    expect(deep.split(", ")).toHaveLength(hintModules - 1)
   })
 
-  it("lists each name once, whatever its case, the project and branch among them", () => {
+  it("lists each name once, whatever its case, a file's without its extension too", () => {
     expect(
       dictationHint(
         facts({
           project: "Checkout",
           cwd: "/srv/checkout",
           branch: "feat/ledger",
-          folders: ["/srv/checkout/ledger", "/srv/checkout/Ledger"],
-          files: ["ledger.ts", "ledger.ts"],
-          prompts: ["see ledger.ts and Checkout"],
+          files: ["ledger.ts", "Ledger.ts", "refunds.ts", "refunds.ts"],
         }),
         "en",
       ),
-    ).toBe("Working on Checkout, on the ledger branch, with ledger.ts.")
+    ).toBe("Working on Checkout, on the ledger branch, with ledger.ts and refunds.ts.")
   })
 
-  it("leaves out commits, ids, numbers, addresses, long words and folders every project has", () => {
+  it("leaves out commits, ids, numbers, addresses, long names and folders every project has", () => {
     expect(
       dictationHint(
         facts({
           project: "Api",
           cwd: "/home/me/api/src",
           branch: "3f9a2c1",
-          folders: ["/home/me/api/src", "/home/me/api/node_modules/zod/lib", "/a/b/c/d/e/routes"],
-          files: ["2026-10-10.log", "x"],
-          prompts: [
-            "deploy 9f86d081884c7d65 to me@example.com, id 123e4567-e89b-12d3-a456-426614174000 " +
-              `${"a".repeat(40)}Name and see packages/billing/src/invoiceTotals.ts`,
+          files: [
+            "2026-10-10.log",
+            "x",
+            "123e4567-e89b-12d3-a456-426614174000.json",
+            "me@example.com",
+            `${"a".repeat(40)}.ts`,
+            "routes.ts",
           ],
         }),
         "en",
       ),
-    ).toBe("Working on Api, with routes and invoiceTotals.ts.")
+    ).toBe("Working on Api, with routes.ts.")
+    expect(dictationHint(facts({ project: "Api", branch: "main" }), "en")).toBe("Working on Api.")
   })
 
-  it("takes from prompts only names spelled as code, or capitalised mid-sentence", () => {
-    expect(
-      dictationHint(
-        facts({
-          prompts: [
-            "Now ask Whisper to spell user_id, the VAD and utf8. Then stop",
-            "Build the paging for the orders API and more and more th…",
-          ],
-        }),
-        "en",
-      ),
-    ).toBe("With Whisper, user_id, VAD, utf8 and API.")
-  })
-
-  it("keeps to its caps on names and length, dropping the plan before any name", () => {
-    const many = Array.from({ length: 40 }, (_, index) => `module${index}.ts`)
+  it("keeps to its caps on files and length, the first names kept", () => {
+    const many = Array.from({ length: 20 }, (_, index) => `mod${index}.ts`)
     const capped = dictationHint(facts({ project: "Big", files: many }), "en")
-    expect(capped).toContain(`module${hintTerms - 1}.ts`)
-    expect(capped).not.toContain(`module${hintTerms}.ts`)
-    const long = Array.from({ length: 40 }, (_, index) => `averyverylongmodulename${index}.ts`)
-    const plan = "Split the module loader into smaller pieces for a faster start"
-    const hint = dictationHint(facts({ project: "Big", files: long, plan }), "en")
+    expect(capped).toContain(`and mod${hintFiles - 1}.ts.`)
+    expect(capped).not.toContain(`mod${hintFiles}.ts`)
+    const long = Array.from({ length: 20 }, (_, index) => `averyverylongmodulename${index}.ts`)
+    const hint = dictationHint(facts({ project: "Big", files: long }), "en")
     expect(hint.length).toBeLessThanOrEqual(hintChars)
     expect(hint).toMatch(/^Working on Big, with averyverylongmodulename0\.ts, .* and \S+\.$/)
-    expect(hint).not.toContain("Split")
-  })
-
-  it("is the plan's title as a sentence of its own, without a word cut off", () => {
-    expect(dictationHint(facts({ project: "Shop", plan: "plan: move the cart to…" }), "en")).toBe(
-      "Working on Shop. Plan: move the cart.",
-    )
+    const both = dictationHint(facts({ folders: ["billing"], files: long }), "en")
+    expect(both).toMatch(/^With billing, averyverylongmodulename0\.ts, /)
   })
 
   it("is nothing without anything to say, or only what there is", () => {
@@ -123,6 +100,7 @@ describe("the dictation hint", () => {
     expect(dictationHint(none, "pl")).toBe("")
     expect(dictationHint(facts({ project: " ", cwd: "/" }), "en")).toBe("")
     expect(dictationHint(facts({ cwd: "/srv/api" }), "en")).toBe("In the api folder.")
+    expect(dictationHint(facts({ files: ["a.ts", "b.ts"] }), "en")).toBe("With a.ts and b.ts.")
     expect(dictationHint(facts({ project: "Home", cwd: "/home/me/" }), "en")).toBe(
       "Working on Home, in the me folder.",
     )
@@ -136,12 +114,11 @@ describe("the dictation hint", () => {
       project: "Kasa",
       cwd: "/srv/kasa/faktury",
       branch: "fix/vat-rates",
-      files: ["vatRates.ts"],
-      plan: "Popraw stawki VAT w fakturach",
-      prompts: ["popraw stawki w vatRates"],
+      files: ["vatRates.ts", "faktura.ts"],
     })
-    expect(dictationHint(some, "pl")).toBe("Kasa, vat-rates, faktury: vatRates.ts, VAT.")
+    expect(dictationHint(some, "pl")).toBe("Kasa, vat-rates, faktury: vatRates.ts, faktura.ts.")
     expect(dictationHint(some, "auto")).toBe(dictationHint(some, "pl"))
     expect(dictationHint(facts({ project: "Kasa" }), "de")).toBe("Kasa.")
+    expect(dictationHint(facts({ files: ["a.ts"] }), "de")).toBe("a.ts.")
   })
 })

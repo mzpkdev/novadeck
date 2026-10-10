@@ -21,9 +21,6 @@ const noFacts: HintFacts = {
   branch: null,
   folders: [],
   files: [],
-  plan: null,
-  prompts: [],
-  reply: null,
 }
 
 const setup = async (
