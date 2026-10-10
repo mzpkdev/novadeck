@@ -77,13 +77,37 @@ export const runEngineOnce = (
         resolve({
           ...printed,
           code: null,
-          failure: error.killed
-            ? `timed out after ${timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`}`
-            : error.message,
+          failure:
+            error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+              ? "printed more than its output may hold"
+              : error.killed
+                ? `timed out after ${timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`}`
+                : error.message,
         })
       },
     )
   })
+}
+
+// Lines that say a start failed without saying why: the engines end with them.
+const generic = /failed to load model|exiting due to|cleaning up before exit|common_fit_params/i
+const causeLine = /error|fail|out of memory|unable|cannot|invalid/i
+
+/**
+ * What a failing server last said that a person can use: its last two lines naming a cause
+ * (llama.cpp ends with generic lines, and the real reason comes a few lines before them),
+ * less its log prefix, or else its last two lines.
+ */
+const whatItSaid = (output: readonly string[]): string => {
+  const lines = output.filter((line) => !/^\s*$/.test(line))
+  const causes = [
+    ...new Set(
+      lines
+        .filter((line) => causeLine.test(line) && !generic.test(line))
+        .map((line) => line.replace(/^\s*\d+(\.\d+)+ [A-Z] /, "")),
+    ),
+  ]
+  return (causes.length > 0 ? causes.slice(-2) : lines.slice(-2)).join(" ")
 }
 
 /** What an engine's server is, and how it is run: everything its program does not share with the others. */
@@ -205,10 +229,7 @@ export class Server<Config extends { readonly folder: string }, Facts> {
 
   /** A message for a person: what went wrong, and the last thing the server said. */
   explain(running: Running<Facts>, what: string, cause?: unknown): string {
-    const detail = running.output
-      .filter((line) => !/^\s*$/.test(line))
-      .slice(-2)
-      .join(" ")
+    const detail = whatItSaid(running.output)
     const why = cause instanceof Error ? ` (${cause.message})` : ""
     const message = `${this.spec.subject} failed: ${what}${why}. ${detail}`.trim()
     return message.length > 900 ? `${message.slice(0, 897)}...` : message

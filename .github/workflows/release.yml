@@ -368,10 +368,43 @@ jobs:
           archive="$(ls application/whisper/dist/novadeck-whisper-*.tar.gz)"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             "$SYSTEMROOT/System32/tar.exe" -xzf "$(cygpath -w "$archive")" -C "$(cygpath -w "$engine")"
-            "$engine/whisper-server.exe" --help > /dev/null
+            server="$engine/whisper-server.exe"
           else
             tar -xzf "$archive" -C "$engine"
-            "$engine/whisper-server" --help > /dev/null
+            server="$engine/whisper-server"
+          fi
+          "$server" --help > /dev/null
+          # The flags the runner starts the server with (application/runner/src/voice/engine.ts):
+          # with a model that is not there, the server must complain of the model, not of an
+          # argument, and exit with a failure at once even though its stdin stays open, as the
+          # runner holds it. The sleep holds stdin open for longer than that; a server that is
+          # still there when it ends has not exited on its own, and exits 0 as its stdin closes.
+          flags=(--host 127.0.0.1 --port 0 --request-path /check -l en -nt -t 2 --vad --exit-with-stdin)
+          model="$engine/absent.bin"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then model="$(cygpath -m "$engine")/absent.bin"; fi
+          status=0
+          sleep 5 | "$server" "${flags[@]}" -m "$model" -vm "$model" > "$RUNNER_TEMP/voice-flags.txt" 2>&1 || status=$?
+          tr -d '\r' < "$RUNNER_TEMP/voice-flags.txt" | tail -n 20
+          if [[ "$status" == 0 ]]; then
+            echo "::error::The server did not fail on a missing model while its stdin was open."
+            exit 1
+          fi
+          if grep -q -i -E 'unknown argument|usage:' "$RUNNER_TEMP/voice-flags.txt"; then
+            echo "::error::The server does not take the flags the runner starts it with."
+            exit 1
+          fi
+          if ! grep -q -i -E 'absent\.bin|failed to initialize whisper context' "$RUNNER_TEMP/voice-flags.txt"; then
+            echo "::error::The server did not complain of the missing model."
+            exit 1
+          fi
+          # With stdin closed the patched server ends at once and cleanly; an unpatched one
+          # rejects the flag. It does so before it loads its model.
+          status=0
+          "$server" "${flags[@]}" -m "$model" -vm "$model" < /dev/null > "$RUNNER_TEMP/voice-stdin.txt" 2>&1 || status=$?
+          if [[ "$status" != 0 ]]; then
+            cat "$RUNNER_TEMP/voice-stdin.txt"
+            echo "::error::The server did not end cleanly when its stdin closed."
+            exit 1
           fi
 
       # The same for murmur's server, which must also list its devices with their types:

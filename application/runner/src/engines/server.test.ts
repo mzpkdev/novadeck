@@ -99,6 +99,50 @@ describe("a server", () => {
     expect(first.stopped).toBe(true)
   })
 
+  it("explains a failed start by its cause, not by the generic lines the engine ends with", async ({
+    resources,
+  }) => {
+    const lines = [
+      "0.00.077.753 E llama_model_load_from_file_impl: failed to load model",
+      "0.00.077.809 E common_fit_params: encountered an error while trying to fit params: failed to load model",
+      "0.00.077.830 E gguf_init_from_reader: invalid magic characters: 'abcd', expected 'GGUF'",
+      "0.00.077.840 E llama_model_load: error loading model: llama_model_loader: failed to load model from /m/x.gguf",
+      "0.00.077.844 E cmn  common_init_: failed to load model '/m/x.gguf'",
+      "0.00.077.850 I srv    operator(): operator(): cleaning up before exit...",
+      "0.00.078.411 E srv  llama_server: exiting due to model loading error",
+    ]
+    const server = new Server(spec, {
+      launch: () => ({
+        command: process.execPath,
+        args: ["-e", `console.error(${JSON.stringify(lines.join("\n"))}); process.exit(1)`],
+      }),
+    })
+    resources.defer(() => server.close())
+    const directory = await folder(resources)
+
+    const failure = server.start({ folder: directory, key: "a" })
+
+    await expect(failure).rejects.toThrow(
+      "Demo failed: the engine stopped while starting. gguf_init_from_reader: invalid magic characters: 'abcd', expected 'GGUF'",
+    )
+    await expect(failure).rejects.not.toThrow("exiting due to")
+  })
+
+  it("explains a failure without a recognisable cause by its last lines", async ({ resources }) => {
+    const server = new Server(spec, {
+      launch: () => ({
+        command: process.execPath,
+        args: ["-e", "console.error('one\\ntwo\\nthree'); process.exit(1)"],
+      }),
+    })
+    resources.defer(() => server.close())
+    const directory = await folder(resources)
+
+    await expect(server.start({ folder: directory, key: "a" })).rejects.toThrow(
+      "the engine stopped while starting. two three",
+    )
+  })
+
   it("words its failures with its subject", async ({ resources }) => {
     const server = new Server(spec, {
       launch: () => ({
@@ -204,6 +248,11 @@ const hangs: Launch = () => ({
 
 const exits: Launch = () => ({ command: process.execPath, args: ["-e", "process.exit(3)"] })
 
+const printsALot: Launch = () => ({
+  command: process.execPath,
+  args: ["-e", "process.stdout.write('x'.repeat(2e6))"],
+})
+
 describe("running an engine once", () => {
   it("answers with what it printed, from the engine environment", async () => {
     await withEnvironment({ LLAMA_ARG_HOST: "0.0.0.0" }, async () => {
@@ -227,6 +276,8 @@ describe("running an engine once", () => {
       stderr: "",
       code: null,
     })
+    const loud = await runEngineOnce(printsALot, "x", [])
+    expect(loud).toMatchObject({ code: null, failure: "printed more than its output may hold" })
     await expect(runEngineOnce(exits, "x", [])).resolves.toEqual({
       stdout: "",
       stderr: "",
