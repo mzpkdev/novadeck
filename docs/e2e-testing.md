@@ -41,11 +41,12 @@ against the hook timeout (ten minutes) rather than a test's. A harness left out 
 `application/runner/vitest.e2e.config.ts` includes them. The unit tests for its parts
 (`src/e2e/**/*.test.ts`) run with the rest.
 
-| Variable                      | Effect                                                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME |
-| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                         |
-| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it |
+| Variable                      | Effect                                                                                                                                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME                                                                                           |
+| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                                                                                                                   |
+| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it                                                                                           |
+| `NOVADECK_E2E_TRACES`         | Where a failed test writes its trace (`trace.ts`): each hook's report and when its hook started, the person's keys, each delivery change, each answer to a hook, and the model's calls. CI uploads them as an artifact |
 
 In CI (`.github/workflows/e2e.yml`) each harness runs in a job of its own, which runs
 the whole suite with `NOVADECK_E2E_AGENTS` set to that harness, so the scenarios across
