@@ -8,10 +8,11 @@ import type { Activity } from "../harnesses/activity.js"
 import type { AgentsAnswer, Messaging, PeerAnswer, SendAnswer } from "../messaging/messaging.js"
 import type { Waiting, Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
+import type { HintFacts } from "../voice/hint.js"
 import { gitBranch } from "./branch.js"
 import type { Naming } from "./naming.js"
 import type { Facts } from "./nudges.js"
-import { busiestFolders, shorten, type Work } from "./work.js"
+import { busiestFolders, firstFrom, shorten, type Work } from "./work.js"
 
 /** What the terminal manager tells of a terminal, for its agent to message others. */
 export type PeerTerminal = {
@@ -213,6 +214,35 @@ export class TerminalPeers {
     ])
     const [main] = busiestFolders(terminal.work?.folders ?? {}, 1)
     return { plan, folder: main?.folder ?? null, branch }
+  }
+
+  /**
+   * What a terminal's dictation hint is made of, but its project's name: the files
+   * `shown` beside it, then what its work and agent say. The first prompt is left out
+   * where it is the command of the agent that opened it, not the person's.
+   */
+  async hint(
+    terminal: PeerTerminal,
+    shown: readonly string[],
+  ): Promise<Omit<HintFacts, "project">> {
+    const { cwd } = terminal.summary
+    const [branch, plan] = await Promise.all([this.branch(cwd), this.plan(terminal)])
+    const { work } = terminal
+    const opener = firstFrom(work, terminal.openedBy) === "opener"
+    // The latest is the first too until the person prompts.
+    const prompts = [work?.latest, work?.first].filter(
+      (prompt): prompt is string =>
+        typeof prompt === "string" && !(opener && prompt === work?.first),
+    )
+    return {
+      cwd,
+      branch,
+      folders: busiestFolders(work?.folders ?? {}).map(({ folder }) => folder),
+      files: [...shown, ...(work?.files ?? [])],
+      plan,
+      prompts: [...new Set(prompts)],
+      reply: terminal.activity?.lastTurn?.reply ?? null,
+    }
   }
 
   /**

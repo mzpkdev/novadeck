@@ -124,6 +124,13 @@ export const wire = (options: RunnerOptions) => {
       (options.database === undefined
         ? join(tmpdir(), `novadeck-voice-${randomUUID()}`)
         : join(dirname(options.database), "voice")),
+    // A terminal's facts, with its project's name, for the hint of a clip dictated into it.
+    hint: async (terminalId) => {
+      const place = terminals.place(terminalId)
+      const facts = await terminals.hintFacts(terminalId)
+      if (!place || !facts) return undefined
+      return { ...facts, project: store.project(store.session(place.sessionId).projectId).name }
+    },
   })
   // Not awaited: the runner starts at once, and the first voice call waits for the load.
   voice.start()
