@@ -178,6 +178,18 @@ const hookRun = (env: NodeJS.ProcessEnv) =>
     encoding: "utf8",
   }).stdout.trim()
 
+const cmdRun = (env: NodeJS.ProcessEnv) =>
+  spawnSync(
+    process.env.COMSPEC ?? "cmd.exe",
+    // As written: Node's own quoting would escape the answer's quotes as `\"`.
+    ["/d", "/s", "/c", `"${agy.hook("win32", "PreToolUse")}"`],
+    {
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...env },
+      encoding: "utf8",
+      windowsVerbatimArguments: true,
+    },
+  ).stdout.trim()
+
 describe("Antigravity's PreToolUse answer", () => {
   it("is ask wherever it prints one: Novadeck's runner, its launcher, and the hook command alone", () => {
     expect(JSON.parse(silentFor(agy.messaging, "PreToolUse"))).toEqual({ decision: "ask" })
@@ -207,7 +219,18 @@ describe("Antigravity's PreToolUse answer", () => {
     },
   )
 
-  it("is registered for every tool off Windows, with PostToolUse for the two that matter", () => {
+  // Antigravity runs it in cmd there, and denies every tool on an answer of nothing.
+  it.runIf(process.platform === "win32")(
+    "is ask from cmd when its launcher is unset or missing",
+    () => {
+      expect(cmdRun({})).toBe('{"decision":"ask"}')
+      expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\nonexistent\hook.exe` })).toBe(
+        '{"decision":"ask"}',
+      )
+    },
+  )
+
+  it("is registered for every tool, with PostToolUse for the two that matter", () => {
     const launchers: Launchers = { mcp: { command: "/data/shell/mcp" } }
     const hooks = (platform: NodeJS.Platform) =>
       (
@@ -217,7 +240,7 @@ describe("Antigravity's PreToolUse answer", () => {
           novadeck: { [event: string]: { matcher?: string; hooks: { command: string }[] }[] }
         }
       ).novadeck
-    for (const platform of ["linux", "darwin"] as const) {
+    for (const platform of ["linux", "darwin", "win32"] as const) {
       const registered = hooks(platform)
       expect(Object.keys(registered)).toEqual([
         "PreInvocation",
@@ -233,10 +256,5 @@ describe("Antigravity's PreToolUse answer", () => {
         "ask_question",
       ])
     }
-    // Windows is unprobed: no PreToolUse, which would deny every tool if its command
-    // printed nothing, and so no ask_question to detect.
-    const windows = hooks("win32")
-    expect(Object.keys(windows)).toEqual(["PreInvocation", "Stop", "PostToolUse"])
-    expect(windows.PostToolUse?.map(({ matcher }) => matcher)).toEqual(["write_to_file"])
   })
 })

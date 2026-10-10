@@ -13,6 +13,23 @@ export const shellFooter = (rows: readonly string[]): boolean => {
 }
 
 /**
+ * On Windows its shell mode runs a command in cmd (probed 2026-10-10, 1.2.14), which runs
+ * only its first line: the lines are joined with `&`, which runs each after the one before
+ * whatever that returned, as sh runs lines. A blank line joins nothing.
+ */
+export const shellCommandOf = (
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): string =>
+  platform === "win32"
+    ? command
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(" & ")
+    : command
+
+/**
  * Antigravity's input box: between two `─` rules, `> ` leading its first row and the rest
  * indented (probed 1.2.14 and 1.3.1, fixtures/input-box.probe.json). Its history above
  * echoes the person's turns the same way, rules and all, so only the lowest pair is the
@@ -22,7 +39,7 @@ export const shellFooter = (rows: readonly string[]): boolean => {
 export const box: BoxProfile = {
   read: (screen) => agreeing(ruledBox(screen, markers), shellFooter(screen.rows)),
   // Enter would run a command shown as a placeholder as the placeholder's own text.
-  shell: { expands: false, starts: true, footer: shellFooter },
+  shell: { expands: false, starts: true, footer: shellFooter, command: shellCommandOf },
   collapsed: ({ text }) => /^\[Pasted text #\d+ (?:\+\d+ lines?|\d+ chars?)\]$/.test(text.trim()),
   // 15 lines showed whole, even of 100 characters each; 16 did not. One line of 1,000
   // characters showed whole, 1,024 did not.

@@ -1601,6 +1601,61 @@ describe("a turn the person's Escape ended", () => {
       vi.useRealTimers()
     }
   })
+
+  it("reads completed with no Stop where the transcript of a harness without records holds the reply", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)! as {
+      transcript: string | null
+    } & (typeof inside.records extends Map<string, infer R> ? R : never)
+    const binding = { agent: "agy", sessionId: "s", instance: null } as const
+    record.binding = binding
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-escape-"))
+    const asked = JSON.stringify({
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      content: "Hold on",
+    })
+    const answered = JSON.stringify({
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      content: "Too late.",
+    })
+    try {
+      for (const [lines, outcome] of [
+        [[asked, answered], { outcome: "completed", reply: "Too late." }],
+        [[answered, asked], { outcome: "interrupted", reply: null }],
+      ] as const) {
+        record.transcript = join(directory, `${outcome.outcome}.jsonl`)
+        writeFileSync(record.transcript, `${lines.join("\n")}\n`)
+        record.activity = fresh(0, true, false)
+        inside.applyFact(record, {
+          ...binding,
+          type: "turn-started",
+          cause: "prompt",
+          startedAt: 10,
+        })
+        inside.messaging.escaped = () => ({ ...binding, type: "turn-escaped", startedAt: 20 })
+        inside.escaped(record)
+        // eslint-disable-next-line no-await-in-loop -- Each case waits for its own verdict.
+        await vi.waitFor(
+          () => expect(record.activity?.lastTurn?.escaped?.settled ?? true).toBe(true),
+          {
+            timeout: escapeVerdictMs + 2000,
+          },
+        )
+        expect(record.activity?.lastTurn).toMatchObject(outcome)
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("saving a terminal that was closed", () => {

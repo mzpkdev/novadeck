@@ -465,8 +465,11 @@ for (const setup of setups) {
       const t1 = await start(run, setup)
       const lines = Array.from({ length: 16 }, (_, at) => `echo ${at} >> long.txt`)
       const long = join(run.sandbox.project, "long.txt")
-      const sent = t1.prompt(`!${lines.join("\n")}`)
-      if (harnesses[setup.agent].box.shell.expands) {
+      const command = lines.join("\n")
+      const sent = t1.prompt(`!${command}`)
+      // What its shell mode is given: Antigravity's on Windows, its lines joined, shows whole.
+      const { box } = harnesses[setup.agent]
+      if (box.shell.expands || !box.collapses(box.shell.command?.(command) ?? command)) {
         await sent
         await t1.poll(
           () =>
