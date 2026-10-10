@@ -93,18 +93,24 @@ export const runEngineOnce = (
 const generic = /failed to load model|exiting due to|cleaning up before exit|common_fit_params/i
 const causeLine = /error|fail|out of memory|unable|cannot|invalid/i
 
+// What servers print once they serve: llama.cpp's "listening on http://..." and whisper's
+// "whisper server listening at http://...".
+const serving = /listening (on|at) http/i
+const prefix = /^\s*\d+(\.\d+)+ [A-Z] /
+
 /**
- * What a failing server last said that a person can use: its last two lines naming a cause
- * (llama.cpp ends with generic lines, and the real reason comes a few lines before them),
- * less its log prefix, or else its last two lines.
+ * What a failing server last said that a person can use. A server that never served failed
+ * to start: its last two lines naming a cause (llama.cpp ends with generic lines, and the
+ * real reason comes a few lines before them). One that did serve failed later, and what it
+ * said while starting was no cause, so only its lines after that count. Without such lines,
+ * its last two. Less its log prefix.
  */
 const whatItSaid = (output: readonly string[]): string => {
-  const lines = output.filter((line) => !/^\s*$/.test(line))
+  const lines = output.filter((line) => !/^\s*$/.test(line)).map((line) => line.replace(prefix, ""))
+  const served = lines.findLastIndex((line) => serving.test(line))
   const causes = [
     ...new Set(
-      lines
-        .filter((line) => causeLine.test(line) && !generic.test(line))
-        .map((line) => line.replace(/^\s*\d+(\.\d+)+ [A-Z] /, "")),
+      lines.slice(served + 1).filter((line) => causeLine.test(line) && !generic.test(line)),
     ),
   ]
   return (causes.length > 0 ? causes.slice(-2) : lines.slice(-2)).join(" ")

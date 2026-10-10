@@ -128,6 +128,32 @@ describe("a server", () => {
     await expect(failure).rejects.not.toThrow("exiting due to")
   })
 
+  it("does not blame a runtime crash on a warning the engine printed while starting", async ({
+    resources,
+  }) => {
+    const lines = [
+      "0.00.010.000 W srv  compute buffer allocation failed, retrying without pipeline parallelism",
+      "0.00.020.000 I srv  llama_server: listening on http://127.0.0.1:1234",
+      "0.00.030.000 I srv  update_slots: all slots are idle",
+      "0.00.040.000 I srv  log_server_r: request: POST /v1/chat/completions 200",
+    ]
+    const server = new Server(spec, {
+      launch: () => ({
+        command: process.execPath,
+        args: ["-e", `console.error(${JSON.stringify(lines.join("\n"))}); process.exit(1)`],
+      }),
+    })
+    resources.defer(() => server.close())
+    const directory = await folder(resources)
+
+    const failure = server.start({ folder: directory, key: "a" })
+
+    await expect(failure).rejects.toThrow(
+      "srv  update_slots: all slots are idle srv  log_server_r: request: POST /v1/chat/completions 200",
+    )
+    await expect(failure).rejects.not.toThrow("compute buffer")
+  })
+
   it("explains a failure without a recognisable cause by its last lines", async ({ resources }) => {
     const server = new Server(spec, {
       launch: () => ({
