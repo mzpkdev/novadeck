@@ -1,6 +1,7 @@
 import type { Report } from "../../shell/reports.js"
 import { describe, expect, it } from "../../test.js"
 import { loadProbe } from "../../testing/probes.js"
+import { callId } from "../harness.js"
 import { decode } from "./decode.js"
 import { transcriptEvents, type Calls } from "./transcript.js"
 
@@ -178,7 +179,20 @@ describe("a root tool call's result in the transcript", () => {
     ])
   })
 
-  it("settles a question or a plan loosely", () => {
+  it("settles a question exactly, as another may still be asked", () => {
+    const question = { questions: [{ question: "A?", options: [{ label: "x" }] }] }
+    expect(read([use("toolu_1", "AskUserQuestion", question), result("toolu_1")])).toMatchObject([
+      { requestId: callId(null, "AskUserQuestion", question), loose: false },
+    ])
+  })
+
+  it("matches nested keys in any order", () => {
+    const nested = { questions: [{ options: [{ label: "x" }], question: "A?" }] }
+    const sorted = { questions: [{ question: "A?", options: [{ label: "x" }] }] }
+    expect(callId(null, "AskUserQuestion", nested)).toBe(callId(null, "AskUserQuestion", sorted))
+  })
+
+  it("settles a plan loosely", () => {
     expect(read([use("toolu_1", "ExitPlanMode", { plan: "x" }), result("toolu_1")])).toMatchObject([
       { type: "attention-resolved", toolName: "ExitPlanMode", loose: true },
     ])

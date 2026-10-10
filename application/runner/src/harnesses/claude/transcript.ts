@@ -16,9 +16,11 @@ export type Calls = Map<string, { readonly requestId: string; readonly toolName:
 // Calls whose results never came, as the session ended, are forgotten past this many.
 const remembered = 256
 
-// The tools whose hook input may differ from the call's: an answered question gains its
-// answers, and Claude Code names a plan's file itself.
-const loosely: ReadonlySet<string> = new Set(["AskUserQuestion", "ExitPlanMode"])
+// The tool whose request's input differs from the call's, as Claude Code names a plan's
+// file itself; an actor shows one plan at a time. A question's request asks it unanswered,
+// as the call does, so it matches exactly: its result's hook may have settled it already,
+// and a loose match would settle another question still asked.
+const loosely: ReadonlySet<string> = new Set(["ExitPlanMode"])
 
 const count = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
