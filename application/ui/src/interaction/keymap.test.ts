@@ -439,6 +439,48 @@ describe("keymap", () => {
         })
       })
 
+      context("when switching to a pinned project", () => {
+        const digit = (n: number, extra: Press = {}): Press => ({
+          ctrlKey: platform !== "mac",
+          metaKey: platform === "mac",
+          key: String(n),
+          code: `Digit${n}`,
+          ...extra,
+        })
+
+        it("routes each digit in capture, so a terminal's input can't take it first", () => {
+          for (let n = 1; n <= 9; n++) {
+            expect(route(platform, "capture", digit(n, { target: terminalInput }))).toEqual([
+              `project.pinned ${n - 1}`,
+            ])
+            expect(route(platform, "bubble", digit(n))).toEqual([])
+          }
+        })
+
+        it("matches by code on any layout and leaves the sidebar chords alone", () => {
+          expect(keydown(platform, digit(1, { key: "&" }))).toEqual(["project.pinned 0"])
+          expect(keydown(platform, digit(0))).toEqual([])
+          const sidebar = digit(1, { shiftKey: true, key: "!" })
+          expect(keydown(platform, sidebar)).toEqual(["sidebar.terminals"])
+          expect(keydown(platform, digit(2, { shiftKey: true, key: "@" }))).toEqual([
+            "sidebar.sessions",
+          ])
+          expect(keydown(platform, digit(3, { altKey: true }))).toEqual([])
+          expect(keydown(platform, { key: "3", code: "Digit3" })).not.toContain("project.pinned 2")
+        })
+
+        it("waits while a dialog is open and swallows repeats", () => {
+          expect(keydown(platform, digit(2), { state: { dialog: true } })).toEqual([])
+          expect(
+            keydown(platform, digit(2), {
+              state: { alert: true, dialog: true },
+            }),
+          ).toEqual([])
+          const binding = keymapFor(platform).find((each) => each.command === "project.pinned")
+          expect(binding?.repeat).toBe("swallow")
+        })
+      })
+
       context("when pressing workspace keys", () => {
         it("routes each key while navigating and ignores repeats, overlays and an open switcher", () => {
           expect(keydown(platform, { key: "Delete" }, navigating)).toEqual(["terminal.close"])
@@ -513,6 +555,7 @@ describe("keymap", () => {
             "voice.cancel",
             "navigate.exit",
             "voice.press",
+            ...Array<string>(9).fill("project.pinned"),
             "session.new",
             "sidebar.terminals",
             "sidebar.sessions",
@@ -554,6 +597,7 @@ describe("keymap", () => {
           "Navigate the workspace: Shift Esc",
           "Hold to dictate: Ctrl Shift M",
           "Terminal in that direction: Ctrl Shift ↑ ↓ ← →",
+          "Switch to pinned project: Ctrl 1–9",
         ],
       ])
       expect(rows("mac")).toEqual([
@@ -573,6 +617,7 @@ describe("keymap", () => {
           "Navigate the workspace: Shift Esc",
           "Hold to dictate: Ctrl Shift M",
           "Terminal in that direction: ⌘ ⌥ ↑ ↓ ← →",
+          "Switch to pinned project: ⌘ 1–9",
         ],
       ])
       expect(shortcutGroups("mac").map(({ description }) => description)).toEqual([

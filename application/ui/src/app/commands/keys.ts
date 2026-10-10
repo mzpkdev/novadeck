@@ -12,6 +12,7 @@ import { nearestInDirection } from "../../model/layout/spatial"
 import { hasTile, isWindow, orderedTiles, tilesOf } from "../../model/roster"
 import { viewModes } from "../../model/state"
 import type { SidebarPanel, Tile } from "../../model/types"
+import { arrangeProjects } from "../../projects/project-arrangement"
 import { sidebarVisible } from "../../shell/shell-state"
 import { cycleRecent, moveRecent } from "../../terminals/recent"
 import {
@@ -261,6 +262,19 @@ export const createKeyCommands = (
         if (!id || id === targeted()?.id) return "handled"
         commands.setKeyboardFocus({ id, view: state().view })
         commands.select(id)
+        return "handled"
+      },
+    },
+    // The Nth pinned project, in the person's order. With none there, or it already current,
+    // the key goes on to the terminal.
+    "project.pinned": {
+      run: (_input, args) => {
+        const { projects, activeProjectId } = workspace.getSnapshot()
+        const { pinned } = arrangeProjects(projects, ui.getSnapshot().projectArrangement)
+        const next = pinned[args ?? 0]
+        if (!next || next.id === activeProjectId) return "through"
+        commands.setSwitcher(null)
+        commands.switchProject(next)
         return "handled"
       },
     },

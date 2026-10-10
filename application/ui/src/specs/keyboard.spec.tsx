@@ -16,6 +16,7 @@ import {
   terminalCount,
   viewRegion,
 } from "./support/keyboard"
+import { workspaceSwitcher } from "./support/sessions"
 import {
   chooseView,
   commandInput,
@@ -28,6 +29,7 @@ import {
   focusTab,
   navigateChip,
   expectStaysAbsent,
+  isMac,
   openWorkspace,
   press,
   reloadWorkspace,
@@ -650,6 +652,80 @@ describe("workspace keys after choosing a view", () => {
       })
     },
   )
+})
+
+const modifier = (): string => (isMac() ? "Meta" : "Control")
+const pressDigit = (digit: number): Promise<void> =>
+  press(`{${modifier()}>}${digit}{/${modifier()}}`)
+const pinInOrder = (): void =>
+  localStorage.setItem(
+    "novadeck.project-arrangement",
+    JSON.stringify({
+      order: ["docs-site", "api-service"],
+      pinned: ["docs-site", "api-service"],
+    }),
+  )
+
+describe("pinned project shortcuts", () => {
+  context("when pressing the pin's number", () => {
+    it("switches to that pinned project, in the order they are pinned", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
+
+      await pressDigit(2)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+
+    it("works from a terminal input without typing the digit there", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await commandInput("Checkout implementation").click()
+
+      await pressDigit(2)
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+  })
+
+  context("when there is no such pin", () => {
+    it("changes nothing and leaves the key to the terminal", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await commandInput("Checkout implementation").click()
+
+      await pressDigit(3)
+      await pressDigit(9)
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
+      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+    })
+
+    it("does not eat the key when the pin is already the current project", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+
+      const event = new KeyboardEvent("keydown", {
+        key: "1",
+        code: "Digit1",
+        ctrlKey: !isMac(),
+        metaKey: isMac(),
+        bubbles: true,
+        cancelable: true,
+      })
+      document.body.dispatchEvent(event)
+
+      expect(event.defaultPrevented).toBe(false)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+  })
 })
 
 describe("typing in a terminal", () => {
