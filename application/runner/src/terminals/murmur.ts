@@ -695,25 +695,40 @@ export class Murmur {
 
   // Murmur became usable: terminals with no description yet get one.
   private catchUp(): void {
-    for (const subject of this.host.subjects()) {
-      // A titled terminal is described again only if a retitle is owed it (a summary's
-      // that did not run, whose timer found murmur unusable).
-      if (subject.naming.murmur !== null) {
-        const watch = this.watches.get(subject.summary.id)
-        if (subject.agent && watch?.owed && watch.tried === null)
-          this.react(subject.summary.id, { session: false })
-        continue
-      }
-      const mission = subject.agent ? this.missionOf(subject) : undefined
-      if (subject.agent && mission === undefined) {
-        this.watch(subject.summary.id).owed = true
-        continue
-      }
-      const watch = this.watch(subject.summary.id)
-      if (mission !== undefined) watch.tried = mission
-      if (!subject.agent) watch.shellOwed = true
-      this.ask(subject.summary.id, subject.agent ? this.times.settleMs : this.times.shellSettleMs)
+    let subjects: readonly MurmurSubject[] = []
+    try {
+      subjects = this.host.subjects()
+    } catch (error) {
+      console.error("Novadeck could not list the terminals to describe:", error)
     }
+    // One terminal that cannot be looked at leaves the others their turn.
+    for (const subject of subjects) {
+      try {
+        this.catchUpOne(subject)
+      } catch (error) {
+        console.error("Novadeck could not look at a terminal to describe it:", error)
+      }
+    }
+  }
+
+  private catchUpOne(subject: MurmurSubject): void {
+    // A titled terminal is described again only if a retitle is owed it (a summary's
+    // that did not run, whose timer found murmur unusable).
+    if (subject.naming.murmur !== null) {
+      const watch = this.watches.get(subject.summary.id)
+      if (subject.agent && watch?.owed && watch.tried === null)
+        this.react(subject.summary.id, { session: false })
+      return
+    }
+    const mission = subject.agent ? this.missionOf(subject) : undefined
+    if (subject.agent && mission === undefined) {
+      this.watch(subject.summary.id).owed = true
+      return
+    }
+    const watch = this.watch(subject.summary.id)
+    if (mission !== undefined) watch.tried = mission
+    if (!subject.agent) watch.shellOwed = true
+    this.ask(subject.summary.id, subject.agent ? this.times.settleMs : this.times.shellSettleMs)
   }
 
   /**

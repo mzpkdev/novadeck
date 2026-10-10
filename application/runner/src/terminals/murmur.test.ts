@@ -1373,6 +1373,33 @@ describe("when murmur becomes usable", () => {
     expect(agents[0]).toMatchObject({ summary: null, prompts: ["Fix the login bug"] })
   })
 
+  it("goes on to the other terminals when one cannot be looked at", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const { describer, subjects } = create({ agent: null })
+    describer.setUsable(false)
+    const broken = {
+      ...subjects.get("a")!,
+      summary: { id: "x", sessionId: "s", cwd: "/w" } as MurmurSubject["summary"],
+      agent: "claude",
+      get naming(): MurmurSubject["naming"] {
+        throw new Error("unreadable")
+      },
+    } as MurmurSubject
+    subjects.set("x", broken)
+    subjects.set("b", {
+      ...subjects.get("a")!,
+      summary: { id: "b", sessionId: "s", cwd: "/w" } as MurmurSubject["summary"],
+      agent: "claude",
+      activity: idle("ok"),
+      work: work(),
+    })
+    describer.setUsable(true)
+    await settle(300)
+    expect(error).toHaveBeenCalled()
+    expect(describer.digests.filter((digest) => digest.kind === "agent")).toHaveLength(1)
+    error.mockRestore()
+  })
+
   it("asks nothing while murmur is unusable, and nothing once stopped", async () => {
     const { murmur, describer } = create({ work: work(), activity: idle("ok") })
     describer.setUsable(false)

@@ -106,7 +106,8 @@ describe("redacting a digest", () => {
       previous: null,
     }
     const clean = redactDigest(digest) as ShellDigest
-    expect(clean.screen).toEqual([redacted, "$"])
+    // Every row of the block is masked, and the rows stay where they are.
+    expect(clean.screen).toEqual([redacted, redacted, redacted, "$"])
   })
 })
 
@@ -455,5 +456,90 @@ describe("redacting names in other scripts, and quotes left open", () => {
 
   it("leaves what follows a closed quote alone", () => {
     expect(redact('password: "hunter2" and more')).toBe(`password: ${redacted} and more`)
+  })
+})
+
+const chop = (text: string, width: number): string[] =>
+  text.match(new RegExp(`.{1,${width}}`, "gu")) ?? []
+describe("redacting key blocks and values across a screen's rows", () => {
+  // Rows as a narrow pane draws them: each long line in pieces, all but the last continuing.
+  const drawn = (lines: string[], width: number) => {
+    const screen: string[] = []
+    const continues: boolean[] = []
+    for (const line of lines) {
+      const pieces = chop(line, width)
+      pieces.forEach((piece, i) => {
+        screen.push(piece)
+        continues.push(i + 1 < pieces.length)
+      })
+    }
+    return { screen, continues }
+  }
+  const redactScreen = (screen: string[], continues: boolean[]) =>
+    (redactDigest({ ...shell(screen), continues }) as ShellDigest).screen
+
+  const body = [
+    "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+    "QyNTUxOQAAACDx4kq9YtmpHq1q2kQZp0bq2M9r9kq8Xq1wQnR3sQe9RgAAAJjZp8Xp2afF",
+    "AAAEDu7Wt2Zf3gq1pX8yq9sh",
+  ]
+  const pem = ["-----BEGIN OPENSSH PRIVATE KEY-----", ...body, "-----END OPENSSH PRIVATE KEY-----"]
+
+  it.each([33, 40, 80])("masks every row of a key block in a %s-column pane", (width) => {
+    const { screen, continues } = drawn(["$ cat id_ed25519", ...pem, "$"], width)
+
+    const result = redactScreen(screen, continues)
+
+    expect(result.join("\n")).not.toMatch(/b3Blbn|QyNTUx|AAAEDu7|OPENSSH|BEGIN/)
+    expect(result).toHaveLength(screen.length)
+    expect(result[0]).toBe("$ cat id_ed25519")
+    expect(result.at(-1)).toBe("$")
+  })
+
+  it("masks to the end of the screen when the END marker is not visible", () => {
+    const { screen, continues } = drawn(["$ cat id", pem[0] ?? "", ...body], 80)
+
+    const result = redactScreen(screen, continues)
+
+    expect(result.join("\n")).not.toMatch(/b3Blbn|QyNTUx|AAAEDu7/)
+    expect(result[0]).toBe("$ cat id")
+  })
+
+  it("masks a service account's private key in a JSON line drawn in pieces", () => {
+    const line = `  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\\n-----END PRIVATE KEY-----\\n",`
+    const { screen, continues } = drawn(["$ cat sa.json", "{", line, "}"], 80)
+
+    const result = redactScreen(screen, continues)
+
+    expect(result.join("\n")).not.toContain("MIIEvQ")
+  })
+
+  it.each([
+    ["{'debug': False, 'smtp_password': 'Zq8rT2mWx9LpKd3VnB7sYcHt5Gf', 'port': 25}"],
+    ['{"level":"info","api_secret": "Zq8rT2mWx9LpKd3VnB7sYcHt5Gf'],
+    ["      postgresPassword: 'Zq8rT2mWx9LpKd3VnB7sYcHt5Gf'  # prod"],
+    ['{"level":"info","api_secret": "Zq8rT2mWx9LpKd3VnB7sYcHt5Gf", "n": 1}'],
+  ])("masks a value drawn across rows: %s", (line) => {
+    const { screen, continues } = drawn(["$ tail -f app.log", line, "$"], 40)
+
+    const result = redactScreen(screen, continues)
+
+    expect(result.join("\n")).not.toMatch(/Zq8r|T2mW|LpKd|Vn[B7]|Yc?Ht|5Gf/)
+    expect(result[0]).toBe("$ tail -f app.log")
+    expect(result.at(-1)).toBe("$")
+  })
+
+  it("leaves a continued pair alone when nothing crosses its boundary", () => {
+    const rows = ["Compiling serde_json", "Compiling tokio v1.4"]
+
+    expect(redactScreen(rows, [true, false])).toEqual(rows)
+  })
+
+  it.each([
+    'print("password: " + user.password)',
+    "log.info('token: ' + mask(t))",
+    'console.log("secret: " + secret)',
+  ])("keeps the code line %s", (line) => {
+    expect(redact(line)).toBe(line)
   })
 })
