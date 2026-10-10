@@ -8,7 +8,7 @@ import {
 import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable, useSortable } from "@dnd-kit/react/sortable"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import { pinnedProjectShortcut } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
@@ -81,6 +81,10 @@ export const PinsBar = ({
 
   const row = useRef<HTMLDivElement | null>(null)
   const [rowElement, setRowElement] = useState<HTMLDivElement | null>(null)
+  const rowRef = useCallback((node: HTMLDivElement | null) => {
+    row.current = node
+    setRowElement(node)
+  }, [])
   const feedback = useMemo(
     () => Feedback.configure({ dropAnimation: { duration: slide(), easing: ease } }),
     [],
@@ -97,7 +101,8 @@ export const PinsBar = ({
   const [drags, setDrags] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [count, setCount] = useState(items.length)
-  const shown = pins.length === 0 ? 0 : Math.min(count, pins.length)
+  // As the bar slides out the pins stay as they were shown, so they slide away in view.
+  const shown = Math.min(count, items.length)
 
   // Measures before paint, and again as the bar or a pin changes size.
   useLayoutEffect(() => {
@@ -140,10 +145,7 @@ export const PinsBar = ({
     >
       <div className="pins-bar-clip">
         <div
-          ref={(node) => {
-            row.current = node
-            setRowElement(node)
-          }}
+          ref={rowRef}
           role="group"
           aria-label="Pinned projects"
           className="pins-bar-row flex items-stretch gap-0.5 px-2.5"
@@ -178,7 +180,7 @@ export const PinsBar = ({
                   project={project}
                   index={index}
                   fits={index < shown}
-                  last={index === pins.length - 1}
+                  last={index === shown - 1}
                   current={project.id === current}
                   status={status}
                   dragging={dragging}
@@ -217,7 +219,7 @@ const PinButton = ({
   index: number
   // It has room to show.
   fits: boolean
-  // No pin follows it.
+  // No shown pin follows it, so it can't step right: the hidden ones are out of reach.
   last: boolean
   current: boolean
   status: ProjectStatus | undefined
@@ -255,9 +257,13 @@ const PinButton = ({
         type="button"
         inert={!fits}
         style={fits ? undefined : { visibility: "hidden" }}
-        className="pin flex min-w-0 max-w-50 shrink-0 items-center px-2.5"
+        className="pin flex min-w-0 max-w-50 shrink-0 items-center text-body"
         aria-current={current ? "true" : undefined}
-        aria-keyshortcuts={`${shortcut.meta ? "Meta" : "Control"}+${shortcut.key} Alt+ArrowLeft Alt+ArrowRight`}
+        aria-keyshortcuts={[
+          `${shortcut.meta ? "Meta" : "Control"}+${shortcut.key}`,
+          ...(index > 0 ? ["Alt+ArrowLeft"] : []),
+          ...(last ? [] : ["Alt+ArrowRight"]),
+        ].join(" ")}
         aria-description={status && statusText[status]}
         data-project-status={status}
         data-dragging={isDragSource ? "true" : undefined}
@@ -277,7 +283,9 @@ const PinButton = ({
         <span aria-hidden="true" className="pin-number text-control">
           {index + 1}
         </span>
-        <span className="pin-name min-w-0 truncate text-body">{project.name}</span>
+        <span className="pin-name min-w-0 truncate" data-text={project.name}>
+          {project.name}
+        </span>
         <span aria-hidden="true" className="project-status-mark pin-mark" />
       </button>
     </Tooltip>

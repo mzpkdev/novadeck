@@ -28,7 +28,7 @@ import type { WorkspaceCommands } from "./workspace"
 
 export type KeyCommand = {
   // False lets the key through unprevented and ends routing for this event.
-  readonly available?: (input: KeyInput) => boolean
+  readonly available?: (input: KeyInput, args?: number) => boolean
   // "next" hands the key to the next matching binding; "through" ends routing and lets
   // the key on, unprevented, to wherever the command moved focus.
   readonly run: (input: KeyInput, args?: number) => "handled" | "next" | "through"
@@ -47,6 +47,10 @@ export const createKeyCommands = (
 ): Record<CommandId, KeyCommand> => {
   const state = () => currentState(workspace.getSnapshot())
   const panel = () => ui.getSnapshot().location.route.panel
+  const pinnedProject = (index: number) =>
+    arrangeProjects(workspace.getSnapshot().projects, ui.getSnapshot().projectArrangement).pinned[
+      index
+    ]
   const terminalsPanelVisible = (): boolean =>
     panel() === "terminals" && sidebarVisible(ui.getSnapshot().shell, effects.desktop())
   // Where Focus toggles to: Focus itself, or back to the windowed view.
@@ -265,14 +269,14 @@ export const createKeyCommands = (
         return "handled"
       },
     },
-    // The Nth pinned project, in the person's order. With none there, or it already current,
-    // the key goes on to the terminal.
+    // The Nth pinned project, in the person's order. With no such pin the key goes on to the
+    // terminal; with one, the key is ours even when it is already the current project.
     "project.pinned": {
+      available: (_input, args) => Boolean(pinnedProject(args ?? 0)),
       run: (_input, args) => {
-        const { projects, activeProjectId } = workspace.getSnapshot()
-        const { pinned } = arrangeProjects(projects, ui.getSnapshot().projectArrangement)
-        const next = pinned[args ?? 0]
-        if (!next || next.id === activeProjectId) return "through"
+        const next = pinnedProject(args ?? 0)
+        if (!next) return "through"
+        if (next.id === workspace.getSnapshot().activeProjectId) return "handled"
         commands.setSwitcher(null)
         commands.switchProject(next)
         return "handled"
@@ -358,7 +362,7 @@ export const runKey = (
   const keydown = phase === "capture" || phase === "bubble"
   for (const binding of candidates) {
     const command = keys[binding.command]
-    if (command.available && !command.available(input)) return "passed"
+    if (command.available && !command.available(input, binding.args)) return "passed"
     if (keydown && input.repeat && binding.repeat === "swallow") return "handled"
     const result = command.run(input, binding.args)
     if (result === "next") continue

@@ -23,8 +23,9 @@
    --pin-fg (muted), --pin-hover-fg (ink): a pin's name at rest, and under the pointer or
    focus.
    --pin-number-fg (muted), --pin-current-number-fg (strong): its number.
-   --pin-drag-bg (--item-highlighted-bg, soft), --pin-drag-shadow (shadow-control): the pin
-   being dragged.
+   --pin-drag-bg (--item-selected-bg, paper), --pin-drag-border-color
+   (--item-selected-border-color, line), --pin-drag-shadow (shadow-control): the pin being
+   dragged, raised and outlined as a selected item is.
    --pins-bar-indicator-bg (--tabs-indicator-bg, strong),
    --pins-bar-indicator-shadow (--tabs-indicator-shadow, none): the current pin's line. */
 .pins-bar {
@@ -64,12 +65,23 @@
   --_fg: var(--pin-fg, var(--color-muted));
   --_number-fg: var(--pin-number-fg, var(--color-muted));
   position: relative;
+  padding-inline: 11px;
   color: var(--_fg);
 }
 .pin-number {
   margin-right: 7px;
   font-family: var(--font-mono);
   color: var(--_number-fg);
+}
+/* The current pin is bolder, so every name holds the room of its bold self: switching
+   moves no other pin. */
+.pin-name::after {
+  content: attr(data-text);
+  display: block;
+  height: 0;
+  overflow: hidden;
+  font-weight: 500;
+  visibility: hidden;
 }
 .pin-mark {
   margin-left: 3px;
@@ -90,6 +102,9 @@
 }
 .pin:focus-visible {
   --_fg: var(--pin-hover-fg, var(--color-ink));
+  /* Inside the edge: the pin fills the bar's height, which clips what is outside. */
+  outline: var(--focus-ring-width) solid var(--focus-ring-color, var(--color-strong));
+  outline-offset: calc(var(--focus-ring-width) * -1);
 }
 @media (hover: hover) {
   .pin:not([aria-current="true"]):hover {
@@ -98,8 +113,11 @@
 }
 .pin[data-dragging="true"] {
   z-index: 1;
-  background-color: var(--pin-drag-bg, var(--item-highlighted-bg, var(--color-soft)));
-  box-shadow: var(--pin-drag-shadow, var(--shadow-control));
+  background-color: var(--pin-drag-bg, var(--item-selected-bg, var(--color-paper)));
+  box-shadow:
+    inset 0 0 0 var(--border-width)
+      var(--pin-drag-border-color, var(--item-selected-border-color, var(--color-line))),
+    var(--pin-drag-shadow, var(--shadow-control));
 }
 @media (prefers-reduced-motion: reduce) {
   .pins-bar[data-animated="true"] {

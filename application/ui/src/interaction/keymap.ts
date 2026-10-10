@@ -202,8 +202,10 @@ const gates: Record<
   "voice-chord": (input, state) =>
     !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
   // Ctrl or ⌘ and a digit, which a terminal would read as its own input, so it runs in
-  // capture; with no such pin the command lets the key on.
-  "pinned-project": (_input, state) => !state.dialog,
+  // capture; with no such pin the command lets the key on. Like the jumps, it leaves text
+  // fields, a tab's rename among them, their keys.
+  "pinned-project": (input, state) =>
+    !state.dialog && (!input.target.editing || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,

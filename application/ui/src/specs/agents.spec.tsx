@@ -557,4 +557,54 @@ describe("A pinned project", () => {
     await expect.element(pin("docs-site")).not.toBeInTheDocument()
     await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "question")
   })
+
+  it("keeps the other pins where they are when switching", async () => {
+    arrange(["storefront", "api-service", "docs-site", "mobile-app"])
+    await openWorkspace("/?demo=agents")
+    await skipWelcome()
+    const xs = () =>
+      pinsBar()
+        .getByRole("button")
+        .elements()
+        .map((button) => Math.round(button.getBoundingClientRect().right * 100) / 100)
+    await pin("storefront").click()
+    await expect.element(pin("storefront")).toHaveAttribute("aria-current", "true")
+    const before = xs()
+    await pin("docs-site").click()
+    await expect.element(pin("docs-site")).toHaveAttribute("aria-current", "true")
+    // Every pin keeps its width, so none after it moves.
+    expect(xs()).toEqual(before)
+  })
+
+  it("keeps a moved pin shown: the last shown pin can't step into the hidden ones", async () => {
+    arrange([
+      "storefront",
+      "api-service",
+      "mobile-app",
+      "design-system",
+      "infra",
+      "dotfiles",
+      "docs-site",
+    ])
+    await page.viewport(600, 900)
+    onTestFinished(() => page.viewport(1440, 900))
+    await openWorkspace("/?demo=agents")
+    await skipWelcome()
+    const shownNames = () =>
+      pinsBar()
+        .getByRole("button")
+        .elements()
+        .filter((button) => !button.hasAttribute("inert"))
+        .map((button) => button.textContent)
+    const before = shownNames()
+    expect(before.length).toBeGreaterThan(1)
+    expect(before.length).toBeLessThan(7)
+    const lastShown = before[before.length - 1]!.replace(/^\d+/, "")
+    const lastPin = pin(lastShown)
+    expect(lastPin.element().getAttribute("aria-keyshortcuts")).not.toContain("Alt+ArrowRight")
+    lastPin.element().focus()
+    await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+    expect(shownNames()).toEqual(before)
+    await expect.element(lastPin).toHaveFocus()
+  })
 })

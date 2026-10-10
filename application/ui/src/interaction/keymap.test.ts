@@ -469,6 +469,15 @@ describe("keymap", () => {
           expect(keydown(platform, { key: "3", code: "Digit3" })).not.toContain("project.pinned 2")
         })
 
+        it("leaves text fields, such as a tab's rename, their keys", () => {
+          const rename = { editing: true, rename: true }
+          expect(route(platform, "capture", digit(2, { target: rename }))).toEqual([])
+          expect(route(platform, "capture", digit(2, { target: { editing: true } }))).toEqual([])
+          expect(route(platform, "capture", digit(2, { target: terminalInput }))).toEqual([
+            "project.pinned 1",
+          ])
+        })
+
         it("waits while a dialog is open and swallows repeats", () => {
           expect(keydown(platform, digit(2), { state: { dialog: true } })).toEqual([])
           expect(

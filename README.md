@@ -196,11 +196,14 @@ under the header shows them in that order, each as its number, its name and its 
 underlined, and a click switches to it. Drag a pin along the bar to reorder the pins, or
 focus one and press Alt+Left or Alt+Right; a drag there never unpins. The number is its
 shortcut: `Ctrl+1` to `Ctrl+9` (`Cmd` on macOS) switches to that pin, from terminal
-input too, in the desktop app (a browser keeps those keys for its tabs). The bar slides
-in with the first pin and out with the last, and Zen hides it. Pins that don't fit drop
-off its end, and the switcher's dot covers them again. The order and the pins are kept
-in this browser or app (`novadeck.project-arrangement` in local storage), not shared
-with other clients of the runner.
+input too, in the desktop app (a browser keeps those keys for its tabs). While a pin has
+that number the key stays out of the terminal, where `Ctrl+3` to `Ctrl+8` would send
+`Esc` and other control codes; without one, it reaches the terminal as usual, and it's
+left alone while you rename a tab or type in another field. The bar slides in with the
+first pin and out with the last, and Zen hides it. Pins that don't fit drop off its end,
+and the switcher's dot covers them again. The order and the pins are kept in this
+browser or app (`novadeck.project-arrangement` in local storage), not shared with other
+clients of the runner.
 
 The Notifications panel (the bell on the sidebar rail) lists everything across every
 project and session that waits on you: questions, permissions and plans to review, and
