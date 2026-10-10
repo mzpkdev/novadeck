@@ -202,11 +202,16 @@ export const PinsBar = ({
       coordinates: { x: box.left + 20, y: box.top + box.height / 2 },
     })
     // dnd-kit takes moves only once the drag is under way, a frame or so after it starts:
-    // till then the pin waits, then goes to where the pointer is by then.
+    // till then the pin waits unseen, then shows where the pointer is by then.
     let pointer = handoff.point
+    pin.style.visibility = "hidden"
     let frame = requestAnimationFrame(function arrive(): void {
-      if (manager.current?.dragOperation.status.dragging) actions.move({ to: pointer })
-      else frame = requestAnimationFrame(arrive)
+      if (!manager.current?.dragOperation.status.dragging) {
+        frame = requestAnimationFrame(arrive)
+        return
+      }
+      actions.move({ to: pointer })
+      frame = requestAnimationFrame(() => pin.style.removeProperty("visibility"))
     })
     const move = (event: PointerEvent): void => {
       pointer = { x: event.clientX, y: event.clientY }
@@ -230,6 +235,7 @@ export const PinsBar = ({
     window.addEventListener("keydown", escape, true)
     following.current = () => {
       cancelAnimationFrame(frame)
+      pin.style.removeProperty("visibility")
       window.removeEventListener("pointermove", move, true)
       window.removeEventListener("pointerup", drop, true)
       window.removeEventListener("pointercancel", cancel, true)
