@@ -3400,7 +3400,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       shell,
     }) => {
       const describer = new FakeDescriber()
-      const manager = shell.manager({ describer, murmurTimes })
+      const manager = shell.manager({ describer, murmurTimes, processPollMs: 50 })
       const terminal = await create(manager, shell)
       await shell.until(manager, terminal.id, "$ ")
       // The alternate screen, a secret drawn on it, and a program holding the foreground.

@@ -16,11 +16,13 @@ Terminals ask for a description when something worth a new one happened (see
   person's prompts (the last one is the current one), the tail of the agent's last reply, the
   agent's own summary when it has written one, and murmur's previous title;
 - a plain shell: project, folder, the foreground command, the visible screen rows and the
-  previous title. While a full-screen program (vim, less, htop, tmux, `kubectl edit`) has the
-  screen, which the terminal's alternate buffer tells, no screen rows are read at all: the
+  previous title. While a full-screen program draws on the terminal's alternate buffer (vim, less, htop,
+  tmux, `kubectl edit`), no screen rows are read at all: the
   program's command line, folder and project are all murmur gets, and with no command known
   (Windows has no foreground sampling) it is not asked and the title stays. When the
-  program quits, the normal screen is read again.
+  program quits, the normal screen is read again. A program that draws on the normal
+  screen is read as any screen is: procps `top`, `less -X`, and git's pager, which git runs
+  as `less -FRX`.
 
 Nothing else is read, and nothing leaves the machine: the server listens on `127.0.0.1`
 behind a random API key made for each launch and passed in the environment

@@ -1311,7 +1311,7 @@ sees it, and the terminal side never includes a permission's command.
   each as safety caps. The service redacts, then cuts to what the model is shown. The
   command line is capped at 2000 characters the same way. A bare prompt with no
   program is not described. While the terminal's alternate buffer is showing (a full-screen
-  program: vim, less, htop, tmux), the screen is left out whole (`alternate` on the screen
+  program that draws on it, such as vim, less, htop or tmux), the screen is left out whole (`alternate` on the screen
   read; `shellDigest` takes none of its rows): the digest has the project, folder and
   command line, which is redacted like every string, and with no command known (no
   foreground sampling, as on Windows) there is no digest, so nothing is asked and the title
