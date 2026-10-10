@@ -46,6 +46,8 @@ const setup = async (
     voice?: ConstructorParameters<typeof Murmur>[1]["voice"]
     freeMemory?: () => number
     requestMs?: number
+    prepareMs?: number
+    prepareScript?: URL
     startMs?: number
     launch?: Launch
     idleMs?: number
@@ -68,6 +70,8 @@ const setup = async (
     ...(options.freeMemory && { freeMemory: options.freeMemory }),
     ...(options.requestMs !== undefined && { requestMs: options.requestMs }),
     ...(options.startMs !== undefined && { startMs: options.startMs }),
+    ...(options.prepareMs !== undefined && { prepareMs: options.prepareMs }),
+    ...(options.prepareScript && { prepareScript: options.prepareScript }),
     ...(options.launch && { launch: options.launch }),
     ...(options.idleMs !== undefined && { idleMs: options.idleMs }),
     ...(options.now && { now: options.now }),
@@ -627,6 +631,32 @@ describe("an engine that hangs while it loads", () => {
     expect(Date.now() - started).toBeLessThan(2000)
     expect(await context.murmur.describe(digest)).toBeUndefined()
   })
+})
+
+describe("a digest that takes too long to redact", () => {
+  it(
+    "gives that job nothing, leaves the event loop running, and backs off",
+    {
+      timeout: 20_000,
+    },
+    async ({ resources }) => {
+      const context = await installed(resources, {
+        prepareMs: 300,
+        prepareScript: new URL("../testing/slow-worker.mjs", import.meta.url),
+        now: () => 1_000,
+      })
+      let ticks = 0
+      const timer = setInterval(() => (ticks += 1), 20)
+
+      const job = await context.murmur.describe({ ...digest, project: "hang" })
+      clearInterval(timer)
+
+      expect(job).toBeUndefined()
+      expect(ticks).toBeGreaterThan(8)
+      // A failure: the next job is refused for a while.
+      expect(await context.murmur.describe({ ...digest, project: "app" })).toBeUndefined()
+    },
+  )
 })
 
 describe("a GPU that went missing", () => {

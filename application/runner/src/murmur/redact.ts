@@ -189,6 +189,9 @@ const closesLiteral = (value: string, offset: unknown, text: unknown): boolean =
   return count % 2 === 1
 }
 
+// The longest value a rule takes whole at once; a secret that reaches it is masked to the end of its run.
+const valueCap = 1024
+
 // A quoted value; one opened and never closed runs to the end of the line. A string inside
 // JSON that is itself in a string has its quotes escaped.
 const quoted = `\\\\"(?:[^\\\\\\n]|\\\\(?!"))*\\\\"|"(?:[^"\\\\\\n]|\\\\.)*"|'(?:[^'\\\\\\n]|\\\\.)*'|"[^\\n]*|'[^\\n]*`
@@ -252,33 +255,39 @@ const rules: readonly Rule[] = [
       /\d/.test(value) || value.length >= 16 ? `${scheme}${gap}${hide(value)}` : all,
   ],
   // aws configure asks for the key by name.
-  [/(\bSecret Access Key[^:\n]*:[ \t]*)(\S+)/gi, (_all, head, value) => `${head}${hide(value)}`],
+  [
+    /(\bSecret Access Key[^:\n]{0,64}:[ \t]*)(\S+)/gi,
+    (_all, head, value) => `${head}${hide(value)}`,
+  ],
   // AUTH=Basic dXNlcjpwYXNz, where the scheme says it is a credential.
   [
     /([=:][ \t]*(?:Basic|Bearer)[ \t]+)([A-Za-z0-9+/=._~-]{8,})/g,
     (_all, head, value) => `${head}${hide(value)}`,
   ],
   // Command lines that take a password in their own way.
-  [/(\bredis-cli\b[^\n]*?\s-a\s+)(?!-)(\S+)/g, (_all, head, value) => `${head}${hide(value)}`],
   [
-    /(\bhtpasswd\b[^\n]*?\s-\w*b\w*\s+\S+\s+\S+\s+)(\S+)/g,
-    (_all, head, value) => `${head}${hide(value)}`,
-  ],
-  [/(\bopenssl\b[^\n]*?\s-k\s+)(?!-)(\S+)/g, (_all, head, value) => `${head}${hide(value)}`],
-  [
-    /(\bopenssl\b[^\n]*?\s-pass(?:in|out)?\s+pass:)(\S+)/g,
+    /(\bredis-cli\b[^\n]{0,256}?\s-a\s+)(?!-)(\S+)/g,
     (_all, head, value) => `${head}${hide(value)}`,
   ],
   [
-    /(\b(?:mysql|mysqladmin|mysqldump)\w*\b[^\n]*?\s-p)(?=\S)(\S+)/g,
+    /(\bhtpasswd\b[^\n]{0,256}?\s-\w*b\w*\s+\S+\s+\S+\s+)(\S+)/g,
+    (_all, head, value) => `${head}${hide(value)}`,
+  ],
+  [/(\bopenssl\b[^\n]{0,256}?\s-k\s+)(?!-)(\S+)/g, (_all, head, value) => `${head}${hide(value)}`],
+  [
+    /(\bopenssl\b[^\n]{0,256}?\s-pass(?:in|out)?\s+pass:)(\S+)/g,
     (_all, head, value) => `${head}${hide(value)}`,
   ],
   [
-    /(\b(?:docker\s+login|sshpass)\b[^\n]*?\s-p\s+)(?!-)(\S+)/g,
+    /(\b(?:mysql|mysqladmin|mysqldump)\w*\b[^\n]{0,256}?\s-p)(?=\S)(\S+)/g,
     (_all, head, value) => `${head}${hide(value)}`,
   ],
   [
-    /(\bcurl\b[^\n]*?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g,
+    /(\b(?:docker\s+login|sshpass)\b[^\n]{0,256}?\s-p\s+)(?!-)(\S+)/g,
+    (_all, head, value) => `${head}${hide(value)}`,
+  ],
+  [
+    /(\bcurl\b[^\n]{0,256}?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g,
     (_all, head, value) => `${head}${hide(value)}`,
   ],
   // --password hunter2, by the flag's exact name.
@@ -296,7 +305,7 @@ const rules: readonly Rule[] = [
   // NAME=value, where the name sounds secret.
   [
     new RegExp(
-      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]{1,1024})`,
+      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]{1,${valueCap}})`,
       "gu",
     ),
     (all, name, joint, value, offset, text) =>
@@ -337,7 +346,7 @@ const rules: readonly Rule[] = [
   // name: value, as YAML and headers have it.
   [
     new RegExp(
-      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]{1,1024})`,
+      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]{1,${valueCap}})`,
       "gu",
     ),
     (all, name, joint, value, offset, text) =>
@@ -377,8 +386,17 @@ const scan = (text: string, pattern: RegExp, replace: Replacer): string => {
       continue
     }
     if (found[0] === "") pattern.lastIndex += 1
-    result += text.slice(last, found.index) + replaced
-    last = found.index + found[0].length
+    let end = found.index + found[0].length
+    let masked = replaced
+    // A value that reached the cap goes on to the end of its run, and so does its mask.
+    const value = [...found].toReversed().find((group) => group !== undefined) ?? ""
+    if (value.length >= valueCap) {
+      const tail = /^[^\s"',;&]*/.exec(text.slice(end))?.[0] ?? ""
+      masked += hide(tail)
+      end += tail.length
+    }
+    result += text.slice(last, found.index) + masked
+    last = end
   }
   return result + text.slice(last)
 }
@@ -436,9 +454,12 @@ const maskKeyBlocks = (screen: readonly string[], continues: readonly boolean[])
 // those marks is masked, in whichever row it lies: a secret across a boundary is masked on both
 // sides of it, even when the row before it ended in a word character, and a row's own context
 // changes nothing else. Marking keeps lengths, so the readings line up character for character.
-// How many rows a window has, to begin with.
-const windowRows = 3
-
+// Redacts the rows of a screen. Rows that go on (each but the last of a group ended at the
+// pane's edge) are marked apart and as one text from each of their starts, and what any of
+// those marks is masked, in whichever row it lies: a secret across a boundary is masked on both
+// sides of it, even when the row before it ended in a word character, and a row's own context
+// changes nothing else. Marking keeps lengths, so the readings line up character for character.
+// The work is bounded by the worker that does it (see prepare.ts), not by cutting the reading.
 const redactRows = (screen: readonly string[], continues: readonly boolean[]): string[] => {
   // A row that holds the sentinel itself could not be told from a mask.
   const rows = screen.map((row) => row.replaceAll(sentinel, "?"))
@@ -451,37 +472,18 @@ const redactRows = (screen: readonly string[], continues: readonly boolean[]): s
     else {
       const text = group.join("")
       const masked: boolean[] = Array.from({ length: text.length }, () => false)
-      // What a reading of more than one row marked, apart from the rows read alone.
-      const spanned: boolean[] = Array.from({ length: text.length }, () => false)
-      const note = (marked: string, from: number, wide = false): void => {
+      const note = (marked: string, from: number): void => {
         for (let i = 0; i < marked.length; i += 1)
-          if (marked[i] === sentinel) {
-            masked[from + i] = true
-            if (wide) spanned[from + i] = true
-          }
+          if (marked[i] === sentinel) masked[from + i] = true
       }
-      // The group as one text, and each row alone.
-      note(mark(text), 0, true)
-      const starts: number[] = []
       let from = 0
-      for (const row of group) {
-        starts.push(from)
-        note(mark(row), from)
-        from += row.length
-      }
-      // From each row's start, a window of a few rows, wider while a mask runs to its end:
-      // this is what sees a token that begins a row after a row that ended in a word
-      // character, which the whole text does not. A row that begins inside a mask is covered.
       for (let start = 0; start < group.length; start += 1) {
-        const at = starts[start] ?? 0
-        if (spanned[at]) continue
-        let end = Math.min(start + windowRows, group.length)
-        for (;;) {
-          const marked = mark(group.slice(start, end).join(""))
-          note(marked, at, true)
-          if (end >= group.length || marked.at(-1) !== sentinel) break
-          end = Math.min(end + windowRows, group.length)
-        }
+        note(mark(group[start] ?? ""), from)
+        // From a row's start, only where the row before leaves something in front of it: after
+        // a space the whole text sees the row's start as it is.
+        if (start === 0 || /\S$/.test(group[start - 1] ?? ""))
+          note(mark(group.slice(start).join("")), from)
+        from += (group[start] ?? "").length
       }
       let offset = 0
       for (const row of group) {

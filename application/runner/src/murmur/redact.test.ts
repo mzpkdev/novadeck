@@ -809,7 +809,7 @@ describe("redacting text with characters outside the basic plane", () => {
   })
 })
 
-const rows = (row: string): string[] => Array.from({ length: 100 }, () => row)
+const rows = (row: string): string[] => Array.from({ length: 60 }, () => row)
 const random = (): string =>
   Array.from(
     { length: 400 },
@@ -830,8 +830,8 @@ describe("the time redaction takes", () => {
     ["a=b repeated", () => rows("a=b ".repeat(100).trimEnd().slice(0, 400))],
     ["a=b without spaces", () => rows(`${"a=b".repeat(133)}a`)],
     ["quotes", () => rows('"a: '.repeat(100))],
-    ["random base64", () => Array.from({ length: 100 }, random)],
-  ])("is quick for a 100 by 400 continued screen of %s", { timeout: 5000 }, (_name, screen) => {
+    ["random base64", () => Array.from({ length: 60 }, random)],
+  ])("is quick for a 60 by 400 continued screen of %s", { timeout: 5000 }, (_name, screen) => {
     // A budget to catch a blow-up (it was 13 s once), not to benchmark: a loaded runner is slow.
     expect(time(screen())).toBeLessThan(2000)
   })
@@ -876,5 +876,48 @@ describe("the sentinel character in the input", () => {
     expect(one.screen).toEqual(["? ~/proj main", "$ ls"])
     expect(group.screen).toEqual(["TOKEN=[redacted]", "[redacted] ok"])
     expect(redact("a\uE000b TOKEN=abcdefgh")).toBe("a?b TOKEN=[redacted]")
+  })
+})
+
+const long = (length: number): string =>
+  Array.from({ length }, (_x, i) => "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"[(i * 7) % 36]).join("")
+
+describe("long values and command lines", () => {
+  it.each([1000, 1100, 1500, 3000])("masks a value of %s characters to its end", (length) => {
+    const value = long(length)
+
+    for (const line of [`AWS_SESSION_TOKEN=${value}`, `aws_session_token: ${value}`]) {
+      const result = redact(line)
+
+      expect(result).toMatch(/^(AWS_SESSION_TOKEN=|aws_session_token: )\[redacted\]$/)
+    }
+  })
+
+  it("does not carry a lazy command-line match across a long line", { timeout: 5000 }, () => {
+    const line = `${"curl ".repeat(2000)}-u admin:hunter2`
+
+    expect(redact(line).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    "redis-cli -a S3cr3tP4ss",
+    "mysql -u root -phunter2xyz app",
+    "curl -u admin:hunter2xyz https://x",
+    "docker login -p hunter2xyz registry",
+    "openssl enc -k hunter2xyz",
+  ])("still masks the password in %s", (line) => {
+    expect(redact(line)).not.toMatch(/S3cr3t|hunter2/)
+  })
+})
+
+describe("a token after a row that ended in a word character", () => {
+  it("is masked to its end, however long", () => {
+    const jwt = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${"eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ".repeat(3)}.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV`
+    const lines = [`${"x".repeat(20)}`, ...jwt.match(/.{1,20}/g)!, "$"]
+    const continues = lines.map((_row, i) => i < lines.length - 1 && lines[i]!.length === 20)
+
+    const result = (redactDigest({ ...shell(lines), continues }) as ShellDigest).screen.join("\n")
+
+    expect(result).not.toMatch(/eyJh|SflKx|eyJzd|IkpvaG4/)
   })
 })

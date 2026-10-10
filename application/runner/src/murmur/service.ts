@@ -17,8 +17,8 @@ import type { Description, Describer, Digest } from "./describer.js"
 import { parseDescription } from "./description.js"
 import { candidates, parseDevices, type Device } from "./devices.js"
 import { parseVmStat } from "./memory.js"
+import { Preparer } from "./prepare.js"
 import { messages, responseFormat, type Message } from "./prompt.js"
-import { redactDigest } from "./redact.js"
 
 /** Where the runner keeps murmur's settings. */
 export type MurmurSettingsStore = {
@@ -53,6 +53,10 @@ export type MurmurOptions = {
   readonly idleMs?: number
   /** How long each device may take for the install check's test description. */
   readonly checkMs?: number
+  /** How long redacting a digest may take before it is given up on. */
+  readonly prepareMs?: number
+  /** The script of the thread that redacts digests; for a test to bring its own. */
+  readonly prepareScript?: URL
   /** How long a job waits before it looks again at voice and memory. */
   readonly retryMs?: number
   /** How long after a failed job the next is refused, and how it grows with each failure in a row. */
@@ -151,6 +155,7 @@ export class Murmur implements Describer {
   private readonly source: string | undefined
   private readonly model: Artifact
   private readonly server: Server<Config, Facts>
+  private readonly preparer: Preparer
   private manifest: Manifest | undefined
   private modelReady = false
   private engineReady = false
@@ -200,6 +205,11 @@ export class Murmur implements Describer {
       options.source ?? (options.engine === undefined ? undefined : dirname(options.engine))
     this.model = options.model ?? pinnedModel
     this.server = this.makeServer(options.idleMs)
+    this.preparer = new Preparer({
+      ...(options.prepareMs !== undefined && { deadlineMs: options.prepareMs }),
+      ...(options.prepareScript && { script: options.prepareScript }),
+      ...(options.idleMs !== undefined && { idleMs: options.idleMs }),
+    })
     // Voice has priority: its work stops ours and wakes whatever waits for it to end.
     this.unwatchVoice = options.voice?.watch((busy) => {
       if (busy) this.current?.abort()
@@ -345,6 +355,7 @@ export class Murmur implements Describer {
     if (!usable) {
       this.current?.abort()
       void this.server.stop()
+      void this.preparer.stop()
     }
     for (const listener of this.usableListeners) listener(usable)
     this.wake()
@@ -470,6 +481,7 @@ export class Murmur implements Describer {
     await this.removal?.catch(() => {})
     await this.loading
     await this.server.close()
+    await this.preparer.close()
     this.watchers.finish()
   }
 
@@ -765,7 +777,14 @@ export class Murmur implements Describer {
     signal: AbortSignal | undefined,
     terminal: string | undefined,
   ): Promise<Description | null | undefined> {
-    const chat = messages(redactDigest(digest))
+    // Redacted and written in a thread of its own, within a deadline.
+    const chat = await this.preparer.prepare(digest, signal)
+    if (chat === undefined || chat === "late") {
+      // A digest that took too long, or a thread that would not start, is a failure of this
+      // job; one that was dropped or came as murmur closed is not.
+      if (!signal?.aborted && !this.closed) this.failed()
+      return undefined
+    }
     // Refusals are counted for the terminal asking; without a name, for its digest's shape.
     const key = terminal === undefined ? digestKey(digest) : JSON.stringify(["terminal", terminal])
     const retryMs = this.options.retryMs ?? 15_000

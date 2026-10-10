@@ -117,8 +117,29 @@ const randomLike = (piece: string): boolean =>
   !spaceless.test(piece) &&
   /\d/.test(piece) &&
   /\p{L}/u.test(piece) &&
+  !identifierLike(piece) &&
   ((!/[a-z]{5}/.test(piece) && entropy(piece) >= 3) ||
     (piece.length >= 16 && (piece.match(/\d/g) ?? []).length >= 3 && entropy(piece) >= 3))
+
+// A name in code (`Float32Array`, `iPhone15ProMax`, `Ed25519PublicKey`): cut at the changes of
+// case and at the digits, at least half of it is words of three letters or more.
+const identifierLike = (piece: string): boolean => {
+  // Names in code mix cases or are in capitals; a run of lower case and digits is more often a key.
+  if (!/\p{Lu}/u.test(piece)) return false
+  const segments = piece
+    .replaceAll(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
+    .replaceAll(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
+    .split(/[^\p{L}]+/u)
+    // An acronym is a word up to four letters; a longer run of capitals is no word.
+    .filter(
+      (word) =>
+        word.length >= 3 &&
+        // Words have vowels; a random run of letters often has none.
+        /[aeiouyAEIOUY]/.test(word) &&
+        (word.length <= 4 || word !== word.toUpperCase()),
+    )
+  return segments.reduce((sum, word) => sum + word.length, 0) * 2 >= piece.length
+}
 
 // A hex string of a hash's length is a commit id in a log and a secret in a title.
 const hexRun = /(?<![0-9a-z])[0-9a-f]{32,}(?![0-9a-z])/i
