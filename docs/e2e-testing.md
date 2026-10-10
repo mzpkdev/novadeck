@@ -9,17 +9,22 @@ give the same result every time.
 
 ## Running
 
-The suite runs on Linux and Windows. On Linux its keyring cut is a dead D-Bus address,
-which doesn't keep a harness from the macOS Keychain, and its leftover-process check reads
-`/proc`. On Windows the sandbox moves the user's folders too (USERPROFILE, APPDATA,
-LOCALAPPDATA, TEMP), Claude Code and Codex keep their logins in files there, and a test
-of Antigravity refuses to start while the Credential Manager holds its login
-(`credentials.ts`), as no environment moves that store; the leftover-process check reads
-each process's folder and environment through a small lister it compiles once. Windows
-runs need what CI's runners have: PowerShell 7, Git for Windows, and symlinks (an
-administrator, or Developer Mode). On anything else the fixture fails each test, saying
-so; a scenario file can skip instead with `describe.skipIf(!supported)`, `supported`
-coming from `fixture.ts`.
+The suite runs on Linux and Windows, and on macOS in CI. On Linux its keyring cut is a
+dead D-Bus address, and its leftover-process check reads `/proc`. On Windows the sandbox
+moves the user's folders too (USERPROFILE, APPDATA, LOCALAPPDATA, TEMP), Claude Code and
+Codex keep their logins in files there, and a test of Antigravity refuses to start while
+the Credential Manager holds its login (`credentials.ts`), as no environment moves that
+store; the leftover-process check reads each process's folder and environment through a
+small lister it compiles once. Windows runs need what CI's runners have: PowerShell 7, Git
+for Windows, and symlinks (an administrator, or Developer Mode). Nothing an environment
+moves keeps a harness from the macOS login Keychain, so on a Mac outside CI, where your
+own sign-ins may be, the suite refuses to run unless you set
+`NOVADECK_E2E_MACOS_KEYCHAIN=accept`. GitHub's macOS runners have nothing signed in, but
+their image turns on Reduce motion, which Codex follows by drawing no logo on its first
+screen, so the E2E workflow turns it off there first; a Mac with it on fails that
+scenario, saying so. The leftover-process check asks `ps` and `lsof` there. Anywhere else
+the fixture fails each test, saying why (`unsupported` in `support.ts`); a scenario file
+can skip instead with `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
 
 ```sh
 npm run test:e2e                  # from the repository root; builds the protocol and relay first
@@ -41,11 +46,12 @@ against the hook timeout (ten minutes) rather than a test's. A harness left out 
 `application/runner/vitest.e2e.config.ts` includes them. The unit tests for its parts
 (`src/e2e/**/*.test.ts`) run with the rest.
 
-| Variable                      | Effect                                                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME |
-| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                         |
-| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it |
+| Variable                             | Effect                                                                                                                       |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `NOVADECK_E2E_CACHE`                 | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME |
+| `NOVADECK_E2E_HARNESS=latest`        | Installs and runs each harness's newest release instead of its pin, as a drift check                                         |
+| `NOVADECK_E2E_AGENTS`                | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it |
+| `NOVADECK_E2E_MACOS_KEYCHAIN=accept` | Runs the suite on a Mac outside CI, though the harnesses can reach your login Keychain                                       |
 
 In CI (`.github/workflows/e2e.yml`) each harness runs in a job of its own, which runs
 the whole suite with `NOVADECK_E2E_AGENTS` set to that harness, so the scenarios across

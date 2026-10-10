@@ -77,15 +77,25 @@ const ended = async (terminal: DeckTerminal, from: number, shows: string): Promi
  * has since the call: the next instance's, drawn as it starts. One that clears its screen
  * as it exits (Claude Code, Codex) draws it again from none, one that leaves it there
  * (Antigravity) a second time, so the first's banner left on screen can't pass for it.
- * Called once the person's command to leave is submitted.
+ * A clear and a redraw within one look show no change in that count, as Antigravity's on
+ * macOS can; then the banner showing where `said`, the first instance's own conversation
+ * on screen at the call, is gone says the same. Called once the person's command to leave
+ * is submitted.
  */
-const redrawn = (terminal: DeckTerminal, { banner, name }: AgentSetup): Promise<unknown> => {
+const redrawn = async (
+  terminal: DeckTerminal,
+  { banner, name }: AgentSetup,
+  said: string,
+): Promise<unknown> => {
+  const before = (await terminal.screen()).includes(said)
   let fewest = Number.POSITIVE_INFINITY
   return terminal.poll(
     async () => {
-      const shown = occurrences(await terminal.screen(), banner)
+      const screen = await terminal.screen()
+      const shown = occurrences(screen, banner)
       fewest = Math.min(fewest, shown)
-      return shown > fewest ? true : undefined
+      if (shown > fewest) return true
+      return before && shown > 0 && !screen.includes(said) ? true : undefined
     },
     `${name} to draw its banner again as it starts anew`,
     60_000,
@@ -236,7 +246,7 @@ for (const setup of setups) {
         await t2.submit("Ask t1 for the word")
         await t1.reached(holds("t2", "t1", "queued"), { after: mark })
       })
-      const anew = redrawn(t1, setup)
+      const anew = redrawn(t1, setup, "Remember the word heron")
       // Awaited below, once Novadeck has seen the new start; a failure before then is the test's.
       anew.catch(() => {})
 

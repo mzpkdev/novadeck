@@ -182,6 +182,9 @@ describe("agent plugins", () => {
       "PreToolUse",
       "PostToolUse",
     ])
+    // Codex clamps an Interrupt hook past 3 seconds, warning at every start.
+    expect(codexHooks.Interrupt[0].hooks[0].timeout).toBe(3)
+    expect(codexHooks.Stop[0].hooks[0].timeout).toBe(10)
     expect(read(agy, "plugin.json")).toEqual({ name: "novadeck" })
     expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual([
       "PreInvocation",
