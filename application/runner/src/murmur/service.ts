@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
-import { freemem, tmpdir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { freemem } from "node:os"
+import { dirname, join } from "node:path"
 
 import type { MurmurCheck, MurmurInstall, MurmurSettings, MurmurState } from "@novadeck/protocol"
 
@@ -8,7 +8,15 @@ import type { Activity } from "../engines/activity.js"
 import { DownloadError, download } from "../engines/download.js"
 import { aborted, engineStatus, fetchEngine, removeContents } from "../engines/install.js"
 import { readManifest, type Artifact, type Manifest } from "../engines/manifest.js"
-import { Server, token, type Launch, type Running, type ServerSpec } from "../engines/server.js"
+import { modelFile as modelPathOf, pruneModels } from "../engines/models.js"
+import {
+  Server,
+  runEngineOnce,
+  token,
+  type Launch,
+  type Running,
+  type ServerSpec,
+} from "../engines/server.js"
 import { EngineError, engineFolder, exists, programFile } from "../engines/unpack.js"
 import { Watchers } from "../engines/watchers.js"
 import { DomainError } from "../errors.js"
@@ -18,7 +26,7 @@ import { parseDescription } from "./description.js"
 import { candidates, parseDevices, type Device } from "./devices.js"
 import { parseVmStat } from "./memory.js"
 import { Preparer } from "./prepare.js"
-import { messages, responseFormat, type Message } from "./prompt.js"
+import { responseFormat, type Message } from "./prompt.js"
 
 /** Where the runner keeps murmur's settings. */
 export type MurmurSettingsStore = {
@@ -72,6 +80,8 @@ export type MurmurOptions = {
   readonly now?: () => number
 }
 
+const needsGpu = "Murmur needs a working GPU, and this computer has none it can use."
+
 const unavailable = (message: string): DomainError => new DomainError("CONFLICT", message)
 
 const explain = (error: unknown): string => {
@@ -80,6 +90,14 @@ const explain = (error: unknown): string => {
     return "There is not enough disk space to install murmur."
   return `Murmur could not be installed: ${error instanceof Error ? error.message : String(error)}`
 }
+
+// Why the worker thread gave no chat for the install check's test terminal.
+const workerFailure = {
+  unavailable: "Murmur's worker could not start.",
+  late: "Murmur's worker took too long to prepare the test terminal.",
+  failed: "Murmur's worker failed on the test terminal.",
+  stopped: "Murmur's worker was stopped.",
+} as const
 
 // How long after a failed engine update the next look tries it again.
 export const updateRetryMs = 60_000
@@ -106,7 +124,32 @@ type Config = {
   readonly device: string
 }
 
-type Facts = { readonly key: string }
+// Nothing is learned from the server's log.
+type Facts = Readonly<Record<string, never>>
+
+// llama-server's arguments. Changing these flags, or the HTTP surface murmur relies on
+// (`/health`, `/v1/chat/completions`, the key in `LLAMA_API_KEY`), means bumping
+// `engineInterface` in application/murmur/scripts/build.ts, so an engine unpacked for the
+// old ones is fetched again; whisper's engine has the same rule.
+export const serverArguments = (model: string, device: string, port: number): string[] => [
+  "--host",
+  "127.0.0.1",
+  "--port",
+  String(port),
+  "-m",
+  model,
+  "--device",
+  device,
+  "-ngl",
+  "999",
+  "-c",
+  "4096",
+  "-np",
+  "1",
+  "--reasoning",
+  "off",
+  "--exit-with-stdin",
+]
 
 /** Resolves when `signal` aborts, never when there is none. */
 const dropped = (signal: AbortSignal | undefined): Promise<void> =>
@@ -172,6 +215,7 @@ export class Murmur implements Describer {
     | undefined
   private readonly watchers = new Watchers<MurmurState>()
   private readonly usableListeners = new Set<(usable: boolean) => void>()
+  private readonly clearedListeners = new Set<() => void>()
   private lastUsable = false
   private closed = false
   // Jobs run one after another: the tail of the line, and the request now in flight.
@@ -179,9 +223,11 @@ export class Murmur implements Describer {
   private current: AbortController | undefined
   private readonly sleepers = new Set<() => void>()
   private readonly unwatchVoice: (() => void) | undefined
-  // The key of the server being started: `prepare` makes it and `facts` keeps it, in one go.
-  private fresh = ""
   private failures = 0
+  // Engine failures in a row (a crash, or no answer in time): the third is shown on the card.
+  private engineStrikes = 0
+  // Why jobs fail now, while the check still stands: shown on the card until a job succeeds.
+  private runtimeFailure: string | null = null
   private refusedUntil = 0
   // The device the running server was started with, so a warm job doesn't list them again.
   private cached: { readonly device: string } | undefined
@@ -233,32 +279,15 @@ export class Murmur implements Describer {
       health: "/health",
       key: (config) => `${config.folder}\0${config.device}\0${config.model}`,
       prepare: (config, port) => {
-        this.fresh = token()
+        const key = token()
         return {
-          args: [
-            "--host",
-            "127.0.0.1",
-            "--port",
-            String(port),
-            "-m",
-            config.model,
-            "--device",
-            config.device,
-            "-ngl",
-            "999",
-            "-c",
-            "4096",
-            "-np",
-            "1",
-            "--reasoning",
-            "off",
-            "--exit-with-stdin",
-          ],
+          args: serverArguments(config.model, config.device, port),
           // In the environment, where no one lists it as they would an argument.
-          env: { LLAMA_API_KEY: this.fresh },
+          env: { LLAMA_API_KEY: key },
+          headers: { authorization: `Bearer ${key}` },
         }
       },
-      facts: () => ({ key: this.fresh }),
+      facts: () => ({}),
     }
   }
 
@@ -311,7 +340,10 @@ export class Murmur implements Describer {
       sizes: { engine: this.manifest?.size ?? 0, model: this.model.size },
       installing: this.installing,
       check,
-      failure: this.failure ?? (installed && check === null && !this.installing ? unchecked : null),
+      failure:
+        this.failure ??
+        this.runtimeFailure ??
+        (installed && check === null && !this.installing ? unchecked : null),
     }
   }
 
@@ -346,6 +378,26 @@ export class Murmur implements Describer {
     return () => void this.usableListeners.delete(listener)
   }
 
+  watchCleared(listener: () => void): () => void {
+    this.clearedListeners.add(listener)
+    return () => void this.clearedListeners.delete(listener)
+  }
+
+  private cleared(): void {
+    for (const listener of this.clearedListeners) listener()
+  }
+
+  // What backing off and counting failures remembered is forgotten: after a passing check,
+  // and when the person turns murmur on.
+  private resetBackoff(): void {
+    this.failures = 0
+    this.engineStrikes = 0
+    this.refusedUntil = 0
+    this.refusals.clear()
+    this.cached = undefined
+    this.runtimeFailure = null
+  }
+
   private changed(): void {
     this.watchers.changed()
     const usable = this.usable()
@@ -376,6 +428,7 @@ export class Murmur implements Describer {
     const controller = new AbortController()
     this.updateFailedAt = undefined
     this.failure = null
+    this.runtimeFailure = null
     this.settings.saveMurmurCheck(null)
     // Installing it says the person wants it, whatever they chose before; an off from then
     // on, during the install too, still holds.
@@ -431,11 +484,15 @@ export class Murmur implements Describer {
   }
 
   private async removeAll(): Promise<void> {
+    // The titles it wrote are cleared when it ends, or when it fails after turning murmur off.
+    let turnedOff = false
+    let removed = false
     try {
       await this.cancel()
       // The runner may have closed while the install ended.
       this.assertOpen()
       // Off first: a removal that fails halfway must not leave murmur on.
+      turnedOff = this.settings.murmurSettings().enabled
       this.settings.saveMurmurSettings({ enabled: false })
       this.changed()
       // The program is in use until it has exited, which Windows will not delete.
@@ -452,9 +509,12 @@ export class Murmur implements Describer {
       }
       this.settings.saveMurmurCheck(null)
       this.failure = null
+      this.runtimeFailure = null
+      removed = true
     } finally {
       this.uninstalling = false
       this.changed()
+      if (!this.closed && (removed || turnedOff)) this.cleared()
     }
   }
 
@@ -463,11 +523,16 @@ export class Murmur implements Describer {
     await this.ready()
     this.assertOpen()
     if (this.uninstalling) throw new DomainError("CONFLICT", "Murmur is being removed.")
+    const wasOn = this.settings.murmurSettings().enabled
     // Turned on before any install, it is wanted, and the install that follows turns it on.
     if (change.enabled === true && !this.installed())
       this.settings.saveMurmurSettings({ ...change, enabled: null })
     else this.settings.saveMurmurSettings(change)
+    // A fresh start: what went wrong before is not held against it.
+    if (change.enabled !== undefined) this.resetBackoff()
     this.changed()
+    // Turned off by the person: the titles it wrote go.
+    if (change.enabled === false && wasOn) this.cleared()
   }
 
   /** Cancels an install and ends the engine, as the runner closes. */
@@ -490,7 +555,7 @@ export class Murmur implements Describer {
   }
 
   private modelPath(): string {
-    return join(this.directory, "models", basename(this.model.url))
+    return modelPathOf(this.directory, this.model)
   }
 
   private progress(install: MurmurInstall, force = false): void {
@@ -530,10 +595,17 @@ export class Murmur implements Describer {
         await this.refresh()
       }
       if (engineOnly) return
+      // No GPU is found before the model, 1.28 GB, is downloaded for nothing.
+      const folder = this.engineDir
+      if (folder === undefined) throw new EngineError("The murmur engine is missing.")
+      const devices = candidates(await this.listDevices(folder, signal))
+      signal.throwIfAborted()
+      if (devices.length === 0) throw new EngineError(needsGpu)
       await this.fetchModel(signal)
       this.progress({ step: "check", received: 0, total: 0 }, true)
-      const check = await this.measure(signal)
+      const check = await this.measure(signal, folder, devices)
       this.settings.saveMurmurCheck(check)
+      this.resetBackoff()
       // Checked, so on, unless the person turned it off themselves.
       this.settings.saveMurmurSettings({ enabled: this.settings.murmurEnabledChoice() !== false })
       await this.refresh()
@@ -555,39 +627,36 @@ export class Murmur implements Describer {
   private async fetchModel(signal: AbortSignal): Promise<void> {
     const total = this.model.size
     this.progress({ step: "model", received: 0, total }, true)
-    if (await exists(this.modelPath())) return
-    await download({
-      from: this.model.url,
-      to: this.modelPath(),
-      sha256: this.model.sha256,
-      size: this.model.size,
-      signal,
-      progress: (received) => this.progress({ step: "model", received, total }),
-    })
-    await this.refresh()
+    if (!(await exists(this.modelPath()))) {
+      await download({
+        from: this.model.url,
+        to: this.modelPath(),
+        sha256: this.model.sha256,
+        size: this.model.size,
+        signal,
+        progress: (received) => this.progress({ step: "model", received, total }),
+      })
+      await this.refresh()
+    }
+    // Models of an earlier pin, and downloads that never finished, are not kept.
+    await pruneModels(this.directory, [this.modelPath()])
   }
 
-  /** The devices this engine sees; empty when it can't list them or `signal` aborts. */
-  private listDevices(folder: string, signal: AbortSignal): Promise<Device[]> {
+  /**
+   * The devices this engine sees; empty when `signal` aborts or it lists none. A program that
+   * could not run, or failed, and lists none is an error that says why.
+   */
+  private async listDevices(folder: string, signal: AbortSignal): Promise<Device[]> {
     const program = join(folder, programFile("llama-server"))
-    const launch: Launch = this.options.launch ?? ((p, a) => ({ command: p, args: a }))
-    const launched = launch(program, ["--list-devices"])
-    return new Promise((resolve) => {
-      execFile(
-        launched.command,
-        [...launched.args],
-        {
-          // Not the engine's folder: Windows can't remove a folder a process works in.
-          cwd: tmpdir(),
-          timeout: 30_000,
-          windowsHide: true,
-          signal,
-          env: { ...process.env, ...launched.env },
-        },
-        (_error, stdout, stderr) =>
-          resolve(signal.aborted ? [] : parseDevices(`${stdout}\n${stderr}`)),
-      )
-    })
+    const run = await runEngineOnce(this.options.launch, program, ["--list-devices"], { signal })
+    if (signal.aborted) return []
+    const devices = parseDevices(`${run.stdout}\n${run.stderr}`)
+    if (devices.length === 0 && (run.failure !== undefined || run.code !== 0)) {
+      const last = run.stderr.split(/\r?\n/).findLast((text) => text.trim() !== "")
+      const why = last?.trim() ?? run.failure ?? `it exited with code ${run.code}`
+      throw new EngineError(`Murmur's engine could not list the GPUs: ${why.slice(0, 300)}`)
+    }
+    return devices
   }
 
   // A reply that is no usable title is no failure of the engine: that job gets no title.
@@ -602,10 +671,7 @@ export class Murmur implements Describer {
     const limit = AbortSignal.any([signal, AbortSignal.timeout(this.options.requestMs ?? 60_000)])
     const response = await server.request(running, "/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${running.facts.key}`,
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
         messages: chat,
         temperature: 0,
@@ -666,17 +732,21 @@ export class Murmur implements Describer {
   }
 
   /**
-   * Runs the check description on each GPU in order, integrated first, and keeps the first
-   * that gives a valid one. None is a failure that says murmur needs a working GPU.
+   * Runs the check description on each of `devices` in order, integrated first, and keeps
+   * the first that gives a valid one. None is a failure that says murmur needs a working
+   * GPU, and what the last device said. The test digest goes through the worker thread as
+   * every digest does, so a worker that can't run fails the install, not the first job.
    */
-  private async measure(signal: AbortSignal): Promise<MurmurCheck> {
-    const folder = this.engineDir
-    if (folder === undefined) throw new EngineError("The murmur engine is missing.")
-    const devices = candidates(await this.listDevices(folder, signal))
+  private async measure(
+    signal: AbortSignal,
+    folder: string,
+    devices: readonly Device[],
+  ): Promise<MurmurCheck> {
+    const chat = await this.preparer.prepare(checkDigest, signal)
     signal.throwIfAborted()
-    const needs = "Murmur needs a working GPU, and this computer has none it can use."
-    if (devices.length === 0) throw new EngineError(needs)
-    const chat = messages(checkDigest)
+    if (chat === undefined || typeof chat === "string")
+      throw new EngineError(workerFailure[chat ?? "stopped"])
+    let last: unknown
     for (const device of devices) {
       // Its own server, so a device that hangs or crashes ends with it.
       const server = this.makeServer(undefined)
@@ -699,16 +769,18 @@ export class Murmur implements Describer {
           integrated: device.kind === "igpu",
           milliseconds: Math.round(performance.now() - started),
         }
-      } catch {
+      } catch (error) {
         // Cancelling ends the check; any other failure is this device's, and the next is tried.
         signal.throwIfAborted()
+        last = error
       } finally {
         limit.removeEventListener("abort", stop)
         // eslint-disable-next-line no-await-in-loop -- One device at a time.
         await server.close()
       }
     }
-    throw new EngineError(`${needs} None of its GPUs described a test terminal.`)
+    const cause = last instanceof Error ? ` ${last.message}`.slice(0, 700) : ""
+    throw new EngineError(`${needsGpu} None of its GPUs described a test terminal.${cause}`)
   }
 
   // Waiting between jobs' looks at voice and memory: ends at once on a wake.
@@ -784,10 +856,18 @@ export class Murmur implements Describer {
     if (this.clock() < (this.refusals.get(key)?.until ?? 0)) return undefined
     // Redacted and written in a thread of its own, within a deadline.
     const chat = await this.preparer.prepare(digest, signal)
-    if (chat === undefined || chat === "late") {
-      // A digest that took too long, or a thread that would not start, is a failure of this
-      // job; one that was dropped or came as murmur closed is not.
-      if (!signal?.aborted && !this.closed) this.failed()
+    if (chat === undefined || typeof chat === "string") {
+      // A job that was dropped, or came as murmur closed or turned off, did not fail.
+      if (signal?.aborted || this.closed || !this.usable()) return undefined
+      // A digest that took too long, or made the thread fail, is this terminal's trouble
+      // (a screen that is slow to redact): only it is left alone, from the first time.
+      if (chat === "late" || chat === "failed") this.refused(key, true, true)
+      // A thread that would not start is everyone's: back off, and say so on the card.
+      if (chat === "unavailable") {
+        this.failed()
+        this.runtimeFailure = "Murmur's worker could not start."
+        this.changed()
+      }
       return undefined
     }
     const retryMs = this.options.retryMs ?? 15_000
@@ -797,8 +877,10 @@ export class Murmur implements Describer {
       // A terminal whose titles keep being refused is left alone for a while; the others aren't.
       if (this.clock() < (this.refusals.get(key)?.until ?? 0)) return undefined
       // Waits for voice to finish and for memory to come back, then looks again.
+      // Murmur's own model counts in the computer's free memory once loaded: only a cold
+      // start is held back by it.
       // eslint-disable-next-line no-await-in-loop -- One look at a time.
-      const low = await this.lowMemory(signal)
+      const low = this.server.facts === undefined && (await this.lowMemory(signal))
       // Dropped while memory was read: an aborted read says nothing, and nothing may run.
       if (signal?.aborted) return undefined
       if (this.options.voice?.busy() || low) {
@@ -828,13 +910,26 @@ export class Murmur implements Describer {
         // eslint-disable-next-line no-await-in-loop -- One job at a time.
         const description = await this.complete(config, this.server, chat, controller.signal)
         this.failures = 0
+        this.engineStrikes = 0
+        if (this.runtimeFailure !== null) {
+          this.runtimeFailure = null
+          this.changed()
+        }
         this.refused(key, description === undefined)
         return description ?? null
-      } catch {
+      } catch (error) {
         if (signal?.aborted || this.closed) return undefined
         // Stopped by voice, not by a failure: wait and run again.
         if (controller.signal.aborted) continue
         this.failed()
+        // Three in a row are shown on the card, though the check stands.
+        this.engineStrikes += 1
+        if (this.engineStrikes >= 3) {
+          this.runtimeFailure = (
+            error instanceof EngineError ? error.message : "Murmur's engine stopped answering."
+          ).slice(0, 1024)
+          this.changed()
+        }
         // An engine that failed, or stopped answering, starts afresh next time.
         void this.server.stop()
         return undefined
@@ -846,14 +941,18 @@ export class Murmur implements Describer {
   }
 
   // Counts the titles refused for a terminal in a row; from the second, like a failure, it is
-  // not asked again for a while, longer each time.
-  private refused(key: string, refused: boolean): void {
+  // not asked again for a while, longer each time. `severe` (its digest could not be
+  // prepared) holds it off from the first.
+  private refused(key: string, refused: boolean, severe = false): void {
     if (!refused) {
       this.refusals.delete(key)
       return
     }
     const count = (this.refusals.get(key)?.count ?? 0) + 1
-    const wait = count < 2 ? 0 : (this.options.backoffMs ?? 30_000) * 2 ** Math.min(count - 2, 4)
+    const wait =
+      count < 2 && !severe
+        ? 0
+        : (this.options.backoffMs ?? 30_000) * 2 ** Math.min(count - (severe ? 1 : 2), 4)
     this.refusals.delete(key)
     this.refusals.set(key, { count, until: this.clock() + wait })
     // Bounded: the longest-quiet terminals are forgotten first.
@@ -879,12 +978,19 @@ export class Murmur implements Describer {
     const model = this.modelPath()
     if (this.server.facts !== undefined && this.cached !== undefined)
       return { ...this.cached, folder, model }
-    const device = (await this.listDevices(folder, signal)).find(
-      (candidate) => candidate.name.slice(0, 256) === check.device,
-    )
+    const listed = await this.listDevices(folder, signal)
+    const device = listed.find((candidate) => candidate.name.slice(0, 256) === check.device)
     if (device === undefined) {
-      // The GPU is gone, or the engine can't list it: not asked again by every trigger.
-      if (!signal.aborted) this.failed()
+      if (signal.aborted) return undefined
+      if (listed.length > 0) {
+        // The engine lists GPUs, and not the one checked: that check no longer stands.
+        this.settings.saveMurmurCheck(null)
+        this.failure = "The GPU murmur was checked on is gone. Try again."
+        this.changed()
+      } else {
+        // The engine lists none: not asked again by every trigger.
+        this.failed()
+      }
       return undefined
     }
     // Metal's figure is this process's own working set, which says nothing of the computer's.

@@ -71,4 +71,9 @@ export type Describer = {
    * returns an unsubscribe.
    */
   watchUsable(listener: (usable: boolean) => void): () => void
+  /**
+   * Calls `listener` when the person turns murmur off or uninstalls it, so the titles it wrote
+   * are cleared; returns an unsubscribe.
+   */
+  watchCleared(listener: () => void): () => void
 }

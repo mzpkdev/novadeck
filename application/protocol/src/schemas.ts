@@ -661,8 +661,8 @@ export const voiceState = z.strictObject({
   failure: z.string().max(1024).nullable(),
 })
 
-// Murmur: a small model that runs on this machine's GPU and writes terminals' titles and
-// summaries, opt-in from Preferences like voice input. It has one engine and one model.
+// Murmur: a small model that runs on this machine's GPU and writes terminals' titles,
+// opt-in from Preferences like voice input. It has one engine and one model.
 
 // What an install is doing: downloading the engine or the model, or checking that they
 // describe, with the bytes received of the step's total.
@@ -696,8 +696,11 @@ export const murmurState = z.strictObject({
   // Null until a check passes. A machine with no working GPU stays null, and `failure`
   // says murmur needs one.
   check: murmurCheck.nullable(),
-  // Why the last install, or the engine's update, failed, until the next install, update
-  // or removal.
+  // Why murmur is not working, in words for the person: the last install or engine update
+  // that failed, until the next install, update or removal; the GPU it was checked on being
+  // gone (the check is then null, and Try again installs just the check); a worker that
+  // would not start; or the engine failing three jobs in a row (the check stands) until a job
+  // succeeds. Turning murmur on or off clears the last two.
   failure: z.string().max(1024).nullable(),
 })
 

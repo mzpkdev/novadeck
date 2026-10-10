@@ -86,9 +86,19 @@ export const spacelessCharacters = { min: 2, max: 16 }
 
 const tidy = (text: string): string => text.replace(/\s+/g, " ").trim()
 
+// Characters that show nothing or reorder what is shown: format characters (bidi overrides
+// and isolates, zero-width spaces and joiners, the soft hyphen) and the C1 controls. A title
+// is plain text, so they are dropped before anything looks at it.
+const invisible = /[\p{Cf}\u0080-\u009f]/gu
+
 // Markdown the model sometimes wraps its words in; a terminal title shows it literally.
 const plain = (text: string): string =>
-  tidy(text.replace(/[*_`#]+/g, " ").replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, ""))
+  tidy(
+    text
+      .replaceAll(invisible, "")
+      .replace(/[*_`#]+/g, " ")
+      .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, ""),
+  )
 
 // Murmur reads text that may hold a secret that redaction missed, and writes a title that is
 // shown on screen. A title with a token-like piece in it is refused whatever the input was.
@@ -233,7 +243,8 @@ export const parseDescription = (raw: string, source?: string): Description | un
   const shown = source === undefined ? undefined : fold(source)
   // A provider's key is looked for in the title as the model wrote it as well: tidying turns
   // `_` into a space. Nothing else is, since markdown around a code name is no part of it.
-  if (looksSecret(cleanTitle) || providerKeys.test(title)) return undefined
+  if (looksSecret(cleanTitle) || providerKeys.test(title.replaceAll(invisible, "")))
+    return undefined
   if (exampleTitles.some((example) => copies(cleanTitle, example, shown))) return undefined
   return { title: cleanTitle }
 }

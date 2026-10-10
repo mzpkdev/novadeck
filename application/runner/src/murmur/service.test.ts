@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises"
+import { readdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import type { MurmurState } from "@novadeck/protocol"
@@ -19,7 +19,7 @@ import {
 import type { Resources } from "../testing/resources.js"
 import { WorkspaceStore } from "../workspaces/store.js"
 import type { AgentDigest, Digest } from "./describer.js"
-import { Murmur } from "./service.js"
+import { Murmur, serverArguments } from "./service.js"
 
 const digest: AgentDigest = {
   kind: "agent",
@@ -99,11 +99,20 @@ const watchUntil = async (murmur: Murmur, done: (state: MurmurState) => boolean)
   return states
 }
 
+// The model file the fake llama-server runs from: named by the model's checksum, so found.
+const modelOf = async (directory: string): Promise<string> => {
+  const name = (await readdir(join(directory, "models"))).find((file) =>
+    file.endsWith("model.gguf"),
+  )
+  if (name === undefined) throw new Error("No model installed.")
+  return join(directory, "models", name)
+}
+
 // What the fake llama-server was sent, as the model file it ran from logged it.
 const requests = async (
   directory: string,
 ): Promise<{ messages: { role: string; content: string }[] }[]> =>
-  (await readFile(join(directory, "models", "model.gguf.requests"), "utf8"))
+  (await readFile(`${await modelOf(directory)}.requests`, "utf8"))
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line))
@@ -164,10 +173,13 @@ describe("installing murmur", () => {
     })
   })
 
-  it("fails in words when there is no GPU, keeping what it fetched", async ({ resources }) => {
-    const { murmur, store } = await installed(resources, { devices: [processor] })
+  it("fails in words when there is no GPU, before the model is downloaded", async ({
+    resources,
+  }) => {
+    const { murmur, store, directory } = await installed(resources, { devices: [processor] })
 
-    expect(murmur.state()).toMatchObject({ installed: true, check: null })
+    expect(murmur.state()).toMatchObject({ installed: false, check: null })
+    await expect(readdir(join(directory, "models"))).rejects.toThrow()
     expect(murmur.state().failure).toMatch(/needs a working GPU/)
     expect(store.murmurCheck()).toBeNull()
     await expect(murmur.describe(digest)).resolves.toBeUndefined()
@@ -207,8 +219,9 @@ describe("installing murmur", () => {
     resources.defer(() => store.close())
     const directory = await folder(resources)
     const manifest = await llamaArchive(resources)
+    // The model fetched, and no GPU describes with it.
     const first = await installed(resources, {
-      devices: [processor],
+      behaviour: "garbage",
       store,
       directory,
       engine: manifest,
@@ -234,8 +247,9 @@ describe("installed murmur that never passed its check", () => {
     resources.defer(() => store.close())
     const directory = await folder(resources)
     const manifest = await llamaArchive(resources)
+    // The model fetched, and no GPU describes with it.
     const first = await installed(resources, {
-      devices: [processor],
+      behaviour: "garbage",
       store,
       directory,
       engine: manifest,
@@ -246,7 +260,7 @@ describe("installed murmur that never passed its check", () => {
       store,
       directory,
       engine: manifest,
-      devices: [processor],
+      behaviour: "garbage",
     })
 
     // No failure of its own was kept, yet the card must offer Try again.
@@ -255,6 +269,8 @@ describe("installed murmur that never passed its check", () => {
     await murmur.install()
     await murmur.settled()
     expect(murmur.state().failure).toMatch(/needs a working GPU/)
+    // The last device's own words are kept.
+    expect(murmur.state().failure).toMatch(/no usable title/)
   })
 
   it("does not say so while an install runs, or before anything is installed", async ({
@@ -517,7 +533,7 @@ describe("an engine that stops answering", () => {
   }) => {
     let time = 1_000
     const context = await installed(resources, { requestMs: 300, now: () => time })
-    await writeFile(join(context.directory, "models", "model.gguf"), "hang")
+    await writeFile(await modelOf(context.directory), "hang")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
@@ -529,7 +545,7 @@ describe("an engine that stops answering", () => {
     expect(await hung).toBeUndefined()
     // Backing off now.
     expect(await context.murmur.describe(digest)).toBeUndefined()
-    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+    await writeFile(await modelOf(context.directory), "plain")
     time += 10_000
     expect(await context.murmur.describe(digest)).toBeDefined()
   })
@@ -538,14 +554,14 @@ describe("an engine that stops answering", () => {
 describe("a reply that is no title", () => {
   it("gives that job no title, without backing off", async ({ resources }) => {
     const context = await installed(resources, { now: () => 1_000 })
-    await writeFile(join(context.directory, "models", "model.gguf"), "garbage")
+    await writeFile(await modelOf(context.directory), "garbage")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
     // The model ran and its reply was refused: null, not undefined.
     expect(await context.murmur.describe(digest)).toBeNull()
 
-    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+    await writeFile(await modelOf(context.directory), "plain")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
     // The clock didn't move, so a back-off would still refuse.
@@ -553,16 +569,15 @@ describe("a reply that is no title", () => {
   })
 })
 
-const fix = async (context: { directory: string; murmur: Murmur }) => {
-  await writeFile(join(context.directory, "models", "model.gguf"), "plain")
-  await context.murmur.set({ enabled: false })
-  await context.murmur.set({ enabled: true })
+// The fake reads what its model file says at each request: mending it mends the running server.
+const fix = async (context: { directory: string }) => {
+  await writeFile(await modelOf(context.directory), "plain")
 }
 
 describe("titles that keep being refused", () => {
   const refuse = async (resources: Parameters<typeof setup>[0]) => {
     const context = await installed(resources, { now: () => 1_000 })
-    await writeFile(join(context.directory, "models", "model.gguf"), "garbage")
+    await writeFile(await modelOf(context.directory), "garbage")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
     return context
@@ -597,7 +612,7 @@ describe("a model that copies an example", () => {
   // The install check refuses a copy too, so the model starts copying after it.
   const copying = async (resources: Parameters<typeof setup>[0]) => {
     const context = await installed(resources)
-    await writeFile(join(context.directory, "models", "model.gguf"), "copy")
+    await writeFile(await modelOf(context.directory), "copy")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
     return context.murmur
@@ -621,7 +636,7 @@ describe("a model that copies an example", () => {
 describe("an engine that hangs while it loads", () => {
   it("drops the job after the start's time, and backs off", async ({ resources }) => {
     const context = await installed(resources, { startMs: 150, now: () => 1_000 })
-    await writeFile(join(context.directory, "models", "model.gguf"), "late")
+    await writeFile(await modelOf(context.directory), "late")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
@@ -648,13 +663,18 @@ describe("a digest that takes too long to redact", () => {
       let ticks = 0
       const timer = setInterval(() => (ticks += 1), 20)
 
-      const job = await context.murmur.describe({ ...digest, project: "hang" })
+      const job = await context.murmur.describe({ ...digest, project: "hang" }, { terminal: "a" })
       clearInterval(timer)
 
       expect(job).toBeUndefined()
       expect(ticks).toBeGreaterThan(8)
-      // A failure: the next job is refused for a while.
-      expect(await context.murmur.describe({ ...digest, project: "app" })).toBeUndefined()
+      // Only that terminal is held off; another still gets a title.
+      expect(
+        await context.murmur.describe({ ...digest, project: "app" }, { terminal: "b" }),
+      ).toBeDefined()
+      expect(
+        await context.murmur.describe({ ...digest, project: "hang" }, { terminal: "a" }),
+      ).toBeUndefined()
     },
   )
 })
@@ -783,7 +803,7 @@ describe("giving way", () => {
     let time = 1_000
     const context = await installed(resources, { now: () => time })
     // The model now crashes on the first job.
-    await writeFile(join(context.directory, "models", "model.gguf"), "crash")
+    await writeFile(await modelOf(context.directory), "crash")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
@@ -792,9 +812,7 @@ describe("giving way", () => {
     time += 10
     expect(await context.murmur.describe(digest)).toBeUndefined()
 
-    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
-    await context.murmur.set({ enabled: false })
-    await context.murmur.set({ enabled: true })
+    await writeFile(await modelOf(context.directory), "plain")
     expect(await context.murmur.describe(digest)).toBeUndefined()
     time += 10_000
     expect(await context.murmur.describe(digest)).toBeDefined()
@@ -857,5 +875,232 @@ describe("closing murmur", () => {
 
     await watching
     expect(states.length).toBeGreaterThan(0)
+  })
+})
+
+describe("the free-memory gate", () => {
+  it("does not count murmur's own loaded model against it", async ({ resources }) => {
+    let free = 16 * 1024 * 1024 * 1024
+    const { murmur } = await installed(resources, { freeMemory: () => free })
+    // Loaded now.
+    expect(await murmur.describe(digest)).toBeDefined()
+
+    // Its own model is what used the memory up.
+    free = 256 * 1024 * 1024
+
+    expect(await murmur.describe(digest)).toBeDefined()
+  })
+})
+
+describe("a GPU that is gone", () => {
+  it("drops the check and says so, when the engine lists others", async ({ resources }) => {
+    let devices: FakeDevice[] = [arc]
+    const context = await installed(resources, {
+      launch: (program, args) =>
+        fakeLaunch(args.includes("--list-devices") ? devices : [arc])(program, args),
+    })
+    devices = [nvidia]
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+
+    expect(context.store.murmurCheck()).toBeNull()
+    expect(context.murmur.state()).toMatchObject({ installed: true, check: null })
+    expect(context.murmur.state().failure).toMatch(/GPU murmur was checked on is gone.*Try again/)
+  })
+})
+
+describe("an engine that keeps failing", () => {
+  it("shows the third failure in a row, and clears it on the next success", async ({
+    resources,
+  }) => {
+    let time = 1_000
+    const context = await installed(resources, { now: () => time })
+    await writeFile(await modelOf(context.directory), "crash")
+    const job = async () => {
+      time += 1_000_000
+      return context.murmur.describe(digest)
+    }
+
+    await job()
+    await job()
+    expect(context.murmur.state().failure).toBeNull()
+    await job()
+
+    expect(context.murmur.state().failure).toMatch(/engine/i)
+    // The check stands: murmur is still on, and tries again.
+    expect(context.murmur.state()).toMatchObject({ enabled: true, check: { integrated: true } })
+    await writeFile(await modelOf(context.directory), "plain")
+    expect(await job()).toBeDefined()
+    expect(context.murmur.state().failure).toBeNull()
+  })
+})
+
+describe("what a failed install says", () => {
+  it("carries the engine's own words when it cannot list the GPUs", async ({ resources }) => {
+    const base = fakeLaunch([arc])
+    const { murmur } = await setup(resources, {
+      launch: (program, args) =>
+        args.includes("--list-devices")
+          ? {
+              command: process.execPath,
+              args: [
+                "-e",
+                "console.error('libvulkan.so.1: cannot open shared object'); process.exit(127)",
+              ],
+            }
+          : base(program, args),
+    })
+
+    await murmur.install()
+    await murmur.settled()
+
+    expect(murmur.state().failure).toMatch(/could not list the GPUs: libvulkan/)
+    expect(murmur.state().installed).toBe(false)
+  })
+
+  it("fails when the worker that prepares digests cannot start", async ({ resources }) => {
+    const { murmur } = await installed(resources, {
+      prepareScript: new URL("../testing/no-such-worker.mjs", import.meta.url),
+    })
+
+    expect(murmur.state().check).toBeNull()
+    expect(murmur.state().failure).toMatch(/worker could not start/)
+  })
+
+  it("says so on the card when the worker cannot start later", async ({ resources }) => {
+    const context = await installed(resources)
+    // Rebuilt around a script that is not there.
+    const broken = await setup(resources, {
+      store: context.store,
+      directory: context.directory,
+      engine: context.manifest as string,
+      prepareScript: new URL("../testing/no-such-worker.mjs", import.meta.url),
+    })
+
+    expect(await broken.murmur.describe(digest)).toBeUndefined()
+
+    expect(broken.murmur.state().failure).toMatch(/worker could not start/)
+  })
+})
+
+describe("backing off, and forgetting", () => {
+  it("is forgotten when the person turns murmur on", async ({ resources }) => {
+    const context = await installed(resources, { now: () => 1_000 })
+    await writeFile(await modelOf(context.directory), "crash")
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    // Backing off.
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    await writeFile(await modelOf(context.directory), "plain")
+
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    expect(await context.murmur.describe(digest)).toBeDefined()
+  })
+
+  it("does not count a job whose digest was stopped by murmur turning off", async ({
+    resources,
+  }) => {
+    const context = await installed(resources, {
+      now: () => 1_000,
+      prepareMs: 5000,
+      prepareScript: new URL("../testing/slow-worker.mjs", import.meta.url),
+    })
+    const job = context.murmur.describe({ ...digest, project: "hang" }, { terminal: "a" })
+    await sleep(200)
+    await context.murmur.set({ enabled: false })
+    expect(await job).toBeUndefined()
+
+    await context.murmur.set({ enabled: true })
+    // Nothing was held against the terminal or murmur.
+    expect(
+      await context.murmur.describe({ ...digest, project: "app" }, { terminal: "a" }),
+    ).toBeDefined()
+  })
+})
+
+describe("the model file", () => {
+  it("is named by its checksum, and others are removed after the install", async ({
+    resources,
+  }) => {
+    const { directory } = await setup(resources)
+    const { mkdir } = await import("node:fs/promises")
+    await mkdir(join(directory, "models"), { recursive: true })
+    await writeFile(join(directory, "models", "old-model.gguf"), "old")
+    await writeFile(join(directory, "models", "stale.gguf.part"), "partial")
+    const again = await installed(resources, { directory })
+
+    const files = await readdir(join(directory, "models"))
+
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatch(/^[0-9a-f]{12}-model\.gguf$/)
+    expect(again.murmur.state().installed).toBe(true)
+  })
+})
+
+describe("llama-server's arguments", () => {
+  // Changing these means bumping `engineInterface` in application/murmur/scripts/build.ts.
+  it("are pinned", () => {
+    expect(serverArguments("/m/model.gguf", "Vulkan0", 8080)).toEqual([
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "-m",
+      "/m/model.gguf",
+      "--device",
+      "Vulkan0",
+      "-ngl",
+      "999",
+      "-c",
+      "4096",
+      "-np",
+      "1",
+      "--reasoning",
+      "off",
+      "--exit-with-stdin",
+    ])
+  })
+})
+
+describe("clearing titles", () => {
+  it("tells when the person turns murmur off, once, and not on other ends", async ({
+    resources,
+  }) => {
+    const { murmur } = await installed(resources)
+    let cleared = 0
+    const unwatch = murmur.watchCleared(() => (cleared += 1))
+
+    await murmur.set({ enabled: false })
+    await murmur.set({ enabled: false })
+    expect(cleared).toBe(1)
+    await murmur.set({ enabled: true })
+    expect(cleared).toBe(1)
+    unwatch()
+    await murmur.set({ enabled: false })
+    expect(cleared).toBe(1)
+  })
+
+  it("tells when murmur is uninstalled, and not when the runner closes", async ({ resources }) => {
+    const { murmur } = await installed(resources)
+    let cleared = 0
+    murmur.watchCleared(() => (cleared += 1))
+
+    await murmur.uninstall()
+    expect(cleared).toBe(1)
+  })
+
+  it("is silent as the runner closes, and when a check fails", async ({ resources }) => {
+    const { murmur } = await setup(resources, { devices: [processor] })
+    let cleared = 0
+    murmur.watchCleared(() => (cleared += 1))
+
+    await murmur.install()
+    await murmur.settled()
+    await murmur.close()
+
+    expect(cleared).toBe(0)
   })
 })

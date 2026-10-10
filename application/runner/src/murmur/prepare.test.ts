@@ -153,3 +153,28 @@ describe("preparing a digest in a thread", () => {
     await preparer.close()
   })
 })
+
+describe("a pattern that backtracks without end", () => {
+  it("is ended by the deadline: late, and the thread exits within a second", async ({
+    resources,
+  }) => {
+    const preparer = new Preparer({
+      script: new URL("../testing/regex-worker.mjs", import.meta.url),
+      deadlineMs: 300,
+    })
+    resources.defer(() => preparer.close())
+    await preparer.prepare(digest("app"))
+    // The thread, to watch it end: a stuck regex cannot be interrupted from inside.
+    const worker = preparer["worker"]
+    expect(worker).toBeDefined()
+    const exited = new Promise<number>((resolve) => {
+      worker?.once("exit", () => resolve(performance.now()))
+    })
+
+    const result = await preparer.prepare(digest("regex"))
+    const late = performance.now()
+
+    expect(result).toBe("late")
+    expect((await exited) - late).toBeLessThan(1000)
+  })
+})

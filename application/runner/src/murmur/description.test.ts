@@ -17,6 +17,14 @@ describe("reading the model's title", () => {
     expect(parseDescription(reply('  "**Fix** the  build."  '))).toEqual({ title: "Fix the build" })
   })
 
+  it("drops invisible and reordering characters from a title", () => {
+    // A bidi override, an isolate, zero-width characters, a soft hyphen and a C1 control.
+    expect(title("Fix\u202E the\u2066 build\u2069\u202C")).toBe("Fix the build")
+    expect(title("Fix\u200B the\u200D bu\u00ADild\u0085 now")).toBe("Fix the build now")
+    // Hiding a key's middle with them does not get it past the guard.
+    expect(title("Rotate sk-\u200BAbC9dEf2GhI4jKl7 key")).toBeUndefined()
+  })
+
   it.each([
     "OK button styling",
     "Okay dialog copy",

@@ -7,7 +7,10 @@
 //   "copy"          answers with the first example title of the prompt, whatever it is asked
 //   "hang"          never answers a completion
 //   "garbage"       answers with something that isn't the JSON asked for
+//   "device"        puts the device it runs on in its title
 //   "log"           appends each request it is sent, as a line of JSON, to the model's file name + ".requests"
+// What the file says at the start steers loading ("fail", "late"); what it says at each
+// request steers the answer, so a test can mend or break a running server by rewriting it.
 // The real server lists devices before it has a model; here the test hands them over as
 // `--fake-devices <json>`, each { id, name, free, total, kind }.
 import { appendFileSync, readFileSync } from "node:fs"
@@ -28,6 +31,7 @@ if (has("--list-devices")) {
 }
 
 const behaviour = readFileSync(argument("-m"), "utf8")
+const current = () => readFileSync(argument("-m"), "utf8")
 const device = argument("--device")
 if (!devices.some((candidate) => candidate.id === device)) {
   console.error(`error: invalid device: ${device}`)
@@ -73,21 +77,22 @@ const server = createServer(async (request, response) => {
     return
   }
   const asked = await body(request)
-  if (behaviour.includes("crash")) {
+  const mode = current()
+  if (mode.includes("crash")) {
     console.error("GGML_ASSERT: out of memory")
     process.exit(3)
   }
-  if (behaviour.includes("hang")) await new Promise(() => {})
-  if (behaviour.includes("slow")) await new Promise((resolve) => setTimeout(resolve, 500))
+  if (mode.includes("hang")) await new Promise(() => {})
+  if (mode.includes("slow")) await new Promise((resolve) => setTimeout(resolve, 500))
   completions += 1
-  if (behaviour.includes("log"))
+  if (mode.includes("log"))
     appendFileSync(`${argument("-m")}.requests`, `${JSON.stringify(asked)}\n`)
-  const content = behaviour.includes("garbage")
+  const content = mode.includes("garbage")
     ? "Sure! Here is a title for your terminal."
     : JSON.stringify({
-        title: behaviour.includes("copy")
+        title: mode.includes("copy")
           ? "Rotating billing webhook keys"
-          : behaviour.includes("device")
+          : mode.includes("device")
             ? `Fake title on ${device}`
             : `Fake title ${completions}`,
       })

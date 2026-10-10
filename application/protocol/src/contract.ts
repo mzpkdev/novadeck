@@ -393,7 +393,7 @@ export const contract = {
     // Forgets a clip without transcribing it. An unknown clip is fine.
     discard: procedure.input(z.strictObject({ clipId: id })).output(z.void()),
   },
-  // Murmur, the local model that writes terminals' titles and summaries (see
+  // Murmur, the local model that writes terminals' titles (see
   // `murmurState`).
   murmur: {
     // The addon's state, then again on each change.
