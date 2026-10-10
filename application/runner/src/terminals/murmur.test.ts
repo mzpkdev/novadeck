@@ -1506,15 +1506,24 @@ describe("when the person turns murmur off or removes it", () => {
     vi.useRealTimers()
   })
 
-  it("clears the titles, drops what waited, and owes nothing when murmur returns", async () => {
-    const { murmur, describer, clears, subjects } = create({ work: work(), activity: idle("ok") })
+  it("clears the titles and drops what waited, then catches the terminal up once murmur returns", async () => {
+    const { murmur, describer, clears, subjects } = create({
+      work: work(),
+      activity: idle("ok"),
+      naming: { ...unnamed, murmur: { title: "Old title" } },
+    })
+    // A retitle for a new session waits out its quiet when murmur is cleared.
     murmur.reported("a", report({ session: true }))
-    // The request waits out its quiet when murmur is cleared.
     describer.clear()
     await settle(1_000)
     expect(clears.count).toBe(1)
     expect(describer.jobs).toHaveLength(0)
     expect(subjects.get("a")!.naming.murmur).toBeNull()
+    // Back on, it is titled afresh by catch-up, once, and nothing else was owed.
+    describer.setUsable(true)
+    await settle(1_000)
+    expect(describer.jobs).toHaveLength(1)
+    expect(subjects.get("a")!.naming.murmur).toEqual({ title: "Title 1" })
   })
 
   it("does not clear on close, a failed check or losing the GPU (only usability changes)", async () => {

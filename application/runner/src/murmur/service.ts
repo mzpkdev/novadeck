@@ -523,6 +523,11 @@ export class Murmur implements Describer {
     else this.settings.saveMurmurSettings(change)
     // A fresh start: what went wrong before is not held against it.
     if (change.enabled === true && !wasOn) this.resetBackoff()
+    // Turned off, what was shown of failing jobs goes; the backoff stays until it is turned on.
+    if (change.enabled === false && wasOn) {
+      this.runtimeFailure = null
+      this.engineStrikes = 0
+    }
     this.changed()
     // Turned off by the person: the titles it wrote go.
     if (change.enabled === false && wasOn) this.cleared()

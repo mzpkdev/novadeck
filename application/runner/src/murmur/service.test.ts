@@ -944,6 +944,24 @@ describe("an engine that keeps failing", () => {
   })
 })
 
+describe("an engine failure shown on the card", () => {
+  it("goes when the person turns murmur off", async ({ resources }) => {
+    let time = 1_000
+    const context = await installed(resources, { now: () => time })
+    await writeFile(await modelOf(context.directory), "crash")
+    for (let i = 0; i < 3; i += 1) {
+      time += 1_000_000
+      // eslint-disable-next-line no-await-in-loop -- One after another.
+      await context.murmur.describe(digest, { terminal: "t" })
+    }
+    expect(context.murmur.state().failure).toMatch(/engine/i)
+
+    await context.murmur.set({ enabled: false })
+
+    expect(context.murmur.state().failure).toBeNull()
+  })
+})
+
 describe("what a failed install says", () => {
   it("carries the engine's own words when it cannot list the GPUs", async ({ resources }) => {
     const base = fakeLaunch([arc])
@@ -1098,13 +1116,30 @@ describe("clearing titles", () => {
     expect(cleared).toBe(1)
   })
 
-  it("tells when murmur is uninstalled, and not when the runner closes", async ({ resources }) => {
+  it("tells when murmur is uninstalled", async ({ resources }) => {
     const { murmur } = await installed(resources)
     let cleared = 0
     murmur.watchCleared(() => (cleared += 1))
 
     await murmur.uninstall()
     expect(cleared).toBe(1)
+  })
+
+  it("does not tell when the runner closes, with murmur on or mid-uninstall", async ({
+    resources,
+  }) => {
+    const on = await installed(resources)
+    let cleared = 0
+    on.murmur.watchCleared(() => (cleared += 1))
+    await on.murmur.close()
+    expect(cleared).toBe(0)
+
+    const removing = await installed(resources)
+    removing.murmur.watchCleared(() => (cleared += 1))
+    const removal = removing.murmur.uninstall()
+    await removing.murmur.close()
+    await removal.catch(() => {})
+    expect(cleared).toBe(0)
   })
 
   it("fires once for an uninstall whose removal fails", async ({ resources }) => {
