@@ -473,6 +473,70 @@ describe("A pinned project", () => {
     await expect.element(pin("api-service")).toHaveTextContent("1api-service")
   })
 
+  context("reordered", () => {
+    const pinNames = () =>
+      pinsBar()
+        .getByRole("button")
+        .elements()
+        .map((button) => button.textContent)
+
+    it("by dragging a pin along the bar, which the switcher and the numbers follow", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      expect(pinNames()).toEqual(["1storefront", "2api-service", "3mobile-app"])
+
+      const first = pin("storefront")
+      const last = pin("mobile-app")
+      const from = first.element().getBoundingClientRect()
+      const to = last.element().getBoundingClientRect()
+      await userEvent.dragAndDrop(first, last, {
+        sourcePosition: { x: from.width / 2, y: from.height / 2 },
+        targetPosition: { x: to.width - 4, y: to.height / 2 },
+        steps: 12,
+      })
+      await expect.poll(pinNames).toEqual(["1api-service", "2mobile-app", "3storefront"])
+      await expect
+        .element(pin("storefront"))
+        .toHaveAttribute("aria-keyshortcuts", expect.stringMatching(/\+3 /))
+      // Still pinned, and the switcher lists them in that order.
+      await workspaceSwitcher().click()
+      const listed = page
+        .getByRole("dialog", { name: "Switch workspace" })
+        .getByRole("button", { name: /^(storefront|api-service|mobile-app)/ })
+        .elements()
+        .map((button) => button.querySelector("strong")?.textContent)
+      expect(listed.slice(0, 3)).toEqual(["api-service", "mobile-app", "storefront"])
+    })
+
+    it("only by a drag: a click still switches", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await pin("api-service").click()
+      await expect.element(pin("api-service")).toHaveAttribute("aria-current", "true")
+      expect(pinNames()).toEqual(["1storefront", "2api-service", "3mobile-app"])
+    })
+
+    it("by Alt and the arrows, with the focus kept, and never out of the bar", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      pin("storefront").element().focus()
+      await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+      await expect.poll(pinNames).toEqual(["1api-service", "2storefront", "3mobile-app"])
+      await expect.element(pin("storefront")).toHaveFocus()
+      await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+      await expect.poll(pinNames).toEqual(["1api-service", "2mobile-app", "3storefront"])
+      // The last one stays pinned.
+      await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+      expect(pinNames()).toEqual(["1api-service", "2mobile-app", "3storefront"])
+      await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}")
+      await expect.poll(pinNames).toEqual(["1api-service", "2storefront", "3mobile-app"])
+      await expect.element(pin("storefront")).toHaveFocus()
+    })
+  })
+
   it("hides the pins that don't fit, and the dot covers them again", async () => {
     // Seven pins in a narrow window: the last, docs-site, has no room, so the dot shows
     // its question instead of leaving it out.

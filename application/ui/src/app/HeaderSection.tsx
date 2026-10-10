@@ -110,6 +110,8 @@ export const HeaderSection = memo((): React.JSX.Element => {
         statuses={statuses}
         hidden={zen}
         onSelect={select}
+        onMove={moveProject}
+        onStep={stepProject}
         onShown={setShownPins}
       />
     </>

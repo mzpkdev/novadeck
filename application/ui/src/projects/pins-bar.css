@@ -13,7 +13,8 @@
    Hooks: on the strip, data-open="true" while a pin shows, and data-animated="true" once
    the page is up, from which it slides; on a pin, aria-current="true" for the current
    project, and data-project-status="question" | "attention" | "failed" | "done" (never
-   "running").
+   "running"); data-dragging="true" on the pin being dragged along the bar, which lifts
+   as a dragged row of the switcher does. The others slide aside.
 
    Tokens, each optional (its fallback in brackets):
    --pins-bar-bg (--region-header-bg, paper), --pins-bar-image (--region-header-image),
@@ -22,6 +23,8 @@
    --pin-fg (muted), --pin-hover-fg (ink): a pin's name at rest, and under the pointer or
    focus.
    --pin-number-fg (muted), --pin-current-number-fg (strong): its number.
+   --pin-drag-bg (--item-highlighted-bg, soft), --pin-drag-shadow (shadow-control): the pin
+   being dragged.
    --pins-bar-indicator-bg (--tabs-indicator-bg, strong),
    --pins-bar-indicator-shadow (--tabs-indicator-shadow, none): the current pin's line. */
 .pins-bar {
@@ -92,6 +95,11 @@
   .pin:not([aria-current="true"]):hover {
     --_fg: var(--pin-hover-fg, var(--color-ink));
   }
+}
+.pin[data-dragging="true"] {
+  z-index: 1;
+  background-color: var(--pin-drag-bg, var(--item-highlighted-bg, var(--color-soft)));
+  box-shadow: var(--pin-drag-shadow, var(--shadow-control));
 }
 @media (prefers-reduced-motion: reduce) {
   .pins-bar[data-animated="true"] {
