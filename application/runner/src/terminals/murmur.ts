@@ -1,4 +1,4 @@
-import { basename, isAbsolute, relative } from "node:path"
+import { basename, isAbsolute, relative, sep } from "node:path"
 
 import { terminalTitle, type AgentName, type ForegroundProcess } from "@novadeck/protocol"
 
@@ -119,7 +119,8 @@ const shownFolder = (folder: string, projectFolder: string | undefined): string 
   if (projectFolder !== undefined) {
     const inside = relative(projectFolder, folder)
     if (!inside) return "."
-    if (!inside.startsWith("..") && !isAbsolute(inside)) return inside
+    // Always "/"-separated: the model reads the same digest on every platform.
+    if (!inside.startsWith("..") && !isAbsolute(inside)) return inside.split(sep).join("/")
   }
   return placeName(folder)
 }

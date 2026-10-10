@@ -162,7 +162,16 @@ describe("an answer's hold of the person's input", () => {
       { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
       "creator",
     )
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Until the screen shows the mouse asked for, which a slow machine's child takes a while
+    // to start and answer; a fixed wait let the report through before that.
+    const reporting = (
+      manager as unknown as {
+        records: Map<string, { screen: { modes: { mouseTrackingMode: string } } }>
+      }
+    ).records.get(terminal.id)!
+    await vi.waitFor(() => expect(reporting.screen.modes.mouseTrackingMode).toBe("any"), {
+      timeout: 10_000,
+    })
     const hold = (
       manager as unknown as {
         holdInput: (
