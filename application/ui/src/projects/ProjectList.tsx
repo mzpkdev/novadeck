@@ -79,6 +79,8 @@ export const ProjectList = ({
   const pinDrop = useContext(PinDropContext)
   // The drag left the list and went to the pins bar.
   const handedOff = useRef(false)
+  // The row whose drag went to the pins bar, unseen in the list as it closes.
+  const [gone, setGone] = useState<string | null>(null)
   // Where the rows began on screen as the drag started, before they made room for it.
   const rowsTop = useRef<number | null>(null)
   // A row that can reach the pins bar leaves the list; otherwise it stays in it.
@@ -122,6 +124,7 @@ export const ProjectList = ({
           if (!source) return
           const id = String(source.id)
           handedOff.current = false
+          setGone(null)
           rowsTop.current =
             list?.querySelector(".workspace-switcher-row")?.getBoundingClientRect().top ?? null
           pinDrop?.start(id, pinAvailable || pinned.some((project) => project.id === id))
@@ -142,8 +145,11 @@ export const ProjectList = ({
             point.y > menu.bottom + leeway
           if (!away || !pinDrop.handOff(point)) return
           handedOff.current = true
-          // The bar's pin takes over as what's dragged; the row's ghost goes at once.
-          const row = event.operation.source?.element
+          // The bar's pin takes over as what's dragged; the row's ghost goes at once, and the
+          // row stays unseen in the list as it closes.
+          const { source } = event.operation
+          if (source) setGone(String(source.id))
+          const row = source?.element
           if (row instanceof HTMLElement) row.style.visibility = "hidden"
           queueMicrotask(() => manager.actions.stop({ canceled: true }))
         }}
@@ -181,6 +187,7 @@ export const ProjectList = ({
               status={statuses[project.id]}
               pinned={index < pinned.length}
               pinBlocked={!pinAvailable}
+              away={project.id === gone}
               removable={removable}
               focusRequest={focusRequest}
               onFocused={() => setFocusRequest(null)}
