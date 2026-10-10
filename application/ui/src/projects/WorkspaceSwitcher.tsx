@@ -51,6 +51,8 @@ export const WorkspaceSwitcher = ({
   const removable = Boolean(onRemove) && projects.length > 1
   // What another project has waiting on the person, marked on the button.
   const elsewhere = elsewhereStatus(statuses, current.id, dotIgnores)
+  // The other projects, whose names the button is sized to as well.
+  const others = projects.filter(({ id }) => id !== current.id)
   return (
     <div className="workspace-switcher relative min-w-0 w-fit max-w-[200px] flex-[0_1_auto] max-[700px]:max-w-[130px]">
       <Popover
@@ -72,7 +74,20 @@ export const WorkspaceSwitcher = ({
               <span aria-hidden="true" className="project-status-dot workspace-switcher-dot" />
             )}
             <Folder aria-hidden="true" className="shrink-0" size={14} strokeWidth={1.55} />
-            <span className="min-w-0 flex-1 truncate">{current.name}</span>
+            {/* The other names sit unseen in the same cell, drawn from CSS so they stay out of
+                the button's text, so it takes the longest one's width and the pinned chips
+                after it stay put on a switch. */}
+            <span className="grid min-w-0 flex-1">
+              <span className="col-start-1 row-start-1 truncate">{current.name}</span>
+              {others.map((project) => (
+                <span
+                  key={project.id}
+                  aria-hidden="true"
+                  data-name={project.name}
+                  className="invisible col-start-1 row-start-1 truncate before:content-[attr(data-name)]"
+                />
+              ))}
+            </span>
             <ChevronDown aria-hidden="true" className="shrink-0" size={14} strokeWidth={1.75} />
           </button>
         }
