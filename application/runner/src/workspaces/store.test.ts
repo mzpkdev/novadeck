@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -39,6 +40,10 @@ const it = base.extend<{
     })
   },
 })
+
+// Whether a file holds the secret a test's transcript carried.
+const saved = (file: string) =>
+  existsSync(file) && readFileSync(file).includes("SECRET_TRANSCRIPT_TEXT")
 
 describe("workspace metadata", () => {
   it("persists project and session identities, renames, and order across database reopen", async ({
@@ -424,9 +429,51 @@ describe("saved terminals", () => {
       work: null,
     }
     workspace.saveTerminal({ ...terminal, transcript: "SECRET_TRANSCRIPT_TEXT" })
+    // Neither in the database nor in its write-ahead log, while it is open and once closed.
+    for (const forget of [
+      () => workspace.clearTranscripts(),
+      () => workspace.removeTerminal(terminal.id),
+    ]) {
+      forget()
+      expect(saved(path)).toBe(false)
+      expect(saved(`${path}-wal`)).toBe(false)
+      workspace.saveTerminal({ ...terminal, transcript: "SECRET_TRANSCRIPT_TEXT" })
+    }
     workspace.clearTranscripts()
     workspace.close()
-    expect(readFileSync(path).includes("SECRET_TRANSCRIPT_TEXT")).toBe(false)
+    expect(saved(path)).toBe(false)
+    expect(saved(`${path}-wal`)).toBe(false)
+  })
+
+  it("write through a log as private as the database, so a save never flushes the disk", ({
+    directory,
+    store,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const workspace = store(path)
+    workspace.saveTerminal({
+      id: randomUUID(),
+      sessionId: "s",
+      cwd: "/",
+      agents: {},
+      promptedAt: null,
+      handle: "t1",
+      naming: { person: null, agent: null, summary: null },
+      openedBy: null,
+      ledBy: null,
+      command: null,
+      lastProgram: null,
+      work: null,
+    })
+    const database = new DatabaseSync(path, { readOnly: true })
+    try {
+      expect(database.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "wal" })
+    } finally {
+      database.close()
+    }
+    if (process.platform !== "win32")
+      for (const file of [`${path}-wal`, `${path}-shm`])
+        expect(statSync(file).mode & 0o777).toBe(0o600)
   })
 
   it("keep every terminal until it is closed, listed by session in the order they came", ({
