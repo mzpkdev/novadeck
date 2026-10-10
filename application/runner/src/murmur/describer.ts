@@ -64,7 +64,7 @@ export type Describer = {
    */
   describe(
     digest: Digest,
-    options?: { readonly signal?: AbortSignal; readonly terminal?: string },
+    options: { readonly signal?: AbortSignal; readonly terminal: string },
   ): Promise<Description | null | undefined>
   /**
    * Calls `listener` at once with whether murmur is usable now, then whenever that changes;

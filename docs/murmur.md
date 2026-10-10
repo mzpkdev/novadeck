@@ -89,7 +89,7 @@ needs a working GPU, without the 1.28 GB download. When candidates all fail the 
 failure keeps the last device's own words. If the engine can't list devices at all, the failure
 says what it printed last.
 
-If a later launch finds the engine lists GPUs but not the checked one, the check is dropped and
+If a later launch finds the engine doesn't list the checked GPU (it may list none), the check is dropped and
 the card shows "The GPU murmur was checked on is gone. Try again."
 
 ## The card's state
@@ -99,7 +99,7 @@ Installed with no passed check (a cancelled check, or a restart after a failed o
 again runs just the check. `failure` is also set for a failed install or engine update, and
 clears on the next one. While murmur runs it is set when the worker thread won't start or after
 three engine failures in a row (a crash or no answer in time), and clears on the next job that
-succeeds or when murmur is turned on or off. The check is kept in those cases.
+succeeds or when murmur is turned on. The check is kept in those cases.
 
 ## Being polite
 

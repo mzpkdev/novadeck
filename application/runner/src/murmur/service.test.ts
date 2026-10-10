@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises"
+import { chmod, readdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import type { MurmurState } from "@novadeck/protocol"
@@ -126,7 +126,7 @@ describe("murmur without an engine", () => {
     expect(murmur.state()).toMatchObject({ available: false, installed: false, enabled: false })
     expect(murmur.state().sizes.engine).toBe(0)
     await expect(murmur.install()).rejects.toMatchObject({ code: "CONFLICT" })
-    await expect(murmur.describe(digest)).resolves.toBeUndefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeUndefined()
   })
 })
 
@@ -168,7 +168,7 @@ describe("installing murmur", () => {
       failure: null,
       check: { device: nvidia.name, integrated: false },
     })
-    await expect(murmur.describe(digest)).resolves.toMatchObject({
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toMatchObject({
       title: "Fake title on Vulkan1",
     })
   })
@@ -182,7 +182,7 @@ describe("installing murmur", () => {
     await expect(readdir(join(directory, "models"))).rejects.toThrow()
     expect(murmur.state().failure).toMatch(/needs a working GPU/)
     expect(store.murmurCheck()).toBeNull()
-    await expect(murmur.describe(digest)).resolves.toBeUndefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeUndefined()
   })
 
   it("fails the same when every GPU fails", async ({ resources }) => {
@@ -316,9 +316,9 @@ describe("murmur's settings", () => {
 
     await murmur.set({ enabled: false })
     expect(murmur.state().enabled).toBe(false)
-    await expect(murmur.describe(digest)).resolves.toBeUndefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeUndefined()
     await murmur.set({ enabled: true })
-    await expect(murmur.describe(digest)).resolves.toBeDefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeDefined()
   })
 
   it("survives the runner, with what is installed", async ({ resources }) => {
@@ -336,7 +336,7 @@ describe("murmur's settings", () => {
       enabled: true,
       check: { integrated: true },
     })
-    await expect(murmur.describe(digest)).resolves.toBeDefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeDefined()
   })
 
   it("tells those who watch usability when it changes", async ({ resources }) => {
@@ -367,7 +367,7 @@ describe("uninstalling murmur", () => {
       check: null,
     })
     expect(store.murmurCheck()).toBeNull()
-    await expect(murmur.describe(digest)).resolves.toBeUndefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeUndefined()
     await expect(import("node:fs/promises").then((fs) => fs.readdir(directory))).resolves.toEqual(
       [],
     )
@@ -394,7 +394,7 @@ describe("murmur after the app brings a new engine", () => {
 
     expect(states.some((state) => state.installing?.step === "engine")).toBe(true)
     expect(next.murmur.state()).toMatchObject({ enabled: true, check: { integrated: true } })
-    await expect(next.murmur.describe(digest)).resolves.toBeDefined()
+    await expect(next.murmur.describe(digest, { terminal: "t" })).resolves.toBeDefined()
   })
 })
 
@@ -410,7 +410,7 @@ describe("murmur after the app brings a new engine, while it is fetched", () => 
       return base(program, args)
     }
     const first = await installed(resources, { store, directory, launch })
-    await first.murmur.describe(digest)
+    await first.murmur.describe(digest, { terminal: "t" })
     const old = programs.at(-1) ?? ""
     await first.murmur.close()
 
@@ -426,7 +426,7 @@ describe("murmur after the app brings a new engine, while it is fetched", () => 
     await next.murmur.refresh()
     await next.murmur.settled()
     programs.length = 0
-    await next.murmur.describe(digest)
+    await next.murmur.describe(digest, { terminal: "t" })
 
     expect(programs).toHaveLength(1)
     expect(programs[0]).not.toBe(old)
@@ -441,7 +441,7 @@ describe("describing", () => {
   }) => {
     const { murmur, directory } = await installed(resources, { behaviour: "log device" })
 
-    const description = await murmur.describe(digest)
+    const description = await murmur.describe(digest, { terminal: "t" })
 
     expect(description).toMatchObject({ title: "Fake title on Vulkan0" })
     const asked = (await requests(directory)).at(-1)
@@ -464,7 +464,7 @@ describe("describing", () => {
       previous: { title: "Tailing log" },
     }
 
-    await murmur.describe(shell)
+    await murmur.describe(shell, { terminal: "t" })
 
     const text = (await requests(directory)).at(-1)?.messages[1]?.content ?? ""
     expect(text).toContain("tail -f app.log")
@@ -475,7 +475,10 @@ describe("describing", () => {
   it("does one job at a time", async ({ resources }) => {
     const { murmur } = await installed(resources, { behaviour: "slow" })
 
-    const [first, second] = await Promise.all([murmur.describe(digest), murmur.describe(digest)])
+    const [first, second] = await Promise.all([
+      murmur.describe(digest, { terminal: "t" }),
+      murmur.describe(digest, { terminal: "t" }),
+    ])
 
     expect(first?.title).toBe("Fake title 1")
     expect(second?.title).toBe("Fake title 2")
@@ -485,11 +488,11 @@ describe("describing", () => {
     const { murmur } = await installed(resources, { behaviour: "slow" })
     const early = new AbortController()
     early.abort()
-    expect(await murmur.describe(digest, { signal: early.signal })).toBeUndefined()
+    expect(await murmur.describe(digest, { terminal: "t", signal: early.signal })).toBeUndefined()
 
-    const running = murmur.describe(digest)
+    const running = murmur.describe(digest, { terminal: "t" })
     const waiting = new AbortController()
-    const queued = murmur.describe(digest, { signal: waiting.signal })
+    const queued = murmur.describe(digest, { terminal: "t", signal: waiting.signal })
     waiting.abort()
 
     expect(await queued).toBeUndefined()
@@ -500,30 +503,30 @@ describe("describing", () => {
     const { murmur } = await installed(resources, { behaviour: "slow" })
     const controller = new AbortController()
 
-    const job = murmur.describe(digest, { signal: controller.signal })
+    const job = murmur.describe(digest, { terminal: "t", signal: controller.signal })
     await sleep(100)
     controller.abort()
 
     expect(await job).toBeUndefined()
-    await expect(murmur.describe(digest)).resolves.toBeDefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeDefined()
   })
 
   it("unloads the model when idle and loads it again for the next job", async ({ resources }) => {
     const { murmur } = await installed(resources, { idleMs: 100 })
 
-    expect((await murmur.describe(digest))?.title).toBe("Fake title 1")
+    expect((await murmur.describe(digest, { terminal: "t" }))?.title).toBe("Fake title 1")
     await sleep(400)
 
     // A new server counts from one again.
-    expect((await murmur.describe(digest))?.title).toBe("Fake title 1")
+    expect((await murmur.describe(digest, { terminal: "t" }))?.title).toBe("Fake title 1")
   })
 
   it("keeps the model loaded while jobs come", async ({ resources }) => {
     const { murmur } = await installed(resources, { idleMs: 1000 })
 
-    await murmur.describe(digest)
+    await murmur.describe(digest, { terminal: "t" })
 
-    expect((await murmur.describe(digest))?.title).toBe("Fake title 2")
+    expect((await murmur.describe(digest, { terminal: "t" }))?.title).toBe("Fake title 2")
   })
 })
 
@@ -537,17 +540,20 @@ describe("an engine that stops answering", () => {
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
-    const hung = context.murmur.describe(digest)
+    const hung = context.murmur.describe(digest, { terminal: "t" })
     // Another terminal's job, dropped by its own signal, leaves the line at once.
-    const other = context.murmur.describe(digest, { signal: AbortSignal.timeout(100) })
+    const other = context.murmur.describe(digest, {
+      terminal: "t",
+      signal: AbortSignal.timeout(100),
+    })
 
     expect(await other).toBeUndefined()
     expect(await hung).toBeUndefined()
     // Backing off now.
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
     await writeFile(await modelOf(context.directory), "plain")
     time += 10_000
-    expect(await context.murmur.describe(digest)).toBeDefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeDefined()
   })
 })
 
@@ -559,13 +565,13 @@ describe("a reply that is no title", () => {
     await context.murmur.set({ enabled: true })
 
     // The model ran and its reply was refused: null, not undefined.
-    expect(await context.murmur.describe(digest)).toBeNull()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeNull()
 
     await writeFile(await modelOf(context.directory), "plain")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
     // The clock didn't move, so a back-off would still refuse.
-    expect(await context.murmur.describe(digest)).toBeDefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeDefined()
   })
 })
 
@@ -595,17 +601,6 @@ describe("titles that keep being refused", () => {
     expect(await context.murmur.describe(digest, { terminal: "b" })).toBeDefined()
     expect(await context.murmur.describe(digest, { terminal: "b" })).not.toBeNull()
   })
-
-  it("counts a digest's shape when no terminal is named", async ({ resources }) => {
-    const context = await refuse(resources)
-
-    await context.murmur.describe(digest)
-    await context.murmur.describe(digest)
-    await fix(context)
-
-    expect(await context.murmur.describe(digest)).toBeUndefined()
-    expect(await context.murmur.describe({ ...digest, project: "other" })).toBeDefined()
-  })
 })
 
 describe("a model that copies an example", () => {
@@ -621,14 +616,17 @@ describe("a model that copies an example", () => {
   it("is refused, as the digest says nothing of it", async ({ resources }) => {
     const murmur = await copying(resources)
 
-    expect(await murmur.describe(digest)).toBeNull()
+    expect(await murmur.describe(digest, { terminal: "t" })).toBeNull()
   })
 
   it("is not, when the digest is about that work", async ({ resources }) => {
     const murmur = await copying(resources)
 
     expect(
-      await murmur.describe({ ...digest, prompts: ["rotating billing webhook keys, please"] }),
+      await murmur.describe(
+        { ...digest, prompts: ["rotating billing webhook keys, please"] },
+        { terminal: "t" },
+      ),
     ).toEqual({ title: "Rotating billing webhook keys" })
   })
 })
@@ -642,9 +640,9 @@ describe("an engine that hangs while it loads", () => {
 
     const started = Date.now()
 
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
     expect(Date.now() - started).toBeLessThan(2000)
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
   })
 })
 
@@ -696,12 +694,19 @@ describe("a GPU that went missing", () => {
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
     listings = 0
+    let cleared = 0
+    context.murmur.watchCleared(() => (cleared += 1))
 
-    expect(await context.murmur.describe(digest)).toBeUndefined()
-    expect(await context.murmur.describe(digest)).toBeUndefined()
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
 
     expect(listings).toBe(1)
+    // A clean listing without the checked GPU: the check is dropped, and says why.
+    expect(context.store.murmurCheck()).toBeNull()
+    expect(context.murmur.state().failure).toMatch(/is gone/)
+    // Losing the GPU is not the person turning murmur off: no titles are cleared.
+    expect(cleared).toBe(0)
   })
 })
 
@@ -724,7 +729,9 @@ describe("a job dropped while memory is read", () => {
     })
     launched.length = 0
 
-    expect(await context.murmur.describe(digest, { signal: controller.signal })).toBeUndefined()
+    expect(
+      await context.murmur.describe(digest, { terminal: "t", signal: controller.signal }),
+    ).toBeUndefined()
 
     expect(launched).toEqual([])
   })
@@ -737,7 +744,7 @@ describe("giving way", () => {
     const { murmur } = await installed(resources, { voice: tracker })
     let done = false
 
-    const job = murmur.describe(digest).then((value) => {
+    const job = murmur.describe(digest, { terminal: "t" }).then((value) => {
       done = true
       return value
     })
@@ -757,7 +764,7 @@ describe("giving way", () => {
     const { murmur } = await installed(resources, { voice: tracker, behaviour: "slow device" })
     let done = false
 
-    const job = murmur.describe(digest).then((value) => {
+    const job = murmur.describe(digest, { terminal: "t" }).then((value) => {
       done = true
       return value
     })
@@ -777,7 +784,7 @@ describe("giving way", () => {
     const { murmur } = await installed(resources, { freeMemory: () => free })
     let done = false
 
-    const job = murmur.describe(digest).then((value) => {
+    const job = murmur.describe(digest, { terminal: "t" }).then((value) => {
       done = true
       return value
     })
@@ -792,7 +799,7 @@ describe("giving way", () => {
     const { murmur } = await installed(resources, { freeMemory: () => 0 })
     const controller = new AbortController()
 
-    const job = murmur.describe(digest, { signal: controller.signal })
+    const job = murmur.describe(digest, { terminal: "t", signal: controller.signal })
     await sleep(60)
     controller.abort()
 
@@ -807,15 +814,15 @@ describe("giving way", () => {
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
     // Refused at once, while backing off.
     time += 10
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
 
     await writeFile(await modelOf(context.directory), "plain")
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
     time += 10_000
-    expect(await context.murmur.describe(digest)).toBeDefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeDefined()
   })
 })
 
@@ -860,7 +867,7 @@ describe("closing murmur", () => {
     await murmur.close()
 
     await expect(murmur.install()).rejects.toMatchObject({ code: "RUNTIME_CLOSING" })
-    await expect(murmur.describe(digest)).resolves.toBeUndefined()
+    await expect(murmur.describe(digest, { terminal: "t" })).resolves.toBeUndefined()
   })
 
   it("ends a watch when its owner is released", async ({ resources }) => {
@@ -883,12 +890,12 @@ describe("the free-memory gate", () => {
     let free = 16 * 1024 * 1024 * 1024
     const { murmur } = await installed(resources, { freeMemory: () => free })
     // Loaded now.
-    expect(await murmur.describe(digest)).toBeDefined()
+    expect(await murmur.describe(digest, { terminal: "t" })).toBeDefined()
 
     // Its own model is what used the memory up.
     free = 256 * 1024 * 1024
 
-    expect(await murmur.describe(digest)).toBeDefined()
+    expect(await murmur.describe(digest, { terminal: "t" })).toBeDefined()
   })
 })
 
@@ -903,7 +910,7 @@ describe("a GPU that is gone", () => {
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
 
     expect(context.store.murmurCheck()).toBeNull()
     expect(context.murmur.state()).toMatchObject({ installed: true, check: null })
@@ -920,7 +927,7 @@ describe("an engine that keeps failing", () => {
     await writeFile(await modelOf(context.directory), "crash")
     const job = async () => {
       time += 1_000_000
-      return context.murmur.describe(digest)
+      return context.murmur.describe(digest, { terminal: "t" })
     }
 
     await job()
@@ -979,7 +986,7 @@ describe("what a failed install says", () => {
       prepareScript: new URL("../testing/no-such-worker.mjs", import.meta.url),
     })
 
-    expect(await broken.murmur.describe(digest)).toBeUndefined()
+    expect(await broken.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
 
     expect(broken.murmur.state().failure).toMatch(/worker could not start/)
   })
@@ -989,15 +996,15 @@ describe("backing off, and forgetting", () => {
   it("is forgotten when the person turns murmur on", async ({ resources }) => {
     const context = await installed(resources, { now: () => 1_000 })
     await writeFile(await modelOf(context.directory), "crash")
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
     // Backing off.
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeUndefined()
     await writeFile(await modelOf(context.directory), "plain")
 
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
-    expect(await context.murmur.describe(digest)).toBeDefined()
+    expect(await context.murmur.describe(digest, { terminal: "t" })).toBeDefined()
   })
 
   it("does not count a job whose digest was stopped by murmur turning off", async ({
@@ -1013,8 +1020,16 @@ describe("backing off, and forgetting", () => {
     await context.murmur.set({ enabled: false })
     expect(await job).toBeUndefined()
 
+    // Nothing was counted against the terminal or murmur (before turning it on forgets).
+    const counted = context.murmur as unknown as {
+      refusals: Map<string, unknown>
+      refusedUntil: number
+      failures: number
+    }
+    expect(counted.refusals.size).toBe(0)
+    expect(counted.refusedUntil).toBe(0)
+    expect(counted.failures).toBe(0)
     await context.murmur.set({ enabled: true })
-    // Nothing was held against the terminal or murmur.
     expect(
       await context.murmur.describe({ ...digest, project: "app" }, { terminal: "a" }),
     ).toBeDefined()
@@ -1089,6 +1104,24 @@ describe("clearing titles", () => {
     murmur.watchCleared(() => (cleared += 1))
 
     await murmur.uninstall()
+    expect(cleared).toBe(1)
+  })
+
+  it("fires once for an uninstall whose removal fails", async ({ resources }) => {
+    // A folder that cannot be written to keeps its files from being removed.
+    if (process.platform === "win32" || process.getuid?.() === 0) return
+    const { murmur, directory } = await installed(resources)
+    let cleared = 0
+    murmur.watchCleared(() => (cleared += 1))
+    const models = join(directory, "models")
+    await chmod(models, 0o555)
+    try {
+      await expect(murmur.uninstall()).rejects.toMatchObject({ code: "CONFLICT" })
+    } finally {
+      await chmod(models, 0o755)
+    }
+
+    // Murmur was turned off by it, so the titles go, once.
     expect(cleared).toBe(1)
   })
 

@@ -173,13 +173,6 @@ const readVmStat = (signal: AbortSignal | undefined): Promise<number> =>
     )
   })
 
-// What a digest is, as far as telling one terminal's from another's: for keeping count of
-// the titles refused for it.
-const digestKey = (digest: Digest): string =>
-  digest.kind === "agent"
-    ? JSON.stringify(["agent", digest.project, digest.folder, digest.branch, digest.prompts.at(0)])
-    : JSON.stringify(["shell", digest.project, digest.folder, digest.command])
-
 // Shown, with Try again, when murmur is installed but no check passed: a check that was
 // cancelled, or a runner that restarted after one failed.
 const unchecked =
@@ -529,7 +522,7 @@ export class Murmur implements Describer {
       this.settings.saveMurmurSettings({ ...change, enabled: null })
     else this.settings.saveMurmurSettings(change)
     // A fresh start: what went wrong before is not held against it.
-    if (change.enabled !== undefined) this.resetBackoff()
+    if (change.enabled === true && !wasOn) this.resetBackoff()
     this.changed()
     // Turned off by the person: the titles it wrote go.
     if (change.enabled === false && wasOn) this.cleared()
@@ -805,7 +798,7 @@ export class Murmur implements Describer {
 
   async describe(
     digest: Digest,
-    options: { readonly signal?: AbortSignal; readonly terminal?: string } = {},
+    options: { readonly signal?: AbortSignal; readonly terminal: string },
   ): Promise<Description | null | undefined> {
     const { signal } = options
     if (signal?.aborted || !this.usable()) return undefined
@@ -847,10 +840,10 @@ export class Murmur implements Describer {
   private async job(
     digest: Digest,
     signal: AbortSignal | undefined,
-    terminal: string | undefined,
+    terminal: string,
   ): Promise<Description | null | undefined> {
-    // Refusals are counted for the terminal asking; without a name, for its digest's shape.
-    const key = terminal === undefined ? digestKey(digest) : JSON.stringify(["terminal", terminal])
+    // Refusals are counted for the terminal asking.
+    const key = JSON.stringify(["terminal", terminal])
     // A job that will be refused spends no time of the thread's.
     if (this.clock() < this.refusedUntil) return undefined
     if (this.clock() < (this.refusals.get(key)?.until ?? 0)) return undefined
@@ -982,15 +975,11 @@ export class Murmur implements Describer {
     const device = listed.find((candidate) => candidate.name.slice(0, 256) === check.device)
     if (device === undefined) {
       if (signal.aborted) return undefined
-      if (listed.length > 0) {
-        // The engine lists GPUs, and not the one checked: that check no longer stands.
-        this.settings.saveMurmurCheck(null)
-        this.failure = "The GPU murmur was checked on is gone. Try again."
-        this.changed()
-      } else {
-        // The engine lists none: not asked again by every trigger.
-        this.failed()
-      }
+      // The engine ran and lists no such GPU (a failure to list throws instead): that
+      // check no longer stands.
+      this.settings.saveMurmurCheck(null)
+      this.failure = "The GPU murmur was checked on is gone. Try again."
+      this.changed()
       return undefined
     }
     // Metal's figure is this process's own working set, which says nothing of the computer's.

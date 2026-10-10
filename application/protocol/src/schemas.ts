@@ -700,7 +700,7 @@ export const murmurState = z.strictObject({
   // that failed, until the next install, update or removal; the GPU it was checked on being
   // gone (the check is then null, and Try again installs just the check); a worker that
   // would not start; or the engine failing three jobs in a row (the check stands) until a job
-  // succeeds. Turning murmur on or off clears the last two.
+  // succeeds. Turning murmur on clears the last two.
   failure: z.string().max(1024).nullable(),
 })
 

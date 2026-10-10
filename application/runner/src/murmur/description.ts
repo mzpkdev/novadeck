@@ -87,9 +87,10 @@ export const spacelessCharacters = { min: 2, max: 16 }
 const tidy = (text: string): string => text.replace(/\s+/g, " ").trim()
 
 // Characters that show nothing or reorder what is shown: format characters (bidi overrides
-// and isolates, zero-width spaces and joiners, the soft hyphen) and the C1 controls. A title
-// is plain text, so they are dropped before anything looks at it.
-const invisible = /[\p{Cf}\u0080-\u009f]/gu
+// and isolates, zero-width spaces, the soft hyphen) and the C1 controls. A title
+// is plain text, so they are dropped before anything looks at it. The zero-width non-joiner
+// and joiner stay: Persian, Indic scripts and emoji sequences need them.
+const invisible = /(?![\u200C\u200D])[\p{Cf}\u0080-\u009f]/gu
 
 // Markdown the model sometimes wraps its words in; a terminal title shows it literally.
 const plain = (text: string): string =>

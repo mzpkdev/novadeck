@@ -20,9 +20,16 @@ describe("reading the model's title", () => {
   it("drops invisible and reordering characters from a title", () => {
     // A bidi override, an isolate, zero-width characters, a soft hyphen and a C1 control.
     expect(title("Fix\u202E the\u2066 build\u2069\u202C")).toBe("Fix the build")
-    expect(title("Fix\u200B the\u200D bu\u00ADild\u0085 now")).toBe("Fix the build now")
+    expect(title("Fix\u200B the\u2060 bu\u00ADild\uFEFF\u0085 now")).toBe("Fix the build now")
     // Hiding a key's middle with them does not get it past the guard.
     expect(title("Rotate sk-\u200BAbC9dEf2GhI4jKl7 key")).toBeUndefined()
+  })
+
+  it("keeps the joiners that Persian, Indic scripts and emoji need", () => {
+    expect(title("برنامه\u200Cنویسی وب")).toBe("برنامه\u200Cنویسی وب")
+    expect(title("Family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} emoji picker")).toBe(
+      "Family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} emoji picker",
+    )
   })
 
   it.each([
