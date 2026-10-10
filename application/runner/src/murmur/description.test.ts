@@ -696,3 +696,51 @@ describe("provider keys, wherever they are and whatever is around them", () => {
     expect(title(text)).toBeDefined()
   })
 })
+
+describe("keys cut short, and names that begin like keys", () => {
+  it.each([
+    "hf_QxTzRmWpLkJhGfDsAeV",
+    "hf_QxTzRmWpLkJh",
+    "ghp_Ab3dEf6hIj9lMn",
+    "npm_Ab3dEf6hIj9lMn",
+    "sk-Ab3dEf6hIj9lMn",
+    "sk_live_Ab3dEf6hIj9lMn",
+    "whsec_Ab3dEf6hIj9lMnOp",
+    "glpat-Ab3dEf6hIj9lMn",
+    "AIzaSyAb3dEf6hIj9lMn",
+    "xoxb-123456789012-12345",
+  ])("refuses %s, whole or cut short", (key) => {
+    expect(title(`Fix ${key}`)).toBeUndefined()
+    expect(title(`Fix (${key})`)).toBeUndefined()
+  })
+
+  it.each([
+    "Installing sk-learn-contrib-imbalanced",
+    "Fixing xoxb-token-rotation-handler",
+    "Rotating xoxp-user-token-refresh flow",
+    "Scoping github_pat_fine_grained_permissions",
+    "Reading github_pat_expiration_warnings",
+    "Testing sk-proj-scoped-api-keys docs",
+    "Fixing glpat-expiration-reminder-job",
+    "Parsing ya29.access-token-response bodies",
+    "Documenting AIzaSyDocsExampleKeyPlaceholder",
+    "Updating sk-SK-translations-for-dashboard",
+    "Fixing sk-SK_localization_strings_file",
+    "Running pypi-publish-github-action-workflow",
+    "Debugging ASIATEMPORARYCREDENTIALS logic",
+    "Debugging AKIA prefix detection",
+    "Fixing SG.api-key-prefix-validation-rules.check",
+    "Reading eyJhbGciOi.eyJzdWIi header",
+    "Fixing `sk-learn-contrib-imbalanced` import",
+    "Fixing **xoxb-bot-token-scopes-config**",
+    "Tuning hf_hub_download_timeout_seconds",
+    "Fixing npm_config_registry_url_override",
+    "Testing dop_v1_token_format docs",
+    "Fixing sk_live_mode_feature_flagging",
+    "Fixing rk_test_restricted_keys docs",
+    "Using AGE-SECRET-KEY-1 format docs",
+    "Reviewing shpat_access_token_scopes",
+  ])("keeps %s", (text) => {
+    expect(title(text)).toBeDefined()
+  })
+})

@@ -109,25 +109,39 @@ const entropy = (word: string): number => {
 // then a contiguous run of the characters and length they use. A name that merely begins the
 // same (`npm_config_cache`, `hf_hub_download`, `sk-learn`) has underscores or too little
 // after it, so it is no key. Found anywhere in the title, however it is wrapped.
+// What a provider's keys look like, in the shape they are documented to have: the prefix and
+// then a random body. A random body mixes cases, and for most providers puts digits among
+// letters; words in lower case (`hf_transfer`, `npm_lifecycle_event`, `sk-learn-contrib`) do not.
+// The run needs 12 or more characters, since a title is 48 characters and keys get cut short
+// in prose. Underscores in a name that is a word list (`npm_config_cache`) stop the match by
+// themselves, except where a key's own body has them.
+const randomBody = (prefix: string, digits: boolean, body = "[A-Za-z0-9]"): string =>
+  `${prefix}(?=${body}*(?:[a-z][A-Z]|[A-Z][a-z]${digits ? "|\\d[A-Za-z]|[A-Za-z]\\d" : ""}))${body}{12,}`
+
+const wide = "[A-Za-z0-9_-]"
 const providerKeys = new RegExp(
   `(?<![A-Za-z0-9])(?:${[
-    "(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}",
-    "github_pat_[A-Za-z0-9_]{20,}",
-    "sk-[A-Za-z0-9_-]{20,}",
-    "(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}",
-    "glpat-[A-Za-z0-9_-]{20,}",
-    "hf_[A-Za-z0-9]{20,}",
-    "npm_[A-Za-z0-9]{20,}",
-    "pypi-[A-Za-z0-9_-]{30,}",
+    randomBody("(?:ghp|gho|ghu|ghs|ghr)_", true),
+    randomBody("github_pat_", true, "[A-Za-z0-9_]"),
+    randomBody("sk-", true, wide),
+    randomBody("(?:sk|rk)_(?:live|test)_", true),
+    randomBody("whsec_", true),
+    randomBody("glpat-", true, wide),
+    randomBody("hf_", false),
+    randomBody("npm_", true),
+    randomBody("pypi-", true, wide),
+    randomBody("xox[abeoprs]-", true, "[A-Za-z0-9-]"),
+    // Slack's are digits and hyphens in front.
+    "xox[abeoprs]-[0-9-]{12,}",
+    randomBody("ya29\\.", false, wide),
+    `AIza(?:(?=[A-Za-z0-9_-]*\\d)|(?=[A-Za-z0-9_-]*(?:[a-z][A-Z]|[A-Z][a-z]))(?![A-Za-z0-9_-]*[a-z]{5}))[A-Za-z0-9_-]{12,}`,
+    "eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}",
+    randomBody("SG\\.", true, wide),
+    "SG\\.[A-Za-z0-9_-]{16,}\\.[A-Za-z0-9_-]{16,}",
     "shp(?:at|ca|ss)_[A-Za-z0-9]{32}",
     "dop_v1_[a-f0-9]{20,}",
-    "xox[abeoprs]-[A-Za-z0-9-]{20,}",
-    "ya29\\.[A-Za-z0-9_-]{20,}",
-    "AIza[A-Za-z0-9_-]{30,}",
-    "eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}",
-    "SG\\.[A-Za-z0-9_-]{16,}\\.[A-Za-z0-9_-]{16,}",
     "AGE-SECRET-KEY-1[A-Z0-9]{20,}",
-    "(?:AKIA|ASIA)[0-9A-Z]{16}",
+    "(?:AKIA|ASIA)[0-9A-Z]{16}(?![0-9A-Za-z])",
   ].join("|")})`,
 )
 

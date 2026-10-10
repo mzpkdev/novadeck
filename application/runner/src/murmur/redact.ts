@@ -209,8 +209,8 @@ const rules: readonly Rule[] = [
   [new RegExp(`(?<![\\w])${spaced("hvs.")}${wrapped(`${url}.`, 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("npm_")}${wrapped("A-Za-z0-9", 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("pypi-")}${wrapped("A-Za-z0-9_=-", 20)}`, "g"), mask],
-  [new RegExp(`(?<![\\w])ya29\\.${wrapped(`${url}.`, 20)}`, "g"), mask],
-  [new RegExp(`(?<![\\w])${spaced("AIza")}${wrapped(url, 30)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])ya29\\.(?=[A-Za-z0-9_.-]*[A-Z0-9])${wrapped(`${url}.`, 20)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("AIza")}(?=[A-Za-z0-9_-]*\\d)${wrapped(url, 30)}`, "g"), mask],
   [new RegExp(`(?<![\\w])SG\\.${wrapped(url, 16)}\\.${wrapped(url, 16)}`, "g"), mask],
   // A Discord bot token: three parts, the first the user id's digits in base64.
   [
@@ -219,7 +219,7 @@ const rules: readonly Rule[] = [
       /^\d{17,20}$/.test(Buffer.from(id, "base64url").toString("utf8")) ? hide(all) : all,
   ],
   [new RegExp(`${spaced("AGE-SECRET-KEY-1")}${wrapped("A-Z0-9", 20)}`, "g"), mask],
-  [new RegExp(`(?<![\\w])(?:AKIA|ASIA)[0-9A-Z]{16}`, "g"), mask],
+  [new RegExp(`(?<![\\w])(?:AKIA|ASIA)[0-9A-Z]{16}(?![0-9A-Za-z])`, "g"), mask],
   [new RegExp(`(?<![\\w])xox[abeoprs]-${wrapped("A-Za-z0-9-", 10)}`, "g"), mask],
   [new RegExp(`(?<![\\w])eyJ[\\w-]{8,}\\.[\\w-]{8,}\\.[\\w-]*`, "g"), mask],
   // Webhooks carry their secret in the path.
