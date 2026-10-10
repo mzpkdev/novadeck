@@ -260,9 +260,9 @@ taskbar, marked new.
 
 What belongs there is a deliverable: something made to be looked at (an image or
 screenshot, a rendered page or dev server, a report, mockup, diagram or generated
-document, or the one file the user asked for), shown once it is done. Source, tests and
-config edited as part of a change are not deliverables; the user reads those in the
-diff. Every harness hears this the same two ways, as neither plugin ships a skill: the
+document, or the one file the user asked for), shown once it is done. A source file
+counts while it is the one the user and the agent work on together; the files a change
+touches on the way do not, and the user reads those in the diff. Every harness hears this the same two ways, as neither plugin ships a skill: the
 `show` tool's own description carries the rule, and the runner's prompt-time hook adds
 Novadeck's artifacts notice, one paragraph, at the first quiet prompt of each root
 session and after a compaction (`artifactsNotice` in `terminals/nudges.ts`, delivered

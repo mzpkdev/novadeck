@@ -127,8 +127,9 @@ export const artifactsNotice =
   "show the user what you make, with Novadeck's show tool. Show a deliverable when it is " +
   "done, not each file you touch: an image or screenshot, a rendered page or a dev " +
   "server's address, a report, mockup, diagram or generated document, or the one file the " +
-  "user asked you for. Source, tests and config you edit as part of a change aren't " +
-  "deliverables; the user reads those in the diff. Show it without open when you finish " +
+  "user asked you for. A source file is one too while it is the file you are working on " +
+  "together, so show it and keep it shown; the files a change touches on the way aren't, " +
+  "and the user reads those in the diff. Show it without open when you finish " +
   "it, and with open only when they asked to see it, which a revision of something you " +
   "are iterating on with them is. Showing the same file or page again updates it, so one " +
   "item per deliverable, and while they have it open each save shows at once; close takes " +

@@ -333,7 +333,8 @@ describe("Novadeck's MCP server", () => {
       expect(show.description).toContain(
         "Show a deliverable when it is done, not each file you touch",
       )
-      expect(show.description).toContain("aren't deliverables; the user reads those in the diff")
+      expect(show.description).toContain("the files a change touches on the way aren't")
+      expect(show.description).toContain("the file you are working on together")
       expect(show.description).toContain("Set open to true only when they asked to see it")
       expect(show.description).toContain("one item per deliverable")
       expect(show.description).toContain("a revision of something you are iterating on with them")

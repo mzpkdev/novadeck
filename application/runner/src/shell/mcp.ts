@@ -93,9 +93,10 @@ const show: Tool<Shown> = {
     "beside the terminal they're talking to you in. Give either file or url. Show a " +
     "deliverable when it is done, not each file you touch: an image or screenshot, a " +
     "rendered page or a dev server's address, a report, mockup, diagram or generated " +
-    "document, the lines you mean, or the one file the user asked you for. Source, tests " +
-    "and config you edit as part of a change aren't deliverables; the user reads those in " +
-    "the diff. Set open to true only when they asked to see it, which a revision of " +
+    "document, the lines you mean, or the one file the user asked you for. A source file is " +
+    "one too while it is the file you are working on together, so show it and keep it " +
+    "shown; the files a change touches on the way aren't, and the user reads those in the " +
+    "diff. Set open to true only when they asked to see it, which a revision of " +
     "something you are iterating on with them is; otherwise it waits for them in Novadeck, " +
     "marked new. Showing the same file or page again updates it beside you, so one item " +
     "per deliverable; while they have it open, each save shows at once.",
