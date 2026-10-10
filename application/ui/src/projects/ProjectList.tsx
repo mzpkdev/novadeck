@@ -135,11 +135,12 @@ export const ProjectList = ({
           const menu = list?.parentElement?.getBoundingClientRect()
           const accepts = pinDrop.getSnapshot()?.accepts === true
           if (menu && accepts) {
-            // Out once clearly past the menu: above its rows (the pinned label at most,
-            // over the bar), or a little past its sides or bottom, so a reorder that swings
-            // wide stays one. Out stays out: the menu doesn't come back for this drag.
+            // Out once clearly past the menu: a little above its rows (the pinned label at
+            // most, over the bar) or its top where they're scrolled away, or past its sides
+            // or bottom, so a reorder that swings wide or flicks to the top stays one. Out
+            // stays out: the menu doesn't come back for this drag.
             const away =
-              point.y < (rowsTop.current ?? menu.top) ||
+              point.y < Math.max(rowsTop.current ?? menu.top, menu.top) - 4 ||
               point.x < menu.left - leeway ||
               point.x > menu.right + leeway ||
               point.y > menu.bottom + leeway
