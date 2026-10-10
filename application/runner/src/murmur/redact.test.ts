@@ -921,3 +921,19 @@ describe("a token after a row that ended in a word character", () => {
     expect(result).not.toMatch(/eyJh|SflKx|eyJzd|IkpvaG4/)
   })
 })
+
+describe("a secret behind a label that ends a row", () => {
+  it.each([
+    ["password: ", "token: B4aTpQ9xK2mWz7LvN3sYcH5g"],
+    ["Secret Access Key: ", "token: B4aTpQ9xK2mWz7LvN3sYcH5g"],
+    ["API_KEY= ", "ghp_B4aTpQ9xK2mWz7LvN3sYcH5gAbCd"],
+  ])("masks the secret on the next row after %s", (label, secret) => {
+    const width = 24
+    const lines = [label.padStart(width, "x").slice(-width), ...(secret.match(/.{1,24}/g) ?? [])]
+    const continues = lines.map((row, i) => i < lines.length - 1 && row.length === width)
+
+    const result = (redactDigest({ ...shell(lines), continues }) as ShellDigest).screen.join("\n")
+
+    expect(result).not.toMatch(/B4aTp|Q9xK|WzLv|7LvN|sYcH/)
+  })
+})

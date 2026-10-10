@@ -48,6 +48,8 @@ export class Preparer {
   private idle: NodeJS.Timeout | undefined
   private closed = false
   private next = 0
+  // Counts stops, so a thread that was launched before one is ended when it comes up.
+  private generation = 0
 
   constructor(private readonly options: PrepareOptions = {}) {}
 
@@ -82,7 +84,11 @@ export class Preparer {
         this.discard(worker)
         done(undefined)
       }
-      const onAbort = (): void => done(undefined)
+      // The thread may be in the middle of this digest: ended, or it would go on spinning.
+      const onAbort = (): void => {
+        this.discard(worker)
+        done(undefined)
+      }
       const timer = setTimeout(() => {
         // Whatever it is doing is not stopped by asking: the thread is ended.
         this.discard(worker)
@@ -106,6 +112,7 @@ export class Preparer {
   /** Ends the thread; the next digest starts another. */
   async stop(): Promise<void> {
     clearTimeout(this.idle)
+    this.generation += 1
     const worker = this.worker
     this.worker = undefined
     this.starting = undefined
@@ -134,6 +141,7 @@ export class Preparer {
   }
 
   private launch(): Promise<Worker | undefined> {
+    const generation = this.generation
     return new Promise((resolve) => {
       let worker: Worker
       try {
@@ -158,7 +166,7 @@ export class Preparer {
         clearTimeout(timer)
         worker.off("error", fail)
         worker.off("exit", fail)
-        if (this.closed) {
+        if (this.closed || generation !== this.generation) {
           void worker.terminate()
           return resolve(undefined)
         }
@@ -167,6 +175,8 @@ export class Preparer {
         worker.once("exit", () => {
           if (this.worker === worker) this.worker = undefined
         })
+        // An error between digests must not become an uncaught exception.
+        worker.on("error", () => this.discard(worker))
         resolve(worker)
       })
     })

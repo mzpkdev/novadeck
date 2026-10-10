@@ -101,4 +101,55 @@ describe("preparing a digest in a thread", () => {
     expect(preparer.running).toBe(false)
     await preparer.close()
   })
+
+  it("ends the thread of a job that is dropped, so it does not spin on", async ({ resources }) => {
+    const preparer = new Preparer({ script, deadlineMs: 5000 })
+    resources.defer(() => preparer.close())
+    await preparer.prepare(digest("app"))
+    const controller = new AbortController()
+
+    const job = preparer.prepare(digest("hang"), controller.signal)
+    setTimeout(() => controller.abort(), 50)
+    expect(await job).toBeUndefined()
+
+    // The thread was ended with the job, not left to run until a deadline.
+    expect(preparer.running).toBe(false)
+    const cpu = process.cpuUsage()
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const used = process.cpuUsage(cpu)
+    expect((used.user + used.system) / 1000).toBeLessThan(400)
+    // The next job gets a thread of its own, and its full time.
+    expect(await preparer.prepare(digest("next"))).toHaveLength(2)
+  })
+
+  it("survives an error in the thread between digests", async ({ resources }) => {
+    const preparer = new Preparer({
+      script: new URL("../testing/throw-worker.mjs", import.meta.url),
+    })
+    resources.defer(() => preparer.close())
+    const uncaught: unknown[] = []
+    const listener = (error: unknown): number => uncaught.push(error)
+    process.on("uncaughtException", listener)
+    try {
+      expect(await preparer.prepare(digest("a"))).toHaveLength(1)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(uncaught).toEqual([])
+      expect(preparer.running).toBe(false)
+      expect(await preparer.prepare(digest("b"))).toHaveLength(1)
+    } finally {
+      process.off("uncaughtException", listener)
+    }
+  })
+
+  it("ends a thread that comes up after a stop", async () => {
+    const preparer = new Preparer({ script })
+
+    const job = preparer.prepare(digest("app"))
+    await preparer.stop()
+
+    expect(await job).toBeUndefined()
+    expect(preparer.running).toBe(false)
+    await preparer.close()
+  })
 })

@@ -107,7 +107,7 @@ const entropy = (word: string): number => {
 
 // What a provider's keys begin with, followed by enough to be one.
 const providerKey =
-  /^(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|sk_live_|sk_test_|rk_live_|rk_test_|glpat-|hf_|npm_|xox[abeoprs]-|ya29\.|AIza|eyJ|SG\.|AGE-SECRET-KEY-)[A-Za-z0-9_.-]{8,}|^(?:AKIA|ASIA)[0-9A-Z]{16}/
+  /^(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|sk_live_|sk_test_|rk_live_|rk_test_|glpat-|hf_|npm_|xox[abeoprs]-|ya29\.|AIza|eyJ|SG\.|AGE-SECRET-KEY-|pypi-|shpat_|shpca_|shpss_|dop_v1_)[A-Za-z0-9_.-]{8,}|^(?:AKIA|ASIA)[0-9A-Z]{16}/
 
 // 12 or more characters of letters and digits that read as no word: no run of lowercase
 // letters that long, and as many different characters as a random string has; or 16 or more
@@ -122,7 +122,7 @@ const randomLike = (piece: string): boolean =>
     (piece.length >= 16 && (piece.match(/\d/g) ?? []).length >= 3 && entropy(piece) >= 3))
 
 // A name in code (`Float32Array`, `iPhone15ProMax`, `Ed25519PublicKey`): cut at the changes of
-// case and at the digits, at least half of it is words of three letters or more.
+// case and at the digits, at least 60% of it is words and the numbers in them.
 const identifierLike = (piece: string): boolean => {
   // Names in code mix cases or are in capitals; a run of lower case and digits is more often a key.
   if (!/\p{Lu}/u.test(piece)) return false
@@ -130,15 +130,19 @@ const identifierLike = (piece: string): boolean => {
     .replaceAll(/(\p{Ll})(\p{Lu})/gu, "$1 $2")
     .replaceAll(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
     .split(/[^\p{L}]+/u)
-    // An acronym is a word up to four letters; a longer run of capitals is no word.
+    // A word: a capital or not and then lower case, 3 to 12 letters, with a vowel; or an
+    // acronym of up to four capitals.
     .filter(
       (word) =>
-        word.length >= 3 &&
-        // Words have vowels; a random run of letters often has none.
         /[aeiouyAEIOUY]/.test(word) &&
-        (word.length <= 4 || word !== word.toUpperCase()),
+        (/^\p{Lu}?\p{Ll}{2,11}$/u.test(word) || /^\p{Lu}{2,4}$/u.test(word)),
     )
-  return segments.reduce((sum, word) => sum + word.length, 0) * 2 >= piece.length
+  // The numbers in names (25519, 256, 32) are not random either: runs of two to five digits next to a word.
+  const numbers = (
+    piece.match(/(?<=\p{Ll}{3})\d{2,5}(?!\d)|(?<!\d)\d{2,5}(?=\p{Lu}\p{Ll}{2})/gu) ?? []
+  ).reduce((sum, run) => sum + run.length, 0)
+  const covered = segments.reduce((sum, word) => sum + word.length, 0) + numbers
+  return covered * 5 >= piece.length * 3
 }
 
 // A hex string of a hash's length is a commit id in a log and a secret in a title.
@@ -150,7 +154,8 @@ const tokenLike = (text: string): boolean =>
     .split(/\s+/)
     .some(
       (word) =>
-        providerKey.test(word) || word.split(/[-./@:_]+/).some((piece) => randomLike(piece)),
+        providerKey.test(word.replace(/^[*`"'“”‘’#]+/, "")) ||
+        word.split(/[-./@:_]+/).some((piece) => randomLike(piece)),
     )
 
 // A title is refused when it has a token-like piece, or when redaction masks a piece of it that
@@ -193,7 +198,8 @@ export const parseDescription = (raw: string, source?: string): Description | un
   if (given.length > 0 && given.every((word) => chatWords.has(word))) return undefined
   if (spacelessChat.has(cleanTitle.replaceAll(/\s/g, ""))) return undefined
   const shown = source === undefined ? undefined : fold(source)
-  if (looksSecret(cleanTitle)) return undefined
+  // Run on the title as the model wrote it as well: tidying turns `_` into a space.
+  if (looksSecret(cleanTitle) || tokenLike(title)) return undefined
   if (exampleTitles.some((example) => copies(cleanTitle, example, shown))) return undefined
   return { title: cleanTitle }
 }

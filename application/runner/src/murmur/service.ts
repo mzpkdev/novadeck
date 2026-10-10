@@ -777,6 +777,11 @@ export class Murmur implements Describer {
     signal: AbortSignal | undefined,
     terminal: string | undefined,
   ): Promise<Description | null | undefined> {
+    // Refusals are counted for the terminal asking; without a name, for its digest's shape.
+    const key = terminal === undefined ? digestKey(digest) : JSON.stringify(["terminal", terminal])
+    // A job that will be refused spends no time of the thread's.
+    if (this.clock() < this.refusedUntil) return undefined
+    if (this.clock() < (this.refusals.get(key)?.until ?? 0)) return undefined
     // Redacted and written in a thread of its own, within a deadline.
     const chat = await this.preparer.prepare(digest, signal)
     if (chat === undefined || chat === "late") {
@@ -785,8 +790,6 @@ export class Murmur implements Describer {
       if (!signal?.aborted && !this.closed) this.failed()
       return undefined
     }
-    // Refusals are counted for the terminal asking; without a name, for its digest's shape.
-    const key = terminal === undefined ? digestKey(digest) : JSON.stringify(["terminal", terminal])
     const retryMs = this.options.retryMs ?? 15_000
     for (;;) {
       if (signal?.aborted || !this.usable()) return undefined

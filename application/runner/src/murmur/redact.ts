@@ -479,10 +479,7 @@ const redactRows = (screen: readonly string[], continues: readonly boolean[]): s
       let from = 0
       for (let start = 0; start < group.length; start += 1) {
         note(mark(group[start] ?? ""), from)
-        // From a row's start, only where the row before leaves something in front of it: after
-        // a space the whole text sees the row's start as it is.
-        if (start === 0 || /\S$/.test(group[start - 1] ?? ""))
-          note(mark(group.slice(start).join("")), from)
+        note(mark(group.slice(start).join("")), from)
         from += (group[start] ?? "").length
       }
       let offset = 0

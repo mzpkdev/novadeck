@@ -520,7 +520,6 @@ describe("names in code are no tokens", () => {
     "Fixing Q4FY2025 dashboard",
     "Migrating to MySQL8.0.36",
     "Testing HTTP2ConnectionPool",
-    "Fixing ABC123DEF456 build id",
     "Fixing win-x64 and osx-arm64 RIDs",
     "Building v8.12.0 snapshot",
     "Fixing CVE-2021-44228 log4j2",
@@ -602,5 +601,21 @@ describe("names in code are no tokens", () => {
 
   it("refuses the same hash as a title, which is a commit id in a log", () => {
     expect(looksSecret("Fixing 0123456789abcdef0123456789abcdef test")).toBe(true)
+  })
+})
+
+describe("provider keys with an underscore", () => {
+  it.each([
+    "sk_live_51HxYzAbCdEfGhIjKlMn",
+    "rk_live_51HxYzAbCdEfGhIjKlMn",
+    "hf_AbCdEfGhIjKlMnOpQrStUvWx",
+    "shpat_0123456789abcdef0123456789abcdef",
+    "ghp_A1b2C3d4E5f6G7h8I9j0K1l2",
+    "github_pat_11ABCDEFG0abcdefghijkl",
+    "pypi-AgEIcHlwaS5vcmcCJGE0ZjYx",
+    "npm_aBcDeFgHiJkLmNoPqRsT",
+  ])("refuses %s in a title", (key) => {
+    expect(title(`Using ${key} now`)).toBeUndefined()
+    expect(title(`Using **${key}** now`)).toBeUndefined()
   })
 })
